@@ -241,13 +241,13 @@ function RequisitionForm({ profile, onCancel, onSaved }) {
       supabase.from('departments').select('id, name').eq('active', true).order('name'),
       supabase.from('categories').select('id, name, sub_department_id').order('name'),
       supabase.from('inventory_items')
-        .select('id, name, unit, category_id, categories(name)')
-        .eq('status', 'approved')
+        .select('id, name, unit, category_id, status, categories(name)')
+        .in('status', ['approved', 'pending', 'pending_dept'])
         .order('name')
         .limit(2000),
       supabase.from('catering_store_items')
-        .select('id, name, unit, category_id, categories(name)')
-        .eq('status', 'approved')
+        .select('id, name, unit, category_id, status, categories(name)')
+        .in('status', ['approved', 'pending', 'pending_dept'])
         .order('name')
         .limit(2000),
     ])
@@ -500,7 +500,7 @@ function RequisitionForm({ profile, onCancel, onSaved }) {
                             onClick={function () { selectInventoryItem(index, inv) }}
                             className="w-full text-left px-3 py-2 hover:bg-indigo-50 active:bg-indigo-100 transition-colors border-b border-gray-100 last:border-0">
                             <p className="text-sm font-medium text-gray-800">{titleCase(inv.name)}</p>
-                            <p className="text-[11px] text-gray-400">{inv.categories?.name || '—'} · {inv.unit} · {inv._source === 'catering_store' ? 'CS' : 'INV'}</p>
+                            <p className="text-[11px] text-gray-400">{inv.categories?.name || '—'} · {inv.unit} · {inv._source === 'catering_store' ? 'CS' : 'INV'}{inv.status !== 'approved' ? ' · ⏳ Pending' : ''}</p>
                           </button>
                         )
                       })}
