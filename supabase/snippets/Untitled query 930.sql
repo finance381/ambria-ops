@@ -1,0 +1,1 @@
+SELECT id, name, status, submitted_by FROM inventory_items WHERE status = 'pending';
