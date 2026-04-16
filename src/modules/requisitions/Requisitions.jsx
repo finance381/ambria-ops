@@ -52,7 +52,7 @@ function Requisitions({ profile, onBack }) {
   async function loadRequisitions() {
     var { data, error } = await supabase
       .from('requisitions')
-      .select('id, department, urgency, purpose, status, created_at, requested_by, rejection_reason, profiles:requested_by(name)')
+      .select('id, department, urgency, purpose, status, created_at, needed_by, requested_by, rejection_reason, profiles:requested_by(name)')
       .order('created_at', { ascending: false })
       .limit(500)
     if (error) { alert('Failed to load: ' + error.message); setLoading(false); return }
@@ -64,7 +64,7 @@ function Requisitions({ profile, onBack }) {
     setDetailReq(req)
     var { data } = await supabase
       .from('requisition_items')
-      .select('id, item_id, item_name, category_id, qty, unit, notes, _source, categories(name)')
+      .select('id, item_id, item_name, category_id, qty, unit, notes, _source, estimated_cost_paise, categories(name)')
       .eq('requisition_id', req.id)
     setDetailItems(data || [])
     setView('detail')
@@ -191,9 +191,9 @@ function Requisitions({ profile, onBack }) {
                   <p className="text-sm font-semibold text-gray-900 truncate">
                     {req.purpose || 'Requisition #' + req.id}
                   </p>
-                  <p className="text-[11px] text-gray-400 mt-0.5">
+                  <p className="text-xs text-gray-400 mt-0.5">
                     {view === 'approve' ? (req.profiles?.name || '—') + ' · ' : ''}
-                    {req.department} · {formatDate(req.created_at)}
+                    {req.department} · {formatDate(req.created_at)}{req.needed_by ? ' · Need by ' + formatDate(req.needed_by) : ''}
                   </p>
                 </div>
                 <div className="flex gap-1.5 flex-shrink-0 ml-2">
@@ -226,12 +226,13 @@ function RequisitionForm({ profile, onCancel, onSaved }) {
   var [department, setDepartment] = useState('')
   var [urgency, setUrgency] = useState('normal')
   var [purpose, setPurpose] = useState('')
+  var [neededBy, setNeededBy] = useState('')
   var [cart, setCart] = useState([emptyCartItem()])
   var [saving, setSaving] = useState(false)
   var [errors, setErrors] = useState({})
 
   function emptyCartItem() {
-    return { mode: 'existing', item_id: null, item_name: '', category_id: '', qty: '1', unit: 'Pieces', notes: '', _source: 'new', search: '' }
+    return { mode: 'existing', item_id: null, item_name: '', category_id: '', qty: '1', unit: 'Pieces', notes: '', _source: 'new', search: '', estimated_cost: '' }
   }
 
   useEffect(function () { loadLookups() }, [])
@@ -241,12 +242,12 @@ function RequisitionForm({ profile, onCancel, onSaved }) {
       supabase.from('departments').select('id, name').eq('active', true).order('name'),
       supabase.from('categories').select('id, name, sub_department_id').order('name'),
       supabase.from('inventory_items')
-        .select('id, name, unit, category_id, status, categories(name)')
+        .select('id, name, unit, qty, category_id, status, categories(name)')
         .in('status', ['approved', 'pending', 'pending_dept'])
         .order('name')
         .limit(2000),
       supabase.from('catering_store_items')
-        .select('id, name, unit, category_id, status, categories(name)')
+        .select('id, name, unit, qty, category_id, status, categories(name)')
         .in('status', ['approved', 'pending', 'pending_dept'])
         .order('name')
         .limit(2000),
@@ -358,6 +359,7 @@ function RequisitionForm({ profile, onCancel, onSaved }) {
         department: department,
         urgency: urgency,
         purpose: purpose.trim(),
+        needed_by: neededBy || null,
         status: status,
         dept_approved_by: deptApprovedBy,
         dept_approved_at: deptApprovedAt,
@@ -377,6 +379,7 @@ function RequisitionForm({ profile, onCancel, onSaved }) {
             unit: c.unit,
             notes: c.notes.trim() || null,
             _source: c.mode === 'existing' ? c._source : 'new',
+            estimated_cost_paise: c.estimated_cost ? Math.round(Number(c.estimated_cost) * 100) : null,
           }
         })
 
@@ -430,6 +433,12 @@ function RequisitionForm({ profile, onCancel, onSaved }) {
               )
             })}
           </div>
+        </div>
+          <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Needed By</label>
+          <input type="date" value={neededBy} onChange={function (e) { setNeededBy(e.target.value) }}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            style={{ fontSize: '16px' }} />
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Purpose / Reason <span className="text-red-500">*</span></label>
@@ -502,7 +511,7 @@ function RequisitionForm({ profile, onCancel, onSaved }) {
                             onClick={function () { selectInventoryItem(index, inv) }}
                             className="w-full text-left px-3 py-2 hover:bg-indigo-50 active:bg-indigo-100 transition-colors border-b border-gray-100 last:border-0">
                             <p className="text-sm font-medium text-gray-800">{titleCase(inv.name)}</p>
-                            <p className="text-[11px] text-gray-400">{inv.categories?.name || '—'} · {inv.unit} · {inv._source === 'catering_store' ? 'CS' : 'INV'}{inv.status !== 'approved' ? ' · ⏳ Pending' : ''}</p>
+                            <p className="text-[11px] text-gray-400">{inv.categories?.name || '—'} · {inv.unit} · <span className={"font-bold " + (inv.qty > 0 ? "text-green-600" : "text-red-500")}>{inv.qty} in stock</span> · {inv._source === 'catering_store' ? 'CS' : 'INV'}{inv.status !== 'approved' ? ' · ⏳ Pending' : ''}</p>
                           </button>
                         )
                       })}
@@ -547,14 +556,24 @@ function RequisitionForm({ profile, onCancel, onSaved }) {
                 </div>
               </div>
 
-              <div>
-                <label className="block text-[11px] text-gray-400 mb-0.5">Notes</label>
-                <input type="text" value={item.notes}
-                  onChange={function (e) { updateCart(index, 'notes', e.target.value) }}
-                  placeholder="Specific brand, size, specification..."
-                  maxLength="300"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  style={{ fontSize: '16px' }} />
+              <div className="flex gap-2">
+                <div className="flex-1">
+                  <label className="block text-[11px] text-gray-400 mb-0.5">Notes</label>
+                  <input type="text" value={item.notes}
+                    onChange={function (e) { updateCart(index, 'notes', e.target.value) }}
+                    placeholder="Brand, size, spec..."
+                    maxLength="300"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    style={{ fontSize: '16px' }} />
+                </div>
+                <div className="w-28">
+                  <label className="block text-[11px] text-gray-400 mb-0.5">Est. Cost ₹</label>
+                  <input type="number" min="0" step="any" inputMode="decimal" value={item.estimated_cost}
+                    onChange={function (e) { updateCart(index, 'estimated_cost', e.target.value) }}
+                    placeholder="—"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    style={{ fontSize: '16px' }} />
+                </div>
               </div>
             </div>
           )
@@ -680,6 +699,7 @@ function RequisitionDetail({ req, items, profile, isAdmin, isDeptApprover, onBac
                 </div>
                 <div className="text-right flex-shrink-0 ml-2">
                   <p className="text-sm font-bold text-gray-800">{li.qty} {li.unit}</p>
+                  {li.estimated_cost_paise && <p className="text-[11px] text-gray-400">~₹{(li.estimated_cost_paise / 100).toLocaleString('en-IN')}</p>}
                 </div>
               </div>
               {li.notes && (
