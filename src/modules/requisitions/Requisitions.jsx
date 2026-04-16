@@ -465,9 +465,11 @@ function RequisitionForm({ profile, onCancel, onSaved }) {
                 <span className="text-[11px] font-bold text-gray-400">Item #{index + 1}</span>
                 <div className="flex items-center gap-2">
                   <button type="button" onClick={function () { toggleMode(index) }}
-                    className={"text-[11px] font-bold px-2 py-0.5 rounded-full transition-colors " +
-                      (item.mode === 'new' ? "bg-amber-100 text-amber-700" : "bg-indigo-100 text-indigo-700")}>
-                    {item.mode === 'new' ? '✦ New Item' : '📦 From Inventory'}
+                    className="flex items-center gap-2">
+                    <span className="text-[11px] font-bold text-gray-500">{item.mode === 'new' ? '✦ New' : '📦 Inventory'}</span>
+                    <div className={"relative w-9 h-5 rounded-full transition-colors " + (item.mode === 'new' ? "bg-amber-400" : "bg-indigo-500")}>
+                      <div className={"absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform " + (item.mode === 'new' ? "translate-x-4" : "translate-x-0.5")} />
+                    </div>
                   </button>
                   {cart.length > 1 && (
                     <button type="button" onClick={function () { removeCartItem(index) }}
