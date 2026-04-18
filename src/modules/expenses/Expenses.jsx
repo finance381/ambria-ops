@@ -23,6 +23,7 @@ function Expenses({ profile }) {
   var [saving, setSaving] = useState(false)
   var [showForm, setShowForm] = useState(false)
   var [search, setSearch] = useState('')
+  var [statusFilter, setStatusFilter] = useState('')
   var [rejectTarget, setRejectTarget] = useState(null)
   var [rejectReason, setRejectReason] = useState('')
   var [receiptPreview, setReceiptPreview] = useState(null)
@@ -42,9 +43,9 @@ function Expenses({ profile }) {
       supabase.from('expense_categories').select('id, name').eq('active', true).order('name'),
       view === 'review'
         ? supabase.from('expenses')
-            .select('id, user_id, category_id, amount_paise, description, receipt_path, status, reviewed_by, reviewed_at, rejection_reason, expense_date, created_at, expense_categories(name), profiles!expenses_user_id_fkey(name, email)')
-            .eq('status', 'pending')
+            .select('id, user_id, category_id, amount_paise, description, receipt_path, status, reviewed_by, reviewed_at, rejection_reason, expense_date, created_at, expense_categories(name), profiles!expenses_user_id_fkey(name, email), reviewer:profiles!expenses_reviewed_by_fkey(name)')
             .order('created_at', { ascending: false })
+            .limit(200)
         : supabase.from('expenses')
             .select('id, user_id, category_id, amount_paise, description, receipt_path, status, reviewed_by, reviewed_at, rejection_reason, expense_date, created_at, expense_categories(name), reviewer:profiles!expenses_reviewed_by_fkey(name)')
             .eq('user_id', profile.id)
@@ -148,6 +149,7 @@ function Expenses({ profile }) {
 
   var searchLower = search.toLowerCase()
   var filtered = expenses.filter(function (e) {
+    if (statusFilter && e.status !== statusFilter) return false
     if (!search) return true
     return (e.description || '').toLowerCase().includes(searchLower) ||
       (e.expense_categories?.name || '').toLowerCase().includes(searchLower) ||
@@ -191,11 +193,21 @@ function Expenses({ profile }) {
         className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
         style={{ fontSize: '16px' }} />
 
-      {/* Count */}
-      <div className="text-sm text-gray-400">
-        {filtered.length} expense{filtered.length !== 1 ? 's' : ''}{view === 'review' ? ' pending review' : ''}
+      {/* Status filter + Count */}
+      <div className="flex items-center gap-3">
+        {view === 'review' && (
+          <select value={statusFilter} onChange={function (e) { setStatusFilter(e.target.value) }}
+            className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            <option value="">All statuses</option>
+            <option value="pending">Pending</option>
+            <option value="approved">Approved</option>
+            <option value="rejected">Rejected</option>
+          </select>
+        )}
+        <div className="text-sm text-gray-400">
+          {filtered.length} expense{filtered.length !== 1 ? 's' : ''}
+        </div>
       </div>
-
       {/* List */}
       {filtered.length === 0 && (
         <div className="bg-white border border-gray-200 rounded-xl p-8 text-center">
@@ -223,6 +235,12 @@ function Expenses({ profile }) {
                 <span>📅 {formatDate(exp.expense_date)}</span>
                 {view === 'review' && exp.profiles && (
                   <span>👤 {exp.profiles.name}</span>
+                )}
+                {view === 'review' && exp.status === 'rejected' && exp.rejection_reason && (
+                  <span className="text-red-500">❌ {exp.rejection_reason}</span>
+                )}
+                {view === 'review' && exp.status !== 'pending' && exp.reviewer?.name && (
+                  <span>🔍 {exp.reviewer.name}</span>
                 )}
                 {view === 'my' && exp.status === 'rejected' && exp.rejection_reason && (
                   <span className="text-red-500">❌ {exp.rejection_reason}</span>
