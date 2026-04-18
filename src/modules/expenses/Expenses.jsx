@@ -36,6 +36,8 @@ function Expenses({ profile }) {
   var [selectedWalletUser, setSelectedWalletUser] = useState(null)
   var [walletSearch, setWalletSearch] = useState('')
   var [walletRoleFilter, setWalletRoleFilter] = useState('')
+  var [txDateFrom, setTxDateFrom] = useState('')
+  var [txDateTo, setTxDateTo] = useState('')
   var [showIssue, setShowIssue] = useState(false)
   var [issueUserId, setIssueUserId] = useState('')
   var [issueAmount, setIssueAmount] = useState('')
@@ -122,15 +124,41 @@ function Expenses({ profile }) {
     setAllWallets(merged)
   }
 
-  async function loadUserTransactions(user) {
+  async function loadUserTransactions(user, dateFrom, dateTo) {
     setSelectedWalletUser(user)
     if (!user.wallet_id) { setTransactions([]); return }
-    var { data } = await supabase.from('wallet_transactions')
+    var query = supabase.from('wallet_transactions')
       .select('id, type, amount_paise, balance_after_paise, description, reference_type, performed_by, created_at, performer:profiles!wallet_transactions_performed_by_fkey(name)')
       .eq('wallet_id', user.wallet_id)
-      .order('created_at', { ascending: false })
-      .limit(50)
+    if (dateFrom) { query = query.gte('created_at', dateFrom + 'T00:00:00') }
+    if (dateTo) { query = query.lte('created_at', dateTo + 'T23:59:59') }
+    var { data } = await query.order('created_at', { ascending: false }).limit(200)
     setTransactions(data || [])
+  }
+
+  function exportTransactions() {
+    if (transactions.length === 0) return
+    var userName = selectedWalletUser?.name || 'user'
+    var rows = [['Date', 'Type', 'Amount', 'Balance After', 'Description', 'By']]
+    transactions.forEach(function (tx) {
+      rows.push([
+        new Date(tx.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+        tx.type,
+        (tx.type === 'debit' ? '-' : '+') + (tx.amount_paise / 100).toFixed(2),
+        (tx.balance_after_paise / 100).toFixed(2),
+        (tx.description || '').replace(/,/g, ' '),
+        tx.performer?.name || '—',
+      ])
+    })
+    var csv = '\uFEFF' + rows.map(function (r) { return r.join(',') }).join('\n')
+    var blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    var url = URL.createObjectURL(blob)
+    var a = document.createElement('a')
+    a.href = url
+    var range = (txDateFrom || 'all') + '_to_' + (txDateTo || 'now')
+    a.download = 'wallet_' + userName.replace(/\s+/g, '_') + '_' + range + '.csv'
+    a.click()
+    URL.revokeObjectURL(url)
   }
 
   useEffect(function () {
@@ -450,7 +478,7 @@ function Expenses({ profile }) {
       {/* ═══ ADMIN SELECTED USER TRANSACTIONS ═══ */}
       {view === 'wallet' && isAdmin && selectedWalletUser && (
         <div className="space-y-2">
-          <button onClick={function () { setSelectedWalletUser(null); setTransactions([]) }}
+          <button onClick={function () { setSelectedWalletUser(null); setTransactions([]); setTxDateFrom(''); setTxDateTo('') }}
             className="text-xs font-bold text-indigo-600 hover:underline">← Back to all wallets</button>
           <div className="bg-white border border-gray-200 rounded-xl p-4">
             <div className="flex items-center justify-between">
@@ -462,6 +490,58 @@ function Expenses({ profile }) {
                 {formatPaise(selectedWalletUser.balance_paise)}
               </p>
             </div>
+          </div>
+          <div className="flex gap-2 flex-wrap items-center">
+            <input type="date" value={txDateFrom}
+              onChange={function (e) { setTxDateFrom(e.target.value) }}
+              className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              style={{ fontSize: '16px' }} />
+            <span className="text-xs text-gray-400">to</span>
+            <input type="date" value={txDateTo}
+              onChange={function (e) { setTxDateTo(e.target.value) }}
+              className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              style={{ fontSize: '16px' }} />
+            <button onClick={function () { loadUserTransactions(selectedWalletUser, txDateFrom, txDateTo) }}
+              className="px-3 py-1.5 text-xs font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors">
+              Filter
+            </button>
+            {(txDateFrom || txDateTo) && (
+              <button onClick={function () { setTxDateFrom(''); setTxDateTo(''); loadUserTransactions(selectedWalletUser, '', '') }}
+                className="px-3 py-1.5 text-xs font-bold text-gray-500 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors">
+                Reset
+              </button>
+            )}
+            <div className="flex-1" />
+            <button onClick={exportTransactions} disabled={transactions.length === 0}
+              className="px-3 py-1.5 text-xs font-bold text-white bg-gray-700 rounded-lg hover:bg-gray-800 disabled:opacity-30 transition-colors">
+              Export CSV
+            </button>
+          </div>
+          <div className="flex gap-2 flex-wrap items-center">
+            <input type="date" value={txDateFrom}
+              onChange={function (e) { setTxDateFrom(e.target.value) }}
+              className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              style={{ fontSize: '16px' }} />
+            <span className="text-xs text-gray-400">to</span>
+            <input type="date" value={txDateTo}
+              onChange={function (e) { setTxDateTo(e.target.value) }}
+              className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              style={{ fontSize: '16px' }} />
+            <button onClick={function () { loadUserTransactions(selectedWalletUser, txDateFrom, txDateTo) }}
+              className="px-3 py-1.5 text-xs font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors">
+              Filter
+            </button>
+            {(txDateFrom || txDateTo) && (
+              <button onClick={function () { setTxDateFrom(''); setTxDateTo(''); loadUserTransactions(selectedWalletUser, '', '') }}
+                className="px-3 py-1.5 text-xs font-bold text-gray-500 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors">
+                Reset
+              </button>
+            )}
+            <div className="flex-1" />
+            <button onClick={exportTransactions} disabled={transactions.length === 0}
+              className="px-3 py-1.5 text-xs font-bold text-white bg-gray-700 rounded-lg hover:bg-gray-800 disabled:opacity-30 transition-colors">
+              Export CSV
+            </button>
           </div>
           <div className="text-sm text-gray-400">{transactions.length} transaction{transactions.length !== 1 ? 's' : ''}</div>
           {transactions.length === 0 && (
