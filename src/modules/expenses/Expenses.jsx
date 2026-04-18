@@ -517,32 +517,6 @@ function Expenses({ profile }) {
               Export CSV
             </button>
           </div>
-          <div className="flex gap-2 flex-wrap items-center">
-            <input type="date" value={txDateFrom}
-              onChange={function (e) { setTxDateFrom(e.target.value) }}
-              className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              style={{ fontSize: '16px' }} />
-            <span className="text-xs text-gray-400">to</span>
-            <input type="date" value={txDateTo}
-              onChange={function (e) { setTxDateTo(e.target.value) }}
-              className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              style={{ fontSize: '16px' }} />
-            <button onClick={function () { loadUserTransactions(selectedWalletUser, txDateFrom, txDateTo) }}
-              className="px-3 py-1.5 text-xs font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors">
-              Filter
-            </button>
-            {(txDateFrom || txDateTo) && (
-              <button onClick={function () { setTxDateFrom(''); setTxDateTo(''); loadUserTransactions(selectedWalletUser, '', '') }}
-                className="px-3 py-1.5 text-xs font-bold text-gray-500 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors">
-                Reset
-              </button>
-            )}
-            <div className="flex-1" />
-            <button onClick={exportTransactions} disabled={transactions.length === 0}
-              className="px-3 py-1.5 text-xs font-bold text-white bg-gray-700 rounded-lg hover:bg-gray-800 disabled:opacity-30 transition-colors">
-              Export CSV
-            </button>
-          </div>
           <div className="text-sm text-gray-400">{transactions.length} transaction{transactions.length !== 1 ? 's' : ''}</div>
           {transactions.length === 0 && (
             <div className="bg-white border border-gray-200 rounded-xl p-8 text-center">
