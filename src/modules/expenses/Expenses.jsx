@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { formatPaise, formatDate } from '../../lib/format'
 import { logActivity } from '../../lib/logger'
 import Modal from '../../components/ui/Modal'
+import SearchDropdown from '../../components/ui/SearchDropdown'
 
 var STATUS_COLORS = {
   pending: 'bg-yellow-100 text-yellow-700',
@@ -488,15 +489,14 @@ function Expenses({ profile }) {
       <Modal open={showIssue} onClose={function () { setShowIssue(false); setIssueUserId(''); setIssueAmount(''); setIssueDesc(''); setSelectedUserWallet(null) }} title="Issue Petty Cash">
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">User <span className="text-red-500">*</span></label>
-            <select value={issueUserId} onChange={function (e) { onIssueUserChange(e.target.value) }}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              style={{ fontSize: '16px' }}>
-              <option value="">Select user</option>
-              {allUsers.map(function (u) {
-                return <option key={u.id} value={u.id}>{u.name} ({u.role})</option>
-              })}
-            </select>
+            <SearchDropdown
+              label="User"
+              required
+              items={allUsers.map(function (u) { return { label: u.name + ' (' + u.role + ')', value: u.id } })}
+              value={issueUserId}
+              onChange={function (val) { onIssueUserChange(val) }}
+              placeholder="Search user..."
+            />
             {selectedUserWallet && (
               <p className={"text-xs mt-1 font-medium " + (selectedUserWallet.balance_paise < 0 ? "text-red-500" : "text-green-600")}>
                 Current balance: {formatPaise(selectedUserWallet.balance_paise)}
