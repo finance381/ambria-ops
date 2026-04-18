@@ -32,6 +32,10 @@ function Expenses({ profile }) {
   // Wallet state
   var [wallet, setWallet] = useState(null)
   var [transactions, setTransactions] = useState([])
+  var [allWallets, setAllWallets] = useState([])
+  var [selectedWalletUser, setSelectedWalletUser] = useState(null)
+  var [walletSearch, setWalletSearch] = useState('')
+  var [walletRoleFilter, setWalletRoleFilter] = useState('')
   var [showIssue, setShowIssue] = useState(false)
   var [issueUserId, setIssueUserId] = useState('')
   var [issueAmount, setIssueAmount] = useState('')
@@ -96,8 +100,38 @@ function Expenses({ profile }) {
   }
 
   useEffect(function () {
-    if (view === 'wallet' && wallet) { loadTransactions() }
+    if (view === 'wallet') {
+      if (isAdmin) { loadAllWallets() }
+      else if (wallet) { loadTransactions() }
+    }
   }, [view, wallet?.id])
+
+  async function loadAllWallets() {
+    var { data: profiles } = await supabase.from('profiles')
+      .select('id, name, email, role')
+      .eq('active', true)
+      .order('name')
+    var { data: wallets } = await supabase.from('wallets')
+      .select('id, user_id, balance_paise, updated_at')
+    var walletMap = {}
+    ;(wallets || []).forEach(function (w) { walletMap[w.user_id] = w })
+    var merged = (profiles || []).map(function (p) {
+      var w = walletMap[p.id]
+      return { id: p.id, name: p.name, email: p.email, role: p.role, balance_paise: w ? w.balance_paise : 0, wallet_id: w ? w.id : null }
+    })
+    setAllWallets(merged)
+  }
+
+  async function loadUserTransactions(user) {
+    setSelectedWalletUser(user)
+    if (!user.wallet_id) { setTransactions([]); return }
+    var { data } = await supabase.from('wallet_transactions')
+      .select('id, type, amount_paise, balance_after_paise, description, reference_type, performed_by, created_at, performer:profiles!wallet_transactions_performed_by_fkey(name)')
+      .eq('wallet_id', user.wallet_id)
+      .order('created_at', { ascending: false })
+      .limit(50)
+    setTransactions(data || [])
+  }
 
   useEffect(function () {
     if (isAdmin) {
@@ -220,6 +254,7 @@ function Expenses({ profile }) {
     setIssueDesc('')
     setSelectedUserWallet(null)
     loadWallet()
+    if (isAdmin) { loadAllWallets() }
     setSaving(false)
   }
 
@@ -255,26 +290,45 @@ function Expenses({ profile }) {
 
   return (
     <div className="space-y-3">
-      {/* Wallet balance card */}
-      <div className={"rounded-xl p-4 border " + (wallet && wallet.balance_paise < 0 ? "bg-red-50 border-red-200" : "bg-indigo-50 border-indigo-200")}>
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-wider text-gray-500">Wallet Balance</p>
-            <p className={"text-2xl font-bold mt-1 " + (wallet && wallet.balance_paise < 0 ? "text-red-600" : "text-indigo-700")}>
-              {wallet ? formatPaise(wallet.balance_paise) : '₹0.00'}
-            </p>
-            {wallet && wallet.balance_paise < 0 && (
-              <p className="text-xs text-red-500 mt-0.5 font-medium">Overdraft</p>
-            )}
+      {/* Wallet balance card — own balance for staff, summary for admin */}
+      {!isAdmin && (
+        <div className={"rounded-xl p-4 border " + (wallet && wallet.balance_paise < 0 ? "bg-red-50 border-red-200" : "bg-indigo-50 border-indigo-200")}>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wider text-gray-500">Wallet Balance</p>
+              <p className={"text-2xl font-bold mt-1 " + (wallet && wallet.balance_paise < 0 ? "text-red-600" : "text-indigo-700")}>
+                {wallet ? formatPaise(wallet.balance_paise) : '₹0.00'}
+              </p>
+              {wallet && wallet.balance_paise < 0 && (
+                <p className="text-xs text-red-500 mt-0.5 font-medium">Overdraft</p>
+              )}
+            </div>
           </div>
-          {isAdmin && (
+        </div>
+      )}
+      {isAdmin && (
+        <div className="rounded-xl p-4 border bg-indigo-50 border-indigo-200">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wider text-gray-500">Total Issued</p>
+              <p className="text-2xl font-bold mt-1 text-indigo-700">
+                {formatPaise(allWallets.reduce(function (s, w) { return s + (w.balance_paise > 0 ? w.balance_paise : 0) }, 0))}
+              </p>
+              <p className="text-xs text-gray-500 mt-0.5">{allWallets.filter(function (w) { return w.balance_paise !== 0 }).length} active wallets</p>
+            </div>
+            <div className="text-right">
+              <p className="text-xs font-bold uppercase tracking-wider text-red-500">Total Overdraft</p>
+              <p className="text-lg font-bold text-red-600">
+                {formatPaise(Math.abs(allWallets.reduce(function (s, w) { return s + (w.balance_paise < 0 ? w.balance_paise : 0) }, 0)))}
+              </p>
+            </div>
             <button onClick={function () { setShowIssue(true) }}
               className="px-3 py-1.5 text-xs font-bold text-white bg-green-600 rounded-lg hover:bg-green-700 active:bg-green-800 transition-colors">
               + Issue Money
             </button>
-          )}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* View toggle + Add button */}
       <div className="flex items-center gap-2">
@@ -303,13 +357,116 @@ function Expenses({ profile }) {
         )}
       </div>
 
-      {/* ═══ WALLET TRANSACTIONS VIEW ═══ */}
-      {view === 'wallet' && (
+      {/* ═══ WALLET VIEW ═══ */}
+      {view === 'wallet' && !isAdmin && (
         <div className="space-y-2">
           <div className="text-sm text-gray-400">{transactions.length} transaction{transactions.length !== 1 ? 's' : ''}</div>
           {transactions.length === 0 && (
             <div className="bg-white border border-gray-200 rounded-xl p-8 text-center">
               <p className="text-gray-400 text-sm">No transactions yet</p>
+            </div>
+          )}
+          {transactions.map(function (tx) {
+            var isCredit = tx.type === 'credit'
+            return (
+              <div key={tx.id} className="bg-white border border-gray-200 rounded-xl p-4">
+                <div className="flex items-start justify-between">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className={"text-sm font-bold " + (isCredit ? "text-green-600" : "text-red-600")}>
+                        {isCredit ? '+' : '-'}{formatPaise(tx.amount_paise)}
+                      </span>
+                      <span className={"text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full " + (isCredit ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700")}>
+                        {tx.type}
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-600 mt-1">{tx.description || '—'}</p>
+                  </div>
+                  <div className="text-right flex-shrink-0">
+                    <p className="text-xs font-medium text-gray-700">Bal: {formatPaise(tx.balance_after_paise)}</p>
+                    <p className="text-[11px] text-gray-400 mt-0.5">{formatDate(tx.created_at)}</p>
+                  </div>
+                </div>
+                {tx.performer?.name && (
+                  <p className="text-[11px] text-gray-400 mt-1">By: {tx.performer.name}</p>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* ═══ ADMIN ALL WALLETS VIEW ═══ */}
+      {view === 'wallet' && isAdmin && !selectedWalletUser && (
+        <div className="space-y-2">
+          <div className="flex gap-2 flex-wrap">
+            <input type="text" value={walletSearch}
+              onChange={function (e) { setWalletSearch(e.target.value) }}
+              placeholder="Search user..."
+              className="flex-1 min-w-[150px] px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              style={{ fontSize: '16px' }} />
+            <select value={walletRoleFilter} onChange={function (e) { setWalletRoleFilter(e.target.value) }}
+              className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+              <option value="">All roles</option>
+              {[...new Set(allWallets.map(function (w) { return w.role }))].sort().map(function (r) {
+                return <option key={r} value={r}>{r}</option>
+              })}
+            </select>
+          </div>
+          <div className="text-sm text-gray-400">
+            {(function () {
+              var wSearch = walletSearch.toLowerCase()
+              return allWallets.filter(function (w) {
+                if (walletRoleFilter && w.role !== walletRoleFilter) return false
+                if (!walletSearch) return true
+                return w.name.toLowerCase().includes(wSearch) || (w.email || '').toLowerCase().includes(wSearch)
+              }).length
+            })()} users
+          </div>
+          {allWallets.filter(function (w) {
+            if (walletRoleFilter && w.role !== walletRoleFilter) return false
+            if (!walletSearch) return true
+            var wSearch = walletSearch.toLowerCase()
+            return w.name.toLowerCase().includes(wSearch) || (w.email || '').toLowerCase().includes(wSearch)
+          }).map(function (w) {
+            return (
+              <div key={w.id} onClick={function () { loadUserTransactions(w) }}
+                className="bg-white border border-gray-200 rounded-xl p-4 cursor-pointer hover:bg-gray-50 active:bg-gray-100 transition-colors">
+                <div className="flex items-center justify-between">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-bold text-gray-900">{w.name}</p>
+                    <span className={"text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-600"}>{w.role}</span>
+                  </div>
+                  <p className={"text-lg font-bold " + (w.balance_paise < 0 ? "text-red-600" : w.balance_paise > 0 ? "text-green-600" : "text-gray-400")}>
+                    {formatPaise(w.balance_paise)}
+                  </p>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* ═══ ADMIN SELECTED USER TRANSACTIONS ═══ */}
+      {view === 'wallet' && isAdmin && selectedWalletUser && (
+        <div className="space-y-2">
+          <button onClick={function () { setSelectedWalletUser(null); setTransactions([]) }}
+            className="text-xs font-bold text-indigo-600 hover:underline">← Back to all wallets</button>
+          <div className="bg-white border border-gray-200 rounded-xl p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-bold text-gray-900">{selectedWalletUser.name}</p>
+                <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-600">{selectedWalletUser.role}</span>
+              </div>
+              <p className={"text-xl font-bold " + (selectedWalletUser.balance_paise < 0 ? "text-red-600" : "text-green-600")}>
+                {formatPaise(selectedWalletUser.balance_paise)}
+              </p>
+            </div>
+          </div>
+          <div className="text-sm text-gray-400">{transactions.length} transaction{transactions.length !== 1 ? 's' : ''}</div>
+          {transactions.length === 0 && (
+            <div className="bg-white border border-gray-200 rounded-xl p-8 text-center">
+              <p className="text-gray-400 text-sm">No transactions for this user</p>
             </div>
           )}
           {transactions.map(function (tx) {
