@@ -9,6 +9,7 @@ import DeptReview from '../../modules/categories/DeptReview'
 import { useLang } from '../../lib/i18n.jsx'
 import QuoteCalculator from '../../modules/quote/QuoteCalculator'
 import Requisitions from '../../modules/requisitions/Requisitions'
+import Expenses from '../../modules/expenses/Expenses'
 
 var FEATURES = [
   { key: 'feature_add', label: 'Add Item', icon: '📝', tab: 'add' },
@@ -18,6 +19,7 @@ var FEATURES = [
   { key: 'feature_events', label: 'Events', icon: '📅', tab: 'events' },
   { key: 'feature_requisitions', label: 'Requisitions', icon: '📋', tab: 'requisitions' },
   { key: 'feature_quote', label: 'Quote Calc', icon: '🧮', tab: 'quote' },
+  { key: 'feature_expenses', label: 'Expenses', icon: '💰', tab: 'expenses' },
   { key: 'feature_admin', label: 'Admin', icon: '⚙️', tab: 'admin' },
 ]
 
@@ -165,6 +167,9 @@ function Shell({ profile, onSignOut }) {
         )}
         {tab === 'requisitions' && (
           <Requisitions profile={profile} onBack={function () { setTab('home') }} />
+        )}
+        {tab === 'expenses' && (
+          <Expenses profile={profile} />
         )}
         {tab === 'admin' && isAdmin && (
           <AdminMobile profile={profile} />

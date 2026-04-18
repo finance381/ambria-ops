@@ -55,6 +55,15 @@ var FEATURE_PERMS = [
      grants: ['feature_quote'],
   },
   {
+    key: 'feature_expenses',
+    label: 'Expenses',
+    icon: '💰',
+    grants: ['feature_expenses', 'expense_submit'],
+    optional: [
+      { key: 'expense_approve', label: 'Approve/reject expenses' },
+    ],
+  },
+  {
    key: 'feature_admin',
    label: 'Admin Panel',
    icon: '⚙️',

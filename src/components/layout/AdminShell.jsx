@@ -23,7 +23,8 @@ var ADMIN_TABS = [
   { key: 'categories', label: 'Masters', icon: '⚙️' },
   { key: 'users', label: 'Users', icon: '👥' },
   { key: 'logs', label: 'Logs', icon: '📜' },
-  // Hidden until built: dashboard, expenses, boxes, challans, purchase, calendar
+  { key: 'expenses', label: 'Expenses', icon: '💰' },
+  // Hidden until built: dashboard, boxes, challans, purchase, calendar
 ]
 
 var MODULES = {
