@@ -151,7 +151,7 @@ function InventoryForm({ item, profile, onClose, onSaved }) {
       if (subCategoryId) query = query.eq('sub_category_id', Number(subCategoryId))
       query.order('name').then(function ({ data }) { setExistingItems(data || []) })
     } else { setExistingItems([]) }
-  }, [categoryId, subCategoryId, cateringStoreSubDeptId, categories])
+  }, [categoryId, subCategoryId, cateringStoreSubDeptId])
   useEffect(function () {
     if (categoryId) {
       var cat = categories.find(function (c) { return String(c.id) === categoryId })
@@ -161,7 +161,7 @@ function InventoryForm({ item, profile, onClose, onSaved }) {
         setDimensionValues(fields.map(function (f) { return { name: f.name, qty: '', unit: 'Pieces' } }))
       }
     } else { setCategoryDimFields([]); setDimensionValues([]) }
-  }, [categoryId, categories])
+  }, [categoryId])
 
   async function loadLookups() {
     var [catRes, deptRes, venueRes, subVenueRes, subDeptRes] = await Promise.all([
