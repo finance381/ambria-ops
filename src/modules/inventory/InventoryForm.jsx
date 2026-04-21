@@ -121,7 +121,7 @@ function InventoryForm({ item, profile, onClose, onSaved }) {
     } else { setSubCategories([]); setSubCategoryId('') }
   }, [categoryId])
   useEffect(function () {
-    if (!cateringStoreSubDeptId || !categoryId) { setBrandList([]); return }
+    if (!cateringStoreSubDeptId || !categoryId || !name.trim()) { setBrandList([]); return }
     var cat = categories.find(function (c) { return String(c.id) === categoryId })
     if (!cat || cat.sub_department_id !== cateringStoreSubDeptId) { setBrandList([]); return }
     supabase.from('catering_store_items')
@@ -134,7 +134,7 @@ function InventoryForm({ item, profile, onClose, onSaved }) {
         var brands = [...new Set((res.data || []).map(function (r) { return r.brand }).filter(Boolean))].sort()
         setBrandList(brands)
       })
-  }, [categoryId, cateringStoreSubDeptId, categories])
+  }, [categoryId, cateringStoreSubDeptId, name])
   useEffect(function () {
     if (categoryId) {
       var isCatStore = false
