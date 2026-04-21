@@ -323,9 +323,9 @@ function InventoryForm({ item, profile, onClose, onSaved }) {
 
   function validate() {
     var errs = {}
-    if (!categoryId) errs.cat = t('categoryRequired') || 'Category is required'
-    if (!name.trim()) errs.item = t('itemNameRequired') || 'Item name is required'
-    if (!qty && qty !== 0) errs.qty = t('qtyRequired') || 'Quantity is required'
+    if (!categoryId) errs.cat = 'Category is required' || 'Category is required'
+    if (!name.trim()) errs.item = 'Item name is required' || 'Item name is required'
+    if (!qty && qty !== 0) errs.qty = 'Quantity is required' || 'Quantity is required'
     var hasAlloc = allocations.some(function (a) { return a.department && a.qty })
     if (!hasAlloc) errs.dept = 'At least one allocation is required'
     setErrors(errs); return Object.keys(errs).length === 0
@@ -537,7 +537,7 @@ function InventoryForm({ item, profile, onClose, onSaved }) {
   if (cropSrc) {
     return (
       <div className="bg-gray-50 rounded-lg border border-gray-200 p-4">
-        <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">{t('cropImage')}</h3>
+        <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">{t('Crop Image')}</h3>
         <ImageCrop imageSrc={cropSrc} onCrop={handleCropped} onUseFull={handleUseFull} onCancel={handleCropCancel} />
       </div>
     )
@@ -547,19 +547,19 @@ function InventoryForm({ item, profile, onClose, onSaved }) {
     <form onSubmit={handleSubmit} className="space-y-4">
       {/* ═══ PHOTO CARD ═══ */}
       <div className="bg-gray-50 rounded-lg border border-gray-200 p-4">
-        <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">{t('photo')}</h3>
+        <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">{t('Photo')}</h3>
         {!imagePreview ? (
           <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
             <div className="text-3xl mb-2">📷</div>
             <div className="flex gap-2 justify-center mb-2">
               <label className="px-3 py-1.5 text-sm bg-white border border-gray-300 rounded-md hover:bg-gray-50 cursor-pointer transition-colors font-medium">
-                {"📸 " + t('camera')}<input type="file" accept="image/*" capture="environment" onChange={handleImageChange} className="hidden" />
+                {"📸 " + t('Camera')}<input type="file" accept="image/*" capture="environment" onChange={handleImageChange} className="hidden" />
               </label>
               <label className="px-3 py-1.5 text-sm bg-white border border-gray-300 rounded-md hover:bg-gray-50 cursor-pointer transition-colors font-medium">
-                {"🖼️ " + t('gallery')}<input type="file" accept="image/*" onChange={handleImageChange} className="hidden" />
+                {"🖼️ " + t('Gallery')}<input type="file" accept="image/*" onChange={handleImageChange} className="hidden" />
               </label>
             </div>
-            <p className="text-xs text-gray-400">{t('photoHint')}</p>
+            <p className="text-xs text-gray-400">{t('Photo Hint')}</p>
           </div>
         ) : (
           <div className="relative inline-block">
@@ -572,18 +572,18 @@ function InventoryForm({ item, profile, onClose, onSaved }) {
 
       {/* ═══ ITEM DETAILS CARD ═══ */}
       <div className="bg-gray-50 rounded-lg border border-gray-200 p-4 space-y-3">
-        <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">{t('itemDetails')}</h3>
+        <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">{t('Item Details')}</h3>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">{t('type')}</label>
+          <label className="block text-sm font-medium text-gray-700 mb-1">{t('Type')}</label>
           <div className="flex gap-0 bg-white border border-gray-300 rounded-md overflow-hidden">
             <button type="button" onClick={function () { setType('Indoor') }} className={"flex-1 py-2 text-sm font-medium transition-colors " + (type === 'Indoor' ? "bg-blue-600 text-white" : "text-gray-500 hover:bg-gray-50")}>🏠 Indoor</button>
             <button type="button" onClick={function () { setType('Outdoor') }} className={"flex-1 py-2 text-sm font-medium transition-colors " + (type === 'Outdoor' ? "bg-green-600 text-white" : "text-gray-500 hover:bg-gray-50")}>🌳 Outdoor</button>
             <button type="button" onClick={function () { setType('Premium') }} className={"flex-1 py-2 text-sm font-medium transition-colors " + (type === 'Premium' ? "bg-purple-600 text-white" : "text-gray-500 hover:bg-gray-50")}>★ Premium</button>
           </div>
         </div>
-        <SearchDropdown label={t('category')} required items={catItems} value={categoryId} onChange={setCategoryId} placeholder={t('searchCategory')} error={errors.cat} />
-        <SearchDropdown label={t('subCategory')} items={subCatItems} value={subCategoryId} onChange={setSubCategoryId} placeholder={t('searchSubCategory')} />
-        <SearchDropdown label={t('itemName')} required items={itemNameItems} value={name} onChange={handleItemNameSelect} allowAdd onAdd={function (val) { setName(val) }} placeholder={t('searchItemName')} error={errors.item} />
+        <SearchDropdown label={t('Category')} required items={catItems} value={categoryId} onChange={setCategoryId} placeholder={t('Search Category...')} error={errors.cat} />
+        <SearchDropdown label={t('Sub-Category')} items={subCatItems} value={subCategoryId} onChange={setSubCategoryId} placeholder={t('Search Sub-Category...')} />
+        <SearchDropdown label={t('Item Name')} required items={itemNameItems} value={name} onChange={handleItemNameSelect} allowAdd onAdd={function (val) { setName(val) }} placeholder={t('Search Item Name...')} error={errors.item} />
         {showPackSize && (
           <div className="bg-amber-50 rounded-lg border border-amber-200 p-3 space-y-2">
             <h4 className="text-[11px] font-bold text-amber-700 uppercase tracking-wider">Pack Size</h4>
@@ -630,14 +630,14 @@ function InventoryForm({ item, profile, onClose, onSaved }) {
           </div>
         )}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">{t('description')}</label>
+          <label className="block text-sm font-medium text-gray-700 mb-1">{t('Description')}</label>
           <div className="flex gap-1">
-            <textarea value={description} onChange={function (e) { setDescription(e.target.value) }} rows="2" maxLength="1000" placeholder={t('optionalNotes')} className="flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none" />
+            <textarea value={description} onChange={function (e) { setDescription(e.target.value) }} rows="2" maxLength="1000" placeholder={t('Optional notes...')} className="flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none" />
             <button type="button" onClick={function () { startSpeech('description') }} className={"px-2.5 py-2 rounded-md text-sm transition-colors flex-shrink-0 self-start " + (listeningField === 'description' ? "bg-red-500 text-white animate-pulse" : "bg-gray-100 text-gray-600 hover:bg-gray-200")}>🎙️</button>
           </div>
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">{t('itemNameHindi')}</label>
+          <label className="block text-sm font-medium text-gray-700 mb-1">{t('Item Name (Hindi)')}</label>
           <div className="flex gap-1">
             <input type="text" value={nameHindi} onChange={function (e) { setNameHindi(e.target.value); setHiEdited(true) }} maxLength="200" placeholder="हिंदी नाम" className="flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
             <button type="button" onClick={function () { startSpeech('nameHindi') }} className={"px-2.5 py-2 rounded-md text-sm transition-colors flex-shrink-0 " + (listeningField === 'nameHindi' ? "bg-red-500 text-white animate-pulse" : "bg-gray-100 text-gray-600 hover:bg-gray-200")}>🎙️</button>
@@ -645,12 +645,12 @@ function InventoryForm({ item, profile, onClose, onSaved }) {
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">{t('quantity')}<span className="text-red-500 ml-0.5">*</span></label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">{t('Quantity')}<span className="text-red-500 ml-0.5">*</span></label>
             <input type="number" min="0" max="999999" step="any" inputMode="numeric" value={qty} onChange={function (e) { setQty(e.target.value) }} placeholder="0" className={"w-full px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 " + (errors.qty ? "border-red-300" : "border-gray-300")} />
             {errors.qty && <p className="text-xs text-red-500 mt-1">{errors.qty}</p>}
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">{t('unit')}</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">{t('Unit')}</label>
             <select value={unit} onChange={function (e) { setUnit(e.target.value) }}
               className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white">
               {UNITS.map(function (u) { return <option key={u} value={u}>{u}</option> })}
@@ -658,15 +658,15 @@ function InventoryForm({ item, profile, onClose, onSaved }) {
           </div>
         </div>
         <div className="grid grid-cols-3 gap-3">
-          <div><label className="block text-sm font-medium text-gray-700 mb-1">{showPackSize ? 'Season Reorder Qty' : t('minOrderQty')}</label><input type="number" min="0" step="any" inputMode="numeric" value={minOrderQty} onChange={function (e) { setMinOrderQty(e.target.value) }} placeholder="—" className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" /></div>
-          <div><label className="block text-sm font-medium text-gray-700 mb-1">{showPackSize ? 'Off Season Reorder Qty' : t('reorderQty')}</label><input type="number" min="0" step="any" inputMode="numeric" value={reorderQty} onChange={function (e) { setReorderQty(e.target.value) }} placeholder="—" className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" /></div>
-          {(profile?.role === 'admin' || profile?.role === 'auditor') && (<div><label className="block text-sm font-medium text-gray-700 mb-1">{t('rate') + ' (₹)'}</label><input type="number" min="0" step="any" inputMode="decimal" value={ratePaise} onChange={function (e) { setRatePaise(e.target.value) }} placeholder="—" className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" /></div>)}
+          <div><label className="block text-sm font-medium text-gray-700 mb-1">{showPackSize ? 'Season Reorder Qty' : t('Min Order Qty')}</label><input type="number" min="0" step="any" inputMode="numeric" value={minOrderQty} onChange={function (e) { setMinOrderQty(e.target.value) }} placeholder="—" className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" /></div>
+          <div><label className="block text-sm font-medium text-gray-700 mb-1">{showPackSize ? 'Off Season Reorder Qty' : t('Reorder Qty')}</label><input type="number" min="0" step="any" inputMode="numeric" value={reorderQty} onChange={function (e) { setReorderQty(e.target.value) }} placeholder="—" className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" /></div>
+          {(profile?.role === 'admin' || profile?.role === 'auditor') && (<div><label className="block text-sm font-medium text-gray-700 mb-1">{t('Rate') + ' (₹)'}</label><input type="number" min="0" step="any" inputMode="decimal" value={ratePaise} onChange={function (e) { setRatePaise(e.target.value) }} placeholder="—" className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" /></div>)}
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">{t('isAsset')}</label>
+          <label className="block text-sm font-medium text-gray-700 mb-1">{t('Is Asset?')}</label>
           <div className="flex gap-0 bg-white border border-gray-300 rounded-md overflow-hidden">
             {['yes', 'no', 'unknown'].map(function (val) {
-              var labels = { yes: t('yes'), no: t('no'), unknown: t('dontKnow') }; var active = isAsset === val
+              var labels = { yes: t('Yes'), no: t('No'), unknown: t('Dont Know') }; var active = isAsset === val
               var colors = { yes: active ? 'bg-green-600 text-white' : 'text-gray-500 hover:bg-gray-50', no: active ? 'bg-red-600 text-white' : 'text-gray-500 hover:bg-gray-50', unknown: active ? 'bg-gray-600 text-white' : 'text-gray-500 hover:bg-gray-50' }
               return <button key={val} type="button" onClick={function () { setIsAsset(val) }} className={"flex-1 py-2 text-sm font-medium transition-colors " + colors[val]}>{labels[val]}</button>
             })}
@@ -677,7 +677,7 @@ function InventoryForm({ item, profile, onClose, onSaved }) {
       {/* ═══ ALLOCATION CARD ═══ */}
       <div className="bg-gray-50 rounded-lg border border-gray-200 p-4 space-y-3">
         <div className="flex items-center justify-between">
-          <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">{t('allocations') || 'Allocations'}</h3>
+          <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">{t('Allocations') || 'Allocations'}</h3>
           <button type="button" onClick={addAllocationRow} className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 transition-colors">+ Add Row</button>
         </div>
         {errors.dept && <p className="text-xs text-red-500">{errors.dept}</p>}
@@ -688,15 +688,15 @@ function InventoryForm({ item, profile, onClose, onSaved }) {
                 <span className="text-[11px] font-bold text-gray-400">#{index + 1}</span>
                 {allocations.length > 1 && <button type="button" onClick={function () { removeAllocationRow(index) }} className="text-xs text-red-400 hover:text-red-600 font-semibold">Remove</button>}
               </div>
-              <SearchDropdown label={t('department')} required items={deptItems} value={row.department} onChange={function (val) { updateAllocation(index, 'department', val) }} placeholder={t('searchDepartment')} />
-              <SearchDropdown label={t('venue') || 'Venue'} items={venues.map(function (v) { return { label: v.code + ' — ' + v.name, value: String(v.id) } })} value={row.venue_id} onChange={function (val) { updateAllocation(index, 'venue_id', val) }} placeholder="Select venue..." />
+              <SearchDropdown label={t('Department')} required items={deptItems} value={row.department} onChange={function (val) { updateAllocation(index, 'department', val) }} placeholder={t('Search Department...')} />
+              <SearchDropdown label={t('Venue') || 'Venue'} items={venues.map(function (v) { return { label: v.code + ' — ' + v.name, value: String(v.id) } })} value={row.venue_id} onChange={function (val) { updateAllocation(index, 'venue_id', val) }} placeholder="Select venue..." />
               {row.venue_id && (function () {
                 var filtered = subVenues.filter(function (sv) { return String(sv.venue_id) === row.venue_id })
                 if (filtered.length === 0) return null
                 return <SearchDropdown label="Sub-venue" items={filtered.map(function (sv) { return { label: sv.name, value: String(sv.id) } })} value={row.sub_venue_id} onChange={function (val) { updateAllocation(index, 'sub_venue_id', val) }} placeholder="Select sub-venue..." />
               })()}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">{t('quantity')}</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{t('Quantity')}</label>
                 <input type="number" min="0" step="any" inputMode="numeric" value={row.qty} onChange={function (e) { updateAllocation(index, 'qty', e.target.value) }} placeholder="0" className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
               </div>
               
@@ -732,9 +732,9 @@ function InventoryForm({ item, profile, onClose, onSaved }) {
       {/* ═══ SUBMIT AREA ═══ */}
       {errors.submit && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">{errors.submit}</div>}
       <div className="flex gap-3 justify-end pt-1">
-        {!isEdit && <button type="button" onClick={resetForm} className="px-4 py-2 text-sm text-gray-600 bg-gray-100 border border-gray-300 rounded-md hover:bg-gray-200 transition-colors font-medium">{t('reset')}</button>}
-        <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-gray-600 bg-gray-100 border border-gray-300 rounded-md hover:bg-gray-200 transition-colors font-medium">{t('cancel')}</button>
-        <button type="submit" disabled={saving} className="px-6 py-2 text-sm text-white bg-indigo-600 rounded-md hover:bg-indigo-700 disabled:opacity-50 transition-colors font-medium">{saving ? t('saving') : (isEdit ? t('updateItem') : t('submitItem'))}</button>
+        {!isEdit && <button type="button" onClick={resetForm} className="px-4 py-2 text-sm text-gray-600 bg-gray-100 border border-gray-300 rounded-md hover:bg-gray-200 transition-colors font-medium">{t('Reset')}</button>}
+        <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-gray-600 bg-gray-100 border border-gray-300 rounded-md hover:bg-gray-200 transition-colors font-medium">{t('Cancel')}</button>
+        <button type="submit" disabled={saving} className="px-6 py-2 text-sm text-white bg-indigo-600 rounded-md hover:bg-indigo-700 disabled:opacity-50 transition-colors font-medium">{saving ? t('Saving...') : (isEdit ? t('Update Item') : t('Submit Item'))}</button>
       </div>
     </form>
   )
