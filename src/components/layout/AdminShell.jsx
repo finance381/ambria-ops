@@ -23,7 +23,7 @@ var ADMIN_TABS = [
   { key: 'categories', label: 'Masters', icon: '⚙️' },
   { key: 'users', label: 'Users', icon: '👥' },
   { key: 'logs', label: 'Logs', icon: '📜' },
-  { key: 'expenses', label: 'Expenses', icon: '💰' },
+  { key: 'expenses', label: 'PC & Direct Expenses', icon: '💰' },
   // Hidden until built: dashboard, boxes, challans, purchase, calendar
 ]
 

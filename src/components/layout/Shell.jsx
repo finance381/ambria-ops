@@ -19,7 +19,7 @@ var FEATURES = [
   { key: 'feature_events', label: 'Events', icon: '📅', tab: 'events' },
   { key: 'feature_requisitions', label: 'Requisitions', icon: '📋', tab: 'requisitions' },
   { key: 'feature_quote', label: 'Quote Calc', icon: '🧮', tab: 'quote' },
-  { key: 'feature_expenses', label: 'Expenses', icon: '💰', tab: 'expenses' },
+  { key: 'feature_expenses', label: 'PC & Direct Expenses', icon: '💰', tab: 'expenses' },
   { key: 'feature_admin', label: 'Admin', icon: '⚙️', tab: 'admin' },
 ]
 

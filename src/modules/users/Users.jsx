@@ -56,7 +56,7 @@ var FEATURE_PERMS = [
   },
   {
     key: 'feature_expenses',
-    label: 'Expenses',
+    label: 'PC & Direct Expenses',
     icon: '💰',
     grants: ['feature_expenses', 'expense_submit'],
     optional: [

@@ -1,793 +1,676 @@
 import { useState, useEffect } from 'react'
-import { supabase } from '../../lib/supabase'
-import { formatPaise, formatDate } from '../../lib/format'
+import { supabase, getImageUrl } from '../../lib/supabase'
+import { titleCase, formatDate } from '../../lib/format'
 import { logActivity } from '../../lib/logger'
-import Modal from '../../components/ui/Modal'
 import SearchDropdown from '../../components/ui/SearchDropdown'
 
+var PAGE_SIZE = 20
+
 var STATUS_COLORS = {
+  pending_dept: 'bg-amber-100 text-amber-700',
   pending: 'bg-yellow-100 text-yellow-700',
   approved: 'bg-green-100 text-green-700',
   rejected: 'bg-red-100 text-red-700',
 }
 
+var STATUS_LABELS = {
+  pending_dept: 'Dept Review',
+  pending: 'Admin Review',
+  approved: 'Approved',
+  rejected: 'Rejected',
+}
+
+function formatPoints(paise) {
+  if (paise == null) return '—'
+  return (paise / 100).toLocaleString('en-IN') + ' pts'
+}
+
 function Expenses({ profile }) {
-  var perms = profile?.permissions || []
-  var isAdmin = profile?.role === 'admin' || profile?.role === 'auditor'
-  var canApprove = isAdmin || perms.includes('expense_approve')
-  var canSubmit = isAdmin || perms.includes('expense_submit')
-
-  var [view, setView] = useState(canApprove ? 'review' : 'my')
-  var [expenses, setExpenses] = useState([])
-  var [categories, setCategories] = useState([])
+  var [view, setView] = useState('list') // list | form | detail | approve
+  var [myExpenses, setMyExpenses] = useState([])
+  var [approvalExpenses, setApprovalExpenses] = useState([])
+  var [myHasMore, setMyHasMore] = useState(false)
+  var [approvalHasMore, setApprovalHasMore] = useState(false)
   var [loading, setLoading] = useState(true)
-  var [saving, setSaving] = useState(false)
-  var [showForm, setShowForm] = useState(false)
-  var [search, setSearch] = useState('')
+  var [loadingMore, setLoadingMore] = useState(false)
+  var [detailExp, setDetailExp] = useState(null)
   var [statusFilter, setStatusFilter] = useState('')
-  var [rejectTarget, setRejectTarget] = useState(null)
-  var [rejectReason, setRejectReason] = useState('')
-  var [receiptPreview, setReceiptPreview] = useState(null)
+  var [editExp, setEditExp] = useState(null)
 
-  // Wallet state
-  var [wallet, setWallet] = useState(null)
-  var [transactions, setTransactions] = useState([])
-  var [allWallets, setAllWallets] = useState([])
-  var [selectedWalletUser, setSelectedWalletUser] = useState(null)
-  var [walletSearch, setWalletSearch] = useState('')
-  var [walletRoleFilter, setWalletRoleFilter] = useState('')
-  var [txDateFrom, setTxDateFrom] = useState('')
-  var [txDateTo, setTxDateTo] = useState('')
-  var [showIssue, setShowIssue] = useState(false)
-  var [issueUserId, setIssueUserId] = useState('')
-  var [issueAmount, setIssueAmount] = useState('')
-  var [issueDesc, setIssueDesc] = useState('')
-  var [allUsers, setAllUsers] = useState([])
-  var [selectedUserWallet, setSelectedUserWallet] = useState(null)
+  var isAdmin = profile?.role === 'admin'
+  var isAuditor = profile?.role === 'auditor'
+  var isDeptApprover = (profile?.permissions || []).indexOf('dept_approve') !== -1
+  var showApproveTab = isAdmin || isAuditor || isDeptApprover
 
-  // Form state
-  var [formCat, setFormCat] = useState('')
-  var [formAmount, setFormAmount] = useState('')
-  var [formDesc, setFormDesc] = useState('')
-  var [formDate, setFormDate] = useState(new Date().toISOString().substring(0, 10))
-  var [formReceipt, setFormReceipt] = useState(null)
+  useEffect(function () {
+    loadMyExpenses(false)
+    loadApprovalExpenses(false)
+  }, [statusFilter])
 
-  useEffect(function () { loadData(); loadWallet() }, [view])
+  async function loadMyExpenses(append) {
+    var offset = append ? myExpenses.length : 0
+    if (!append) setLoading(true)
+    else setLoadingMore(true)
 
-  async function loadWallet() {
-    var { data } = await supabase.from('wallets')
-      .select('id, balance_paise, updated_at')
+    var query = supabase.from('expenses')
+      .select('id, category_id, sub_category_id, amount_paise, description, status, expense_date, receipt_path, created_at, rejection_reason, categories(name), sub_categories(name)')
       .eq('user_id', profile.id)
-      .maybeSingle()
-    setWallet(data)
-  }
-
-  async function loadTransactions() {
-    if (!wallet) return
-    var { data } = await supabase.from('wallet_transactions')
-      .select('id, type, amount_paise, balance_after_paise, description, reference_type, performed_by, created_at, performer:profiles!wallet_transactions_performed_by_fkey(name)')
-      .eq('wallet_id', wallet.id)
       .order('created_at', { ascending: false })
-      .limit(50)
-    setTransactions(data || [])
-  }
+      .range(offset, offset + PAGE_SIZE)
 
-  async function loadData() {
-    setLoading(true)
-    var queries = [
-      supabase.from('expense_categories').select('id, name').eq('active', true).order('name'),
-    ]
-    if (view === 'review') {
-      queries.push(
-        supabase.from('expenses')
-          .select('id, user_id, category_id, amount_paise, description, receipt_path, status, reviewed_by, reviewed_at, rejection_reason, expense_date, created_at, expense_categories(name), profiles!expenses_user_id_fkey(name, email), reviewer:profiles!expenses_reviewed_by_fkey(name)')
-          .order('created_at', { ascending: false })
-          .limit(200)
-      )
-    } else if (view === 'my') {
-      queries.push(
-        supabase.from('expenses')
-          .select('id, user_id, category_id, amount_paise, description, receipt_path, status, reviewed_by, reviewed_at, rejection_reason, expense_date, created_at, expense_categories(name), reviewer:profiles!expenses_reviewed_by_fkey(name)')
-          .eq('user_id', profile.id)
-          .order('created_at', { ascending: false })
-          .limit(100)
-      )
+    if (statusFilter) query = query.eq('status', statusFilter)
+
+    var { data, error } = await query
+    if (error) { alert('Failed to load: ' + error.message); setLoading(false); setLoadingMore(false); return }
+
+    var rows = data || []
+    var hasMore = rows.length > PAGE_SIZE
+    if (hasMore) rows = rows.slice(0, PAGE_SIZE)
+
+    if (append) {
+      setMyExpenses(function (prev) { return prev.concat(rows) })
+    } else {
+      setMyExpenses(rows)
     }
-    var results = await Promise.all(queries)
-    setCategories(results[0].data || [])
-    if (view !== 'wallet') {
-      setExpenses(results[1]?.data || [])
-    }
+    setMyHasMore(hasMore)
     setLoading(false)
+    setLoadingMore(false)
   }
+
+  async function loadApprovalExpenses(append) {
+    if (!showApproveTab) { setApprovalExpenses([]); return }
+
+    var offset = append ? approvalExpenses.length : 0
+    if (append) setLoadingMore(true)
+
+    var statuses = []
+    if (isAdmin || isAuditor) {
+      statuses = isDeptApprover ? ['pending_dept', 'pending'] : ['pending']
+    } else if (isDeptApprover) {
+      statuses = ['pending_dept']
+    }
+    if (statuses.length === 0) { setApprovalExpenses([]); return }
+
+    var query = supabase.from('expenses')
+      .select('id, user_id, category_id, sub_category_id, amount_paise, description, status, expense_date, receipt_path, created_at, rejection_reason, categories(name), sub_categories(name), profiles:user_id(name)')
+      .neq('user_id', profile.id)
+      .in('status', statuses)
+      .order('created_at', { ascending: false })
+      .range(offset, offset + PAGE_SIZE)
+
+    var { data, error } = await query
+    if (error) { alert('Failed to load approvals: ' + error.message); setLoadingMore(false); return }
+
+    var rows = data || []
+    var hasMore = rows.length > PAGE_SIZE
+    if (hasMore) rows = rows.slice(0, PAGE_SIZE)
+
+    if (append) {
+      setApprovalExpenses(function (prev) { return prev.concat(rows) })
+    } else {
+      setApprovalExpenses(rows)
+    }
+    setApprovalHasMore(hasMore)
+    setLoadingMore(false)
+  }
+
+  function openDetail(exp) {
+    setDetailExp(exp)
+    setView('detail')
+  }
+
+  function handleFormDone() {
+    setView('list')
+    setEditExp(null)
+    loadMyExpenses(false)
+    loadApprovalExpenses(false)
+  }
+
+  var displayList = view === 'approve' ? approvalExpenses : myExpenses
+  var displayHasMore = view === 'approve' ? approvalHasMore : myHasMore
+
+  // Total points for my expenses
+  var myTotal = myExpenses.reduce(function (sum, e) { return sum + (e.amount_paise || 0) }, 0)
+
+  if (loading) {
+    return <p className="text-gray-400 text-sm text-center py-8">Loading...</p>
+  }
+
+  // ═══════════════════════════════════════════════
+  // FORM VIEW
+  // ═══════════════════════════════════════════════
+  if (view === 'form') {
+    return (
+      <ExpenseForm
+        profile={profile}
+        editExp={editExp}
+        onCancel={function () { setView('list'); setEditExp(null) }}
+        onSaved={handleFormDone}
+      />
+    )
+  }
+
+  // ═══════════════════════════════════════════════
+  // DETAIL VIEW
+  // ═══════════════════════════════════════════════
+  if (view === 'detail' && detailExp) {
+    return (
+      <ExpenseDetail
+        exp={detailExp}
+        profile={profile}
+        isAdmin={isAdmin}
+        isDeptApprover={isDeptApprover}
+        onBack={function () { setView(detailExp._fromApprove ? 'approve' : 'list'); setDetailExp(null) }}
+        onUpdated={function () { loadMyExpenses(false); loadApprovalExpenses(false); setView(detailExp._fromApprove ? 'approve' : 'list'); setDetailExp(null) }}
+        onEdit={function () { setEditExp(detailExp); setView('form') }}
+      />
+    )
+  }
+
+  // ═══════════════════════════════════════════════
+  // LIST / APPROVE VIEW
+  // ═══════════════════════════════════════════════
+  return (
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-bold text-gray-900">PC & Direct Expenses</h2>
+          <p className="text-xs text-gray-400">
+            {view === 'approve'
+              ? approvalExpenses.length + ' pending approval'
+              : myExpenses.length + ' expenses' + (myTotal > 0 ? ' · ' + formatPoints(myTotal) + ' total' : '')}
+          </p>
+        </div>
+        <button onClick={function () { setEditExp(null); setView('form') }}
+          className="px-4 py-2 text-sm font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 active:bg-indigo-800 transition-colors">
+          + New Expense
+        </button>
+      </div>
+
+      {/* Tabs */}
+      {showApproveTab && (
+        <div className="flex bg-gray-100 rounded-lg p-0.5">
+          <button onClick={function () { setView('list'); setStatusFilter('') }}
+            className={"flex-1 py-2 text-sm font-semibold rounded-md transition-colors " + (view === 'list' ? "bg-white text-gray-900 shadow-sm" : "text-gray-500")}>
+            My Expenses
+          </button>
+          <button onClick={function () { setView('approve'); setStatusFilter('') }}
+            className={"flex-1 py-2 text-sm font-semibold rounded-md transition-colors relative " + (view === 'approve' ? "bg-white text-gray-900 shadow-sm" : "text-gray-500")}>
+            Approvals
+            {approvalExpenses.length > 0 && (
+              <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+                {approvalExpenses.length}
+              </span>
+            )}
+          </button>
+        </div>
+      )}
+
+      {/* Status filter — My Expenses only */}
+      {view === 'list' && (
+        <div className="flex gap-2 flex-wrap">
+          {['', 'pending_dept', 'pending', 'approved', 'rejected'].map(function (s) {
+            var label = s ? STATUS_LABELS[s] : 'All'
+            return (
+              <button key={s} onClick={function () { setStatusFilter(s === statusFilter ? '' : s) }}
+                className={"px-3 py-1.5 text-[11px] font-bold rounded-full border transition-colors " +
+                  (statusFilter === s ? "bg-gray-900 text-white border-gray-900" : "bg-white text-gray-500 border-gray-200 hover:bg-gray-50")}>
+                {label}
+              </button>
+            )
+          })}
+        </div>
+      )}
+
+      {/* List */}
+      {displayList.length === 0 && (
+        <div className="bg-white border border-gray-200 rounded-xl p-8 text-center">
+          <p className="text-gray-400 text-sm">{view === 'approve' ? 'No pending approvals' : 'No expenses yet'}</p>
+        </div>
+      )}
+
+      <div className="space-y-3">
+        {displayList.map(function (exp) {
+          return (
+            <div key={exp.id}
+              onClick={function () {
+                var e = Object.assign({}, exp, { _fromApprove: view === 'approve' })
+                openDetail(e)
+              }}
+              className="bg-white border border-gray-200 rounded-xl p-4 hover:shadow-md active:bg-gray-50 cursor-pointer transition-all">
+              <div className="flex items-start justify-between mb-1">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-gray-900 truncate">{exp.description || 'Expense'}</p>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    {view === 'approve' ? (exp.profiles?.name || '—') + ' · ' : ''}
+                    {exp.categories?.name || '—'}
+                    {exp.sub_categories?.name ? ' > ' + exp.sub_categories.name : ''}
+                    {' · ' + formatDate(exp.expense_date)}
+                  </p>
+                </div>
+                <div className="flex flex-col items-end gap-1 flex-shrink-0 ml-2">
+                  <span className="text-sm font-bold text-gray-800">{formatPoints(exp.amount_paise)}</span>
+                  <span className={"text-[10px] font-bold uppercase px-2 py-0.5 rounded-full " + (STATUS_COLORS[exp.status] || 'bg-gray-100 text-gray-600')}>
+                    {STATUS_LABELS[exp.status] || exp.status}
+                  </span>
+                </div>
+              </div>
+              {exp.status === 'rejected' && exp.rejection_reason && (
+                <p className="text-[11px] text-red-500 mt-1 line-clamp-1">Reason: {exp.rejection_reason}</p>
+              )}
+              {exp.receipt_path && (
+                <span className="text-[10px] text-green-600 font-medium">📎 Receipt attached</span>
+              )}
+            </div>
+          )
+        })}
+      </div>
+
+      {/* Load More */}
+      {displayHasMore && (
+        <button onClick={function () {
+          if (view === 'approve') loadApprovalExpenses(true)
+          else loadMyExpenses(true)
+        }} disabled={loadingMore}
+          className="w-full py-3 text-sm font-medium text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 disabled:opacity-50 transition-colors">
+          {loadingMore ? 'Loading...' : 'Load More'}
+        </button>
+      )}
+    </div>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════════
+// FORM — Submit / Edit expense
+// ═══════════════════════════════════════════════════════════════
+function ExpenseForm({ profile, editExp, onCancel, onSaved }) {
+  var [categories, setCategories] = useState([])
+  var [subCategories, setSubCategories] = useState([])
+  var [categoryId, setCategoryId] = useState(editExp ? String(editExp.category_id) : '')
+  var [subCategoryId, setSubCategoryId] = useState(editExp?.sub_category_id ? String(editExp.sub_category_id) : '')
+  var [amount, setAmount] = useState(editExp ? String(editExp.amount_paise / 100) : '')
+  var [description, setDescription] = useState(editExp ? (editExp.description || '') : '')
+  var [expenseDate, setExpenseDate] = useState(editExp ? editExp.expense_date : new Date().toISOString().split('T')[0])
+  var [receiptFile, setReceiptFile] = useState(null)
+  var [saving, setSaving] = useState(false)
+  var [errors, setErrors] = useState({})
+
+  var isEditing = !!editExp
 
   useEffect(function () {
-    if (view === 'wallet') {
-      if (isAdmin) { loadAllWallets() }
-      else if (wallet) { loadTransactions() }
-    }
-  }, [view, wallet?.id])
-
-  async function loadAllWallets() {
-    var { data: profiles } = await supabase.from('profiles')
-      .select('id, name, email, role')
-      .eq('active', true)
-      .order('name')
-    var { data: wallets } = await supabase.from('wallets')
-      .select('id, user_id, balance_paise, updated_at')
-    var walletMap = {}
-    ;(wallets || []).forEach(function (w) { walletMap[w.user_id] = w })
-    var merged = (profiles || []).map(function (p) {
-      var w = walletMap[p.id]
-      return { id: p.id, name: p.name, email: p.email, role: p.role, balance_paise: w ? w.balance_paise : 0, wallet_id: w ? w.id : null }
-    })
-    setAllWallets(merged)
-  }
-
-  async function loadUserTransactions(user, dateFrom, dateTo) {
-    setSelectedWalletUser(user)
-    if (!user.wallet_id) { setTransactions([]); return }
-    var query = supabase.from('wallet_transactions')
-      .select('id, type, amount_paise, balance_after_paise, description, reference_type, performed_by, created_at, performer:profiles!wallet_transactions_performed_by_fkey(name)')
-      .eq('wallet_id', user.wallet_id)
-    if (dateFrom) { query = query.gte('created_at', dateFrom + 'T00:00:00') }
-    if (dateTo) { query = query.lte('created_at', dateTo + 'T23:59:59') }
-    var { data } = await query.order('created_at', { ascending: false }).limit(200)
-    setTransactions(data || [])
-  }
-
-  function exportTransactions() {
-    if (transactions.length === 0) return
-    var userName = selectedWalletUser?.name || 'user'
-    var rows = [['Date', 'Type', 'Amount', 'Balance After', 'Description', 'By']]
-    transactions.forEach(function (tx) {
-      rows.push([
-        new Date(tx.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
-        tx.type,
-        (tx.type === 'debit' ? '-' : '+') + (tx.amount_paise / 100).toFixed(2),
-        (tx.balance_after_paise / 100).toFixed(2),
-        (tx.description || '').replace(/,/g, ' '),
-        tx.performer?.name || '—',
-      ])
-    })
-    var csv = '\uFEFF' + rows.map(function (r) { return r.join(',') }).join('\n')
-    var blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
-    var url = URL.createObjectURL(blob)
-    var a = document.createElement('a')
-    a.href = url
-    var range = (txDateFrom || 'all') + '_to_' + (txDateTo || 'now')
-    a.download = 'wallet_' + userName.replace(/\s+/g, '_') + '_' + range + '.csv'
-    a.click()
-    URL.revokeObjectURL(url)
-  }
-
-  useEffect(function () {
-    if (isAdmin) {
-      supabase.from('profiles').select('id, name, email, role').eq('active', true).order('name')
-        .then(function (res) { setAllUsers(res.data || []) })
-    }
+    supabase.from('categories').select('id, name, status').order('name')
+      .then(function (res) { setCategories(res.data || []) })
   }, [])
 
-  function resetForm() {
-    setFormCat('')
-    setFormAmount('')
-    setFormDesc('')
-    setFormDate(new Date().toISOString().substring(0, 10))
-    setFormReceipt(null)
-    setShowForm(false)
+  useEffect(function () {
+    if (categoryId) {
+      supabase.from('sub_categories').select('id, name').eq('category_id', Number(categoryId)).order('name')
+        .then(function (res) { setSubCategories(res.data || []) })
+    } else { setSubCategories([]); setSubCategoryId('') }
+  }, [categoryId])
+
+  var catItems = categories.map(function (c) { return { label: c.name, value: String(c.id) } })
+  var subCatItems = subCategories.map(function (s) { return { label: s.name, value: String(s.id) } })
+
+  function validate() {
+    var errs = {}
+    if (!categoryId) errs.cat = 'Category required'
+    if (!amount || Number(amount) <= 0) errs.amount = 'Amount required'
+    if (!description.trim()) errs.desc = 'Description required'
+    if (!expenseDate) errs.date = 'Date required'
+    setErrors(errs)
+    return Object.keys(errs).length === 0
+  }
+
+  async function uploadReceipt(expenseId) {
+    if (!receiptFile) return null
+    var ext = receiptFile.name.split('.').pop()
+    var path = profile.id + '/' + expenseId + '_' + Date.now() + '.' + ext
+    var { error } = await supabase.storage.from('receipts').upload(path, receiptFile, { upsert: true })
+    if (error) return null
+    return path
   }
 
   async function handleSubmit() {
-    if (!formCat || !formAmount || !formDesc.trim()) {
-      alert('Category, amount, description required')
-      return
-    }
-    var amtPaise = Math.round(Number(formAmount) * 100)
-    if (amtPaise <= 0 || isNaN(amtPaise)) {
-      alert('Enter valid amount')
-      return
-    }
+    if (saving) return
+    if (!validate()) return
     setSaving(true)
 
-    var receiptPath = null
-    if (formReceipt) {
-      var ext = formReceipt.name.split('.').pop() || 'jpg'
-      var filePath = profile.id + '/' + Date.now() + '.' + ext
-      var { error: upErr } = await supabase.storage.from('receipts').upload(filePath, formReceipt)
-      if (upErr) {
-        alert('Receipt upload failed: ' + upErr.message)
-        setSaving(false)
-        return
+    try {
+      var amountPaise = Math.round(Number(amount) * 100)
+
+      if (isEditing) {
+        var { error: updErr } = await supabase.from('expenses').update({
+          category_id: Number(categoryId),
+          sub_category_id: subCategoryId ? Number(subCategoryId) : null,
+          amount_paise: amountPaise,
+          description: description.trim(),
+          expense_date: expenseDate,
+        }).eq('id', editExp.id)
+        if (updErr) throw new Error(updErr.message)
+
+        if (receiptFile) {
+          var path = await uploadReceipt(editExp.id)
+          if (path) {
+            var { error: pathErr } = await supabase.from('expenses').update({ receipt_path: path }).eq('id', editExp.id)
+            if (pathErr) throw new Error(pathErr.message)
+          }
+        }
+
+        try { await logActivity('EXPENSE_EDIT', description.trim() + ' | ' + formatPoints(amountPaise)) } catch (_) {}
+      } else {
+        // Determine status — same two-tier logic
+        var selfIsDeptApprover = (profile?.permissions || []).indexOf('dept_approve') !== -1
+        var isAdminRole = profile?.role === 'admin' || profile?.role === 'auditor'
+
+        var status = 'pending_dept'
+        var deptApprovedBy = null
+        var deptApprovedAt = null
+
+        if (isAdminRole) {
+          status = 'approved'
+        } else if (selfIsDeptApprover) {
+          status = 'pending'
+          deptApprovedBy = profile.id
+          deptApprovedAt = new Date().toISOString()
+        } else {
+          var { data: approvers } = await supabase
+            .from('profiles')
+            .select('id')
+            .contains('permissions', ['dept_approve'])
+            .eq('active', true)
+            .neq('id', profile.id)
+            .limit(1)
+          if (!approvers || approvers.length === 0) {
+            status = 'pending'
+          }
+        }
+
+        var { data: newExp, error: insErr } = await supabase.from('expenses').insert({
+          user_id: profile.id,
+          category_id: Number(categoryId),
+          sub_category_id: subCategoryId ? Number(subCategoryId) : null,
+          amount_paise: amountPaise,
+          description: description.trim(),
+          expense_date: expenseDate,
+          status: status,
+          dept_approved_by: deptApprovedBy,
+          dept_approved_at: deptApprovedAt,
+        }).select('id').single()
+        if (insErr) throw new Error(insErr.message)
+
+        if (receiptFile && newExp) {
+          var path = await uploadReceipt(newExp.id)
+          if (path) {
+            await supabase.from('expenses').update({ receipt_path: path }).eq('id', newExp.id)
+          }
+        }
+
+        try { await logActivity('EXPENSE_SUBMIT', description.trim() + ' | ' + formatPoints(amountPaise)) } catch (_) {}
       }
-      receiptPath = filePath
-    }
 
-    var { error } = await supabase.from('expenses').insert({
-      user_id: profile.id,
-      category_id: Number(formCat),
-      amount_paise: amtPaise,
-      description: formDesc.trim(),
-      expense_date: formDate,
-      receipt_path: receiptPath,
-      status: 'pending',
-    })
-    if (error) {
-      alert('Submit failed: ' + error.message)
-      setSaving(false)
-      return
+      onSaved()
+    } catch (err) {
+      setErrors(function (prev) { return Object.assign({}, prev, { submit: err.message }) })
     }
-    logActivity('EXPENSE_SUBMIT', formatPaise(amtPaise) + ' | ' + formDesc.trim().substring(0, 50))
-    resetForm()
     setSaving(false)
-    loadData()
-  }
-
-  async function approveExpense(exp) {
-    setSaving(true)
-    var { error } = await supabase.from('expenses').update({
-      status: 'approved',
-      reviewed_by: profile.id,
-      reviewed_at: new Date().toISOString(),
-    }).eq('id', exp.id)
-    if (error) { alert('Approve failed: ' + error.message); setSaving(false); return }
-    logActivity('EXPENSE_APPROVE', formatPaise(exp.amount_paise) + ' | ' + (exp.profiles?.name || '—'))
-    loadData()
-    loadWallet()
-    setSaving(false)
-  }
-
-  async function confirmReject() {
-    if (!rejectTarget || !rejectReason.trim()) return
-    setSaving(true)
-    var { error } = await supabase.from('expenses').update({
-      status: 'rejected',
-      reviewed_by: profile.id,
-      reviewed_at: new Date().toISOString(),
-      rejection_reason: rejectReason.trim(),
-    }).eq('id', rejectTarget.id)
-    if (error) { alert('Reject failed: ' + error.message); setSaving(false); return }
-    logActivity('EXPENSE_REJECT', formatPaise(rejectTarget.amount_paise) + ' | ' + rejectReason.trim().substring(0, 50))
-    setRejectTarget(null)
-    setRejectReason('')
-    loadData()
-    setSaving(false)
-  }
-
-  async function handleIssueMoney() {
-    if (!issueUserId || !issueAmount) {
-      alert('Select user and enter amount')
-      return
-    }
-    var amtPaise = Math.round(Number(issueAmount) * 100)
-    if (amtPaise <= 0 || isNaN(amtPaise)) {
-      alert('Enter valid amount')
-      return
-    }
-    setSaving(true)
-    var { data, error } = await supabase.rpc('issue_money', {
-      p_user_id: issueUserId,
-      p_amount_paise: amtPaise,
-      p_description: issueDesc.trim() || 'Petty cash issued',
-    })
-    if (error) {
-      alert('Issue failed: ' + error.message)
-      setSaving(false)
-      return
-    }
-    var userName = allUsers.find(function (u) { return u.id === issueUserId })?.name || '—'
-    logActivity('WALLET_ISSUE', formatPaise(amtPaise) + ' → ' + userName)
-    setShowIssue(false)
-    setIssueUserId('')
-    setIssueAmount('')
-    setIssueDesc('')
-    setSelectedUserWallet(null)
-    loadWallet()
-    if (isAdmin) { loadAllWallets() }
-    setSaving(false)
-  }
-
-  async function onIssueUserChange(uid) {
-    setIssueUserId(uid)
-    if (!uid) { setSelectedUserWallet(null); return }
-    var { data } = await supabase.from('wallets')
-      .select('balance_paise')
-      .eq('user_id', uid)
-      .maybeSingle()
-    setSelectedUserWallet(data)
-  }
-
-  function getReceiptUrl(path) {
-    if (!path) return null
-    var { data } = supabase.storage.from('receipts').getPublicUrl(path)
-    return data?.publicUrl || null
-  }
-
-  var searchLower = search.toLowerCase()
-  var filtered = expenses.filter(function (e) {
-    if (statusFilter && e.status !== statusFilter) return false
-    if (!search) return true
-    return (e.description || '').toLowerCase().includes(searchLower) ||
-      (e.expense_categories?.name || '').toLowerCase().includes(searchLower) ||
-      (e.profiles?.name || '').toLowerCase().includes(searchLower) ||
-      String(e.amount_paise).includes(search)
-  })
-
-  if (loading) {
-    return <p className="text-sm text-gray-400 text-center py-8">Loading...</p>
   }
 
   return (
-    <div className="space-y-3">
-      {/* Wallet balance card — own balance for staff, summary for admin */}
-      {!isAdmin && (
-        <div className={"rounded-xl p-4 border " + (wallet && wallet.balance_paise < 0 ? "bg-red-50 border-red-200" : "bg-indigo-50 border-indigo-200")}>
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs font-bold uppercase tracking-wider text-gray-500">Wallet Balance</p>
-              <p className={"text-2xl font-bold mt-1 " + (wallet && wallet.balance_paise < 0 ? "text-red-600" : "text-indigo-700")}>
-                {wallet ? formatPaise(wallet.balance_paise) : '₹0.00'}
-              </p>
-              {wallet && wallet.balance_paise < 0 && (
-                <p className="text-xs text-red-500 mt-0.5 font-medium">Overdraft</p>
-              )}
-            </div>
-          </div>
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-bold text-gray-900">{isEditing ? 'Edit Expense' : 'New Expense'}</h2>
+        <button onClick={onCancel} className="text-sm text-gray-500 hover:text-gray-700 font-medium">Cancel</button>
+      </div>
+
+      <div className="bg-gray-50 rounded-lg border border-gray-200 p-4 space-y-3">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Date <span className="text-red-500">*</span></label>
+          <input type="date" value={expenseDate} onChange={function (e) { setExpenseDate(e.target.value) }}
+            className={"w-full px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 " + (errors.date ? "border-red-300" : "border-gray-300")}
+            style={{ fontSize: '16px' }} />
+          {errors.date && <p className="text-xs text-red-500 mt-1">{errors.date}</p>}
         </div>
-      )}
-      {isAdmin && (
-        <div className="rounded-xl p-4 border bg-indigo-50 border-indigo-200">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs font-bold uppercase tracking-wider text-gray-500">Total Issued</p>
-              <p className="text-2xl font-bold mt-1 text-indigo-700">
-                {formatPaise(allWallets.reduce(function (s, w) { return s + (w.balance_paise > 0 ? w.balance_paise : 0) }, 0))}
-              </p>
-              <p className="text-xs text-gray-500 mt-0.5">{allWallets.filter(function (w) { return w.balance_paise !== 0 }).length} active wallets</p>
-            </div>
-            <div className="text-right">
-              <p className="text-xs font-bold uppercase tracking-wider text-red-500">Total Overdraft</p>
-              <p className="text-lg font-bold text-red-600">
-                {formatPaise(Math.abs(allWallets.reduce(function (s, w) { return s + (w.balance_paise < 0 ? w.balance_paise : 0) }, 0)))}
-              </p>
-            </div>
-            <button onClick={function () { setShowIssue(true) }}
-              className="px-3 py-1.5 text-xs font-bold text-white bg-green-600 rounded-lg hover:bg-green-700 active:bg-green-800 transition-colors">
-              + Issue Money
-            </button>
+
+        <SearchDropdown label="Category" required items={catItems} value={categoryId}
+          onChange={function (val) { setCategoryId(val); setSubCategoryId('') }}
+          placeholder="Search category..." error={errors.cat} />
+
+        {subCatItems.length > 0 && (
+          <SearchDropdown label="Sub-Category" items={subCatItems} value={subCategoryId}
+            onChange={setSubCategoryId} placeholder="Search sub-category..." />
+        )}
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Amount (Points) <span className="text-red-500">*</span></label>
+          <div className="relative">
+            <input type="number" min="1" step="any" inputMode="decimal" value={amount}
+              onChange={function (e) { setAmount(e.target.value) }}
+              placeholder="0"
+              className={"w-full px-3 py-2 pr-12 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 " + (errors.amount ? "border-red-300" : "border-gray-300")}
+              style={{ fontSize: '16px' }} />
+            <span className="absolute right-3 top-2.5 text-xs font-bold text-gray-400">pts</span>
           </div>
+          {errors.amount && <p className="text-xs text-red-500 mt-1">{errors.amount}</p>}
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Description <span className="text-red-500">*</span></label>
+          <textarea value={description} onChange={function (e) { setDescription(e.target.value) }}
+            rows="2" maxLength="500" placeholder="What was this expense for?"
+            className={"w-full px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none " + (errors.desc ? "border-red-300" : "border-gray-300")}
+            style={{ fontSize: '16px' }} />
+          {errors.desc && <p className="text-xs text-red-500 mt-1">{errors.desc}</p>}
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Receipt (optional)</label>
+          <input type="file" accept="image/*,.pdf"
+            onChange={function (e) { setReceiptFile(e.target.files?.[0] || null) }}
+            className="w-full text-sm text-gray-500 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-indigo-50 file:text-indigo-600 hover:file:bg-indigo-100" />
+          {editExp?.receipt_path && !receiptFile && (
+            <p className="text-[11px] text-green-600 mt-1">📎 Existing receipt attached</p>
+          )}
+        </div>
+      </div>
+
+      {/* Summary */}
+      {amount && Number(amount) > 0 && (
+        <div className="flex items-center justify-between bg-indigo-50 border border-indigo-200 rounded-lg px-4 py-3">
+          <span className="text-sm font-medium text-indigo-700">Total</span>
+          <span className="text-sm font-bold text-indigo-900">{Number(amount).toLocaleString('en-IN')} pts</span>
         </div>
       )}
 
-      {/* View toggle + Add button */}
-      <div className="flex items-center gap-2">
-        <div className="flex bg-white border border-gray-200 rounded-lg overflow-hidden">
-          {canApprove && (
-            <button onClick={function () { setView('review') }}
-              className={"px-3 py-1.5 text-xs font-bold transition-colors " + (view === 'review' ? "bg-gray-900 text-white" : "text-gray-400")}>
-              Review
-            </button>
-          )}
-          <button onClick={function () { setView('my') }}
-            className={"px-3 py-1.5 text-xs font-bold transition-colors " + (view === 'my' ? "bg-gray-900 text-white" : "text-gray-400")}>
-            My Expenses
-          </button>
-          <button onClick={function () { setView('wallet') }}
-            className={"px-3 py-1.5 text-xs font-bold transition-colors " + (view === 'wallet' ? "bg-gray-900 text-white" : "text-gray-400")}>
-            Transactions
-          </button>
+      {errors.submit && (
+        <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{errors.submit}</div>
+      )}
+
+      <div className="flex gap-3">
+        <button type="button" onClick={onCancel}
+          className="flex-1 py-3 text-sm text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors font-medium">Cancel</button>
+        <button type="button" onClick={handleSubmit} disabled={saving}
+          className="flex-1 py-3 text-sm text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors font-medium">
+          {saving ? (isEditing ? 'Updating...' : 'Submitting...') : (isEditing ? 'Update Expense' : 'Submit Expense')}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════════
+// DETAIL + APPROVAL VIEW
+// ═══════════════════════════════════════════════════════════════
+function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdated, onEdit }) {
+  var [saving, setSaving] = useState(false)
+  var [rejectMode, setRejectMode] = useState(false)
+  var [rejectReason, setRejectReason] = useState('')
+
+  var canDeptApprove = isDeptApprover && exp.status === 'pending_dept' && exp.user_id !== profile?.id
+  var canAdminApprove = isAdmin && exp.status === 'pending'
+  var canApprove = canDeptApprove || canAdminApprove
+  var canDelete = (exp.user_id === profile?.id && (exp.status === 'pending_dept' || exp.status === 'pending')) || isAdmin
+  var canEdit = exp.user_id === profile?.id && (exp.status === 'pending_dept' || exp.status === 'pending')
+
+  async function approve() {
+    if (saving) return
+    setSaving(true)
+    var update = {}
+    if (canDeptApprove) {
+      update = { status: 'pending', dept_approved_by: profile.id, dept_approved_at: new Date().toISOString() }
+    } else if (canAdminApprove) {
+      update = { status: 'approved', reviewed_by: profile.id, reviewed_at: new Date().toISOString() }
+    }
+    var { error } = await supabase.from('expenses').update(update).eq('id', exp.id)
+    if (error) { alert('Approve failed: ' + error.message); setSaving(false); return }
+    try { await logActivity('EXPENSE_APPROVE', (exp.description || 'Expense') + ' | ' + formatPoints(exp.amount_paise) + ' | ' + (canDeptApprove ? 'dept' : 'admin')) } catch (_) {}
+    setSaving(false)
+    onUpdated()
+  }
+
+  async function reject() {
+    if (!rejectReason.trim()) return
+    if (saving) return
+    setSaving(true)
+    var { error } = await supabase.from('expenses').update({
+      status: 'rejected',
+      rejection_reason: rejectReason.trim(),
+      reviewed_by: profile.id,
+      reviewed_at: new Date().toISOString(),
+    }).eq('id', exp.id)
+    if (error) { alert('Reject failed: ' + error.message); setSaving(false); return }
+    try { await logActivity('EXPENSE_REJECT', (exp.description || 'Expense') + ' | ' + rejectReason.trim()) } catch (_) {}
+    setSaving(false)
+    onUpdated()
+  }
+
+  async function deleteExp() {
+    if (!confirm('Delete this expense? This cannot be undone.')) return
+    if (saving) return
+    setSaving(true)
+    // Delete receipt from storage if exists
+    if (exp.receipt_path) {
+      await supabase.storage.from('receipts').remove([exp.receipt_path])
+    }
+    var { error } = await supabase.from('expenses').delete().eq('id', exp.id)
+    if (error) { alert('Delete failed: ' + error.message); setSaving(false); return }
+    try { await logActivity('EXPENSE_DELETE', exp.description || 'Expense') } catch (_) {}
+    setSaving(false)
+    onUpdated()
+  }
+
+  var receiptUrl = exp.receipt_path ? supabase.storage.from('receipts').getPublicUrl(exp.receipt_path).data?.publicUrl : null
+
+  return (
+    <div className="space-y-4">
+      {/* Header */}
+      <div>
+        <button onClick={onBack} className="text-sm text-indigo-600 font-medium hover:text-indigo-800 transition-colors mb-2">← Back</button>
+        <div className="flex items-start justify-between">
+          <div>
+            <h2 className="text-lg font-bold text-gray-900">{exp.description || 'Expense'}</h2>
+            <p className="text-xs text-gray-400 mt-0.5">
+              {exp.profiles?.name || '—'} · {formatDate(exp.expense_date)}
+            </p>
+          </div>
+          <span className={"text-[10px] font-bold uppercase px-2 py-0.5 rounded-full " + (STATUS_COLORS[exp.status] || 'bg-gray-100 text-gray-600')}>
+            {STATUS_LABELS[exp.status] || exp.status}
+          </span>
         </div>
-        <div className="flex-1" />
-        {canSubmit && view === 'my' && (
-          <button onClick={function () { setShowForm(true) }}
-            className="px-3 py-1.5 text-xs font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 active:bg-indigo-800 transition-colors">
-            + New Expense
-          </button>
+      </div>
+
+      {/* Rejection reason */}
+      {exp.status === 'rejected' && exp.rejection_reason && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+          <p className="text-xs font-bold text-red-700 mb-0.5">Rejection Reason</p>
+          <p className="text-sm text-red-600">{exp.rejection_reason}</p>
+        </div>
+      )}
+
+      {/* Details card */}
+      <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-3">
+        <div className="flex justify-between">
+          <span className="text-sm text-gray-500">Amount</span>
+          <span className="text-sm font-bold text-gray-900">{formatPoints(exp.amount_paise)}</span>
+        </div>
+        <div className="flex justify-between">
+          <span className="text-sm text-gray-500">Category</span>
+          <span className="text-sm text-gray-800">{exp.categories?.name || '—'}{exp.sub_categories?.name ? ' > ' + exp.sub_categories.name : ''}</span>
+        </div>
+        <div className="flex justify-between">
+          <span className="text-sm text-gray-500">Date</span>
+          <span className="text-sm text-gray-800">{formatDate(exp.expense_date)}</span>
+        </div>
+        {exp.description && (
+          <div>
+            <span className="text-sm text-gray-500">Description</span>
+            <p className="text-sm text-gray-800 mt-0.5">{exp.description}</p>
+          </div>
         )}
       </div>
 
-      {/* ═══ WALLET VIEW ═══ */}
-      {view === 'wallet' && !isAdmin && (
-        <div className="space-y-2">
-          <div className="text-sm text-gray-400">{transactions.length} transaction{transactions.length !== 1 ? 's' : ''}</div>
-          {transactions.length === 0 && (
-            <div className="bg-white border border-gray-200 rounded-xl p-8 text-center">
-              <p className="text-gray-400 text-sm">No transactions yet</p>
-            </div>
-          )}
-          {transactions.map(function (tx) {
-            var isCredit = tx.type === 'credit'
-            return (
-              <div key={tx.id} className="bg-white border border-gray-200 rounded-xl p-4">
-                <div className="flex items-start justify-between">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className={"text-sm font-bold " + (isCredit ? "text-green-600" : "text-red-600")}>
-                        {isCredit ? '+' : '-'}{formatPaise(tx.amount_paise)}
-                      </span>
-                      <span className={"text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full " + (isCredit ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700")}>
-                        {tx.type}
-                      </span>
-                    </div>
-                    <p className="text-xs text-gray-600 mt-1">{tx.description || '—'}</p>
-                  </div>
-                  <div className="text-right flex-shrink-0">
-                    <p className="text-xs font-medium text-gray-700">Bal: {formatPaise(tx.balance_after_paise)}</p>
-                    <p className="text-[11px] text-gray-400 mt-0.5">{formatDate(tx.created_at)}</p>
-                  </div>
-                </div>
-                {tx.performer?.name && (
-                  <p className="text-[11px] text-gray-400 mt-1">By: {tx.performer.name}</p>
-                )}
-              </div>
-            )
-          })}
+      {/* Receipt */}
+      {receiptUrl && (
+        <div>
+          <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Receipt</p>
+          <a href={receiptUrl} target="_blank" rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors">
+            📎 View Receipt
+          </a>
         </div>
       )}
 
-      {/* ═══ ADMIN ALL WALLETS VIEW ═══ */}
-      {view === 'wallet' && isAdmin && !selectedWalletUser && (
-        <div className="space-y-2">
-          <div className="flex gap-2 flex-wrap">
-            <input type="text" value={walletSearch}
-              onChange={function (e) { setWalletSearch(e.target.value) }}
-              placeholder="Search user..."
-              className="flex-1 min-w-[150px] px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              style={{ fontSize: '16px' }} />
-            <select value={walletRoleFilter} onChange={function (e) { setWalletRoleFilter(e.target.value) }}
-              className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
-              <option value="">All roles</option>
-              {[...new Set(allWallets.map(function (w) { return w.role }))].sort().map(function (r) {
-                return <option key={r} value={r}>{r}</option>
-              })}
-            </select>
-          </div>
-          <div className="text-sm text-gray-400">
-            {(function () {
-              var wSearch = walletSearch.toLowerCase()
-              return allWallets.filter(function (w) {
-                if (walletRoleFilter && w.role !== walletRoleFilter) return false
-                if (!walletSearch) return true
-                return w.name.toLowerCase().includes(wSearch) || (w.email || '').toLowerCase().includes(wSearch)
-              }).length
-            })()} users
-          </div>
-          {allWallets.filter(function (w) {
-            if (walletRoleFilter && w.role !== walletRoleFilter) return false
-            if (!walletSearch) return true
-            var wSearch = walletSearch.toLowerCase()
-            return w.name.toLowerCase().includes(wSearch) || (w.email || '').toLowerCase().includes(wSearch)
-          }).map(function (w) {
-            return (
-              <div key={w.id} onClick={function () { loadUserTransactions(w) }}
-                className="bg-white border border-gray-200 rounded-xl p-4 cursor-pointer hover:bg-gray-50 active:bg-gray-100 transition-colors">
-                <div className="flex items-center justify-between">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-bold text-gray-900">{w.name}</p>
-                    <span className={"text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-600"}>{w.role}</span>
-                  </div>
-                  <p className={"text-lg font-bold " + (w.balance_paise < 0 ? "text-red-600" : w.balance_paise > 0 ? "text-green-600" : "text-gray-400")}>
-                    {formatPaise(w.balance_paise)}
-                  </p>
-                </div>
-              </div>
-            )
-          })}
+      {/* Edit button */}
+      {canEdit && (
+        <button onClick={onEdit} disabled={saving}
+          className="w-full py-3 text-sm font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 disabled:opacity-50 transition-colors">
+          ✎ Edit Expense
+        </button>
+      )}
+
+      {/* Approval actions */}
+      {canApprove && !rejectMode && (
+        <div className="flex gap-3">
+          <button onClick={function () { setRejectMode(true) }} disabled={saving}
+            className="flex-1 py-3 text-sm font-bold text-red-600 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 disabled:opacity-50 transition-colors">
+            ✗ Reject
+          </button>
+          <button onClick={approve} disabled={saving}
+            className="flex-1 py-3 text-sm font-bold text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors">
+            {saving ? 'Approving...' : '✓ Approve'}
+          </button>
         </div>
       )}
 
-      {/* ═══ ADMIN SELECTED USER TRANSACTIONS ═══ */}
-      {view === 'wallet' && isAdmin && selectedWalletUser && (
-        <div className="space-y-2">
-          <button onClick={function () { setSelectedWalletUser(null); setTransactions([]); setTxDateFrom(''); setTxDateTo('') }}
-            className="text-xs font-bold text-indigo-600 hover:underline">← Back to all wallets</button>
-          <div className="bg-white border border-gray-200 rounded-xl p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-bold text-gray-900">{selectedWalletUser.name}</p>
-                <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-600">{selectedWalletUser.role}</span>
-              </div>
-              <p className={"text-xl font-bold " + (selectedWalletUser.balance_paise < 0 ? "text-red-600" : "text-green-600")}>
-                {formatPaise(selectedWalletUser.balance_paise)}
-              </p>
-            </div>
+      {rejectMode && (
+        <div className="space-y-3">
+          <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+            <label className="block text-sm font-medium text-red-700 mb-1">Rejection Reason <span className="text-red-500">*</span></label>
+            <textarea value={rejectReason}
+              onChange={function (e) { setRejectReason(e.target.value) }}
+              rows="3" maxLength="500" placeholder="Reason for rejection..."
+              className="w-full px-3 py-2 border border-red-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-red-500 resize-none"
+              style={{ fontSize: '16px' }} />
           </div>
-          <div className="flex gap-2 flex-wrap items-center">
-            <input type="date" value={txDateFrom}
-              onChange={function (e) { setTxDateFrom(e.target.value) }}
-              className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              style={{ fontSize: '16px' }} />
-            <span className="text-xs text-gray-400">to</span>
-            <input type="date" value={txDateTo}
-              onChange={function (e) { setTxDateTo(e.target.value) }}
-              className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              style={{ fontSize: '16px' }} />
-            <button onClick={function () { loadUserTransactions(selectedWalletUser, txDateFrom, txDateTo) }}
-              className="px-3 py-1.5 text-xs font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors">
-              Filter
-            </button>
-            {(txDateFrom || txDateTo) && (
-              <button onClick={function () { setTxDateFrom(''); setTxDateTo(''); loadUserTransactions(selectedWalletUser, '', '') }}
-                className="px-3 py-1.5 text-xs font-bold text-gray-500 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors">
-                Reset
-              </button>
-            )}
-            <div className="flex-1" />
-            <button onClick={exportTransactions} disabled={transactions.length === 0}
-              className="px-3 py-1.5 text-xs font-bold text-white bg-gray-700 rounded-lg hover:bg-gray-800 disabled:opacity-30 transition-colors">
-              Export CSV
+          <div className="flex gap-3">
+            <button onClick={function () { setRejectMode(false); setRejectReason('') }}
+              className="flex-1 py-3 text-sm text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors font-medium">Cancel</button>
+            <button onClick={reject} disabled={saving || !rejectReason.trim()}
+              className="flex-1 py-3 text-sm text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors font-medium">
+              {saving ? 'Rejecting...' : 'Confirm Reject'}
             </button>
           </div>
-          <div className="text-sm text-gray-400">{transactions.length} transaction{transactions.length !== 1 ? 's' : ''}</div>
-          {transactions.length === 0 && (
-            <div className="bg-white border border-gray-200 rounded-xl p-8 text-center">
-              <p className="text-gray-400 text-sm">No transactions for this user</p>
-            </div>
-          )}
-          {transactions.map(function (tx) {
-            var isCredit = tx.type === 'credit'
-            return (
-              <div key={tx.id} className="bg-white border border-gray-200 rounded-xl p-4">
-                <div className="flex items-start justify-between">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className={"text-sm font-bold " + (isCredit ? "text-green-600" : "text-red-600")}>
-                        {isCredit ? '+' : '-'}{formatPaise(tx.amount_paise)}
-                      </span>
-                      <span className={"text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full " + (isCredit ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700")}>
-                        {tx.type}
-                      </span>
-                    </div>
-                    <p className="text-xs text-gray-600 mt-1">{tx.description || '—'}</p>
-                  </div>
-                  <div className="text-right flex-shrink-0">
-                    <p className="text-xs font-medium text-gray-700">Bal: {formatPaise(tx.balance_after_paise)}</p>
-                    <p className="text-[11px] text-gray-400 mt-0.5">{formatDate(tx.created_at)}</p>
-                  </div>
-                </div>
-                {tx.performer?.name && (
-                  <p className="text-[11px] text-gray-400 mt-1">By: {tx.performer.name}</p>
-                )}
-              </div>
-            )
-          })}
         </div>
       )}
 
-      {/* ═══ EXPENSES LIST (my + review) ═══ */}
-      {view !== 'wallet' && (
-        <>
-          <input type="text" value={search}
-            onChange={function (e) { setSearch(e.target.value) }}
-            placeholder="Search expenses..."
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            style={{ fontSize: '16px' }} />
-
-          <div className="flex items-center gap-3">
-            {view === 'review' && (
-              <select value={statusFilter} onChange={function (e) { setStatusFilter(e.target.value) }}
-                className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                <option value="">All statuses</option>
-                <option value="pending">Pending</option>
-                <option value="approved">Approved</option>
-                <option value="rejected">Rejected</option>
-              </select>
-            )}
-            <div className="text-sm text-gray-400">
-              {filtered.length} expense{filtered.length !== 1 ? 's' : ''}
-            </div>
-          </div>
-
-          {filtered.length === 0 && (
-            <div className="bg-white border border-gray-200 rounded-xl p-8 text-center">
-              <p className="text-gray-400 text-sm">{view === 'review' ? 'No expenses' : 'No expenses yet'}</p>
-            </div>
-          )}
-
-          {filtered.map(function (exp) {
-            var receiptUrl = getReceiptUrl(exp.receipt_path)
-            return (
-              <div key={exp.id} className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
-                <div className="p-4">
-                  <div className="flex items-start justify-between mb-2">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-lg font-bold text-gray-900">{formatPaise(exp.amount_paise)}</p>
-                      <p className="text-sm text-gray-700 mt-0.5">{exp.description}</p>
-                    </div>
-                    <span className={"text-[11px] font-bold uppercase px-2 py-0.5 rounded-full flex-shrink-0 " + (STATUS_COLORS[exp.status] || '')}>
-                      {exp.status}
-                    </span>
-                  </div>
-                  <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-500">
-                    <span>📁 {exp.expense_categories?.name || '—'}</span>
-                    <span>📅 {formatDate(exp.expense_date)}</span>
-                    {view === 'review' && exp.profiles && (
-                      <span>👤 {exp.profiles.name}</span>
-                    )}
-                    {exp.status === 'rejected' && exp.rejection_reason && (
-                      <span className="text-red-500">❌ {exp.rejection_reason}</span>
-                    )}
-                    {exp.status !== 'pending' && exp.reviewer?.name && (
-                      <span>🔍 {exp.reviewer.name}</span>
-                    )}
-                  </div>
-                  {receiptUrl && (
-                    <button onClick={function () { setReceiptPreview(receiptUrl) }}
-                      className="mt-2 text-xs text-indigo-600 font-medium hover:underline">
-                      📎 View Receipt
-                    </button>
-                  )}
-                </div>
-                {view === 'review' && exp.status === 'pending' && canApprove && (
-                  <div className="flex border-t border-gray-100">
-                    <button onClick={function () { approveExpense(exp) }} disabled={saving}
-                      className="flex-1 py-3 text-sm font-bold text-green-600 hover:bg-green-50 active:bg-green-100 disabled:opacity-50 transition-colors">
-                      ✓ Approve
-                    </button>
-                    <div className="w-px bg-gray-100" />
-                    <button onClick={function () { setRejectTarget(exp); setRejectReason('') }} disabled={saving}
-                      className="flex-1 py-3 text-sm font-bold text-red-500 hover:bg-red-50 active:bg-red-100 disabled:opacity-50 transition-colors">
-                      ✗ Reject
-                    </button>
-                  </div>
-                )}
-              </div>
-            )
-          })}
-        </>
+      {/* Delete */}
+      {canDelete && !canApprove && (
+        <button onClick={deleteExp} disabled={saving}
+          className="w-full py-3 text-sm font-bold text-red-500 bg-white border border-red-200 rounded-lg hover:bg-red-50 disabled:opacity-50 transition-colors">
+          Delete Expense
+        </button>
       )}
-
-      {/* ═══ SUBMIT FORM MODAL ═══ */}
-      <Modal open={showForm} onClose={resetForm} title="New Expense">
-        <div className="space-y-4">
-          {wallet && (
-            <div className={"rounded-lg p-3 text-sm font-medium " + (wallet.balance_paise < 0 ? "bg-red-50 text-red-700" : "bg-indigo-50 text-indigo-700")}>
-              Wallet: {formatPaise(wallet.balance_paise)}{wallet.balance_paise < 0 ? ' (Overdraft)' : ''}
-            </div>
-          )}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Category <span className="text-red-500">*</span></label>
-            <select value={formCat} onChange={function (e) { setFormCat(e.target.value) }}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              style={{ fontSize: '16px' }}>
-              <option value="">Select category</option>
-              {categories.map(function (c) {
-                return <option key={c.id} value={String(c.id)}>{c.name}</option>
-              })}
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Amount (₹) <span className="text-red-500">*</span></label>
-            <input type="number" inputMode="decimal" step="0.01" min="0" value={formAmount}
-              onChange={function (e) { setFormAmount(e.target.value) }}
-              placeholder="0.00"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              style={{ fontSize: '16px' }} />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Description <span className="text-red-500">*</span></label>
-            <textarea value={formDesc} onChange={function (e) { setFormDesc(e.target.value) }}
-              rows="2" maxLength="500" placeholder="What was this expense for?"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
-              style={{ fontSize: '16px' }} />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
-            <input type="date" value={formDate}
-              onChange={function (e) { setFormDate(e.target.value) }}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              style={{ fontSize: '16px' }} />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Receipt (optional)</label>
-            <input type="file" accept="image/*,application/pdf"
-              onChange={function (e) { setFormReceipt(e.target.files?.[0] || null) }}
-              className="w-full text-sm text-gray-500 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100" />
-          </div>
-          <div className="flex gap-3 pt-2">
-            <button onClick={resetForm}
-              className="flex-1 px-4 py-3 text-sm text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors font-medium">
-              Cancel
-            </button>
-            <button onClick={handleSubmit} disabled={saving || !formCat || !formAmount || !formDesc.trim()}
-              className="flex-1 px-4 py-3 text-sm text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors font-medium">
-              {saving ? 'Submitting...' : 'Submit'}
-            </button>
-          </div>
-        </div>
-      </Modal>
-
-      {/* ═══ ISSUE MONEY MODAL ═══ */}
-      <Modal open={showIssue} onClose={function () { setShowIssue(false); setIssueUserId(''); setIssueAmount(''); setIssueDesc(''); setSelectedUserWallet(null) }} title="Issue Petty Cash">
-        <div className="space-y-4">
-          <div>
-            <SearchDropdown
-              label="User"
-              required
-              items={allUsers.map(function (u) { return { label: u.name + ' (' + u.role + ')', value: u.id } })}
-              value={issueUserId}
-              onChange={function (val) { onIssueUserChange(val) }}
-              placeholder="Search user..."
-            />
-            {selectedUserWallet && (
-              <p className={"text-xs mt-1 font-medium " + (selectedUserWallet.balance_paise < 0 ? "text-red-500" : "text-green-600")}>
-                Current balance: {formatPaise(selectedUserWallet.balance_paise)}
-              </p>
-            )}
-            {issueUserId && !selectedUserWallet && (
-              <p className="text-xs mt-1 text-gray-400">No wallet yet — will be created on issue</p>
-            )}
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Amount (₹) <span className="text-red-500">*</span></label>
-            <input type="number" inputMode="decimal" step="0.01" min="0" value={issueAmount}
-              onChange={function (e) { setIssueAmount(e.target.value) }}
-              placeholder="0.00"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              style={{ fontSize: '16px' }} />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-            <input type="text" value={issueDesc}
-              onChange={function (e) { setIssueDesc(e.target.value) }}
-              placeholder="Petty cash issued"
-              maxLength="200"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              style={{ fontSize: '16px' }} />
-          </div>
-          <div className="flex gap-3 pt-2">
-            <button onClick={function () { setShowIssue(false); setIssueUserId(''); setIssueAmount(''); setIssueDesc(''); setSelectedUserWallet(null) }}
-              className="flex-1 px-4 py-3 text-sm text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors font-medium">
-              Cancel
-            </button>
-            <button onClick={handleIssueMoney} disabled={saving || !issueUserId || !issueAmount}
-              className="flex-1 px-4 py-3 text-sm text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors font-medium">
-              {saving ? 'Issuing...' : 'Issue Money'}
-            </button>
-          </div>
-        </div>
-      </Modal>
-
-      {/* ═══ REJECT MODAL ═══ */}
-      <Modal open={!!rejectTarget} onClose={function () { setRejectTarget(null) }} title="Reject Expense">
-        {rejectTarget && (
-          <div className="space-y-4">
-            <div className="bg-red-50 border border-red-200 rounded-lg p-3">
-              <p className="text-sm text-red-800 font-medium">Reject {formatPaise(rejectTarget.amount_paise)} expense?</p>
-              <p className="text-xs text-red-600 mt-1">{rejectTarget.description}</p>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Reason <span className="text-red-500">*</span></label>
-              <textarea value={rejectReason}
-                onChange={function (e) { setRejectReason(e.target.value) }}
-                rows="3" maxLength="500" placeholder="Reason for rejection..."
-                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-red-500 resize-none"
-                style={{ fontSize: '16px' }} />
-            </div>
-            <div className="flex gap-3">
-              <button onClick={function () { setRejectTarget(null) }}
-                className="flex-1 px-4 py-3 text-sm text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors font-medium">Cancel</button>
-              <button onClick={confirmReject} disabled={saving || !rejectReason.trim()}
-                className="flex-1 px-4 py-3 text-sm text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors font-medium">
-                {saving ? 'Rejecting...' : 'Reject'}
-              </button>
-            </div>
-          </div>
-        )}
-      </Modal>
-
-      {/* ═══ RECEIPT PREVIEW MODAL ═══ */}
-      <Modal open={!!receiptPreview} onClose={function () { setReceiptPreview(null) }} title="Receipt">
-        {receiptPreview && (
-          <div className="flex items-center justify-center">
-            {receiptPreview.endsWith('.pdf') ? (
-              <a href={receiptPreview} target="_blank" rel="noopener noreferrer"
-                className="text-indigo-600 font-medium text-sm hover:underline">Open PDF in new tab</a>
-            ) : (
-              <img src={receiptPreview} alt="Receipt" className="max-w-full max-h-[70vh] rounded-lg" />
-            )}
-          </div>
-        )}
-      </Modal>
     </div>
   )
 }
