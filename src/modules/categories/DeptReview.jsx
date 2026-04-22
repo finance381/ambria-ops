@@ -45,6 +45,7 @@ function DeptReview({ profile }) {
   }
 
   async function approveItem(item) {
+    if (saving) return
     setSaving(true)
     var table = item._source === 'catering_store' ? 'catering_store_items' : 'inventory_items'
     var { error } = await supabase.from(table).update({
