@@ -36,6 +36,17 @@ function Expenses({ profile }) {
   var [detailExp, setDetailExp] = useState(null)
   var [statusFilter, setStatusFilter] = useState('')
   var [editExp, setEditExp] = useState(null)
+  var [walletBalance, setWalletBalance] = useState(0)
+  var [walletView, setWalletView] = useState(null) // null | 'wallets' | 'transactions'
+  var [allWallets, setAllWallets] = useState([])
+  var [walletProfiles, setWalletProfiles] = useState({})
+  var [selectedWallet, setSelectedWallet] = useState(null)
+  var [walletTxns, setWalletTxns] = useState([])
+  var [walletSearch, setWalletSearch] = useState('')
+  var [issueModal, setIssueModal] = useState(null)
+  var [issueAmount, setIssueAmount] = useState('')
+  var [issueDesc, setIssueDesc] = useState('')
+  var [issueSaving, setIssueSaving] = useState(false)
 
   var [subCatMap, setSubCatMap] = useState({})
 
@@ -44,12 +55,14 @@ function Expenses({ profile }) {
   var isDeptApprover = (profile?.permissions || []).indexOf('dept_approve') !== -1
   var showApproveTab = isAdmin || isAuditor || isDeptApprover
 
-  useEffect(function () {
+   useEffect(function () {
     supabase.from('sub_categories').select('id, name').then(function (res) {
       var map = {}
       ;(res.data || []).forEach(function (sc) { map[sc.id] = sc.name })
       setSubCatMap(map)
     })
+    supabase.from('wallets').select('balance_paise').eq('user_id', profile.id).maybeSingle()
+      .then(function (res) { setWalletBalance(res.data?.balance_paise || 0) })
     loadMyExpenses(false)
     loadApprovalExpenses(false)
   }, [statusFilter])
@@ -130,6 +143,67 @@ function Expenses({ profile }) {
     setEditExp(null)
     loadMyExpenses(false)
     loadApprovalExpenses(false)
+    supabase.from('wallets').select('balance_paise').eq('user_id', profile.id).maybeSingle()
+      .then(function (res) { setWalletBalance(res.data?.balance_paise || 0) })
+  }
+
+  async function loadAllWallets() {
+    var [wRes, pRes] = await Promise.all([
+      supabase.from('wallets').select('id, user_id, balance_paise, updated_at').order('updated_at', { ascending: false }),
+      supabase.from('profiles').select('id, name, email, role').eq('active', true),
+    ])
+    var pMap = {}
+    ;(pRes.data || []).forEach(function (p) { pMap[p.id] = p })
+    setWalletProfiles(pMap)
+    setAllWallets(wRes.data || [])
+  }
+
+  async function openWalletTxns(wallet) {
+    setSelectedWallet(wallet)
+    var { data } = await supabase.from('wallet_transactions')
+      .select('id, type, amount_paise, balance_after_paise, description, reference_type, reference_id, performed_by, created_at')
+      .eq('wallet_id', wallet.id)
+      .order('created_at', { ascending: false })
+      .limit(200)
+    setWalletTxns(data || [])
+    setWalletView('transactions')
+  }
+
+  async function issuePoints() {
+    if (issueSaving || !issueModal || !issueAmount || Number(issueAmount) <= 0) return
+    setIssueSaving(true)
+    var amountPaise = Math.round(Number(issueAmount) * 100)
+    var { error } = await supabase.rpc('issue_money', {
+      p_user_id: issueModal.user_id,
+      p_amount_paise: amountPaise,
+      p_description: issueDesc.trim() || 'Points issued by admin',
+    })
+    if (error) { alert('Issue failed: ' + error.message); setIssueSaving(false); return }
+    try { await logActivity('WALLET_ISSUE', (walletProfiles[issueModal.user_id]?.name || '—') + ' | ' + formatPoints(amountPaise) + ' | ' + (issueDesc.trim() || '—')) } catch (_) {}
+    setIssueModal(null)
+    setIssueAmount('')
+    setIssueDesc('')
+    setIssueSaving(false)
+    loadAllWallets()
+  }
+
+  function exportWalletCSV() {
+    if (!walletTxns.length || !selectedWallet) return
+    var userName = walletProfiles[selectedWallet.user_id]?.name || 'user'
+    var headers = ['Date', 'Type', 'Amount (pts)', 'Balance After (pts)', 'Description', 'Performed By']
+    var rows = walletTxns.map(function (t) {
+      return [
+        t.created_at ? t.created_at.split('T')[0] : '',
+        t.type || '',
+        t.amount_paise ? (t.amount_paise / 100) : 0,
+        t.balance_after_paise ? (t.balance_after_paise / 100) : 0,
+        (t.description || '').replace(/,/g, ';'),
+        walletProfiles[t.performed_by]?.name || '—',
+      ].join(',')
+    })
+    var csv = '\uFEFF' + headers.join(',') + '\n' + rows.join('\n')
+    var blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+    var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'wallet_' + userName + '_' + new Date().toISOString().split('T')[0] + '.csv'; a.click()
   }
 
   var displayList = view === 'approve' ? approvalExpenses : myExpenses
@@ -150,6 +224,7 @@ function Expenses({ profile }) {
       <ExpenseForm
         profile={profile}
         editExp={editExp}
+        walletBalance={walletBalance}
         onCancel={function () { setView('list'); setEditExp(null) }}
         onSaved={handleFormDone}
       />
@@ -175,10 +250,199 @@ function Expenses({ profile }) {
   }
 
   // ═══════════════════════════════════════════════
+  // WALLET ADMIN — All balances
+  // ═══════════════════════════════════════════════
+  if (walletView === 'wallets') {
+    var wSearchLower = walletSearch.toLowerCase()
+    var filteredWallets = allWallets.filter(function (w) {
+      if (!walletSearch) return true
+      var p = walletProfiles[w.user_id]
+      return (p?.name || '').toLowerCase().indexOf(wSearchLower) !== -1 ||
+        (p?.email || '').toLowerCase().indexOf(wSearchLower) !== -1 ||
+        (p?.role || '').toLowerCase().indexOf(wSearchLower) !== -1
+    })
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <button onClick={function () { setWalletView(null) }} className="text-sm text-indigo-600 font-medium hover:text-indigo-800 transition-colors mb-1">← Back to Expenses</button>
+            <h2 className="text-lg font-bold text-gray-900">All Wallets</h2>
+            <p className="text-xs text-gray-400">{filteredWallets.length} wallets</p>
+          </div>
+        </div>
+        <input type="text" value={walletSearch} onChange={function (e) { setWalletSearch(e.target.value) }}
+          placeholder="Search name, email, role..."
+          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          style={{ fontSize: '16px' }} />
+        <div className="space-y-2">
+          {filteredWallets.map(function (w) {
+            var p = walletProfiles[w.user_id] || {}
+            return (
+              <div key={w.id} className="bg-white border border-gray-200 rounded-xl p-4 flex items-center justify-between">
+                <div className="flex-1 min-w-0 cursor-pointer" onClick={function () { openWalletTxns(w) }}>
+                  <p className="text-sm font-semibold text-gray-900">{p.name || '—'}</p>
+                  <p className="text-xs text-gray-400">{p.email || '—'} · {p.role || '—'}</p>
+                </div>
+                <div className="flex items-center gap-3 flex-shrink-0">
+                  <span className={"text-sm font-bold " + ((w.balance_paise || 0) < 0 ? "text-red-600" : "text-green-700")}>{formatPoints(w.balance_paise)}</span>
+                  <button onClick={function () { setIssueModal(w); setIssueAmount(''); setIssueDesc('') }}
+                    className="px-3 py-1.5 text-xs font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors">
+                    + Issue
+                  </button>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+        {/* Issue Points Modal */}
+        {issueModal && (
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={function () { setIssueModal(null) }}>
+            <div className="bg-white rounded-xl p-6 w-full max-w-sm space-y-4" onClick={function (e) { e.stopPropagation() }}>
+              <h3 className="text-base font-bold text-gray-900">Issue Points</h3>
+              <p className="text-sm text-gray-500">To: <span className="font-medium text-gray-800">{walletProfiles[issueModal.user_id]?.name || '—'}</span></p>
+              <p className="text-xs text-gray-400">Current balance: {formatPoints(issueModal.balance_paise)}</p>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Amount (Points)</label>
+                <input type="number" min="1" step="any" inputMode="decimal" value={issueAmount}
+                  onChange={function (e) { setIssueAmount(e.target.value) }}
+                  placeholder="0" className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  style={{ fontSize: '16px' }} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                <input type="text" value={issueDesc} onChange={function (e) { setIssueDesc(e.target.value) }}
+                  placeholder="e.g. Weekly allowance, Reimbursement..."
+                  maxLength="300" className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  style={{ fontSize: '16px' }} />
+              </div>
+              <div className="flex gap-3">
+                <button onClick={function () { setIssueModal(null) }}
+                  className="flex-1 py-2.5 text-sm text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors font-medium">Cancel</button>
+                <button onClick={issuePoints} disabled={issueSaving || !issueAmount || Number(issueAmount) <= 0}
+                  className="flex-1 py-2.5 text-sm text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors font-medium">
+                  {issueSaving ? 'Issuing...' : 'Issue ' + (issueAmount && Number(issueAmount) > 0 ? Number(issueAmount).toLocaleString('en-IN') + ' pts' : '')}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  // ═══════════════════════════════════════════════
+  // WALLET TRANSACTIONS — Per-user drill-down
+  // ═══════════════════════════════════════════════
+  if (walletView === 'transactions' && selectedWallet) {
+    var txnUser = walletProfiles[selectedWallet.user_id] || {}
+    return (
+      <div className="space-y-4">
+        <div>
+          <button onClick={function () { setWalletView('wallets'); setSelectedWallet(null); setWalletTxns([]) }}
+            className="text-sm text-indigo-600 font-medium hover:text-indigo-800 transition-colors mb-1">← Back to Wallets</button>
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-bold text-gray-900">{txnUser.name || '—'}</h2>
+              <p className="text-xs text-gray-400">{txnUser.email || '—'} · Balance: <span className={"font-bold " + ((selectedWallet.balance_paise || 0) < 0 ? "text-red-600" : "text-green-700")}>{formatPoints(selectedWallet.balance_paise)}</span></p>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={function () { setIssueModal(selectedWallet); setIssueAmount(''); setIssueDesc('') }}
+                className="px-3 py-1.5 text-xs font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors">
+                + Issue
+              </button>
+              {walletTxns.length > 0 && (
+                <button onClick={exportWalletCSV}
+                  className="px-3 py-1.5 text-xs font-bold text-green-600 bg-green-50 border border-green-200 rounded-lg hover:bg-green-100 transition-colors">
+                  📥 CSV
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+        {walletTxns.length === 0 && (
+          <div className="bg-white border border-gray-200 rounded-xl p-8 text-center">
+            <p className="text-gray-400 text-sm">No transactions yet</p>
+          </div>
+        )}
+        <div className="space-y-2">
+          {walletTxns.map(function (t) {
+            var isCredit = t.type === 'credit'
+            return (
+              <div key={t.id} className="bg-white border border-gray-200 rounded-lg p-3">
+                <div className="flex items-start justify-between">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-gray-800">{t.description || '—'}</p>
+                    <p className="text-[11px] text-gray-400">
+                      {formatDate(t.created_at)}
+                      {t.reference_type ? ' · ' + t.reference_type : ''}
+                      {t.performed_by && walletProfiles[t.performed_by] ? ' · by ' + walletProfiles[t.performed_by].name : ''}
+                    </p>
+                  </div>
+                  <div className="text-right flex-shrink-0 ml-2">
+                    <p className={"text-sm font-bold " + (isCredit ? "text-green-600" : "text-red-600")}>
+                      {isCredit ? '+' : '−'}{formatPoints(Math.abs(t.amount_paise))}
+                    </p>
+                    <p className="text-[10px] text-gray-400">bal: {formatPoints(t.balance_after_paise)}</p>
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+        {/* Issue modal (reuse same one) */}
+        {issueModal && (
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={function () { setIssueModal(null) }}>
+            <div className="bg-white rounded-xl p-6 w-full max-w-sm space-y-4" onClick={function (e) { e.stopPropagation() }}>
+              <h3 className="text-base font-bold text-gray-900">Issue Points</h3>
+              <p className="text-sm text-gray-500">To: <span className="font-medium text-gray-800">{walletProfiles[issueModal.user_id]?.name || '—'}</span></p>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Amount (Points)</label>
+                <input type="number" min="1" step="any" inputMode="decimal" value={issueAmount}
+                  onChange={function (e) { setIssueAmount(e.target.value) }}
+                  placeholder="0" className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  style={{ fontSize: '16px' }} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                <input type="text" value={issueDesc} onChange={function (e) { setIssueDesc(e.target.value) }}
+                  placeholder="e.g. Weekly allowance" maxLength="300"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  style={{ fontSize: '16px' }} />
+              </div>
+              <div className="flex gap-3">
+                <button onClick={function () { setIssueModal(null) }}
+                  className="flex-1 py-2.5 text-sm text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors font-medium">Cancel</button>
+                <button onClick={issuePoints} disabled={issueSaving || !issueAmount || Number(issueAmount) <= 0}
+                  className="flex-1 py-2.5 text-sm text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors font-medium">
+                  {issueSaving ? 'Issuing...' : 'Issue ' + (issueAmount && Number(issueAmount) > 0 ? Number(issueAmount).toLocaleString('en-IN') + ' pts' : '')}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  // ═══════════════════════════════════════════════
   // LIST / APPROVE VIEW
   // ═══════════════════════════════════════════════
   return (
     <div className="space-y-4">
+      {/* Wallet balance */}
+      <div className={"flex items-center justify-between rounded-xl p-4 border " + (walletBalance < 0 ? "bg-red-50 border-red-200" : "bg-green-50 border-green-200")}>
+        <div>
+          <p className="text-xs font-medium text-gray-500">My Wallet Balance</p>
+          <p className={"text-xl font-bold " + (walletBalance < 0 ? "text-red-700" : "text-green-700")}>{formatPoints(walletBalance)}</p>
+        </div>
+        {(isAdmin || isAuditor) && (
+          <button onClick={function () { setWalletView('wallets'); loadAllWallets() }}
+            className="px-3 py-1.5 text-xs font-bold text-indigo-600 bg-white border border-indigo-200 rounded-lg hover:bg-indigo-50 transition-colors">
+            Manage Wallets
+          </button>
+        )}
+      </div>
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -291,7 +555,7 @@ function Expenses({ profile }) {
 // ═══════════════════════════════════════════════════════════════
 // FORM — Submit / Edit expense
 // ═══════════════════════════════════════════════════════════════
-function ExpenseForm({ profile, editExp, onCancel, onSaved }) {
+function ExpenseForm({ profile, editExp, walletBalance, onCancel, onSaved }) {
   var [categories, setCategories] = useState([])
   var [subCategories, setSubCategories] = useState([])
   var [categoryId, setCategoryId] = useState(editExp ? String(editExp.category_id) : '')
@@ -487,6 +751,17 @@ function ExpenseForm({ profile, editExp, onCancel, onSaved }) {
         <div className="flex items-center justify-between bg-indigo-50 border border-indigo-200 rounded-lg px-4 py-3">
           <span className="text-sm font-medium text-indigo-700">Total</span>
           <span className="text-sm font-bold text-indigo-900">{Number(amount).toLocaleString('en-IN')} pts</span>
+        </div>
+      )}
+
+      {/* Overdraft warning */}
+      {amount && Number(amount) > 0 && walletBalance != null && Math.round(Number(amount) * 100) > walletBalance && (
+        <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
+          <span className="text-amber-600 text-lg">⚠️</span>
+          <div>
+            <p className="text-sm font-medium text-amber-700">Insufficient balance</p>
+            <p className="text-xs text-amber-600">Wallet: {formatPoints(walletBalance)} · Expense: {Number(amount).toLocaleString('en-IN')} pts · Shortfall: {formatPoints(Math.round(Number(amount) * 100) - walletBalance)}</p>
+          </div>
         </div>
       )}
 
