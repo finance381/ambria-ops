@@ -53,7 +53,7 @@ function Expenses({ profile }) {
     else setLoadingMore(true)
 
     var query = supabase.from('expenses')
-      .select('id, category_id, sub_category_id, amount_paise, description, status, expense_date, receipt_path, created_at, rejection_reason, categories(name), sub_categories(name)')
+      .select('id, category_id, sub_category_id, amount_paise, description, status, expense_date, receipt_path, created_at, rejection_reason, categories(name), sub_categories!sub_category_id(name)')
       .eq('user_id', profile.id)
       .order('created_at', { ascending: false })
       .range(offset, offset + PAGE_SIZE)
@@ -92,7 +92,7 @@ function Expenses({ profile }) {
     if (statuses.length === 0) { setApprovalExpenses([]); return }
 
     var query = supabase.from('expenses')
-      .select('id, user_id, category_id, sub_category_id, amount_paise, description, status, expense_date, receipt_path, created_at, rejection_reason, categories(name), sub_categories(name), profiles:user_id(name)')
+      .select('id, user_id, category_id, sub_category_id, amount_paise, description, status, expense_date, receipt_path, created_at, rejection_reason, categories(name), sub_categories!sub_category_id(name), profiles:user_id(name)')
       .neq('user_id', profile.id)
       .in('status', statuses)
       .order('created_at', { ascending: false })
