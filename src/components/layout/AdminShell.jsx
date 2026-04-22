@@ -1,16 +1,15 @@
-import { useState } from 'react'
+import { useState, lazy, Suspense } from 'react'
 import { ROLE_COLORS } from '../../lib/constants'
-import { lazy, Suspense } from 'react'
-import Inventory from '../../modules/inventory/Inventory'
-import Events from '../../modules/events/Events'
-import Categories from '../../modules/categories/Categories'
-import AdminItems from '../../modules/inventory/AdminItems'
-import PendingReview from '../../modules/categories/PendingReview'
-import Users from '../../modules/users/Users'
-import ActivityLogs from '../../modules/logs/ActivityLogs'
 
-var Dashboard = lazy(function () { return import('../../modules/dashboard/Dashboard') })
+var PendingReview = lazy(function () { return import('../../modules/categories/PendingReview') })
+var Inventory = lazy(function () { return import('../../modules/inventory/Inventory') })
+var Events = lazy(function () { return import('../../modules/events/Events') })
+var AdminItems = lazy(function () { return import('../../modules/inventory/AdminItems') })
+var Categories = lazy(function () { return import('../../modules/categories/Categories') })
+var Users = lazy(function () { return import('../../modules/users/Users') })
+var ActivityLogs = lazy(function () { return import('../../modules/logs/ActivityLogs') })
 var Expenses = lazy(function () { return import('../../modules/expenses/Expenses') })
+var Dashboard = lazy(function () { return import('../../modules/dashboard/Dashboard') })
 var Boxes = lazy(function () { return import('../../modules/boxes/Boxes') })
 var Purchase = lazy(function () { return import('../../modules/purchase/Purchase') })
 var Calendar = lazy(function () { return import('../../modules/calendar/Calendar') })
@@ -99,7 +98,7 @@ function AdminShell({ profile, onSignOut }) {
         <h2 className="text-xl font-bold text-gray-800 mb-5">{activeLabel}</h2>
         {ActiveModule && (
           <Suspense fallback={<p className="text-gray-400 text-sm">Loading...</p>}>
-            <ActiveModule profile={profile} />
+            <ActiveModule key={active} profile={profile} />
           </Suspense>
         )}
         {!ActiveModule && (
