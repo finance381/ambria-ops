@@ -37,23 +37,29 @@ function Expenses({ profile }) {
   var [statusFilter, setStatusFilter] = useState('')
   var [editExp, setEditExp] = useState(null)
 
+  var [subCatMap, setSubCatMap] = useState({})
+
   var isAdmin = profile?.role === 'admin'
   var isAuditor = profile?.role === 'auditor'
   var isDeptApprover = (profile?.permissions || []).indexOf('dept_approve') !== -1
   var showApproveTab = isAdmin || isAuditor || isDeptApprover
 
   useEffect(function () {
+    supabase.from('sub_categories').select('id, name').then(function (res) {
+      var map = {}
+      ;(res.data || []).forEach(function (sc) { map[sc.id] = sc.name })
+      setSubCatMap(map)
+    })
     loadMyExpenses(false)
     loadApprovalExpenses(false)
   }, [statusFilter])
-
   async function loadMyExpenses(append) {
     var offset = append ? myExpenses.length : 0
     if (!append) setLoading(true)
     else setLoadingMore(true)
 
     var query = supabase.from('expenses')
-      .select('id, category_id, sub_category_id, amount_paise, description, status, expense_date, receipt_path, created_at, rejection_reason, categories(name), sub_categories!sub_category_id(name)')
+      .select('id, category_id, sub_category_id, amount_paise, description, status, expense_date, receipt_path, created_at, rejection_reason, categories(name)')
       .eq('user_id', profile.id)
       .order('created_at', { ascending: false })
       .range(offset, offset + PAGE_SIZE)
@@ -92,7 +98,7 @@ function Expenses({ profile }) {
     if (statuses.length === 0) { setApprovalExpenses([]); return }
 
     var query = supabase.from('expenses')
-      .select('id, user_id, category_id, sub_category_id, amount_paise, description, status, expense_date, receipt_path, created_at, rejection_reason, categories(name), sub_categories!sub_category_id(name), profiles:user_id(name)')
+      .select('id, user_id, category_id, sub_category_id, amount_paise, description, status, expense_date, receipt_path, created_at, rejection_reason, categories(name), profiles:user_id(name)')
       .neq('user_id', profile.id)
       .in('status', statuses)
       .order('created_at', { ascending: false })
@@ -158,6 +164,7 @@ function Expenses({ profile }) {
       <ExpenseDetail
         exp={detailExp}
         profile={profile}
+        subCatMap={subCatMap}
         isAdmin={isAdmin}
         isDeptApprover={isDeptApprover}
         onBack={function () { setView(detailExp._fromApprove ? 'approve' : 'list'); setDetailExp(null) }}
@@ -245,7 +252,7 @@ function Expenses({ profile }) {
                   <p className="text-xs text-gray-400 mt-0.5">
                     {view === 'approve' ? (exp.profiles?.name || '—') + ' · ' : ''}
                     {exp.categories?.name || '—'}
-                    {exp.sub_categories?.name ? ' > ' + exp.sub_categories.name : ''}
+                    {exp.sub_category_id && subCatMap[exp.sub_category_id] ? ' > ' + subCatMap[exp.sub_category_id] : ''}
                     {' · ' + formatDate(exp.expense_date)}
                   </p>
                 </div>
@@ -502,7 +509,7 @@ function ExpenseForm({ profile, editExp, onCancel, onSaved }) {
 // ═══════════════════════════════════════════════════════════════
 // DETAIL + APPROVAL VIEW
 // ═══════════════════════════════════════════════════════════════
-function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdated, onEdit }) {
+function ExpenseDetail({ exp, profile, subCatMap, isAdmin, isDeptApprover, onBack, onUpdated, onEdit }) {
   var [saving, setSaving] = useState(false)
   var [rejectMode, setRejectMode] = useState(false)
   var [rejectReason, setRejectReason] = useState('')
@@ -596,7 +603,7 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
         </div>
         <div className="flex justify-between">
           <span className="text-sm text-gray-500">Category</span>
-          <span className="text-sm text-gray-800">{exp.categories?.name || '—'}{exp.sub_categories?.name ? ' > ' + exp.sub_categories.name : ''}</span>
+          <span className="text-sm text-gray-800">{exp.categories?.name || '—'}{exp.sub_category_id && subCatMap[exp.sub_category_id] ? ' > ' + subCatMap[exp.sub_category_id] : ''}</span>
         </div>
         <div className="flex justify-between">
           <span className="text-sm text-gray-500">Date</span>
