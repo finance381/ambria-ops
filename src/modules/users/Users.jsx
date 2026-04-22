@@ -326,7 +326,7 @@ function Users() {
     } else {
       setEditUser(null)
       loadUsers()
-      logActivity('USER_UPDATE', editUser.email + ' → role:' + editRole)
+      try { await logActivity('USER_UPDATE', editUser.email + ' → role:' + editRole) } catch (_) {}
     }
     setSaving(false)
   }
@@ -348,7 +348,7 @@ function Users() {
       setDeleteConfirm(null)
       setEditUser(null)
       loadUsers()
-      logActivity('USER_DELETE', target?.email || userId)
+      try { await logActivity('USER_DELETE', target?.email || userId) } catch (_) {}
     }
     setSaving(false)
   }
@@ -370,7 +370,7 @@ function Users() {
       setAddOpen(false)
       setAddName(''); setAddEmail(''); setAddRole('logistics')
       loadUsers()
-      logActivity('USER_ADD', addEmail.trim())
+      try { await logActivity('USER_ADD', addEmail.trim()) } catch (_) {}
     }
     setSaving(false)
   }

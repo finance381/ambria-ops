@@ -433,7 +433,7 @@ function InventoryForm({ item, profile, onClose, onSaved }) {
           // Delete the edited item + its old allocations
           await supabase.from(allocTable).delete().eq('item_id', item.id)
           await supabase.from(tableName).delete().eq('id', item.id)
-          logActivity('ITEM_EDIT_MERGE', payload.name + ' → merged into existing (qty +' + (Number(qty) || 0) + ')')
+          try { await logActivity('ITEM_EDIT_MERGE', payload.name + ' → merged into existing (qty +' + (Number(qty) || 0) + ')') } catch (_) {}
         } else {
           // No merge needed — standard update
           await supabase.from(allocTable).delete().eq('item_id', item.id)

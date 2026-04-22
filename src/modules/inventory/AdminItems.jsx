@@ -133,7 +133,7 @@ function AdminItems({ profile }) {
     }
     var { error: delErr } = await supabase.from(itemTable).delete().eq('id', item.id)
     if (delErr) { alert('Delete failed: ' + delErr.message); return }
-    logActivity('ITEM_DELETE', item.name + ' | ID: ' + (item.inventory_id || item.id))
+    try { await logActivity('ITEM_DELETE', item.name + ' | ID: ' + (item.inventory_id || item.id)) } catch (_) {}
     setDeleteConfirm(null)
     loadData()
   }
@@ -207,7 +207,7 @@ function AdminItems({ profile }) {
       setImportProgress({ done: done, total: rows.length, skipped: skipped })
     }
 
-    logActivity('IMPORT_CSV', importMode.toUpperCase() + ' | ' + done + ' processed, ' + skipped + ' skipped')
+    try { await logActivity('IMPORT_CSV', importMode.toUpperCase() + ' | ' + done + ' processed, ' + skipped + ' skipped') } catch (_) {}
     setImporting(false)
     loadData()
   }
@@ -355,14 +355,14 @@ function AdminItems({ profile }) {
      reason: holdForm.reason.trim(),
      created_by: profile?.id,
    })
-   logActivity('MAINTENANCE_HOLD', holdItem.name + ' | ' + holdForm.qty + '× | ' + holdForm.hold_from + ' to ' + holdForm.hold_to + (holdForm.reason ? ' | ' + holdForm.reason : ''))
+   try { await logActivity('MAINTENANCE_HOLD', holdItem.name + ' | ' + holdForm.qty + '× | ' + holdForm.hold_from + ' to ' + holdForm.hold_to + (holdForm.reason ? ' | ' + holdForm.reason : '')) } catch (_) {}
    setHoldSaving(false)
    openHolds(holdItem)
  }
 
  async function removeHold(holdId) {
    await supabase.from('maintenance_holds').delete().eq('id', holdId)
-   logActivity('MAINTENANCE_RELEASE', holdItem.name + ' | Hold #' + holdId)
+   try { await logActivity('MAINTENANCE_RELEASE', holdItem.name + ' | Hold #' + holdId) } catch (_) {}
    openHolds(holdItem)
  }
 

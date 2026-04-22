@@ -137,7 +137,7 @@ function PendingReview({ profile }) {
       }
     }
     await supabase.from(rejectTarget.table).delete().eq('id', rejectTarget.id)
-    logActivity('REJECT_' + rejectTarget.type.toUpperCase().replace('-', '_'), rejectTarget.name + ' | Reason: ' + rejectReason.trim())
+    try { await logActivity('REJECT_' + rejectTarget.type.toUpperCase().replace('-', '_'), rejectTarget.name + ' | Reason: ' + rejectReason.trim()) } catch (_) {}
     setRejectTarget(null)
     setRejectReason('')
     loadPending()

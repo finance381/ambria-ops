@@ -54,7 +54,7 @@ function DeptReview({ profile }) {
       dept_approved_at: new Date().toISOString(),
     }).eq('id', item.id)
     if (error) { alert('Approve failed: ' + error.message); setSaving(false); return }
-    logActivity('DEPT_APPROVE_ITEM', item.name + ' | Cat: ' + (item.categories?.name || '—'))
+    try { await logActivity('DEPT_APPROVE_ITEM', item.name + ' | Cat: ' + (item.categories?.name || '—')) } catch (_) {}
     loadItems()
     setSaving(false)
   }
@@ -75,7 +75,7 @@ function DeptReview({ profile }) {
     }
     var { error } = await supabase.from(table).delete().eq('id', rejectTarget.id)
     if (error) { alert('Reject failed: ' + error.message); setSaving(false); return }
-    logActivity('DEPT_REJECT_ITEM', rejectTarget.name + ' | Reason: ' + rejectReason.trim())
+    try { await logActivity('DEPT_REJECT_ITEM', rejectTarget.name + ' | Reason: ' + rejectReason.trim()) } catch (_) {}
     setRejectTarget(null)
     setRejectReason('')
     loadItems()

@@ -563,7 +563,7 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
           if (itemsErr) throw new Error(itemsErr.message)
         }
 
-        logActivity('REQUISITION_CREATE', purpose.trim() + ' | ' + lineItems.length + ' items | ' + urgency)
+        try { await logActivity('REQUISITION_CREATE', purpose.trim() + ' | ' + lineItems.length + ' items | ' + urgency) } catch (_) {}
       }
 
       onSaved()
@@ -813,7 +813,7 @@ function RequisitionDetail({ req, items, profile, isAdmin, isDeptApprover, onBac
     }
     var { error } = await supabase.from('requisitions').update(update).eq('id', req.id)
     if (error) { alert('Approve failed: ' + error.message); setSaving(false); return }
-    logActivity('REQUISITION_APPROVE', (req.purpose || 'Req #' + req.id) + ' | ' + (canDeptApprove ? 'dept' : 'admin'))
+    try { await logActivity('REQUISITION_APPROVE', (req.purpose || 'Req #' + req.id) + ' | ' + (canDeptApprove ? 'dept' : 'admin')) } catch (_) {}
     setSaving(false)
     onUpdated()
   }
@@ -828,7 +828,7 @@ function RequisitionDetail({ req, items, profile, isAdmin, isDeptApprover, onBac
       reviewed_at: new Date().toISOString(),
     }).eq('id', req.id)
     if (error) { alert('Reject failed: ' + error.message); setSaving(false); return }
-    logActivity('REQUISITION_REJECT', (req.purpose || 'Req #' + req.id) + ' | ' + rejectReason.trim())
+    try { await logActivity('REQUISITION_REJECT', (req.purpose || 'Req #' + req.id) + ' | ' + rejectReason.trim()) } catch (_) {}
     setSaving(false)
     onUpdated()
   }
@@ -838,7 +838,7 @@ function RequisitionDetail({ req, items, profile, isAdmin, isDeptApprover, onBac
     setSaving(true)
     var { error } = await supabase.from('requisitions').delete().eq('id', req.id)
     if (error) { alert('Delete failed: ' + error.message); setSaving(false); return }
-    logActivity('REQUISITION_DELETE', req.purpose || 'Req #' + req.id)
+    try { await logActivity('REQUISITION_DELETE', req.purpose || 'Req #' + req.id) } catch (_) {}
     setSaving(false)
     onUpdated()
   }

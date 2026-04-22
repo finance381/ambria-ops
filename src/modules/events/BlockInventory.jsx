@@ -313,7 +313,7 @@ function BlockInventory({ func, profile, onDone }) {
       
 
       var totalBlocked = Object.keys(selections).filter(function (id) { return Number(selections[id]?.qty) > 0 }).length
-      logActivity('BLOCK_ITEMS', func.event_name + ' | ' + totalBlocked + ' items')
+      try { await logActivity('BLOCK_ITEMS', func.event_name + ' | ' + totalBlocked + ' items') } catch (_) {}
       onDone()
     } catch (err) {
       setError(err.message || 'Failed to save')

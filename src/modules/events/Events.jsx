@@ -220,7 +220,7 @@ function Events({ profile }) {
         }
       }
 
-      logActivity('UPDATE_BUFFER', (selectedFunction?.event_name || '') + ' | setup=' + editingBuffer.setup_days + ' teardown=' + editingBuffer.teardown_days)
+      try { await logActivity('UPDATE_BUFFER', (selectedFunction?.event_name || '') + ' | setup=' + editingBuffer.setup_days + ' teardown=' + editingBuffer.teardown_days) } catch (_) {}
       setEditingBuffer(null)
       if (selectedFunction) openFunctionDetail(selectedFunction)
       loadEvents()
@@ -242,7 +242,7 @@ function Events({ profile }) {
       var itemId = ei.item_id
       var { error: relErr } = await supabase.from('event_items').delete().eq('id', ei.id)
       if (relErr) throw new Error('Release failed: ' + relErr.message)
-      logActivity('RELEASE_ITEMS', (selectedFunction?.event_name || '') + ' | ' + titleCase(ei.inventory_items?.name) + ' × ' + ei.qty)
+      try { await logActivity('RELEASE_ITEMS', (selectedFunction?.event_name || '') + ' | ' + titleCase(ei.inventory_items?.name) + ' × ' + ei.qty) } catch (_) {}
       setEventItems(function (prev) { return prev.filter(function (x) { return x.id !== ei.id }) })
       // Check cascade
       var { data } = await supabase.rpc('check_freed_inventory', { p_item_ids: [itemId] })
@@ -266,7 +266,7 @@ function Events({ profile }) {
       var itemIds = [...new Set(releasable.map(function (ei) { return ei.item_id }))]
       var { error: relErr } = await supabase.from('event_items').delete().in('id', ids)
       if (relErr) throw new Error('Release failed: ' + relErr.message)
-      logActivity('RELEASE_ITEMS', (selectedFunction?.event_name || '') + ' | ALL ' + releasable.length + ' items')
+      try { await logActivity('RELEASE_ITEMS', (selectedFunction?.event_name || '') + ' | ALL ' + releasable.length + ' items') } catch (_) {}
       setEventItems(function (prev) { return prev.filter(function (x) { return !ids.includes(x.id) }) })
       // Check cascade
       var { data } = await supabase.rpc('check_freed_inventory', { p_item_ids: itemIds })
@@ -285,7 +285,7 @@ function Events({ profile }) {
     try {
       var { error: togErr } = await supabase.from('event_items').update({ block_status: newStatus }).eq('id', ei.id)
       if (togErr) throw new Error(togErr.message)
-      logActivity('BLOCK_STATUS', titleCase(ei.inventory_items?.name) + ' → ' + newStatus)
+      try { await logActivity('BLOCK_STATUS', titleCase(ei.inventory_items?.name) + ' → ' + newStatus) } catch (_) {}
       setEventItems(function (prev) {
         return prev.map(function (x) { return x.id === ei.id ? Object.assign({}, x, { block_status: newStatus }) : x })
       })
@@ -302,7 +302,7 @@ function Events({ profile }) {
     var ids = tentatives.map(function (ei) { return ei.id })
     var { error: confErr } = await supabase.from('event_items').update({ block_status: 'confirmed' }).in('id', ids)
     if (confErr) { alert('Confirm failed: ' + confErr.message); return }
-    logActivity('BLOCK_STATUS', (selectedFunction?.event_name || '') + ' | Confirmed ALL ' + tentatives.length + ' tentative')
+    try { await logActivity('BLOCK_STATUS', (selectedFunction?.event_name || '') + ' | Confirmed ALL ' + tentatives.length + ' tentative') } catch (_) {}
     setEventItems(function (prev) {
       return prev.map(function (x) { return x.block_status === 'tentative' ? Object.assign({}, x, { block_status: 'confirmed' }) : x })
     })
