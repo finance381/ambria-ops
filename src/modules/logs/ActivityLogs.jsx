@@ -6,45 +6,69 @@ function ActivityLogs({ profile }) {
   var [logs, setLogs] = useState([])
   var [loading, setLoading] = useState(true)
   var [users, setUsers] = useState([])
+  var [userMap, setUserMap] = useState({})
   var [userFilter, setUserFilter] = useState('')
   var [search, setSearch] = useState('')
   var [page, setPage] = useState(1)
+  var [totalCount, setTotalCount] = useState(0)
+  var [searchTimer, setSearchTimer] = useState(null)
   var perPage = 50
 
   useEffect(function () {
-    loadData()
+    supabase.from('profiles').select('id, name, email').then(function (res) {
+      var uList = res.data || []
+      setUsers(uList)
+      var map = {}
+      uList.forEach(function (u) { map[u.id] = u })
+      setUserMap(map)
+    })
   }, [])
 
-  async function loadData() {
-    var [logsRes, usersRes] = await Promise.all([
-      supabase.from('activity_logs').select('*').order('created_at', { ascending: false }).limit(5000),
-      supabase.from('profiles').select('id, name, email'),
-    ])
-    setUsers(usersRes.data || [])
+  useEffect(function () {
+    if (Object.keys(userMap).length === 0) return
+    loadLogs()
+  }, [page, userFilter, userMap])
 
-    var userMap = {}
-    ;(usersRes.data || []).forEach(function (u) { userMap[u.id] = u })
+  // Debounced search — 400ms after typing stops
+  useEffect(function () {
+    if (searchTimer) clearTimeout(searchTimer)
+    var timer = setTimeout(function () {
+      setPage(1)
+      loadLogs()
+    }, 400)
+    setSearchTimer(timer)
+    return function () { clearTimeout(timer) }
+  }, [search])
 
-    var enriched = (logsRes.data || []).map(function (log) {
+  async function loadLogs() {
+    setLoading(true)
+    var from = (page - 1) * perPage
+    var to = from + perPage - 1
+
+    // Count query
+    var countQuery = supabase.from('activity_logs').select('id', { count: 'exact', head: true })
+    if (userFilter) countQuery = countQuery.eq('user_id', userFilter)
+    if (search.trim()) countQuery = countQuery.or('details.ilike.%' + search.trim() + '%,action.ilike.%' + search.trim() + '%')
+
+    // Data query
+    var dataQuery = supabase.from('activity_logs').select('*')
+      .order('created_at', { ascending: false })
+      .range(from, to)
+    if (userFilter) dataQuery = dataQuery.eq('user_id', userFilter)
+    if (search.trim()) dataQuery = dataQuery.or('details.ilike.%' + search.trim() + '%,action.ilike.%' + search.trim() + '%')
+
+    var [countRes, dataRes] = await Promise.all([countQuery, dataQuery])
+
+    setTotalCount(countRes.count || 0)
+    var enriched = (dataRes.data || []).map(function (log) {
       return Object.assign({}, log, { profile: userMap[log.user_id] || null })
     })
     setLogs(enriched)
     setLoading(false)
   }
 
-  var searchLower = search.toLowerCase()
-  var filtered = logs.filter(function (l) {
-    var matchUser = !userFilter || l.user_id === userFilter
-    var matchSearch = !search ||
-      (l.action || '').toLowerCase().includes(searchLower) ||
-      (l.details || '').toLowerCase().includes(searchLower) ||
-      (l.profile?.name || '').toLowerCase().includes(searchLower) ||
-      (l.profile?.email || '').toLowerCase().includes(searchLower)
-    return matchUser && matchSearch
-  })
-
-  var totalPages = Math.ceil(filtered.length / perPage)
-  var paged = filtered.slice((page - 1) * perPage, page * perPage)
+  var totalPages = Math.ceil(totalCount / perPage)
+  var paged = logs
 
   var actionColors = {
     ITEM_CREATE: 'bg-green-100 text-green-700',
@@ -58,6 +82,22 @@ function ActivityLogs({ profile }) {
     CAT_DELETE: 'bg-red-100 text-red-700',
     DEPT_CREATE: 'bg-green-100 text-green-700',
     VENUE_CREATE: 'bg-green-100 text-green-700',
+    ITEM_SUBMIT: 'bg-emerald-100 text-emerald-700',
+    ITEM_EDIT_MERGE: 'bg-purple-100 text-purple-700',
+    ITEM_DELETE: 'bg-red-100 text-red-700',
+    APPROVE_ITEM: 'bg-green-100 text-green-700',
+    DEPT_APPROVE_ITEM: 'bg-amber-100 text-amber-700',
+    BLOCK_ITEMS: 'bg-indigo-100 text-indigo-700',
+    RELEASE_ITEMS: 'bg-orange-100 text-orange-700',
+    BLOCK_STATUS: 'bg-blue-100 text-blue-700',
+    REQUISITION_CREATE: 'bg-green-100 text-green-700',
+    REQUISITION_APPROVE: 'bg-green-100 text-green-700',
+    REQUISITION_REJECT: 'bg-red-100 text-red-700',
+    REQUISITION_EDIT: 'bg-blue-100 text-blue-700',
+    REQUISITION_DELETE: 'bg-red-100 text-red-700',
+    MAINTENANCE_HOLD: 'bg-amber-100 text-amber-700',
+    MAINTENANCE_RELEASE: 'bg-orange-100 text-orange-700',
+    UPDATE_BUFFER: 'bg-blue-100 text-blue-700',
   }
 
   if (loading) {
@@ -71,7 +111,7 @@ function ActivityLogs({ profile }) {
         <input
           type="text"
           value={search}
-          onChange={function (e) { setSearch(e.target.value); setPage(1) }}
+          onChange={function (e) { setSearch(e.target.value) }}
           placeholder="Search action, details, user..."
           className="flex-1 min-w-[200px] px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
         />
@@ -86,8 +126,9 @@ function ActivityLogs({ profile }) {
           })}
         </select>
         <div className="text-sm text-gray-400 self-center">
-          {filtered.length} log{filtered.length !== 1 ? 's' : ''}
+          {totalCount} log{totalCount !== 1 ? 's' : ''}
         </div>
+
       </div>
 
       {/* Table */}

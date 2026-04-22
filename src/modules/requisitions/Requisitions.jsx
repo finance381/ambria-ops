@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import { titleCase, formatDate } from '../../lib/format'
 import { logActivity } from '../../lib/logger'
 import Modal from '../../components/ui/Modal'
 import { Badge } from '../../components/ui/Badge'
 
+var PAGE_SIZE = 20
 var URGENCY_COLORS = {
   low: 'bg-gray-100 text-gray-600',
   normal: 'bg-blue-100 text-blue-700',
@@ -36,28 +37,115 @@ var UNITS = [
 
 function Requisitions({ profile, onBack }) {
   var [view, setView] = useState('list') // list | form | detail | approve
-  var [requisitions, setRequisitions] = useState([])
+  var [myReqs, setMyReqs] = useState([])
+  var [approvalReqs, setApprovalReqs] = useState([])
+  var [myHasMore, setMyHasMore] = useState(false)
+  var [approvalHasMore, setApprovalHasMore] = useState(false)
   var [loading, setLoading] = useState(true)
+  var [loadingMore, setLoadingMore] = useState(false)
   var [detailReq, setDetailReq] = useState(null)
   var [detailItems, setDetailItems] = useState([])
   var [statusFilter, setStatusFilter] = useState('')
+  var [editReq, setEditReq] = useState(null)
+  var [editItems, setEditItems] = useState([])
+  var [departments, setDepartments] = useState([])
 
   var isAdmin = profile?.role === 'admin'
   var isAuditor = profile?.role === 'auditor'
-  var isDeptApprover = (profile?.permissions || []).includes('dept_approve')
-  var showApproveTab = isAdmin || isDeptApprover
+  var isDeptApprover = (profile?.permissions || []).indexOf('dept_approve') !== -1
+  var showApproveTab = isAdmin || isAuditor || isDeptApprover
 
-  useEffect(function () { loadRequisitions() }, [])
+  // Derive dept names for scoping non-admin dept approvers
+  var approverDeptNames = []
+  if (isDeptApprover && !isAdmin && !isAuditor) {
+    var deptIds = profile?.event_dept_ids || []
+    if (deptIds.length > 0) {
+      approverDeptNames = departments.filter(function (d) { return deptIds.indexOf(d.id) !== -1 }).map(function (d) { return d.name })
+    }
+  }
 
-  async function loadRequisitions() {
-    var { data, error } = await supabase
-      .from('requisitions')
+  useEffect(function () {
+    supabase.from('departments').select('id, name').eq('active', true).then(function (res) {
+      setDepartments(res.data || [])
+    })
+  }, [])
+
+  useEffect(function () {
+    if (departments.length === 0) return
+    loadMyReqs(false)
+    loadApprovalReqs(false)
+  }, [statusFilter, departments])
+
+  async function loadMyReqs(append) {
+    var offset = append ? myReqs.length : 0
+    if (!append) setLoading(true)
+    else setLoadingMore(true)
+
+    var query = supabase.from('requisitions')
       .select('id, department, urgency, purpose, status, created_at, needed_by, requested_by, rejection_reason, profiles:requested_by(name)')
+      .eq('requested_by', profile.id)
       .order('created_at', { ascending: false })
-      .limit(500)
-    if (error) { alert('Failed to load: ' + error.message); setLoading(false); return }
-    setRequisitions(data || [])
+      .range(offset, offset + PAGE_SIZE)
+
+    if (statusFilter) query = query.eq('status', statusFilter)
+
+    var { data, error } = await query
+    if (error) { alert('Failed to load: ' + error.message); setLoading(false); setLoadingMore(false); return }
+
+    var rows = data || []
+    var hasMore = rows.length > PAGE_SIZE
+    if (hasMore) rows = rows.slice(0, PAGE_SIZE)
+
+    if (append) {
+      setMyReqs(function (prev) { return prev.concat(rows) })
+    } else {
+      setMyReqs(rows)
+    }
+    setMyHasMore(hasMore)
     setLoading(false)
+    setLoadingMore(false)
+  }
+
+  async function loadApprovalReqs(append) {
+    if (!showApproveTab) { setApprovalReqs([]); return }
+
+    var offset = append ? approvalReqs.length : 0
+    if (append) setLoadingMore(true)
+
+    var statuses = []
+    if (isAdmin || isAuditor) {
+      statuses = isDeptApprover ? ['pending_dept', 'pending'] : ['pending']
+    } else if (isDeptApprover) {
+      statuses = ['pending_dept']
+    }
+    if (statuses.length === 0) { setApprovalReqs([]); return }
+
+    var query = supabase.from('requisitions')
+      .select('id, department, urgency, purpose, status, created_at, needed_by, requested_by, rejection_reason, profiles:requested_by(name)')
+      .neq('requested_by', profile.id)
+      .in('status', statuses)
+      .order('created_at', { ascending: false })
+      .range(offset, offset + PAGE_SIZE)
+
+    // Dept-scoped: non-admin dept approvers only see their departments
+    if (isDeptApprover && !isAdmin && !isAuditor && approverDeptNames.length > 0) {
+      query = query.in('department', approverDeptNames)
+    }
+
+    var { data, error } = await query
+    if (error) { alert('Failed to load approvals: ' + error.message); setLoadingMore(false); return }
+
+    var rows = data || []
+    var hasMore = rows.length > PAGE_SIZE
+    if (hasMore) rows = rows.slice(0, PAGE_SIZE)
+
+    if (append) {
+      setApprovalReqs(function (prev) { return prev.concat(rows) })
+    } else {
+      setApprovalReqs(rows)
+    }
+    setApprovalHasMore(hasMore)
+    setLoadingMore(false)
   }
 
   async function openDetail(req) {
@@ -70,19 +158,22 @@ function Requisitions({ profile, onBack }) {
     setView('detail')
   }
 
-  // ─── Filter logic ───
-  var myReqs = requisitions.filter(function (r) { return r.requested_by === profile?.id })
-  var approvalReqs = requisitions.filter(function (r) {
-    if (r.requested_by === profile?.id) return false
-    if (isAdmin && r.status === 'pending') return true
-    if (isDeptApprover && r.status === 'pending_dept') return true
-    return false
-  })
+  function startEdit(req, items) {
+    setEditReq(req)
+    setEditItems(items)
+    setView('form')
+  }
+
+  function handleFormDone() {
+    setView('list')
+    setEditReq(null)
+    setEditItems([])
+    loadMyReqs(false)
+    loadApprovalReqs(false)
+  }
 
   var displayList = view === 'approve' ? approvalReqs : myReqs
-  if (statusFilter) {
-    displayList = displayList.filter(function (r) { return r.status === statusFilter })
-  }
+  var displayHasMore = view === 'approve' ? approvalHasMore : myHasMore
 
   if (loading) {
     return <p className="text-gray-400 text-sm text-center py-8">Loading...</p>
@@ -95,8 +186,10 @@ function Requisitions({ profile, onBack }) {
     return (
       <RequisitionForm
         profile={profile}
-        onCancel={function () { setView('list') }}
-        onSaved={function () { setView('list'); loadRequisitions() }}
+        editReq={editReq}
+        editItems={editItems}
+        onCancel={function () { setView('list'); setEditReq(null); setEditItems([]) }}
+        onSaved={handleFormDone}
       />
     )
   }
@@ -113,7 +206,8 @@ function Requisitions({ profile, onBack }) {
         isAdmin={isAdmin}
         isDeptApprover={isDeptApprover}
         onBack={function () { setView(detailReq._fromApprove ? 'approve' : 'list'); setDetailReq(null); setDetailItems([]) }}
-        onUpdated={function () { loadRequisitions(); setView(detailReq._fromApprove ? 'approve' : 'list'); setDetailReq(null); setDetailItems([]) }}
+        onUpdated={function () { loadMyReqs(false); loadApprovalReqs(false); setView(detailReq._fromApprove ? 'approve' : 'list'); setDetailReq(null); setDetailItems([]) }}
+        onEdit={function () { startEdit(detailReq, detailItems) }}
       />
     )
   }
@@ -129,7 +223,7 @@ function Requisitions({ profile, onBack }) {
           <h2 className="text-lg font-bold text-gray-900">Requisitions</h2>
           <p className="text-xs text-gray-400">{view === 'approve' ? approvalReqs.length + ' pending approval' : myReqs.length + ' requests'}</p>
         </div>
-        <button onClick={function () { setView('form') }}
+        <button onClick={function () { setEditReq(null); setEditItems([]); setView('form') }}
           className="px-4 py-2 text-sm font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 active:bg-indigo-800 transition-colors">
           + New Request
         </button>
@@ -154,21 +248,21 @@ function Requisitions({ profile, onBack }) {
         </div>
       )}
 
-      {/* Status filter */}
-      <div className="flex gap-2 flex-wrap">
-        {['', 'pending_dept', 'pending', 'approved', 'rejected', 'fulfilled'].map(function (s) {
-          var label = s ? STATUS_LABELS[s] : 'All'
-          var count = s ? displayList.filter(function (r) { return !statusFilter ? r.status === s : true }).length : (view === 'approve' ? approvalReqs.length : myReqs.length)
-          if (s && !statusFilter && count === 0) return null
-          return (
-            <button key={s} onClick={function () { setStatusFilter(s === statusFilter ? '' : s) }}
-              className={"px-3 py-1.5 text-[11px] font-bold rounded-full border transition-colors " +
-                (statusFilter === s ? "bg-gray-900 text-white border-gray-900" : "bg-white text-gray-500 border-gray-200 hover:bg-gray-50")}>
-              {label}
-            </button>
-          )
-        })}
-      </div>
+      {/* Status filter — only on My Requests tab */}
+      {view === 'list' && (
+        <div className="flex gap-2 flex-wrap">
+          {['', 'pending_dept', 'pending', 'approved', 'rejected', 'fulfilled'].map(function (s) {
+            var label = s ? STATUS_LABELS[s] : 'All'
+            return (
+              <button key={s} onClick={function () { setStatusFilter(s === statusFilter ? '' : s) }}
+                className={"px-3 py-1.5 text-[11px] font-bold rounded-full border transition-colors " +
+                  (statusFilter === s ? "bg-gray-900 text-white border-gray-900" : "bg-white text-gray-500 border-gray-200 hover:bg-gray-50")}>
+                {label}
+              </button>
+            )
+          })}
+        </div>
+      )}
 
       {/* List */}
       {displayList.length === 0 && (
@@ -212,30 +306,83 @@ function Requisitions({ profile, onBack }) {
           )
         })}
       </div>
+
+      {/* Load More */}
+      {displayHasMore && (
+        <button onClick={function () {
+          if (view === 'approve') loadApprovalReqs(true)
+          else loadMyReqs(true)
+        }} disabled={loadingMore}
+          className="w-full py-3 text-sm font-medium text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 disabled:opacity-50 transition-colors">
+          {loadingMore ? 'Loading...' : 'Load More'}
+        </button>
+      )}
     </div>
   )
 }
 
 // ═══════════════════════════════════════════════════════════════
-// FORM — Multi-item cart
+// FORM — Multi-item cart (supports create + edit)
 // ═══════════════════════════════════════════════════════════════
-function RequisitionForm({ profile, onCancel, onSaved }) {
+function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
   var [departments, setDepartments] = useState([])
   var [categories, setCategories] = useState([])
   var [inventoryItems, setInventoryItems] = useState([])
-  var [department, setDepartment] = useState('')
-  var [urgency, setUrgency] = useState('normal')
-  var [purpose, setPurpose] = useState('')
-  var [neededBy, setNeededBy] = useState('')
-  var [cart, setCart] = useState([emptyCartItem()])
+  var [department, setDepartment] = useState(editReq ? editReq.department : '')
+  var [urgency, setUrgency] = useState(editReq ? editReq.urgency : 'normal')
+  var [purpose, setPurpose] = useState(editReq ? (editReq.purpose || '') : '')
+  var [neededBy, setNeededBy] = useState(editReq && editReq.needed_by ? editReq.needed_by : '')
+  var [cart, setCart] = useState([])
   var [saving, setSaving] = useState(false)
   var [errors, setErrors] = useState({})
+  var [activeSearchIndex, setActiveSearchIndex] = useState(-1)
+  var searchContainerRef = useRef(null)
+
+  var isEditing = !!editReq
 
   function emptyCartItem() {
     return { mode: 'existing', item_id: null, item_name: '', category_id: '', qty: '1', unit: 'Pieces', notes: '', _source: 'new', search: '', estimated_cost: '' }
   }
 
+  // Initialize cart — empty for new, pre-filled for edit
+  useEffect(function () {
+    if (isEditing && editItems && editItems.length > 0) {
+      var prefilled = editItems.map(function (li) {
+        return {
+          mode: li._source === 'new' ? 'new' : 'existing',
+          item_id: li.item_id,
+          item_name: li.item_name || '',
+          category_id: li.category_id ? String(li.category_id) : '',
+          qty: String(li.qty || 1),
+          unit: li.unit || 'Pieces',
+          notes: li.notes || '',
+          _source: li._source || 'new',
+          search: li.item_name || '',
+          estimated_cost: li.estimated_cost_paise ? String(li.estimated_cost_paise / 100) : '',
+        }
+      })
+      setCart(prefilled)
+    } else {
+      setCart([emptyCartItem()])
+    }
+  }, [])
+
   useEffect(function () { loadLookups() }, [])
+
+  // Click-outside to close search dropdown
+  useEffect(function () {
+    function handleClickOutside(e) {
+      if (searchContainerRef.current && !searchContainerRef.current.contains(e.target)) {
+        setActiveSearchIndex(-1)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    document.addEventListener('touchstart', handleClickOutside)
+    return function () {
+      document.removeEventListener('mousedown', handleClickOutside)
+      document.removeEventListener('touchstart', handleClickOutside)
+    }
+  }, [])
 
   async function loadLookups() {
     var [deptRes, catRes, invRes, csRes] = await Promise.all([
@@ -284,6 +431,7 @@ function RequisitionForm({ profile, onCancel, onSaved }) {
         })
       })
     })
+    setActiveSearchIndex(-1)
   }
 
   function toggleMode(index) {
@@ -307,6 +455,14 @@ function RequisitionForm({ profile, onCancel, onSaved }) {
     })
   }
 
+  // Total estimated cost (live)
+  var totalCostPaise = 0
+  cart.forEach(function (c) {
+    if (c.estimated_cost && Number(c.estimated_cost) > 0) {
+      totalCostPaise += Math.round(Number(c.estimated_cost) * 100)
+    }
+  })
+
   function validate() {
     var errs = {}
     if (!department) errs.dept = 'Department required'
@@ -323,55 +479,10 @@ function RequisitionForm({ profile, onCancel, onSaved }) {
     setSaving(true)
 
     try {
-      // Determine status — same logic as inventory
-      var selfIsDeptApprover = (profile?.permissions || []).includes('dept_approve')
-      var isAdminRole = profile?.role === 'admin' || profile?.role === 'auditor'
-
-      var status = 'pending_dept'
-      var deptApprovedBy = null
-      var deptApprovedAt = null
-
-      if (isAdminRole) {
-        status = 'approved'
-      } else if (selfIsDeptApprover) {
-        status = 'pending'
-        deptApprovedBy = profile.id
-        deptApprovedAt = new Date().toISOString()
-      } else {
-        // Check if any dept approver exists (other than self)
-        var { data: approvers } = await supabase
-          .from('profiles')
-          .select('id')
-          .contains('permissions', ['dept_approve'])
-          .eq('active', true)
-          .neq('id', profile.id)
-          .limit(1)
-        if (approvers && approvers.length > 0) {
-          status = 'pending_dept'
-        } else {
-          status = 'pending'
-        }
-      }
-
-      // Insert requisition header
-      var { data: req, error: reqErr } = await supabase.from('requisitions').insert({
-        requested_by: profile.id,
-        department: department,
-        urgency: urgency,
-        purpose: purpose.trim(),
-        needed_by: neededBy || null,
-        status: status,
-        dept_approved_by: deptApprovedBy,
-        dept_approved_at: deptApprovedAt,
-      }).select('id').single()
-      if (reqErr) throw new Error(reqErr.message)
-
-      // Insert line items
       var lineItems = cart
         .filter(function (c) { return c.item_name.trim() && Number(c.qty) > 0 })
         .map(function (c) {
           return {
-            requisition_id: req.id,
             item_id: c.mode === 'existing' && c.item_id ? c.item_id : null,
             item_name: c.item_name.trim(),
             category_id: c.category_id ? Number(c.category_id) : null,
@@ -383,12 +494,78 @@ function RequisitionForm({ profile, onCancel, onSaved }) {
           }
         })
 
-      if (lineItems.length > 0) {
-        var { error: itemsErr } = await supabase.from('requisition_items').insert(lineItems)
-        if (itemsErr) throw new Error(itemsErr.message)
+      if (isEditing) {
+        // ─── UPDATE existing requisition ───
+        var { error: updErr } = await supabase.from('requisitions').update({
+          department: department,
+          urgency: urgency,
+          purpose: purpose.trim(),
+          needed_by: neededBy || null,
+        }).eq('id', editReq.id)
+        if (updErr) throw new Error(updErr.message)
+
+        // Delete old items, insert new
+        var { error: delErr } = await supabase.from('requisition_items').delete().eq('requisition_id', editReq.id)
+        if (delErr) throw new Error(delErr.message)
+
+        if (lineItems.length > 0) {
+          var itemsWithReqId = lineItems.map(function (li) { return Object.assign({}, li, { requisition_id: editReq.id }) })
+          var { error: insErr } = await supabase.from('requisition_items').insert(itemsWithReqId)
+          if (insErr) throw new Error(insErr.message)
+        }
+
+        logActivity('REQUISITION_EDIT', purpose.trim() + ' | ' + lineItems.length + ' items')
+      } else {
+        // ─── CREATE new requisition ───
+        var selfIsDeptApprover = (profile?.permissions || []).indexOf('dept_approve') !== -1
+        var isAdminRole = profile?.role === 'admin' || profile?.role === 'auditor'
+
+        var status = 'pending_dept'
+        var deptApprovedBy = null
+        var deptApprovedAt = null
+
+        if (isAdminRole) {
+          status = 'approved'
+        } else if (selfIsDeptApprover) {
+          status = 'pending'
+          deptApprovedBy = profile.id
+          deptApprovedAt = new Date().toISOString()
+        } else {
+          var { data: approvers } = await supabase
+            .from('profiles')
+            .select('id')
+            .contains('permissions', ['dept_approve'])
+            .eq('active', true)
+            .neq('id', profile.id)
+            .limit(1)
+          if (approvers && approvers.length > 0) {
+            status = 'pending_dept'
+          } else {
+            status = 'pending'
+          }
+        }
+
+        var { data: req, error: reqErr } = await supabase.from('requisitions').insert({
+          requested_by: profile.id,
+          department: department,
+          urgency: urgency,
+          purpose: purpose.trim(),
+          needed_by: neededBy || null,
+          status: status,
+          dept_approved_by: deptApprovedBy,
+          dept_approved_at: deptApprovedAt,
+        }).select('id').single()
+        if (reqErr) throw new Error(reqErr.message)
+
+        if (lineItems.length > 0) {
+          var itemsWithId = lineItems.map(function (li) { return Object.assign({}, li, { requisition_id: req.id }) })
+          var { error: itemsErr } = await supabase.from('requisition_items').insert(itemsWithId)
+          if (itemsErr) throw new Error(itemsErr.message)
+        }
+
+        logActivity('REQUISITION_CREATE', purpose.trim() + ' | ' + lineItems.length + ' items | ' + urgency)
       }
 
-      logActivity('REQUISITION_CREATE', purpose.trim() + ' | ' + lineItems.length + ' items | ' + urgency)
       onSaved()
     } catch (err) {
       setErrors(function (prev) { return Object.assign({}, prev, { submit: err.message }) })
@@ -399,7 +576,7 @@ function RequisitionForm({ profile, onCancel, onSaved }) {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-bold text-gray-900">New Requisition</h2>
+        <h2 className="text-lg font-bold text-gray-900">{isEditing ? 'Edit Requisition' : 'New Requisition'}</h2>
         <button onClick={onCancel} className="text-sm text-gray-500 hover:text-gray-700 font-medium">Cancel</button>
       </div>
 
@@ -451,7 +628,7 @@ function RequisitionForm({ profile, onCancel, onSaved }) {
       </div>
 
       {/* Cart items */}
-      <div className="space-y-3">
+      <div className="space-y-3" ref={searchContainerRef}>
         <div className="flex items-center justify-between">
           <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Items</h3>
           <button type="button" onClick={addCartItem}
@@ -461,10 +638,10 @@ function RequisitionForm({ profile, onCancel, onSaved }) {
 
         {cart.map(function (item, index) {
           var searchResults = []
-          if (item.mode === 'existing' && item.search.trim().length >= 2) {
+          if (item.mode === 'existing' && item.search.trim().length >= 2 && activeSearchIndex === index && !item.item_id) {
             var q = item.search.toLowerCase()
             searchResults = inventoryItems.filter(function (inv) {
-              return inv.name.toLowerCase().includes(q) || (inv.categories?.name || '').toLowerCase().includes(q)
+              return inv.name.toLowerCase().indexOf(q) !== -1 || (inv.categories?.name || '').toLowerCase().indexOf(q) !== -1
             }).slice(0, 8)
           }
 
@@ -490,8 +667,10 @@ function RequisitionForm({ profile, onCancel, onSaved }) {
               {item.mode === 'existing' ? (
                 <div className="relative">
                   <input type="text" value={item.search}
+                    onFocus={function () { setActiveSearchIndex(index) }}
                     onChange={function (e) {
                       updateCart(index, 'search', e.target.value)
+                      setActiveSearchIndex(index)
                       if (!e.target.value.trim()) {
                         updateCart(index, 'item_id', null)
                         updateCart(index, 'item_name', '')
@@ -503,7 +682,7 @@ function RequisitionForm({ profile, onCancel, onSaved }) {
                   {item.item_id && (
                     <span className="absolute right-2 top-2.5 text-[10px] text-green-600 font-bold">✓ Linked</span>
                   )}
-                  {searchResults.length > 0 && !item.item_id && (
+                  {searchResults.length > 0 && (
                     <div className="absolute z-10 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
                       {searchResults.map(function (inv) {
                         return (
@@ -580,6 +759,14 @@ function RequisitionForm({ profile, onCancel, onSaved }) {
         })}
       </div>
 
+      {/* Total cost summary */}
+      {totalCostPaise > 0 && (
+        <div className="flex items-center justify-between bg-indigo-50 border border-indigo-200 rounded-lg px-4 py-3">
+          <span className="text-sm font-medium text-indigo-700">Estimated Total</span>
+          <span className="text-sm font-bold text-indigo-900">₹{(totalCostPaise / 100).toLocaleString('en-IN')}</span>
+        </div>
+      )}
+
       {/* Submit */}
       {errors.submit && (
         <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{errors.submit}</div>
@@ -589,7 +776,7 @@ function RequisitionForm({ profile, onCancel, onSaved }) {
           className="flex-1 py-3 text-sm text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors font-medium">Cancel</button>
         <button type="button" onClick={handleSubmit} disabled={saving}
           className="flex-1 py-3 text-sm text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors font-medium">
-          {saving ? 'Submitting...' : 'Submit Request'}
+          {saving ? (isEditing ? 'Updating...' : 'Submitting...') : (isEditing ? 'Update Request' : 'Submit Request')}
         </button>
       </div>
     </div>
@@ -599,7 +786,7 @@ function RequisitionForm({ profile, onCancel, onSaved }) {
 // ═══════════════════════════════════════════════════════════════
 // DETAIL + APPROVAL VIEW
 // ═══════════════════════════════════════════════════════════════
-function RequisitionDetail({ req, items, profile, isAdmin, isDeptApprover, onBack, onUpdated }) {
+function RequisitionDetail({ req, items, profile, isAdmin, isDeptApprover, onBack, onUpdated, onEdit }) {
   var [saving, setSaving] = useState(false)
   var [rejectMode, setRejectMode] = useState(false)
   var [rejectReason, setRejectReason] = useState('')
@@ -608,6 +795,13 @@ function RequisitionDetail({ req, items, profile, isAdmin, isDeptApprover, onBac
   var canAdminApprove = isAdmin && req.status === 'pending'
   var canApprove = canDeptApprove || canAdminApprove
   var canDelete = (req.requested_by === profile?.id && (req.status === 'pending_dept' || req.status === 'pending')) || isAdmin
+  var canEdit = req.requested_by === profile?.id && (req.status === 'pending_dept' || req.status === 'pending')
+
+  // Total cost
+  var totalPaise = 0
+  items.forEach(function (li) {
+    if (li.estimated_cost_paise) totalPaise += li.estimated_cost_paise
+  })
 
   async function approve() {
     setSaving(true)
@@ -680,6 +874,14 @@ function RequisitionDetail({ req, items, profile, isAdmin, isDeptApprover, onBac
         </div>
       )}
 
+      {/* Total cost summary */}
+      {totalPaise > 0 && (
+        <div className="flex items-center justify-between bg-indigo-50 border border-indigo-200 rounded-lg px-4 py-3">
+          <span className="text-sm font-medium text-indigo-700">Estimated Total</span>
+          <span className="text-sm font-bold text-indigo-900">₹{(totalPaise / 100).toLocaleString('en-IN')}</span>
+        </div>
+      )}
+
       {/* Line items */}
       <div className="space-y-2">
         <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">{items.length} Items</h3>
@@ -709,6 +911,14 @@ function RequisitionDetail({ req, items, profile, isAdmin, isDeptApprover, onBac
           )
         })}
       </div>
+
+      {/* Edit button for owner on pending */}
+      {canEdit && (
+        <button onClick={onEdit} disabled={saving}
+          className="w-full py-3 text-sm font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 disabled:opacity-50 transition-colors">
+          ✎ Edit Requisition
+        </button>
+      )}
 
       {/* Approval actions */}
       {canApprove && !rejectMode && (
