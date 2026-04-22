@@ -96,16 +96,7 @@ function InventoryForm({ item, profile, onClose, onSaved }) {
           })
       }
     })
-        .then(function (res) {
-          var data = res.data || []
-          if (data.length > 0) {
-            setAllocations(data.map(function (va) {
-              return { department: item.department || '', venue_id: String(va.venue_id), sub_venue_id: va.sub_venue_id ? String(va.sub_venue_id) : '', qty: String(va.qty) }
-            }))
-          }
-        })
-    }
-  )
+  }, [])
   useEffect(function () {
     if (categoryId) {
       supabase.from('sub_categories').select('*').eq('category_id', Number(categoryId)).order('name')
@@ -134,7 +125,7 @@ function InventoryForm({ item, profile, onClose, onSaved }) {
         var brands = [...new Set((res.data || []).map(function (r) { return r.brand }).filter(Boolean))].sort()
         setBrandList(brands)
       })
-  }, [categoryId, cateringStoreSubDeptId, name])
+  }, [categoryId, cateringStoreSubDeptId])
   useEffect(function () {
     if (categoryId) {
       var isCatStore = false
@@ -516,7 +507,7 @@ function InventoryForm({ item, profile, onClose, onSaved }) {
       }
       var logAction = isEdit ? 'ITEM_UPDATE' : 'ITEM_SUBMIT'
       var logDetail = name.trim() + ' | Cat: ' + (categories.find(function (c) { return String(c.id) === categoryId })?.name || '—') + ' | Qty: ' + (Number(qty) || 0)
-      logActivity(logAction, logDetail)
+      try { await logActivity(logAction, logDetail) } catch (_) {}
       onSaved()
     } catch (err) { setErrors(function (prev) { return { ...prev, submit: err.message || 'Failed to save' } }) }
     setSaving(false)
