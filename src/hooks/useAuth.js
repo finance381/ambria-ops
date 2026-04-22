@@ -6,28 +6,28 @@ export function useAuth() {
   const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(true)
 
+  var fetchedId = { current: null }
+
   useEffect(function () {
-    supabase.auth.getSession().then(function ({ data: { session } }) {
-      if (session?.user) {
-        setUser(session.user)
-        fetchProfile(session.user)
-      } else {
-        setLoading(false)
-      }
-    })
+    var ignore = false
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(function (_event, session) {
+      if (ignore) return
       if (session?.user) {
         setUser(session.user)
-        fetchProfile(session.user)
+        if (fetchedId.current !== session.user.id) {
+          fetchedId.current = session.user.id
+          fetchProfile(session.user)
+        }
       } else {
+        fetchedId.current = null
         setUser(null)
         setProfile(null)
         setLoading(false)
       }
     })
 
-    return function () { subscription.unsubscribe() }
+    return function () { ignore = true; subscription.unsubscribe() }
   }, [])
 
   function fetchProfile(authUser) {
