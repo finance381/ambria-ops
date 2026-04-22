@@ -95,11 +95,12 @@ function AdminItems({ profile }) {
   }
 
   function exportItems() {
-    var headers = ['Inventory ID', 'Name', 'Name Hindi', 'Category', 'Sub-category', 'Type', 'Qty', 'Unit', 'Department', 'Description', 'Status', 'Source', 'Brand', 'Pack Size Qty', 'Pack Size Unit', 'Min Order / Season Reorder', 'Reorder / Off Season Reorder', 'Rate (₹)', 'Is Asset', 'Venue Code', 'Venue Qty']
+    var headers = ['Inventory ID', 'Name', 'Name Hindi', 'Category', 'Sub-category', 'Type', 'Qty', 'Unit', 'Department', 'Description', 'Status', 'Source', 'Brand', 'Pack Size Qty', 'Pack Size Unit', 'Min Order / Season Reorder', 'Reorder / Off Season Reorder', 'Rate (₹)', 'Is Asset', 'Venue Code', 'Sub-Venue', 'Venue Qty']
     var rows = filtered.map(function (i) {
       var venueStr = (i.venue_allocations || []).map(function (va) { return (va.venues?.code || '') + ':' + va.qty }).join('; ')
       var venueCodes = (i.venue_allocations || []).map(function (va) { return va.venues?.code || '' }).join('; ')
-      var venueQtys = (i.venue_allocations || []).map(function (va) { return va.qty }).join('; ')
+      var venueSubVenues = (i.venue_allocations || []).map(function (va) { var sv = subVenues.find(function (s) { return s.id === va.sub_venue_id }); return sv?.name || '' }).join('; ')
+      var venueQtys = (i.venue_allocations || []).map(function (va) { return va.qty }).join('; ') 
       return [
         i.inventory_id || '', i.name, i.name_hindi || '',
         i.categories?.name || '', i.sub_categories?.name || '',
@@ -109,7 +110,7 @@ function AdminItems({ profile }) {
         i.season_reorder_qty || i.min_order_qty || '',
         i.off_season_reorder_qty || i.reorder_qty || '',
         i.rate_paise ? (i.rate_paise / 100) : '',
-        i.is_asset || '', venueCodes, venueQtys
+        i.is_asset || '', venueCodes, venueSubVenues, venueQtys
       ].map(csvEscape).join(',')
     })
     var csv = '\uFEFF' + headers.join(',') + '\n' + rows.join('\n')
@@ -118,8 +119,8 @@ function AdminItems({ profile }) {
   }
 
   function downloadTemplate() {
-    var headers = ['Name', 'Name Hindi', 'Category', 'Sub-category', 'Type', 'Qty', 'Unit', 'Department', 'Description', 'Brand', 'Pack Size Qty', 'Pack Size Unit', 'Min Order Qty', 'Reorder Qty', 'Rate (₹)', 'Is Asset', 'Venue Code', 'Venue Qty']
-    var example = ['Table Top White', 'टेबल टॉप सफेद', 'Cloths', 'Table Top', 'Indoor', '50', 'Pieces', 'Decor', 'White crushed cloth', '', '', '', '10', '15', '500', 'yes', 'PHD', '50']
+    var headers = ['Name', 'Name Hindi', 'Category', 'Sub-category', 'Type', 'Qty', 'Unit', 'Department', 'Description', 'Brand', 'Pack Size Qty', 'Pack Size Unit', 'Min Order Qty', 'Reorder Qty', 'Rate (₹)', 'Is Asset', 'Venue Code', 'Sub-Venue', 'Venue Qty']
+    var example = ['Table Top White', 'टेबल टॉप सफेद', 'Cloths', 'Table Top', 'Indoor', '50', 'Pieces', 'Decor', 'White crushed cloth', '', '', '', '10', '15', '500', 'yes', 'PHD', 'Main Hall', '50']
     var csv = '\uFEFF' + headers.join(',') + '\n' + example.map(csvEscape).join(',')
     var blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
     var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'ambria_import_template.csv'; a.click()
@@ -244,6 +245,7 @@ function AdminItems({ profile }) {
 
     var newQty = Number(findCol(r, ['qty', 'quantity'])) || 0
     var venueCode = findCol(r, ['venue code', 'venue_code', 'venue'])
+    var subVenueName = findCol(r, ['sub-venue', 'sub_venue', 'subvenue'])
     var venueQty = Number(findCol(r, ['venue qty', 'venue_qty'])) || newQty
 
     var nameHindi = findCol(r, ['name hindi', 'name_hindi'])
@@ -291,10 +293,17 @@ function AdminItems({ profile }) {
         var venue = venues.find(function (v) { return v.code.toLowerCase() === venueCode.toLowerCase() })
         if (venue) {
           var { data: existAlloc } = await supabase.from(allocTable).select('id, qty').eq('item_id', existing.id).eq('venue_id', venue.id).limit(1).maybeSingle()
+          var subVenueId = null
+          if (subVenueName) {
+            var sv = subVenues.find(function (s) { return s.name.toLowerCase() === subVenueName.toLowerCase() && s.venue_id === venue.id })
+            if (sv) subVenueId = sv.id
+          }
           if (existAlloc) {
             await supabase.from(allocTable).update({ qty: existAlloc.qty + venueQty }).eq('id', existAlloc.id)
           } else {
-            await supabase.from(allocTable).insert({ item_id: existing.id, venue_id: venue.id, qty: venueQty })
+            var allocPayload = { item_id: existing.id, venue_id: venue.id, qty: venueQty }
+            if (subVenueId) allocPayload.sub_venue_id = subVenueId
+            await supabase.from(allocTable).insert(allocPayload)
           }
         }
       }
@@ -327,7 +336,12 @@ function AdminItems({ profile }) {
     if (newItem && venueCode) {
       var venue = venues.find(function (v) { return v.code.toLowerCase() === venueCode.toLowerCase() })
       if (venue) {
-        await supabase.from(allocTable).insert({ item_id: newItem.id, venue_id: venue.id, qty: venueQty })
+        var allocPayload = { item_id: newItem.id, venue_id: venue.id, qty: venueQty }
+        if (subVenueName) {
+          var sv = subVenues.find(function (s) { return s.name.toLowerCase() === subVenueName.toLowerCase() && s.venue_id === venue.id })
+          if (sv) allocPayload.sub_venue_id = sv.id
+        }
+        await supabase.from(allocTable).insert(allocPayload)
       }
     }
     return true
