@@ -35,6 +35,15 @@ function Expenses({ profile }) {
   var [loadingMore, setLoadingMore] = useState(false)
   var [detailExp, setDetailExp] = useState(null)
   var [statusFilter, setStatusFilter] = useState('')
+  var [dateFrom, setDateFrom] = useState('')
+  var [dateTo, setDateTo] = useState('')
+  var [expSearch, setExpSearch] = useState('')
+  var [expSearchDebounced, setExpSearchDebounced] = useState('')
+  var [reportView, setReportView] = useState(false)
+  var [reportData, setReportData] = useState(null)
+  var [reportFrom, setReportFrom] = useState(new Date().toISOString().slice(0, 7) + '-01')
+  var [reportTo, setReportTo] = useState(new Date().toISOString().split('T')[0])
+  var [reportLoading, setReportLoading] = useState(false)
   var [editExp, setEditExp] = useState(null)
   var [walletBalance, setWalletBalance] = useState(0)
   var [walletView, setWalletView] = useState(null) // null | 'wallets' | 'transactions'
@@ -46,7 +55,13 @@ function Expenses({ profile }) {
   var [issueModal, setIssueModal] = useState(null)
   var [issueAmount, setIssueAmount] = useState('')
   var [issueDesc, setIssueDesc] = useState('')
+  var [issueType, setIssueType] = useState('credit')
   var [issueSaving, setIssueSaving] = useState(false)
+  var [bulkMode, setBulkMode] = useState(false)
+  var [bulkSelected, setBulkSelected] = useState({})
+  var [bulkAmount, setBulkAmount] = useState('')
+  var [bulkDesc, setBulkDesc] = useState('')
+  var [bulkSaving, setBulkSaving] = useState(false)
 
 
   var isAdmin = profile?.role === 'admin'
@@ -54,12 +69,17 @@ function Expenses({ profile }) {
   var isDeptApprover = (profile?.permissions || []).indexOf('dept_approve') !== -1
   var showApproveTab = isAdmin || isAuditor || isDeptApprover
 
+  useEffect(function () {
+    var timer = setTimeout(function () { setExpSearchDebounced(expSearch) }, 400)
+    return function () { clearTimeout(timer) }
+  }, [expSearch])
+
    useEffect(function () {
     supabase.from('wallets').select('balance_paise').eq('user_id', profile.id).maybeSingle()
       .then(function (res) { setWalletBalance(res.data?.balance_paise || 0) })
     loadMyExpenses(false)
     loadApprovalExpenses(false)
-  }, [statusFilter])
+  }, [statusFilter, dateFrom, dateTo, expSearchDebounced])
   async function loadMyExpenses(append) {
     var offset = append ? myExpenses.length : 0
     if (!append) setLoading(true)
@@ -72,6 +92,9 @@ function Expenses({ profile }) {
       .range(offset, offset + PAGE_SIZE)
 
     if (statusFilter) query = query.eq('status', statusFilter)
+    if (dateFrom) query = query.gte('expense_date', dateFrom)
+    if (dateTo) query = query.lte('expense_date', dateTo)
+    if (expSearchDebounced) query = query.ilike('description', '%' + expSearchDebounced + '%')
 
     var { data, error } = await query
     if (error) { alert('Failed to load: ' + error.message); setLoading(false); setLoadingMore(false); return }
@@ -167,17 +190,48 @@ function Expenses({ profile }) {
     if (issueSaving || !issueModal || !issueAmount || Number(issueAmount) <= 0) return
     setIssueSaving(true)
     var amountPaise = Math.round(Number(issueAmount) * 100)
-    var { error } = await supabase.rpc('issue_money', {
+    var rpcName = issueType === 'debit' ? 'deduct_money' : 'issue_money'
+    var defaultDesc = issueType === 'debit' ? 'Points deducted by admin' : 'Points issued by admin'
+    var { error } = await supabase.rpc(rpcName, {
       p_user_id: issueModal.user_id,
       p_amount_paise: amountPaise,
-      p_description: issueDesc.trim() || 'Points issued by admin',
+      p_description: issueDesc.trim() || defaultDesc,
     })
-    if (error) { alert('Issue failed: ' + error.message); setIssueSaving(false); return }
-    try { await logActivity('WALLET_ISSUE', (walletProfiles[issueModal.user_id]?.name || '—') + ' | ' + formatPoints(amountPaise) + ' | ' + (issueDesc.trim() || '—')) } catch (_) {}
+    if (error) { alert((issueType === 'debit' ? 'Deduct' : 'Issue') + ' failed: ' + error.message); setIssueSaving(false); return }
+    var logAction = issueType === 'debit' ? 'WALLET_DEDUCT' : 'WALLET_ISSUE'
+    try { await logActivity(logAction, (walletProfiles[issueModal.user_id]?.name || '—') + ' | ' + formatPoints(amountPaise) + ' | ' + (issueDesc.trim() || '—')) } catch (_) {}
     setIssueModal(null)
     setIssueAmount('')
     setIssueDesc('')
     setIssueSaving(false)
+    loadAllWallets()
+  }
+  async function runBulkIssue() {
+    var userIds = Object.keys(bulkSelected).filter(function (k) { return bulkSelected[k] })
+    if (bulkSaving || !userIds.length || !bulkAmount || Number(bulkAmount) <= 0) return
+    setBulkSaving(true)
+    var amountPaise = Math.round(Number(bulkAmount) * 100)
+    var desc = bulkDesc.trim() || 'Bulk points issued by admin'
+    var succeeded = 0
+    var failed = 0
+    var CHUNK = 10
+    for (var c = 0; c < userIds.length; c += CHUNK) {
+      var chunk = userIds.slice(c, c + CHUNK)
+      var results = await Promise.allSettled(chunk.map(function (uid) {
+        return supabase.rpc('issue_money', { p_user_id: uid, p_amount_paise: amountPaise, p_description: desc })
+      }))
+      results.forEach(function (res) {
+        if (res.status === 'fulfilled' && !res.value.error) succeeded++
+        else failed++
+      })
+    }
+    try { await logActivity('WALLET_BULK_ISSUE', succeeded + ' users | ' + formatPoints(amountPaise) + ' each | ' + desc) } catch (_) {}
+    alert('Done: ' + succeeded + ' issued' + (failed > 0 ? ', ' + failed + ' failed' : ''))
+    setBulkSaving(false)
+    setBulkMode(false)
+    setBulkSelected({})
+    setBulkAmount('')
+    setBulkDesc('')
     loadAllWallets()
   }
 
@@ -199,12 +253,193 @@ function Expenses({ profile }) {
     var blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
     var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'wallet_' + userName + '_' + new Date().toISOString().split('T')[0] + '.csv'; a.click()
   }
+  async function loadReport() {
+    setReportLoading(true)
+    var { data, error } = await supabase.from('expenses')
+      .select('id, user_id, category_id, amount_paise, status, expense_date, categories(name), profiles:user_id(name)')
+      .eq('status', 'approved')
+      .gte('expense_date', reportFrom)
+      .lte('expense_date', reportTo)
+      .order('expense_date', { ascending: false })
+      .limit(5000)
+    if (error) { alert('Report failed: ' + error.message); setReportLoading(false); return }
+    var rows = data || []
+    var totalPaise = 0
+    var byUser = {}
+    var byCat = {}
+    var byMonth = {}
+    rows.forEach(function (r) {
+      var amt = r.amount_paise || 0
+      totalPaise += amt
+      var uName = r.profiles?.name || '—'
+      byUser[uName] = (byUser[uName] || 0) + amt
+      var cName = r.categories?.name || 'Uncategorized'
+      byCat[cName] = (byCat[cName] || 0) + amt
+      var month = (r.expense_date || '').slice(0, 7)
+      if (month) byMonth[month] = (byMonth[month] || 0) + amt
+    })
+    var sortObj = function (obj) {
+      return Object.entries(obj).sort(function (a, b) { return b[1] - a[1] })
+    }
+    setReportData({
+      count: rows.length,
+      totalPaise: totalPaise,
+      byUser: sortObj(byUser),
+      byCat: sortObj(byCat),
+      byMonth: Object.entries(byMonth).sort(function (a, b) { return a[0].localeCompare(b[0]) }),
+    })
+    setReportLoading(false)
+  }
+
+  function exportReportCSV() {
+    if (!reportData) return
+    var sections = []
+    sections.push('Summary')
+    sections.push('Total Approved,' + (reportData.totalPaise / 100))
+    sections.push('Count,' + reportData.count)
+    sections.push('')
+    sections.push('By User')
+    sections.push('User,Amount (pts)')
+    reportData.byUser.forEach(function (r) { sections.push(r[0] + ',' + (r[1] / 100)) })
+    sections.push('')
+    sections.push('By Category')
+    sections.push('Category,Amount (pts)')
+    reportData.byCat.forEach(function (r) { sections.push(r[0] + ',' + (r[1] / 100)) })
+    sections.push('')
+    sections.push('By Month')
+    sections.push('Month,Amount (pts)')
+    reportData.byMonth.forEach(function (r) { sections.push(r[0] + ',' + (r[1] / 100)) })
+    var csv = '\uFEFF' + sections.join('\n')
+    var blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+    var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'expense_report_' + reportFrom + '_' + reportTo + '.csv'; a.click()
+  }
+
+  function exportExpenseCSV() {
+    if (!myExpenses.length) return
+    var headers = ['Date', 'Category', 'Sub-Category', 'Amount (pts)', 'Description', 'Status', 'Created']
+    var rows = myExpenses.map(function (e) {
+      return [
+        e.expense_date || '',
+        e.categories?.name || '',
+        e.sub_categories?.name || '',
+        e.amount_paise ? (e.amount_paise / 100) : 0,
+        (e.description || '').replace(/,/g, ';'),
+        e.status || '',
+        e.created_at ? e.created_at.split('T')[0] : '',
+      ].join(',')
+    })
+    var csv = '\uFEFF' + headers.join(',') + '\n' + rows.join('\n')
+    var blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+    var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'my_expenses_' + new Date().toISOString().split('T')[0] + '.csv'; a.click()
+  }
 
   var displayList = view === 'approve' ? approvalExpenses : myExpenses
   var displayHasMore = view === 'approve' ? approvalHasMore : myHasMore
 
   // Total points for my expenses
   var myTotal = myExpenses.reduce(function (sum, e) { return sum + (e.amount_paise || 0) }, 0)
+
+  if (reportView && (isAdmin || isAuditor)) {
+    return (
+      <div className="space-y-4">
+        <div>
+          <button onClick={function () { setReportView(false); setReportData(null) }}
+            className="text-sm text-indigo-600 font-medium hover:text-indigo-800 transition-colors mb-1">← Back to Expenses</button>
+          <h2 className="text-lg font-bold text-gray-900">Expense Report</h2>
+          <p className="text-xs text-gray-400">Approved expenses summary</p>
+        </div>
+        <div className="flex gap-2 items-end">
+          <div className="flex-1">
+            <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">From</label>
+            <input type="date" value={reportFrom} onChange={function (e) { setReportFrom(e.target.value) }}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              style={{ fontSize: '16px' }} />
+          </div>
+          <div className="flex-1">
+            <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">To</label>
+            <input type="date" value={reportTo} onChange={function (e) { setReportTo(e.target.value) }}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              style={{ fontSize: '16px' }} />
+          </div>
+          <button onClick={loadReport} disabled={reportLoading}
+            className="px-4 py-2 text-sm font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors">
+            {reportLoading ? 'Loading...' : 'Generate'}
+          </button>
+        </div>
+        {reportData && (
+          <div className="space-y-4">
+            <div className="flex gap-3">
+              <div className="flex-1 bg-indigo-50 border border-indigo-200 rounded-xl p-4 text-center">
+                <p className="text-[10px] font-bold text-indigo-400 uppercase">Total Approved</p>
+                <p className="text-xl font-bold text-indigo-700">{formatPoints(reportData.totalPaise)}</p>
+              </div>
+              <div className="flex-1 bg-gray-50 border border-gray-200 rounded-xl p-4 text-center">
+                <p className="text-[10px] font-bold text-gray-400 uppercase">Expenses</p>
+                <p className="text-xl font-bold text-gray-700">{reportData.count}</p>
+              </div>
+            </div>
+            <div className="bg-white border border-gray-200 rounded-xl p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-bold text-gray-900">By User</h3>
+              </div>
+              <div className="space-y-2">
+                {reportData.byUser.slice(0, 15).map(function (r) {
+                  var pct = reportData.totalPaise > 0 ? Math.round(r[1] / reportData.totalPaise * 100) : 0
+                  return (
+                    <div key={r[0]} className="flex items-center justify-between">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-gray-800 truncate">{r[0]}</p>
+                        <div className="w-full bg-gray-100 rounded-full h-1.5 mt-1">
+                          <div className="bg-indigo-500 h-1.5 rounded-full" style={{ width: pct + '%' }}></div>
+                        </div>
+                      </div>
+                      <span className="text-sm font-bold text-gray-700 ml-3 flex-shrink-0">{formatPoints(r[1])}</span>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+            <div className="bg-white border border-gray-200 rounded-xl p-4">
+              <h3 className="text-sm font-bold text-gray-900 mb-3">By Category</h3>
+              <div className="space-y-2">
+                {reportData.byCat.slice(0, 15).map(function (r) {
+                  var pct = reportData.totalPaise > 0 ? Math.round(r[1] / reportData.totalPaise * 100) : 0
+                  return (
+                    <div key={r[0]} className="flex items-center justify-between">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-gray-800 truncate">{r[0]}</p>
+                        <div className="w-full bg-gray-100 rounded-full h-1.5 mt-1">
+                          <div className="bg-green-500 h-1.5 rounded-full" style={{ width: pct + '%' }}></div>
+                        </div>
+                      </div>
+                      <span className="text-sm font-bold text-gray-700 ml-3 flex-shrink-0">{formatPoints(r[1])}</span>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+            <div className="bg-white border border-gray-200 rounded-xl p-4">
+              <h3 className="text-sm font-bold text-gray-900 mb-3">By Month</h3>
+              <div className="space-y-2">
+                {reportData.byMonth.map(function (r) {
+                  return (
+                    <div key={r[0]} className="flex items-center justify-between">
+                      <span className="text-sm text-gray-800">{r[0]}</span>
+                      <span className="text-sm font-bold text-gray-700">{formatPoints(r[1])}</span>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+            <button onClick={exportReportCSV}
+              className="w-full py-3 text-sm font-bold text-green-600 bg-green-50 border border-green-200 rounded-lg hover:bg-green-100 transition-colors">
+              📥 Export Report CSV
+            </button>
+          </div>
+        )}
+      </div>
+    )
+  }
 
   if (loading) {
     return <p className="text-gray-400 text-sm text-center py-8">Loading...</p>
@@ -260,7 +495,15 @@ function Expenses({ profile }) {
           <div>
             <button onClick={function () { setWalletView(null) }} className="text-sm text-indigo-600 font-medium hover:text-indigo-800 transition-colors mb-1">← Back to Expenses</button>
             <h2 className="text-lg font-bold text-gray-900">All Wallets</h2>
-            <p className="text-xs text-gray-400">{filteredWallets.length} wallets</p>
+            <div className="flex items-center gap-2">
+              <p className="text-xs text-gray-400">{filteredWallets.length} wallets</p>
+              {!bulkMode && (
+                <button onClick={function () { setBulkMode(true); setBulkSelected({}) }}
+                  className="px-2 py-1 text-[10px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-md hover:bg-indigo-100 transition-colors">
+                  Bulk Issue
+                </button>
+              )}
+            </div>
           </div>
         </div>
         <input type="text" value={walletSearch} onChange={function (e) { setWalletSearch(e.target.value) }}
@@ -272,13 +515,18 @@ function Expenses({ profile }) {
             var p = walletProfiles[w.user_id] || {}
             return (
               <div key={w.id} className="bg-white border border-gray-200 rounded-xl p-4 flex items-center justify-between">
-                <div className="flex-1 min-w-0 cursor-pointer" onClick={function () { openWalletTxns(w) }}>
+                {bulkMode && (
+                  <input type="checkbox" checked={!!bulkSelected[w.user_id]}
+                    onChange={function () { setBulkSelected(function (prev) { var n = Object.assign({}, prev); n[w.user_id] = !n[w.user_id]; return n }) }}
+                    className="w-5 h-5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 mr-3 flex-shrink-0" />
+                )}
+                <div className="flex-1 min-w-0 cursor-pointer" onClick={function () { if (!bulkMode) openWalletTxns(w) }}>
                   <p className="text-sm font-semibold text-gray-900">{p.name || '—'}</p>
                   <p className="text-xs text-gray-400">{p.email || '—'} · {p.role || '—'}</p>
                 </div>
                 <div className="flex items-center gap-3 flex-shrink-0">
                   <span className={"text-sm font-bold " + ((w.balance_paise || 0) < 0 ? "text-red-600" : "text-green-700")}>{formatPoints(w.balance_paise)}</span>
-                  <button onClick={function () { setIssueModal(w); setIssueAmount(''); setIssueDesc('') }}
+                  <button onClick={function () { setIssueModal(w); setIssueAmount(''); setIssueDesc(''); setIssueType('credit') }}
                     className="px-3 py-1.5 text-xs font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors">
                     + Issue
                   </button>
@@ -287,11 +535,56 @@ function Expenses({ profile }) {
             )
           })}
         </div>
+        {bulkMode && (
+          <div className="sticky bottom-0 bg-white border-t border-gray-200 rounded-xl p-4 shadow-lg space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-bold text-gray-900">
+                {Object.values(bulkSelected).filter(Boolean).length} selected
+              </p>
+              <div className="flex gap-2">
+                <button onClick={function () { var all = {}; filteredWallets.forEach(function (w) { all[w.user_id] = true }); setBulkSelected(all) }}
+                  className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800">Select All</button>
+                <button onClick={function () { setBulkSelected({}) }}
+                  className="text-[10px] font-bold text-gray-500 hover:text-gray-700">Clear</button>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <input type="number" min="1" step="any" inputMode="decimal" value={bulkAmount}
+                onChange={function (e) { setBulkAmount(e.target.value) }}
+                placeholder="Amount (pts)" className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                style={{ fontSize: '16px' }} />
+              <input type="text" value={bulkDesc} onChange={function (e) { setBulkDesc(e.target.value) }}
+                placeholder="Description" maxLength="300" className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                style={{ fontSize: '16px' }} />
+            </div>
+            <div className="flex gap-2">
+              <button onClick={function () { setBulkMode(false); setBulkSelected({}); setBulkAmount(''); setBulkDesc('') }}
+                className="flex-1 py-2.5 text-sm text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors font-medium">Cancel</button>
+              <button onClick={runBulkIssue}
+                disabled={bulkSaving || !bulkAmount || Number(bulkAmount) <= 0 || Object.values(bulkSelected).filter(Boolean).length === 0}
+                className="flex-1 py-2.5 text-sm text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors font-medium">
+                {bulkSaving ? 'Issuing...' : 'Issue to ' + Object.values(bulkSelected).filter(Boolean).length + ' users'}
+              </button>
+            </div>
+          </div>
+        )}
         {/* Issue Points Modal */}
         {issueModal && (
           <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={function () { setIssueModal(null) }}>
             <div className="bg-white rounded-xl p-6 w-full max-w-sm space-y-4" onClick={function (e) { e.stopPropagation() }}>
-              <h3 className="text-base font-bold text-gray-900">Issue Points</h3>
+              <div className="flex items-center justify-between">
+                <h3 className="text-base font-bold text-gray-900">{issueType === 'debit' ? 'Deduct Points' : 'Issue Points'}</h3>
+                <div className="flex bg-gray-100 rounded-lg p-0.5">
+                  <button onClick={function () { setIssueType('credit') }}
+                    className={"px-3 py-1 text-xs font-bold rounded-md transition-colors " + (issueType === 'credit' ? "bg-white text-green-700 shadow-sm" : "text-gray-500")}>
+                    + Credit
+                  </button>
+                  <button onClick={function () { setIssueType('debit') }}
+                    className={"px-3 py-1 text-xs font-bold rounded-md transition-colors " + (issueType === 'debit' ? "bg-white text-red-700 shadow-sm" : "text-gray-500")}>
+                    − Debit
+                  </button>
+                </div>
+              </div>
               <p className="text-sm text-gray-500">To: <span className="font-medium text-gray-800">{walletProfiles[issueModal.user_id]?.name || '—'}</span></p>
               <p className="text-xs text-gray-400">Current balance: {formatPoints(issueModal.balance_paise)}</p>
               <div>
@@ -313,7 +606,7 @@ function Expenses({ profile }) {
                   className="flex-1 py-2.5 text-sm text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors font-medium">Cancel</button>
                 <button onClick={issuePoints} disabled={issueSaving || !issueAmount || Number(issueAmount) <= 0}
                   className="flex-1 py-2.5 text-sm text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors font-medium">
-                  {issueSaving ? 'Issuing...' : 'Issue ' + (issueAmount && Number(issueAmount) > 0 ? Number(issueAmount).toLocaleString('en-IN') + ' pts' : '')}
+                  {issueSaving ? (issueType === 'debit' ? 'Deducting...' : 'Issuing...') : (issueType === 'debit' ? 'Deduct ' : 'Issue ') + (issueAmount && Number(issueAmount) > 0 ? Number(issueAmount).toLocaleString('en-IN') + ' pts' : '')}
                 </button>
               </div>
             </div>
@@ -428,12 +721,16 @@ function Expenses({ profile }) {
           <p className="text-xs font-medium text-gray-500">My Wallet Balance</p>
           <p className={"text-xl font-bold " + (walletBalance < 0 ? "text-red-700" : "text-green-700")}>{formatPoints(walletBalance)}</p>
         </div>
-        {(isAdmin || isAuditor) && (
+        {(isAdmin || isAuditor) && (<>
           <button onClick={function () { setWalletView('wallets'); loadAllWallets() }}
             className="px-3 py-1.5 text-xs font-bold text-indigo-600 bg-white border border-indigo-200 rounded-lg hover:bg-indigo-50 transition-colors">
             Manage Wallets
           </button>
-        )}
+          <button onClick={function () { setReportView(true); loadReport() }}
+            className="px-3 py-1.5 text-xs font-bold text-amber-600 bg-white border border-amber-200 rounded-lg hover:bg-amber-50 transition-colors">
+            📊 Reports
+          </button>
+        </>)}
       </div>
 
       {/* Header */}
@@ -446,10 +743,18 @@ function Expenses({ profile }) {
               : myExpenses.length + ' expenses' + (myTotal > 0 ? ' · ' + formatPoints(myTotal) + ' total' : '')}
           </p>
         </div>
-        <button onClick={function () { setEditExp(null); setView('form') }}
-          className="px-4 py-2 text-sm font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 active:bg-indigo-800 transition-colors">
-          + New Expense
-        </button>
+        <div className="flex gap-2">
+          {view === 'list' && myExpenses.length > 0 && (
+            <button onClick={exportExpenseCSV}
+              className="px-3 py-2 text-sm font-bold text-green-600 bg-green-50 border border-green-200 rounded-lg hover:bg-green-100 transition-colors">
+              📥 CSV
+            </button>
+          )}
+          <button onClick={function () { setEditExp(null); setView('form') }}
+            className="px-4 py-2 text-sm font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 active:bg-indigo-800 transition-colors">
+            + New Expense
+          </button>
+        </div>
       </div>
 
       {/* Tabs */}
@@ -484,6 +789,37 @@ function Expenses({ profile }) {
               </button>
             )
           })}
+        </div>
+      )}
+      {/* Search */}
+      {view === 'list' && (
+        <input type="text" value={expSearch} onChange={function (e) { setExpSearch(e.target.value) }}
+          placeholder="Search expenses..."
+          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          style={{ fontSize: '16px' }} />
+      )}
+
+      {/* Date range filter */}
+      {view === 'list' && (
+        <div className="flex gap-2">
+          <div className="flex-1">
+            <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">From</label>
+            <input type="date" value={dateFrom} onChange={function (e) { setDateFrom(e.target.value) }}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              style={{ fontSize: '16px' }} />
+          </div>
+          <div className="flex-1">
+            <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">To</label>
+            <input type="date" value={dateTo} onChange={function (e) { setDateTo(e.target.value) }}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              style={{ fontSize: '16px' }} />
+          </div>
+          {(dateFrom || dateTo) && (
+            <button onClick={function () { setDateFrom(''); setDateTo('') }}
+              className="self-end px-3 py-2 text-xs font-bold text-gray-500 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors mb-px">
+              Clear
+            </button>
+          )}
         </div>
       )}
 
