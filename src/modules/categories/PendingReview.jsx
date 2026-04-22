@@ -60,6 +60,7 @@ function PendingReview({ profile }) {
   }
 
   async function approveItem(table, id, name, type) {
+    if (saving) return
     setSaving(true)
     try {
       if (table === 'inventory_items' || table === 'catering_store_items') {
@@ -68,7 +69,7 @@ function PendingReview({ profile }) {
         var { data: pending } = await supabase.from(table).select('*').eq('id', id).maybeSingle()
         if (pending) {
           // Check for existing approved item with same key fields
-          var matchQuery = supabase.from(table).select('id, qty').eq('name', pending.name).eq('category_id', pending.category_id).eq('status', 'approved').neq('id', id)
+          var matchQuery = supabase.from(table).select('id, qty, image_path').eq('name', pending.name).eq('category_id', pending.category_id).eq('status', 'approved').neq('id', id)
           if (pending.sub_category_id) { matchQuery = matchQuery.eq('sub_category_id', pending.sub_category_id) } else { matchQuery = matchQuery.is('sub_category_id', null) }
           if (table === 'catering_store_items') {
             if (pending.brand) { matchQuery = matchQuery.eq('brand', pending.brand) } else { matchQuery = matchQuery.is('brand', null) }
@@ -100,17 +101,17 @@ function PendingReview({ profile }) {
             // Delete the pending row + its allocations
             await supabase.from(allocTable).delete().eq('item_id', id)
             await supabase.from(table).delete().eq('id', id)
-            logActivity('APPROVE_ITEM_MERGE', name + ' → merged into existing (qty +' + (pending.qty || 0) + ')')
+            try { await logActivity('APPROVE_ITEM_MERGE', name + ' → merged into existing (qty +' + (pending.qty || 0) + ')') } catch (_) {}
           } else {
             // No existing match — just approve
             await supabase.from(table).update({ status: 'approved' }).eq('id', id)
-            logActivity('APPROVE_ITEM', name)
+            try { await logActivity('APPROVE_ITEM', name) } catch (_) {}
           }
         }
       } else {
         // Categories / sub-categories
         await supabase.from(table).update({ status: 'approved' }).eq('id', id)
-        logActivity('APPROVE_' + type.toUpperCase().replace('-', '_'), name)
+        try { await logActivity('APPROVE_' + type.toUpperCase().replace('-', '_'), name) } catch (_) {}
       }
     } catch (err) {
       alert('Approve failed: ' + (err.message || 'Unknown error'))
