@@ -61,6 +61,8 @@ function Expenses({ profile }) {
   var [walletProfiles, setWalletProfiles] = useState({})
   var [selectedWallet, setSelectedWallet] = useState(null)
   var [walletTxns, setWalletTxns] = useState([])
+  var [txnFrom, setTxnFrom] = useState('')
+  var [txnTo, setTxnTo] = useState('')
   var [walletSearch, setWalletSearch] = useState('')
   var [issueModal, setIssueModal] = useState(null)
   var [issueAmount, setIssueAmount] = useState('')
@@ -198,15 +200,22 @@ function Expenses({ profile }) {
     setAllWallets(wRes.data || [])
   }
 
-  async function openWalletTxns(wallet) {
-    setSelectedWallet(wallet)
-    var { data } = await supabase.from('wallet_transactions')
+  async function openWalletTxns(wallet, from, to) {
+    if (wallet) setSelectedWallet(wallet)
+    var wid = (wallet || selectedWallet)?.id
+    if (!wid) return
+    var query = supabase.from('wallet_transactions')
       .select('id, type, amount_paise, balance_after_paise, description, reference_type, reference_id, performed_by, created_at')
-      .eq('wallet_id', wallet.id)
+      .eq('wallet_id', wid)
       .order('created_at', { ascending: false })
-      .limit(200)
+      .limit(500)
+    var f = from != null ? from : txnFrom
+    var t = to != null ? to : txnTo
+    if (f) query = query.gte('created_at', f + 'T00:00:00')
+    if (t) query = query.lte('created_at', t + 'T23:59:59')
+    var { data } = await query
     setWalletTxns(data || [])
-    setWalletView('transactions')
+    if (wallet) setWalletView('transactions')
   }
 
   async function issuePoints() {
@@ -810,7 +819,7 @@ if (allExpView && (isAdmin || isAuditor)) {
     return (
       <div className="space-y-4">
         <div>
-          <button onClick={function () { setWalletView('wallets'); setSelectedWallet(null); setWalletTxns([]) }}
+          <button onClick={function () { setWalletView('wallets'); setSelectedWallet(null); setWalletTxns([]); setTxnFrom(''); setTxnTo('') }}
             className="text-sm text-indigo-600 font-medium hover:text-indigo-800 transition-colors mb-1">← Back to Wallets</button>
           <div className="flex items-center justify-between">
             <div>
@@ -830,6 +839,26 @@ if (allExpView && (isAdmin || isAuditor)) {
               )}
             </div>
           </div>
+        </div>
+        <div className="flex gap-2 items-end">
+          <div className="flex-1">
+            <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">From</label>
+            <input type="date" value={txnFrom} onChange={function (e) { setTxnFrom(e.target.value); openWalletTxns(null, e.target.value, null) }}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              style={{ fontSize: '16px' }} />
+          </div>
+          <div className="flex-1">
+            <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">To</label>
+            <input type="date" value={txnTo} onChange={function (e) { setTxnTo(e.target.value); openWalletTxns(null, null, e.target.value) }}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              style={{ fontSize: '16px' }} />
+          </div>
+          {(txnFrom || txnTo) && (
+            <button onClick={function () { setTxnFrom(''); setTxnTo(''); openWalletTxns(null, '', '') }}
+              className="px-3 py-2 text-xs font-bold text-gray-500 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors mb-px">
+              Clear
+            </button>
+          )}
         </div>
         {walletTxns.length === 0 && (
           <div className="bg-white border border-gray-200 rounded-xl p-8 text-center">
