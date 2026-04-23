@@ -100,6 +100,11 @@ function Shell({ profile, onSignOut }) {
                 हि
               </button>
             </div>
+            <a href="/"
+              className="text-[11px] px-2 py-1 border border-gray-200 rounded-lg text-gray-400 hover:text-indigo-500 hover:border-indigo-200 transition-colors no-underline"
+            >
+              ⌂
+            </a>
             <button
               onClick={onSignOut}
               className="text-[11px] px-2 py-1 border border-gray-200 rounded-lg text-gray-400 hover:text-red-500 hover:border-red-200 transition-colors"
