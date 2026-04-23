@@ -1114,6 +1114,7 @@ function ExpenseForm({ profile, editExp, walletBalance, onCancel, onSaved }) {
   var [receiptFile, setReceiptFile] = useState(null)
   var [saving, setSaving] = useState(false)
   var [errors, setErrors] = useState({})
+  var [dupeWarning, setDupeWarning] = useState('')
 
   var isEditing = !!editExp
 
@@ -1128,6 +1129,25 @@ function ExpenseForm({ profile, editExp, walletBalance, onCancel, onSaved }) {
         .then(function (res) { setSubCategories(res.data || []) })
     } else { setSubCategories([]); setSubCategoryId('') }
   }, [categoryId])
+
+  useEffect(function () {
+    if (!amount || !expenseDate || Number(amount) <= 0 || isEditing) { setDupeWarning(''); return }
+    var paise = Math.round(Number(amount) * 100)
+    supabase.from('expenses')
+      .select('id, description')
+      .eq('user_id', profile.id)
+      .eq('amount_paise', paise)
+      .eq('expense_date', expenseDate)
+      .limit(1)
+      .maybeSingle()
+      .then(function (res) {
+        if (res.data) {
+          setDupeWarning('Possible duplicate: "' + (res.data.description || 'Expense') + '" with same amount on same date')
+        } else {
+          setDupeWarning('')
+        }
+      })
+  }, [amount, expenseDate])
 
   var catItems = categories.map(function (c) { return { label: c.name, value: String(c.id) } })
   var subCatItems = subCategories.map(function (s) { return { label: s.name, value: String(s.id) } })
@@ -1301,6 +1321,13 @@ function ExpenseForm({ profile, editExp, walletBalance, onCancel, onSaved }) {
           <span className="text-sm font-bold text-indigo-900">{Number(amount).toLocaleString('en-IN')} pts</span>
         </div>
       )}
+      {/* Duplicate warning */}
+      {dupeWarning && (
+        <div className="flex items-center gap-2 bg-orange-50 border border-orange-200 rounded-lg px-4 py-3">
+          <span className="text-orange-600 text-lg">⚠️</span>
+          <p className="text-sm text-orange-700">{dupeWarning}</p>
+        </div>
+      )}
 
       {/* Overdraft warning */}
       {amount && Number(amount) > 0 && walletBalance != null && Math.round(Number(amount) * 100) > walletBalance && (
@@ -1444,10 +1471,16 @@ function ExpenseDetail({ exp, profile, subCatMap, isAdmin, isDeptApprover, onBac
       {receiptUrl && (
         <div>
           <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Receipt</p>
-          <a href={receiptUrl} target="_blank" rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors">
-            📎 View Receipt
-          </a>
+          {/\.(jpg|jpeg|png|gif|webp)$/i.test(exp.receipt_path || '') ? (
+            <a href={receiptUrl} target="_blank" rel="noopener noreferrer">
+              <img src={receiptUrl} alt="Receipt" className="w-full max-h-80 object-contain rounded-lg border border-gray-200 bg-gray-50" />
+            </a>
+          ) : (
+            <a href={receiptUrl} target="_blank" rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors">
+              📎 View Receipt
+            </a>
+          )}
         </div>
       )}
 

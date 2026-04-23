@@ -32,9 +32,28 @@ function Shell({ profile, onSignOut }) {
   var { lang, switchLang } = useLang()
 
   // Admin/auditor see all cards; others see only granted features
+  var badgeCounts = { feature_expenses: expBadge }
+
   var visibleFeatures = FEATURES.filter(function (f) {
     return perms.includes(f.key)
   })
+  var [expBadge, setExpBadge] = useState(0)
+
+  useEffect(function () {
+    if (!perms.includes('feature_expenses')) return
+    var isDeptAppr = perms.indexOf('dept_approve') !== -1
+    var isAdminRole = profile.role === 'admin' || profile.role === 'auditor'
+    var statuses = []
+    if (isAdminRole) statuses = isDeptAppr ? ['pending_dept', 'pending'] : ['pending']
+    else if (isDeptAppr) statuses = ['pending_dept']
+    if (!statuses.length) return
+
+    supabase.from('expenses')
+      .select('id', { count: 'exact', head: true })
+      .neq('user_id', profile.id)
+      .in('status', statuses)
+      .then(function (res) { setExpBadge(res.count || 0) })
+  }, [tab])
 
   function handleSaved() {
     setShowSuccess(true)
@@ -129,7 +148,14 @@ function Shell({ profile, onSignOut }) {
                   onClick={function () { setTab(f.tab) }}
                   className="bg-white border border-gray-200 rounded-xl p-5 flex flex-col items-center gap-2 shadow-sm hover:shadow-md hover:border-gray-300 active:scale-[0.98] transition-all"
                 >
-                  <span className="text-3xl">{f.icon}</span>
+                  <div className="relative inline-block">
+                <span className="text-2xl">{f.icon}</span>
+                {badgeCounts[f.key] > 0 && (
+                  <span className="absolute -top-1 -right-2 w-5 h-5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+                    {badgeCounts[f.key] > 9 ? '9+' : badgeCounts[f.key]}
+                  </span>
+                )}
+              </div>
                   <span className="text-sm font-semibold text-gray-800">{f.label}</span>
                 </button>
               )
