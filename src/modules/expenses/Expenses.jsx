@@ -191,13 +191,19 @@ function Expenses({ profile }) {
 
   async function loadAllWallets() {
     var [wRes, pRes] = await Promise.all([
-      supabase.from('wallets').select('id, user_id, balance_paise, updated_at').order('updated_at', { ascending: false }),
-      supabase.from('profiles').select('id, name, email, role').eq('active', true),
+      supabase.from('wallets').select('id, user_id, balance_paise, updated_at'),
+      supabase.from('profiles').select('id, name, email, role').eq('active', true).order('name'),
     ])
     var pMap = {}
     ;(pRes.data || []).forEach(function (p) { pMap[p.id] = p })
     setWalletProfiles(pMap)
-    setAllWallets(wRes.data || [])
+    var wMap = {}
+    ;(wRes.data || []).forEach(function (w) { wMap[w.user_id] = w })
+    var combined = (pRes.data || []).map(function (p) {
+      var w = wMap[p.id]
+      return { id: w?.id || 'no_wallet_' + p.id, user_id: p.id, balance_paise: w?.balance_paise || 0, updated_at: w?.updated_at || null, _hasWallet: !!w }
+    })
+    setAllWallets(combined)
   }
 
   async function openWalletTxns(wallet, from, to) {
