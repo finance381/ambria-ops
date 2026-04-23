@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { supabase } from '../../lib/supabase'
 import { ROLE_COLORS } from '../../lib/constants'
 import Inventory from '../../modules/inventory/Inventory'
 import InventoryForm from '../../modules/inventory/InventoryForm'
