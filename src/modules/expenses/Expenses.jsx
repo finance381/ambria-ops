@@ -44,6 +44,16 @@ function Expenses({ profile }) {
   var [reportFrom, setReportFrom] = useState(new Date().toISOString().slice(0, 7) + '-01')
   var [reportTo, setReportTo] = useState(new Date().toISOString().split('T')[0])
   var [reportLoading, setReportLoading] = useState(false)
+  var [allExpView, setAllExpView] = useState(false)
+  var [allExps, setAllExps] = useState([])
+  var [allExpHasMore, setAllExpHasMore] = useState(false)
+  var [allExpStatus, setAllExpStatus] = useState('')
+  var [allExpFrom, setAllExpFrom] = useState('')
+  var [allExpTo, setAllExpTo] = useState('')
+  var [allExpSearch, setAllExpSearch] = useState('')
+  var [allExpSearchD, setAllExpSearchD] = useState('')
+  var [allExpLoading, setAllExpLoading] = useState(false)
+  var [allExpLoadingMore, setAllExpLoadingMore] = useState(false)
   var [editExp, setEditExp] = useState(null)
   var [walletBalance, setWalletBalance] = useState(0)
   var [walletView, setWalletView] = useState(null) // null | 'wallets' | 'transactions'
@@ -74,6 +84,10 @@ function Expenses({ profile }) {
     var timer = setTimeout(function () { setExpSearchDebounced(expSearch) }, 400)
     return function () { clearTimeout(timer) }
   }, [expSearch])
+  useEffect(function () {
+    var timer = setTimeout(function () { setAllExpSearchD(allExpSearch) }, 400)
+    return function () { clearTimeout(timer) }
+  }, [allExpSearch])
 
   useEffect(function () {
     supabase.from('sub_categories').select('id, name').then(function (res) {
@@ -262,6 +276,56 @@ function Expenses({ profile }) {
     var blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
     var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'wallet_' + userName + '_' + new Date().toISOString().split('T')[0] + '.csv'; a.click()
   }
+  async function loadAllExps(append) {
+    var offset = append ? allExps.length : 0
+    if (append) setAllExpLoadingMore(true)
+    else setAllExpLoading(true)
+
+    var query = supabase.from('expenses')
+      .select('id, user_id, category_id, sub_category_id, amount_paise, description, status, expense_date, receipt_path, created_at, rejection_reason, categories(name), profiles:user_id(name)')
+      .order('created_at', { ascending: false })
+      .range(offset, offset + PAGE_SIZE)
+
+    if (allExpStatus) query = query.eq('status', allExpStatus)
+    if (allExpFrom) query = query.gte('expense_date', allExpFrom)
+    if (allExpTo) query = query.lte('expense_date', allExpTo)
+    if (allExpSearchD) query = query.ilike('description', '%' + allExpSearchD + '%')
+
+    var { data, error } = await query
+    if (error) { alert('Failed: ' + error.message); setAllExpLoading(false); setAllExpLoadingMore(false); return }
+
+    var rows = data || []
+    var hasMore = rows.length > PAGE_SIZE
+    if (hasMore) rows = rows.slice(0, PAGE_SIZE)
+
+    if (append) {
+      setAllExps(function (prev) { return prev.concat(rows) })
+    } else {
+      setAllExps(rows)
+    }
+    setAllExpHasMore(hasMore)
+    setAllExpLoading(false)
+    setAllExpLoadingMore(false)
+  }
+
+  function exportAllExpCSV() {
+    if (!allExps.length) return
+    var headers = ['Date', 'User', 'Category', 'Sub-Category', 'Amount (pts)', 'Description', 'Status']
+    var rows = allExps.map(function (e) {
+      return [
+        e.expense_date || '',
+        e.profiles?.name || '',
+        e.categories?.name || '',
+        subCatMap[e.sub_category_id] || '',
+        e.amount_paise ? (e.amount_paise / 100) : 0,
+        (e.description || '').replace(/,/g, ';'),
+        e.status || '',
+      ].join(',')
+    })
+    var csv = '\uFEFF' + headers.join(',') + '\n' + rows.join('\n')
+    var blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+    var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'all_expenses_' + new Date().toISOString().split('T')[0] + '.csv'; a.click()
+  }
   async function loadReport() {
     setReportLoading(true)
     var { data, error } = await supabase.from('expenses')
@@ -347,6 +411,118 @@ function Expenses({ profile }) {
 
   // Total points for my expenses
   var myTotal = myExpenses.reduce(function (sum, e) { return sum + (e.amount_paise || 0) }, 0)
+  useEffect(function () {
+    if (allExpView) loadAllExps(false)
+  }, [allExpStatus, allExpFrom, allExpTo, allExpSearchD])
+if (allExpView && (isAdmin || isAuditor)) {
+    var allExpTotal = allExps.reduce(function (s, e) { return s + (e.amount_paise || 0) }, 0)
+    return (
+      <div className="space-y-4">
+        <div>
+          <button onClick={function () { setAllExpView(false) }}
+            className="text-sm text-indigo-600 font-medium hover:text-indigo-800 transition-colors mb-1">← Back to Expenses</button>
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-bold text-gray-900">All Expenses</h2>
+              <p className="text-xs text-gray-400">{allExps.length} shown · {formatPoints(allExpTotal)} total</p>
+            </div>
+            {allExps.length > 0 && (
+              <button onClick={exportAllExpCSV}
+                className="px-3 py-1.5 text-xs font-bold text-green-600 bg-green-50 border border-green-200 rounded-lg hover:bg-green-100 transition-colors">
+                📥 CSV
+              </button>
+            )}
+          </div>
+        </div>
+
+        <input type="text" value={allExpSearch} onChange={function (e) { setAllExpSearch(e.target.value) }}
+          placeholder="Search description..."
+          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          style={{ fontSize: '16px' }} />
+
+        <div className="flex gap-2 flex-wrap">
+          {['', 'pending_dept', 'pending', 'approved', 'rejected'].map(function (s) {
+            var label = s ? STATUS_LABELS[s] : 'All'
+            return (
+              <button key={s} onClick={function () { setAllExpStatus(s === allExpStatus ? '' : s) }}
+                className={"px-3 py-1.5 text-[11px] font-bold rounded-full border transition-colors " +
+                  (allExpStatus === s ? "bg-gray-900 text-white border-gray-900" : "bg-white text-gray-500 border-gray-200 hover:bg-gray-50")}>
+                {label}
+              </button>
+            )
+          })}
+        </div>
+
+        <div className="flex gap-2">
+          <div className="flex-1">
+            <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">From</label>
+            <input type="date" value={allExpFrom} onChange={function (e) { setAllExpFrom(e.target.value) }}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              style={{ fontSize: '16px' }} />
+          </div>
+          <div className="flex-1">
+            <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">To</label>
+            <input type="date" value={allExpTo} onChange={function (e) { setAllExpTo(e.target.value) }}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              style={{ fontSize: '16px' }} />
+          </div>
+          {(allExpFrom || allExpTo) && (
+            <button onClick={function () { setAllExpFrom(''); setAllExpTo('') }}
+              className="self-end px-3 py-2 text-xs font-bold text-gray-500 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors mb-px">
+              Clear
+            </button>
+          )}
+        </div>
+
+        {allExpLoading && <p className="text-gray-400 text-sm text-center py-4">Loading...</p>}
+
+        {!allExpLoading && allExps.length === 0 && (
+          <div className="bg-white border border-gray-200 rounded-xl p-8 text-center">
+            <p className="text-gray-400 text-sm">No expenses found</p>
+          </div>
+        )}
+
+        {!allExpLoading && (
+          <div className="space-y-3">
+            {allExps.map(function (exp) {
+              return (
+                <div key={exp.id}
+                  onClick={function () {
+                    var e = Object.assign({}, exp, { _fromApprove: true })
+                    openDetail(e)
+                  }}
+                  className="bg-white border border-gray-200 rounded-xl p-4 hover:shadow-md active:bg-gray-50 cursor-pointer transition-all">
+                  <div className="flex items-start justify-between mb-1">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-gray-900 truncate">{exp.description || 'Expense'}</p>
+                      <p className="text-xs text-gray-400 mt-0.5">
+                        {exp.profiles?.name || '—'} · {exp.categories?.name || '—'}
+                        {exp.sub_category_id && subCatMap[exp.sub_category_id] ? ' > ' + subCatMap[exp.sub_category_id] : ''}
+                        {' · ' + formatDate(exp.expense_date)}
+                      </p>
+                    </div>
+                    <div className="flex flex-col items-end gap-1 flex-shrink-0 ml-2">
+                      <span className="text-sm font-bold text-gray-800">{formatPoints(exp.amount_paise)}</span>
+                      <span className={"text-[10px] font-bold uppercase px-2 py-0.5 rounded-full " + (STATUS_COLORS[exp.status] || 'bg-gray-100 text-gray-600')}>
+                        {STATUS_LABELS[exp.status] || exp.status}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+
+        {allExpHasMore && (
+          <button onClick={function () { loadAllExps(true) }} disabled={allExpLoadingMore}
+            className="w-full py-3 text-sm font-medium text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 disabled:opacity-50 transition-colors">
+            {allExpLoadingMore ? 'Loading...' : 'Load More'}
+          </button>
+        )}
+      </div>
+    )
+  }
 
   if (reportView && (isAdmin || isAuditor)) {
     return (
@@ -480,8 +656,8 @@ function Expenses({ profile }) {
         subCatMap={subCatMap}
         isAdmin={isAdmin}
         isDeptApprover={isDeptApprover}
-        onBack={function () { setView(detailExp._fromApprove ? 'approve' : 'list'); setDetailExp(null) }}
-        onUpdated={function () { loadMyExpenses(false); loadApprovalExpenses(false); setView(detailExp._fromApprove ? 'approve' : 'list'); setDetailExp(null) }}
+        onBack={function () { if (allExpView) { setView('list'); setDetailExp(null); return } setView(detailExp._fromApprove ? 'approve' : 'list'); setDetailExp(null) }}
+        onUpdated={function () { loadMyExpenses(false); loadApprovalExpenses(false); if (allExpView) loadAllExps(false); if (allExpView) { setView('list'); setDetailExp(null); return } setView(detailExp._fromApprove ? 'approve' : 'list'); setDetailExp(null) }}
         onEdit={function () { setEditExp(detailExp); setView('form') }}
       />
     )
@@ -739,6 +915,10 @@ function Expenses({ profile }) {
           <button onClick={function () { setReportView(true); loadReport() }}
             className="px-3 py-1.5 text-xs font-bold text-amber-600 bg-white border border-amber-200 rounded-lg hover:bg-amber-50 transition-colors">
             📊 Reports
+          </button>
+          <button onClick={function () { setAllExpView(true); loadAllExps(false) }}
+            className="px-3 py-1.5 text-xs font-bold text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
+            📋 All
           </button>
         </>)}
       </div>
