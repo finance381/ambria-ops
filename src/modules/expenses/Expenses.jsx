@@ -62,6 +62,7 @@ function Expenses({ profile }) {
   var [bulkAmount, setBulkAmount] = useState('')
   var [bulkDesc, setBulkDesc] = useState('')
   var [bulkSaving, setBulkSaving] = useState(false)
+  var [subCatMap, setSubCatMap] = useState({})
 
 
   var isAdmin = profile?.role === 'admin'
@@ -73,6 +74,14 @@ function Expenses({ profile }) {
     var timer = setTimeout(function () { setExpSearchDebounced(expSearch) }, 400)
     return function () { clearTimeout(timer) }
   }, [expSearch])
+
+  useEffect(function () {
+    supabase.from('sub_categories').select('id, name').then(function (res) {
+      var map = {}
+      ;(res.data || []).forEach(function (sc) { map[sc.id] = sc.name })
+      setSubCatMap(map)
+    })
+  }, [])
 
    useEffect(function () {
     supabase.from('wallets').select('balance_paise').eq('user_id', profile.id).maybeSingle()
@@ -86,7 +95,7 @@ function Expenses({ profile }) {
     else setLoadingMore(true)
 
     var query = supabase.from('expenses')
-      .select('id, category_id, sub_category_id, amount_paise, description, status, expense_date, receipt_path, created_at, rejection_reason, categories(name), sub_categories!sub_category_id(name)')
+      .select('id, category_id, sub_category_id, amount_paise, description, status, expense_date, receipt_path, created_at, rejection_reason, categories(name)')
       .eq('user_id', profile.id)
       .order('created_at', { ascending: false })
       .range(offset, offset + PAGE_SIZE)
@@ -128,7 +137,7 @@ function Expenses({ profile }) {
     if (statuses.length === 0) { setApprovalExpenses([]); return }
 
     var query = supabase.from('expenses')
-      .select('id, user_id, category_id, sub_category_id, amount_paise, description, status, expense_date, receipt_path, created_at, rejection_reason, categories(name), sub_categories!sub_category_id(name), profiles:user_id(name)')
+      .select('id, user_id, category_id, sub_category_id, amount_paise, description, status, expense_date, receipt_path, created_at, rejection_reason, categories(name), profiles:user_id(name)')
       .neq('user_id', profile.id)
       .in('status', statuses)
       .order('created_at', { ascending: false })
@@ -321,7 +330,7 @@ function Expenses({ profile }) {
       return [
         e.expense_date || '',
         e.categories?.name || '',
-        e.sub_categories?.name || '',
+        subCatMap[e.sub_category_id] || '',
         e.amount_paise ? (e.amount_paise / 100) : 0,
         (e.description || '').replace(/,/g, ';'),
         e.status || '',
@@ -468,6 +477,7 @@ function Expenses({ profile }) {
       <ExpenseDetail
         exp={detailExp}
         profile={profile}
+        subCatMap={subCatMap}
         isAdmin={isAdmin}
         isDeptApprover={isDeptApprover}
         onBack={function () { setView(detailExp._fromApprove ? 'approve' : 'list'); setDetailExp(null) }}
@@ -845,7 +855,7 @@ function Expenses({ profile }) {
                   <p className="text-xs text-gray-400 mt-0.5">
                     {view === 'approve' ? (exp.profiles?.name || '—') + ' · ' : ''}
                     {exp.categories?.name || '—'}
-                    {exp.sub_categories?.name ? ' > ' + exp.sub_categories.name : ''}
+                    {exp.sub_category_id && subCatMap[exp.sub_category_id] ? ' > ' + subCatMap[exp.sub_category_id] : ''}
                     {' · ' + formatDate(exp.expense_date)}
                   </p>
                 </div>
@@ -1113,7 +1123,7 @@ function ExpenseForm({ profile, editExp, walletBalance, onCancel, onSaved }) {
 // ═══════════════════════════════════════════════════════════════
 // DETAIL + APPROVAL VIEW
 // ═══════════════════════════════════════════════════════════════
-function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdated, onEdit }) {
+function ExpenseDetail({ exp, profile, subCatMap, isAdmin, isDeptApprover, onBack, onUpdated, onEdit }) {
   var [saving, setSaving] = useState(false)
   var [rejectMode, setRejectMode] = useState(false)
   var [rejectReason, setRejectReason] = useState('')
