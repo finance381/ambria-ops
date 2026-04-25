@@ -3,6 +3,7 @@ import { supabase, getImageUrl } from '../../lib/supabase'
 import { titleCase, formatDate } from '../../lib/format'
 import { logActivity } from '../../lib/logger'
 import SearchDropdown from '../../components/ui/SearchDropdown'
+import ExpenseFormMulti from './ExpenseForm'
 
 var PAGE_SIZE = 20
 
@@ -75,6 +76,11 @@ function Expenses({ profile }) {
   var [bulkDesc, setBulkDesc] = useState('')
   var [bulkSaving, setBulkSaving] = useState(false)
   var [subCatMap, setSubCatMap] = useState({})
+  var [typesModal, setTypesModal] = useState(false)
+  var [expTypes, setExpTypes] = useState([])
+  var [typeName, setTypeName] = useState('')
+  var [typeEditId, setTypeEditId] = useState(null)
+  var [typeSaving, setTypeSaving] = useState(false)
 
 
   var isAdmin = profile?.role === 'admin'
@@ -111,7 +117,7 @@ function Expenses({ profile }) {
     else setLoadingMore(true)
 
     var query = supabase.from('expenses')
-      .select('id, category_id, sub_category_id, amount_paise, description, status, expense_date, receipt_path, created_at, rejection_reason, categories(name)')
+      .select('id, category_id, sub_category_id, expense_type_id, amount_paise, description, status, expense_date, receipt_path, created_at, rejection_reason, vendor_name, travel_from, travel_to, travel_mode, categories(name), expense_types(name)')
       .eq('user_id', profile.id)
       .order('created_at', { ascending: false })
       .range(offset, offset + PAGE_SIZE)
@@ -153,7 +159,7 @@ function Expenses({ profile }) {
     if (statuses.length === 0) { setApprovalExpenses([]); return }
 
     var query = supabase.from('expenses')
-      .select('id, user_id, category_id, sub_category_id, amount_paise, description, status, expense_date, receipt_path, created_at, rejection_reason, categories(name), profiles:user_id(name)')
+      .select('id, user_id, category_id, sub_category_id, expense_type_id, amount_paise, description, status, expense_date, receipt_path, created_at, rejection_reason, vendor_name, travel_from, travel_to, travel_mode, categories(name), expense_types(name), profiles:user_id(name)')
       .neq('user_id', profile.id)
       .in('status', statuses)
       .order('created_at', { ascending: false })
@@ -297,7 +303,7 @@ function Expenses({ profile }) {
     else setAllExpLoading(true)
 
     var query = supabase.from('expenses')
-      .select('id, user_id, category_id, sub_category_id, amount_paise, description, status, expense_date, receipt_path, created_at, rejection_reason, categories(name), profiles:user_id(name)')
+      .select('id, user_id, category_id, sub_category_id, expense_type_id, amount_paise, description, status, expense_date, receipt_path, created_at, rejection_reason, vendor_name, travel_from, travel_to, travel_mode, categories(name), expense_types(name), profiles:user_id(name)')
       .order('created_at', { ascending: false })
       .range(offset, offset + PAGE_SIZE)
 
@@ -421,6 +427,29 @@ function Expenses({ profile }) {
     var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'my_expenses_' + new Date().toISOString().split('T')[0] + '.csv'; a.click()
   }
 
+  async function loadExpTypes() {
+    var { data } = await supabase.from('expense_types').select('id, name, extra_fields, active, sort_order').order('sort_order')
+    setExpTypes(data || [])
+  }
+  async function saveExpType() {
+    if (typeSaving || !typeName.trim()) return
+    setTypeSaving(true)
+    if (typeEditId) {
+      await supabase.from('expense_types').update({ name: typeName.trim() }).eq('id', typeEditId)
+    } else {
+      var maxSort = expTypes.reduce(function (m, t) { return t.sort_order > m ? t.sort_order : m }, 0)
+      await supabase.from('expense_types').insert({ name: typeName.trim(), sort_order: maxSort + 1 })
+    }
+    setTypeName('')
+    setTypeEditId(null)
+    setTypeSaving(false)
+    loadExpTypes()
+  }
+  async function toggleExpType(id, active) {
+    await supabase.from('expense_types').update({ active: !active }).eq('id', id)
+    loadExpTypes()
+  }
+
   var displayList = view === 'approve' ? approvalExpenses : myExpenses
   var displayHasMore = view === 'approve' ? approvalHasMore : myHasMore
 
@@ -511,7 +540,7 @@ if (allExpView && (isAdmin || isAuditor)) {
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold text-gray-900 truncate">{exp.description || 'Expense'}</p>
                       <p className="text-xs text-gray-400 mt-0.5">
-                        {exp.profiles?.name || '—'} · {exp.categories?.name || '—'}
+                        {exp.profiles?.name || '—'} · {exp.expense_types?.name ? exp.expense_types.name + ' · ' : ''}{exp.categories?.name || '—'}
                         {exp.sub_category_id && subCatMap[exp.sub_category_id] ? ' > ' + subCatMap[exp.sub_category_id] : ''}
                         {' · ' + formatDate(exp.expense_date)}
                       </p>
@@ -649,14 +678,25 @@ if (allExpView && (isAdmin || isAuditor)) {
   // FORM VIEW
   // ═══════════════════════════════════════════════
   if (view === 'form') {
+    if (editExp) {
+      return (
+        <ExpenseEditForm
+          profile={profile}
+          editExp={editExp}
+          walletBalance={walletBalance}
+          onCancel={function () { setView('list'); setEditExp(null) }}
+          onSaved={handleFormDone}
+        />
+      )
+    }
     return (
-      <ExpenseForm
-        profile={profile}
-        editExp={editExp}
-        walletBalance={walletBalance}
-        onCancel={function () { setView('list'); setEditExp(null) }}
-        onSaved={handleFormDone}
-      />
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-bold text-gray-900">New Expenses</h2>
+          <button onClick={function () { setView('list') }} className="text-sm text-gray-500 hover:text-gray-700 font-medium">Cancel</button>
+        </div>
+        <ExpenseFormMulti profile={profile} onDone={handleFormDone} />
+      </div>
     )
   }
 
@@ -955,6 +995,12 @@ if (allExpView && (isAdmin || isAuditor)) {
             className="px-3 py-1.5 text-xs font-bold text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
             📋 All
           </button>
+          {(profile?.permissions || []).indexOf('admin_masters') !== -1 && (
+            <button onClick={function () { setTypesModal(true); loadExpTypes() }}
+              className="px-3 py-1.5 text-xs font-bold text-purple-600 bg-white border border-purple-200 rounded-lg hover:bg-purple-50 transition-colors">
+              ⚙ Types
+            </button>
+          )}
         </>)}
       </div>
 
@@ -1069,6 +1115,7 @@ if (allExpView && (isAdmin || isAuditor)) {
                   <p className="text-sm font-semibold text-gray-900 truncate">{exp.description || 'Expense'}</p>
                   <p className="text-xs text-gray-400 mt-0.5">
                     {view === 'approve' ? (exp.profiles?.name || '—') + ' · ' : ''}
+                    {exp.expense_types?.name ? exp.expense_types.name + ' · ' : ''}
                     {exp.categories?.name || '—'}
                     {exp.sub_category_id && subCatMap[exp.sub_category_id] ? ' > ' + subCatMap[exp.sub_category_id] : ''}
                     {' · ' + formatDate(exp.expense_date)}
@@ -1102,6 +1149,51 @@ if (allExpView && (isAdmin || isAuditor)) {
           {loadingMore ? 'Loading...' : 'Load More'}
         </button>
       )}
+
+      {typesModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={function () { setTypesModal(false); setTypeName(''); setTypeEditId(null) }}>
+          <div className="bg-white rounded-xl p-5 w-full max-w-sm space-y-4" onClick={function (e) { e.stopPropagation() }}>
+            <h3 className="text-base font-bold text-gray-900">Expense Types</h3>
+            <div className="space-y-2 max-h-60 overflow-y-auto">
+              {expTypes.map(function (et) {
+                return (
+                  <div key={et.id} className="flex items-center justify-between p-2 rounded-lg bg-gray-50">
+                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                      <span className={"text-sm font-medium truncate " + (et.active ? "text-gray-800" : "text-gray-400 line-through")}>{et.name}</span>
+                      {et.extra_fields && et.extra_fields.length > 0 && (
+                        <span className="text-[10px] text-purple-500 bg-purple-50 px-1.5 py-0.5 rounded">{et.extra_fields.length} fields</span>
+                      )}
+                    </div>
+                    <div className="flex gap-1 flex-shrink-0">
+                      <button onClick={function () { setTypeEditId(et.id); setTypeName(et.name) }}
+                        className="text-xs px-2 py-1 rounded bg-gray-200 text-gray-600 hover:bg-gray-300">✎</button>
+                      <button onClick={function () { toggleExpType(et.id, et.active) }}
+                        className={"text-xs px-2 py-1 rounded " + (et.active ? "bg-green-100 text-green-700 hover:bg-green-200" : "bg-red-100 text-red-600 hover:bg-red-200")}>
+                        {et.active ? 'On' : 'Off'}
+                      </button>
+                    </div>
+                  </div>
+                )
+              })}
+              {expTypes.length === 0 && <p className="text-sm text-gray-400 text-center py-2">No types yet</p>}
+            </div>
+            <div className="flex gap-2">
+              <input type="text" value={typeName} onChange={function (e) { setTypeName(e.target.value) }}
+                placeholder={typeEditId ? 'Rename...' : 'New type name...'}
+                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-400"
+                onKeyDown={function (e) { if (e.key === 'Enter') saveExpType() }} />
+              <button onClick={saveExpType} disabled={typeSaving || !typeName.trim()}
+                className="px-4 py-2 text-sm font-bold text-white bg-purple-600 rounded-lg hover:bg-purple-700 disabled:opacity-50 transition-colors">
+                {typeEditId ? 'Save' : 'Add'}
+              </button>
+            </div>
+            {typeEditId && (
+              <button onClick={function () { setTypeEditId(null); setTypeName('') }}
+                className="text-xs text-gray-500 hover:text-gray-700">Cancel edit</button>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -1109,7 +1201,7 @@ if (allExpView && (isAdmin || isAuditor)) {
 // ═══════════════════════════════════════════════════════════════
 // FORM — Submit / Edit expense
 // ═══════════════════════════════════════════════════════════════
-function ExpenseForm({ profile, editExp, walletBalance, onCancel, onSaved }) {
+function ExpenseEditForm({ profile, editExp, walletBalance, onCancel, onSaved }) {
   var [categories, setCategories] = useState([])
   var [subCategories, setSubCategories] = useState([])
   var [categoryId, setCategoryId] = useState(editExp ? String(editExp.category_id) : '')
@@ -1369,6 +1461,31 @@ function ExpenseDetail({ exp, profile, subCatMap, isAdmin, isDeptApprover, onBac
   var [saving, setSaving] = useState(false)
   var [rejectMode, setRejectMode] = useState(false)
   var [rejectReason, setRejectReason] = useState('')
+  var [allocations, setAllocations] = useState([])
+  var [allocVenues, setAllocVenues] = useState({})
+
+  useEffect(function () {
+    supabase.from('expense_allocations')
+      .select('id, department, venue_id, sub_venue_id, amount_paise')
+      .eq('expense_id', exp.id)
+      .then(function (res) {
+        var rows = res.data || []
+        setAllocations(rows)
+        if (rows.length > 0) {
+          var vIds = rows.map(function (r) { return r.venue_id }).filter(Boolean)
+          var svIds = rows.map(function (r) { return r.sub_venue_id }).filter(Boolean)
+          Promise.all([
+            vIds.length > 0 ? supabase.from('venues').select('id, code, name').in('id', vIds) : { data: [] },
+            svIds.length > 0 ? supabase.from('sub_venues').select('id, name').in('id', svIds) : { data: [] }
+          ]).then(function (results) {
+            var map = {}
+            ;(results[0].data || []).forEach(function (v) { map['v_' + v.id] = v.code + ' — ' + v.name })
+            ;(results[1].data || []).forEach(function (sv) { map['sv_' + sv.id] = sv.name })
+            setAllocVenues(map)
+          })
+        }
+      })
+  }, [exp.id])
 
   var canDeptApprove = isDeptApprover && exp.status === 'pending_dept' && exp.user_id !== profile?.id
   var canAdminApprove = isAdmin && exp.status === 'pending'
@@ -1465,6 +1582,24 @@ function ExpenseDetail({ exp, profile, subCatMap, isAdmin, isDeptApprover, onBac
           <span className="text-sm text-gray-500">Date</span>
           <span className="text-sm text-gray-800">{formatDate(exp.expense_date)}</span>
         </div>
+        {exp.expense_types?.name && (
+          <div className="flex justify-between">
+            <span className="text-sm text-gray-500">Type</span>
+            <span className="text-sm text-gray-800">{exp.expense_types.name}</span>
+          </div>
+        )}
+        {exp.vendor_name && (
+          <div className="flex justify-between">
+            <span className="text-sm text-gray-500">Vendor</span>
+            <span className="text-sm text-gray-800">{exp.vendor_name}</span>
+          </div>
+        )}
+        {exp.travel_from && (
+          <div className="flex justify-between">
+            <span className="text-sm text-gray-500">Travel</span>
+            <span className="text-sm text-gray-800">{(exp.travel_mode ? exp.travel_mode + ': ' : '') + exp.travel_from + ' → ' + (exp.travel_to || '—')}</span>
+          </div>
+        )}
         {exp.description && (
           <div>
             <span className="text-sm text-gray-500">Description</span>
@@ -1472,6 +1607,27 @@ function ExpenseDetail({ exp, profile, subCatMap, isAdmin, isDeptApprover, onBac
           </div>
         )}
       </div>
+
+      {/* Allocations */}
+      {allocations.length > 0 && (
+        <div className="bg-white border border-gray-200 rounded-lg p-4">
+          <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Allocations</p>
+          <div className="space-y-1.5">
+            {allocations.map(function (a) {
+              return (
+                <div key={a.id} className="flex items-center justify-between text-sm">
+                  <span className="text-gray-700">
+                    {a.department}
+                    {a.venue_id && allocVenues['v_' + a.venue_id] ? ' · ' + allocVenues['v_' + a.venue_id] : ''}
+                    {a.sub_venue_id && allocVenues['sv_' + a.sub_venue_id] ? ' > ' + allocVenues['sv_' + a.sub_venue_id] : ''}
+                  </span>
+                  {a.amount_paise > 0 && <span className="font-medium text-gray-800">{formatPoints(a.amount_paise)}</span>}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Receipt */}
       {receiptUrl && (
