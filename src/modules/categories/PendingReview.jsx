@@ -29,12 +29,12 @@ function PendingReview({ profile }) {
       supabase.from('categories').select('*, profiles:added_by(name, email)').eq('status', 'pending'),
       supabase.from('sub_categories').select('*, categories(name), profiles:added_by(name, email)').eq('status', 'pending'),
       supabase.from('inventory_items')
-        .select('id, name, name_hindi, brand, pack_size_qty, pack_size_unit, inventory_id, type, qty, unit, department, location, notes, description, min_order_qty, reorder_qty, image_path, category_id, sub_category_id, status, entry_date, created_at, dimensions, categories(name, code), sub_categories(name), profiles:submitted_by(name, email), dept_approver:dept_approved_by(name, email), venue_allocations(qty, venues(code, name))')
+        .select('*, categories(name, code), sub_categories(name), profiles:submitted_by(name, email), dept_approver:dept_approved_by(name, email), venue_allocations(qty, venues(code, name))')
         .eq('status', 'pending')
         .order('created_at', { ascending: false })
         .limit(200),
       supabase.from('catering_store_items')
-        .select('id, name, name_hindi, brand, pack_size_qty, pack_size_unit, inventory_id, type, qty, unit, department, location, notes, description, image_path, category_id, sub_category_id, status, entry_date, created_at, categories(name, code), sub_categories(name), profiles:submitted_by(name, email), dept_approver:dept_approved_by(name, email), cs_venue_allocations(qty, venues(code, name))')
+        .select('*, categories(name, code), sub_categories(name), profiles:submitted_by(name, email), dept_approver:dept_approved_by(name, email), cs_venue_allocations(qty, venues(code, name))')
         .eq('status', 'pending')
         .order('created_at', { ascending: false })
         .limit(200),
