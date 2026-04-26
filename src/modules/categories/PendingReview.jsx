@@ -19,6 +19,8 @@ function PendingReview({ profile }) {
   var [catFilter, setCatFilter] = useState('')
   var [subCatFilter, setSubCatFilter] = useState('')
   var [departments, setDepartments] = useState([])
+  var [page, setPage] = useState(0)
+  var PAGE_SIZE = 50
 
   useEffect(function () { loadPending() }, [])
 
@@ -27,13 +29,15 @@ function PendingReview({ profile }) {
       supabase.from('categories').select('*, profiles:added_by(name, email)').eq('status', 'pending'),
       supabase.from('sub_categories').select('*, categories(name), profiles:added_by(name, email)').eq('status', 'pending'),
       supabase.from('inventory_items')
-        .select('*, categories(name, code), sub_categories(name), profiles:submitted_by(name, email), dept_approver:dept_approved_by(name, email), venue_allocations(qty, venues(code, name))')
+        .select('id, name, name_hindi, brand, pack_size_qty, pack_size_unit, inventory_id, type, qty, unit, department, location, notes, description, min_order_qty, reorder_qty, image_path, category_id, sub_category_id, status, entry_date, created_at, dimensions, categories(name, code), sub_categories(name), profiles:submitted_by(name, email), dept_approver:dept_approved_by(name, email), venue_allocations(qty, venues(code, name))')
         .eq('status', 'pending')
-        .order('created_at', { ascending: false }),
+        .order('created_at', { ascending: false })
+        .limit(200),
       supabase.from('catering_store_items')
-        .select('*, categories(name, code), sub_categories(name), profiles:submitted_by(name, email), dept_approver:dept_approved_by(name, email), cs_venue_allocations(qty, venues(code, name))')
+        .select('id, name, name_hindi, brand, pack_size_qty, pack_size_unit, inventory_id, type, qty, unit, department, location, notes, description, image_path, category_id, sub_category_id, status, entry_date, created_at, categories(name, code), sub_categories(name), profiles:submitted_by(name, email), dept_approver:dept_approved_by(name, email), cs_venue_allocations(qty, venues(code, name))')
         .eq('status', 'pending')
-        .order('created_at', { ascending: false }),
+        .order('created_at', { ascending: false })
+        .limit(200),
       supabase.from('departments').select('id, name, category_ids').eq('active', true).order('name'),
       supabase.from('categories').select('id, name, sub_department_id').order('name'),
       supabase.from('sub_categories').select('id, name, category_id').order('name'),
@@ -116,7 +120,7 @@ function PendingReview({ profile }) {
     } catch (err) {
       alert('Approve failed: ' + (err.message || 'Unknown error'))
     }
-    loadPending()
+    await loadPending()
     setSaving(false)
   }
 
@@ -140,7 +144,7 @@ function PendingReview({ profile }) {
     try { await logActivity('REJECT_' + rejectTarget.type.toUpperCase().replace('-', '_'), rejectTarget.name + ' | Reason: ' + rejectReason.trim()) } catch (_) {}
     setRejectTarget(null)
     setRejectReason('')
-    loadPending()
+    await loadPending()
     setSaving(false)
   }
 
@@ -156,19 +160,20 @@ function PendingReview({ profile }) {
   var searchLower = search.toLowerCase()
   var filteredItems = pendingItems.filter(function (item) {
     var matchSearch = !search ||
-      item.name.toLowerCase().includes(searchLower) ||
-      (item.name_hindi || '').toLowerCase().includes(searchLower) ||
-      (item.inventory_id || '').toLowerCase().includes(searchLower) ||
-      (item.profiles?.name || '').toLowerCase().includes(searchLower) ||
-      (item.profiles?.email || '').toLowerCase().includes(searchLower) ||
-      (item.dept_approver?.name || '').toLowerCase().includes(searchLower) ||
-      (item.dept_approver?.email || '').toLowerCase().includes(searchLower) ||
-      (item.categories?.name || '').toLowerCase().includes(searchLower) ||
-      (item.department || '').toLowerCase().includes(searchLower)
+      (item.name || '').toLowerCase().indexOf(searchLower) !== -1 ||
+      (item.name_hindi || '').toLowerCase().indexOf(searchLower) !== -1 ||
+      (item.inventory_id || '').toLowerCase().indexOf(searchLower) !== -1 ||
+      (item.profiles?.name || '').toLowerCase().indexOf(searchLower) !== -1 ||
+      (item.profiles?.email || '').toLowerCase().indexOf(searchLower) !== -1 ||
+      (item.dept_approver?.name || '').toLowerCase().indexOf(searchLower) !== -1 ||
+      (item.dept_approver?.email || '').toLowerCase().indexOf(searchLower) !== -1 ||
+      (item.categories?.name || '').toLowerCase().indexOf(searchLower) !== -1 ||
+      (item.department || '').toLowerCase().indexOf(searchLower) !== -1
     var matchDept = !deptFilter || item.department === deptFilter
-    var matchCat = !catFilter || String(item.category_id) === catFilter
-    var matchSubCat = !subCatFilter || String(item.sub_category_id) === subCatFilter
-    return matchSearch && matchDept && matchCat && matchSubCat
+    var matchCat = !catFilter || item.category_id === Number(catFilter)
+    var matchSubCat = !subCatFilter || item.sub_category_id === Number(subCatFilter)
+    var matchDeptCats = !deptCatIds || deptCatIds.indexOf(item.category_id) !== -1
+    return matchSearch && matchDept && matchDeptCats && matchCat && matchSubCat
   })
 
   // Category options: if dept selected, only show tagged categories
@@ -282,7 +287,7 @@ function PendingReview({ profile }) {
         <div>
           <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Inventory Items ({filteredItems.length})</h3>
           <div className="grid gap-4 lg:grid-cols-2">
-            {filteredItems.map(function (item) {
+            {filteredItems.slice(0, (page + 1) * PAGE_SIZE).map(function (item) {
               var imgUrl = getImageUrl(item.image_path)
               var venueAllocs = item.venue_allocations || []
               var typeColors = { Premium: 'bg-purple-100 text-purple-700', Outdoor: 'bg-green-100 text-green-700', Indoor: 'bg-blue-100 text-blue-700' }
@@ -359,6 +364,12 @@ function PendingReview({ profile }) {
               )
             })}
           </div>
+          {filteredItems.length > (page + 1) * PAGE_SIZE && (
+            <button onClick={function () { setPage(page + 1) }}
+              className="w-full mt-4 py-3 text-sm font-medium text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors">
+              Load More ({filteredItems.length - (page + 1) * PAGE_SIZE} remaining)
+            </button>
+          )}
         </div>
       )}
       <Modal open={!!editingItem} onClose={function () { setEditingItem(null) }} title={'Edit: ' + titleCase(editingItem?.name || '')} wide>
