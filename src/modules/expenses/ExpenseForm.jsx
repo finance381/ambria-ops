@@ -18,9 +18,13 @@ function makeEntry() {
     travelTo: '',
     allocations: [{ department: '', venueId: '', subVenueId: '', amountPaise: '' }],
     receiptFile: null,
-    receiptPreview: ''
+    receiptPreview: '',
+    audioBlob: null,
+    audioUrl: '',
+    recording: false
   }
 }
+
 
 
 function makeAllocation() {
@@ -113,12 +117,67 @@ function ExpenseForm({ profile, onDone }) {
     setEntries(updated)
   }
 
+  var mediaRecorders = {}
+
+  function startRecording(idx) {
+    navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
+      var chunks = []
+      var recorder = new MediaRecorder(stream, { mimeType: 'audio/webm' })
+      mediaRecorders[idx] = { recorder: recorder, stream: stream }
+
+      recorder.ondataavailable = function (e) { if (e.data.size > 0) chunks.push(e.data) }
+      recorder.onstop = function () {
+        stream.getTracks().forEach(function (t) { t.stop() })
+        var blob = new Blob(chunks, { type: 'audio/webm' })
+        var url = URL.createObjectURL(blob)
+        var updated = entries.map(function (e, i) {
+          if (i !== idx) return e
+          if (e.audioUrl) URL.revokeObjectURL(e.audioUrl)
+          return Object.assign({}, e, { audioBlob: blob, audioUrl: url, recording: false, receiptFile: null, receiptPreview: '' })
+        })
+        setEntries(updated)
+        delete mediaRecorders[idx]
+      }
+
+      var updated = entries.map(function (e, i) {
+        if (i !== idx) return e
+        return Object.assign({}, e, { recording: true })
+      })
+      setEntries(updated)
+      recorder.start()
+
+      // Auto-stop after 30 seconds
+      setTimeout(function () { stopRecording(idx) }, 30000)
+    }).catch(function () {
+      setError('Microphone access denied')
+    })
+  }
+
+  function stopRecording(idx) {
+    var mr = mediaRecorders[idx]
+    if (mr && mr.recorder.state === 'recording') {
+      mr.recorder.stop()
+    }
+  }
+
+  function removeAudio(idx) {
+    var updated = entries.map(function (e, i) {
+      if (i !== idx) return e
+      if (e.audioUrl) URL.revokeObjectURL(e.audioUrl)
+      return Object.assign({}, e, { audioBlob: null, audioUrl: '', recording: false })
+    })
+    setEntries(updated)
+  }
+
   function duplicateEntry(idx) {
     var src = entries[idx]
     var dup = Object.assign({}, src, {
       _key: Date.now() + '_' + Math.random().toString(36).slice(2, 8),
       receiptFile: null,
       receiptPreview: '',
+      audioBlob: null,
+      audioUrl: '',
+      recording: false,
       allocations: src.allocations.map(function (a) { return Object.assign({}, a) })
     })
     var updated = entries.slice()
@@ -197,7 +256,7 @@ function ExpenseForm({ profile, onDone }) {
       if (typeHasField(e.expenseTypeId, 'travel_to') && !e.travelTo.trim()) {
         return 'Entry ' + (i + 1) + ': Enter travel to location'
       }
-      if (!e.receiptFile) return 'Entry ' + (i + 1) + ': Receipt image is required'
+      if (!e.receiptFile && !e.audioBlob) return 'Entry ' + (i + 1) + ': Receipt image or voice note is required'
       // Validate allocations have at least dept
       for (var j = 0; j < e.allocations.length; j++) {
         var a = e.allocations[j]
@@ -258,6 +317,15 @@ function ExpenseForm({ profile, onDone }) {
         var { error: upErr } = await supabase.storage.from('receipts').upload(rPath, e.receiptFile, { upsert: true })
         if (!upErr) {
           await supabase.from('expenses').update({ receipt_path: rPath }).eq('id', exp.id)
+        }
+      }
+
+      // Upload voice receipt if no image
+      if (!e.receiptFile && e.audioBlob) {
+        var aPath = profile.id + '/' + exp.id + '_voice_' + Date.now() + '.webm'
+        var { error: aErr } = await supabase.storage.from('receipts').upload(aPath, e.audioBlob, { contentType: 'audio/webm', upsert: true })
+        if (!aErr) {
+          await supabase.from('expenses').update({ receipt_path: aPath }).eq('id', exp.id)
         }
       }
 
@@ -569,7 +637,7 @@ function ExpenseForm({ profile, onDone }) {
                   })}
                 </div>
               </div>
-            {/* Receipt */}
+            {/* Receipt — image OR voice */}
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Receipt <span className="text-red-500">*</span></label>
                 {entry.receiptPreview ? (
@@ -581,18 +649,43 @@ function ExpenseForm({ profile, onDone }) {
                       className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full text-xs flex items-center justify-center shadow-sm hover:bg-red-600"
                     >✕</button>
                   </div>
+                ) : entry.audioUrl ? (
+                  <div className="flex items-center gap-3 p-3 rounded-lg bg-blue-50 border border-blue-200">
+                    <audio src={entry.audioUrl} controls className="flex-1 h-8" />
+                    <button
+                      type="button"
+                      onClick={function () { removeAudio(idx) }}
+                      className="w-6 h-6 bg-red-500 text-white rounded-full text-xs flex items-center justify-center shadow-sm hover:bg-red-600 flex-shrink-0"
+                    >✕</button>
+                  </div>
+                ) : entry.recording ? (
+                  <button
+                    type="button"
+                    onClick={function () { stopRecording(idx) }}
+                    className="w-full py-3 rounded-lg bg-red-500 text-white text-sm font-medium animate-pulse flex items-center justify-center gap-2"
+                  >
+                    <span className="w-2.5 h-2.5 bg-white rounded-full" />
+                    Recording... Tap to stop
+                  </button>
                 ) : (
                   <div className="flex gap-2">
-                    <label className="flex-1 flex items-center justify-center gap-2 py-3 rounded-lg border-2 border-dashed border-gray-300 text-sm text-gray-500 hover:border-amber-400 hover:text-amber-600 cursor-pointer transition-colors">
-                      <span>📁 Gallery</span>
+                    <label className="flex-1 flex items-center justify-center gap-1.5 py-3 rounded-lg border-2 border-dashed border-gray-300 text-sm text-gray-500 hover:border-amber-400 hover:text-amber-600 cursor-pointer transition-colors">
+                      <span>📁</span><span>Gallery</span>
                       <input type="file" accept="image/*,.pdf" className="hidden"
                         onChange={function (e) { handleReceipt(idx, e.target.files?.[0] || null); e.target.value = '' }} />
                     </label>
-                    <label className="flex-1 flex items-center justify-center gap-2 py-3 rounded-lg border-2 border-dashed border-gray-300 text-sm text-gray-500 hover:border-amber-400 hover:text-amber-600 cursor-pointer transition-colors">
-                      <span>📷 Camera</span>
+                    <label className="flex-1 flex items-center justify-center gap-1.5 py-3 rounded-lg border-2 border-dashed border-gray-300 text-sm text-gray-500 hover:border-amber-400 hover:text-amber-600 cursor-pointer transition-colors">
+                      <span>📷</span><span>Camera</span>
                       <input type="file" accept="image/*" capture="environment" className="hidden"
                         onChange={function (e) { handleReceipt(idx, e.target.files?.[0] || null); e.target.value = '' }} />
                     </label>
+                    <button
+                      type="button"
+                      onClick={function () { startRecording(idx) }}
+                      className="flex-1 flex items-center justify-center gap-1.5 py-3 rounded-lg border-2 border-dashed border-gray-300 text-sm text-gray-500 hover:border-blue-400 hover:text-blue-600 transition-colors"
+                    >
+                      <span>🎙</span><span>Voice</span>
+                    </button>
                   </div>
                 )}
               </div>

@@ -1633,7 +1633,12 @@ function ExpenseDetail({ exp, profile, subCatMap, isAdmin, isDeptApprover, onBac
       {receiptUrl && (
         <div>
           <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Receipt</p>
-          {/\.(jpg|jpeg|png|gif|webp)$/i.test(exp.receipt_path || '') ? (
+          {/\.(webm|ogg|mp3|wav)$/i.test(exp.receipt_path || '') ? (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+              <p className="text-xs text-blue-600 font-medium mb-2">🎙 Voice Receipt</p>
+              <audio src={receiptUrl} controls className="w-full" />
+            </div>
+          ) : /\.(jpg|jpeg|png|gif|webp)$/i.test(exp.receipt_path || '') ? (
             <a href={receiptUrl} target="_blank" rel="noopener noreferrer">
               <img src={receiptUrl} alt="Receipt" className="w-full max-h-80 object-contain rounded-lg border border-gray-200 bg-gray-50" />
             </a>
