@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { logActivity } from '../../lib/logger'
 import SearchDropdown from '../../components/ui/SearchDropdown'
+import { useVoice } from '../../hooks/useVoice'
 
 function makeEntry() {
   return {
@@ -16,7 +17,7 @@ function makeEntry() {
     travelMode: '',
     travelFrom: '',
     travelTo: '',
-    allocations: [{ department: '', venueId: '', subVenueId: '', amountPaise: '' }],
+    allocations: [{ department: '', venueId: '', amountPaise: '' }]
     receiptFile: null,
     receiptPreview: '',
     audioBlob: null,
@@ -28,7 +29,7 @@ function makeEntry() {
 
 
 function makeAllocation() {
-  return { department: '', venueId: '', subVenueId: '', amountPaise: '' }
+  return { department: '', venueId: '', amountPaise: '' }
 }
 
 function ExpenseForm({ profile, onDone }) {
@@ -38,12 +39,12 @@ function ExpenseForm({ profile, onDone }) {
   var [expenseTypes, setExpenseTypes] = useState([])
   var [departments, setDepartments] = useState([])
   var [venues, setVenues] = useState([])
-  var [subVenues, setSubVenues] = useState([])
   var [loading, setLoading] = useState(true)
 
   // ── Form state ──
   var [entries, setEntries] = useState([makeEntry()])
   var [saving, setSaving] = useState(false)
+  var voice = useVoice()
   var [error, setError] = useState('')
   var [success, setSuccess] = useState('')
 
@@ -58,14 +59,12 @@ function ExpenseForm({ profile, onDone }) {
       supabase.from('expense_types').select('id, name, extra_fields, sort_order').eq('active', true).order('sort_order'),
       supabase.from('departments').select('id, name').eq('active', true).order('name'),
       supabase.from('venues').select('id, code, name').eq('active', true).order('name'),
-      supabase.from('sub_venues').select('id, venue_id, name').eq('active', true).order('name')
-    ])
+      ])
     setCategories(catR.data || [])
     setSubCategories(scR.data || [])
     setExpenseTypes(etR.data || [])
     setDepartments(dR.data || [])
     setVenues(vR.data || [])
-    setSubVenues(svR.data || [])
     setLoading(false)
   }
 
@@ -294,6 +293,17 @@ function ExpenseForm({ profile, onDone }) {
         expense_date: e.expenseDate,
         status: 'pending',
         vendor_name: typeHasField(e.expenseTypeId, 'vendor_name') ? e.vendorName.trim() : null,
+        metadata: {
+          utility_type: e.utilityType || null,
+          location: e.maintLocation || null,
+          asset_name: e.assetName || null,
+          event_name: e.eventName || null,
+          vehicle_number: e.vehicleNumber || null,
+          km_reading: e.kmReading || null,
+          tracking_number: e.trackingNumber || null,
+          destination: e.courierDest || null,
+          client_name: e.clientName || null,
+        },
         travel_from: typeHasField(e.expenseTypeId, 'travel_from') ? e.travelFrom.trim() : null,
         travel_to: typeHasField(e.expenseTypeId, 'travel_to') ? e.travelTo.trim() : null,
         travel_mode: typeHasField(e.expenseTypeId, 'travel_mode') ? e.travelMode : null
@@ -337,7 +347,6 @@ function ExpenseForm({ profile, onDone }) {
             expense_id: exp.id,
             department: a.department,
             venue_id: a.venueId ? Number(a.venueId) : null,
-            sub_venue_id: a.subVenueId ? Number(a.subVenueId) : null,
             amount_paise: a.amountPaise ? Math.round(Number(a.amountPaise) * 100) : 0
           }
         })
@@ -374,10 +383,6 @@ function ExpenseForm({ profile, onDone }) {
     return subCategories.filter(function (sc) { return sc.category_id === Number(categoryId) })
   }
 
-  function filteredSubVenues(venueId) {
-    if (!venueId) return []
-    return subVenues.filter(function (sv) { return sv.venue_id === Number(venueId) })
-  }
 
   if (loading) return <div className="text-center py-8 text-gray-500">Loading...</div>
 
@@ -437,32 +442,40 @@ function ExpenseForm({ profile, onDone }) {
                 />
               </div>
 
-              {/* Expense Type pills */}
+              {/* Expense Type */}
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Expense Type</label>
-                <div className="flex flex-wrap gap-2">
+                <select
+                  value={entry.expenseTypeId}
+                  onChange={function (e) { updateEntry(idx, 'expenseTypeId', e.target.value) }}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-amber-300 focus:border-amber-400"
+                >
+                  <option value="">Select type...</option>
                   {expenseTypes.map(function (et) {
-                    var selected = Number(entry.expenseTypeId) === et.id
-                    return (
-                      <button
-                        key={et.id}
-                        type="button"
-                        onClick={function () { updateEntry(idx, 'expenseTypeId', String(et.id)) }}
-                        className={
-                          'px-3 py-1.5 rounded-lg text-sm font-medium border transition-all ' +
-                          (selected
-                            ? 'bg-amber-600 text-white border-amber-600 shadow-sm'
-                            : 'bg-white text-gray-600 border-gray-200 hover:border-amber-300')
-                        }
-                      >{et.name}</button>
-                    )
+                    return <option key={et.id} value={String(et.id)}>{et.name}</option>
                   })}
-                </div>
+                </select>
               </div>
 
               {/* Description */}
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Description</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-medium text-gray-600">Description</label>
+                  <button
+                    type="button"
+                    onClick={function () {
+                      if (voice.listening) {
+                        voice.stop()
+                      } else {
+                        voice.start(function (text) {
+                          updateEntry(idx, 'description', entry.description + (entry.description ? ' ' : '') + text)
+                        })
+                      }
+                    }}
+                    className={"px-2 py-0.5 rounded text-xs font-medium transition-all " +
+                      (voice.listening ? "bg-red-500 text-white animate-pulse" : "bg-gray-100 text-gray-500 hover:bg-gray-200")}
+                  >{voice.listening ? '⏹ Stop' : '🎤 Dictate'}</button>
+                </div>
                 <textarea
                   value={entry.description}
                   onChange={function (e) { updateEntry(idx, 'description', e.target.value) }}
@@ -535,6 +548,84 @@ function ExpenseForm({ profile, onDone }) {
                 </div>
               )}
 
+              {/* Type-specific: Utility */}
+              {typeHasField(entry.expenseTypeId, 'utility_type') && (
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Utility Type</label>
+                  <select value={entry.utilityType || ''} onChange={function (e) { updateEntry(idx, 'utilityType', e.target.value) }}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-amber-300">
+                    <option value="">Select...</option>
+                    {['Electricity', 'Water', 'Internet', 'Phone'].map(function (u) { return <option key={u} value={u}>{u}</option> })}
+                  </select>
+                </div>
+              )}
+
+              {/* Type-specific: Maintenance */}
+              {typeHasField(entry.expenseTypeId, 'asset_name') && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Location</label>
+                    <input type="text" value={entry.maintLocation || ''} onChange={function (e) { updateEntry(idx, 'maintLocation', e.target.value) }}
+                      placeholder="Where" className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-300" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Asset Name</label>
+                    <input type="text" value={entry.assetName || ''} onChange={function (e) { updateEntry(idx, 'assetName', e.target.value) }}
+                      placeholder="What asset" className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-300" />
+                  </div>
+                </div>
+              )}
+
+              {/* Type-specific: Event Expense */}
+              {typeHasField(entry.expenseTypeId, 'event_name') && (
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Event Name</label>
+                  <input type="text" value={entry.eventName || ''} onChange={function (e) { updateEntry(idx, 'eventName', e.target.value) }}
+                    placeholder="Which event" className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-300" />
+                </div>
+              )}
+
+              {/* Type-specific: Fuel */}
+              {typeHasField(entry.expenseTypeId, 'vehicle_number') && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Vehicle Number</label>
+                    <input type="text" value={entry.vehicleNumber || ''} onChange={function (e) { updateEntry(idx, 'vehicleNumber', e.target.value) }}
+                      placeholder="DL-XX-XXXX" className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-300" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">KM Reading</label>
+                    <input type="number" inputMode="numeric" value={entry.kmReading || ''} onChange={function (e) { updateEntry(idx, 'kmReading', e.target.value) }}
+                      placeholder="0" className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-300" />
+                  </div>
+                </div>
+              )}
+
+              {/* Type-specific: Courier */}
+              {typeHasField(entry.expenseTypeId, 'tracking_number') && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Tracking #</label>
+                    <input type="text" value={entry.trackingNumber || ''} onChange={function (e) { updateEntry(idx, 'trackingNumber', e.target.value) }}
+                      placeholder="AWB / tracking" className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-300" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Destination</label>
+                    <input type="text" value={entry.courierDest || ''} onChange={function (e) { updateEntry(idx, 'courierDest', e.target.value) }}
+                      placeholder="Where to" className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-300" />
+                  </div>
+                </div>
+              )}
+
+              {/* Type-specific: Client Entertainment */}
+              {typeHasField(entry.expenseTypeId, 'client_name') && (
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Client Name</label>
+                  <input type="text" value={entry.clientName || ''} onChange={function (e) { updateEntry(idx, 'clientName', e.target.value) }}
+                    placeholder="Client / guest name" className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-300" />
+                </div>
+              )}
+
               {/* Amount + Date row */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -573,10 +664,9 @@ function ExpenseForm({ profile, onDone }) {
 
                 <div className="space-y-2">
                   {entry.allocations.map(function (alloc, aIdx) {
-                    var svList = filteredSubVenues(alloc.venueId)
                     return (
                       <div key={aIdx} className="flex gap-2 items-start">
-                        <div className="flex-1 grid grid-cols-4 gap-2">
+                        <div className="flex-1 grid grid-cols-3 gap-2">
                           {/* Department */}
                           <select
                             value={alloc.department}
@@ -598,19 +688,6 @@ function ExpenseForm({ profile, onDone }) {
                             <option value="">Venue</option>
                             {venues.map(function (v) {
                               return <option key={v.id} value={String(v.id)}>{v.code}</option>
-                            })}
-                          </select>
-
-                          {/* Sub-venue */}
-                          <select
-                            value={alloc.subVenueId}
-                            onChange={function (e) { updateAllocation(idx, aIdx, 'subVenueId', e.target.value) }}
-                            className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs bg-white focus:ring-2 focus:ring-amber-300"
-                            disabled={!svList.length}
-                          >
-                            <option value="">Sub-venue</option>
-                            {svList.map(function (sv) {
-                              return <option key={sv.id} value={String(sv.id)}>{sv.name}</option>
                             })}
                           </select>
 
