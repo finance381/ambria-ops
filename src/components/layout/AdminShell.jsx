@@ -1,5 +1,7 @@
 import { useState, lazy, Suspense } from 'react'
 import { ROLE_COLORS } from '../../lib/constants'
+import ActivityLogs from '../../modules/logs/ActivityLogs'
+import RateCardEditor from '../../modules/quote/RateCardEditor'
 
 var PendingReview = lazy(function () { return import('../../modules/categories/PendingReview') })
 var Events = lazy(function () { return import('../../modules/events/Events') })
@@ -12,8 +14,7 @@ var Dashboard = lazy(function () { return import('../../modules/dashboard/Dashbo
 var Boxes = lazy(function () { return import('../../modules/boxes/Boxes') })
 var Purchase = lazy(function () { return import('../../modules/purchase/Purchase') })
 var Calendar = lazy(function () { return import('../../modules/calendar/Calendar') })
-var QuoteCalculator = React.lazy(function () { return import('../../modules/quote/QuoteCalculator.jsx') })
-var RateCardEditor = React.lazy(function () { return import('../../modules/quote/RateCardEditor.jsx') })
+
 
 var ADMIN_TABS = [
   { key: 'pending', label: 'Pending', icon: '⏳' },
@@ -23,6 +24,8 @@ var ADMIN_TABS = [
   { key: 'users', label: 'Users', icon: '👥' },
   { key: 'logs', label: 'Logs', icon: '📜' },
   { key: 'expenses', label: 'PC & Direct Expenses', icon: '💰' },
+  { key: 'ratecard', label: 'Rate Card', icon: '💰' },
+  // Hidden until built: dashboard, expenses, boxes, challans, purchase, calendar
   // Hidden until built: dashboard, boxes, challans, purchase, calendar
 ]
 
@@ -38,6 +41,7 @@ var MODULES = {
   categories: Categories,
   users: Users,
   logs: ActivityLogs,
+  ratecard: RateCardEditor,
 }
 
 function AdminShell({ profile, onSignOut }) {

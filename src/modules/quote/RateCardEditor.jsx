@@ -310,10 +310,390 @@ function TTDEditor({ config, onSave, saving }) {
 }
 
 // ══════════════════════════════════════
+//  MENU EDITOR
+// ══════════════════════════════════════
+
+var MENU_DEFAULTS = {
+  labels: ['Magnum', 'Double Magnum', 'Multi Cuisine', 'Luxury'],
+  base_rate: [1250, 1350, 0, 0], nv_upgrade: 300,
+  flat_add: [0, 0, 0, 3], max_pax: [250, 300, 0, 0],
+  is_sliding: [false, false, true, true],
+}
+var FORMULA_DEFAULTS = {
+  start_rate: 1450, start_pax: 300, step: 50, step_pax: 100,
+  floor_rate: 800, reset_pax: 800, reset_rate: 1350, reset_floor: 400,
+}
+var FORMULA_FIELDS = [
+  { key: 'start_rate', label: 'Start Rate (₹/hd)', hint: 'Phase 1 starting per-head' },
+  { key: 'start_pax', label: 'Start Pax', hint: 'Pax where Phase 1 begins' },
+  { key: 'step', label: 'Step (₹)', hint: 'Rate drop per step' },
+  { key: 'step_pax', label: 'Step Pax', hint: 'Pax interval per step' },
+  { key: 'floor_rate', label: 'Floor Rate (₹/hd)', hint: 'Phase 1 minimum rate' },
+  { key: 'reset_pax', label: 'Reset Pax', hint: 'Pax where Phase 2 starts' },
+  { key: 'reset_rate', label: 'Reset Rate (₹/hd)', hint: 'Phase 2 starting rate' },
+  { key: 'reset_floor', label: 'Reset Floor (₹/hd)', hint: 'Phase 2 minimum rate' },
+]
+
+var fieldLabel = { fontSize: 10, fontWeight: 600, color: C.muted, marginBottom: 3 }
+
+function MenuEditor({ config, onSave, saving }) {
+  var menuRaw = config.menu || MENU_DEFAULTS
+  var formulaRaw = config.menu_formula || FORMULA_DEFAULTS
+  var [menu, setMenu] = useState(clone(menuRaw))
+  var [formula, setFormula] = useState(clone(formulaRaw))
+
+  useEffect(function () { setMenu(clone(config.menu || MENU_DEFAULTS)) }, [config.menu])
+  useEffect(function () { setFormula(clone(config.menu_formula || FORMULA_DEFAULTS)) }, [config.menu_formula])
+
+  function updArr(field, idx, val) {
+    var d = clone(menu)
+    d[field][idx] = val
+    setMenu(d)
+  }
+
+  return (
+    <>
+      <SectionCard title="Menu Rates">
+        {/* NV Upgrade */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, padding: 10, borderRadius: 9, background: C.bg, border: '1px solid ' + C.border }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: C.maroon2, flex: 1 }}>NV Upgrade (₹/hd)</div>
+          <div style={{ width: 90 }}>
+            <NumCell value={menu.nv_upgrade} onChange={function (v) { var d = clone(menu); d.nv_upgrade = v; setMenu(d) }} />
+          </div>
+        </div>
+
+        {/* Per-menu cards */}
+        {(menu.labels || []).map(function (label, idx) {
+          return (
+            <div key={idx} style={{ marginBottom: 12, padding: 12, borderRadius: 10, border: '1px solid ' + C.border, background: '#fff' }}>
+              <input value={label} onChange={function (e) { updArr('labels', idx, e.target.value) }}
+                style={{ width: '100%', padding: 9, borderRadius: 7, border: '1px solid ' + C.border, fontSize: 13, fontWeight: 700, color: C.maroon, fontFamily: 'inherit', marginBottom: 10 }} />
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 8 }}>
+                <div>
+                  <div style={fieldLabel}>Base Rate (₹/hd)</div>
+                  <NumCell value={menu.base_rate[idx]} onChange={function (v) { updArr('base_rate', idx, v) }} />
+                </div>
+                <div>
+                  <div style={fieldLabel}>Flat Add (₹L)</div>
+                  <NumCell value={menu.flat_add[idx]} onChange={function (v) { updArr('flat_add', idx, v) }} />
+                </div>
+                <div>
+                  <div style={fieldLabel}>Max Pax (0=∞)</div>
+                  <NumCell value={menu.max_pax[idx]} onChange={function (v) { updArr('max_pax', idx, v) }} />
+                </div>
+              </div>
+              <button onClick={function () { updArr('is_sliding', idx, !menu.is_sliding[idx]) }}
+                style={{
+                  padding: '6px 14px', borderRadius: 7, fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                  border: '2px solid ' + (menu.is_sliding[idx] ? '#D4872C' : C.border),
+                  background: menu.is_sliding[idx] ? '#FFF8F0' : '#fff',
+                  color: menu.is_sliding[idx] ? '#D4872C' : C.muted,
+                }}>{menu.is_sliding[idx] ? 'Sliding: ON' : 'Sliding: OFF'}</button>
+            </div>
+          )
+        })}
+        <SaveBtn onClick={function () { onSave('menu', menu) }} saving={saving} label="Save Menu Rates" />
+      </SectionCard>
+
+      <SectionCard title="Sliding Scale Formula">
+        <div style={{ fontSize: 11, color: C.muted, marginBottom: 12 }}>Phase 1: start_rate at start_pax, drops by step every step_pax, floor at floor_rate. Phase 2: resets at reset_pax.</div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          {FORMULA_FIELDS.map(function (f) {
+            return (
+              <div key={f.key}>
+                <div style={fieldLabel}>{f.label}</div>
+                <NumCell value={formula[f.key]} onChange={function (v) { var d = clone(formula); d[f.key] = v; setFormula(d) }} />
+              </div>
+            )
+          })}
+        </div>
+        <SaveBtn onClick={function () { onSave('menu_formula', formula) }} saving={saving} label="Save Formula" />
+      </SectionCard>
+    </>
+  )
+}
+
+// ══════════════════════════════════════
+//  DÉCOR EDITOR
+// ══════════════════════════════════════
+
+var DECOR_SECTIONS = [
+  { key: 'decor', label: 'Pushpanjali', tiers: 3, defaultLabels: ['Premium', 'Standard', 'Banquet'] },
+  { key: 'decor_eg', label: 'EG / Aura', tiers: 2, defaultLabels: ['Standard', 'Banquet'] },
+  { key: 'decor_valencia', label: 'Valencia', tiers: 0, defaultLabels: [] },
+]
+
+function makeEmptyDecor(tierCount) {
+  if (tierCount === 0) return { nw_offset: -0.5, q: [0, 0, 0], t: [0, 0, 0], f: [0, 0, 0] }
+  var empty = []
+  for (var i = 0; i < tierCount; i++) empty.push([0, 0, 0])
+  return { labels: DECOR_SECTIONS[tierCount === 3 ? 0 : 1].defaultLabels.slice(), nw_offset: -0.5, q: clone(empty), t: clone(empty), f: clone(empty) }
+}
+
+function DecorEditor({ config, onSave, saving }) {
+  var [subTab, setSubTab] = useState(0)
+  var sec = DECOR_SECTIONS[subTab]
+
+  var raw = config[sec.key] || makeEmptyDecor(sec.tiers)
+  var [draft, setDraft] = useState(clone(raw))
+
+  useEffect(function () {
+    var s = DECOR_SECTIONS[subTab]
+    setDraft(clone(config[s.key] || makeEmptyDecor(s.tiers)))
+  }, [subTab, config])
+
+  function updateOffset(val) {
+    var d = clone(draft)
+    d.nw_offset = val
+    setDraft(d)
+  }
+
+  function updateLabel(idx, val) {
+    var d = clone(draft)
+    d.labels[idx] = val
+    setDraft(d)
+  }
+
+  // For tiered venues: tier × category × Q/T/F
+  function updateTiered(tier, tierIdx, catIdx, val) {
+    var d = clone(draft)
+    d[tier][tierIdx][catIdx] = val
+    setDraft(d)
+  }
+
+  // For Valencia: flat category × Q/T/F
+  function updateFlat(tier, catIdx, val) {
+    var d = clone(draft)
+    d[tier][catIdx] = val
+    setDraft(d)
+  }
+
+  var isFlat = sec.tiers === 0
+
+  return (
+    <>
+      {/* Sub-tabs */}
+      <div style={{ display: 'flex', gap: 6, marginBottom: 16 }}>
+        {DECOR_SECTIONS.map(function (s, idx) {
+          var on = subTab === idx
+          return (
+            <button key={idx} onClick={function () { setSubTab(idx) }} style={{
+              padding: '8px 14px', borderRadius: 9, border: '2px solid ' + (on ? C.gold : C.border),
+              background: on ? '#FFF8F0' : '#fff', color: on ? C.gold : C.muted,
+              fontSize: 12, fontWeight: 700, cursor: 'pointer',
+            }}>{s.label}</button>
+          )
+        })}
+      </div>
+
+      <SectionCard title={sec.label + ' Décor (₹L)'}>
+        {/* NW Offset */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, padding: 10, borderRadius: 9, background: C.bg, border: '1px solid ' + C.border }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: C.maroon2, flex: 1 }}>NW Offset (₹L)</div>
+          <div style={{ width: 90 }}>
+            <NumCell value={draft.nw_offset} onChange={updateOffset} />
+          </div>
+        </div>
+
+        {/* Tier labels (not for Valencia) */}
+        {!isFlat && draft.labels && (
+          <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+            {draft.labels.map(function (l, i) {
+              return (
+                <input key={i} value={l} onChange={function (e) { updateLabel(i, e.target.value) }}
+                  style={{ flex: 1, padding: 8, borderRadius: 7, border: '1px solid ' + C.border, fontSize: 12, fontWeight: 600, color: C.maroon, fontFamily: 'inherit' }} />
+              )
+            })}
+          </div>
+        )}
+
+        {/* Tiered grids (Pushpanjali / EG) */}
+        {!isFlat && (draft.labels || []).map(function (tierLabel, tierIdx) {
+          return (
+            <div key={tierIdx} style={{ marginBottom: 18 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: C.maroon2, marginBottom: 8 }}>{tierLabel}</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '72px 1fr 1fr 1fr', gap: 6, alignItems: 'center' }}>
+                <TierHeader />
+                {CAT_LABELS.map(function (catLabel, catIdx) {
+                  return (
+                    <div key={catIdx} style={{ display: 'contents' }}>
+                      <div style={{ fontSize: 11, fontWeight: 600, color: CAT_COLORS[catIdx] }}>{catLabel}</div>
+                      {TIERS.map(function (tier) {
+                        return <NumCell key={tier} value={(draft[tier][tierIdx] || [])[catIdx] || 0} onChange={function (v) { updateTiered(tier, tierIdx, catIdx, v) }} />
+                      })}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )
+        })}
+
+        {/* Flat grid (Valencia) */}
+        {isFlat && (
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '72px 1fr 1fr 1fr', gap: 6, alignItems: 'center' }}>
+              <TierHeader />
+              {CAT_LABELS.map(function (catLabel, catIdx) {
+                return (
+                  <div key={catIdx} style={{ display: 'contents' }}>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: CAT_COLORS[catIdx] }}>{catLabel}</div>
+                    {TIERS.map(function (tier) {
+                      return <NumCell key={tier} value={(draft[tier] || [])[catIdx] || 0} onChange={function (v) { updateFlat(tier, catIdx, v) }} />
+                    })}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
+        <SaveBtn onClick={function () { onSave(sec.key, draft) }} saving={saving} label={'Save ' + sec.label} />
+      </SectionCard>
+    </>
+  )
+}
+
+// ══════════════════════════════════════
+//  SEASON DATE CALENDAR
+// ══════════════════════════════════════
+
+var MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December']
+var DAY_HEADERS = ['Su','Mo','Tu','We','Th','Fr','Sa']
+var BRUSH_OPTS = [
+  { cat: 0, label: "King's", color: '#D4872C', bg: '#FFF8F0' },
+  { cat: 1, label: 'Perfect', color: '#8B2D2D', bg: '#FDF2F2' },
+  { cat: 2, label: 'Filler', color: '#6B5B4E', bg: '#F7F5F3' },
+]
+
+function pad2(n) { return n < 10 ? '0' + n : '' + n }
+
+function SeasonCalendar({ config, onSave, saving }) {
+  var raw = config.season_dates || {}
+  var [draft, setDraft] = useState(clone(raw))
+  var [brush, setBrush] = useState(0)
+  var [viewYear, setViewYear] = useState(new Date().getFullYear())
+  var [pointer, setPointer] = useState(false)
+
+  useEffect(function () { setDraft(clone(config.season_dates || {})) }, [config.season_dates])
+
+  function toggleDate(mm, dd) {
+    var key = pad2(mm + 1) + '-' + pad2(dd)
+    var d = clone(draft)
+    if (d[key] === brush) {
+      delete d[key]
+    } else {
+      d[key] = brush
+    }
+    setDraft(d)
+  }
+
+  function getCat(mm, dd) {
+    var key = pad2(mm + 1) + '-' + pad2(dd)
+    return draft[key] != null ? draft[key] : -1
+  }
+
+  function renderMonth(monthIdx) {
+    var firstDay = new Date(viewYear, monthIdx, 1).getDay()
+    var daysInMonth = new Date(viewYear, monthIdx + 1, 0).getDate()
+    var cells = []
+    for (var blank = 0; blank < firstDay; blank++) {
+      cells.push(<div key={'b' + blank} />)
+    }
+    for (var day = 1; day <= daysInMonth; day++) {
+      var cat = getCat(monthIdx, day)
+      var dotColor = cat === 0 ? '#D4872C' : cat === 1 ? '#8B2D2D' : cat === 2 ? '#6B5B4E' : 'transparent'
+      var bgColor = cat === 0 ? '#FFF8F0' : cat === 1 ? '#FDF2F2' : cat === 2 ? '#F7F5F3' : '#fff'
+      var dd = day
+      cells.push(
+        <div key={day}
+          onPointerDown={function (e) { e.preventDefault(); setPointer(true); toggleDate(monthIdx, dd) }}
+          onPointerEnter={function () { if (pointer) toggleDate(monthIdx, dd) }}
+          style={{
+            width: 32, height: 32, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+            borderRadius: 7, cursor: 'pointer', fontSize: 11, fontWeight: 600,
+            background: bgColor, color: cat >= 0 ? BRUSH_OPTS[cat].color : C.muted,
+            border: '1px solid ' + (cat >= 0 ? BRUSH_OPTS[cat].color + '44' : 'transparent'),
+            userSelect: 'none', touchAction: 'none',
+          }}>
+          {day}
+          {cat >= 0 && <div style={{ width: 4, height: 4, borderRadius: 2, background: dotColor, marginTop: 1 }} />}
+        </div>
+      )
+    }
+    return cells
+  }
+
+  // Stats
+  var kings = 0, perfect = 0
+  Object.keys(draft).forEach(function (k) { if (draft[k] === 0) kings++; if (draft[k] === 1) perfect++ })
+
+  return (
+    <>
+      <SectionCard title="Season Dates">
+        {/* Brush selector */}
+        <div style={{ display: 'flex', gap: 6, marginBottom: 16 }}>
+          {BRUSH_OPTS.map(function (b) {
+            var on = brush === b.cat
+            return (
+              <button key={b.cat} onClick={function () { setBrush(b.cat) }} style={{
+                flex: 1, padding: '9px 6px', borderRadius: 9,
+                border: '2px solid ' + (on ? b.color : C.border),
+                background: on ? b.bg : '#fff', color: on ? b.color : C.muted,
+                fontSize: 12, fontWeight: 700, cursor: 'pointer',
+              }}>{b.label}</button>
+            )
+          })}
+        </div>
+
+        <div style={{ fontSize: 10, color: C.muted, marginBottom: 12, textAlign: 'center' }}>
+          Tap dates to tag. Untagged = Filler by default.
+          &nbsp;&nbsp;👑 {kings} &nbsp; ⚔️ {perfect}
+        </div>
+
+        {/* Year nav */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16, marginBottom: 16 }}
+          onPointerUp={function () { setPointer(false) }}
+          onPointerCancel={function () { setPointer(false) }}>
+          <button onClick={function () { setViewYear(viewYear - 1) }} style={{
+            width: 32, height: 32, borderRadius: 8, border: '1px solid ' + C.border,
+            background: '#fff', cursor: 'pointer', fontSize: 14, fontWeight: 700, color: C.maroon,
+          }}>‹</button>
+          <div style={{ fontSize: 16, fontWeight: 800, color: C.maroon }}>{viewYear}</div>
+          <button onClick={function () { setViewYear(viewYear + 1) }} style={{
+            width: 32, height: 32, borderRadius: 8, border: '1px solid ' + C.border,
+            background: '#fff', cursor: 'pointer', fontSize: 14, fontWeight: 700, color: C.maroon,
+          }}>›</button>
+        </div>
+
+        {/* Month grids */}
+        <div onPointerUp={function () { setPointer(false) }} onPointerLeave={function () { setPointer(false) }}>
+          {MONTH_NAMES.map(function (mName, mIdx) {
+            return (
+              <div key={mIdx} style={{ marginBottom: 20 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: C.maroon2, marginBottom: 6 }}>{mName}</div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 32px)', gap: 3 }}>
+                  {DAY_HEADERS.map(function (dh) {
+                    return <div key={dh} style={{ textAlign: 'center', fontSize: 9, fontWeight: 700, color: C.muted, paddingBottom: 2 }}>{dh}</div>
+                  })}
+                  {renderMonth(mIdx)}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+
+        <SaveBtn onClick={function () { onSave('season_dates', draft) }} saving={saving} label="Save Season Dates" />
+      </SectionCard>
+    </>
+  )
+}
+
+// ══════════════════════════════════════
 //  MAIN COMPONENT
 // ══════════════════════════════════════
 
-var TABS = ['Venues', 'Rentals', 'DJ', 'TTD']
+var TABS = ['Venues', 'Rentals', 'DJ', 'TTD', 'Menu', 'Décor', 'Season']
 
 function RateCardEditor({ profile }) {
   if (profile.role !== 'admin') return (
@@ -387,6 +767,9 @@ function RateCardEditor({ profile }) {
       {tab === 1 && <RentalsEditor config={config} onSave={saveKey} saving={saving} />}
       {tab === 2 && <DJEditor config={config} onSave={saveKey} saving={saving} />}
       {tab === 3 && <TTDEditor config={config} onSave={saveKey} saving={saving} />}
+      {tab === 4 && <MenuEditor config={config} onSave={saveKey} saving={saving} />}
+      {tab === 5 && <DecorEditor config={config} onSave={saveKey} saving={saving} />}
+      {tab === 6 && <SeasonCalendar config={config} onSave={saveKey} saving={saving} />}
     </div>
   )
 }

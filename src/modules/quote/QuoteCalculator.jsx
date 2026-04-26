@@ -33,19 +33,13 @@ var FALLBACK_ET = [
 
 // ── Date classification (non-financial, stays client-side) ──
 var MONTHS = 'Jan,Feb,Mar,Apr,May,Jun,Jul,Aug,Sep,Oct,Nov,Dec'.split(',')
-var DATE_OVERRIDES = {}
-'Nov 21,Nov 24,Nov 25,Nov 26,Dec 2,Dec 3,Dec 4,Dec 5,Dec 11,Dec 12'.split(',').forEach(function (k) { DATE_OVERRIDES[k] = 0 })
-'Feb 5,Feb 6,Feb 8,Feb 10,Feb 12,Feb 14,Feb 19,Feb 20,Feb 21,Feb 24,Feb 25,Feb 26,May 1,May 3,May 5,May 6,May 7,May 8,May 13,May 14'.split(',').forEach(function (k) { DATE_OVERRIDES[k] = 1 })
-
-function classifyDate(val) {
+function classifyDate(val, seasonDates) {
   if (!val) return -1
   var d = new Date(val + 'T00:00:00')
   if (isNaN(d)) return -1
-  var k = MONTHS[d.getMonth()] + ' ' + d.getDate()
-  if (DATE_OVERRIDES[k] != null) return DATE_OVERRIDES[k]
-  var m = d.getMonth(), dd = d.getDate()
-  if (m === 10) return dd >= 20 ? 0 : dd >= 9 ? 1 : 2
-  if (m === 11) return dd <= 15 ? 0 : dd <= 22 ? 1 : 2
+  var mm = d.getMonth(), dd = d.getDate()
+  var key = (mm + 1 < 10 ? '0' : '') + (mm + 1) + '-' + (dd < 10 ? '0' : '') + dd
+  if (seasonDates && seasonDates[key] != null) return seasonDates[key]
   return 2
 }
 function autoTtdIdx(eventDateStr) {
@@ -206,6 +200,7 @@ function QuoteCalculator({ profile }) {
   var [loadingQuotes, setLoadingQuotes] = useState(false)
   var [saveMsg, setSaveMsg] = useState('')
   var [quoteStatus, setQuoteStatus] = useState('draft')
+  var [seasonDates, setSeasonDates] = useState(null)
   var [notes, setNotes] = useState('')
 
   // DB-driven lists
@@ -213,12 +208,12 @@ function QuoteCalculator({ profile }) {
   var [eventTypes, setEventTypes] = useState(FALLBACK_ET)
 
   useEffect(function () {
-    supabase.from('quote_config').select('key, value').in('key', ['inquiry_modes', 'event_types']).then(function (res) {
-      console.log('quote_config result:', res)
+    supabase.from('quote_config').select('key, value').in('key', ['inquiry_modes', 'event_types', 'season_dates']).then(function (res) {
       if (!res.data) return
       res.data.forEach(function (row) {
         if (row.key === 'inquiry_modes' && Array.isArray(row.value)) setInquiryModes(row.value)
         if (row.key === 'event_types' && Array.isArray(row.value)) setEventTypes(row.value)
+        if (row.key === 'season_dates' && row.value) setSeasonDates(row.value)
       })
     })
   }, [])
@@ -232,7 +227,7 @@ function QuoteCalculator({ profile }) {
   // Derived
   var currentET = eventTypes[eventTypeIdx] || eventTypes[0] || { label: 'Wedding', wedding: true }
   var isWedding = currentET.wedding
-  var dc = classifyDate(eventDate)
+  var dc = classifyDate(eventDate, seasonDates)
   var ct = dc >= 0 ? dc : catOverride
 
   // ── RPC call ──
@@ -308,7 +303,7 @@ function QuoteCalculator({ profile }) {
   function handleDateChange(val) {
     setEventDate(val)
     setTtdIdx(autoTtdIdx(val))
-    var c = classifyDate(val)
+    var c = classifyDate(val, seasonDates)
     if (c >= 0) setCatOverride(c)
     if (c === 0) setMenuIdx(3)
   }
