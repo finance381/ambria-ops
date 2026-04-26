@@ -2,7 +2,6 @@ import { useState, lazy, Suspense } from 'react'
 import { ROLE_COLORS } from '../../lib/constants'
 
 var PendingReview = lazy(function () { return import('../../modules/categories/PendingReview') })
-var Inventory = lazy(function () { return import('../../modules/inventory/Inventory') })
 var Events = lazy(function () { return import('../../modules/events/Events') })
 var AdminItems = lazy(function () { return import('../../modules/inventory/AdminItems') })
 var Categories = lazy(function () { return import('../../modules/categories/Categories') })
@@ -16,9 +15,8 @@ var Calendar = lazy(function () { return import('../../modules/calendar/Calendar
 
 var ADMIN_TABS = [
   { key: 'pending', label: 'Pending', icon: '⏳' },
-  { key: 'inventory', label: 'Inventory', icon: '📦' },
+  { key: 'items', label: 'Inventory', icon: '📦' },
   { key: 'events', label: 'Events', icon: '📅' },
-  { key: 'items', label: 'Items', icon: '📦' },
   { key: 'categories', label: 'Masters', icon: '⚙️' },
   { key: 'users', label: 'Users', icon: '👥' },
   { key: 'logs', label: 'Logs', icon: '📜' },
@@ -29,7 +27,6 @@ var ADMIN_TABS = [
 var MODULES = {
   dashboard: Dashboard,
   pending: PendingReview,
-  inventory: Inventory,
   events: Events,
   expenses: Expenses,
   boxes: Boxes,
