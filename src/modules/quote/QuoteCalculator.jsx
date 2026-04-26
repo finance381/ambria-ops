@@ -206,6 +206,7 @@ function QuoteCalculator({ profile }) {
   var [loadingQuotes, setLoadingQuotes] = useState(false)
   var [saveMsg, setSaveMsg] = useState('')
   var [quoteStatus, setQuoteStatus] = useState('draft')
+  var [notes, setNotes] = useState('')
 
   // DB-driven lists
   var [inquiryModes, setInquiryModes] = useState(FALLBACK_MODES)
@@ -369,6 +370,7 @@ function QuoteCalculator({ profile }) {
       dj_q_paise: toPaise(dj.q || 0), dj_t_paise: toPaise(dj.t || 0), dj_f_paise: toPaise(dj.f || 0),
       total_q_paise: toPaise(total.q || 0), total_t_paise: toPaise(total.t || 0), total_f_paise: toPaise(total.f || 0),
       proposal_text: proposalText,
+      notes: notes.trim() || null,
       deal_value_paise: packageVal ? Math.round(+packageVal * 10000000) : null,
     }
     if (taxMode !== 0 || split5 !== 50) {
@@ -407,7 +409,7 @@ function QuoteCalculator({ profile }) {
     setCatOverride(q.date_category || 2); setMenuIdx(q.menu_idx != null ? q.menu_idx : 3)
     setDecorIdx(0); setDjIdx(1); setTtdIdx(q.ttd_idx != null ? q.ttd_idx : autoTtdIdx(q.event_date)); setPackageVal(''); setDealVal(14); setTaxMode(0); setSplit5(50)
     if (q.deal_value_paise != null) { setPackageVal(String(fromPaise(q.deal_value_paise))); setTaxMode(q.tax_mode || 0); setSplit5(q.split_5_pct || 50) }
-    setSavedId(q.id); setQuoteStatus(q.status || 'draft')
+    setSavedId(q.id); setQuoteStatus(q.status || 'draft'); setNotes(q.notes || '')
     setShowQuotes(false); setShowProposal(false); setPage(0)
   }
 
@@ -415,7 +417,7 @@ function QuoteCalculator({ profile }) {
     setGuestName(''); setGuestPhone(''); setEventDate(''); setInquiryMode(''); setEventTypeIdx(0)
     setVenueIdx(0); setFoodPref(0); setPax(400); setSlot(0); setCatOverride(2); setMenuIdx(3)
     setDecorIdx(0); setDjIdx(1); setTtdIdx(0); setDealVal(14); setTaxMode(0); setSplit5(50)
-    setQuoteStatus('draft'); setSavedId(null); setShowQuotes(false); setShowProposal(false); setPage(0)
+    setQuoteStatus('draft'); setSavedId(null); setNotes(''); setShowQuotes(false); setShowProposal(false); setPage(0)
   }
 
   async function updateStatus(s) {
@@ -450,6 +452,7 @@ function QuoteCalculator({ profile }) {
           same_date_same_venue: (demandData || []).filter(function(q) { return q.venue_idx === venueIdx }).length,
           same_week: (weekData || []).length,
         },
+        notes: notes.trim() || null,
       }
       var res = await fetch(
         import.meta.env.VITE_SUPABASE_URL + '/functions/v1/quote-assist',
@@ -843,6 +846,14 @@ function QuoteCalculator({ profile }) {
 
           {savedId && <StatusBar quoteStatus={quoteStatus} onUpdate={updateStatus} />}
         </div>
+
+        {/* NOTES */}
+        <SectionCard title="Notes">
+          <textarea value={notes} onChange={function(e){ setNotes(e.target.value) }}
+            rows="3" maxLength="1000" placeholder="Remarks, special requests, negotiation context..."
+            style={{ width: '100%', padding: 11, borderRadius: 9, border: '2px solid ' + C.border, fontSize: 14, fontFamily: 'inherit', color: '#3D2B2B', background: C.bg, resize: 'vertical', outline: 'none' }} />
+          {notes.length > 0 && <div style={{ fontSize: 10, color: C.muted, textAlign: 'right', marginTop: 4 }}>{notes.length}/1000</div>}
+        </SectionCard>
 
         {/* DEAL VALUE */}
         <SectionCard title="Deal Value">

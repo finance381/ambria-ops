@@ -21,7 +21,7 @@ serve(async (req) => {
     const since = new Date(Date.now() - 30 * 86400000).toISOString().split("T")[0]
     const { data: quotes, error: qErr } = await supabase
       .from("quotes")
-      .select("venue_idx, venue_name, event_date, date_category, slot, pax, food_pref, is_wedding, menu_idx, menu_label, per_head_rate, decor_idx, dj_idx, ttd_idx, total_q_paise, total_t_paise, total_f_paise, deal_value_paise, status, created_at")
+      .select("venue_idx, venue_name, event_date, date_category, slot, pax, food_pref, is_wedding, menu_idx, menu_label, per_head_rate, decor_idx, dj_idx, ttd_idx, total_q_paise, total_t_paise, total_f_paise, deal_value_paise, status, notes, created_at")
       .gte("created_at", since)
       .order("created_at", { ascending: false })
       .limit(200)
@@ -82,6 +82,7 @@ Generate a fresh dynamic patterns file from the quote data. Rules:
    - DEMAND FORECAST: hot dates, per-venue demand for next 60 days
    - RECENT QUOTE PATTERNS: avg quote values by venue, popular menus, common pax ranges, conversion rates (status=accepted vs total)
    - PRICING INTELLIGENCE: deal values closing at vs quoted, TTD discount usage
+   - REP INSIGHTS: recurring themes from sales rep notes (special requests, negotiation patterns, objections raised)
 4. Do NOT repeat any information from the base knowledge file — this file supplements it.
 5. Strip any PII. No guest names, phones, emails.
 6. Keep total output under 4000 words.
