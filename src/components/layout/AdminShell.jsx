@@ -1,6 +1,5 @@
 import { useState, lazy, Suspense } from 'react'
 import { ROLE_COLORS } from '../../lib/constants'
-import ActivityLogs from '../../modules/logs/ActivityLogs'
 import RateCardEditor from '../../modules/quote/RateCardEditor'
 
 var PendingReview = lazy(function () { return import('../../modules/categories/PendingReview') })
