@@ -17,7 +17,7 @@ function makeEntry() {
     travelMode: '',
     travelFrom: '',
     travelTo: '',
-    allocations: [{ department: '', venueId: '', amountPaise: '' }]
+    allocations: [{ department: '', venueId: '', amountPaise: '' }],
     receiptFile: null,
     receiptPreview: '',
     audioBlob: null,
