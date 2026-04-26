@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 
 /* ═══════════════════════════════════════════════════════
@@ -574,6 +574,7 @@ function SeasonCalendar({ config, onSave, saving }) {
   var [brush, setBrush] = useState(0)
   var [viewYear, setViewYear] = useState(new Date().getFullYear())
   var [pointer, setPointer] = useState(false)
+  var lastPainted = useRef(null)
 
   useEffect(function () { setDraft(clone(config.season_dates || {})) }, [config.season_dates])
 
@@ -584,6 +585,21 @@ function SeasonCalendar({ config, onSave, saving }) {
       delete d[key]
     } else {
       d[key] = brush
+    }
+    setDraft(d)
+  }
+
+  function fillRange(fromMonth, fromDay, toMonth, toDay) {
+    var d = clone(draft)
+    var start = new Date(viewYear, fromMonth, fromDay)
+    var end = new Date(viewYear, toMonth, toDay)
+    if (end < start) { var tmp = start; start = end; end = tmp }
+    var cur = new Date(start)
+    while (cur <= end) {
+      var mm = cur.getMonth(), dd = cur.getDate()
+      var key = (mm + 1 < 10 ? '0' : '') + (mm + 1) + '-' + (dd < 10 ? '0' : '') + dd
+      d[key] = brush
+      cur.setDate(cur.getDate() + 1)
     }
     setDraft(d)
   }
@@ -612,8 +628,8 @@ function SeasonCalendar({ config, onSave, saving }) {
       var bgColor = cat === 0 ? '#FFF8F0' : cat === 1 ? '#FDF2F2' : cat === 2 ? '#F7F5F3' : '#fff'
       return (
         <div key={day}
-          onPointerDown={function (e) { e.preventDefault(); setPointer(true); toggleDate(monthIdx, day) }}
-          onPointerEnter={function () { if (pointer) toggleDate(monthIdx, day) }}
+          onPointerDown={function (e) { e.preventDefault(); setPointer(true); lastPainted.current = { m: monthIdx, d: day }; toggleDate(monthIdx, day) }}
+          onPointerEnter={function () { if (pointer) { if (lastPainted.current) fillRange(lastPainted.current.m, lastPainted.current.d, monthIdx, day); lastPainted.current = { m: monthIdx, d: day } }}}
           style={{
             aspectRatio: '1', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
             borderRadius: 7, cursor: 'pointer', fontSize: 12, fontWeight: 600,
