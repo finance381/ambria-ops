@@ -601,14 +601,19 @@ function SeasonCalendar({ config, onSave, saving }) {
       cells.push(<div key={'b' + blank} />)
     }
     for (var day = 1; day <= daysInMonth; day++) {
+      cells.push(renderDay(monthIdx, day))
+    }
+    return cells
+  }
+
+  function renderDay(monthIdx, day) {
       var cat = getCat(monthIdx, day)
       var dotColor = cat === 0 ? '#D4872C' : cat === 1 ? '#8B2D2D' : cat === 2 ? '#6B5B4E' : 'transparent'
       var bgColor = cat === 0 ? '#FFF8F0' : cat === 1 ? '#FDF2F2' : cat === 2 ? '#F7F5F3' : '#fff'
-      var dd = day
-      cells.push(
+      return (
         <div key={day}
-          onPointerDown={function (e) { e.preventDefault(); setPointer(true); toggleDate(monthIdx, dd) }}
-          onPointerEnter={function () { if (pointer) toggleDate(monthIdx, dd) }}
+          onPointerDown={function (e) { e.preventDefault(); setPointer(true); toggleDate(monthIdx, day) }}
+          onPointerEnter={function () { if (pointer) toggleDate(monthIdx, day) }}
           style={{
             aspectRatio: '1', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
             borderRadius: 7, cursor: 'pointer', fontSize: 12, fontWeight: 600,
@@ -620,8 +625,6 @@ function SeasonCalendar({ config, onSave, saving }) {
           {cat >= 0 && <div style={{ width: 4, height: 4, borderRadius: 2, background: dotColor, marginTop: 1 }} />}
         </div>
       )
-    }
-    return cells
   }
 
   // Stats
