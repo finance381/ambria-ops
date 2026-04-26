@@ -610,8 +610,8 @@ function SeasonCalendar({ config, onSave, saving }) {
           onPointerDown={function (e) { e.preventDefault(); setPointer(true); toggleDate(monthIdx, dd) }}
           onPointerEnter={function () { if (pointer) toggleDate(monthIdx, dd) }}
           style={{
-            width: 32, height: 32, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-            borderRadius: 7, cursor: 'pointer', fontSize: 11, fontWeight: 600,
+            aspectRatio: '1', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+            borderRadius: 7, cursor: 'pointer', fontSize: 12, fontWeight: 600,
             background: bgColor, color: cat >= 0 ? BRUSH_OPTS[cat].color : C.muted,
             border: '1px solid ' + (cat >= 0 ? BRUSH_OPTS[cat].color + '44' : 'transparent'),
             userSelect: 'none', touchAction: 'none',
@@ -667,14 +667,15 @@ function SeasonCalendar({ config, onSave, saving }) {
         </div>
 
         {/* Month grids */}
-        <div onPointerUp={function () { setPointer(false) }} onPointerLeave={function () { setPointer(false) }}>
+        <div onPointerUp={function () { setPointer(false) }} onPointerLeave={function () { setPointer(false) }}
+          style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 20 }}>
           {MONTH_NAMES.map(function (mName, mIdx) {
             return (
-              <div key={mIdx} style={{ marginBottom: 20 }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: C.maroon2, marginBottom: 6 }}>{mName}</div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 32px)', gap: 3 }}>
+              <div key={mIdx} style={{ padding: 12, borderRadius: 10, border: '1px solid ' + C.border, background: '#fff' }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: C.maroon2, marginBottom: 8, textAlign: 'center' }}>{mName}</div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 3 }}>
                   {DAY_HEADERS.map(function (dh) {
-                    return <div key={dh} style={{ textAlign: 'center', fontSize: 9, fontWeight: 700, color: C.muted, paddingBottom: 2 }}>{dh}</div>
+                    return <div key={dh} style={{ textAlign: 'center', fontSize: 10, fontWeight: 700, color: C.muted, paddingBottom: 4 }}>{dh}</div>
                   })}
                   {renderMonth(mIdx)}
                 </div>
@@ -737,7 +738,7 @@ function RateCardEditor({ profile }) {
   if (loading) return <div style={{ padding: 40, textAlign: 'center', color: C.muted }}>Loading config...</div>
 
   return (
-    <div style={{ fontFamily: 'Segoe UI, sans-serif', color: '#3D2B2B', maxWidth: 600, margin: '0 auto' }}>
+    <div style={{ fontFamily: 'Segoe UI, sans-serif', color: '#3D2B2B', maxWidth: tab === 6 ? 960 : 600, margin: '0 auto' }}>
       {/* Tab bar */}
       <div style={{ display: 'flex', gap: 6, marginBottom: 16, flexWrap: 'wrap' }}>
         {TABS.map(function (label, idx) {
