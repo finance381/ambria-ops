@@ -99,8 +99,8 @@ function AdminShell({ profile, onSignOut }) {
       <main className="max-w-[1200px] mx-auto px-6 py-6">
         <h2 className="text-xl font-bold text-gray-800 mb-5">{activeLabel}</h2>
         {ActiveModule && (
-          <Suspense fallback={<p className="text-gray-400 text-sm">Loading...</p>}>
-            <ActiveModule key={active} profile={profile} />
+          <Suspense fallback={<div className="text-center py-8 text-sm text-gray-400">Loading...</div>}>
+            <ActiveModule profile={profile} />
           </Suspense>
         )}
         {!ActiveModule && (
