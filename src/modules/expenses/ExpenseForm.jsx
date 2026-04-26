@@ -16,9 +16,12 @@ function makeEntry() {
     travelMode: '',
     travelFrom: '',
     travelTo: '',
-    allocations: [{ department: '', venueId: '', subVenueId: '', amountPaise: '' }]
+    allocations: [{ department: '', venueId: '', subVenueId: '', amountPaise: '' }],
+    receiptFile: null,
+    receiptPreview: ''
   }
 }
+
 
 function makeAllocation() {
   return { department: '', venueId: '', subVenueId: '', amountPaise: '' }
@@ -90,10 +93,32 @@ function ExpenseForm({ profile, onDone }) {
     setEntries(entries.filter(function (_, i) { return i !== idx }))
   }
 
+  function handleReceipt(idx, file) {
+    if (!file) return
+    var preview = URL.createObjectURL(file)
+    var updated = entries.map(function (e, i) {
+      if (i !== idx) return e
+      if (e.receiptPreview) URL.revokeObjectURL(e.receiptPreview)
+      return Object.assign({}, e, { receiptFile: file, receiptPreview: preview })
+    })
+    setEntries(updated)
+  }
+
+  function removeReceipt(idx) {
+    var updated = entries.map(function (e, i) {
+      if (i !== idx) return e
+      if (e.receiptPreview) URL.revokeObjectURL(e.receiptPreview)
+      return Object.assign({}, e, { receiptFile: null, receiptPreview: '' })
+    })
+    setEntries(updated)
+  }
+
   function duplicateEntry(idx) {
     var src = entries[idx]
     var dup = Object.assign({}, src, {
       _key: Date.now() + '_' + Math.random().toString(36).slice(2, 8),
+      receiptFile: null,
+      receiptPreview: '',
       allocations: src.allocations.map(function (a) { return Object.assign({}, a) })
     })
     var updated = entries.slice()
@@ -172,6 +197,7 @@ function ExpenseForm({ profile, onDone }) {
       if (typeHasField(e.expenseTypeId, 'travel_to') && !e.travelTo.trim()) {
         return 'Entry ' + (i + 1) + ': Enter travel to location'
       }
+      if (!e.receiptFile) return 'Entry ' + (i + 1) + ': Receipt image is required'
       // Validate allocations have at least dept
       for (var j = 0; j < e.allocations.length; j++) {
         var a = e.allocations[j]
@@ -223,6 +249,16 @@ function ExpenseForm({ profile, onDone }) {
       if (insErr || !exp) {
         failed++
         continue
+      }
+
+      // Upload receipt
+      if (e.receiptFile) {
+        var ext = e.receiptFile.name.split('.').pop()
+        var rPath = profile.id + '/' + exp.id + '_' + Date.now() + '.' + ext
+        var { error: upErr } = await supabase.storage.from('receipts').upload(rPath, e.receiptFile, { upsert: true })
+        if (!upErr) {
+          await supabase.from('expenses').update({ receipt_path: rPath }).eq('id', exp.id)
+        }
       }
 
       // Insert allocations
@@ -532,6 +568,33 @@ function ExpenseForm({ profile, onDone }) {
                     )
                   })}
                 </div>
+              </div>
+            {/* Receipt */}
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Receipt <span className="text-red-500">*</span></label>
+                {entry.receiptPreview ? (
+                  <div className="relative inline-block">
+                    <img src={entry.receiptPreview} alt="Receipt" className="h-32 rounded-lg border border-gray-200 object-cover" />
+                    <button
+                      type="button"
+                      onClick={function () { removeReceipt(idx) }}
+                      className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full text-xs flex items-center justify-center shadow-sm hover:bg-red-600"
+                    >✕</button>
+                  </div>
+                ) : (
+                  <div className="flex gap-2">
+                    <label className="flex-1 flex items-center justify-center gap-2 py-3 rounded-lg border-2 border-dashed border-gray-300 text-sm text-gray-500 hover:border-amber-400 hover:text-amber-600 cursor-pointer transition-colors">
+                      <span>📁 Gallery</span>
+                      <input type="file" accept="image/*,.pdf" className="hidden"
+                        onChange={function (e) { handleReceipt(idx, e.target.files?.[0] || null); e.target.value = '' }} />
+                    </label>
+                    <label className="flex-1 flex items-center justify-center gap-2 py-3 rounded-lg border-2 border-dashed border-gray-300 text-sm text-gray-500 hover:border-amber-400 hover:text-amber-600 cursor-pointer transition-colors">
+                      <span>📷 Camera</span>
+                      <input type="file" accept="image/*" capture="environment" className="hidden"
+                        onChange={function (e) { handleReceipt(idx, e.target.files?.[0] || null); e.target.value = '' }} />
+                    </label>
+                  </div>
+                )}
               </div>
             </div>
           </div>
