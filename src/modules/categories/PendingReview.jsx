@@ -84,7 +84,7 @@ function PendingReview({ profile }) {
 
           if (existing) {
             // Merge: add qty to existing
-            var newQty = (existing.qty || 0) + (pending.qty || 0)
+            var newQty = Math.round(((existing.qty || 0) + (pending.qty || 0)) * 1000) / 1000
             await supabase.from(table).update({ qty: newQty }).eq('id', existing.id)
             // Merge allocations
             var { data: pendingAllocs } = await supabase.from(allocTable).select('*').eq('item_id', id)
@@ -93,7 +93,7 @@ function PendingReview({ profile }) {
               var pa = pendingAllocs[ai]
               var match = (existingAllocs || []).find(function (ea) { return ea.venue_id === pa.venue_id && (ea.sub_venue_id || null) === (pa.sub_venue_id || null) })
               if (match) {
-                await supabase.from(allocTable).update({ qty: match.qty + pa.qty }).eq('id', match.id)
+                await supabase.from(allocTable).update({ qty: Math.round((match.qty + pa.qty) * 1000) / 1000 }).eq('id', match.id)
               } else {
                 await supabase.from(allocTable).insert({ item_id: existing.id, venue_id: pa.venue_id, sub_venue_id: pa.sub_venue_id || null, qty: pa.qty })
               }

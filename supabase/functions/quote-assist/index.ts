@@ -57,6 +57,7 @@ FIELD GUIDE:
 - demand.same_date = total quotes across all venues for this exact date
 - demand.same_date_same_venue = quotes for same date AND same venue
 - demand.same_week = quotes within 7-day window
+- notes = sales rep remarks, special requests, negotiation context (may be null)
 
 DEMAND RULES:
 - 5+ same-date quotes = HIGH demand. Hold Quote price, no discounts. Mention scarcity.

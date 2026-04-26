@@ -418,7 +418,7 @@ function InventoryForm({ item, profile, onClose, onSaved }) {
             if (!nr.qty || nr.qty <= 0) continue
             var match = (targetAllocs || []).find(function (ta) { return ta.venue_id === nr.venue_id && (ta.sub_venue_id || null) === (nr.sub_venue_id || null) })
             if (match) {
-              var { error: updErr } = await supabase.from(allocTable).update({ qty: match.qty + nr.qty }).eq('id', match.id)
+              var { error: updErr } = await supabase.from(allocTable).update({ qty: Math.round((match.qty + nr.qty) * 1000) / 1000 }).eq('id', match.id)
               if (updErr) throw new Error('Merge allocation update failed: ' + updErr.message)
             } else {
               var { error: insErr } = await supabase.from(allocTable).insert({ item_id: mergeTarget.id, venue_id: nr.venue_id, sub_venue_id: nr.sub_venue_id, qty: nr.qty })
@@ -466,7 +466,7 @@ function InventoryForm({ item, profile, onClose, onSaved }) {
 
         if (existing) {
           // Admin merge: add qty + merge allocations into existing approved item
-          var newQty = (existing.qty || 0) + (Number(qty) || 0)
+          var newQty = Math.round(((existing.qty || 0) + (Number(qty) || 0)) * 1000) / 1000
           var { error: updateErr } = await supabase.from(tableName).update({ qty: newQty }).eq('id', existing.id)
           if (updateErr) throw updateErr
           targetItem = { id: existing.id }
@@ -484,7 +484,7 @@ function InventoryForm({ item, profile, onClose, onSaved }) {
             if (!nrQty || nrQty <= 0) continue
             var match = (oldAllocs || []).find(function (oa) { return oa.venue_id === nrVenueId && (oa.sub_venue_id || null) === nrSubVenueId })
             if (match) {
-              var { error: updErr } = await supabase.from(allocTable).update({ qty: match.qty + nrQty }).eq('id', match.id)
+              var { error: updErr } = await supabase.from(allocTable).update({ qty: Math.round((match.qty + nrQty) * 1000) / 1000 }).eq('id', match.id)
               if (updErr) throw new Error('Allocation update failed: ' + updErr.message)
             } else {
               var { error: insErr } = await supabase.from(allocTable).insert({ item_id: existing.id, venue_id: nrVenueId, sub_venue_id: nrSubVenueId, qty: nrQty })

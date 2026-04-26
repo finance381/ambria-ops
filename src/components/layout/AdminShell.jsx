@@ -12,6 +12,8 @@ var Dashboard = lazy(function () { return import('../../modules/dashboard/Dashbo
 var Boxes = lazy(function () { return import('../../modules/boxes/Boxes') })
 var Purchase = lazy(function () { return import('../../modules/purchase/Purchase') })
 var Calendar = lazy(function () { return import('../../modules/calendar/Calendar') })
+var QuoteCalculator = React.lazy(function () { return import('../../modules/quote/QuoteCalculator.jsx') })
+var RateCardEditor = React.lazy(function () { return import('../../modules/quote/RateCardEditor.jsx') })
 
 var ADMIN_TABS = [
   { key: 'pending', label: 'Pending', icon: '⏳' },
