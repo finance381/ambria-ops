@@ -71,7 +71,7 @@ var FEATURE_PERMS = [
   },
   {
     key: 'feature_receive',
-    label: 'Purchase Orders',
+    label: 'Receiving',
     icon: '🛒',
     grants: ['feature_receive'],
   },
