@@ -245,13 +245,13 @@ function Purchase({ profile }) {
   }
 
   // ─── SAVE VENDOR INFO (admin on draft/confirmed) ───
-  async function savePoItemVendor(poItemId, vendorName, vendorContact, vendorRatePaise) {
+  async function savePoItemVendor(poItemId, vendorName, vendorContact, vendorRatePaise, estTotal) {
     var updateObj = {
       vendor_name: vendorName || null,
       vendor_contact: vendorContact || null,
       vendor_rate_paise: vendorRatePaise || null,
     }
-    if (vendorRatePaise) updateObj.estimated_cost_paise = vendorRatePaise
+    if (estTotal) updateObj.estimated_cost_paise = estTotal
     var { error } = await supabase.from('purchase_order_items').update(updateObj).eq('id', poItemId)
     if (error) alert('Save failed: ' + error.message)
   }
@@ -538,7 +538,9 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, on
 
   async function saveVendor(poItemId) {
     var ratePaise = vendorForm.rate ? Math.round(Number(vendorForm.rate) * 100) : null
-    await onSaveVendor(poItemId, vendorForm.name.trim(), vendorForm.contact.trim(), ratePaise)
+    var item = items.find(function (it) { return it.id === poItemId })
+    var estTotal = ratePaise && item ? ratePaise * item.qty_ordered : null
+    await onSaveVendor(poItemId, vendorForm.name.trim(), vendorForm.contact.trim(), ratePaise, estTotal)
     setItems(function (prev) {
       return prev.map(function (it) {
         if (it.id !== poItemId) return it
@@ -546,7 +548,7 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, on
           vendor_name: vendorForm.name.trim() || null,
           vendor_contact: vendorForm.contact.trim() || null,
           vendor_rate_paise: ratePaise,
-          estimated_cost_paise: ratePaise || it.estimated_cost_paise,
+          estimated_cost_paise: estTotal || it.estimated_cost_paise,
         })
       })
     })
@@ -655,7 +657,8 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, on
 
               {/* Cost display */}
               <div className="flex gap-3 text-[11px]">
-                {it.estimated_cost_paise > 0 && <span className="text-gray-500">Est: {formatPaise(it.estimated_cost_paise)}</span>}
+                {it.vendor_rate_paise > 0 && <span className="text-gray-400">Rate: {formatPaise(it.vendor_rate_paise)}/{it.unit}</span>}
+                {it.estimated_cost_paise > 0 && <span className="text-gray-500">Est Total: {formatPaise(it.estimated_cost_paise)}</span>}
                 {it.actual_cost_paise > 0 && <span className="text-green-600 font-medium">Actual: {formatPaise(it.actual_cost_paise)}</span>}
               </div>
 
