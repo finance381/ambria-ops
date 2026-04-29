@@ -10,7 +10,6 @@ import DeptReview from '../../modules/categories/DeptReview'
 import { useLang } from '../../lib/i18n.jsx'
 import QuoteCalculator from '../../modules/quote/QuoteCalculator'
 import Requisitions from '../../modules/requisitions/Requisitions'
-import Expenses from '../../modules/expenses/Expenses'
 import Purchase from '../../modules/purchase/Purchase'
 
 var FEATURES = [
@@ -22,7 +21,7 @@ var FEATURES = [
   { key: 'feature_requisitions', label: 'Requisitions', icon: '📋', tab: 'requisitions' },
   { key: 'feature_quote', label: 'Quote Calc', icon: '🧮', tab: 'quote' },
   { key: 'feature_expenses', label: 'PC & Direct Expenses', icon: '💰', tab: 'expenses' },
-  { key: 'feature_purchase', label: 'Purchases', icon: '🛒', tab: 'purchase' },
+  { key: 'feature_purchase', label: 'Purchase Orders', icon: '🛒', tab: 'purchase' },
   { key: 'feature_admin', label: 'Admin', icon: '⚙️', tab: 'admin' },
 ]
 

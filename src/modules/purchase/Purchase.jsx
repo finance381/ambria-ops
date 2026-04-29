@@ -2,34 +2,30 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { titleCase, formatDate, formatPaise } from '../../lib/format'
 import { logActivity } from '../../lib/logger'
+import SearchDropdown from '../../components/ui/SearchDropdown'
 
 var PO_STATUS_LABELS = {
   draft: 'Draft',
   confirmed: 'Confirmed',
-  procured: 'Procured',
-  partial: 'Partial',
-  received: 'Received',
+  completed: 'Completed',
   closed: 'Closed',
 }
 
 var PO_STATUS_COLORS = {
   draft: 'bg-gray-100 text-gray-600',
   confirmed: 'bg-blue-100 text-blue-700',
-  procured: 'bg-purple-100 text-purple-700',
-  partial: 'bg-amber-100 text-amber-700',
-  received: 'bg-green-100 text-green-700',
+  completed: 'bg-green-100 text-green-700',
   closed: 'bg-gray-200 text-gray-500',
 }
 
 var ITEM_STATUS_COLORS = {
-  ordered: 'bg-blue-100 text-blue-700',
-  partial: 'bg-amber-100 text-amber-700',
-  received: 'bg-green-100 text-green-700',
+  pending: 'bg-yellow-100 text-yellow-700',
+  purchased: 'bg-green-100 text-green-700',
   cancelled: 'bg-red-100 text-red-600',
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MAIN — Admin-only PO Dashboard
+// MAIN COMPONENT
 // ═══════════════════════════════════════════════════════════════
 function Purchase({ profile }) {
   var [tab, setTab] = useState('queue')
@@ -42,9 +38,16 @@ function Purchase({ profile }) {
   var [activePoItems, setActivePoItems] = useState([])
   var [loading, setLoading] = useState(true)
   var [saving, setSaving] = useState(false)
+  var [staffList, setStaffList] = useState([])
+
+  var isAdmin = profile?.role === 'admin' || profile?.role === 'auditor'
+  var isPurchaser = !isAdmin
 
   useEffect(function () {
-    loadQueue()
+    if (isAdmin) {
+      loadQueue()
+      loadStaff()
+    }
     loadPos()
   }, [])
 
@@ -53,7 +56,6 @@ function Purchase({ profile }) {
   // ─── QUEUE: approved requisition items not yet in any PO ───
   async function loadQueue() {
     setLoading(true)
-    // Fetch requisition items without PO link
     var { data: itemsRaw, error } = await supabase
       .from('requisition_items')
       .select('id, item_id, item_name, category_id, qty, unit, notes, _source, estimated_cost_paise, po_item_id, requisition_id, categories(name)')
@@ -66,7 +68,6 @@ function Purchase({ profile }) {
     var items = itemsRaw || []
     if (items.length === 0) { setQueueItems([]); setLoading(false); return }
 
-    // Fetch parent requisitions separately (avoids FK hint issues)
     var reqIds = []
     items.forEach(function (it) {
       if (reqIds.indexOf(it.requisition_id) === -1) reqIds.push(it.requisition_id)
@@ -93,21 +94,50 @@ function Purchase({ profile }) {
   async function loadPos() {
     var query = supabase
       .from('purchase_orders')
-      .select('id, status, notes, created_at, updated_at, profiles:created_by(name)')
+      .select('id, status, notes, assigned_to, created_at, updated_at, profiles:created_by(name), assignee:assigned_to(name)')
       .order('created_at', { ascending: false })
       .limit(100)
 
     if (poStatusFilter) query = query.eq('status', poStatusFilter)
 
-    var { data } = await query
-    setPoList(data || [])
+    // Purchaser only sees assigned POs
+    if (isPurchaser) {
+      query = query.eq('assigned_to', profile.id)
+    }
+
+    var { data, error } = await query
+    if (error) {
+      // FK hint fallback for assigned_to
+      var fallbackQuery = supabase
+        .from('purchase_orders')
+        .select('id, status, notes, assigned_to, created_at, updated_at, profiles:created_by(name)')
+        .order('created_at', { ascending: false })
+        .limit(100)
+      if (poStatusFilter) fallbackQuery = fallbackQuery.eq('status', poStatusFilter)
+      if (isPurchaser) fallbackQuery = fallbackQuery.eq('assigned_to', profile.id)
+      var { data: fbData } = await fallbackQuery
+      setPoList(fbData || [])
+    } else {
+      setPoList(data || [])
+    }
+    setLoading(false)
+  }
+
+  // ─── STAFF LIST for assigning purchaser ───
+  async function loadStaff() {
+    var { data } = await supabase
+      .from('profiles')
+      .select('id, name, role')
+      .eq('active', true)
+      .order('name')
+    setStaffList(data || [])
   }
 
   // ─── OPEN PO DETAIL ───
   async function openPoDetail(po) {
     var { data } = await supabase
       .from('purchase_order_items')
-      .select('id, requisition_item_id, item_id, item_name, category_id, _source, qty_ordered, unit, vendor_name, vendor_contact, vendor_rate_paise, estimated_cost_paise, actual_cost_paise, actual_qty, received_by, received_at, status, notes, categories(name)')
+      .select('id, requisition_item_id, item_id, item_name, category_id, _source, qty_ordered, unit, vendor_name, vendor_contact, vendor_rate_paise, estimated_cost_paise, actual_cost_paise, actual_qty, received_by, received_at, status, notes, receipt_path, categories(name)')
       .eq('po_id', po.id)
       .order('created_at')
 
@@ -157,7 +187,7 @@ function Purchase({ profile }) {
           qty_ordered: q.qty,
           unit: q.unit || 'Pieces',
           estimated_cost_paise: q.estimated_cost_paise || 0,
-          status: 'ordered',
+          status: 'pending',
         }
       })
 
@@ -182,7 +212,6 @@ function Purchase({ profile }) {
       loadQueue()
       loadPos()
 
-      // Open the new PO
       openPoDetail(Object.assign({}, po, { status: 'draft', created_at: new Date().toISOString(), profiles: { name: profile.name } }))
     } catch (err) {
       alert('Failed to create PO: ' + err.message)
@@ -190,7 +219,7 @@ function Purchase({ profile }) {
     }
   }
 
-  // ─── PO STATUS TRANSITIONS ───
+  // ─── PO STATUS TRANSITIONS (admin only) ───
   async function updatePoStatus(poId, newStatus) {
     if (saving) return
     setSaving(true)
@@ -202,7 +231,20 @@ function Purchase({ profile }) {
     loadPos()
   }
 
-  // ─── SAVE VENDOR INFO ON PO ITEMS ───
+  // ─── ASSIGN PURCHASER (admin only) ───
+  async function assignPurchaser(poId, userId) {
+    if (saving) return
+    setSaving(true)
+    var { error } = await supabase.from('purchase_orders').update({ assigned_to: userId || null }).eq('id', poId)
+    if (error) { alert('Assign failed: ' + error.message); setSaving(false); return }
+    var staff = staffList.find(function (s) { return s.id === userId })
+    try { await logActivity('PO_ASSIGN', 'PO ' + poId.slice(0, 8) + ' → ' + (staff?.name || 'unassigned')) } catch (_) {}
+    setActivePo(function (prev) { return prev ? Object.assign({}, prev, { assigned_to: userId }) : prev })
+    setSaving(false)
+    loadPos()
+  }
+
+  // ─── SAVE VENDOR INFO (admin on draft/confirmed) ───
   async function savePoItemVendor(poItemId, vendorName, vendorContact, vendorRatePaise) {
     var updateObj = {
       vendor_name: vendorName || null,
@@ -214,41 +256,51 @@ function Purchase({ profile }) {
     if (error) alert('Save failed: ' + error.message)
   }
 
-  // ─── RECEIVE ITEM ───
-  async function receiveItem(poItemId, actualQty, actualCostPaise) {
+  // ─── MARK ITEM PURCHASED (purchaser) ───
+  async function markPurchased(poItemId, actualQty, actualCostPaise, receiptFile) {
     if (saving) return
     setSaving(true)
 
-    var { error } = await supabase.from('purchase_order_items').update({
+    // Upload receipt if provided
+    var receiptPath = null
+    if (receiptFile) {
+      var ext = receiptFile.name.split('.').pop()
+      var fileName = profile.id + '/po-' + Date.now() + '.' + ext
+      var { error: upErr } = await supabase.storage.from('receipts').upload(fileName, receiptFile)
+      if (!upErr) receiptPath = fileName
+    }
+
+    var updateObj = {
       actual_qty: actualQty,
       actual_cost_paise: actualCostPaise,
       received_by: profile.id,
       received_at: new Date().toISOString(),
-      status: 'received',
-    }).eq('id', poItemId)
+      status: 'purchased',
+    }
+    if (receiptPath) updateObj.receipt_path = receiptPath
 
-    if (error) { alert('Receive failed: ' + error.message); setSaving(false); return }
+    var { error } = await supabase.from('purchase_order_items').update(updateObj).eq('id', poItemId)
+    if (error) { alert('Failed: ' + error.message); setSaving(false); return }
 
     // Update local state
     var updatedItems = activePoItems.map(function (p) {
-      if (p.id === poItemId) return Object.assign({}, p, { status: 'received', actual_qty: actualQty, actual_cost_paise: actualCostPaise })
+      if (p.id === poItemId) return Object.assign({}, p, updateObj)
       return p
     })
     setActivePoItems(updatedItems)
 
-    // Auto-transition PO status
+    // Auto-complete PO when all items purchased/cancelled
     if (activePo) {
-      var allDone = updatedItems.every(function (p) { return p.status === 'received' || p.status === 'cancelled' })
-      var someDone = updatedItems.some(function (p) { return p.status === 'received' })
-
+      var allDone = updatedItems.every(function (p) { return p.status === 'purchased' || p.status === 'cancelled' })
       if (allDone) {
-        await updatePoStatus(activePo.id, 'received')
-      } else if (someDone && activePo.status !== 'partial') {
-        await updatePoStatus(activePo.id, 'partial')
+        await supabase.from('purchase_orders').update({ status: 'completed' }).eq('id', activePo.id)
+        setActivePo(function (prev) { return prev ? Object.assign({}, prev, { status: 'completed' }) : prev })
+        try { await logActivity('PO_COMPLETE', 'PO ' + activePo.id.slice(0, 8) + ' auto-completed') } catch (_) {}
+        loadPos()
       }
     }
 
-    try { await logActivity('PO_RECEIVE', 'Item received | PO ' + (activePo?.id || '').slice(0, 8)) } catch (_) {}
+    try { await logActivity('PO_ITEM_PURCHASED', titleCase(activePoItems.find(function (p) { return p.id === poItemId })?.item_name || '') + ' | ₹' + (actualCostPaise / 100)) } catch (_) {}
     setSaving(false)
   }
 
@@ -266,17 +318,54 @@ function Purchase({ profile }) {
         items={activePoItems}
         setItems={setActivePoItems}
         profile={profile}
+        isAdmin={isAdmin}
+        staffList={staffList}
         saving={saving}
-        onBack={function () { setView('list'); setActivePo(null); setActivePoItems([]); loadQueue(); loadPos() }}
-        onStatusChange={function (s) { updatePoStatus(activePo.id, s) }}
+        onBack={function () { setView('list'); setActivePo(null); setActivePoItems([]); if (isAdmin) loadQueue(); loadPos() }}
+        onStatusChange={updatePoStatus}
+        onAssign={assignPurchaser}
         onSaveVendor={savePoItemVendor}
-        onReceive={receiveItem}
+        onMarkPurchased={markPurchased}
       />
     )
   }
 
   // ═══════════════════════════════════════════════
-  // MAIN TABS: QUEUE | POs
+  // PURCHASER VIEW — only assigned POs
+  // ═══════════════════════════════════════════════
+  if (isPurchaser) {
+    return (
+      <div className="space-y-4">
+        <h2 className="text-lg font-bold text-gray-900">My Purchase Orders</h2>
+
+        {poList.length === 0 && (
+          <div className="bg-white rounded-lg border border-gray-200 p-8 text-center">
+            <p className="text-gray-400 text-sm">No purchase orders assigned to you</p>
+          </div>
+        )}
+
+        {poList.map(function (po) {
+          return (
+            <div key={po.id} onClick={function () { openPoDetail(po) }}
+              className="bg-white rounded-lg border border-gray-200 p-3 hover:border-gray-300 active:bg-gray-50 transition-colors cursor-pointer">
+              <div className="flex items-center justify-between">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-gray-800">PO #{po.id.slice(0, 8)}</p>
+                  <p className="text-[11px] text-gray-400 mt-0.5">{formatDate(po.created_at)}{po.notes ? ' · ' + po.notes : ''}</p>
+                </div>
+                <span className={"text-[10px] font-bold uppercase px-2 py-0.5 rounded-full " + (PO_STATUS_COLORS[po.status] || '')}>
+                  {PO_STATUS_LABELS[po.status] || po.status}
+                </span>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    )
+  }
+
+  // ═══════════════════════════════════════════════
+  // ADMIN VIEW — QUEUE + POs
   // ═══════════════════════════════════════════════
   return (
     <div className="space-y-4">
@@ -365,7 +454,7 @@ function Purchase({ profile }) {
       {tab === 'pos' && (
         <div className="space-y-3">
           <div className="flex gap-2 flex-wrap">
-            {['', 'draft', 'confirmed', 'procured', 'partial', 'received', 'closed'].map(function (s) {
+            {['', 'draft', 'confirmed', 'completed', 'closed'].map(function (s) {
               var label = s ? PO_STATUS_LABELS[s] : 'All'
               return (
                 <button key={s} onClick={function () { setPoStatusFilter(s === poStatusFilter ? '' : s) }}
@@ -384,6 +473,7 @@ function Purchase({ profile }) {
           )}
 
           {poList.map(function (po) {
+            var assigneeName = po.assignee?.name || null
             return (
               <div key={po.id} onClick={function () { openPoDetail(po) }}
                 className="bg-white rounded-lg border border-gray-200 p-3 hover:border-gray-300 active:bg-gray-50 transition-colors cursor-pointer">
@@ -392,6 +482,7 @@ function Purchase({ profile }) {
                     <p className="text-sm font-semibold text-gray-800">PO #{po.id.slice(0, 8)}</p>
                     <p className="text-[11px] text-gray-400 mt-0.5">
                       {po.profiles?.name || '—'} · {formatDate(po.created_at)}
+                      {assigneeName ? ' · 🛒 ' + assigneeName : ''}
                       {po.notes ? ' · ' + po.notes : ''}
                     </p>
                   </div>
@@ -409,24 +500,32 @@ function Purchase({ profile }) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// PO DETAIL — View items, assign vendors, status transitions, receive
+// PO DETAIL
 // ═══════════════════════════════════════════════════════════════
-function PoDetail({ po, items, setItems, profile, saving, onBack, onStatusChange, onSaveVendor, onReceive }) {
+function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, onBack, onStatusChange, onAssign, onSaveVendor, onMarkPurchased }) {
   var [editingVendor, setEditingVendor] = useState(null)
   var [vendorForm, setVendorForm] = useState({ name: '', contact: '', rate: '' })
-  var [receivingItem, setReceivingItem] = useState(null)
-  var [receiveForm, setReceiveForm] = useState({ qty: '', cost: '' })
+  var [purchasingItem, setPurchasingItem] = useState(null)
+  var [purchaseForm, setPurchaseForm] = useState({ qty: '', cost: '', receipt: null })
+
+  var isPurchaser = po.assigned_to === profile?.id
+  var canEdit = isAdmin && (po.status === 'draft' || po.status === 'confirmed')
+  var canConfirm = isAdmin && po.status === 'draft' && items.length > 0
+  var canClose = isAdmin && po.status === 'completed'
+  var canPurchase = isPurchaser && po.status === 'confirmed'
 
   var totalEstPaise = 0
   var totalActualPaise = 0
+  var pendingCount = 0
+  var purchasedCount = 0
   items.forEach(function (it) {
     if (it.estimated_cost_paise) totalEstPaise += it.estimated_cost_paise
     if (it.actual_cost_paise) totalActualPaise += it.actual_cost_paise
+    if (it.status === 'pending') pendingCount++
+    if (it.status === 'purchased') purchasedCount++
   })
 
-  var canConfirm = po.status === 'draft' && items.length > 0
-  var canMarkProcured = po.status === 'confirmed'
-  var canClose = po.status === 'received'
+  var staffItems = staffList.map(function (s) { return { label: s.name + (s.role === 'admin' ? ' (Admin)' : ''), value: s.id } })
 
   function startVendorEdit(it) {
     setEditingVendor(it.id)
@@ -454,21 +553,22 @@ function PoDetail({ po, items, setItems, profile, saving, onBack, onStatusChange
     setEditingVendor(null)
   }
 
-  function startReceive(it) {
-    setReceivingItem(it.id)
-    setReceiveForm({
+  function startPurchase(it) {
+    setPurchasingItem(it.id)
+    setPurchaseForm({
       qty: String(it.qty_ordered),
       cost: it.estimated_cost_paise ? String(it.estimated_cost_paise / 100) : '',
+      receipt: null,
     })
   }
 
-  async function confirmReceive(poItemId) {
-    var actualQty = Number(receiveForm.qty)
-    var actualCostPaise = Math.round(Number(receiveForm.cost) * 100)
-    if (!actualQty || actualQty <= 0) { alert('Enter received qty'); return }
+  async function confirmPurchase(poItemId) {
+    var actualQty = Number(purchaseForm.qty)
+    var actualCostPaise = Math.round(Number(purchaseForm.cost) * 100)
+    if (!actualQty || actualQty <= 0) { alert('Enter qty purchased'); return }
     if (!actualCostPaise || actualCostPaise <= 0) { alert('Enter actual cost'); return }
-    await onReceive(poItemId, actualQty, actualCostPaise)
-    setReceivingItem(null)
+    await onMarkPurchased(poItemId, actualQty, actualCostPaise, purchaseForm.receipt)
+    setPurchasingItem(null)
   }
 
   return (
@@ -482,7 +582,7 @@ function PoDetail({ po, items, setItems, profile, saving, onBack, onStatusChange
       </div>
 
       {/* PO info */}
-      <div className="bg-white rounded-lg border border-gray-200 p-4 space-y-2">
+      <div className="bg-white rounded-lg border border-gray-200 p-4 space-y-3">
         <p className="text-sm font-bold text-gray-800">PO #{po.id.slice(0, 8)}</p>
         <div className="text-[11px] text-gray-400 space-y-0.5">
           <p>Created by: {po.profiles?.name || '—'} · {formatDate(po.created_at)}</p>
@@ -500,10 +600,23 @@ function PoDetail({ po, items, setItems, profile, saving, onBack, onStatusChange
             </div>
           )}
           <div>
-            <p className="text-[10px] text-gray-400 uppercase">Items</p>
-            <p className="text-sm font-bold text-gray-700">{items.length}</p>
+            <p className="text-[10px] text-gray-400 uppercase">Progress</p>
+            <p className="text-sm font-bold text-gray-700">{purchasedCount + '/' + items.length}</p>
           </div>
         </div>
+
+        {/* Assign purchaser — admin only, draft/confirmed */}
+        {canEdit && (
+          <div className="pt-2 border-t border-gray-100">
+            <SearchDropdown
+              label="Assign Purchaser"
+              items={staffItems}
+              value={po.assigned_to || ''}
+              onChange={function (val) { onAssign(po.id, val) }}
+              placeholder="Select staff member..."
+            />
+          </div>
+        )}
       </div>
 
       {/* Items */}
@@ -511,7 +624,7 @@ function PoDetail({ po, items, setItems, profile, saving, onBack, onStatusChange
         <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">{items.length + ' Item' + (items.length !== 1 ? 's' : '')}</h3>
         {items.map(function (it) {
           var isEditingVendor = editingVendor === it.id
-          var isReceiving = receivingItem === it.id
+          var isPurchasing = purchasingItem === it.id
 
           return (
             <div key={it.id} className="bg-white rounded-lg border border-gray-200 p-3 space-y-2">
@@ -529,7 +642,7 @@ function PoDetail({ po, items, setItems, profile, saving, onBack, onStatusChange
                 </span>
               </div>
 
-              {/* Vendor info display */}
+              {/* Vendor info */}
               {it.vendor_name && !isEditingVendor && (
                 <div className="bg-gray-50 rounded p-2">
                   <p className="text-[11px] text-gray-600">
@@ -546,9 +659,18 @@ function PoDetail({ po, items, setItems, profile, saving, onBack, onStatusChange
                 {it.actual_cost_paise > 0 && <span className="text-green-600 font-medium">Actual: {formatPaise(it.actual_cost_paise)}</span>}
               </div>
 
+              {/* Receipt link */}
+              {it.receipt_path && (
+                <a href={supabase.storage.from('receipts').getPublicUrl(it.receipt_path).data.publicUrl}
+                  target="_blank" rel="noopener noreferrer"
+                  className="inline-block text-[11px] text-indigo-600 font-medium hover:underline">
+                  📎 View Bill
+                </a>
+              )}
+
               {it.notes && <p className="text-[11px] text-gray-400">{it.notes}</p>}
 
-              {/* Vendor edit form */}
+              {/* Vendor edit form — admin only */}
               {isEditingVendor && (
                 <div className="bg-blue-50 rounded-lg border border-blue-200 p-3 space-y-2">
                   <p className="text-[11px] font-bold text-blue-700 uppercase">Assign Vendor</p>
@@ -575,46 +697,54 @@ function PoDetail({ po, items, setItems, profile, saving, onBack, onStatusChange
                 </div>
               )}
 
-              {/* Receive form */}
-              {isReceiving && (
+              {/* Purchase form — purchaser marks item as bought */}
+              {isPurchasing && (
                 <div className="bg-green-50 rounded-lg border border-green-200 p-3 space-y-2">
-                  <p className="text-[11px] font-bold text-green-700 uppercase">Receive Item</p>
+                  <p className="text-[11px] font-bold text-green-700 uppercase">Mark as Purchased</p>
                   <div className="grid grid-cols-2 gap-2">
                     <div>
-                      <label className="block text-[11px] text-gray-500 mb-0.5">Qty Received</label>
-                      <input type="number" min="0" step="any" inputMode="decimal" value={receiveForm.qty}
-                        onChange={function (e) { setReceiveForm(function (p) { return Object.assign({}, p, { qty: e.target.value }) }) }}
+                      <label className="block text-[11px] text-gray-500 mb-0.5">Qty Bought</label>
+                      <input type="number" min="0" step="any" inputMode="decimal" value={purchaseForm.qty}
+                        onChange={function (e) { setPurchaseForm(function (p) { return Object.assign({}, p, { qty: e.target.value }) }) }}
                         className="w-full px-2 py-1.5 border border-green-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
                     </div>
                     <div>
                       <label className="block text-[11px] text-gray-500 mb-0.5">Actual Cost (₹)</label>
-                      <input type="number" min="0" step="0.01" inputMode="decimal" value={receiveForm.cost}
-                        onChange={function (e) { setReceiveForm(function (p) { return Object.assign({}, p, { cost: e.target.value }) }) }}
+                      <input type="number" min="0" step="0.01" inputMode="decimal" value={purchaseForm.cost}
+                        onChange={function (e) { setPurchaseForm(function (p) { return Object.assign({}, p, { cost: e.target.value }) }) }}
                         className="w-full px-2 py-1.5 border border-green-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
                     </div>
                   </div>
+                  <div>
+                    <label className="block text-[11px] text-gray-500 mb-0.5">Upload Bill / Receipt</label>
+                    <input type="file" accept="image/*,application/pdf"
+                      onChange={function (e) { setPurchaseForm(function (p) { return Object.assign({}, p, { receipt: e.target.files[0] || null }) }) }}
+                      className="w-full text-sm text-gray-500 file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-xs file:font-medium file:bg-green-100 file:text-green-700" />
+                  </div>
                   <div className="flex gap-2">
-                    <button onClick={function () { setReceivingItem(null) }}
+                    <button onClick={function () { setPurchasingItem(null) }}
                       className="flex-1 py-1.5 text-xs text-gray-600 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors">Cancel</button>
-                    <button onClick={function () { confirmReceive(it.id) }} disabled={saving}
+                    <button onClick={function () { confirmPurchase(it.id) }} disabled={saving}
                       className="flex-1 py-1.5 text-xs text-white bg-green-600 rounded-md hover:bg-green-700 disabled:opacity-50 transition-colors">
-                      {saving ? 'Saving...' : 'Confirm Received'}
+                      {saving ? 'Saving...' : '✓ Purchased'}
                     </button>
                   </div>
                 </div>
               )}
 
-              {/* Action buttons per item */}
-              {it.status === 'ordered' && !isEditingVendor && !isReceiving && (
+              {/* Action buttons */}
+              {it.status === 'pending' && !isEditingVendor && !isPurchasing && (
                 <div className="flex gap-2">
-                  <button onClick={function (e) { e.stopPropagation(); startVendorEdit(it) }}
-                    className="text-[11px] font-medium text-blue-600 hover:text-blue-800 transition-colors">
-                    {it.vendor_name ? '✎ Edit Vendor' : '+ Assign Vendor'}
-                  </button>
-                  {(po.status === 'procured' || po.status === 'partial') && (
-                    <button onClick={function (e) { e.stopPropagation(); startReceive(it) }}
+                  {canEdit && (
+                    <button onClick={function (e) { e.stopPropagation(); startVendorEdit(it) }}
+                      className="text-[11px] font-medium text-blue-600 hover:text-blue-800 transition-colors">
+                      {it.vendor_name ? '✎ Edit Vendor' : '+ Assign Vendor'}
+                    </button>
+                  )}
+                  {canPurchase && (
+                    <button onClick={function (e) { e.stopPropagation(); startPurchase(it) }}
                       className="text-[11px] font-medium text-green-600 hover:text-green-800 transition-colors">
-                      ✓ Receive
+                      🛒 Mark Purchased
                     </button>
                   )}
                 </div>
@@ -624,22 +754,19 @@ function PoDetail({ po, items, setItems, profile, saving, onBack, onStatusChange
         })}
       </div>
 
-      {/* PO-level actions */}
+      {/* PO-level actions — admin only */}
       <div className="space-y-2">
         {canConfirm && (
-          <button onClick={function () { onStatusChange('confirmed') }} disabled={saving}
+          <button onClick={function () {
+            if (!po.assigned_to) { alert('Assign a purchaser before confirming'); return }
+            onStatusChange(po.id, 'confirmed')
+          }} disabled={saving}
             className="w-full py-3 text-sm font-bold text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors">
-            {saving ? 'Confirming...' : 'Confirm PO'}
-          </button>
-        )}
-        {canMarkProcured && (
-          <button onClick={function () { onStatusChange('procured') }} disabled={saving}
-            className="w-full py-3 text-sm font-bold text-white bg-purple-600 rounded-lg hover:bg-purple-700 disabled:opacity-50 transition-colors">
-            {saving ? 'Updating...' : 'Mark as Procured'}
+            {saving ? 'Confirming...' : 'Confirm & Send to Purchaser'}
           </button>
         )}
         {canClose && (
-          <button onClick={function () { onStatusChange('closed') }} disabled={saving}
+          <button onClick={function () { onStatusChange(po.id, 'closed') }} disabled={saving}
             className="w-full py-3 text-sm font-bold text-white bg-gray-700 rounded-lg hover:bg-gray-800 disabled:opacity-50 transition-colors">
             {saving ? 'Closing...' : 'Close PO'}
           </button>
