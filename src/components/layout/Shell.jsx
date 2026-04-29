@@ -34,28 +34,111 @@ function Shell({ profile, onSignOut }) {
   var { lang, switchLang } = useLang()
 
   // Admin/auditor see all cards; others see only granted features
-  var badgeCounts = { feature_expenses: expBadge }
+  var [badges, setBadges] = useState({})
 
   var visibleFeatures = FEATURES.filter(function (f) {
     return perms.includes(f.key)
   })
-  var [expBadge, setExpBadge] = useState(0)
+
+  var badgeCounts = badges
 
   useEffect(function () {
-    if (!perms.includes('feature_expenses')) return
+    loadBadges()
+  }, [tab])
+
+  async function loadBadges() {
+    var counts = {}
     var isDeptAppr = perms.indexOf('dept_approve') !== -1
     var isAdminRole = profile.role === 'admin' || profile.role === 'auditor'
-    var statuses = []
-    if (isAdminRole) statuses = isDeptAppr ? ['pending_dept', 'pending'] : ['pending']
-    else if (isDeptAppr) statuses = ['pending_dept']
-    if (!statuses.length) return
 
-    supabase.from('expenses')
-      .select('id', { count: 'exact', head: true })
-      .neq('user_id', profile.id)
-      .in('status', statuses)
-      .then(function (res) { setExpBadge(res.count || 0) })
-  }, [tab])
+    var promises = []
+
+    // Dept Review badge
+    if (perms.indexOf('feature_dept_review') !== -1) {
+      promises.push(
+        Promise.all([
+          supabase.from('inventory_items').select('id', { count: 'exact', head: true }).eq('status', 'pending_dept'),
+          supabase.from('catering_store_items').select('id', { count: 'exact', head: true }).eq('status', 'pending_dept'),
+        ]).then(function (res) {
+          counts.feature_dept_review = (res[0].count || 0) + (res[1].count || 0)
+        })
+      )
+    }
+
+    // Pending Review badge
+    if (perms.indexOf('feature_pending') !== -1) {
+      promises.push(
+        Promise.all([
+          supabase.from('inventory_items').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
+          supabase.from('catering_store_items').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
+        ]).then(function (res) {
+          counts.feature_pending = (res[0].count || 0) + (res[1].count || 0)
+        })
+      )
+    }
+
+    // Requisitions badge
+    if (perms.indexOf('feature_requisitions') !== -1 && (isDeptAppr || isAdminRole)) {
+      var reqStatuses = []
+      if (isAdminRole) reqStatuses = isDeptAppr ? ['pending_dept', 'pending'] : ['pending']
+      else if (isDeptAppr) reqStatuses = ['pending_dept']
+      if (reqStatuses.length > 0) {
+        promises.push(
+          supabase.from('requisitions')
+            .select('id', { count: 'exact', head: true })
+            .neq('requested_by', profile.id)
+            .in('status', reqStatuses)
+            .then(function (res) { counts.feature_requisitions = res.count || 0 })
+        )
+      }
+    }
+
+    // Expenses badge
+    if (perms.indexOf('feature_expenses') !== -1) {
+      var expStatuses = []
+      if (isAdminRole) expStatuses = isDeptAppr ? ['pending_dept', 'pending'] : ['pending']
+      else if (isDeptAppr) expStatuses = ['pending_dept']
+      if (expStatuses.length > 0) {
+        promises.push(
+          supabase.from('expenses')
+            .select('id', { count: 'exact', head: true })
+            .neq('user_id', profile.id)
+            .in('status', expStatuses)
+            .then(function (res) { counts.feature_expenses = res.count || 0 })
+        )
+      }
+    }
+
+    // Purchase Orders badge
+    if (perms.indexOf('feature_purchase') !== -1) {
+      if (isAdminRole) {
+        // Admin: count items in queue (approved req items without PO)
+        promises.push(
+          supabase.from('requisition_items')
+            .select('id, requisitions!inner(status)', { count: 'exact', head: true })
+            .is('po_item_id', null)
+            .eq('requisitions.status', 'approved')
+            .then(function (res) { counts.feature_purchase = res.count || 0 })
+            .catch(function () {
+              // FK hint fallback — just show 0
+              counts.feature_purchase = 0
+            })
+        )
+      } else {
+        // Purchaser: count confirmed POs assigned to them
+        promises.push(
+          supabase.from('purchase_orders')
+            .select('id', { count: 'exact', head: true })
+            .eq('assigned_to', profile.id)
+            .eq('status', 'confirmed')
+            .then(function (res) { counts.feature_purchase = res.count || 0 })
+        )
+      }
+    }
+
+    await Promise.allSettled(promises)
+    setBadges(counts)
+  }
 
   function handleSaved() {
     setShowSuccess(true)
