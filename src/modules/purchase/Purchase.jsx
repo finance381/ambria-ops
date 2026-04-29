@@ -685,7 +685,6 @@ function Purchase({ profile }) {
       {/* ═══ RECEIVING TAB (Admin) ═══ */}
       {tab === 'receiving' && (
         <div className="space-y-3">
-          <p className="text-red-500 font-bold">RECEIVING TAB ACTIVE</p>
           {showInvForm && (
             <div className="space-y-3">
               <div className="flex items-center gap-2">
