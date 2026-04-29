@@ -70,6 +70,12 @@ var FEATURE_PERMS = [
     grants: ['feature_purchase'],
   },
   {
+    key: 'feature_receive',
+    label: 'Purchase Orders',
+    icon: '🛒',
+    grants: ['feature_receive'],
+  },
+  {
    key: 'feature_admin',
    label: 'Admin Panel',
    icon: '⚙️',

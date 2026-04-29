@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { titleCase, formatDate, formatPaise } from '../../lib/format'
 import { logActivity } from '../../lib/logger'
 import SearchDropdown from '../../components/ui/SearchDropdown'
+import InventoryForm from '../inventory/InventoryForm'
 
 var PO_STATUS_LABELS = {
   draft: 'Draft',
@@ -21,6 +22,7 @@ var PO_STATUS_COLORS = {
 var ITEM_STATUS_COLORS = {
   pending: 'bg-yellow-100 text-yellow-700',
   purchased: 'bg-green-100 text-green-700',
+  received: 'bg-indigo-100 text-indigo-700',
   cancelled: 'bg-red-100 text-red-600',
 }
 
@@ -39,16 +41,28 @@ function Purchase({ profile }) {
   var [loading, setLoading] = useState(true)
   var [saving, setSaving] = useState(false)
   var [staffList, setStaffList] = useState([])
+  var [receivingItems, setReceivingItems] = useState([])
+  var [receivingLoading, setReceivingLoading] = useState(false)
+  var [receivingItem, setReceivingItem] = useState(null)
+  var [receiveQty, setReceiveQty] = useState('')
+  var [showInvForm, setShowInvForm] = useState(null)
 
   var isAdmin = profile?.role === 'admin' || profile?.role === 'auditor'
-  var isPurchaser = !isAdmin
+  var isReceiver = (profile?.permissions || []).indexOf('feature_receive') !== -1
+  var isPurchaser = !isAdmin && !isReceiver
 
   useEffect(function () {
     if (isAdmin) {
       loadQueue()
       loadStaff()
+      loadReceiving()
     }
-    loadPos()
+    if (isReceiver) {
+      loadReceiving()
+    }
+    if (!isReceiver) {
+      loadPos()
+    }
   }, [])
 
   useEffect(function () { loadPos() }, [poStatusFilter])
@@ -135,11 +149,73 @@ function Purchase({ profile }) {
     })
     setStaffList(purchasers)
   }
+  // ─── RECEIVING: load purchased items awaiting receive ───
+  async function loadReceiving() {
+    setReceivingLoading(true)
+    var { data, error } = await supabase
+      .from('purchase_order_items')
+      .select('id, po_id, item_id, item_name, category_id, _source, qty_ordered, actual_qty, unit, vendor_name, vendor_rate_paise, actual_cost_paise, status, purchased_by, purchased_at, categories(name)')
+      .eq('status', 'purchased')
+      .order('purchased_at', { ascending: true })
+      .limit(200)
+    if (error) { setReceivingItems([]); setReceivingLoading(false); return }
+    // Fetch PO info for context
+    var poIds = []
+    ;(data || []).forEach(function (it) { if (poIds.indexOf(it.po_id) === -1) poIds.push(it.po_id) })
+    var poMap = {}
+    if (poIds.length > 0) {
+      var { data: pos } = await supabase
+        .from('purchase_orders')
+        .select('id, notes, created_at, profiles:created_by(name)')
+        .in('id', poIds)
+      ;(pos || []).forEach(function (p) { poMap[p.id] = p })
+    }
+    setReceivingItems((data || []).map(function (it) { return Object.assign({}, it, { po: poMap[it.po_id] || null }) }))
+    setReceivingLoading(false)
+  }
+
+  // ─── RECEIVE EXISTING ITEM (qty bump via trigger) ───
+  async function receiveExistingItem(poItem) {
+    if (saving) return
+    var qtyReceived = Number(receiveQty)
+    if (!qtyReceived || qtyReceived <= 0) { alert('Enter valid qty'); return }
+    setSaving(true)
+    var { error } = await supabase.from('purchase_order_items').update({
+      actual_qty: qtyReceived,
+      received_by: profile.id,
+      received_at: new Date().toISOString(),
+      status: 'received',
+    }).eq('id', poItem.id)
+    if (error) { alert('Failed: ' + error.message); setSaving(false); return }
+    try { await logActivity('PO_ITEM_RECEIVED', titleCase(poItem.item_name) + ' | qty: ' + qtyReceived + ' | existing ' + poItem._source) } catch (_) {}
+    setReceivingItem(null)
+    setReceiveQty('')
+    setSaving(false)
+    loadReceiving()
+  }
+
+  // ─── RECEIVE NEW ITEM — callback after InventoryForm saves ───
+  async function receiveNewDone(savedItem, tableName) {
+    if (!showInvForm || !savedItem?.id) { setShowInvForm(null); return }
+    var poItem = showInvForm
+    var linkCol = tableName === 'catering_store_items' ? 'cs_item_id' : 'inventory_item_id'
+    var { error } = await supabase.from('purchase_order_items').update({
+      [linkCol]: savedItem.id,
+      received_by: profile.id,
+      received_at: new Date().toISOString(),
+      status: 'received',
+    }).eq('id', poItem.id)
+    if (error) { alert('Receive link failed: ' + error.message) }
+    try { await logActivity('PO_ITEM_RECEIVED', titleCase(poItem.item_name) + ' | new item → ' + tableName + ' #' + savedItem.id) } catch (_) {}
+    setShowInvForm(null)
+    loadReceiving()
+  }
+
   // ─── OPEN PO DETAIL ───
   async function openPoDetail(po) {
     var { data } = await supabase
       .from('purchase_order_items')
-      .select('id, requisition_item_id, item_id, item_name, category_id, _source, qty_ordered, unit, vendor_name, vendor_contact, vendor_rate_paise, estimated_cost_paise, actual_cost_paise, actual_qty, received_by, received_at, status, notes, receipt_path, categories(name)')
+      .select('id, requisition_item_id, item_id, item_name, category_id, _source, qty_ordered, unit, vendor_name, vendor_contact, vendor_rate_paise, estimated_cost_paise, actual_cost_paise, actual_qty, purchased_by, purchased_at, received_by, received_at, inventory_item_id, cs_item_id, status, notes, receipt_path, categories(name)')
       .eq('po_id', po.id)
       .order('created_at')
 
@@ -275,8 +351,8 @@ function Purchase({ profile }) {
     var updateObj = {
       actual_qty: actualQty,
       actual_cost_paise: actualCostPaise,
-      received_by: profile.id,
-      received_at: new Date().toISOString(),
+      purchased_by: profile.id,
+      purchased_at: new Date().toISOString(),
       status: 'purchased',
     }
     if (receiptPath) updateObj.receipt_path = receiptPath
@@ -327,6 +403,106 @@ function Purchase({ profile }) {
         onSaveVendor={savePoItemVendor}
         onMarkPurchased={markPurchased}
       />
+    )
+  }
+
+  // ═══════════════════════════════════════════════
+  // RECEIVER VIEW — only Receiving tab
+  // ═══════════════════════════════════════════════
+  if (isReceiver) {
+    // InventoryForm overlay for new items
+    if (showInvForm) {
+      return (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <button onClick={function () { setShowInvForm(null) }} className="text-sm text-gray-500 hover:text-gray-700">← Back</button>
+            <h2 className="text-lg font-bold text-gray-900">Add New Item to Inventory</h2>
+          </div>
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-2">
+            <p className="text-[11px] text-amber-700">Receiving <strong>{titleCase(showInvForm.item_name)}</strong> — fill item details below. Category, name, qty, unit and rate are pre-filled from PO.</p>
+          </div>
+          <InventoryForm
+            item={null}
+            prefill={{
+              name: showInvForm.item_name,
+              category_id: showInvForm.category_id,
+              qty: showInvForm.actual_qty || showInvForm.qty_ordered,
+              unit: showInvForm.unit,
+              rate_paise: showInvForm.vendor_rate_paise || 0,
+            }}
+            profile={profile}
+            onClose={function () { setShowInvForm(null) }}
+            onSaved={function (savedItem, tableName) { receiveNewDone(savedItem, tableName) }}
+          />
+        </div>
+      )
+    }
+
+    return (
+      <div className="space-y-4">
+        <h2 className="text-lg font-bold text-gray-900">Receive Items</h2>
+        {receivingLoading && <p className="text-gray-400 text-sm text-center py-8">Loading...</p>}
+        {!receivingLoading && receivingItems.length === 0 && (
+          <div className="bg-white rounded-lg border border-gray-200 p-8 text-center">
+            <p className="text-gray-400 text-sm">No items awaiting receiving</p>
+          </div>
+        )}
+        {receivingItems.map(function (it) {
+          var isActive = receivingItem === it.id
+          return (
+            <div key={it.id} className="bg-white rounded-lg border border-gray-200 p-3 space-y-2">
+              <div className="flex items-start justify-between">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-gray-800">{titleCase(it.item_name)}</p>
+                  <p className="text-[11px] text-gray-400 mt-0.5">
+                    {it.categories?.name || '—'} · Ordered: {it.qty_ordered} {it.unit}
+                    {it.actual_qty ? ' · Bought: ' + it.actual_qty : ''}
+                    {' · '}<span className={"font-medium " + (it._source === 'new' ? "text-amber-600" : "text-indigo-600")}>
+                      {it._source === 'new' ? 'New Item' : it._source === 'catering_store' ? 'Catering Store' : 'Inventory'}
+                    </span>
+                  </p>
+                  {it.vendor_name && <p className="text-[11px] text-gray-400">Vendor: {it.vendor_name}</p>}
+                  {it.po && <p className="text-[11px] text-gray-400">PO #{it.po_id.slice(0, 8)} · {it.po.profiles?.name || '—'} · {formatDate(it.po.created_at)}</p>}
+                </div>
+              </div>
+
+              {/* Receive action — existing item */}
+              {it._source !== 'new' && !isActive && (
+                <button onClick={function () { setReceivingItem(it.id); setReceiveQty(String(it.actual_qty || it.qty_ordered)) }}
+                  className="w-full py-2 text-sm font-semibold text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors">
+                  📦 Receive Item
+                </button>
+              )}
+              {it._source !== 'new' && isActive && (
+                <div className="bg-indigo-50 rounded-lg border border-indigo-200 p-3 space-y-2">
+                  <div>
+                    <label className="block text-[11px] text-gray-500 mb-0.5">Qty Received</label>
+                    <input type="number" min="0" step="any" inputMode="numeric" value={receiveQty}
+                      onChange={function (e) { setReceiveQty(e.target.value) }}
+                      className="w-full px-3 py-2 border border-indigo-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={function () { setReceivingItem(null); setReceiveQty('') }}
+                      className="flex-1 py-2 text-xs text-gray-600 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors">Cancel</button>
+                    <button onClick={function () { receiveExistingItem(it) }} disabled={saving}
+                      className="flex-1 py-2 text-xs text-white bg-indigo-600 rounded-md hover:bg-indigo-700 disabled:opacity-50 transition-colors">
+                      {saving ? 'Saving...' : '✓ Confirm Received'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Receive action — new item */}
+              {it._source === 'new' && (
+                <button onClick={function () { setShowInvForm(it) }}
+                  className="w-full py-2 text-sm font-semibold text-amber-600 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 transition-colors">
+                  📋 Receive & Add to Inventory
+                </button>
+              )}
+            </div>
+          )
+        })}
+      </div>
     )
   }
 
@@ -393,6 +569,15 @@ function Purchase({ profile }) {
         <button onClick={function () { setTab('pos') }}
           className={"flex-1 py-2 text-sm font-semibold rounded-md transition-colors " + (tab === 'pos' ? "bg-white text-gray-900 shadow-sm" : "text-gray-500")}>
           Purchase Orders
+        </button>
+        <button onClick={function () { setTab('receiving') }}
+          className={"flex-1 py-2 text-sm font-semibold rounded-md transition-colors relative " + (tab === 'receiving' ? "bg-white text-gray-900 shadow-sm" : "text-gray-500")}>
+          Receiving
+          {receivingItems.length > 0 && (
+            <span className="absolute -top-1 -right-1 w-5 h-5 bg-amber-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+              {receivingItems.length > 99 ? '99+' : receivingItems.length}
+            </span>
+          )}
         </button>
       </div>
 
@@ -493,6 +678,89 @@ function Purchase({ profile }) {
               </div>
             )
           })}
+          {/* ═══ RECEIVING TAB (Admin) ═══ */}
+      {tab === 'receiving' && (
+        <div className="space-y-3">
+          {showInvForm && (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <button onClick={function () { setShowInvForm(null) }} className="text-sm text-gray-500 hover:text-gray-700">← Back</button>
+                <h3 className="text-sm font-bold text-gray-900">Add New Item to Inventory</h3>
+              </div>
+              <InventoryForm
+                item={null}
+                prefill={{
+                  name: showInvForm.item_name,
+                  category_id: showInvForm.category_id,
+                  qty: showInvForm.actual_qty || showInvForm.qty_ordered,
+                  unit: showInvForm.unit,
+                  rate_paise: showInvForm.vendor_rate_paise || 0,
+                }}
+                profile={profile}
+                onClose={function () { setShowInvForm(null) }}
+                onSaved={function (savedItem, tableName) { receiveNewDone(savedItem, tableName) }}
+              />
+            </div>
+          )}
+          {!showInvForm && receivingLoading && <p className="text-gray-400 text-sm text-center py-8">Loading...</p>}
+          {!showInvForm && !receivingLoading && receivingItems.length === 0 && (
+            <div className="bg-white rounded-lg border border-gray-200 p-8 text-center">
+              <p className="text-gray-400 text-sm">No items awaiting receiving</p>
+            </div>
+          )}
+          {!showInvForm && receivingItems.map(function (it) {
+            var isActive = receivingItem === it.id
+            return (
+              <div key={it.id} className="bg-white rounded-lg border border-gray-200 p-3 space-y-2">
+                <div className="flex items-start justify-between">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-gray-800">{titleCase(it.item_name)}</p>
+                    <p className="text-[11px] text-gray-400 mt-0.5">
+                      {it.categories?.name || '—'} · Ordered: {it.qty_ordered} {it.unit}
+                      {it.actual_qty ? ' · Bought: ' + it.actual_qty : ''}
+                      {' · '}<span className={"font-medium " + (it._source === 'new' ? "text-amber-600" : "text-indigo-600")}>
+                        {it._source === 'new' ? 'New Item' : it._source === 'catering_store' ? 'CS' : 'INV'}
+                      </span>
+                    </p>
+                    {it.vendor_name && <p className="text-[11px] text-gray-400">Vendor: {it.vendor_name}</p>}
+                    {it.po && <p className="text-[11px] text-gray-400">PO #{it.po_id.slice(0, 8)} · {it.po.profiles?.name || '—'}</p>}
+                  </div>
+                </div>
+                {it._source !== 'new' && !isActive && (
+                  <button onClick={function () { setReceivingItem(it.id); setReceiveQty(String(it.actual_qty || it.qty_ordered)) }}
+                    className="w-full py-2 text-sm font-semibold text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors">
+                    📦 Receive
+                  </button>
+                )}
+                {it._source !== 'new' && isActive && (
+                  <div className="bg-indigo-50 rounded-lg border border-indigo-200 p-3 space-y-2">
+                    <div>
+                      <label className="block text-[11px] text-gray-500 mb-0.5">Qty Received</label>
+                      <input type="number" min="0" step="any" inputMode="numeric" value={receiveQty}
+                        onChange={function (e) { setReceiveQty(e.target.value) }}
+                        className="w-full px-3 py-2 border border-indigo-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={function () { setReceivingItem(null); setReceiveQty('') }}
+                        className="flex-1 py-2 text-xs text-gray-600 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors">Cancel</button>
+                      <button onClick={function () { receiveExistingItem(it) }} disabled={saving}
+                        className="flex-1 py-2 text-xs text-white bg-indigo-600 rounded-md hover:bg-indigo-700 disabled:opacity-50 transition-colors">
+                        {saving ? 'Saving...' : '✓ Confirm'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {it._source === 'new' && (
+                  <button onClick={function () { setShowInvForm(it) }}
+                    className="w-full py-2 text-sm font-semibold text-amber-600 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 transition-colors">
+                    📋 Receive & Add to Inventory
+                  </button>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
         </div>
       )}
     </div>

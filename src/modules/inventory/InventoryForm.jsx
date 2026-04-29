@@ -18,41 +18,42 @@ var UNITS = [
   'Trips', 'Hours', 'Days', 'Loads',
 ]
 
-function InventoryForm({ item, profile, onClose, onSaved }) {
+function InventoryForm({ item, prefill, profile, onClose, onSaved }) {
   var { t } = useLang()
+  var seed = item || prefill || null
   var [categories, setCategories] = useState([])
   var [subCategories, setSubCategories] = useState([])
   var [existingItems, setExistingItems] = useState([])
   var [departments, setDepartments] = useState([])
-  var [categoryId, setCategoryId] = useState(item?.category_id ? String(item.category_id) : '')
-  var [subCategoryId, setSubCategoryId] = useState(item?.sub_category_id ? String(item.sub_category_id) : '')
-  var [name, setName] = useState(item?.name || '')
-  var [description, setDescription] = useState(item?.description || '')
-  var [nameHindi, setNameHindi] = useState(item?.name_hindi || '')
+  var [categoryId, setCategoryId] = useState(seed?.category_id ? String(seed.category_id) : '')
+  var [subCategoryId, setSubCategoryId] = useState(seed?.sub_category_id ? String(seed.sub_category_id) : '')
+  var [name, setName] = useState(seed?.name || '')
+  var [description, setDescription] = useState(seed?.description || '')
+  var [nameHindi, setNameHindi] = useState(seed?.name_hindi || '')
   var [hiEdited, setHiEdited] = useState(false)
-  var [qty, setQty] = useState(item?.qty ?? '')
-  var [unit, setUnit] = useState(item?.unit || 'Pieces')
-  var [minOrderQty, setMinOrderQty] = useState(item?.min_order_qty ?? item?.season_reorder_qty ?? '')
-  var [reorderQty, setReorderQty] = useState(item?.reorder_qty ?? item?.off_season_reorder_qty ?? '')
-  var [ratePaise, setRatePaise] = useState(item?.rate_paise ? (item.rate_paise / 100) : '')
-  var [isAsset, setIsAsset] = useState(item?.is_asset ?? 'unknown')
+  var [qty, setQty] = useState(seed?.qty ?? '')
+  var [unit, setUnit] = useState(seed?.unit || 'Pieces')
+  var [minOrderQty, setMinOrderQty] = useState(seed?.min_order_qty ?? seed?.season_reorder_qty ?? '')
+  var [reorderQty, setReorderQty] = useState(seed?.reorder_qty ?? seed?.off_season_reorder_qty ?? '')
+  var [ratePaise, setRatePaise] = useState(seed?.rate_paise ? (seed.rate_paise / 100) : '')
+  var [isAsset, setIsAsset] = useState(seed?.is_asset ?? 'unknown')
   var [venues, setVenues] = useState([])
   var [subVenues, setSubVenues] = useState([])
   var [allocations, setAllocations] = useState([{ department: '', venue_id: '', sub_venue_id: '', qty: '' }])
-  var [type, setType] = useState(item?.type || 'Indoor')
+  var [type, setType] = useState(seed?.type || 'Indoor')
   var [imageFile, setImageFile] = useState(null)
-  var [imagePreview, setImagePreview] = useState(item?.image_path ? getImageUrl(item.image_path) : '')
+  var [imagePreview, setImagePreview] = useState(seed?.image_path ? getImageUrl(seed.image_path) : '')
   var [cropSrc, setCropSrc] = useState(null)
   var [listeningField, setListeningField] = useState(null)
   var recognitionRef = useRef(null)
   var [saving, setSaving] = useState(false)
   var [errors, setErrors] = useState({})
-  var [dimensionValues, setDimensionValues] = useState(item?.dimensions || [])
+  var [dimensionValues, setDimensionValues] = useState(seed?.dimensions || [])
   var [categoryDimFields, setCategoryDimFields] = useState([])
   var [cateringStoreSubDeptId, setCateringStoreSubDeptId] = useState(null)
-  var [packSizeQty, setPackSizeQty] = useState(item?.pack_size_qty ?? '')
-  var [packSizeUnit, setPackSizeUnit] = useState(item?.pack_size_unit || 'Grams')
-  var [packSizeBrand, setPackSizeBrand] = useState(item?.brand || '')
+  var [packSizeQty, setPackSizeQty] = useState(seed?.pack_size_qty ?? '')
+  var [packSizeUnit, setPackSizeUnit] = useState(seed?.pack_size_unit || 'Grams')
+  var [packSizeBrand, setPackSizeBrand] = useState(seed?.brand || '')
   var [brandList, setBrandList] = useState([])
   var isEdit = !!item
 
@@ -355,7 +356,7 @@ function InventoryForm({ item, profile, onClose, onSaved }) {
     if (!isEdit && profile?.id) { payload.submitted_by = profile.id }
     if (!isEdit) {
       var isAdminRole = profile?.role === 'admin' || profile?.role === 'auditor'
-      if (isAdminRole) {
+      if (prefill || isAdminRole) {
         payload.status = 'approved'
       } else {
         // Check if a dept approver exists for this category (other than the submitter)
@@ -508,7 +509,7 @@ function InventoryForm({ item, profile, onClose, onSaved }) {
       var logAction = isEdit ? 'ITEM_UPDATE' : 'ITEM_SUBMIT'
       var logDetail = name.trim() + ' | Cat: ' + (categories.find(function (c) { return String(c.id) === categoryId })?.name || '—') + ' | Qty: ' + (Number(qty) || 0)
       try { await logActivity(logAction, logDetail) } catch (_) {}
-      onSaved()
+      onSaved(targetItem, tableName)
     } catch (err) { setErrors(function (prev) { return { ...prev, submit: err.message || 'Failed to save' } }) }
     setSaving(false)
   }

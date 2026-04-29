@@ -22,6 +22,7 @@ var FEATURES = [
   { key: 'feature_quote', label: 'Quote Calc', icon: '🧮', tab: 'quote' },
   { key: 'feature_expenses', label: 'PC & Direct Expenses', icon: '💰', tab: 'expenses' },
   { key: 'feature_purchase', label: 'Purchase Orders', icon: '🛒', tab: 'purchase' },
+  { key: 'feature_receive', label: 'Receive Items', icon: '📦', tab: 'receive' },
   { key: 'feature_admin', label: 'Admin', icon: '⚙️', tab: 'admin' },
 ]
 
@@ -134,6 +135,16 @@ function Shell({ profile, onSignOut }) {
             .then(function (res) { counts.feature_purchase = res.count || 0 })
         )
       }
+    }
+
+    // Receiving badge
+    if (perms.indexOf('feature_receive') !== -1) {
+      promises.push(
+        supabase.from('purchase_order_items')
+          .select('id', { count: 'exact', head: true })
+          .eq('status', 'purchased')
+          .then(function (res) { counts.feature_receive = res.count || 0 })
+      )
     }
 
     await Promise.allSettled(promises)
@@ -286,6 +297,9 @@ function Shell({ profile, onSignOut }) {
           <Expenses profile={profile} />
         )}
         {tab === 'purchase' && (
+          <Purchase profile={profile} />
+        )}
+        {tab === 'receive' && (
           <Purchase profile={profile} />
         )}
         {tab === 'admin' && isAdmin && (
