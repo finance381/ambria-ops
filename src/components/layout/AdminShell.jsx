@@ -25,7 +25,8 @@ var ADMIN_TABS = [
   { key: 'expenses', label: 'PC & Direct Expenses', icon: '💰' },
   { key: 'ratecard', label: 'Rate Card', icon: '💰' },
   // Hidden until built: dashboard, expenses, boxes, challans, purchase, calendar
-  // Hidden until built: dashboard, boxes, challans, purchase, calendar
+  { key: 'purchase', label: 'Purchases', icon: '🛒' },
+  // Hidden until built: dashboard, boxes, challans, calendar
 ]
 
 var MODULES = {

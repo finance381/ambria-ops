@@ -11,6 +11,7 @@ import { useLang } from '../../lib/i18n.jsx'
 import QuoteCalculator from '../../modules/quote/QuoteCalculator'
 import Requisitions from '../../modules/requisitions/Requisitions'
 import Expenses from '../../modules/expenses/Expenses'
+import Purchase from '../../modules/purchase/Purchase'
 
 var FEATURES = [
   { key: 'feature_add', label: 'Add Item', icon: '📝', tab: 'add' },
@@ -21,6 +22,7 @@ var FEATURES = [
   { key: 'feature_requisitions', label: 'Requisitions', icon: '📋', tab: 'requisitions' },
   { key: 'feature_quote', label: 'Quote Calc', icon: '🧮', tab: 'quote' },
   { key: 'feature_expenses', label: 'PC & Direct Expenses', icon: '💰', tab: 'expenses' },
+  { key: 'feature_purchase', label: 'Purchases', icon: '🛒', tab: 'purchase' },
   { key: 'feature_admin', label: 'Admin', icon: '⚙️', tab: 'admin' },
 ]
 
@@ -202,6 +204,9 @@ function Shell({ profile, onSignOut }) {
         )}
         {tab === 'expenses' && (
           <Expenses profile={profile} />
+        )}
+        {tab === 'purchase' && (
+          <Purchase profile={profile} />
         )}
         {tab === 'admin' && isAdmin && (
           <AdminMobile profile={profile} />
