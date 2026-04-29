@@ -152,7 +152,7 @@ function Requisitions({ profile, onBack }) {
     setDetailReq(req)
     var { data } = await supabase
       .from('requisition_items')
-      .select('id, item_id, item_name, category_id, qty, unit, notes, _source, estimated_cost_paise, categories(name)')
+      .select('id, item_id, item_name, category_id, qty, unit, notes, _source, estimated_cost_paise, po_item_id, categories(name)')
       .eq('requisition_id', req.id)
     setDetailItems(data || [])
     setView('detail')
@@ -790,6 +790,21 @@ function RequisitionDetail({ req, items, profile, isAdmin, isDeptApprover, onBac
   var [saving, setSaving] = useState(false)
   var [rejectMode, setRejectMode] = useState(false)
   var [rejectReason, setRejectReason] = useState('')
+  var [poStatuses, setPoStatuses] = useState({})
+
+  useEffect(function () {
+    // Fetch PO status for items that have po_item_id
+    var poItemIds = items.filter(function (li) { return !!li.po_item_id }).map(function (li) { return li.po_item_id })
+    if (poItemIds.length === 0) return
+    supabase.from('purchase_order_items')
+      .select('id, status, vendor_name, actual_qty, actual_cost_paise, purchase_orders!inner(id, status)')
+      .in('id', poItemIds)
+      .then(function (res) {
+        var map = {}
+        ;(res.data || []).forEach(function (poi) { map[poi.id] = poi })
+        setPoStatuses(map)
+      })
+  }, [items])
 
   var canDeptApprove = isDeptApprover && req.status === 'pending_dept' && req.requested_by !== profile?.id
   var canAdminApprove = isAdmin && req.status === 'pending'
@@ -907,6 +922,21 @@ function RequisitionDetail({ req, items, profile, isAdmin, isDeptApprover, onBac
               {li.notes && (
                 <p className="text-[11px] text-gray-500 mt-1">{li.notes}</p>
               )}
+              {li.po_item_id && poStatuses[li.po_item_id] && (function () {
+                var poi = poStatuses[li.po_item_id]
+                var poStatus = poi.purchase_orders?.status || poi.status
+                var colors = { draft: 'bg-gray-100 text-gray-600', confirmed: 'bg-blue-100 text-blue-600', procured: 'bg-purple-100 text-purple-600', partial: 'bg-amber-100 text-amber-600', received: 'bg-green-100 text-green-600', closed: 'bg-gray-200 text-gray-500', ordered: 'bg-blue-100 text-blue-600' }
+                return (
+                  <div className="flex items-center gap-2 mt-1.5 pt-1.5 border-t border-gray-100">
+                    <span className="text-[10px] text-gray-400">PO:</span>
+                    <span className={"text-[10px] font-bold uppercase px-2 py-0.5 rounded-full " + (colors[poStatus] || 'bg-gray-100 text-gray-500')}>
+                      {poStatus}
+                    </span>
+                    {poi.vendor_name && <span className="text-[10px] text-gray-400">· {poi.vendor_name}</span>}
+                    {poi.actual_cost_paise > 0 && <span className="text-[10px] text-green-600 font-medium">· ₹{(poi.actual_cost_paise / 100).toLocaleString('en-IN')}</span>}
+                  </div>
+                )
+              })()}
             </div>
           )
         })}
