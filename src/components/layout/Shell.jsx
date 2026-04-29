@@ -11,6 +11,7 @@ import { useLang } from '../../lib/i18n.jsx'
 import QuoteCalculator from '../../modules/quote/QuoteCalculator'
 import Requisitions from '../../modules/requisitions/Requisitions'
 import Purchase from '../../modules/purchase/Purchase'
+import Expenses from '../../modules/expenses/Expenses'
 
 var FEATURES = [
   { key: 'feature_add', label: 'Add Item', icon: '📝', tab: 'add' },
