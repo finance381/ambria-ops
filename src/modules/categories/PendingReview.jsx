@@ -19,6 +19,9 @@ function PendingReview({ profile }) {
   var [catFilter, setCatFilter] = useState('')
   var [subCatFilter, setSubCatFilter] = useState('')
   var [departments, setDepartments] = useState([])
+  var [subDepartments, setSubDepartments] = useState([])
+  var [categories, setCategories] = useState([])
+  var [subDeptFilter, setSubDeptFilter] = useState('')
   var [page, setPage] = useState(0)
   var PAGE_SIZE = 50
 
@@ -60,6 +63,8 @@ function PendingReview({ profile }) {
       return new Date(b.created_at || 0) - new Date(a.created_at || 0)
     }))
     setDepartments(deptRes.data || [])
+    setSubDepartments(subDeptRes.data || [])
+    setCategories(catRes.data || [])
     setLoading(false)
   }
 
@@ -170,10 +175,14 @@ function PendingReview({ profile }) {
       (item.categories?.name || '').toLowerCase().indexOf(searchLower) !== -1 ||
       (item.department || '').toLowerCase().indexOf(searchLower) !== -1
     var matchDept = !deptFilter || item.department === deptFilter
+    var matchSubDept = !subDeptFilter || (function () {
+      var sdCatIds = categories.filter(function (c) { return String(c.sub_department_id) === subDeptFilter }).map(function (c) { return c.id })
+      return sdCatIds.indexOf(item.category_id) !== -1
+    })()
     var matchCat = !catFilter || item.category_id === Number(catFilter)
     var matchSubCat = !subCatFilter || item.sub_category_id === Number(subCatFilter)
     var matchDeptCats = !deptCatIds || deptCatIds.indexOf(item.category_id) !== -1
-    return matchSearch && matchDept && matchDeptCats && matchCat && matchSubCat
+    return matchSearch && matchDept && matchSubDept && matchDeptCats && matchCat && matchSubCat
   })
 
   // Category options: if dept selected, only show tagged categories
@@ -181,7 +190,11 @@ function PendingReview({ profile }) {
     var item = pendingItems.find(function (i) { return i.category_id === cid })
     return { id: cid, name: item?.categories?.name || '—' }
   }).filter(function (c) {
-    return !deptCatIds || deptCatIds.includes(c.id)
+    if (subDeptFilter) {
+      var cat = categories.find(function (ct) { return ct.id === c.id })
+      if (!cat || String(cat.sub_department_id) !== subDeptFilter) return false
+    }
+    return !deptCatIds || deptCatIds.indexOf(c.id) !== -1
   }).sort(function (a, b) { return a.name.localeCompare(b.name) })
 
   // Sub-category options: filtered by selected category
@@ -209,11 +222,26 @@ function PendingReview({ profile }) {
           placeholder="Search item, submitter, dept approver..."
           className="flex-1 min-w-[200px] px-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
         <select value={deptFilter}
-          onChange={function (e) { setDeptFilter(e.target.value); setCatFilter(''); setSubCatFilter('') }}
+          onChange={function (e) { setDeptFilter(e.target.value); setSubDeptFilter(''); setCatFilter(''); setSubCatFilter('') }}
           className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
           <option value="">All Departments</option>
           {departments.map(function (d) { return <option key={d.id} value={d.name}>{d.name}</option> })}
         </select>
+        {(function () {
+          var deptSubDepts = subDepartments.filter(function (sd) {
+            if (!deptFilter) return true
+            var dept = departments.find(function (d) { return d.name === deptFilter })
+            return dept ? sd.department_id === dept.id : true
+          })
+          return (
+            <select value={subDeptFilter}
+              onChange={function (e) { setSubDeptFilter(e.target.value); setCatFilter(''); setSubCatFilter('') }}
+              className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+              <option value="">All Sub-depts</option>
+              {deptSubDepts.map(function (sd) { return <option key={sd.id} value={String(sd.id)}>{sd.name}</option> })}
+            </select>
+          )
+        })()}
         <select value={catFilter}
           onChange={function (e) { setCatFilter(e.target.value); setSubCatFilter('') }}
           className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">

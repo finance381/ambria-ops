@@ -95,12 +95,12 @@ function AdminItems({ profile }) {
   }
 
   function exportItems() {
-    var headers = ['Inventory ID', 'Name', 'Name Hindi', 'Category', 'Sub-category', 'Type', 'Qty', 'Unit', 'Department', 'Description', 'Status', 'Source', 'Brand', 'Pack Size Qty', 'Pack Size Unit', 'Min Order / Season Reorder', 'Reorder / Off Season Reorder', 'Rate (₹)', 'Is Asset', 'Venue Code', 'Sub-Venue', 'Venue Qty']
+    var headers = ['Inventory ID', 'Name', 'Name Hindi', 'Category', 'Sub-category', 'Type', 'Qty', 'Unit', 'Department', 'Description', 'Status', 'Source', 'Brand', 'Pack Size Qty', 'Pack Size Unit', 'Min Order / Season Reorder', 'Reorder / Off Season Reorder', 'Rate (₹)', 'Is Asset', 'Venue Code', 'Sub-Venue', 'Venue Qty', 'Image URL']
     var rows = filtered.map(function (i) {
-      var venueStr = (i.venue_allocations || []).map(function (va) { return (va.venues?.code || '') + ':' + va.qty }).join('; ')
       var venueCodes = (i.venue_allocations || []).map(function (va) { return va.venues?.code || '' }).join('; ')
       var venueSubVenues = (i.venue_allocations || []).map(function (va) { var sv = subVenues.find(function (s) { return s.id === va.sub_venue_id }); return sv?.name || '' }).join('; ')
-      var venueQtys = (i.venue_allocations || []).map(function (va) { return va.qty }).join('; ') 
+      var venueQtys = (i.venue_allocations || []).map(function (va) { return va.qty }).join('; ')
+      var imgUrl = i.image_path ? supabase.storage.from('images').getPublicUrl(i.image_path).data?.publicUrl || '' : ''
       return [
         i.inventory_id || '', i.name, i.name_hindi || '',
         i.categories?.name || '', i.sub_categories?.name || '',
@@ -110,7 +110,7 @@ function AdminItems({ profile }) {
         i.season_reorder_qty || i.min_order_qty || '',
         i.off_season_reorder_qty || i.reorder_qty || '',
         i.rate_paise ? (i.rate_paise / 100) : '',
-        i.is_asset || '', venueCodes, venueSubVenues, venueQtys
+        i.is_asset || '', venueCodes, venueSubVenues, venueQtys, imgUrl
       ].map(csvEscape).join(',')
     })
     var csv = '\uFEFF' + headers.join(',') + '\n' + rows.join('\n')
