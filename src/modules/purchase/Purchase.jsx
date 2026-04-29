@@ -127,12 +127,14 @@ function Purchase({ profile }) {
   async function loadStaff() {
     var { data } = await supabase
       .from('profiles')
-      .select('id, name, role')
+      .select('id, name, role, permissions')
       .eq('active', true)
       .order('name')
-    setStaffList(data || [])
+    var purchasers = (data || []).filter(function (s) {
+      return (s.permissions || []).indexOf('feature_purchase') !== -1
+    })
+    setStaffList(purchasers)
   }
-
   // ─── OPEN PO DETAIL ───
   async function openPoDetail(po) {
     var { data } = await supabase
@@ -289,14 +291,12 @@ function Purchase({ profile }) {
     })
     setActivePoItems(updatedItems)
 
-    // Auto-complete PO when all items purchased/cancelled
+    // Check if all items done — trigger auto-completes in DB, just update local state
     if (activePo) {
       var allDone = updatedItems.every(function (p) { return p.status === 'purchased' || p.status === 'cancelled' })
       if (allDone) {
-        await supabase.from('purchase_orders').update({ status: 'completed' }).eq('id', activePo.id)
         setActivePo(function (prev) { return prev ? Object.assign({}, prev, { status: 'completed' }) : prev })
-        try { await logActivity('PO_COMPLETE', 'PO ' + activePo.id.slice(0, 8) + ' auto-completed') } catch (_) {}
-        loadPos()
+        try { await logActivity('PO_COMPLETE', 'PO ' + (activePo?.id || '').slice(0, 8) + ' auto-completed') } catch (_) {}
       }
     }
 
