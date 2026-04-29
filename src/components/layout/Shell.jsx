@@ -236,16 +236,14 @@ function Shell({ profile, onSignOut }) {
                 <button
                   key={f.key}
                   onClick={function () { setTab(f.tab) }}
-                  className="bg-white border border-gray-200 rounded-xl p-5 flex flex-col items-center gap-2 shadow-sm hover:shadow-md hover:border-gray-300 active:scale-[0.98] transition-all"
+                  className="relative bg-white border border-gray-200 rounded-xl p-5 flex flex-col items-center gap-2 shadow-sm hover:shadow-md hover:border-gray-300 active:scale-[0.98] transition-all"
                 >
-                  <div className="relative inline-block">
-                <span className="text-2xl">{f.icon}</span>
-                {badgeCounts[f.key] > 0 && (
-                  <span className="absolute -top-1 -right-2 w-5 h-5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
-                    {badgeCounts[f.key] > 9 ? '9+' : badgeCounts[f.key]}
-                  </span>
-                )}
-              </div>
+                  {badgeCounts[f.key] > 0 && (
+                    <span className="absolute top-2 right-2 min-w-[20px] h-5 px-1.5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+                      {badgeCounts[f.key] > 99 ? '99+' : badgeCounts[f.key]}
+                    </span>
+                  )}
+                  <span className="text-2xl">{f.icon}</span>
                   <span className="text-sm font-semibold text-gray-800">{f.label}</span>
                 </button>
               )
