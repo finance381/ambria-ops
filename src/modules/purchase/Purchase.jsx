@@ -679,7 +679,10 @@ function Purchase({ profile }) {
               </div>
             )
           })}
-          {/* ═══ RECEIVING TAB (Admin) ═══ */}
+        </div>
+      )}
+
+      {/* ═══ RECEIVING TAB (Admin) ═══ */}
       {tab === 'receiving' && (
         <div className="space-y-3">
           <p className="text-red-500 font-bold">RECEIVING TAB ACTIVE</p>
@@ -761,8 +764,6 @@ function Purchase({ profile }) {
               </div>
             )
           })}
-        </div>
-      )}
         </div>
       )}
     </div>
