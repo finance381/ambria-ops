@@ -138,14 +138,14 @@ function PendingReview({ profile }) {
     if (!rejectTarget || !rejectReason.trim()) return
     setSaving(true)
     if (rejectTarget.table === 'inventory_items' || rejectTarget.table === 'catering_store_items') {
-      var allocTable = rejectTarget.table === 'catering_store_items' ? 'cs_venue_allocations' : 'venue_allocations'
-      await supabase.from(allocTable).delete().eq('item_id', rejectTarget.id)
-      var { data: itemData } = await supabase.from(rejectTarget.table).select('image_path').eq('id', rejectTarget.id).maybeSingle()
-      if (itemData?.image_path) {
-        await supabase.storage.from('images').remove([itemData.image_path])
-      }
+      await supabase.from(rejectTarget.table).update({
+        status: 'rejected',
+        rejection_reason: rejectReason.trim()
+      }).eq('id', rejectTarget.id)
+    } else {
+      // Categories / sub-categories — still hard delete (no edit flow for masters)
+      await supabase.from(rejectTarget.table).delete().eq('id', rejectTarget.id)
     }
-    await supabase.from(rejectTarget.table).delete().eq('id', rejectTarget.id)
     try { await logActivity('REJECT_' + rejectTarget.type.toUpperCase().replace('-', '_'), rejectTarget.name + ' | Reason: ' + rejectReason.trim()) } catch (_) {}
     setRejectTarget(null)
     setRejectReason('')
@@ -417,7 +417,7 @@ function PendingReview({ profile }) {
           <div className="space-y-4">
             <div className="bg-red-50 border border-red-200 rounded-lg p-3">
               <p className="text-sm text-red-800 font-medium">Are you sure you want to reject this {rejectTarget.type.toLowerCase()}?</p>
-              <p className="text-sm text-red-700 mt-1">"{titleCase(rejectTarget.name)}" will be permanently deleted and the submitter can re-add it in the future.</p>
+              <p className="text-sm text-red-700 mt-1">"{titleCase(rejectTarget.name)}" will be moved back to dept review as rejected. Dept head can edit and resubmit.</p>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Reason for rejection <span className="text-red-500">*</span></label>

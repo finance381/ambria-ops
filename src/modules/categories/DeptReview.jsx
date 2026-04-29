@@ -16,6 +16,7 @@ function DeptReview({ profile }) {
   var [dateFilter, setDateFilter] = useState('')
   var [catFilter, setCatFilter] = useState('')
   var [search, setSearch] = useState('')
+  var [statusTab, setStatusTab] = useState('pending_dept')
 
   useEffect(function () { loadItems() }, [])
 
@@ -25,12 +26,12 @@ function DeptReview({ profile }) {
     var [invRes, csRes] = await Promise.all([
       supabase.from('inventory_items')
         .select('*, categories(name, code), sub_categories(name), profiles:submitted_by(name, email), venue_allocations(qty, venues(code, name))')
-        .eq('status', 'pending_dept')
+        .in('status', ['pending_dept', 'rejected'])
         .in('category_id', catIds)
         .order('created_at', { ascending: false }),
       supabase.from('catering_store_items')
         .select('*, categories(name, code), sub_categories(name), profiles:submitted_by(name, email), cs_venue_allocations(qty, venues(code, name))')
-        .eq('status', 'pending_dept')
+        .in('status', ['pending_dept', 'rejected'])
         .in('category_id', catIds)
         .order('created_at', { ascending: false }),
     ])
@@ -59,6 +60,20 @@ function DeptReview({ profile }) {
     setSaving(false)
   }
 
+  async function resubmitItem(item) {
+    if (saving) return
+    setSaving(true)
+    var table = item._source === 'catering_store' ? 'catering_store_items' : 'inventory_items'
+    var { error } = await supabase.from(table).update({
+      status: 'pending_dept',
+      rejection_reason: null
+    }).eq('id', item.id)
+    if (error) { alert('Resubmit failed: ' + error.message); setSaving(false); return }
+    try { await logActivity('DEPT_RESUBMIT_ITEM', item.name + ' | resubmitted after rejection') } catch (_) {}
+    await loadItems()
+    setSaving(false)
+  }
+
   function openReject(item) {
     setRejectTarget(item)
     setRejectReason('')
@@ -68,17 +83,15 @@ function DeptReview({ profile }) {
     if (!rejectTarget || !rejectReason.trim()) return
     setSaving(true)
     var table = rejectTarget._source === 'catering_store' ? 'catering_store_items' : 'inventory_items'
-    var allocTable = rejectTarget._source === 'catering_store' ? 'cs_venue_allocations' : 'venue_allocations'
-    await supabase.from(allocTable).delete().eq('item_id', rejectTarget.id)
-    if (rejectTarget.image_path) {
-      await supabase.storage.from('images').remove([rejectTarget.image_path])
-    }
-    var { error } = await supabase.from(table).delete().eq('id', rejectTarget.id)
+    var { error } = await supabase.from(table).update({
+      status: 'rejected',
+      rejection_reason: rejectReason.trim()
+    }).eq('id', rejectTarget.id)
     if (error) { alert('Reject failed: ' + error.message); setSaving(false); return }
     try { await logActivity('DEPT_REJECT_ITEM', rejectTarget.name + ' | Reason: ' + rejectReason.trim()) } catch (_) {}
     setRejectTarget(null)
     setRejectReason('')
-    loadItems()
+    await loadItems()
     setSaving(false)
   }
 
@@ -86,7 +99,10 @@ function DeptReview({ profile }) {
     return <p className="text-sm text-gray-400 text-center py-8">Loading...</p>
   }
 
-  var catOptions = [...new Set(items.map(function (i) { return i.category_id }).filter(Boolean))].map(function (cid) {
+  var pendingCount = items.filter(function (i) { return i.status === 'pending_dept' }).length
+  var rejectedCount = items.filter(function (i) { return i.status === 'rejected' }).length
+
+  var catOptions = [...new Set(items.filter(function (i) { return i.status === statusTab }).map(function (i) { return i.category_id }).filter(Boolean))].map(function (cid) {
     var item = items.find(function (i) { return i.category_id === cid })
     return { id: cid, name: item?.categories?.name || '—' }
   }).sort(function (a, b) { return a.name.localeCompare(b.name) })
@@ -101,15 +117,26 @@ function DeptReview({ profile }) {
      (item.inventory_id || '').toLowerCase().includes(searchLower) ||
      (item.categories?.name || '').toLowerCase().includes(searchLower) ||
      (item.profiles?.name || '').toLowerCase().includes(searchLower)
-   return matchDate && matchCat && matchSearch
+   var matchStatus = item.status === statusTab
+    return matchStatus && matchDate && matchSearch && matchCat
   })
 
   var hasFilters = dateFilter || catFilter || search
 
   return (
     <div className="space-y-3">
-      <div className="text-sm text-gray-400">
-        {items.length} items awaiting your review
+      {/* Status tabs */}
+      <div className="flex gap-0 bg-white border border-gray-200 rounded-lg overflow-hidden">
+        <button onClick={function () { setStatusTab('pending_dept') }}
+          className={"flex-1 py-2.5 text-sm font-medium transition-colors " +
+            (statusTab === 'pending_dept' ? "bg-amber-500 text-white" : "text-gray-500 hover:bg-gray-50")}>
+          Pending {pendingCount > 0 ? '(' + pendingCount + ')' : ''}
+        </button>
+        <button onClick={function () { setStatusTab('rejected') }}
+          className={"flex-1 py-2.5 text-sm font-medium transition-colors " +
+            (statusTab === 'rejected' ? "bg-red-500 text-white" : "text-gray-500 hover:bg-gray-50")}>
+          Rejected {rejectedCount > 0 ? '(' + rejectedCount + ')' : ''}
+        </button>
       </div>
 
       {/* Filters */}
@@ -196,17 +223,36 @@ function DeptReview({ profile }) {
               </div>
             </div>
 
+            {/* Rejection reason */}
+            {item.status === 'rejected' && item.rejection_reason && (
+              <div className="mx-4 mb-2 bg-red-50 border border-red-200 rounded-lg p-2">
+                <p className="text-[10px] font-bold text-red-500 uppercase">Rejection Reason</p>
+                <p className="text-xs text-red-700 mt-0.5">{item.rejection_reason}</p>
+              </div>
+            )}
+
             {/* Action buttons */}
-            <div className="flex border-t border-gray-100">
-              <button onClick={function () { approveItem(item) }} disabled={saving}
-                className="flex-1 py-3 text-sm font-bold text-green-600 hover:bg-green-50 active:bg-green-100 disabled:opacity-50 transition-colors">✓ Approve</button>
-              <div className="w-px bg-gray-100" />
-              <button onClick={function () { setEditingItem(item) }} disabled={saving}
-                className="flex-1 py-3 text-sm font-bold text-indigo-600 hover:bg-indigo-50 active:bg-indigo-100 disabled:opacity-50 transition-colors">✎ Edit</button>
-              <div className="w-px bg-gray-100" />
-              <button onClick={function () { openReject(item) }} disabled={saving}
-                className="flex-1 py-3 text-sm font-bold text-red-500 hover:bg-red-50 active:bg-red-100 disabled:opacity-50 transition-colors">✗ Reject</button>
-            </div>
+            {item.status === 'rejected' ? (
+              <div className="flex border-t border-gray-100">
+                <button onClick={function () { setEditingItem(item) }} disabled={saving}
+                  className="flex-1 py-3 text-sm font-bold text-indigo-600 hover:bg-indigo-50 active:bg-indigo-100 disabled:opacity-50 transition-colors">✎ Edit</button>
+                <div className="w-px bg-gray-100" />
+                <button onClick={function () { resubmitItem(item) }} disabled={saving}
+                  className="flex-1 py-3 text-sm font-bold text-green-600 hover:bg-green-50 active:bg-green-100 disabled:opacity-50 transition-colors">
+                  {saving ? '...' : '↩ Resubmit'}</button>
+              </div>
+            ) : (
+              <div className="flex border-t border-gray-100">
+                <button onClick={function () { approveItem(item) }} disabled={saving}
+                  className="flex-1 py-3 text-sm font-bold text-green-600 hover:bg-green-50 active:bg-green-100 disabled:opacity-50 transition-colors">✓ Approve</button>
+                <div className="w-px bg-gray-100" />
+                <button onClick={function () { setEditingItem(item) }} disabled={saving}
+                  className="flex-1 py-3 text-sm font-bold text-indigo-600 hover:bg-indigo-50 active:bg-indigo-100 disabled:opacity-50 transition-colors">✎ Edit</button>
+                <div className="w-px bg-gray-100" />
+                <button onClick={function () { openReject(item) }} disabled={saving}
+                  className="flex-1 py-3 text-sm font-bold text-red-500 hover:bg-red-50 active:bg-red-100 disabled:opacity-50 transition-colors">✗ Reject</button>
+              </div>
+            )}
           </div>
         )
       })}
@@ -228,7 +274,7 @@ function DeptReview({ profile }) {
           <div className="space-y-4">
             <div className="bg-red-50 border border-red-200 rounded-lg p-3">
               <p className="text-sm text-red-800 font-medium">Reject "{titleCase(rejectTarget.name)}"?</p>
-              <p className="text-xs text-red-600 mt-1">This will permanently delete the item, image, and allocations. This cannot be undone.</p>
+              <p className="text-xs text-red-600 mt-1">Item will be moved to Rejected tab. Submitter or you can edit and resubmit.</p>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Reason <span className="text-red-500">*</span></label>
