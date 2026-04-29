@@ -48,7 +48,8 @@ function Purchase({ profile }) {
   var [showInvForm, setShowInvForm] = useState(null)
 
   var isAdmin = profile?.role === 'admin' || profile?.role === 'auditor'
-  var isReceiver = (profile?.permissions || []).indexOf('feature_receive') !== -1
+  var hasReceive = (profile?.permissions || []).indexOf('feature_receive') !== -1
+  var isReceiver = hasReceive && !isAdmin
   var isPurchaser = !isAdmin && !isReceiver
 
   useEffect(function () {
