@@ -29,7 +29,7 @@ var ITEM_STATUS_COLORS = {
 // ═══════════════════════════════════════════════════════════════
 // MAIN COMPONENT
 // ═══════════════════════════════════════════════════════════════
-function Purchase({ profile }) {
+function Purchase({ profile, mode }) {
   var [tab, setTab] = useState('queue')
   var [view, setView] = useState('list')
   var [queueItems, setQueueItems] = useState([])
