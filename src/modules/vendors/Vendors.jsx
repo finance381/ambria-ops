@@ -11,7 +11,7 @@ function Vendors({ profile }) {
   var [catFilter, setCatFilter] = useState('')
   var [showInactive, setShowInactive] = useState(false)
   var [editing, setEditing] = useState(null)
-  var [form, setForm] = useState({ name: '', contact: '', phone: '', category_ids: [], notes: '' })
+  var [form, setForm] = useState({ name: '', contact: '', phone: '', phone2: '', email: '', address: '', category_ids: [], notes: '', opening_balance: '', gst_number: '', pan_number: '', bank_account: '', bank_ifsc: '', vendor_type: 'Supplier', lead_time_days: '' })
 
   useEffect(function () { loadAll() }, [])
 
@@ -28,7 +28,7 @@ function Vendors({ profile }) {
 
   function startAdd() {
     setEditing('new')
-    setForm({ name: '', contact: '', phone: '', category_ids: [], notes: '' })
+    setForm({ name: '', contact: '', phone: '', phone2: '', email: '', address: '', category_ids: [], notes: '', opening_balance: '', gst_number: '', pan_number: '', bank_account: '', bank_ifsc: '', vendor_type: 'Supplier', lead_time_days: '' })
   }
 
   function startEdit(v) {
@@ -37,14 +37,24 @@ function Vendors({ profile }) {
       name: v.name || '',
       contact: v.contact || '',
       phone: v.phone || '',
+      phone2: v.phone2 || '',
+      email: v.email || '',
+      address: v.address || '',
       category_ids: v.category_ids || [],
       notes: v.notes || '',
+      opening_balance: v.opening_balance_paise ? String(v.opening_balance_paise / 100) : '',
+      gst_number: v.gst_number || '',
+      pan_number: v.pan_number || '',
+      bank_account: v.bank_account || '',
+      bank_ifsc: v.bank_ifsc || '',
+      vendor_type: v.vendor_type || 'Supplier',
+      lead_time_days: v.lead_time_days ? String(v.lead_time_days) : '',
     })
   }
 
   function cancelEdit() {
     setEditing(null)
-    setForm({ name: '', contact: '', phone: '', category_ids: [], notes: '' })
+    setForm({ name: '', contact: '', phone: '', phone2: '', email: '', address: '', category_ids: [], notes: '', opening_balance: '', gst_number: '', pan_number: '', bank_account: '', bank_ifsc: '', vendor_type: 'Supplier', lead_time_days: '' })
   }
 
   function toggleCat(catId) {
@@ -66,8 +76,18 @@ function Vendors({ profile }) {
       name: form.name.trim(),
       contact: form.contact.trim() || null,
       phone: form.phone.trim() || null,
+      phone2: form.phone2.trim() || null,
+      email: form.email.trim() || null,
+      address: form.address.trim() || null,
       category_ids: form.category_ids,
       notes: form.notes.trim() || null,
+      opening_balance_paise: form.opening_balance ? Math.round(Number(form.opening_balance) * 100) : 0,
+      gst_number: form.gst_number.trim() || null,
+      pan_number: form.pan_number.trim() || null,
+      bank_account: form.bank_account.trim() || null,
+      bank_ifsc: form.bank_ifsc.trim() || null,
+      vendor_type: form.vendor_type || 'Supplier',
+      lead_time_days: form.lead_time_days ? Number(form.lead_time_days) : null,
     }
 
     if (editing === 'new') {
@@ -126,47 +146,141 @@ function Vendors({ profile }) {
         </div>
 
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm divide-y divide-gray-100">
-          {/* Name */}
-          <div className="p-5">
-            <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Vendor Name <span className="text-red-500">*</span></label>
-            <input type="text" value={form.name}
-              onChange={function (e) { setForm(function (p) { return Object.assign({}, p, { name: e.target.value }) }) }}
-              placeholder="e.g. Sharma Traders"
-              className="w-full px-4 py-3 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent bg-gray-50"
-              style={{ fontSize: '16px' }} />
+          {/* Identity */}
+          <div className="p-5 space-y-3">
+            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Identity</p>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Vendor Name <span className="text-red-500">*</span></label>
+              <input type="text" value={form.name}
+                onChange={function (e) { setForm(function (p) { return Object.assign({}, p, { name: e.target.value }) }) }}
+                placeholder="e.g. Sharma Traders"
+                className="w-full px-4 py-3 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-gray-50"
+                style={{ fontSize: '16px' }} />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Vendor Type</label>
+                <select value={form.vendor_type}
+                  onChange={function (e) { setForm(function (p) { return Object.assign({}, p, { vendor_type: e.target.value }) }) }}
+                  className="w-full px-4 py-3 border border-gray-200 rounded-lg text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                  {['Supplier', 'Contractor', 'Service Provider', 'Rental'].map(function (t) {
+                    return <option key={t} value={t}>{t}</option>
+                  })}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Lead Time (days)</label>
+                <input type="number" min="0" value={form.lead_time_days}
+                  onChange={function (e) { setForm(function (p) { return Object.assign({}, p, { lead_time_days: e.target.value }) }) }}
+                  placeholder="e.g. 3"
+                  className="w-full px-4 py-3 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-gray-50"
+                  style={{ fontSize: '16px' }} />
+              </div>
+            </div>
           </div>
 
-          {/* Contact + Phone */}
-          <div className="p-5">
-            <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Contact Info</label>
+          {/* Contact */}
+          <div className="p-5 space-y-3">
+            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Contact</p>
             <div className="grid grid-cols-2 gap-3">
-              <input type="text" value={form.contact}
-                onChange={function (e) { setForm(function (p) { return Object.assign({}, p, { contact: e.target.value }) }) }}
-                placeholder="Contact person name"
-                className="px-4 py-3 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-gray-50"
-                style={{ fontSize: '16px' }} />
-              <input type="tel" value={form.phone}
-                onChange={function (e) { setForm(function (p) { return Object.assign({}, p, { phone: e.target.value }) }) }}
-                placeholder="Phone number"
-                className="px-4 py-3 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-gray-50"
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Contact Person</label>
+                <input type="text" value={form.contact}
+                  onChange={function (e) { setForm(function (p) { return Object.assign({}, p, { contact: e.target.value }) }) }}
+                  placeholder="Name"
+                  className="w-full px-4 py-3 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-gray-50"
+                  style={{ fontSize: '16px' }} />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Email</label>
+                <input type="email" value={form.email}
+                  onChange={function (e) { setForm(function (p) { return Object.assign({}, p, { email: e.target.value }) }) }}
+                  placeholder="vendor@email.com"
+                  className="w-full px-4 py-3 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-gray-50"
+                  style={{ fontSize: '16px' }} />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Phone</label>
+                <input type="tel" value={form.phone}
+                  onChange={function (e) { setForm(function (p) { return Object.assign({}, p, { phone: e.target.value }) }) }}
+                  placeholder="Primary"
+                  className="w-full px-4 py-3 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-gray-50"
+                  style={{ fontSize: '16px' }} />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">WhatsApp / Alt Phone</label>
+                <input type="tel" value={form.phone2}
+                  onChange={function (e) { setForm(function (p) { return Object.assign({}, p, { phone2: e.target.value }) }) }}
+                  placeholder="Secondary"
+                  className="w-full px-4 py-3 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-gray-50"
+                  style={{ fontSize: '16px' }} />
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Address</label>
+              <textarea value={form.address}
+                onChange={function (e) { setForm(function (p) { return Object.assign({}, p, { address: e.target.value }) }) }}
+                rows="2" placeholder="Street, area, city..."
+                className="w-full px-4 py-3 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none bg-gray-50"
                 style={{ fontSize: '16px' }} />
             </div>
           </div>
 
-          {/* Notes */}
-          <div className="p-5">
-            <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Notes</label>
-            <textarea value={form.notes}
-              onChange={function (e) { setForm(function (p) { return Object.assign({}, p, { notes: e.target.value }) }) }}
-              rows="2" placeholder="Address, payment terms, delivery schedule..."
-              className="w-full px-4 py-3 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none bg-gray-50"
-              style={{ fontSize: '16px' }} />
+          {/* Financial */}
+          <div className="p-5 space-y-3">
+            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Financial</p>
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Opening Balance (₹)</label>
+                <input type="number" min="0" step="0.01" inputMode="decimal" value={form.opening_balance}
+                  onChange={function (e) { setForm(function (p) { return Object.assign({}, p, { opening_balance: e.target.value }) }) }}
+                  placeholder="0.00"
+                  className="w-full px-4 py-3 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-gray-50"
+                  style={{ fontSize: '16px' }} />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">GST Number</label>
+                <input type="text" value={form.gst_number} maxLength="15"
+                  onChange={function (e) { setForm(function (p) { return Object.assign({}, p, { gst_number: e.target.value.toUpperCase() }) }) }}
+                  placeholder="22AAAAA0000A1Z5"
+                  className="w-full px-4 py-3 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-gray-50 uppercase"
+                  style={{ fontSize: '16px' }} />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">PAN Number</label>
+                <input type="text" value={form.pan_number} maxLength="10"
+                  onChange={function (e) { setForm(function (p) { return Object.assign({}, p, { pan_number: e.target.value.toUpperCase() }) }) }}
+                  placeholder="ABCDE1234F"
+                  className="w-full px-4 py-3 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-gray-50 uppercase"
+                  style={{ fontSize: '16px' }} />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Bank Account</label>
+                <input type="text" value={form.bank_account}
+                  onChange={function (e) { setForm(function (p) { return Object.assign({}, p, { bank_account: e.target.value }) }) }}
+                  placeholder="Account number"
+                  className="w-full px-4 py-3 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-gray-50"
+                  style={{ fontSize: '16px' }} />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">IFSC Code</label>
+                <input type="text" value={form.bank_ifsc} maxLength="11"
+                  onChange={function (e) { setForm(function (p) { return Object.assign({}, p, { bank_ifsc: e.target.value.toUpperCase() }) }) }}
+                  placeholder="SBIN0001234"
+                  className="w-full px-4 py-3 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-gray-50 uppercase"
+                  style={{ fontSize: '16px' }} />
+              </div>
+            </div>
           </div>
 
           {/* Categories */}
           <div className="p-5">
             <div className="flex items-center justify-between mb-2">
-              <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider">Categories</label>
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Categories</p>
               {form.category_ids.length > 0 && (
                 <span className="text-[11px] text-indigo-600 font-semibold">{form.category_ids.length} selected</span>
               )}
@@ -183,6 +297,16 @@ function Vendors({ profile }) {
                 )
               })}
             </div>
+          </div>
+
+          {/* Notes */}
+          <div className="p-5">
+            <label className="block text-xs font-medium text-gray-600 mb-1">Notes</label>
+            <textarea value={form.notes}
+              onChange={function (e) { setForm(function (p) { return Object.assign({}, p, { notes: e.target.value }) }) }}
+              rows="2" placeholder="Internal notes, special instructions..."
+              className="w-full px-4 py-3 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none bg-gray-50"
+              style={{ fontSize: '16px' }} />
           </div>
         </div>
 
@@ -292,6 +416,14 @@ function Vendors({ profile }) {
                 {/* Name + notes */}
                 <div className="col-span-3 min-w-0">
                   <p className="text-sm font-semibold text-gray-800 truncate">{v.name}</p>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    {v.vendor_type && v.vendor_type !== 'Supplier' && (
+                      <span className="text-[10px] font-medium text-gray-400">{v.vendor_type}</span>
+                    )}
+                    {v.opening_balance_paise > 0 && (
+                      <span className="text-[10px] font-semibold text-amber-600">Bal: ₹{(v.opening_balance_paise / 100).toLocaleString('en-IN')}</span>
+                    )}
+                  </div>
                   {v.notes && <p className="text-[11px] text-gray-400 truncate mt-0.5">{v.notes}</p>}
                 </div>
                 {/* Contact */}
