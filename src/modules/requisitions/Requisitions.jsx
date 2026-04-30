@@ -797,7 +797,7 @@ function RequisitionDetail({ req, items, profile, isAdmin, isDeptApprover, onBac
     var poItemIds = items.filter(function (li) { return !!li.po_item_id }).map(function (li) { return li.po_item_id })
     if (poItemIds.length === 0) return
     supabase.from('purchase_order_items')
-      .select('id, status, vendor_name, actual_qty, actual_cost_paise, purchase_orders!inner(id, status)')
+      .select('id, status, vendor_name, actual_qty, actual_cost_paise, inventory_item_id, cs_item_id, received_at, purchase_orders!inner(id, status)')
       .in('id', poItemIds)
       .then(function (res) {
         var map = {}
@@ -924,16 +924,22 @@ function RequisitionDetail({ req, items, profile, isAdmin, isDeptApprover, onBac
               )}
               {li.po_item_id && poStatuses[li.po_item_id] && (function () {
                 var poi = poStatuses[li.po_item_id]
-                var poStatus = poi.purchase_orders?.status || poi.status
-                var colors = { draft: 'bg-gray-100 text-gray-600', confirmed: 'bg-blue-100 text-blue-600', procured: 'bg-purple-100 text-purple-600', partial: 'bg-amber-100 text-amber-600', received: 'bg-green-100 text-green-600', closed: 'bg-gray-200 text-gray-500', ordered: 'bg-blue-100 text-blue-600' }
+                var itemStatus = poi.status
+                var colors = { pending: 'bg-yellow-100 text-yellow-700', purchased: 'bg-green-100 text-green-700', received: 'bg-indigo-100 text-indigo-700', cancelled: 'bg-red-100 text-red-600' }
                 return (
-                  <div className="flex items-center gap-2 mt-1.5 pt-1.5 border-t border-gray-100">
-                    <span className="text-[10px] text-gray-400">PO:</span>
-                    <span className={"text-[10px] font-bold uppercase px-2 py-0.5 rounded-full " + (colors[poStatus] || 'bg-gray-100 text-gray-500')}>
-                      {poStatus}
-                    </span>
-                    {poi.vendor_name && <span className="text-[10px] text-gray-400">· {poi.vendor_name}</span>}
-                    {poi.actual_cost_paise > 0 && <span className="text-[10px] text-green-600 font-medium">· ₹{(poi.actual_cost_paise / 100).toLocaleString('en-IN')}</span>}
+                  <div className="mt-1.5 pt-1.5 border-t border-gray-100 space-y-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className={"text-[10px] font-bold uppercase px-2 py-0.5 rounded-full " + (colors[itemStatus] || 'bg-gray-100 text-gray-500')}>
+                        {itemStatus === 'received' ? '✓ Received' : itemStatus === 'purchased' ? '🛒 Purchased' : itemStatus}
+                      </span>
+                      {poi.vendor_name && <span className="text-[10px] text-gray-400">{poi.vendor_name}</span>}
+                      {poi.actual_cost_paise > 0 && <span className="text-[10px] text-green-600 font-medium">₹{(poi.actual_cost_paise / 100).toLocaleString('en-IN')}</span>}
+                    </div>
+                    {itemStatus === 'received' && (poi.inventory_item_id || poi.cs_item_id) && (
+                      <p className="text-[10px] text-indigo-600 font-medium">
+                        → Added to {poi.cs_item_id ? 'Catering Store' : 'Inventory'} #{poi.inventory_item_id || poi.cs_item_id}
+                      </p>
+                    )}
                   </div>
                 )
               })()}

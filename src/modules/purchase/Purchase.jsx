@@ -333,6 +333,47 @@ function Purchase({ profile }) {
     loadPos()
   }
 
+  // ─── DELETE DRAFT PO (admin only) ───
+  async function deletePo(poId) {
+    if (saving) return
+    setSaving(true)
+    // Unlink requisition items first
+    var { data: poItems } = await supabase.from('purchase_order_items').select('id').eq('po_id', poId)
+    var poItemIds = (poItems || []).map(function (p) { return p.id })
+    if (poItemIds.length > 0) {
+      await supabase.from('requisition_items').update({ po_item_id: null }).in('po_item_id', poItemIds)
+    }
+    // Delete PO items then PO
+    await supabase.from('purchase_order_items').delete().eq('po_id', poId)
+    var { error } = await supabase.from('purchase_orders').delete().eq('id', poId)
+    if (error) { alert('Delete failed: ' + error.message); setSaving(false); return }
+    try { await logActivity('PO_DELETE', 'Draft PO ' + poId.slice(0, 8) + ' deleted | ' + poItemIds.length + ' items returned to queue') } catch (_) {}
+    setSaving(false)
+    setView('list')
+    setActivePo(null)
+    setActivePoItems([])
+    loadQueue()
+    loadPos()
+  }
+
+  // ─── REMOVE SINGLE ITEM FROM DRAFT PO ───
+  async function removePoItem(poId, poItemId) {
+    if (saving) return
+    setSaving(true)
+    // Unlink requisition item
+    await supabase.from('requisition_items').update({ po_item_id: null }).match({ po_item_id: poItemId })
+    // Delete PO item
+    var { error } = await supabase.from('purchase_order_items').delete().eq('id', poItemId)
+    if (error) { alert('Remove failed: ' + error.message); setSaving(false); return }
+    try { await logActivity('PO_ITEM_REMOVE', 'Item removed from PO ' + poId.slice(0, 8)) } catch (_) {}
+    // Update local state
+    var remaining = activePoItems.filter(function (it) { return it.id !== poItemId })
+    setActivePoItems(remaining)
+    setSaving(false)
+    // If no items left, delete the PO
+    if (remaining.length === 0) { deletePo(poId) }
+  }
+
   // ─── SAVE VENDOR INFO (admin on draft/confirmed) ───
   async function savePoItemVendor(poItemId, vendorName, vendorContact, vendorRatePaise, estTotal) {
     var updateObj = {
@@ -413,6 +454,8 @@ function Purchase({ profile }) {
         onAssign={assignPurchaser}
         onSaveVendor={savePoItemVendor}
         onMarkPurchased={markPurchased}
+        onDeletePo={deletePo}
+        onRemoveItem={removePoItem}
       />
     )
   }
@@ -782,7 +825,7 @@ function Purchase({ profile }) {
 // ═══════════════════════════════════════════════════════════════
 // PO DETAIL
 // ═══════════════════════════════════════════════════════════════
-function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, onBack, onStatusChange, onAssign, onSaveVendor, onMarkPurchased }) {
+function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, onBack, onStatusChange, onAssign, onSaveVendor, onMarkPurchased, onDeletePo, onRemoveItem }) {
   var [editingVendor, setEditingVendor] = useState(null)
   var [vendorForm, setVendorForm] = useState({ name: '', contact: '', rate: '' })
   var [purchasingItem, setPurchasingItem] = useState(null)
@@ -793,6 +836,7 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, on
   var canConfirm = isAdmin && po.status === 'draft' && items.length > 0
   var allReceived = items.length > 0 && items.every(function (it) { return it.status === 'received' || it.status === 'cancelled' })
   var canClose = isAdmin && (po.status === 'completed' || po.status === 'confirmed') && allReceived
+  var canDelete = isAdmin && po.status === 'draft'
   var canPurchase = isPurchaser && po.status === 'confirmed'
 
   var totalEstPaise = 0
@@ -871,6 +915,17 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, on
         <div className="text-[11px] text-gray-400 space-y-0.5">
           <p>Created by: {po.profiles?.name || '—'} · {formatDate(po.created_at)}</p>
           {po.notes && <p>Notes: {po.notes}</p>}
+          {canEdit && (
+            <button onClick={function () {
+              var newNotes = prompt('PO Notes:', po.notes || '')
+              if (newNotes !== null && newNotes !== po.notes) {
+                supabase.from('purchase_orders').update({ notes: newNotes.trim() }).eq('id', po.id)
+                  .then(function (res) { if (!res.error) { po.notes = newNotes.trim() } })
+              }
+            }} className="text-[11px] font-medium text-blue-600 hover:text-blue-800 transition-colors">
+              {po.notes ? '✎ Edit Notes' : '+ Add Notes'}
+            </button>
+          )}
         </div>
         <div className="flex gap-4 pt-1">
           <div>
@@ -1026,6 +1081,12 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, on
                       {it.vendor_name ? '✎ Edit Vendor' : '+ Assign Vendor'}
                     </button>
                   )}
+                  {canDelete && (
+                    <button onClick={function (e) { e.stopPropagation(); if (confirm('Remove this item from PO?')) onRemoveItem(po.id, it.id) }}
+                      className="text-[11px] font-medium text-red-500 hover:text-red-700 transition-colors">
+                      ✕ Remove
+                    </button>
+                  )}
                   {canPurchase && (
                     <button onClick={function (e) { e.stopPropagation(); startPurchase(it) }}
                       className="text-[11px] font-medium text-green-600 hover:text-green-800 transition-colors">
@@ -1054,6 +1115,12 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, on
           <button onClick={function () { onStatusChange(po.id, 'closed') }} disabled={saving}
             className="w-full py-3 text-sm font-bold text-white bg-gray-700 rounded-lg hover:bg-gray-800 disabled:opacity-50 transition-colors">
             {saving ? 'Closing...' : 'Close PO'}
+          </button>
+        )}
+        {canDelete && (
+          <button onClick={function () { if (confirm('Delete this draft PO? Items return to procurement queue.')) onDeletePo(po.id) }} disabled={saving}
+            className="w-full py-3 text-sm font-bold text-red-600 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 disabled:opacity-50 transition-colors">
+            {saving ? 'Deleting...' : '🗑 Delete Draft PO'}
           </button>
         )}
       </div>
