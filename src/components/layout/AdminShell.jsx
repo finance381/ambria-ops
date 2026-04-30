@@ -17,41 +17,97 @@ var Vendors = lazy(function () { return import('../../modules/vendors/Vendors') 
 var Analytics = lazy(function () { return import('../../modules/analytics/Analytics') })
 
 
+// ── Sub-tab switcher ──
+function SubTabs({ tabs, active, onChange }) {
+  return (
+    <div className="flex gap-1 mb-5 bg-gray-100 rounded-lg p-0.5 w-fit">
+      {tabs.map(function (t) {
+        return (
+          <button key={t.key} onClick={function () { onChange(t.key) }}
+            className={"px-4 py-2 text-sm font-semibold rounded-md transition-colors " +
+              (active === t.key ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700")}>
+            {t.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+function InventoryTab({ profile }) {
+  var [sub, setSub] = useState('pending')
+  return (
+    <div>
+      <SubTabs tabs={[{ key: 'pending', label: 'Pending Review' }, { key: 'items', label: 'All Items' }]} active={sub} onChange={setSub} />
+      <Suspense fallback={<div className="text-center py-8 text-sm text-gray-400">Loading...</div>}>
+        {sub === 'pending' && <PendingReview profile={profile} />}
+        {sub === 'items' && <AdminItems profile={profile} />}
+      </Suspense>
+    </div>
+  )
+}
+
+function MastersTab({ profile }) {
+  var [sub, setSub] = useState('categories')
+  return (
+    <div>
+      <SubTabs tabs={[{ key: 'categories', label: 'Categories' }, { key: 'ratecard', label: 'Rate Card' }]} active={sub} onChange={setSub} />
+      <Suspense fallback={<div className="text-center py-8 text-sm text-gray-400">Loading...</div>}>
+        {sub === 'categories' && <Categories profile={profile} />}
+        {sub === 'ratecard' && <RateCardEditor profile={profile} />}
+      </Suspense>
+    </div>
+  )
+}
+
+function UsersTab({ profile }) {
+  var [sub, setSub] = useState('users')
+  return (
+    <div>
+      <SubTabs tabs={[{ key: 'users', label: 'Users' }, { key: 'logs', label: 'Activity Logs' }]} active={sub} onChange={setSub} />
+      <Suspense fallback={<div className="text-center py-8 text-sm text-gray-400">Loading...</div>}>
+        {sub === 'users' && <Users profile={profile} />}
+        {sub === 'logs' && <ActivityLogs profile={profile} />}
+      </Suspense>
+    </div>
+  )
+}
+
+function ProcurementTab({ profile }) {
+  var [sub, setSub] = useState('purchase')
+  return (
+    <div>
+      <SubTabs tabs={[{ key: 'purchase', label: 'Purchase Orders' }, { key: 'vendors', label: 'Vendors' }]} active={sub} onChange={setSub} />
+      <Suspense fallback={<div className="text-center py-8 text-sm text-gray-400">Loading...</div>}>
+        {sub === 'purchase' && <Purchase profile={profile} />}
+        {sub === 'vendors' && <Vendors profile={profile} />}
+      </Suspense>
+    </div>
+  )
+}
+
 var ADMIN_TABS = [
   { key: 'analytics', label: 'Analytics', icon: '📊' },
-  { key: 'pending', label: 'Pending', icon: '⏳' },
-  { key: 'items', label: 'Inventory', icon: '📦' },
+  { key: 'inventory', label: 'Inventory', icon: '📦' },
   { key: 'events', label: 'Events', icon: '📅' },
-  { key: 'categories', label: 'Masters', icon: '⚙️' },
+  { key: 'masters', label: 'Masters', icon: '⚙️' },
   { key: 'users', label: 'Users', icon: '👥' },
-  { key: 'logs', label: 'Logs', icon: '📜' },
-  { key: 'expenses', label: 'PC & Direct Expenses', icon: '💰' },
-  { key: 'ratecard', label: 'Rate Card', icon: '💰' },
-  { key: 'vendors', label: 'Vendors', icon: '🏪' },
-  // Hidden until built: dashboard, expenses, boxes, challans, purchase, calendar
-  { key: 'purchase', label: 'Purchase Orders', icon: '🛒' },
-  // Hidden until built: dashboard, boxes, challans, calendar
+  { key: 'expenses', label: 'Expenses', icon: '💰' },
+  { key: 'procurement', label: 'Procurement', icon: '🛒' },
 ]
 
 var MODULES = {
-  dashboard: Dashboard,
-  pending: PendingReview,
-  events: Events,
-  expenses: Expenses,
-  boxes: Boxes,
-  purchase: Purchase,
-  calendar: Calendar,
-  items: AdminItems,
-  categories: Categories,
-  users: Users,
-  logs: ActivityLogs,
-  ratecard: RateCardEditor,
-  vendors: Vendors,
   analytics: Analytics,
+  inventory: InventoryTab,
+  events: Events,
+  masters: MastersTab,
+  users: UsersTab,
+  expenses: Expenses,
+  procurement: ProcurementTab,
 }
 
 function AdminShell({ profile, onSignOut }) {
-  var [active, setActive] = useState('pending')
+  var [active, setActive] = useState('analytics')
 
   var ActiveModule = MODULES[active] || null
   var activeLabel = ADMIN_TABS.find(function (t) { return t.key === active })?.label || ''

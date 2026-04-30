@@ -13,6 +13,19 @@ const DEP_CODES = [
   { code: "EE", name: "Entertainment" },
 ]
 
+function normalizeVenue(venueName: string, department: string): string {
+  const v = (venueName || "").toLowerCase().trim()
+  if (v.indexOf("pushpanjali") !== -1) return "Ambria Pushpanjali"
+  if (v.indexOf("manaktala") !== -1 || v.indexOf("emerald") !== -1) return "Ambria Manaktala"
+  if (v.indexOf("exotica") !== -1) return "Ambria Exotica"
+  if (v.indexOf("restro") !== -1) return "Ambria Restro"
+  const dept = (department || "").toLowerCase().trim()
+  if (dept.indexOf("catering") !== -1) return "Outdoor Catering"
+  if (dept.indexOf("venue") !== -1) return "Outdoor Venue"
+  if (dept.indexOf("entertainment") !== -1) return "Outdoor Entertainment"
+  return "Outdoor Decor"
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders })
@@ -60,7 +73,7 @@ serve(async (req) => {
           contract_date: e.ContractDate || null,
           department: dep.name,
           contract_type: e.ContractType || null,
-          venue_name: e.VenueName || null,
+          venue_name: normalizeVenue(e.VenueName || "", dep.name),
           location: e.Location || null,
           contact_person: e.ContactPerson || null,
           contact_number: e.ContactNumber || null,
