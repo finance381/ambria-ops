@@ -159,7 +159,17 @@ function Purchase({ profile }) {
       .eq('status', 'purchased')
       .order('purchased_at', { ascending: true })
       .limit(200)
-    if (error) { setReceivingItems([]); setReceivingLoading(false); return }
+    if (error) {
+      // FK hint fallback — retry without categories join
+      var { data: fb } = await supabase
+        .from('purchase_order_items')
+        .select('id, po_id, item_id, item_name, category_id, _source, qty_ordered, actual_qty, unit, vendor_name, vendor_rate_paise, actual_cost_paise, status, purchased_by, purchased_at')
+        .eq('status', 'purchased')
+        .order('purchased_at', { ascending: true })
+        .limit(200)
+      data = fb || []
+      if (!fb) { setReceivingItems([]); setReceivingLoading(false); return }
+    }
     // Fetch PO info for context
     var poIds = []
     ;(data || []).forEach(function (it) { if (poIds.indexOf(it.po_id) === -1) poIds.push(it.po_id) })
@@ -781,7 +791,8 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, on
   var isPurchaser = po.assigned_to === profile?.id
   var canEdit = isAdmin && (po.status === 'draft' || po.status === 'confirmed')
   var canConfirm = isAdmin && po.status === 'draft' && items.length > 0
-  var canClose = isAdmin && po.status === 'completed'
+  var allReceived = items.length > 0 && items.every(function (it) { return it.status === 'received' || it.status === 'cancelled' })
+  var canClose = isAdmin && (po.status === 'completed' || po.status === 'confirmed') && allReceived
   var canPurchase = isPurchaser && po.status === 'confirmed'
 
   var totalEstPaise = 0
@@ -793,6 +804,7 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, on
     if (it.actual_cost_paise) totalActualPaise += it.actual_cost_paise
     if (it.status === 'pending') pendingCount++
     if (it.status === 'purchased') purchasedCount++
+    if (it.status === 'received') purchasedCount++
   })
 
   var staffItems = staffList.map(function (s) { return { label: s.name + (s.role === 'admin' ? ' (Admin)' : ''), value: s.id } })
