@@ -46,6 +46,9 @@ function Purchase({ profile }) {
   var [receivingItem, setReceivingItem] = useState(null)
   var [receiveQty, setReceiveQty] = useState('')
   var [showInvForm, setShowInvForm] = useState(null)
+  var [vendorData, setVendorData] = useState([])
+  var [vendorLoading, setVendorLoading] = useState(false)
+  var [vendorCatFilter, setVendorCatFilter] = useState('')
 
   var isAdmin = profile?.role === 'admin' || profile?.role === 'auditor'
   var hasReceive = (profile?.permissions || []).indexOf('feature_receive') !== -1
@@ -220,6 +223,46 @@ function Purchase({ profile }) {
     try { await logActivity('PO_ITEM_RECEIVED', titleCase(poItem.item_name) + ' | new item → ' + tableName + ' #' + savedItem.id) } catch (_) {}
     setShowInvForm(null)
     loadReceiving()
+  }
+
+  // ─── VENDOR ANALYTICS ───
+  async function loadVendorAnalytics() {
+    if (vendorData.length > 0) return
+    setVendorLoading(true)
+    var { data, error } = await supabase
+      .from('purchase_order_items')
+      .select('id, item_name, category_id, vendor_name, vendor_rate_paise, actual_cost_paise, actual_qty, qty_ordered, unit, status, purchased_at, categories(name)')
+      .not('vendor_name', 'is', null)
+      .in('status', ['purchased', 'received'])
+      .order('item_name')
+      .limit(1000)
+    if (error) { setVendorData([]); setVendorLoading(false); return }
+
+    // Group by item_name
+    var grouped = {}
+    ;(data || []).forEach(function (row) {
+      var key = row.item_name.toLowerCase().trim()
+      if (!grouped[key]) grouped[key] = { item_name: row.item_name, category: row.categories?.name || '—', category_id: row.category_id, vendors: [] }
+      grouped[key].vendors.push({
+        vendor: row.vendor_name,
+        rate_paise: row.vendor_rate_paise || 0,
+        actual_paise: row.actual_cost_paise || 0,
+        qty: row.actual_qty || row.qty_ordered,
+        unit: row.unit,
+        date: row.purchased_at,
+      })
+    })
+
+    // Sort vendors within each item by rate (lowest first)
+    var result = Object.keys(grouped).sort().map(function (key) {
+      var item = grouped[key]
+      item.vendors.sort(function (a, b) { return a.rate_paise - b.rate_paise })
+      item.bestRate = item.vendors[0]?.rate_paise || 0
+      return item
+    })
+
+    setVendorData(result)
+    setVendorLoading(false)
   }
 
   // ─── OPEN PO DETAIL ───
@@ -633,6 +676,10 @@ function Purchase({ profile }) {
             </span>
           )}
         </button>
+        <button onClick={function () { setTab('vendors'); loadVendorAnalytics() }}
+          className={"flex-1 py-2 text-sm font-semibold rounded-md transition-colors " + (tab === 'vendors' ? "bg-white text-gray-900 shadow-sm" : "text-gray-500")}>
+          Vendors
+        </button>
       </div>
 
       {/* ═══ QUEUE TAB ═══ */}
@@ -818,6 +865,82 @@ function Purchase({ profile }) {
           })}
         </div>
       )}
+      {/* ═══ VENDORS TAB (Admin) ═══ */}
+      {tab === 'vendors' && (
+        <div className="space-y-3">
+          {vendorLoading && <p className="text-gray-400 text-sm text-center py-8">Loading vendor data...</p>}
+          {!vendorLoading && vendorData.length === 0 && (
+            <div className="bg-white rounded-lg border border-gray-200 p-8 text-center">
+              <p className="text-gray-400 text-sm">No vendor data yet — purchase items to build history</p>
+            </div>
+          )}
+          {!vendorLoading && vendorData.length > 0 && (
+            <>
+              {/* Category filter */}
+              <div className="flex gap-2 flex-wrap">
+                <button onClick={function () { setVendorCatFilter('') }}
+                  className={"px-3 py-1.5 text-[11px] font-bold rounded-full border transition-colors " +
+                    (!vendorCatFilter ? "bg-gray-900 text-white border-gray-900" : "bg-white text-gray-500 border-gray-200 hover:border-gray-400")}>
+                  All
+                </button>
+                {(function () {
+                  var cats = []
+                  vendorData.forEach(function (item) { if (cats.indexOf(item.category) === -1) cats.push(item.category) })
+                  return cats.sort().map(function (cat) {
+                    return (
+                      <button key={cat} onClick={function () { setVendorCatFilter(cat === vendorCatFilter ? '' : cat) }}
+                        className={"px-3 py-1.5 text-[11px] font-bold rounded-full border transition-colors " +
+                          (vendorCatFilter === cat ? "bg-gray-900 text-white border-gray-900" : "bg-white text-gray-500 border-gray-200 hover:border-gray-400")}>
+                        {cat}
+                      </button>
+                    )
+                  })
+                })()}
+              </div>
+
+              {/* Items with vendor comparison */}
+              {vendorData
+                .filter(function (item) { return !vendorCatFilter || item.category === vendorCatFilter })
+                .map(function (item, idx) {
+                  return (
+                    <div key={idx} className="bg-white rounded-lg border border-gray-200 p-3 space-y-2">
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <p className="text-sm font-semibold text-gray-800">{titleCase(item.item_name)}</p>
+                          <p className="text-[11px] text-gray-400">{item.category} · {item.vendors.length} purchase{item.vendors.length !== 1 ? 's' : ''}</p>
+                        </div>
+                        {item.bestRate > 0 && (
+                          <span className="text-[11px] font-bold text-green-600 bg-green-50 px-2 py-0.5 rounded-full">
+                            Best: {formatPaise(item.bestRate)}/{item.vendors[0]?.unit || 'unit'}
+                          </span>
+                        )}
+                      </div>
+                      <div className="space-y-1">
+                        {item.vendors.map(function (v, vi) {
+                          var isBest = v.rate_paise === item.bestRate && item.vendors.length > 1
+                          return (
+                            <div key={vi} className={"flex items-center justify-between py-1.5 px-2 rounded text-[11px] " + (isBest ? "bg-green-50" : "bg-gray-50")}>
+                              <div className="flex-1 min-w-0">
+                                <span className={"font-medium " + (isBest ? "text-green-700" : "text-gray-700")}>{v.vendor}</span>
+                                {v.date && <span className="text-gray-400 ml-2">{formatDate(v.date)}</span>}
+                              </div>
+                              <div className="flex items-center gap-3 flex-shrink-0">
+                                <span className="text-gray-500">{v.qty} {v.unit}</span>
+                                <span className={"font-bold " + (isBest ? "text-green-700" : "text-gray-700")}>
+                                  {v.rate_paise > 0 ? formatPaise(v.rate_paise) + '/' + v.unit : v.actual_paise > 0 ? formatPaise(v.actual_paise) + ' total' : '—'}
+                                </span>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )
+                })}
+            </>
+          )}
+        </div>
+      )}
     </div>
   )
 }
@@ -830,6 +953,8 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, on
   var [vendorForm, setVendorForm] = useState({ name: '', contact: '', rate: '' })
   var [purchasingItem, setPurchasingItem] = useState(null)
   var [purchaseForm, setPurchaseForm] = useState({ qty: '', cost: '', receipt: null })
+  var [rateHistory, setRateHistory] = useState([])
+  var [rateLoading, setRateLoading] = useState(false)
 
   var isPurchaser = po.assigned_to === profile?.id
   var canEdit = isAdmin && (po.status === 'draft' || po.status === 'confirmed')
@@ -860,6 +985,20 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, on
       contact: it.vendor_contact || '',
       rate: it.vendor_rate_paise ? String(it.vendor_rate_paise / 100) : '',
     })
+    // Fetch last 3 purchases for this item
+    setRateHistory([])
+    setRateLoading(true)
+    supabase.from('purchase_order_items')
+      .select('vendor_name, vendor_rate_paise, actual_cost_paise, actual_qty, qty_ordered, unit, purchased_at')
+      .ilike('item_name', it.item_name)
+      .not('vendor_name', 'is', null)
+      .in('status', ['purchased', 'received'])
+      .order('purchased_at', { ascending: false })
+      .limit(3)
+      .then(function (res) {
+        setRateHistory(res.data || [])
+        setRateLoading(false)
+      })
   }
 
   async function saveVendor(poItemId) {
@@ -1014,6 +1153,43 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, on
               {isEditingVendor && (
                 <div className="bg-blue-50 rounded-lg border border-blue-200 p-3 space-y-2">
                   <p className="text-[11px] font-bold text-blue-700 uppercase">Assign Vendor</p>
+                  {/* Rate history — last 3 purchases */}
+                  {rateLoading && <p className="text-[10px] text-gray-400">Checking history...</p>}
+                  {!rateLoading && rateHistory.length > 0 && (
+                    <div className="bg-white rounded border border-blue-100 p-2 space-y-1">
+                      <p className="text-[10px] font-bold text-gray-500 uppercase">Last {rateHistory.length} Purchase{rateHistory.length !== 1 ? 's' : ''}</p>
+                      {rateHistory.map(function (h, hi) {
+                        return (
+                          <div key={hi}
+                            onClick={function () {
+                              setVendorForm(function (prev) {
+                                return Object.assign({}, prev, {
+                                  name: h.vendor_name || prev.name,
+                                  rate: h.vendor_rate_paise ? String(h.vendor_rate_paise / 100) : prev.rate,
+                                })
+                              })
+                            }}
+                            className="flex items-center justify-between py-1.5 px-2 rounded bg-gray-50 hover:bg-blue-100 cursor-pointer transition-colors">
+                            <div className="flex-1 min-w-0">
+                              <span className="text-[11px] font-medium text-gray-700">{h.vendor_name}</span>
+                              {h.purchased_at && <span className="text-[10px] text-gray-400 ml-1.5">{formatDate(h.purchased_at)}</span>}
+                            </div>
+                            <div className="flex items-center gap-2 flex-shrink-0">
+                              <span className="text-[10px] text-gray-500">{h.actual_qty || h.qty_ordered} {h.unit}</span>
+                              <span className="text-[11px] font-bold text-gray-800">
+                                {h.vendor_rate_paise ? formatPaise(h.vendor_rate_paise) + '/' + h.unit : h.actual_cost_paise ? formatPaise(h.actual_cost_paise) + ' total' : '—'}
+                              </span>
+                              <span className="text-[10px] text-blue-500">↗</span>
+                            </div>
+                          </div>
+                        )
+                      })}
+                      <p className="text-[9px] text-gray-400 text-center">Tap to auto-fill vendor & rate</p>
+                    </div>
+                  )}
+                  {!rateLoading && rateHistory.length === 0 && (
+                    <p className="text-[10px] text-gray-400 italic">No purchase history for this item</p>
+                  )}
                   <input type="text" value={vendorForm.name}
                     onChange={function (e) { setVendorForm(function (p) { return Object.assign({}, p, { name: e.target.value }) }) }}
                     placeholder="Vendor name" maxLength="200"
