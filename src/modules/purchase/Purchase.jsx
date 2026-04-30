@@ -1144,267 +1144,379 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, on
     setPurchasingItem(null)
   }
 
+  // Variance calc
+  var variancePaise = totalActualPaise - totalEstPaise
+  var variancePct = totalEstPaise > 0 ? Math.round((variancePaise / totalEstPaise) * 100) : 0
+  var receivedCount = 0
+  items.forEach(function (it) { if (it.status === 'received') receivedCount++ })
+
+  // Vendor summary
+  var vendorSummary = {}
+  items.forEach(function (it) {
+    if (!it.vendor_name) return
+    if (!vendorSummary[it.vendor_name]) vendorSummary[it.vendor_name] = { count: 0, estPaise: 0, actualPaise: 0 }
+    vendorSummary[it.vendor_name].count++
+    vendorSummary[it.vendor_name].estPaise += it.estimated_cost_paise || 0
+    vendorSummary[it.vendor_name].actualPaise += it.actual_cost_paise || 0
+  })
+  var vendorKeys = Object.keys(vendorSummary).sort()
+  var unassignedCount = items.filter(function (it) { return !it.vendor_name && it.status === 'pending' }).length
+
   return (
     <div className="space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <button onClick={onBack} className="text-sm text-gray-400 hover:text-gray-600">← Back</button>
-        <span className={"text-[10px] font-bold uppercase px-2 py-0.5 rounded-full " + (PO_STATUS_COLORS[po.status] || '')}>
-          {PO_STATUS_LABELS[po.status] || po.status}
-        </span>
+        <div className="flex items-center gap-3">
+          <button onClick={onBack} className="text-sm text-gray-400 hover:text-gray-600 transition-colors">← Back</button>
+          <h2 className="text-lg font-bold text-gray-900">PO #{po.id.slice(0, 8)}</h2>
+          <span className={"text-[10px] font-bold uppercase px-2.5 py-1 rounded-full " + (PO_STATUS_COLORS[po.status] || '')}>
+            {PO_STATUS_LABELS[po.status] || po.status}
+          </span>
+        </div>
+        <div className="text-xs text-gray-400">
+          {po.profiles?.name || '—'} · {formatDate(po.created_at)}
+        </div>
       </div>
 
-      {/* PO info */}
-      <div className="bg-white rounded-lg border border-gray-200 p-4 space-y-3">
-        <p className="text-sm font-bold text-gray-800">PO #{po.id.slice(0, 8)}</p>
-        <div className="text-[11px] text-gray-400 space-y-0.5">
-          <p>Created by: {po.profiles?.name || '—'} · {formatDate(po.created_at)}</p>
-          {po.notes && <p>Notes: {po.notes}</p>}
+      {/* Two-column layout */}
+      <div className="flex gap-5 items-start">
+        {/* ═══ LEFT: Items ═══ */}
+        <div className="flex-1 min-w-0 space-y-3">
+          {/* Assign purchaser — admin only, draft/confirmed */}
           {canEdit && (
-            <button onClick={function () {
-              var newNotes = prompt('PO Notes:', po.notes || '')
-              if (newNotes !== null && newNotes !== po.notes) {
-                supabase.from('purchase_orders').update({ notes: newNotes.trim() }).eq('id', po.id)
-                  .then(function (res) { if (!res.error) { po.notes = newNotes.trim() } })
-              }
-            }} className="text-[11px] font-medium text-blue-600 hover:text-blue-800 transition-colors">
-              {po.notes ? '✎ Edit Notes' : '+ Add Notes'}
-            </button>
-          )}
-        </div>
-        <div className="flex gap-4 pt-1">
-          <div>
-            <p className="text-[10px] text-gray-400 uppercase">Estimated</p>
-            <p className="text-sm font-bold text-gray-700">{formatPaise(totalEstPaise)}</p>
-          </div>
-          {totalActualPaise > 0 && (
-            <div>
-              <p className="text-[10px] text-gray-400 uppercase">Actual</p>
-              <p className="text-sm font-bold text-green-700">{formatPaise(totalActualPaise)}</p>
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
+              <SearchDropdown
+                label="Assign Purchaser"
+                items={staffItems}
+                value={po.assigned_to || ''}
+                onChange={function (val) { onAssign(po.id, val) }}
+                placeholder="Select staff member..."
+              />
             </div>
           )}
-          <div>
-            <p className="text-[10px] text-gray-400 uppercase">Progress</p>
-            <p className="text-sm font-bold text-gray-700">{purchasedCount + '/' + items.length}</p>
-          </div>
-        </div>
 
-        {/* Assign purchaser — admin only, draft/confirmed */}
-        {canEdit && (
-          <div className="pt-2 border-t border-gray-100">
-            <SearchDropdown
-              label="Assign Purchaser"
-              items={staffItems}
-              value={po.assigned_to || ''}
-              onChange={function (val) { onAssign(po.id, val) }}
-              placeholder="Select staff member..."
-            />
-          </div>
-        )}
-      </div>
+          {/* Items table */}
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+            <div className="px-4 py-3 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
+              <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">{items.length + ' Item' + (items.length !== 1 ? 's' : '')}</span>
+              <span className="text-xs text-gray-400">{purchasedCount + receivedCount} of {items.length} done</span>
+            </div>
 
-      {/* Items */}
-      <div className="space-y-2">
-        <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">{items.length + ' Item' + (items.length !== 1 ? 's' : '')}</h3>
-        {items.map(function (it) {
-          var isEditingVendor = editingVendor === it.id
-          var isPurchasing = purchasingItem === it.id
+            <div className="divide-y divide-gray-50">
+              {items.map(function (it) {
+                var isEditingVendor = editingVendor === it.id
+                var isPurchasing = purchasingItem === it.id
+                var itemVariance = (it.actual_cost_paise || 0) - (it.estimated_cost_paise || 0)
 
-          return (
-            <div key={it.id} className="bg-white rounded-lg border border-gray-200 p-3 space-y-2">
-              <div className="flex items-start justify-between">
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-gray-800">{titleCase(it.item_name)}</p>
-                  <p className="text-[11px] text-gray-400 mt-0.5">
-                    {it.categories?.name || '—'} · {it.qty_ordered} {it.unit} · <span className={"font-medium " + (it._source === 'new' ? "text-amber-600" : "text-indigo-600")}>
-                      {it._source === 'new' ? 'New' : it._source === 'catering_store' ? 'CS' : 'INV'}
-                    </span>
-                  </p>
-                </div>
-                <span className={"text-[10px] font-bold uppercase px-2 py-0.5 rounded-full " + (ITEM_STATUS_COLORS[it.status] || '')}>
-                  {it.status}
-                </span>
-              </div>
-
-              {/* Vendor info */}
-              {it.vendor_name && !isEditingVendor && (
-                <div className="bg-gray-50 rounded p-2">
-                  <p className="text-[11px] text-gray-600">
-                    <span className="font-medium">Vendor:</span> {it.vendor_name}
-                    {it.vendor_contact ? ' · ' + it.vendor_contact : ''}
-                    {it.vendor_rate_paise ? ' · Rate: ' + formatPaise(it.vendor_rate_paise) : ''}
-                  </p>
-                </div>
-              )}
-
-              {/* Cost display */}
-              <div className="flex gap-3 text-[11px]">
-                {it.vendor_rate_paise > 0 && <span className="text-gray-400">Rate: {formatPaise(it.vendor_rate_paise)}/{it.unit}</span>}
-                {it.estimated_cost_paise > 0 && <span className="text-gray-500">Est Total: {formatPaise(it.estimated_cost_paise)}</span>}
-                {it.actual_cost_paise > 0 && <span className="text-green-600 font-medium">Actual: {formatPaise(it.actual_cost_paise)}</span>}
-              </div>
-
-              {/* Receipt link */}
-              {it.receipt_path && (
-                <a href={supabase.storage.from('receipts').getPublicUrl(it.receipt_path).data.publicUrl}
-                  target="_blank" rel="noopener noreferrer"
-                  className="inline-block text-[11px] text-indigo-600 font-medium hover:underline">
-                  📎 View Bill
-                </a>
-              )}
-
-              {it.notes && <p className="text-[11px] text-gray-400">{it.notes}</p>}
-
-              {/* Vendor edit form — admin only */}
-              {isEditingVendor && (
-                <div className="bg-blue-50 rounded-lg border border-blue-200 p-3 space-y-2">
-                  <p className="text-[11px] font-bold text-blue-700 uppercase">Assign Vendor</p>
-                  {/* Rate history — last 3 purchases */}
-                  {rateLoading && <p className="text-[10px] text-gray-400">Checking history...</p>}
-                  {!rateLoading && rateHistory.length > 0 && (
-                    <div className="bg-white rounded border border-blue-100 p-2 space-y-1">
-                      <p className="text-[10px] font-bold text-gray-500 uppercase">Last {rateHistory.length} Purchase{rateHistory.length !== 1 ? 's' : ''}</p>
-                      {rateHistory.map(function (h, hi) {
-                        return (
-                          <div key={hi}
-                            onClick={function () {
-                              setVendorForm(function (prev) {
-                                return Object.assign({}, prev, {
-                                  name: h.vendor_name || prev.name,
-                                  rate: h.vendor_rate_paise ? String(h.vendor_rate_paise / 100) : prev.rate,
-                                })
-                              })
-                            }}
-                            className="flex items-center justify-between py-1.5 px-2 rounded bg-gray-50 hover:bg-blue-100 cursor-pointer transition-colors">
-                            <div className="flex-1 min-w-0">
-                              <span className="text-[11px] font-medium text-gray-700">{h.vendor_name}</span>
-                              {h.purchased_at && <span className="text-[10px] text-gray-400 ml-1.5">{formatDate(h.purchased_at)}</span>}
-                            </div>
-                            <div className="flex items-center gap-2 flex-shrink-0">
-                              <span className="text-[10px] text-gray-500">{h.actual_qty || h.qty_ordered} {h.unit}</span>
-                              <span className="text-[11px] font-bold text-gray-800">
-                                {h.vendor_rate_paise ? formatPaise(h.vendor_rate_paise) + '/' + h.unit : h.actual_cost_paise ? formatPaise(h.actual_cost_paise) + ' total' : '—'}
-                              </span>
-                              <span className="text-[10px] text-blue-500">↗</span>
-                            </div>
+                return (
+                  <div key={it.id} className="px-4 py-4 space-y-2">
+                    {/* Item row */}
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-semibold text-gray-800">{titleCase(it.item_name)}</p>
+                          <span className={"text-[10px] font-bold uppercase px-2 py-0.5 rounded-full " + (ITEM_STATUS_COLORS[it.status] || '')}>
+                            {it.status}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-gray-400 mt-0.5">
+                          {it.categories?.name || '—'} · {it.qty_ordered} {it.unit} · <span className={"font-medium " + (it._source === 'new' ? "text-amber-600" : "text-indigo-600")}>
+                            {it._source === 'new' ? 'New' : it._source === 'catering_store' ? 'CS' : 'INV'}
+                          </span>
+                        </p>
+                      </div>
+                      {/* Cost columns */}
+                      <div className="flex gap-4 flex-shrink-0 text-right">
+                        <div>
+                          <p className="text-[10px] text-gray-400">Estimated</p>
+                          <p className="text-xs font-medium text-gray-600">{it.estimated_cost_paise > 0 ? formatPaise(it.estimated_cost_paise) : '—'}</p>
+                        </div>
+                        {it.actual_cost_paise > 0 && (
+                          <div>
+                            <p className="text-[10px] text-gray-400">Actual</p>
+                            <p className={"text-xs font-bold " + (itemVariance > 0 ? "text-red-600" : itemVariance < 0 ? "text-green-600" : "text-gray-700")}>
+                              {formatPaise(it.actual_cost_paise)}
+                            </p>
                           </div>
-                        )
-                      })}
-                      <p className="text-[9px] text-gray-400 text-center">Tap to auto-fill vendor & rate</p>
+                        )}
+                      </div>
                     </div>
-                  )}
-                  {!rateLoading && rateHistory.length === 0 && (
-                    <p className="text-[10px] text-gray-400 italic">No purchase history for this item</p>
-                  )}
-                  <input type="text" value={vendorForm.name}
-                    onChange={function (e) { setVendorForm(function (p) { return Object.assign({}, p, { name: e.target.value }) }) }}
-                    placeholder="Vendor name" maxLength="200"
-                    className="w-full px-2 py-1.5 border border-blue-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    style={{ fontSize: '16px' }} />
-                  <input type="text" value={vendorForm.contact}
-                    onChange={function (e) { setVendorForm(function (p) { return Object.assign({}, p, { contact: e.target.value }) }) }}
-                    placeholder="Contact / phone" maxLength="100"
-                    className="w-full px-2 py-1.5 border border-blue-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    style={{ fontSize: '16px' }} />
-                  <input type="number" min="0" step="0.01" inputMode="decimal" value={vendorForm.rate}
-                    onChange={function (e) { setVendorForm(function (p) { return Object.assign({}, p, { rate: e.target.value }) }) }}
-                    placeholder="Rate per unit (₹)"
-                    className="w-full px-2 py-1.5 border border-blue-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                  <div className="flex gap-2">
-                    <button onClick={function () { setEditingVendor(null) }}
-                      className="flex-1 py-1.5 text-xs text-gray-600 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors">Cancel</button>
-                    <button onClick={function () { saveVendor(it.id) }}
-                      className="flex-1 py-1.5 text-xs text-white bg-blue-600 rounded-md hover:bg-blue-700 transition-colors">Save</button>
-                  </div>
-                </div>
-              )}
 
-              {/* Purchase form — purchaser marks item as bought */}
-              {isPurchasing && (
-                <div className="bg-green-50 rounded-lg border border-green-200 p-3 space-y-2">
-                  <p className="text-[11px] font-bold text-green-700 uppercase">Mark as Purchased</p>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="block text-[11px] text-gray-500 mb-0.5">Qty Bought</label>
-                      <input type="number" min="0" step="any" inputMode="decimal" value={purchaseForm.qty}
-                        onChange={function (e) { setPurchaseForm(function (p) { return Object.assign({}, p, { qty: e.target.value }) }) }}
-                        className="w-full px-2 py-1.5 border border-green-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
-                    </div>
-                    <div>
-                      <label className="block text-[11px] text-gray-500 mb-0.5">Actual Cost (₹)</label>
-                      <input type="number" min="0" step="0.01" inputMode="decimal" value={purchaseForm.cost}
-                        onChange={function (e) { setPurchaseForm(function (p) { return Object.assign({}, p, { cost: e.target.value }) }) }}
-                        className="w-full px-2 py-1.5 border border-green-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-[11px] text-gray-500 mb-0.5">Upload Bill / Receipt</label>
-                    <input type="file" accept="image/*,application/pdf"
-                      onChange={function (e) { setPurchaseForm(function (p) { return Object.assign({}, p, { receipt: e.target.files[0] || null }) }) }}
-                      className="w-full text-sm text-gray-500 file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-xs file:font-medium file:bg-green-100 file:text-green-700" />
-                  </div>
-                  <div className="flex gap-2">
-                    <button onClick={function () { setPurchasingItem(null) }}
-                      className="flex-1 py-1.5 text-xs text-gray-600 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors">Cancel</button>
-                    <button onClick={function () { confirmPurchase(it.id) }} disabled={saving}
-                      className="flex-1 py-1.5 text-xs text-white bg-green-600 rounded-md hover:bg-green-700 disabled:opacity-50 transition-colors">
-                      {saving ? 'Saving...' : '✓ Purchased'}
-                    </button>
-                  </div>
-                </div>
-              )}
+                    {/* Vendor info display */}
+                    {it.vendor_name && !isEditingVendor && (
+                      <div className="flex items-center gap-2 text-[11px] text-gray-500 bg-gray-50 rounded-lg px-3 py-2">
+                        <span className="font-medium text-gray-700">{it.vendor_name}</span>
+                        {it.vendor_contact && <span>· {it.vendor_contact}</span>}
+                        {it.vendor_rate_paise > 0 && <span>· {formatPaise(it.vendor_rate_paise)}/{it.unit}</span>}
+                      </div>
+                    )}
 
-              {/* Action buttons */}
-              {it.status === 'pending' && !isEditingVendor && !isPurchasing && (
-                <div className="flex gap-2">
-                  {canEdit && (
-                    <button onClick={function (e) { e.stopPropagation(); startVendorEdit(it) }}
-                      className="text-[11px] font-medium text-blue-600 hover:text-blue-800 transition-colors">
-                      {it.vendor_name ? '✎ Edit Vendor' : '+ Assign Vendor'}
-                    </button>
-                  )}
-                  {canDelete && (
-                    <button onClick={function (e) { e.stopPropagation(); if (confirm('Remove this item from PO?')) onRemoveItem(po.id, it.id) }}
-                      className="text-[11px] font-medium text-red-500 hover:text-red-700 transition-colors">
-                      ✕ Remove
-                    </button>
-                  )}
-                  {canPurchase && (
-                    <button onClick={function (e) { e.stopPropagation(); startPurchase(it) }}
-                      className="text-[11px] font-medium text-green-600 hover:text-green-800 transition-colors">
-                      🛒 Mark Purchased
-                    </button>
+                    {/* Receipt link */}
+                    {it.receipt_path && (
+                      <a href={supabase.storage.from('receipts').getPublicUrl(it.receipt_path).data.publicUrl}
+                        target="_blank" rel="noopener noreferrer"
+                        className="inline-block text-[11px] text-indigo-600 font-medium hover:underline">
+                        📎 View Bill
+                      </a>
+                    )}
+
+                    {/* Vendor edit form */}
+                    {isEditingVendor && (
+                      <div className="bg-blue-50 rounded-lg border border-blue-200 p-3 space-y-2">
+                        <p className="text-[11px] font-bold text-blue-700 uppercase">Assign Vendor</p>
+                        {/* Rate history */}
+                        {rateLoading && <p className="text-[10px] text-gray-400">Checking history...</p>}
+                        {!rateLoading && rateHistory.length > 0 && (
+                          <div className="bg-white rounded border border-blue-100 p-2 space-y-1">
+                            <p className="text-[10px] font-bold text-gray-500 uppercase">Last {rateHistory.length} Purchase{rateHistory.length !== 1 ? 's' : ''}</p>
+                            {rateHistory.map(function (h, hi) {
+                              return (
+                                <div key={hi}
+                                  onClick={function () {
+                                    setVendorForm(function (prev) {
+                                      return Object.assign({}, prev, {
+                                        name: h.vendor_name || prev.name,
+                                        rate: h.vendor_rate_paise ? String(h.vendor_rate_paise / 100) : prev.rate,
+                                      })
+                                    })
+                                  }}
+                                  className="flex items-center justify-between py-1.5 px-2 rounded bg-gray-50 hover:bg-blue-100 cursor-pointer transition-colors">
+                                  <div className="flex-1 min-w-0">
+                                    <span className="text-[11px] font-medium text-gray-700">{h.vendor_name}</span>
+                                    {h.purchased_at && <span className="text-[10px] text-gray-400 ml-1.5">{formatDate(h.purchased_at)}</span>}
+                                  </div>
+                                  <div className="flex items-center gap-2 flex-shrink-0">
+                                    <span className="text-[10px] text-gray-500">{h.actual_qty || h.qty_ordered} {h.unit}</span>
+                                    <span className="text-[11px] font-bold text-gray-800">
+                                      {h.vendor_rate_paise ? formatPaise(h.vendor_rate_paise) + '/' + h.unit : h.actual_cost_paise ? formatPaise(h.actual_cost_paise) + ' total' : '—'}
+                                    </span>
+                                    <span className="text-[10px] text-blue-500">↗</span>
+                                  </div>
+                                </div>
+                              )
+                            })}
+                            <p className="text-[9px] text-gray-400 text-center">Tap to auto-fill vendor & rate</p>
+                          </div>
+                        )}
+                        {!rateLoading && rateHistory.length === 0 && (
+                          <p className="text-[10px] text-gray-400 italic">No purchase history for this item</p>
+                        )}
+                        <input type="text" value={vendorForm.name}
+                          onChange={function (e) { setVendorForm(function (p) { return Object.assign({}, p, { name: e.target.value }) }) }}
+                          placeholder="Vendor name" maxLength="200"
+                          className="w-full px-2 py-1.5 border border-blue-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          style={{ fontSize: '16px' }} />
+                        <input type="text" value={vendorForm.contact}
+                          onChange={function (e) { setVendorForm(function (p) { return Object.assign({}, p, { contact: e.target.value }) }) }}
+                          placeholder="Contact / phone" maxLength="100"
+                          className="w-full px-2 py-1.5 border border-blue-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          style={{ fontSize: '16px' }} />
+                        <input type="number" min="0" step="0.01" inputMode="decimal" value={vendorForm.rate}
+                          onChange={function (e) { setVendorForm(function (p) { return Object.assign({}, p, { rate: e.target.value }) }) }}
+                          placeholder="Rate per unit (₹)"
+                          className="w-full px-2 py-1.5 border border-blue-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                        <div className="flex gap-2">
+                          <button onClick={function () { setEditingVendor(null) }}
+                            className="flex-1 py-1.5 text-xs text-gray-600 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors">Cancel</button>
+                          <button onClick={function () { saveVendor(it.id) }}
+                            className="flex-1 py-1.5 text-xs text-white bg-blue-600 rounded-md hover:bg-blue-700 transition-colors">Save</button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Purchase form */}
+                    {isPurchasing && (
+                      <div className="bg-green-50 rounded-lg border border-green-200 p-3 space-y-2">
+                        <p className="text-[11px] font-bold text-green-700 uppercase">Mark as Purchased</p>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="block text-[11px] text-gray-500 mb-0.5">Qty Bought</label>
+                            <input type="number" min="0" step="any" inputMode="decimal" value={purchaseForm.qty}
+                              onChange={function (e) { setPurchaseForm(function (p) { return Object.assign({}, p, { qty: e.target.value }) }) }}
+                              className="w-full px-2 py-1.5 border border-green-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
+                          </div>
+                          <div>
+                            <label className="block text-[11px] text-gray-500 mb-0.5">Actual Cost (₹)</label>
+                            <input type="number" min="0" step="0.01" inputMode="decimal" value={purchaseForm.cost}
+                              onChange={function (e) { setPurchaseForm(function (p) { return Object.assign({}, p, { cost: e.target.value }) }) }}
+                              className="w-full px-2 py-1.5 border border-green-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-[11px] text-gray-500 mb-0.5">Upload Bill / Receipt</label>
+                          <input type="file" accept="image/*,application/pdf"
+                            onChange={function (e) { setPurchaseForm(function (p) { return Object.assign({}, p, { receipt: e.target.files[0] || null }) }) }}
+                            className="w-full text-sm text-gray-500 file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-xs file:font-medium file:bg-green-100 file:text-green-700" />
+                        </div>
+                        <div className="flex gap-2">
+                          <button onClick={function () { setPurchasingItem(null) }}
+                            className="flex-1 py-1.5 text-xs text-gray-600 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors">Cancel</button>
+                          <button onClick={function () { confirmPurchase(it.id) }} disabled={saving}
+                            className="flex-1 py-1.5 text-xs text-white bg-green-600 rounded-md hover:bg-green-700 disabled:opacity-50 transition-colors">
+                            {saving ? 'Saving...' : '✓ Purchased'}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Action buttons */}
+                    {it.status === 'pending' && !isEditingVendor && !isPurchasing && (
+                      <div className="flex gap-3">
+                        {canEdit && (
+                          <button onClick={function (e) { e.stopPropagation(); startVendorEdit(it) }}
+                            className="text-[11px] font-semibold text-blue-600 hover:text-blue-800 transition-colors">
+                            {it.vendor_name ? '✎ Edit Vendor' : '+ Assign Vendor'}
+                          </button>
+                        )}
+                        {canDelete && (
+                          <button onClick={function (e) { e.stopPropagation(); if (confirm('Remove this item from PO?')) onRemoveItem(po.id, it.id) }}
+                            className="text-[11px] font-semibold text-red-500 hover:text-red-700 transition-colors">
+                            ✕ Remove
+                          </button>
+                        )}
+                        {canPurchase && (
+                          <button onClick={function (e) { e.stopPropagation(); startPurchase(it) }}
+                            className="text-[11px] font-semibold text-green-600 hover:text-green-800 transition-colors">
+                            🛒 Mark Purchased
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+
+        {/* ═══ RIGHT: Summary sidebar ═══ */}
+        <div className="w-80 flex-shrink-0">
+          <div className="sticky top-[120px] space-y-4">
+            {/* Financial summary */}
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+              <div className="px-4 py-3 bg-gray-900 text-white">
+                <p className="text-[10px] font-bold uppercase tracking-wider">Order Summary</p>
+              </div>
+              <div className="p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-gray-500">Estimated Total</span>
+                  <span className="text-sm font-bold text-gray-700">{formatPaise(totalEstPaise)}</span>
+                </div>
+                {totalActualPaise > 0 && (
+                  <>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-gray-500">Actual Total</span>
+                      <span className="text-sm font-bold text-gray-900">{formatPaise(totalActualPaise)}</span>
+                    </div>
+                    <div className="border-t border-gray-100 pt-2 flex items-center justify-between">
+                      <span className="text-xs font-bold text-gray-500">Variance</span>
+                      <div className="text-right">
+                        <span className={"text-sm font-bold " + (variancePaise > 0 ? "text-red-600" : variancePaise < 0 ? "text-green-600" : "text-gray-700")}>
+                          {variancePaise > 0 ? '+' : ''}{formatPaise(Math.abs(variancePaise))}
+                        </span>
+                        <span className={"text-[10px] ml-1.5 font-bold px-1.5 py-0.5 rounded " +
+                          (variancePaise > 0 ? "bg-red-50 text-red-600" : variancePaise < 0 ? "bg-green-50 text-green-600" : "bg-gray-50 text-gray-500")}>
+                          {variancePaise > 0 ? '▲' : variancePaise < 0 ? '▼' : '='} {Math.abs(variancePct)}%
+                        </span>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+              {/* Progress bar */}
+              <div className="px-4 pb-4">
+                <div className="flex items-center justify-between text-[10px] text-gray-400 mb-1">
+                  <span>Progress</span>
+                  <span>{purchasedCount + receivedCount}/{items.length}</span>
+                </div>
+                <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
+                  <div className="h-full bg-indigo-500 rounded-full transition-all"
+                    style={{ width: (items.length > 0 ? Math.round(((purchasedCount + receivedCount) / items.length) * 100) : 0) + '%' }} />
+                </div>
+              </div>
+            </div>
+
+            {/* Vendor breakdown */}
+            {vendorKeys.length > 0 && (
+              <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                <div className="px-4 py-3 bg-gray-50 border-b border-gray-100">
+                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Vendors</p>
+                </div>
+                <div className="divide-y divide-gray-50">
+                  {vendorKeys.map(function (vk) {
+                    var vs = vendorSummary[vk]
+                    var vVariance = vs.actualPaise - vs.estPaise
+                    return (
+                      <div key={vk} className="px-4 py-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-semibold text-gray-700">{vk}</span>
+                          <span className="text-[10px] text-gray-400">{vs.count} item{vs.count !== 1 ? 's' : ''}</span>
+                        </div>
+                        <div className="flex items-center justify-between mt-1">
+                          <span className="text-[11px] text-gray-400">Est: {formatPaise(vs.estPaise)}</span>
+                          {vs.actualPaise > 0 && (
+                            <span className={"text-[11px] font-semibold " + (vVariance > 0 ? "text-red-600" : "text-green-600")}>
+                              Act: {formatPaise(vs.actualPaise)}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
+                  {unassignedCount > 0 && (
+                    <div className="px-4 py-3">
+                      <span className="text-xs text-amber-500 font-medium">{unassignedCount} item{unassignedCount !== 1 ? 's' : ''} unassigned</span>
+                    </div>
                   )}
                 </div>
+              </div>
+            )}
+
+            {/* Notes */}
+            {po.notes && (
+              <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Notes</p>
+                <p className="text-xs text-gray-600">{po.notes}</p>
+              </div>
+            )}
+            {canEdit && (
+              <button onClick={function () {
+                var newNotes = prompt('PO Notes:', po.notes || '')
+                if (newNotes !== null && newNotes !== po.notes) {
+                  supabase.from('purchase_orders').update({ notes: newNotes.trim() }).eq('id', po.id)
+                    .then(function (res) { if (!res.error) { po.notes = newNotes.trim() } })
+                }
+              }} className="text-[11px] font-medium text-blue-600 hover:text-blue-800 transition-colors">
+                {po.notes ? '✎ Edit Notes' : '+ Add Notes'}
+              </button>
+            )}
+
+            {/* Actions */}
+            <div className="space-y-2">
+              {canConfirm && (
+                <button onClick={function () {
+                  if (!po.assigned_to) { alert('Assign a purchaser before confirming'); return }
+                  onStatusChange(po.id, 'confirmed')
+                }} disabled={saving}
+                  className="w-full py-3 text-sm font-bold text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors shadow-sm">
+                  {saving ? 'Confirming...' : 'Confirm & Send to Purchaser'}
+                </button>
+              )}
+              {canClose && (
+                <button onClick={function () { onStatusChange(po.id, 'closed') }} disabled={saving}
+                  className="w-full py-3 text-sm font-bold text-white bg-gray-700 rounded-lg hover:bg-gray-800 disabled:opacity-50 transition-colors shadow-sm">
+                  {saving ? 'Closing...' : 'Close PO'}
+                </button>
+              )}
+              {canDelete && (
+                <button onClick={function () { if (confirm('Delete this draft PO? Items return to procurement queue.')) onDeletePo(po.id) }} disabled={saving}
+                  className="w-full py-3 text-sm font-bold text-red-600 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 disabled:opacity-50 transition-colors">
+                  {saving ? 'Deleting...' : '🗑 Delete Draft PO'}
+                </button>
               )}
             </div>
-          )
-        })}
-      </div>
-
-      {/* PO-level actions — admin only */}
-      <div className="space-y-2">
-        {canConfirm && (
-          <button onClick={function () {
-            if (!po.assigned_to) { alert('Assign a purchaser before confirming'); return }
-            onStatusChange(po.id, 'confirmed')
-          }} disabled={saving}
-            className="w-full py-3 text-sm font-bold text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors">
-            {saving ? 'Confirming...' : 'Confirm & Send to Purchaser'}
-          </button>
-        )}
-        {canClose && (
-          <button onClick={function () { onStatusChange(po.id, 'closed') }} disabled={saving}
-            className="w-full py-3 text-sm font-bold text-white bg-gray-700 rounded-lg hover:bg-gray-800 disabled:opacity-50 transition-colors">
-            {saving ? 'Closing...' : 'Close PO'}
-          </button>
-        )}
-        {canDelete && (
-          <button onClick={function () { if (confirm('Delete this draft PO? Items return to procurement queue.')) onDeletePo(po.id) }} disabled={saving}
-            className="w-full py-3 text-sm font-bold text-red-600 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 disabled:opacity-50 transition-colors">
-            {saving ? 'Deleting...' : '🗑 Delete Draft PO'}
-          </button>
-        )}
+          </div>
+        </div>
       </div>
     </div>
   )
