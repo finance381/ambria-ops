@@ -684,67 +684,143 @@ function Purchase({ profile }) {
 
       {/* ═══ QUEUE TAB ═══ */}
       {tab === 'queue' && (
-        <div className="space-y-2">
-          {queueItems.length === 0 && (
-            <div className="bg-white rounded-lg border border-gray-200 p-8 text-center">
-              <p className="text-gray-400 text-sm">No items awaiting procurement</p>
-            </div>
-          )}
-
-          {queueItems.length > 0 && (
-            <div className="flex items-center gap-2 pb-1">
-              <button onClick={selectAllQueue}
-                className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 transition-colors">
-                {selectedQueue.length === queueItems.length ? 'Deselect All' : 'Select All'}
-              </button>
-              <span className="text-[11px] text-gray-400">{selectedQueue.length + ' selected'}</span>
-            </div>
-          )}
-
-          {queueItems.map(function (q) {
-            var isSelected = selectedQueue.indexOf(q.id) !== -1
-            var req = q.requisitions || {}
-            return (
-              <div key={q.id}
-                onClick={function () { toggleQueueItem(q.id) }}
-                className={"rounded-lg border p-3 transition-colors cursor-pointer " +
-                  (isSelected ? "bg-indigo-50 border-indigo-300" : "bg-white border-gray-200 hover:border-gray-300")}>
-                <div className="flex items-start gap-3">
-                  <div className={"w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 mt-0.5 transition-colors " +
-                    (isSelected ? "bg-indigo-600 border-indigo-600" : "border-gray-300 bg-white")}>
-                    {isSelected && <span className="text-white text-[10px] font-bold">✓</span>}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-gray-800">{titleCase(q.item_name)}</p>
-                    <p className="text-[11px] text-gray-400 mt-0.5">
-                      {q.categories?.name || '—'} · {q.qty} {q.unit || 'Pcs'} · <span className={"font-medium " + (q._source === 'new' ? "text-amber-600" : "text-indigo-600")}>
-                        {q._source === 'new' ? 'New Item' : q._source === 'catering_store' ? 'CS' : 'Inventory'}
-                      </span>
-                    </p>
-                    <p className="text-[11px] text-gray-400 mt-0.5">
-                      Req: {req.purpose || '—'} · {req.profiles?.name || '—'} · {req.department || '—'}
-                      {req.needed_by ? ' · Need by ' + formatDate(req.needed_by) : ''}
-                    </p>
-                  </div>
-                  {q.estimated_cost_paise > 0 && (
-                    <span className="text-[11px] text-gray-500 font-medium flex-shrink-0">~{formatPaise(q.estimated_cost_paise)}</span>
-                  )}
+        <div className="flex gap-5">
+          {/* Left: Queue table */}
+          <div className="flex-1 min-w-0 space-y-3">
+            {queueItems.length === 0 && (
+              <div className="bg-white rounded-xl border border-gray-200 p-12 text-center shadow-sm">
+                <div className="text-3xl mb-2">📋</div>
+                <p className="text-sm font-semibold text-gray-700">Procurement queue empty</p>
+                <p className="text-xs text-gray-400 mt-1">Approved requisition items will appear here</p>
+              </div>
+            )}
+            {queueItems.length > 0 && (
+              <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                {/* Table header */}
+                <div className="flex items-center gap-3 px-4 py-2.5 bg-gray-50 border-b border-gray-100">
+                  <label className="flex items-center gap-2 cursor-pointer select-none">
+                    <input type="checkbox" checked={selectedQueue.length === queueItems.length && queueItems.length > 0}
+                      onChange={selectAllQueue}
+                      className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
+                    <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Select All</span>
+                  </label>
+                  <span className="text-[11px] text-gray-400 ml-auto">{queueItems.length} items in queue</span>
+                </div>
+                <div className="grid grid-cols-12 gap-2 px-4 py-2 bg-gray-50 border-b border-gray-100 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                  <div className="col-span-1"></div>
+                  <div className="col-span-3">Item</div>
+                  <div className="col-span-2">Category / Source</div>
+                  <div className="col-span-1">Qty</div>
+                  <div className="col-span-3">Requisition</div>
+                  <div className="col-span-2 text-right">Est. Cost</div>
+                </div>
+                {/* Rows */}
+                <div className="max-h-[60vh] overflow-y-auto">
+                  {queueItems.map(function (q, qi) {
+                    var isSelected = selectedQueue.indexOf(q.id) !== -1
+                    var req = q.requisitions || {}
+                    return (
+                      <div key={q.id}
+                        onClick={function () { toggleQueueItem(q.id) }}
+                        className={"grid grid-cols-12 gap-2 px-4 py-3 items-center cursor-pointer transition-colors border-b border-gray-50 " +
+                          (isSelected ? "bg-indigo-50/60" : "hover:bg-gray-50")}>
+                        <div className="col-span-1">
+                          <input type="checkbox" checked={isSelected} readOnly
+                            className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 pointer-events-none" />
+                        </div>
+                        <div className="col-span-3 min-w-0">
+                          <p className="text-sm font-semibold text-gray-800 truncate">{titleCase(q.item_name)}</p>
+                        </div>
+                        <div className="col-span-2 min-w-0">
+                          <p className="text-xs text-gray-500 truncate">{q.categories?.name || '—'}</p>
+                          <span className={"text-[10px] font-bold " + (q._source === 'new' ? "text-amber-600" : "text-indigo-600")}>
+                            {q._source === 'new' ? 'New' : q._source === 'catering_store' ? 'CS' : 'INV'}
+                          </span>
+                        </div>
+                        <div className="col-span-1">
+                          <span className="text-sm font-medium text-gray-700">{q.qty}</span>
+                          <span className="text-[10px] text-gray-400 ml-0.5">{q.unit || 'Pcs'}</span>
+                        </div>
+                        <div className="col-span-3 min-w-0">
+                          <p className="text-xs text-gray-600 truncate">{req.purpose || '—'}</p>
+                          <p className="text-[10px] text-gray-400 truncate">
+                            {req.profiles?.name || '—'} · {req.department || '—'}
+                            {req.needed_by ? ' · ' + formatDate(req.needed_by) : ''}
+                          </p>
+                        </div>
+                        <div className="col-span-2 text-right">
+                          {q.estimated_cost_paise > 0 ? (
+                            <span className="text-sm font-medium text-gray-700">{formatPaise(q.estimated_cost_paise)}</span>
+                          ) : (
+                            <span className="text-xs text-gray-300">—</span>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
                 </div>
               </div>
-            )
-          })}
+            )}
+          </div>
+
+          {/* Right: Cart sidebar */}
+          <div className="w-72 flex-shrink-0">
+            <div className="sticky top-[120px] bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+              <div className="px-4 py-3 bg-gray-900 text-white">
+                <p className="text-xs font-bold uppercase tracking-wider">PO Cart</p>
+                <p className="text-lg font-bold mt-0.5">{selectedQueue.length} item{selectedQueue.length !== 1 ? 's' : ''}</p>
+              </div>
+              {selectedQueue.length > 0 && (
+                <div className="max-h-[40vh] overflow-y-auto divide-y divide-gray-50">
+                  {queueItems.filter(function (q) { return selectedQueue.indexOf(q.id) !== -1 }).map(function (q) {
+                    return (
+                      <div key={q.id} className="px-4 py-2.5 flex items-start justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-medium text-gray-700 truncate">{titleCase(q.item_name)}</p>
+                          <p className="text-[10px] text-gray-400">{q.qty} {q.unit || 'Pcs'}</p>
+                        </div>
+                        <div className="text-right flex-shrink-0">
+                          <p className="text-xs font-semibold text-gray-700">{q.estimated_cost_paise > 0 ? formatPaise(q.estimated_cost_paise) : '—'}</p>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+              {selectedQueue.length === 0 && (
+                <div className="px-4 py-8 text-center">
+                  <p className="text-xs text-gray-400">Select items from queue to create a PO</p>
+                </div>
+              )}
+              {/* Total + Create */}
+              <div className="border-t border-gray-200 px-4 py-3 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-gray-500 uppercase">Est. Total</span>
+                  <span className="text-base font-bold text-gray-900">{formatPaise(
+                    queueItems.filter(function (q) { return selectedQueue.indexOf(q.id) !== -1 })
+                      .reduce(function (sum, q) { return sum + (q.estimated_cost_paise || 0) }, 0)
+                  )}</span>
+                </div>
+                <button onClick={createPo} disabled={saving || selectedQueue.length === 0}
+                  className="w-full py-3 text-sm font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 active:bg-indigo-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-sm">
+                  {saving ? 'Creating...' : 'Create Purchase Order →'}
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
       {/* ═══ POs TAB ═══ */}
       {tab === 'pos' && (
         <div className="space-y-3">
+          {/* Status filters */}
           <div className="flex gap-2 flex-wrap">
             {['', 'draft', 'confirmed', 'completed', 'closed'].map(function (s) {
               var label = s ? PO_STATUS_LABELS[s] : 'All'
               return (
                 <button key={s} onClick={function () { setPoStatusFilter(s === poStatusFilter ? '' : s) }}
-                  className={"px-3 py-1.5 text-[11px] font-bold rounded-full border transition-colors " +
+                  className={"px-4 py-2 text-xs font-bold rounded-lg border transition-colors " +
                     (poStatusFilter === s ? "bg-gray-900 text-white border-gray-900" : "bg-white text-gray-500 border-gray-200 hover:border-gray-400")}>
                   {label}
                 </button>
@@ -753,32 +829,62 @@ function Purchase({ profile }) {
           </div>
 
           {poList.length === 0 && (
-            <div className="bg-white rounded-lg border border-gray-200 p-8 text-center">
-              <p className="text-gray-400 text-sm">No purchase orders</p>
+            <div className="bg-white rounded-xl border border-gray-200 p-12 text-center shadow-sm">
+              <div className="text-3xl mb-2">📦</div>
+              <p className="text-sm font-semibold text-gray-700">No purchase orders</p>
+              <p className="text-xs text-gray-400 mt-1">Create POs from the Procurement Queue tab</p>
             </div>
           )}
 
-          {poList.map(function (po) {
-            var assigneeName = po.assignee?.name || null
-            return (
-              <div key={po.id} onClick={function () { openPoDetail(po) }}
-                className="bg-white rounded-lg border border-gray-200 p-3 hover:border-gray-300 active:bg-gray-50 transition-colors cursor-pointer">
-                <div className="flex items-center justify-between">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-gray-800">PO #{po.id.slice(0, 8)}</p>
-                    <p className="text-[11px] text-gray-400 mt-0.5">
-                      {po.profiles?.name || '—'} · {formatDate(po.created_at)}
-                      {assigneeName ? ' · 🛒 ' + assigneeName : ''}
-                      {po.notes ? ' · ' + po.notes : ''}
-                    </p>
-                  </div>
-                  <span className={"text-[10px] font-bold uppercase px-2 py-0.5 rounded-full " + (PO_STATUS_COLORS[po.status] || '')}>
-                    {PO_STATUS_LABELS[po.status] || po.status}
-                  </span>
-                </div>
+          {poList.length > 0 && (
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+              {/* Header */}
+              <div className="grid grid-cols-12 gap-3 px-5 py-3 bg-gray-50 border-b border-gray-100 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                <div className="col-span-2">PO #</div>
+                <div className="col-span-2">Created</div>
+                <div className="col-span-2">Created By</div>
+                <div className="col-span-2">Assigned To</div>
+                <div className="col-span-1">Status</div>
+                <div className="col-span-3 text-right">Notes</div>
               </div>
-            )
-          })}
+              {/* Rows */}
+              {poList.map(function (po, pi) {
+                var assigneeName = po.assignee?.name || null
+                return (
+                  <div key={po.id}
+                    onClick={function () { openPoDetail(po) }}
+                    className={"grid grid-cols-12 gap-3 px-5 py-4 items-center cursor-pointer transition-colors " +
+                      (pi < poList.length - 1 ? "border-b border-gray-50 " : "") +
+                      "hover:bg-indigo-50/40"}>
+                    <div className="col-span-2">
+                      <p className="text-sm font-bold text-indigo-600">#{po.id.slice(0, 8)}</p>
+                    </div>
+                    <div className="col-span-2">
+                      <p className="text-xs text-gray-600">{formatDate(po.created_at)}</p>
+                    </div>
+                    <div className="col-span-2">
+                      <p className="text-xs text-gray-600">{po.profiles?.name || '—'}</p>
+                    </div>
+                    <div className="col-span-2">
+                      {assigneeName ? (
+                        <span className="text-xs font-medium text-gray-700">🛒 {assigneeName}</span>
+                      ) : (
+                        <span className="text-[11px] text-amber-500 font-medium">Unassigned</span>
+                      )}
+                    </div>
+                    <div className="col-span-1">
+                      <span className={"text-[10px] font-bold uppercase px-2 py-1 rounded-full " + (PO_STATUS_COLORS[po.status] || '')}>
+                        {PO_STATUS_LABELS[po.status] || po.status}
+                      </span>
+                    </div>
+                    <div className="col-span-3 text-right">
+                      <p className="text-xs text-gray-400 truncate">{po.notes || '—'}</p>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
         </div>
       )}
 
