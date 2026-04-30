@@ -1180,7 +1180,7 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, on
       </div>
 
       {/* Two-column layout */}
-      <div className="flex gap-5 items-start">
+      <div className="flex flex-col lg:flex-row gap-5 items-start">
         {/* ═══ LEFT: Items ═══ */}
         <div className="flex-1 min-w-0 space-y-3">
           {/* Assign purchaser — admin only, draft/confirmed */}
@@ -1391,7 +1391,7 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, on
         </div>
 
         {/* ═══ RIGHT: Summary sidebar ═══ */}
-        <div className="w-80 flex-shrink-0">
+        <div className="w-full lg:w-80 lg:flex-shrink-0">
           <div className="sticky top-[120px] space-y-4">
             {/* Financial summary */}
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
