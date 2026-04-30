@@ -13,6 +13,7 @@ var Dashboard = lazy(function () { return import('../../modules/dashboard/Dashbo
 var Boxes = lazy(function () { return import('../../modules/boxes/Boxes') })
 var Purchase = lazy(function () { return import('../../modules/purchase/Purchase') })
 var Calendar = lazy(function () { return import('../../modules/calendar/Calendar') })
+var Vendors = lazy(function () { return import('../../modules/vendors/Vendors') })
 
 
 var ADMIN_TABS = [
@@ -24,6 +25,7 @@ var ADMIN_TABS = [
   { key: 'logs', label: 'Logs', icon: '📜' },
   { key: 'expenses', label: 'PC & Direct Expenses', icon: '💰' },
   { key: 'ratecard', label: 'Rate Card', icon: '💰' },
+  { key: 'vendors', label: 'Vendors', icon: '🏪' },
   // Hidden until built: dashboard, expenses, boxes, challans, purchase, calendar
   { key: 'purchase', label: 'Purchase Orders', icon: '🛒' },
   // Hidden until built: dashboard, boxes, challans, calendar
@@ -42,6 +44,7 @@ var MODULES = {
   users: Users,
   logs: ActivityLogs,
   ratecard: RateCardEditor,
+  vendors: Vendors,
 }
 
 function AdminShell({ profile, onSignOut }) {
