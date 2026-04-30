@@ -14,9 +14,11 @@ var Boxes = lazy(function () { return import('../../modules/boxes/Boxes') })
 var Purchase = lazy(function () { return import('../../modules/purchase/Purchase') })
 var Calendar = lazy(function () { return import('../../modules/calendar/Calendar') })
 var Vendors = lazy(function () { return import('../../modules/vendors/Vendors') })
+var Analytics = lazy(function () { return import('../../modules/analytics/Analytics') })
 
 
 var ADMIN_TABS = [
+  { key: 'analytics', label: 'Analytics', icon: '📊' },
   { key: 'pending', label: 'Pending', icon: '⏳' },
   { key: 'items', label: 'Inventory', icon: '📦' },
   { key: 'events', label: 'Events', icon: '📅' },
@@ -45,6 +47,7 @@ var MODULES = {
   logs: ActivityLogs,
   ratecard: RateCardEditor,
   vendors: Vendors,
+  analytics: Analytics,
 }
 
 function AdminShell({ profile, onSignOut }) {
