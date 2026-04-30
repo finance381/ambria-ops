@@ -51,8 +51,9 @@ function Purchase({ profile }) {
   var [vendorCatFilter, setVendorCatFilter] = useState('')
 
   var isAdmin = profile?.role === 'admin' || profile?.role === 'auditor'
+  var hasPurchase = (profile?.permissions || []).indexOf('feature_purchase') !== -1
   var hasReceive = (profile?.permissions || []).indexOf('feature_receive') !== -1
-  var isReceiver = hasReceive && !isAdmin
+  var isReceiver = !isAdmin && (mode === 'receive' || (hasReceive && !hasPurchase))
   var isPurchaser = !isAdmin && !isReceiver
 
   useEffect(function () {

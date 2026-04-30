@@ -298,10 +298,10 @@ function Shell({ profile, onSignOut }) {
           <Expenses profile={profile} />
         )}
         {tab === 'purchase' && (
-          <Purchase profile={profile} />
+          <Purchase profile={profile} mode="purchase" />
         )}
         {tab === 'receive' && (
-          <Purchase profile={profile} />
+          <Purchase profile={profile} mode="receive" />
         )}
         {tab === 'admin' && isAdmin && (
           <AdminMobile profile={profile} />
