@@ -861,8 +861,6 @@ function ReceivingContent({ items, loading, receivingItem, setReceivingItem, rec
   )
 }
 
-export default Purchase
-
 // ═══════════════════════════════════════════════════════════════
 // PO DETAIL
 // ═══════════════════════════════════════════════════════════════
