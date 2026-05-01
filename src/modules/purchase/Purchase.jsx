@@ -39,6 +39,7 @@ function Purchase({ profile, mode }) {
   var [activePo, setActivePo] = useState(null)
   var [activePoItems, setActivePoItems] = useState([])
   var [loading, setLoading] = useState(true)
+  var [queueLoading, setQueueLoading] = useState(true)
   var [saving, setSaving] = useState(false)
   var [vendorList, setVendorList] = useState([])
   var [staffList, setStaffList] = useState([])
@@ -59,21 +60,20 @@ function Purchase({ profile, mode }) {
       loadQueue()
       loadStaff()
       loadReceiving()
-      supabase.from('vendors').select('id, name, contact, phone, category_ids, active').eq('active', true).order('name').then(function (r) { setVendorList(r.data || []) })
+      supabase.from('vendors').select('id, name, contact, phone, category_ids, active').eq('active', true).order('name')
+        .then(function (r) { setVendorList(r.data || []) })
+        .catch(function () { setVendorList([]) })
     }
     if (isReceiver) {
       loadReceiving()
     }
-    if (!isReceiver) {
-      loadPos()
-    }
   }, [])
 
-  useEffect(function () { loadPos() }, [poStatusFilter])
+  useEffect(function () { if (!isReceiver) loadPos() }, [poStatusFilter])
 
   // ─── QUEUE: approved requisition items not yet in any PO ───
   async function loadQueue() {
-    setLoading(true)
+    setQueueLoading(true)
     var { data: itemsRaw, error } = await supabase
       .from('requisition_items')
       .select('id, item_id, item_name, category_id, qty, unit, notes, _source, estimated_cost_paise, po_item_id, requisition_id, categories(name)')
@@ -81,10 +81,10 @@ function Purchase({ profile, mode }) {
       .order('id', { ascending: false })
       .limit(200)
 
-    if (error) { setQueueItems([]); setLoading(false); return }
+    if (error) { setQueueItems([]); setQueueLoading(false); return }
 
     var items = itemsRaw || []
-    if (items.length === 0) { setQueueItems([]); setLoading(false); return }
+    if (items.length === 0) { setQueueItems([]); setQueueLoading(false); return }
 
     var reqIds = []
     items.forEach(function (it) {
@@ -105,7 +105,7 @@ function Purchase({ profile, mode }) {
       .map(function (it) { return Object.assign({}, it, { requisitions: reqMap[it.requisition_id] }) })
 
     setQueueItems(filtered)
-    setLoading(false)
+    setQueueLoading(false)
   }
 
   // ─── PO LIST ───
@@ -204,8 +204,8 @@ function Purchase({ profile, mode }) {
     try { await logActivity('PO_ITEM_RECEIVED', titleCase(poItem.item_name) + ' | qty: ' + qtyReceived + ' | existing ' + poItem._source) } catch (_) {}
     setReceivingItem(null)
     setReceiveQty('')
+    await loadReceiving()
     setSaving(false)
-    loadReceiving()
   }
 
   // ─── RECEIVE NEW ITEM — callback after InventoryForm saves ───
@@ -222,11 +222,13 @@ function Purchase({ profile, mode }) {
     if (error) { alert('Receive link failed: ' + error.message) }
     try { await logActivity('PO_ITEM_RECEIVED', titleCase(poItem.item_name) + ' | new item → ' + tableName + ' #' + savedItem.id) } catch (_) {}
     setShowInvForm(null)
-    loadReceiving()
+    await loadReceiving()
   }
 
   // ─── OPEN PO DETAIL ───
   async function openPoDetail(po) {
+    if (saving) return
+    setSaving(true)
     var { data } = await supabase
       .from('purchase_order_items')
       .select('id, requisition_item_id, item_id, item_name, category_id, _source, qty_ordered, unit, vendor_name, vendor_contact, vendor_rate_paise, estimated_cost_paise, actual_cost_paise, actual_qty, purchased_by, purchased_at, received_by, received_at, inventory_item_id, cs_item_id, status, notes, receipt_path, categories(name)')
@@ -236,6 +238,7 @@ function Purchase({ profile, mode }) {
     setActivePo(po)
     setActivePoItems(data || [])
     setView('detail')
+    setSaving(false)
   }
 
   // ─── TOGGLE QUEUE SELECTION ───
@@ -435,7 +438,7 @@ function Purchase({ profile, mode }) {
     setSaving(false)
   }
 
-  if (loading) {
+  if (loading || queueLoading) {
     return <p className="text-gray-400 text-sm text-center py-8">Loading...</p>
   }
 
