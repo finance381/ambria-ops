@@ -40,6 +40,7 @@ function Purchase({ profile, mode }) {
   var [activePoItems, setActivePoItems] = useState([])
   var [loading, setLoading] = useState(true)
   var [saving, setSaving] = useState(false)
+  var [vendorList, setVendorList] = useState([])
   var [staffList, setStaffList] = useState([])
   var [receivingItems, setReceivingItems] = useState([])
   var [receivingLoading, setReceivingLoading] = useState(false)
@@ -58,6 +59,7 @@ function Purchase({ profile, mode }) {
       loadQueue()
       loadStaff()
       loadReceiving()
+      supabase.from('vendors').select('id, name, contact, phone, category_ids, active').eq('active', true).order('name').then(function (r) { setVendorList(r.data || []) })
     }
     if (isReceiver) {
       loadReceiving()
@@ -450,6 +452,7 @@ function Purchase({ profile, mode }) {
         isAdmin={isAdmin}
         staffList={staffList}
         saving={saving}
+        vendorList={vendorList}
         onBack={function () { setView('list'); setActivePo(null); setActivePoItems([]); if (isAdmin) loadQueue(); loadPos() }}
         onStatusChange={updatePoStatus}
         onAssign={assignPurchaser}
@@ -932,13 +935,16 @@ function Purchase({ profile, mode }) {
 // ═══════════════════════════════════════════════════════════════
 // PO DETAIL
 // ═══════════════════════════════════════════════════════════════
-function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, onBack, onStatusChange, onAssign, onSaveVendor, onMarkPurchased, onDeletePo, onRemoveItem }) {
+function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, vendorList, onBack, onStatusChange, onAssign, onSaveVendor, onMarkPurchased, onDeletePo, onRemoveItem }) {
   var [editingVendor, setEditingVendor] = useState(null)
   var [vendorForm, setVendorForm] = useState({ name: '', contact: '', rate: '' })
+  var [vendorSearch, setVendorSearch] = useState('')
+  var [vendorMode, setVendorMode] = useState('select')
   var [purchasingItem, setPurchasingItem] = useState(null)
-  var [purchaseForm, setPurchaseForm] = useState({ qty: '', cost: '', receipt: null })
+  var [purchaseForm, setPurchaseForm] = useState({ qty: '', cost: '', receipt: null, vendorName: '', vendorRate: '' })
   var [rateHistory, setRateHistory] = useState([])
   var [rateLoading, setRateLoading] = useState(false)
+  var [showAddVendor, setShowAddVendor] = useState(null)
 
   var isPurchaser = po.assigned_to === profile?.id
   var canEdit = isAdmin && (po.status === 'draft' || po.status === 'confirmed')
@@ -964,12 +970,13 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, on
 
   function startVendorEdit(it) {
     setEditingVendor(it.id)
+    setVendorSearch('')
+    setVendorMode(it.vendor_name ? 'custom' : 'select')
     setVendorForm({
       name: it.vendor_name || '',
       contact: it.vendor_contact || '',
       rate: it.vendor_rate_paise ? String(it.vendor_rate_paise / 100) : '',
     })
-    // Fetch last 3 purchases for this item
     setRateHistory([])
     setRateLoading(true)
     supabase.from('purchase_order_items')
@@ -983,6 +990,12 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, on
         setRateHistory(res.data || [])
         setRateLoading(false)
       })
+  }
+
+  function selectVendorFromList(vendor) {
+    setVendorForm(function (p) { return Object.assign({}, p, { name: vendor.name, contact: vendor.phone || vendor.contact || '' }) })
+    setVendorMode('custom')
+    setVendorSearch('')
   }
 
   async function saveVendor(poItemId) {
@@ -1010,6 +1023,8 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, on
       qty: String(it.qty_ordered),
       cost: it.estimated_cost_paise ? String(it.estimated_cost_paise / 100) : '',
       receipt: null,
+      vendorName: it.vendor_name || '',
+      vendorRate: it.vendor_rate_paise ? String(it.vendor_rate_paise / 100) : '',
     })
   }
 
@@ -1018,8 +1033,41 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, on
     var actualCostPaise = Math.round(Number(purchaseForm.cost) * 100)
     if (!actualQty || actualQty <= 0) { alert('Enter qty purchased'); return }
     if (!actualCostPaise || actualCostPaise <= 0) { alert('Enter actual cost'); return }
+
+    var vendorChanged = false
+    var item = items.find(function (it) { return it.id === poItemId })
+    var newVendorName = purchaseForm.vendorName.trim()
+    var newRatePaise = purchaseForm.vendorRate ? Math.round(Number(purchaseForm.vendorRate) * 100) : null
+
+    if (item && newVendorName && newVendorName !== (item.vendor_name || '')) {
+      vendorChanged = true
+      await onSaveVendor(poItemId, newVendorName, '', newRatePaise, null)
+    } else if (item && newRatePaise && newRatePaise !== item.vendor_rate_paise) {
+      await onSaveVendor(poItemId, newVendorName || item.vendor_name, '', newRatePaise, null)
+    }
+
     await onMarkPurchased(poItemId, actualQty, actualCostPaise, purchaseForm.receipt)
     setPurchasingItem(null)
+
+    if (vendorChanged && newVendorName) {
+      var isInMaster = (vendorList || []).some(function (v) { return v.name.toLowerCase() === newVendorName.toLowerCase() })
+      if (!isInMaster) {
+        setShowAddVendor({ name: newVendorName, contact: '' })
+      }
+    }
+  }
+
+  async function addVendorToMaster() {
+    if (!showAddVendor) return
+    var { error } = await supabase.from('vendors').insert({
+      name: showAddVendor.name,
+      contact: showAddVendor.contact || null,
+      phone: showAddVendor.contact || null,
+      active: true,
+      vendor_type: 'Supplier',
+    })
+    if (error) { alert('Failed: ' + error.message) }
+    setShowAddVendor(null)
   }
 
   // Variance calc
@@ -1179,16 +1227,52 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, on
                         {!rateLoading && rateHistory.length === 0 && (
                           <p className="text-[10px] text-gray-400 italic">No purchase history for this item</p>
                         )}
-                        <input type="text" value={vendorForm.name}
-                          onChange={function (e) { setVendorForm(function (p) { return Object.assign({}, p, { name: e.target.value }) }) }}
-                          placeholder="Vendor name" maxLength="200"
-                          className="w-full px-2 py-1.5 border border-blue-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          style={{ fontSize: '16px' }} />
-                        <input type="text" value={vendorForm.contact}
-                          onChange={function (e) { setVendorForm(function (p) { return Object.assign({}, p, { contact: e.target.value }) }) }}
-                          placeholder="Contact / phone" maxLength="100"
-                          className="w-full px-2 py-1.5 border border-blue-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          style={{ fontSize: '16px' }} />
+                        {vendorMode === 'select' && (
+                          <div className="space-y-1">
+                            <input type="text" value={vendorSearch}
+                              onChange={function (e) { setVendorSearch(e.target.value) }}
+                              placeholder="Search vendors..." autoFocus
+                              className="w-full px-2 py-1.5 border border-blue-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              style={{ fontSize: '16px' }} />
+                            <div className="max-h-32 overflow-y-auto rounded border border-gray-100">
+                              {(vendorList || []).filter(function (v) {
+                                return !vendorSearch || v.name.toLowerCase().indexOf(vendorSearch.toLowerCase()) !== -1
+                              }).slice(0, 8).map(function (v) {
+                                return (
+                                  <div key={v.id} onClick={function () { selectVendorFromList(v) }}
+                                    className="px-2 py-1.5 text-sm hover:bg-blue-50 cursor-pointer border-b border-gray-50 last:border-0">
+                                    <span className="font-medium text-gray-700">{v.name}</span>
+                                    {v.phone && <span className="text-[10px] text-gray-400 ml-2">{v.phone}</span>}
+                                  </div>
+                                )
+                              })}
+                            </div>
+                            <button onClick={function () { setVendorMode('custom') }}
+                              className="w-full py-1.5 text-[11px] text-amber-700 bg-amber-50 rounded-md font-semibold hover:bg-amber-100 transition-colors">
+                              ✏ Type custom vendor name
+                            </button>
+                          </div>
+                        )}
+                        {vendorMode === 'custom' && (
+                          <div className="space-y-2">
+                            <div className="flex gap-2">
+                              <input type="text" value={vendorForm.name}
+                                onChange={function (e) { setVendorForm(function (p) { return Object.assign({}, p, { name: e.target.value }) }) }}
+                                placeholder="Vendor name" maxLength="200"
+                                className="flex-1 px-2 py-1.5 border border-blue-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                style={{ fontSize: '16px' }} />
+                              <button onClick={function () { setVendorMode('select'); setVendorSearch('') }}
+                                className="px-2 py-1.5 text-[10px] text-blue-600 bg-blue-50 rounded-md font-semibold hover:bg-blue-100 transition-colors whitespace-nowrap">
+                                📋 Pick
+                              </button>
+                            </div>
+                            <input type="text" value={vendorForm.contact}
+                              onChange={function (e) { setVendorForm(function (p) { return Object.assign({}, p, { contact: e.target.value }) }) }}
+                              placeholder="Contact / phone" maxLength="100"
+                              className="w-full px-2 py-1.5 border border-blue-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              style={{ fontSize: '16px' }} />
+                          </div>
+                        )}
                         <input type="number" min="0" step="0.01" inputMode="decimal" value={vendorForm.rate}
                           onChange={function (e) { setVendorForm(function (p) { return Object.assign({}, p, { rate: e.target.value }) }) }}
                           placeholder="Rate per unit (₹)"
@@ -1206,6 +1290,23 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, on
                     {isPurchasing && (
                       <div className="bg-green-50 rounded-lg border border-green-200 p-3 space-y-2">
                         <p className="text-[11px] font-bold text-green-700 uppercase">Mark as Purchased</p>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="block text-[11px] text-gray-500 mb-0.5">Vendor</label>
+                            <input type="text" value={purchaseForm.vendorName}
+                              onChange={function (e) { setPurchaseForm(function (p) { return Object.assign({}, p, { vendorName: e.target.value }) }) }}
+                              placeholder="Vendor name"
+                              className="w-full px-2 py-1.5 border border-green-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                              style={{ fontSize: '16px' }} />
+                          </div>
+                          <div>
+                            <label className="block text-[11px] text-gray-500 mb-0.5">Rate/unit (₹)</label>
+                            <input type="number" min="0" step="0.01" inputMode="decimal" value={purchaseForm.vendorRate}
+                              onChange={function (e) { setPurchaseForm(function (p) { return Object.assign({}, p, { vendorRate: e.target.value }) }) }}
+                              placeholder="Rate"
+                              className="w-full px-2 py-1.5 border border-green-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
+                          </div>
+                        </div>
                         <div className="grid grid-cols-2 gap-2">
                           <div>
                             <label className="block text-[11px] text-gray-500 mb-0.5">Qty Bought</label>
@@ -1396,6 +1497,28 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, on
           </div>
         </div>
       </div>
+
+      {/* Add vendor to master prompt */}
+      {showAddVendor && (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50" onClick={function () { setShowAddVendor(null) }}>
+          <div className="bg-white rounded-xl shadow-lg p-5 mx-4 max-w-sm w-full space-y-3" onClick={function (e) { e.stopPropagation() }}>
+            <p className="text-sm font-bold text-gray-900">Add to Vendor Master?</p>
+            <p className="text-xs text-gray-500">
+              "<span className="font-semibold text-gray-700">{showAddVendor.name}</span>" is not in your vendor list. Save for future use?
+            </p>
+            <div className="flex gap-2">
+              <button onClick={function () { setShowAddVendor(null) }}
+                className="flex-1 py-2 text-xs text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors font-semibold">
+                Skip
+              </button>
+              <button onClick={addVendorToMaster}
+                className="flex-1 py-2 text-xs text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors font-semibold">
+                + Add Vendor
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

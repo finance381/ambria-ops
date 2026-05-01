@@ -15,6 +15,7 @@ var Purchase = lazy(function () { return import('../../modules/purchase/Purchase
 var Calendar = lazy(function () { return import('../../modules/calendar/Calendar') })
 var Vendors = lazy(function () { return import('../../modules/vendors/Vendors') })
 var Analytics = lazy(function () { return import('../../modules/analytics/Analytics') })
+var Overview = lazy(function () { return import('../../modules/overview/Overview') })
 
 
 // ── Sub-tab switcher ──
@@ -87,6 +88,7 @@ function ProcurementTab({ profile }) {
 }
 
 var ADMIN_TABS = [
+  { key: 'overview', label: 'Overview', icon: '🏠' },
   { key: 'analytics', label: 'Analytics', icon: '📊' },
   { key: 'inventory', label: 'Inventory', icon: '📦' },
   { key: 'events', label: 'Events', icon: '📅' },
@@ -97,6 +99,7 @@ var ADMIN_TABS = [
 ]
 
 var MODULES = {
+  overview: Overview,
   analytics: Analytics,
   inventory: InventoryTab,
   events: Events,
@@ -107,7 +110,7 @@ var MODULES = {
 }
 
 function AdminShell({ profile, onSignOut }) {
-  var [active, setActive] = useState('analytics')
+  var [active, setActive] = useState('overview')
 
   var ActiveModule = MODULES[active] || null
   var activeLabel = ADMIN_TABS.find(function (t) { return t.key === active })?.label || ''
@@ -163,7 +166,7 @@ function AdminShell({ profile, onSignOut }) {
         <h2 className="text-xl font-bold text-gray-800 mb-5">{activeLabel}</h2>
         {ActiveModule && (
           <Suspense fallback={<div className="text-center py-8 text-sm text-gray-400">Loading...</div>}>
-            <ActiveModule profile={profile} />
+            <ActiveModule profile={profile} onNavigate={function (tab) { setActive(tab) }} />
           </Suspense>
         )}
         {!ActiveModule && (
