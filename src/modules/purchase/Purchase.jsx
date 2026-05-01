@@ -945,6 +945,9 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, ve
   var [rateHistory, setRateHistory] = useState([])
   var [rateLoading, setRateLoading] = useState(false)
   var [showAddVendor, setShowAddVendor] = useState(null)
+  var [editingNotes, setEditingNotes] = useState(false)
+  var [notesText, setNotesText] = useState(po.notes || '')
+  var [notesSaving, setNotesSaving] = useState(false)
 
   var isPurchaser = po.assigned_to === profile?.id
   var canEdit = isAdmin && (po.status === 'draft' || po.status === 'confirmed')
@@ -1452,21 +1455,39 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, ve
             )}
 
             {/* Notes */}
-            {po.notes && (
+            {!editingNotes && po.notes && (
               <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
                 <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Notes</p>
-                <p className="text-xs text-gray-600">{po.notes}</p>
+                <p className="text-xs text-gray-600 whitespace-pre-wrap">{notesText}</p>
               </div>
             )}
-            {canEdit && (
-              <button onClick={function () {
-                var newNotes = prompt('PO Notes:', po.notes || '')
-                if (newNotes !== null && newNotes !== po.notes) {
-                  supabase.from('purchase_orders').update({ notes: newNotes.trim() }).eq('id', po.id)
-                    .then(function (res) { if (!res.error) { po.notes = newNotes.trim() } })
-                }
-              }} className="text-[11px] font-medium text-blue-600 hover:text-blue-800 transition-colors">
-                {po.notes ? '✎ Edit Notes' : '+ Add Notes'}
+            {editingNotes && (
+              <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 space-y-2">
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Notes</p>
+                <textarea value={notesText} onChange={function (e) { setNotesText(e.target.value) }}
+                  rows={3} autoFocus placeholder="Add notes for this PO..."
+                  className="w-full text-xs text-gray-700 border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400 resize-none"
+                  style={{ fontSize: '16px' }} />
+                <div className="flex gap-2">
+                  <button disabled={notesSaving} onClick={async function () {
+                    var trimmed = notesText.trim()
+                    setNotesSaving(true)
+                    var { error } = await supabase.from('purchase_orders').update({ notes: trimmed || null }).eq('id', po.id)
+                    setNotesSaving(false)
+                    if (!error) { po.notes = trimmed || null; setEditingNotes(false) }
+                  }} className="px-3 py-1.5 text-[11px] font-bold text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors">
+                    {notesSaving ? 'Saving...' : 'Save'}
+                  </button>
+                  <button onClick={function () { setNotesText(po.notes || ''); setEditingNotes(false) }}
+                    className="px-3 py-1.5 text-[11px] font-bold text-gray-500 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors">
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+            {!editingNotes && canEdit && (
+              <button onClick={function () { setEditingNotes(true) }} className="text-[11px] font-medium text-blue-600 hover:text-blue-800 transition-colors">
+                {notesText ? '✎ Edit Notes' : '+ Add Notes'}
               </button>
             )}
 
