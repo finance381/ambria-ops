@@ -79,20 +79,32 @@ function Shell({ profile, onSignOut }) {
       )
     }
 
-    // Requisitions badge
-    if (perms.indexOf('feature_requisitions') !== -1 && (isDeptAppr || isAdminRole)) {
-      var reqStatuses = []
-      if (isAdminRole) reqStatuses = isDeptAppr ? ['pending_dept', 'pending'] : ['pending']
-      else if (isDeptAppr) reqStatuses = ['pending_dept']
-      if (reqStatuses.length > 0) {
-        promises.push(
-          supabase.from('requisitions')
-            .select('id', { count: 'exact', head: true })
-            .neq('requested_by', profile.id)
-            .in('status', reqStatuses)
-            .then(function (res) { counts.feature_requisitions = res.count || 0 })
-        )
+   // Requisitions badge
+    if (perms.indexOf('feature_requisitions') !== -1) {
+      // Approval badge for dept approvers / admins
+      if (isDeptAppr || isAdminRole) {
+        var reqStatuses = []
+        if (isAdminRole) reqStatuses = isDeptAppr ? ['pending_dept', 'pending'] : ['pending']
+        else if (isDeptAppr) reqStatuses = ['pending_dept']
+        if (reqStatuses.length > 0) {
+          promises.push(
+            supabase.from('requisitions')
+              .select('id', { count: 'exact', head: true })
+              .neq('requested_by', profile.id)
+              .in('status', reqStatuses)
+              .then(function (res) { counts.feature_requisitions = (counts.feature_requisitions || 0) + (res.count || 0) })
+          )
+        }
       }
+      // Dispatched items awaiting acknowledgment by this user
+      promises.push(
+        supabase.from('requisition_items')
+          .select('id, requisitions!inner(requested_by)', { count: 'exact', head: true })
+          .eq('item_status', 'dispatched')
+          .eq('requisitions.requested_by', profile.id)
+          .then(function (res) { counts.feature_requisitions = (counts.feature_requisitions || 0) + (res.count || 0) })
+          .catch(function () {})
+      )
     }
 
     // Expenses badge

@@ -152,7 +152,7 @@ function Requisitions({ profile, onBack }) {
     setDetailReq(req)
     var { data } = await supabase
       .from('requisition_items')
-      .select('id, item_id, item_name, category_id, qty, unit, notes, _source, estimated_cost_paise, po_item_id, categories(name)')
+      .select('id, item_id, item_name, category_id, qty, unit, notes, _source, estimated_cost_paise, po_item_id, item_status, fulfillment_type, dispatched_by, dispatched_at, dispatched_note, acknowledged_at, auto_acknowledged, categories(name)')
       .eq('requisition_id', req.id)
     setDetailItems(data || [])
     setView('detail')
@@ -791,6 +791,10 @@ function RequisitionDetail({ req, items, profile, isAdmin, isDeptApprover, onBac
   var [rejectMode, setRejectMode] = useState(false)
   var [rejectReason, setRejectReason] = useState('')
   var [poStatuses, setPoStatuses] = useState({})
+  var [stockQty, setStockQty] = useState({})
+  var [stockLoading, setStockLoading] = useState(false)
+  var [fulfillChoices, setFulfillChoices] = useState({})
+  var [dispatchNote, setDispatchNote] = useState('')
 
   useEffect(function () {
     // Fetch PO status for items that have po_item_id
@@ -804,7 +808,51 @@ function RequisitionDetail({ req, items, profile, isAdmin, isDeptApprover, onBac
         ;(res.data || []).forEach(function (poi) { map[poi.id] = poi })
         setPoStatuses(map)
       })
-  }, [items])
+}, [items])
+
+  // Fetch stock qty for existing items when admin can approve
+  useEffect(function () {
+    var canAdmin = isAdmin && req.status === 'pending'
+    if (!canAdmin) return
+    var existingItems = items.filter(function (li) { return li.item_id && li._source !== 'new' })
+    if (existingItems.length === 0) return
+
+    setStockLoading(true)
+    var invIds = existingItems.filter(function (li) { return li._source !== 'catering_store' }).map(function (li) { return li.item_id })
+    var csIds = existingItems.filter(function (li) { return li._source === 'catering_store' }).map(function (li) { return li.item_id })
+
+    var promises = []
+    if (invIds.length > 0) {
+      promises.push(
+        supabase.from('inventory_items').select('id, qty').in('id', invIds)
+          .then(function (r) { return { data: r.data || [], source: 'inventory' } })
+      )
+    }
+    if (csIds.length > 0) {
+      promises.push(
+        supabase.from('catering_store_items').select('id, qty').in('id', csIds)
+          .then(function (r) { return { data: r.data || [], source: 'catering_store' } })
+      )
+    }
+
+    Promise.all(promises).then(function (results) {
+      var qtyMap = {}
+      var choices = {}
+      results.forEach(function (res) {
+        res.data.forEach(function (row) { qtyMap[row.id] = row.qty })
+      })
+      existingItems.forEach(function (li) {
+        var available = qtyMap[li.item_id] || 0
+        choices[li.id] = available >= li.qty ? 'stock' : 'po'
+      })
+      items.forEach(function (li) {
+        if (!choices[li.id]) choices[li.id] = 'po'
+      })
+      setStockQty(qtyMap)
+      setFulfillChoices(choices)
+      setStockLoading(false)
+    }).catch(function () { setStockLoading(false) })
+  }, [items, req.status])
 
   var canDeptApprove = isDeptApprover && req.status === 'pending_dept' && req.requested_by !== profile?.id
   var canAdminApprove = isAdmin && req.status === 'pending'
@@ -820,15 +868,59 @@ function RequisitionDetail({ req, items, profile, isAdmin, isDeptApprover, onBac
 
   async function approve() {
     setSaving(true)
-    var update = {}
+
+    // Dept approve — just forward to admin, no fulfillment logic
     if (canDeptApprove) {
-      update = { status: 'pending', dept_approved_by: profile.id, dept_approved_at: new Date().toISOString() }
-    } else if (canAdminApprove) {
-      update = { status: 'approved', reviewed_by: profile.id, reviewed_at: new Date().toISOString() }
+      var { error } = await supabase.from('requisitions').update({
+        status: 'pending', dept_approved_by: profile.id, dept_approved_at: new Date().toISOString()
+      }).eq('id', req.id)
+      if (error) { alert('Approve failed: ' + error.message); setSaving(false); return }
+      try { await logActivity('REQUISITION_APPROVE', (req.purpose || 'Req #' + req.id) + ' | dept') } catch (_) {}
+      setSaving(false)
+      onUpdated()
+      return
     }
-    var { error } = await supabase.from('requisitions').update(update).eq('id', req.id)
-    if (error) { alert('Approve failed: ' + error.message); setSaving(false); return }
-    try { await logActivity('REQUISITION_APPROVE', (req.purpose || 'Req #' + req.id) + ' | ' + (canDeptApprove ? 'dept' : 'admin')) } catch (_) {}
+
+    // Admin approve + fulfill
+    var { error: reqErr } = await supabase.from('requisitions').update({
+      status: 'approved', reviewed_by: profile.id, reviewed_at: new Date().toISOString()
+    }).eq('id', req.id)
+    if (reqErr) { alert('Approve failed: ' + reqErr.message); setSaving(false); return }
+
+    var stockCount = 0
+    var poCount = 0
+    var errors = []
+
+    for (var i = 0; i < items.length; i++) {
+      var li = items[i]
+      var choice = fulfillChoices[li.id] || 'po'
+
+      if (choice === 'stock' && li.item_id && li._source !== 'new') {
+        var { data: result, error: rpcErr } = await supabase.rpc('issue_from_stock', {
+          p_req_item_id: li.id,
+          p_dispatched_by: profile.id,
+          p_note: dispatchNote.trim() || null,
+        })
+        if (rpcErr || (result && !result.ok)) {
+          errors.push(li.item_name + ': ' + (rpcErr?.message || result?.error || 'Unknown error'))
+          // Fallback to PO
+          await supabase.from('requisition_items').update({ item_status: 'po_queued', fulfillment_type: 'purchase' }).eq('id', li.id)
+          poCount++
+        } else {
+          stockCount++
+        }
+      } else {
+        await supabase.from('requisition_items').update({ item_status: 'po_queued', fulfillment_type: 'purchase' }).eq('id', li.id)
+        poCount++
+      }
+    }
+
+    if (errors.length > 0) {
+      alert('Some items fell back to PO:\n' + errors.join('\n'))
+    }
+
+    var logMsg = (req.purpose || 'Req #' + req.id) + ' | admin | stock:' + stockCount + ' po:' + poCount
+    try { await logActivity('REQUISITION_APPROVE', logMsg) } catch (_) {}
     setSaving(false)
     onUpdated()
   }
@@ -922,6 +1014,90 @@ function RequisitionDetail({ req, items, profile, isAdmin, isDeptApprover, onBac
               {li.notes && (
                 <p className="text-[11px] text-gray-500 mt-1">{li.notes}</p>
               )}
+
+              {/* Stock availability + fulfillment choice — admin approval view */}
+              {canAdminApprove && !stockLoading && li._source !== 'new' && li.item_id && (function () {
+                var available = stockQty[li.item_id] || 0
+                var sufficient = available >= li.qty
+                var choice = fulfillChoices[li.id] || 'po'
+                return (
+                  <div className="mt-2 pt-2 border-t border-gray-100 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <span className={"text-[10px] font-bold px-2 py-0.5 rounded-full " +
+                        (sufficient ? "bg-green-100 text-green-700" : "bg-red-100 text-red-600")}>
+                        {available} in stock
+                      </span>
+                      {!sufficient && <span className="text-[10px] text-red-500">Need {li.qty}, short by {li.qty - available}</span>}
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={function () { setFulfillChoices(function (p) { var n = Object.assign({}, p); n[li.id] = 'stock'; return n }) }}
+                        disabled={!sufficient}
+                        className={"flex-1 py-1.5 text-[11px] font-bold rounded-md border transition-colors " +
+                          (choice === 'stock' ? "bg-green-600 text-white border-green-600" : sufficient ? "bg-white text-green-700 border-green-300 hover:bg-green-50" : "bg-gray-50 text-gray-300 border-gray-200 cursor-not-allowed")}>
+                        📦 Issue from Stock
+                      </button>
+                      <button onClick={function () { setFulfillChoices(function (p) { var n = Object.assign({}, p); n[li.id] = 'po'; return n }) }}
+                        className={"flex-1 py-1.5 text-[11px] font-bold rounded-md border transition-colors " +
+                          (choice === 'po' ? "bg-blue-600 text-white border-blue-600" : "bg-white text-blue-700 border-blue-300 hover:bg-blue-50")}>
+                        🛒 Send to PO
+                      </button>
+                    </div>
+                  </div>
+                )
+              })()}
+              {canAdminApprove && !stockLoading && li._source === 'new' && (
+                <div className="mt-2 pt-2 border-t border-gray-100">
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">New item → PO</span>
+                </div>
+              )}
+              {canAdminApprove && stockLoading && li.item_id && li._source !== 'new' && (
+                <div className="mt-2 pt-2 border-t border-gray-100">
+                  <span className="text-[10px] text-gray-400">Checking stock...</span>
+                </div>
+              )}
+
+              {/* Dispatched status — for requester view */}
+              {li.item_status === 'dispatched' && (
+                <div className="mt-1.5 pt-1.5 border-t border-gray-100 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">📦 Dispatched</span>
+                    {li.dispatched_note && <span className="text-[10px] text-gray-400">{li.dispatched_note}</span>}
+                    {li.dispatched_at && <span className="text-[10px] text-gray-400">{formatDate(li.dispatched_at)}</span>}
+                  </div>
+                  {req.requested_by === profile?.id && (
+                    <button disabled={saving} onClick={async function () {
+                      setSaving(true)
+                      var { data: result, error: rpcErr } = await supabase.rpc('acknowledge_receipt', {
+                        p_req_item_id: li.id,
+                        p_user_id: profile.id,
+                      })
+                      setSaving(false)
+                      if (rpcErr || (result && !result.ok)) {
+                        alert('Failed: ' + (rpcErr?.message || result?.error || 'Unknown error'))
+                        return
+                      }
+                      try { await logActivity('REQUISITION_ACKNOWLEDGE', titleCase(li.item_name) + ' | ' + (req.purpose || 'Req #' + req.id)) } catch (_) {}
+                      onUpdated()
+                    }}
+                      className="w-full py-2 text-[11px] font-bold text-green-700 bg-green-50 border border-green-200 rounded-lg hover:bg-green-100 disabled:opacity-50 transition-colors">
+                      {saving ? 'Confirming...' : '✓ Confirm Received'}
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {/* Fulfilled from stock */}
+              {li.item_status === 'fulfilled' && li.fulfillment_type === 'stock' && (
+                <div className="mt-1.5 pt-1.5 border-t border-gray-100">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-green-100 text-green-700">✓ Received from Stock</span>
+                    {li.acknowledged_at && <span className="text-[10px] text-gray-400">{formatDate(li.acknowledged_at)}</span>}
+                    {li.auto_acknowledged && <span className="text-[10px] text-amber-500">Auto</span>}
+                  </div>
+                </div>
+              )}
+
+              {/* PO tracking — existing behavior */}
               {li.po_item_id && poStatuses[li.po_item_id] && (function () {
                 var poi = poStatuses[li.po_item_id]
                 var itemStatus = poi.status
@@ -956,6 +1132,23 @@ function RequisitionDetail({ req, items, profile, isAdmin, isDeptApprover, onBac
         </button>
       )}
 
+      {/* Dispatch note — only on admin approve when stock items exist */}
+      {canAdminApprove && !rejectMode && (function () {
+        var hasStock = Object.keys(fulfillChoices).some(function (k) { return fulfillChoices[k] === 'stock' })
+        if (!hasStock) return null
+        return (
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 space-y-1">
+            <label className="block text-[11px] font-bold text-blue-700 uppercase">Dispatch Note <span className="text-blue-400 font-normal">(optional)</span></label>
+            <input type="text" value={dispatchNote}
+              onChange={function (e) { setDispatchNote(e.target.value) }}
+              placeholder="Delivery person name, location..."
+              maxLength="200"
+              className="w-full px-3 py-2 border border-blue-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              style={{ fontSize: '16px' }} />
+          </div>
+        )
+      })()}
+
       {/* Approval actions */}
       {canApprove && !rejectMode && (
         <div className="flex gap-3">
@@ -965,7 +1158,7 @@ function RequisitionDetail({ req, items, profile, isAdmin, isDeptApprover, onBac
           </button>
           <button onClick={approve} disabled={saving}
             className="flex-1 py-3 text-sm font-bold text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors">
-            {saving ? 'Approving...' : '✓ Approve'}
+            {saving ? 'Processing...' : canAdminApprove ? '✓ Approve & Process' : '✓ Approve'}
           </button>
         </div>
       )}

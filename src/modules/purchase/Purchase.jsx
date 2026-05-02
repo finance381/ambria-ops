@@ -76,8 +76,9 @@ function Purchase({ profile, mode }) {
     setQueueLoading(true)
     var { data: itemsRaw, error } = await supabase
       .from('requisition_items')
-      .select('id, item_id, item_name, category_id, qty, unit, notes, _source, estimated_cost_paise, po_item_id, requisition_id, categories(name)')
+      .select('id, item_id, item_name, category_id, qty, unit, notes, _source, estimated_cost_paise, po_item_id, item_status, requisition_id, categories(name)')
       .is('po_item_id', null)
+      .eq('item_status', 'po_queued')
       .order('id', { ascending: false })
       .limit(200)
 
