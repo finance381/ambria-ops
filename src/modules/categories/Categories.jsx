@@ -51,6 +51,7 @@ function Categories() {
   var [editCat, setEditCat] = useState(null)
   var [editCatName, setEditCatName] = useState('')
   var [editCatCode, setEditCatCode] = useState('')
+  var [editCatConsumable, setEditCatConsumable] = useState(true)
   var [editCatDims, setEditCatDims] = useState([])
   var [editCatSubs, setEditCatSubs] = useState([])
   var [newDimName, setNewDimName] = useState('')
@@ -225,6 +226,7 @@ function Categories() {
     setEditCat(cat)
     setEditCatName(cat.name)
     setEditCatCode(cat.code || '')
+    setEditCatConsumable(cat.consumable !== false)
     setEditCatDims(cat.dimension_fields || [])
     setEditCatSubs(subCategories.filter(function (s) { return s.category_id === cat.id }))
     setEditCatSubDept(cat.sub_department_id ? String(cat.sub_department_id) : '')
@@ -289,6 +291,7 @@ function Categories() {
       code: editCatCode.trim().toUpperCase() || null,
       dimension_fields: editCatDims,
       sub_department_id: editCatSubDept ? Number(editCatSubDept) : null,
+      consumable: editCatConsumable,
     }).eq('id', editCat.id)
     if (err) { setError(err.message) } else {
       setEditCat(null)
@@ -686,6 +689,10 @@ function Categories() {
                     {dims.length > 0 && (
                       <span className="text-xs bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded">{dims.length} dimensions</span>
                     )}
+                    <span className={"text-[10px] font-bold px-1.5 py-0.5 rounded-full " +
+                      (cat.consumable === false ? "bg-blue-100 text-blue-700" : "bg-gray-100 text-gray-500")}>
+                      {cat.consumable === false ? 'Asset' : 'Consumable'}
+                    </span>
                   </div>
                   <div className="flex gap-2">
                     <button onClick={function () { openEditCat(cat) }}
@@ -944,6 +951,26 @@ function Categories() {
                 <input type="text" value={editCatName} onChange={function (e) { setEditCatName(e.target.value) }}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
               </div>
+            </div>
+
+            {/* Item Type */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Item Type</label>
+              <div className="flex gap-2">
+                <button type="button" onClick={function () { setEditCatConsumable(true) }}
+                  className={"flex-1 py-2 text-sm font-bold rounded-md border transition-colors " +
+                    (editCatConsumable ? "bg-gray-900 text-white border-gray-900" : "bg-white text-gray-500 border-gray-200 hover:bg-gray-50")}>
+                  🔄 Consumable
+                </button>
+                <button type="button" onClick={function () { setEditCatConsumable(false) }}
+                  className={"flex-1 py-2 text-sm font-bold rounded-md border transition-colors " +
+                    (!editCatConsumable ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-500 border-gray-200 hover:bg-gray-50")}>
+                  🏷 Asset
+                </button>
+              </div>
+              <p className="text-[11px] text-gray-400 mt-1">
+                {editCatConsumable ? 'Stock qty will be deducted when issued from requisitions' : 'Stock qty stays unchanged — items are relocated, not consumed'}
+              </p>
             </div>
 
             {/* Sub-categories */}
