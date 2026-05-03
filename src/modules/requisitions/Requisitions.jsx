@@ -4,7 +4,7 @@ import { titleCase, formatDate } from '../../lib/format'
 import { logActivity } from '../../lib/logger'
 import Modal from '../../components/ui/Modal'
 import { Badge } from '../../components/ui/Badge'
-import { APPROVAL_APPROVAL_STATUS_COLORS, APPROVAL_APPROVAL_STATUS_LABELS } from '../../lib/constants'
+import { APPROVAL_STATUS_COLORS, APPROVAL_STATUS_LABELS } from '../../lib/constants'
 
 var PAGE_SIZE = 20
 var URGENCY_COLORS = {
