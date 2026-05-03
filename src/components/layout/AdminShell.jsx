@@ -1,4 +1,4 @@
-import { useState, lazy, Suspense } from 'react'
+import { useState, useEffect, lazy, Suspense } from 'react'
 import { ROLE_COLORS } from '../../lib/constants'
 import RateCardEditor from '../../modules/quote/RateCardEditor'
 
