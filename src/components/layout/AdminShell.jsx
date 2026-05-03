@@ -14,6 +14,7 @@ var Boxes = lazy(function () { return import('../../modules/boxes/Boxes') })
 var Purchase = lazy(function () { return import('../../modules/purchase/Purchase') })
 var Calendar = lazy(function () { return import('../../modules/calendar/Calendar') })
 var Vendors = lazy(function () { return import('../../modules/vendors/Vendors') })
+var Requisitions = lazy(function () { return import('../../modules/requisitions/Requisitions') })
 var Analytics = lazy(function () { return import('../../modules/analytics/Analytics') })
 var Overview = lazy(function () { return import('../../modules/overview/Overview') })
 
@@ -49,13 +50,20 @@ var SUB_TAB_CONFIG = {
     { key: 'logs', label: 'Activity Logs', component: ActivityLogs },
   ],
   procurement: [
+    { key: 'requisitions', label: 'Requisitions', component: Requisitions },
     { key: 'purchase', label: 'Purchase Orders', component: Purchase },
     { key: 'vendors', label: 'Vendors', component: Vendors },
   ],
 }
 
-function TabbedSection({ config, profile, onNavigate }) {
-  var [sub, setSub] = useState(config[0].key)
+function TabbedSection({ config, profile, onNavigate, activeSubTab }) {
+  var [sub, setSub] = useState(activeSubTab || config[0].key)
+
+  useEffect(function () {
+    if (activeSubTab && config.find(function (c) { return c.key === activeSubTab })) {
+      setSub(activeSubTab)
+    }
+  }, [activeSubTab])
   var Active = config.find(function (c) { return c.key === sub })?.component
   return (
     <div>
@@ -80,7 +88,7 @@ var ADMIN_TABS = [
 
 function makeTabbedModule(configKey) {
   return function (props) {
-    return <TabbedSection config={SUB_TAB_CONFIG[configKey]} profile={props.profile} onNavigate={props.onNavigate} />
+    return <TabbedSection config={SUB_TAB_CONFIG[configKey]} profile={props.profile} onNavigate={props.onNavigate} activeSubTab={props.activeSubTab} />
   }
 }
 
@@ -97,6 +105,7 @@ var MODULES = {
 
 function AdminShell({ profile, onSignOut }) {
   var [active, setActive] = useState('overview')
+  var [subTab, setSubTab] = useState(null)
 
   var ActiveModule = MODULES[active] || null
   var activeLabel = ADMIN_TABS.find(function (t) { return t.key === active })?.label || ''
@@ -132,7 +141,7 @@ function AdminShell({ profile, onSignOut }) {
             return (
               <button
                 key={tab.key}
-                onClick={function () { setActive(tab.key) }}
+                onClick={function () { setActive(tab.key); setSubTab(null) }}
                 className={
                   "px-4 py-3 text-[13px] font-semibold whitespace-nowrap border-b-[2.5px] transition-colors " +
                   (isActive
@@ -149,10 +158,10 @@ function AdminShell({ profile, onSignOut }) {
 
       {/* Content */}
       <main className="max-w-[1200px] mx-auto px-6 py-6">
-        <h2 className="text-xl font-bold text-gray-800 mb-5">{activeLabel}</h2>
+        {active !== 'overview' && <h2 className="text-xl font-bold text-gray-800 mb-5">{activeLabel}</h2>}
         {ActiveModule && (
           <Suspense fallback={<div className="text-center py-8 text-sm text-gray-400">Loading...</div>}>
-            <ActiveModule profile={profile} onNavigate={function (tab) { setActive(tab) }} />
+            <ActiveModule profile={profile} onNavigate={function (tab, sub) { setActive(tab); setSubTab(sub || null) }} activeSubTab={subTab} />
           </Suspense>
         )}
         {!ActiveModule && (
