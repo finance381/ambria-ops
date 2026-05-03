@@ -35,53 +35,33 @@ function SubTabs({ tabs, active, onChange }) {
   )
 }
 
-function InventoryTab({ profile }) {
-  var [sub, setSub] = useState('pending')
-  return (
-    <div>
-      <SubTabs tabs={[{ key: 'pending', label: 'Pending Review' }, { key: 'items', label: 'All Items' }]} active={sub} onChange={setSub} />
-      <Suspense fallback={<div className="text-center py-8 text-sm text-gray-400">Loading...</div>}>
-        {sub === 'pending' && <PendingReview profile={profile} />}
-        {sub === 'items' && <AdminItems profile={profile} />}
-      </Suspense>
-    </div>
-  )
+var SUB_TAB_CONFIG = {
+  inventory: [
+    { key: 'pending', label: 'Pending Review', component: PendingReview },
+    { key: 'items', label: 'All Items', component: AdminItems },
+  ],
+  masters: [
+    { key: 'categories', label: 'Categories', component: Categories },
+    { key: 'ratecard', label: 'Rate Card', component: RateCardEditor },
+  ],
+  users: [
+    { key: 'users', label: 'Users', component: Users },
+    { key: 'logs', label: 'Activity Logs', component: ActivityLogs },
+  ],
+  procurement: [
+    { key: 'purchase', label: 'Purchase Orders', component: Purchase },
+    { key: 'vendors', label: 'Vendors', component: Vendors },
+  ],
 }
 
-function MastersTab({ profile }) {
-  var [sub, setSub] = useState('categories')
+function TabbedSection({ config, profile, onNavigate }) {
+  var [sub, setSub] = useState(config[0].key)
+  var Active = config.find(function (c) { return c.key === sub })?.component
   return (
     <div>
-      <SubTabs tabs={[{ key: 'categories', label: 'Categories' }, { key: 'ratecard', label: 'Rate Card' }]} active={sub} onChange={setSub} />
+      <SubTabs tabs={config} active={sub} onChange={setSub} />
       <Suspense fallback={<div className="text-center py-8 text-sm text-gray-400">Loading...</div>}>
-        {sub === 'categories' && <Categories profile={profile} />}
-        {sub === 'ratecard' && <RateCardEditor profile={profile} />}
-      </Suspense>
-    </div>
-  )
-}
-
-function UsersTab({ profile }) {
-  var [sub, setSub] = useState('users')
-  return (
-    <div>
-      <SubTabs tabs={[{ key: 'users', label: 'Users' }, { key: 'logs', label: 'Activity Logs' }]} active={sub} onChange={setSub} />
-      <Suspense fallback={<div className="text-center py-8 text-sm text-gray-400">Loading...</div>}>
-        {sub === 'users' && <Users profile={profile} />}
-        {sub === 'logs' && <ActivityLogs profile={profile} />}
-      </Suspense>
-    </div>
-  )
-}
-
-function ProcurementTab({ profile }) {
-  var [sub, setSub] = useState('purchase')
-  return (
-    <div>
-      <SubTabs tabs={[{ key: 'purchase', label: 'Purchase Orders' }, { key: 'vendors', label: 'Vendors' }]} active={sub} onChange={setSub} />
-      <Suspense fallback={<div className="text-center py-8 text-sm text-gray-400">Loading...</div>}>
-        {sub === 'purchase' && <Purchase profile={profile} />}
-        {sub === 'vendors' && <Vendors profile={profile} />}
+        {Active && <Active profile={profile} onNavigate={onNavigate} />}
       </Suspense>
     </div>
   )
@@ -98,15 +78,21 @@ var ADMIN_TABS = [
   { key: 'procurement', label: 'Procurement', icon: '🛒' },
 ]
 
+function makeTabbedModule(configKey) {
+  return function (props) {
+    return <TabbedSection config={SUB_TAB_CONFIG[configKey]} profile={props.profile} onNavigate={props.onNavigate} />
+  }
+}
+
 var MODULES = {
   overview: Overview,
   analytics: Analytics,
-  inventory: InventoryTab,
+  inventory: makeTabbedModule('inventory'),
   events: Events,
-  masters: MastersTab,
-  users: UsersTab,
+  masters: makeTabbedModule('masters'),
+  users: makeTabbedModule('users'),
   expenses: Expenses,
-  procurement: ProcurementTab,
+  procurement: makeTabbedModule('procurement'),
 }
 
 function AdminShell({ profile, onSignOut }) {

@@ -48,3 +48,19 @@ export const ROLE_COLORS = {
   logistics: 'bg-green-100 text-green-700',
   auditor: 'bg-pink-100 text-pink-700',
 }
+
+export var APPROVAL_STATUS_COLORS = {
+  pending_dept: 'bg-amber-100 text-amber-700',
+  pending: 'bg-yellow-100 text-yellow-700',
+  approved: 'bg-green-100 text-green-700',
+  rejected: 'bg-red-100 text-red-700',
+  fulfilled: 'bg-indigo-100 text-indigo-700',
+}
+
+export var APPROVAL_STATUS_LABELS = {
+  pending_dept: 'Dept Review',
+  pending: 'Admin Review',
+  approved: 'Approved',
+  rejected: 'Rejected',
+  fulfilled: 'Fulfilled',
+}

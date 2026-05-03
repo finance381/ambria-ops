@@ -1,30 +1,12 @@
 import { useState, useEffect } from 'react'
 import { supabase, getImageUrl } from '../../lib/supabase'
-import { titleCase, formatDate } from '../../lib/format'
+import { titleCase, formatDate, formatPoints } from '../../lib/format'
 import { logActivity } from '../../lib/logger'
 import SearchDropdown from '../../components/ui/SearchDropdown'
 import ExpenseFormMulti from './ExpenseForm'
+import { APPROVAL_APPROVAL_STATUS_COLORS, APPROVAL_APPROVAL_STATUS_LABELS } from '../../lib/constants'
 
 var PAGE_SIZE = 20
-
-var STATUS_COLORS = {
-  pending_dept: 'bg-amber-100 text-amber-700',
-  pending: 'bg-yellow-100 text-yellow-700',
-  approved: 'bg-green-100 text-green-700',
-  rejected: 'bg-red-100 text-red-700',
-}
-
-var STATUS_LABELS = {
-  pending_dept: 'Dept Review',
-  pending: 'Admin Review',
-  approved: 'Approved',
-  rejected: 'Rejected',
-}
-
-function formatPoints(paise) {
-  if (paise == null) return '—'
-  return (paise / 100).toLocaleString('en-IN') + ' pts'
-}
 
 function Expenses({ profile }) {
   var [view, setView] = useState('list') // list | form | detail | approve
@@ -486,7 +468,7 @@ if (allExpView && (isAdmin || isAuditor)) {
 
         <div className="flex gap-2 flex-wrap">
           {['', 'pending_dept', 'pending', 'approved', 'rejected'].map(function (s) {
-            var label = s ? STATUS_LABELS[s] : 'All'
+            var label = s ? APPROVAL_STATUS_LABELS[s] : 'All'
             return (
               <button key={s} onClick={function () { setAllExpStatus(s === allExpStatus ? '' : s) }}
                 className={"px-3 py-1.5 text-[11px] font-bold rounded-full border transition-colors " +
@@ -547,8 +529,8 @@ if (allExpView && (isAdmin || isAuditor)) {
                     </div>
                     <div className="flex flex-col items-end gap-1 flex-shrink-0 ml-2">
                       <span className="text-sm font-bold text-gray-800">{formatPoints(exp.amount_paise)}</span>
-                      <span className={"text-[10px] font-bold uppercase px-2 py-0.5 rounded-full " + (STATUS_COLORS[exp.status] || 'bg-gray-100 text-gray-600')}>
-                        {STATUS_LABELS[exp.status] || exp.status}
+                      <span className={"text-[10px] font-bold uppercase px-2 py-0.5 rounded-full " + (APPROVAL_STATUS_COLORS[exp.status] || 'bg-gray-100 text-gray-600')}>
+                        {APPROVAL_STATUS_LABELS[exp.status] || exp.status}
                       </span>
                     </div>
                   </div>
@@ -1051,7 +1033,7 @@ if (allExpView && (isAdmin || isAuditor)) {
       {view === 'list' && (
         <div className="flex gap-2 flex-wrap">
           {['', 'pending_dept', 'pending', 'approved', 'rejected'].map(function (s) {
-            var label = s ? STATUS_LABELS[s] : 'All'
+            var label = s ? APPROVAL_STATUS_LABELS[s] : 'All'
             return (
               <button key={s} onClick={function () { setStatusFilter(s === statusFilter ? '' : s) }}
                 className={"px-3 py-1.5 text-[11px] font-bold rounded-full border transition-colors " +
@@ -1123,8 +1105,8 @@ if (allExpView && (isAdmin || isAuditor)) {
                 </div>
                 <div className="flex flex-col items-end gap-1 flex-shrink-0 ml-2">
                   <span className="text-sm font-bold text-gray-800">{formatPoints(exp.amount_paise)}</span>
-                  <span className={"text-[10px] font-bold uppercase px-2 py-0.5 rounded-full " + (STATUS_COLORS[exp.status] || 'bg-gray-100 text-gray-600')}>
-                    {STATUS_LABELS[exp.status] || exp.status}
+                  <span className={"text-[10px] font-bold uppercase px-2 py-0.5 rounded-full " + (APPROVAL_STATUS_COLORS[exp.status] || 'bg-gray-100 text-gray-600')}>
+                    {APPROVAL_STATUS_LABELS[exp.status] || exp.status}
                   </span>
                 </div>
               </div>
@@ -1554,8 +1536,8 @@ function ExpenseDetail({ exp, profile, subCatMap, isAdmin, isDeptApprover, onBac
               {exp.profiles?.name || '—'} · {formatDate(exp.expense_date)}
             </p>
           </div>
-          <span className={"text-[10px] font-bold uppercase px-2 py-0.5 rounded-full " + (STATUS_COLORS[exp.status] || 'bg-gray-100 text-gray-600')}>
-            {STATUS_LABELS[exp.status] || exp.status}
+          <span className={"text-[10px] font-bold uppercase px-2 py-0.5 rounded-full " + (APPROVAL_STATUS_COLORS[exp.status] || 'bg-gray-100 text-gray-600')}>
+            {APPROVAL_STATUS_LABELS[exp.status] || exp.status}
           </span>
         </div>
       </div>

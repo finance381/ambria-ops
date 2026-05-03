@@ -4,28 +4,13 @@ import { titleCase, formatDate } from '../../lib/format'
 import { logActivity } from '../../lib/logger'
 import Modal from '../../components/ui/Modal'
 import { Badge } from '../../components/ui/Badge'
+import { APPROVAL_APPROVAL_STATUS_COLORS, APPROVAL_APPROVAL_STATUS_LABELS } from '../../lib/constants'
 
 var PAGE_SIZE = 20
 var URGENCY_COLORS = {
   low: 'bg-gray-100 text-gray-600',
   normal: 'bg-blue-100 text-blue-700',
   urgent: 'bg-red-100 text-red-700',
-}
-
-var STATUS_COLORS = {
-  pending_dept: 'bg-amber-100 text-amber-700',
-  pending: 'bg-yellow-100 text-yellow-700',
-  approved: 'bg-green-100 text-green-700',
-  rejected: 'bg-red-100 text-red-700',
-  fulfilled: 'bg-indigo-100 text-indigo-700',
-}
-
-var STATUS_LABELS = {
-  pending_dept: 'Dept Review',
-  pending: 'Admin Review',
-  approved: 'Approved',
-  rejected: 'Rejected',
-  fulfilled: 'Fulfilled',
 }
 
 var UNITS = [
@@ -252,7 +237,7 @@ function Requisitions({ profile, onBack }) {
       {view === 'list' && (
         <div className="flex gap-2 flex-wrap">
           {['', 'pending_dept', 'pending', 'approved', 'rejected', 'fulfilled'].map(function (s) {
-            var label = s ? STATUS_LABELS[s] : 'All'
+            var label = s ? APPROVAL_STATUS_LABELS[s] : 'All'
             return (
               <button key={s} onClick={function () { setStatusFilter(s === statusFilter ? '' : s) }}
                 className={"px-3 py-1.5 text-[11px] font-bold rounded-full border transition-colors " +
@@ -294,8 +279,8 @@ function Requisitions({ profile, onBack }) {
                   <span className={"text-[10px] font-bold uppercase px-2 py-0.5 rounded-full " + (URGENCY_COLORS[req.urgency] || '')}>
                     {req.urgency}
                   </span>
-                  <span className={"text-[10px] font-bold uppercase px-2 py-0.5 rounded-full " + (STATUS_COLORS[req.status] || '')}>
-                    {STATUS_LABELS[req.status] || req.status}
+                  <span className={"text-[10px] font-bold uppercase px-2 py-0.5 rounded-full " + (APPROVAL_STATUS_COLORS[req.status] || '')}>
+                    {APPROVAL_STATUS_LABELS[req.status] || req.status}
                   </span>
                 </div>
               </div>
@@ -966,8 +951,8 @@ function RequisitionDetail({ req, items, profile, isAdmin, isDeptApprover, onBac
             <span className={"text-[10px] font-bold uppercase px-2 py-0.5 rounded-full " + (URGENCY_COLORS[req.urgency] || '')}>
               {req.urgency}
             </span>
-            <span className={"text-[10px] font-bold uppercase px-2 py-0.5 rounded-full " + (STATUS_COLORS[req.status] || '')}>
-              {STATUS_LABELS[req.status] || req.status}
+            <span className={"text-[10px] font-bold uppercase px-2 py-0.5 rounded-full " + (APPROVAL_STATUS_COLORS[req.status] || '')}>
+              {APPROVAL_STATUS_LABELS[req.status] || req.status}
             </span>
           </div>
         </div>

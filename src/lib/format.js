@@ -22,3 +22,8 @@ export function titleCase(str) {
   if (!str) return ''
   return str.toLowerCase().replace(/(?:^|\s)\S/g, function (c) { return c.toUpperCase() })
 }
+
+export function formatPoints(paise) {
+  if (paise == null) return '—'
+  return (paise / 100).toLocaleString('en-IN') + ' pts'
+}

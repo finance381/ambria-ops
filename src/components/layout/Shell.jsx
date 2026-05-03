@@ -45,10 +45,13 @@ function Shell({ profile, onSignOut }) {
   var badgeCounts = badges
 
   useEffect(function () {
-    loadBadges()
+    if (tab !== 'home') return
+    var stale = false
+    loadBadges(function () { return stale })
+    return function () { stale = true }
   }, [tab])
 
-  async function loadBadges() {
+  async function loadBadges(isStale) {
     var counts = {}
     var isDeptAppr = perms.indexOf('dept_approve') !== -1
     var isAdminRole = profile.role === 'admin' || profile.role === 'auditor'
@@ -161,6 +164,7 @@ function Shell({ profile, onSignOut }) {
     }
 
     await Promise.allSettled(promises)
+    if (isStale && isStale()) return
     setBadges(counts)
   }
 
