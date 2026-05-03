@@ -4,7 +4,7 @@ import { titleCase, formatDate, formatPoints } from '../../lib/format'
 import { logActivity } from '../../lib/logger'
 import SearchDropdown from '../../components/ui/SearchDropdown'
 import ExpenseFormMulti from './ExpenseForm'
-import { APPROVAL_APPROVAL_STATUS_COLORS, APPROVAL_APPROVAL_STATUS_LABELS } from '../../lib/constants'
+import { APPROVAL_STATUS_COLORS, APPROVAL_STATUS_LABELS } from '../../lib/constants'
 
 var PAGE_SIZE = 20
 

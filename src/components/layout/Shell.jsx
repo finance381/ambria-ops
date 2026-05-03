@@ -85,8 +85,17 @@ function Shell({ profile, onSignOut }) {
   }
 
   function goBack() {
-    if (tab) { setTab(null) }
-    else if (activeGroup) { setActiveGroup(null) }
+    if (tab) {
+      // Single-item group: skip sub-cards, go home
+      if (currentGroup && currentGroup.items.length === 1) {
+        setTab(null)
+        setActiveGroup(null)
+      } else {
+        setTab(null)
+      }
+    } else if (activeGroup) {
+      setActiveGroup(null)
+    }
   }
 
   function openGroup(group) {
