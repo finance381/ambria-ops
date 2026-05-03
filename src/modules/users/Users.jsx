@@ -76,6 +76,18 @@ var FEATURE_PERMS = [
     grants: ['feature_receive'],
   },
   {
+    key: 'feature_boxes',
+    label: 'Boxes',
+    icon: '📦',
+    grants: ['feature_boxes'],
+  },
+  {
+    key: 'feature_challans',
+    label: 'Challans',
+    icon: '🚛',
+    grants: ['feature_challans'],
+  },
+  {
    key: 'feature_admin',
    label: 'Admin Panel',
    icon: '⚙️',

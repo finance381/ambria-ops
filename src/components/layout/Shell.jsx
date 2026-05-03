@@ -12,6 +12,8 @@ import QuoteCalculator from '../../modules/quote/QuoteCalculator'
 import Requisitions from '../../modules/requisitions/Requisitions'
 import Purchase from '../../modules/purchase/Purchase'
 import Expenses from '../../modules/expenses/Expenses'
+import Boxes from '../../modules/boxes/Boxes'
+import Challans from '../../modules/challans/Challans'
 
 var FEATURES = [
   { key: 'feature_add', label: 'Add Item', icon: '📝', tab: 'add' },
@@ -24,6 +26,8 @@ var FEATURES = [
   { key: 'feature_expenses', label: 'PC & Direct Expenses', icon: '💰', tab: 'expenses' },
   { key: 'feature_purchase', label: 'Purchase Orders', icon: '🛒', tab: 'purchase' },
   { key: 'feature_receive', label: 'Receive Items', icon: '📦', tab: 'receive' },
+  { key: 'feature_boxes', label: 'Boxes', icon: '📦', tab: 'boxes' },
+  { key: 'feature_challans', label: 'Challans', icon: '🚛', tab: 'challans' },
   { key: 'feature_admin', label: 'Admin', icon: '⚙️', tab: 'admin' },
 ]
 
@@ -153,15 +157,22 @@ function Shell({ profile, onSignOut }) {
       }
     }
 
-    // Receiving badge
-    if (perms.indexOf('feature_receive') !== -1) {
+    // Challans badge (active dispatched)
+    if (perms.indexOf('feature_challans') !== -1) {
+      promises.push(
+        supabase.from('challans')
+          .select('id', { count: 'exact', head: true })
+          .in('status', ['dispatched', 'received'])
+          .then(function (res) { counts.feature_challans = res.count || 0 })
+      )
+    }
       promises.push(
         supabase.from('purchase_order_items')
           .select('id', { count: 'exact', head: true })
           .eq('status', 'purchased')
           .then(function (res) { counts.feature_receive = res.count || 0 })
       )
-    }
+    
 
     await Promise.allSettled(promises)
     if (isStale && isStale()) return
@@ -318,6 +329,12 @@ function Shell({ profile, onSignOut }) {
         )}
         {tab === 'receive' && (
           <Purchase profile={profile} mode="receive" />
+        )}
+        {tab === 'boxes' && (
+          <Boxes profile={profile} />
+        )}
+        {tab === 'challans' && (
+          <Challans profile={profile} />
         )}
         {tab === 'admin' && isAdmin && (
           <AdminMobile profile={profile} />
