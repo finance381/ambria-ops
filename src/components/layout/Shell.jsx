@@ -15,45 +15,113 @@ import Expenses from '../../modules/expenses/Expenses'
 import Boxes from '../../modules/boxes/Boxes'
 import Challans from '../../modules/challans/Challans'
 
-var FEATURES = [
-  { key: 'feature_add', label: 'Add Item', icon: '📝', tab: 'add' },
-  { key: 'feature_items', label: 'My Items', icon: '📋', tab: 'my' },
-  { key: 'feature_dept_review', label: 'Dept Review', icon: '✅', tab: 'dept_review' },
-  { key: 'feature_pending', label: 'Pending Review', icon: '⏳', tab: 'pending_review' },
-  { key: 'feature_events', label: 'Events', icon: '📅', tab: 'events' },
-  { key: 'feature_requisitions', label: 'Requisitions', icon: '📋', tab: 'requisitions' },
-  { key: 'feature_quote', label: 'Quote Calc', icon: '🧮', tab: 'quote' },
-  { key: 'feature_expenses', label: 'PC & Direct Expenses', icon: '💰', tab: 'expenses' },
-  { key: 'feature_purchase', label: 'Purchase Orders', icon: '🛒', tab: 'purchase' },
-  { key: 'feature_receive', label: 'Receive Items', icon: '📦', tab: 'receive' },
-  { key: 'feature_boxes', label: 'Boxes', icon: '📦', tab: 'boxes' },
-  { key: 'feature_challans', label: 'Challans', icon: '🚛', tab: 'challans' },
-  { key: 'feature_admin', label: 'Admin', icon: '⚙️', tab: 'admin' },
+var GROUPS = [
+  {
+    key: 'inventory', label: 'Inventory', icon: '📦', items: [
+      { key: 'feature_add', label: 'Add Item', icon: '📝', tab: 'add' },
+      { key: 'feature_items', label: 'My Items', icon: '📋', tab: 'my' },
+      { key: 'feature_boxes', label: 'Boxes', icon: '🗃️', tab: 'boxes' },
+    ]
+  },
+  {
+    key: 'review', label: 'Review', icon: '✅', items: [
+      { key: 'feature_dept_review', label: 'Dept Review', icon: '✅', tab: 'dept_review' },
+      { key: 'feature_pending', label: 'Pending Review', icon: '⏳', tab: 'pending_review' },
+    ]
+  },
+  {
+    key: 'events', label: 'Events', icon: '📅', items: [
+      { key: 'feature_events', label: 'Events', icon: '📅', tab: 'events' },
+      { key: 'feature_quote', label: 'Quote Calc', icon: '🧮', tab: 'quote' },
+    ]
+  },
+  {
+    key: 'procurement', label: 'Procurement', icon: '🛒', items: [
+      { key: 'feature_requisitions', label: 'Requisitions', icon: '📋', tab: 'requisitions' },
+      { key: 'feature_purchase', label: 'Purchase Orders', icon: '🛒', tab: 'purchase' },
+    ]
+  },
+  {
+    key: 'logistics', label: 'Logistics', icon: '🚛', items: [
+      { key: 'feature_receive', label: 'Receive Items', icon: '📦', tab: 'receive' },
+      { key: 'feature_challans', label: 'Challans', icon: '🚛', tab: 'challans' },
+    ]
+  },
+  {
+    key: 'expenses', label: 'Expenses', icon: '💰', items: [
+      { key: 'feature_expenses', label: 'PC & Direct Expenses', icon: '💰', tab: 'expenses' },
+    ]
+  },
+  {
+    key: 'admin', label: 'Admin', icon: '⚙️', items: [
+      { key: 'feature_admin', label: 'Admin', icon: '⚙️', tab: 'admin' },
+    ]
+  },
 ]
 
 function Shell({ profile, onSignOut }) {
-  var [tab, setTab] = useState('home')
+  var [activeGroup, setActiveGroup] = useState(null)
+  var [tab, setTab] = useState(null)
   var [showSuccess, setShowSuccess] = useState(false)
 
   var isAdmin = profile.role === 'admin' || profile.role === 'auditor'
   var perms = profile.permissions || []
   var { lang, switchLang } = useLang()
 
-  // Admin/auditor see all cards; others see only granted features
   var [badges, setBadges] = useState({})
 
-  var visibleFeatures = FEATURES.filter(function (f) {
-    return perms.includes(f.key)
-  })
+  // Filter groups: only show groups where user has at least one sub-feature permission
+  var visibleGroups = GROUPS.map(function (g) {
+    var visibleItems = g.items.filter(function (f) { return perms.indexOf(f.key) !== -1 })
+    if (visibleItems.length === 0) return null
+    return Object.assign({}, g, { items: visibleItems })
+  }).filter(Boolean)
 
-  var badgeCounts = badges
+  // Badge sum per group
+  function groupBadge(group) {
+    var total = 0
+    group.items.forEach(function (f) { total += (badges[f.key] || 0) })
+    return total
+  }
+
+  function goBack() {
+    if (tab) { setTab(null) }
+    else if (activeGroup) { setActiveGroup(null) }
+  }
+
+  function openGroup(group) {
+    // Single-item groups skip sub-cards, go directly to module
+    if (group.items.length === 1) {
+      setActiveGroup(group.key)
+      setTab(group.items[0].tab)
+    } else {
+      setActiveGroup(group.key)
+      setTab(null)
+    }
+  }
+
+  function openModule(item) {
+    setTab(item.tab)
+  }
+
+  // Current group object
+  var currentGroup = activeGroup ? visibleGroups.find(function (g) { return g.key === activeGroup }) : null
+
+  // Header title
+  var headerTitle = 'Inventory Manager'
+  if (tab && currentGroup) {
+    var currentItem = currentGroup.items.find(function (f) { return f.tab === tab })
+    headerTitle = currentItem?.label || currentGroup.label
+  } else if (activeGroup && currentGroup) {
+    headerTitle = currentGroup.label
+  }
 
   useEffect(function () {
-    if (tab !== 'home') return
+    if (activeGroup || tab) return
     var stale = false
     loadBadges(function () { return stale })
     return function () { stale = true }
-  }, [tab])
+  }, [activeGroup, tab])
 
   async function loadBadges(isStale) {
     var counts = {}
@@ -181,7 +249,8 @@ function Shell({ profile, onSignOut }) {
 
   function handleSaved() {
     setShowSuccess(true)
-    setTab('home')
+    setActiveGroup(null)
+    setTab(null)
     setTimeout(function () { setShowSuccess(false) }, 3000)
   }
 
@@ -191,9 +260,9 @@ function Shell({ profile, onSignOut }) {
       <header className="sticky top-0 z-40 bg-white border-b border-gray-200">
         <div className="max-w-[540px] mx-auto flex items-center justify-between px-4 py-3">
           <div className="flex items-center gap-3">
-            {tab !== 'home' && (
+            {(activeGroup || tab) && (
               <button
-                onClick={function () { setTab('home') }}
+                onClick={goBack}
                 className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-900 hover:bg-gray-100 transition-colors"
               >
                 ←
@@ -201,7 +270,7 @@ function Shell({ profile, onSignOut }) {
             )}
             <div>
               <div className="text-base font-bold text-gray-900 leading-tight">
-                {tab === 'home' ? 'Inventory Manager' : (visibleFeatures.find(function (f) { return f.tab === tab })?.label || 'Inventory Manager')}
+                {headerTitle}
               </div>
               <div className="text-[11px] text-gray-400 font-medium">Ambria</div>
             </div>
@@ -267,27 +336,28 @@ function Shell({ profile, onSignOut }) {
       {/* Content */}
       <main className="max-w-[540px] mx-auto px-4 py-4 pb-8">
 
-        {/* Home — Card Grid */}
-        {tab === 'home' && (
+        {/* Level 0: Group Cards */}
+        {!activeGroup && !tab && (
           <div className="grid grid-cols-2 gap-3 pt-2">
-            {visibleFeatures.map(function (f) {
+            {visibleGroups.map(function (g) {
+              var badge = groupBadge(g)
               return (
                 <button
-                  key={f.key}
-                  onClick={function () { setTab(f.tab) }}
+                  key={g.key}
+                  onClick={function () { openGroup(g) }}
                   className="relative bg-white border border-gray-200 rounded-xl p-5 flex flex-col items-center gap-2 shadow-sm hover:shadow-md hover:border-gray-300 active:scale-[0.98] transition-all"
                 >
-                  {badgeCounts[f.key] > 0 && (
+                  {badge > 0 && (
                     <span className="absolute top-2 right-2 min-w-[20px] h-5 px-1.5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
-                      {badgeCounts[f.key] > 99 ? '99+' : badgeCounts[f.key]}
+                      {badge > 99 ? '99+' : badge}
                     </span>
                   )}
-                  <span className="text-2xl">{f.icon}</span>
-                  <span className="text-sm font-semibold text-gray-800">{f.label}</span>
+                  <span className="text-2xl">{g.icon}</span>
+                  <span className="text-sm font-semibold text-gray-800">{g.label}</span>
                 </button>
               )
             })}
-            {visibleFeatures.length === 0 && (
+            {visibleGroups.length === 0 && (
               <div className="col-span-2 text-center py-12 text-gray-400 text-sm">
                 No features assigned. Contact admin.
               </div>
@@ -295,11 +365,35 @@ function Shell({ profile, onSignOut }) {
           </div>
         )}
 
+        {/* Level 1: Sub-Cards within a group */}
+        {activeGroup && !tab && currentGroup && (
+          <div className="grid grid-cols-2 gap-3 pt-2">
+            {currentGroup.items.map(function (f) {
+              return (
+                <button
+                  key={f.key}
+                  onClick={function () { openModule(f) }}
+                  className="relative bg-white border border-gray-200 rounded-xl p-5 flex flex-col items-center gap-2 shadow-sm hover:shadow-md hover:border-gray-300 active:scale-[0.98] transition-all"
+                >
+                  {badges[f.key] > 0 && (
+                    <span className="absolute top-2 right-2 min-w-[20px] h-5 px-1.5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+                      {badges[f.key] > 99 ? '99+' : badges[f.key]}
+                    </span>
+                  )}
+                  <span className="text-2xl">{f.icon}</span>
+                  <span className="text-sm font-semibold text-gray-800">{f.label}</span>
+                </button>
+              )
+            })}
+          </div>
+        )}
+
+        {/* Level 2: Module */}
         {tab === 'add' && (
           <InventoryForm
             item={null}
             profile={profile}
-            onClose={function () { setTab('home') }}
+            onClose={goBack}
             onSaved={handleSaved}
           />
         )}
@@ -307,7 +401,7 @@ function Shell({ profile, onSignOut }) {
           <Inventory profile={profile} />
         )}
         {tab === 'events' && (
-          <Events profile={profile}/>
+          <Events profile={profile} />
         )}
         {tab === 'quote' && (
           <QuoteCalculator profile={profile} />
@@ -319,7 +413,7 @@ function Shell({ profile, onSignOut }) {
           <AdminReview profile={profile} />
         )}
         {tab === 'requisitions' && (
-          <Requisitions profile={profile} onBack={function () { setTab('home') }} />
+          <Requisitions profile={profile} onBack={goBack} />
         )}
         {tab === 'expenses' && (
           <Expenses profile={profile} />
