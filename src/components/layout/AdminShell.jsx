@@ -11,6 +11,7 @@ var ActivityLogs = lazy(function () { return import('../../modules/logs/Activity
 var Expenses = lazy(function () { return import('../../modules/expenses/Expenses') })
 var Dashboard = lazy(function () { return import('../../modules/dashboard/Dashboard') })
 var Boxes = lazy(function () { return import('../../modules/boxes/Boxes') })
+var Challans = lazy(function () { return import('../../modules/challans/Challans') })
 var Purchase = lazy(function () { return import('../../modules/purchase/Purchase') })
 var Calendar = lazy(function () { return import('../../modules/calendar/Calendar') })
 var Vendors = lazy(function () { return import('../../modules/vendors/Vendors') })
@@ -41,6 +42,7 @@ var SUB_TAB_CONFIG = {
     { key: 'pending', label: 'Pending Review', component: PendingReview },
     { key: 'items', label: 'All Items', component: AdminItems },
     { key: 'boxes', label: 'Boxes', component: Boxes },
+    { key: 'challans', label: 'Challans', component: Challans },
   ],
   masters: [
     { key: 'categories', label: 'Categories', component: Categories },
