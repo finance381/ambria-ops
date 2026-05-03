@@ -40,6 +40,7 @@ var SUB_TAB_CONFIG = {
   inventory: [
     { key: 'pending', label: 'Pending Review', component: PendingReview },
     { key: 'items', label: 'All Items', component: AdminItems },
+    { key: 'boxes', label: 'Boxes', component: Boxes },
   ],
   masters: [
     { key: 'categories', label: 'Categories', component: Categories },
