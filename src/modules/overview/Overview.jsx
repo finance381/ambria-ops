@@ -11,7 +11,9 @@
     { key: 'receiving', icon: '📥', label: 'Awaiting Receiving', color: 'teal', desc: 'Purchased, not received' },
     { key: 'vendors', icon: '🏪', label: 'Incomplete Vendors', color: 'pink', desc: 'Missing details' },
     { key: 'events', icon: '📅', label: 'Events This Week', color: 'indigo', desc: 'Upcoming 7 days' },
-  ]
+    { key: 'challans_active', icon: '🚛', label: 'Active Challans', color: 'cyan', desc: 'Dispatched, not closed' },
+    { key: 'shortages', icon: '⚠️', label: 'Shortages', color: 'red', desc: 'Received less than sent' },
+]
 
   var COLOR_MAP = {
     amber: { bg: 'bg-amber-50', border: 'border-amber-200', badge: 'bg-amber-500', text: 'text-amber-700', hover: 'hover:border-amber-400' },
@@ -22,7 +24,9 @@
     teal: { bg: 'bg-teal-50', border: 'border-teal-200', badge: 'bg-teal-500', text: 'text-teal-700', hover: 'hover:border-teal-400' },
     pink: { bg: 'bg-pink-50', border: 'border-pink-200', badge: 'bg-pink-500', text: 'text-pink-700', hover: 'hover:border-pink-400' },
     indigo: { bg: 'bg-indigo-50', border: 'border-indigo-200', badge: 'bg-indigo-500', text: 'text-indigo-700', hover: 'hover:border-indigo-400' },
-  }
+    cyan: { bg: 'bg-cyan-50', border: 'border-cyan-200', badge: 'bg-cyan-500', text: 'text-cyan-700', hover: 'hover:border-cyan-400' },
+    red: { bg: 'bg-red-50', border: 'border-red-200', badge: 'bg-red-500', text: 'text-red-700', hover: 'hover:border-red-400' },
+}
 
   // Navigation map: which admin tab + sub-tab to open
   var NAV_MAP = {
@@ -34,7 +38,9 @@
     receiving: { tab: 'procurement', sub: 'purchase' },
     vendors: { tab: 'procurement', sub: 'vendors' },
     events: { tab: 'events' },
-  }
+    challans_active: { tab: 'inventory', sub: 'challans' },
+    shortages: { tab: 'inventory', sub: 'challans' },
+}
 
   function Overview({ profile, onNavigate }) {
     var [counts, setCounts] = useState({})
@@ -76,7 +82,13 @@
 
         // 8: Pending catering store items
         supabase.from('catering_store_items').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
-      ])
+
+        // 9: Active challans (dispatched or received, not closed)
+        supabase.from('challans').select('id', { count: 'exact', head: true }).in('status', ['dispatched', 'received']),
+
+        // 10: Shortage items (qty_received < qty_sent)
+        supabase.from('challan_items').select('id, qty_sent, qty_received').not('qty_received', 'is', null).limit(500),
+    ])
 
       var pendingInv = (results[0].value?.count || 0) + (results[8].value?.count || 0)
       var pendingReqs = results[1].value?.count || 0
@@ -96,7 +108,12 @@
 
       var weekEvents = results[7].value?.data || []
 
-      setCounts({
+      var activeChallans = results[9].value?.count || 0
+      var shortageItems = (results[10].value?.data || []).filter(function (ci) {
+        return ci.qty_received < ci.qty_sent
+    })
+
+    setCounts({
         inventory: pendingInv,
         requisitions: pendingReqs,
         expenses: pendingExpCount,
@@ -105,7 +122,9 @@
         receiving: awaitingReceive,
         vendors: incompleteVendors.length,
         events: weekEvents.length,
-      })
+        challans_active: activeChallans,
+        shortages: shortageItems.length,
+    })
 
       setDetails({
         expenseTotal: pendingExpTotal,

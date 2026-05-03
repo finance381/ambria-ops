@@ -172,7 +172,7 @@ function Challans({ profile }) {
     // Load dispatch challans for return linking
     if (!challan || challan.type === 'event_return') {
       supabase.from('challans')
-        .select('id, challan_no, event_id, destination_venue_id')
+        .select('id, challan_no, event_id, source_venue_id, destination_venue_id')
         .eq('type', 'event_dispatch')
         .in('status', ['dispatched', 'received'])
         .order('created_at', { ascending: false })
@@ -184,6 +184,17 @@ function Challans({ profile }) {
   var showEventField = formType === 'event_dispatch' || formType === 'event_return'
   var showDestText = formType === 'repair'
   var showReturnFor = formType === 'event_return'
+
+  function onReturnForChange(challanId) {
+    setFormReturnFor(challanId)
+    if (!challanId) return
+    var dc = dispatchChallans.find(function (c) { return String(c.id) === challanId })
+    if (!dc) return
+    // Return: source = dispatch destination, dest = dispatch source
+    if (dc.destination_venue_id) setFormSourceVenue(String(dc.destination_venue_id))
+    if (dc.source_venue_id) setFormDestVenue(String(dc.source_venue_id))
+    if (dc.event_id) setFormEvent(String(dc.event_id))
+  }
 
   async function saveChallan() {
     if (!formSourceVenue) return
@@ -213,7 +224,29 @@ function Challans({ profile }) {
       var { data: newChallan, error } = await supabase.from('challans').insert(payload).select().single()
       if (error) { alert('Save failed: ' + error.message); setSaving(false); return }
       await logActivity('CHALLAN_CREATE', 'Created ' + newChallan.challan_no + ' (' + TYPE_LABELS[formType] + ')')
-      // Auto-open detail for new challan
+
+      // Auto-copy items from dispatch challan into return challan
+      if (formType === 'event_return' && formReturnFor) {
+        var { data: dispatchItems } = await supabase
+          .from('challan_items')
+          .select('inventory_item_id, cs_item_id, event_item_id, box_id, qty_sent, qty_received')
+          .eq('challan_id', Number(formReturnFor))
+        if (dispatchItems && dispatchItems.length > 0) {
+          var returnRows = dispatchItems.map(function (di) {
+            var row = {
+              challan_id: newChallan.id,
+              qty_sent: di.qty_received != null ? di.qty_received : di.qty_sent,
+            }
+            if (di.inventory_item_id) row.inventory_item_id = di.inventory_item_id
+            if (di.cs_item_id) row.cs_item_id = di.cs_item_id
+            if (di.event_item_id) row.event_item_id = di.event_item_id
+            if (di.box_id) row.box_id = di.box_id
+            return row
+          })
+          await supabase.from('challan_items').insert(returnRows)
+        }
+      }
+
       setSaving(false)
       openDetail(newChallan)
       loadChallans()
@@ -708,7 +741,7 @@ function Challans({ profile }) {
           {showReturnFor && (
             <div>
               <label className="block text-xs font-semibold text-gray-500 mb-1">Return for Dispatch Challan</label>
-              <select value={formReturnFor} onChange={function (e) { setFormReturnFor(e.target.value) }}
+              <select value={formReturnFor} onChange={function (e) { onReturnForChange(e.target.value) }}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
                 <option value="">None</option>
                 {dispatchChallans.map(function (dc) {
