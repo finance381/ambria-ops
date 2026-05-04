@@ -4,6 +4,7 @@ import { Badge } from '../../components/ui/Badge'
 import { formatDate, formatPaise, titleCase } from '../../lib/format'
 import Modal from '../../components/ui/Modal'
 import BlockInventory from './BlockInventory'
+import EventTasks from './EventTasks'
 import BriefUpload from './BriefUpload'
 import { logActivity } from '../../lib/logger'
 
@@ -598,6 +599,11 @@ function Events({ profile }) {
                           className="flex-1 py-3 text-sm font-bold text-gray-500 hover:bg-gray-50 active:bg-gray-100 transition-colors">
                           📋 Details
                         </button>
+                        <div className="w-px bg-gray-100" />
+                        <button onClick={function (e) { e.stopPropagation(); openFunctionDetail(f) }}
+                          className="flex-1 py-3 text-sm font-bold text-emerald-600 hover:bg-emerald-50 active:bg-emerald-100 transition-colors">
+                          ✓ Tasks
+                        </button>
                       </div>
                     </div>
                   )
@@ -829,6 +835,15 @@ function Events({ profile }) {
               {eventItems.length === 0 && (
                 <p className="text-sm text-gray-400">No items blocked yet</p>
               )}
+            </div>
+
+            {/* Tasks checklist */}
+            <div className="bg-white border border-gray-200 rounded-lg p-4">
+              <EventTasks
+                eventId={selectedFunction.id}
+                profile={profile}
+                departments={departments}
+              />
             </div>
 
             {selectedFunction.synced_at && (
