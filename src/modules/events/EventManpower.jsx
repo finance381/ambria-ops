@@ -43,8 +43,9 @@ function EventManpower({ eventId, profile, departments }) {
   var [rDept, setRDept] = useState('')
   var [rQty, setRQty] = useState('1')
   var [rNotes, setRNotes] = useState('')
+  var [rSlots, setRSlots] = useState([])
 
-  // Add assignment form
+  // Add assignment form (for existing requirements)
   var [assigningReq, setAssigningReq] = useState(null)
   var [aSource, setASource] = useState('permanent')
   var [aProfile, setAProfile] = useState('')
@@ -101,25 +102,82 @@ function EventManpower({ eventId, profile, departments }) {
 
   // ── REQUIREMENT CRUD ──
 
+  function makeSlot(rate) {
+    return { source: 'permanent', profile_id: '', casual_name: '', casual_phone: '', vendor_id: '', rate: rate || '' }
+  }
+
+  function resizeSlots(qty, rate) {
+    var n = Math.max(0, Number(qty) || 0)
+    setRSlots(function (prev) {
+      if (n <= prev.length) return prev.slice(0, n)
+      var added = []
+      for (var i = prev.length; i < n; i++) added.push(makeSlot(rate))
+      return prev.concat(added)
+    })
+  }
+
+  function updateSlot(idx, field, value) {
+    setRSlots(function (prev) {
+      return prev.map(function (s, i) {
+        if (i !== idx) return s
+        var updated = Object.assign({}, s)
+        updated[field] = value
+        if (field === 'source') {
+          updated.profile_id = ''
+          updated.casual_name = ''
+          updated.casual_phone = ''
+          updated.vendor_id = ''
+        }
+        return updated
+      })
+    })
+  }
+
   function resetReqForm() {
-    setRRole(''); setRDept(''); setRQty('1'); setRNotes('')
+    setRRole(''); setRDept(''); setRQty('1'); setRNotes(''); setRSlots([])
     setShowReqForm(false)
   }
 
   async function addRequirement() {
     if (!rRole || !rQty || saving) return
     setSaving(true)
-    var { error } = await supabase.from('event_manpower').insert({
+    var { data: reqRow, error } = await supabase.from('event_manpower').insert({
       event_id: eventId,
       staff_role_id: Number(rRole),
       department: rDept || null,
       qty_required: Number(rQty),
       notes: rNotes.trim() || null,
       created_by: profile.id,
-    })
+    }).select('id').single()
     if (error) { alert('Failed: ' + error.message); setSaving(false); return }
+
+    // Insert filled slots as assignments
+    var filledSlots = rSlots.filter(function (s) {
+      if (s.source === 'permanent') return !!s.profile_id
+      return !!s.casual_name.trim()
+    })
+    if (filledSlots.length > 0 && reqRow) {
+      var payloads = filledSlots.map(function (s) {
+        var p = {
+          event_manpower_id: reqRow.id,
+          source_type: s.source,
+          rate_paise: s.rate ? Math.round(Number(s.rate) * 100) : 0,
+        }
+        if (s.source === 'permanent') {
+          p.profile_id = s.profile_id
+        } else {
+          p.casual_name = s.casual_name.trim()
+          p.casual_phone = s.casual_phone.trim() || null
+          if (s.source === 'casual_vendor') p.vendor_id = Number(s.vendor_id)
+        }
+        return p
+      })
+      var { error: aErr } = await supabase.from('manpower_assignments').insert(payloads)
+      if (aErr) alert('Requirement added but assignments failed: ' + aErr.message)
+    }
+
     var roleName = roles.find(function (r) { return r.id === Number(rRole) })?.name || ''
-    try { await logActivity('MANPOWER_REQ', roleName + ' × ' + rQty) } catch (_) {}
+    try { await logActivity('MANPOWER_REQ', roleName + ' × ' + rQty + (filledSlots.length > 0 ? ' + ' + filledSlots.length + ' assigned' : '')) } catch (_) {}
     setSaving(false)
     resetReqForm()
     loadAll()
@@ -241,7 +299,12 @@ function EventManpower({ eventId, profile, departments }) {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             <div>
               <label className="block text-[10px] text-gray-500 mb-0.5">Role *</label>
-              <select value={rRole} onChange={function (e) { setRRole(e.target.value) }}
+              <select value={rRole} onChange={function (e) {
+                setRRole(e.target.value)
+                var role = roles.find(function (r) { return r.id === Number(e.target.value) })
+                var defRate = role?.default_rate_paise ? String(role.default_rate_paise / 100) : ''
+                setRSlots(function (prev) { return prev.map(function (s) { return Object.assign({}, s, { rate: s.rate || defRate }) }) })
+              }}
                 className="w-full px-2 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
                 <option value="">Select role...</option>
                 {roles.map(function (r) { return <option key={r.id} value={r.id}>{r.name}{r.department ? ' (' + r.department + ')' : ''}</option> })}
@@ -257,7 +320,12 @@ function EventManpower({ eventId, profile, departments }) {
             </div>
             <div>
               <label className="block text-[10px] text-gray-500 mb-0.5">Qty Needed *</label>
-              <input type="number" min="1" value={rQty} onChange={function (e) { setRQty(e.target.value) }}
+              <input type="number" min="1" value={rQty} onChange={function (e) {
+                setRQty(e.target.value)
+                var role = roles.find(function (r) { return r.id === Number(rRole) })
+                var defRate = role?.default_rate_paise ? String(role.default_rate_paise / 100) : ''
+                resizeSlots(e.target.value, defRate)
+              }}
                 className="w-full px-2 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
             </div>
             <div>
@@ -267,10 +335,77 @@ function EventManpower({ eventId, profile, departments }) {
                 className="w-full px-2 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
             </div>
           </div>
+          {/* Assignment slots */}
+          {rSlots.length > 0 && (
+            <div className="space-y-2 pt-1">
+              <p className="text-[10px] font-bold text-gray-500 uppercase">Assign ({rSlots.length})</p>
+              {rSlots.map(function (slot, idx) {
+                return (
+                  <div key={idx} className="bg-gray-50 rounded-lg p-2 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] text-gray-400 w-4">{idx + 1}.</span>
+                      <div className="flex bg-white border border-gray-300 rounded-lg overflow-hidden">
+                        {['permanent', 'casual_direct', 'casual_vendor'].map(function (s) {
+                          return (
+                            <button key={s} type="button"
+                              onClick={function () { updateSlot(idx, 'source', s) }}
+                              className={"px-2 py-1 text-[10px] font-bold transition-colors " +
+                                (slot.source === s ? "bg-indigo-600 text-white" : "text-gray-500 hover:bg-gray-50")}>
+                              {SOURCE_LABELS[s]}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      {slot.source === 'permanent' && (
+                        <div className="col-span-2">
+                          <select value={slot.profile_id} onChange={function (e) { updateSlot(idx, 'profile_id', e.target.value) }}
+                            className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white">
+                            <option value="">Select staff...</option>
+                            {profiles.map(function (p) { return <option key={p.id} value={p.id}>{p.name}</option> })}
+                          </select>
+                        </div>
+                      )}
+                      {slot.source !== 'permanent' && (
+                        <>
+                          <div>
+                            <input type="text" value={slot.casual_name} onChange={function (e) { updateSlot(idx, 'casual_name', e.target.value) }}
+                              placeholder="Name *"
+                              className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                          </div>
+                          <div>
+                            <input type="tel" value={slot.casual_phone} onChange={function (e) { updateSlot(idx, 'casual_phone', e.target.value) }}
+                              placeholder="Phone"
+                              className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                          </div>
+                        </>
+                      )}
+                      {slot.source === 'casual_vendor' && (
+                        <div>
+                          <select value={slot.vendor_id} onChange={function (e) { updateSlot(idx, 'vendor_id', e.target.value) }}
+                            className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white">
+                            <option value="">Vendor...</option>
+                            {vendors.map(function (v) { return <option key={v.id} value={v.id}>{v.name}</option> })}
+                          </select>
+                        </div>
+                      )}
+                      <div>
+                        <input type="number" min="0" value={slot.rate} onChange={function (e) { updateSlot(idx, 'rate', e.target.value) }}
+                          placeholder="₹ Rate"
+                          className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
           <div className="flex gap-2">
             <button onClick={addRequirement} disabled={saving || !rRole}
               className="px-3 py-1.5 bg-indigo-600 text-white text-xs font-semibold rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors">
-              {saving ? '...' : 'Add'}
+              {saving ? '...' : 'Save'}
             </button>
             <button onClick={resetReqForm}
               className="px-3 py-1.5 border border-gray-300 text-xs font-medium rounded-lg text-gray-600 hover:bg-gray-50 transition-colors">
