@@ -93,6 +93,7 @@ function Challans({ profile }) {
   var [formDriver, setFormDriver] = useState('')
   var [formDriverPhone, setFormDriverPhone] = useState('')
   var [formNotes, setFormNotes] = useState('')
+  var [formEventDate, setFormEventDate] = useState('')
   var [formDispatchDate, setFormDispatchDate] = useState('')
   var [dateEvents, setDateEvents] = useState([])
   var [dateEventsLoading, setDateEventsLoading] = useState(false)
@@ -171,7 +172,7 @@ function Challans({ profile }) {
     setLoading(true)
     var { data, error } = await supabase
       .from('challans')
-      .select('id, challan_no, type, source_venue_id, destination_venue_id, destination_text, event_id, return_for_challan_id, vehicle_no, driver_name, status, dispatched_at, received_at, notes, created_at')
+      .select('id, challan_no, type, source_venue_id, destination_venue_id, destination_text, event_id, return_for_challan_id, vehicle_no, driver_name, driver_phone, status, dispatch_date, dispatched_at, received_at, notes, created_at')
       .order('created_at', { ascending: false })
       .limit(PAGE_SIZE)
 
@@ -193,9 +194,23 @@ function Challans({ profile }) {
     setFormDriver(challan?.driver_name || '')
     setFormDriverPhone(challan?.driver_phone || '')
     setFormNotes(challan?.notes || '')
-    setFormDispatchDate('')
-    setDateEvents([])
     setView('form')
+
+    // Pre-fill dates for dispatch challan edit
+    if ((challan?.type === 'event_dispatch') && challan?.event_id) {
+      var linkedEv = events.find(function (e) { return e.id === challan.event_id })
+      if (linkedEv) {
+        setFormEventDate(linkedEv.contract_date)
+        loadEventsByDate(linkedEv.contract_date)
+      } else {
+        setFormEventDate('')
+        setDateEvents([])
+      }
+    } else {
+      setFormEventDate('')
+      setDateEvents([])
+    }
+    setFormDispatchDate(challan?.dispatch_date || '')
     // Load dispatch challans for return linking
     if (!challan || challan.type === 'event_return') {
       supabase.from('challans')
@@ -208,7 +223,6 @@ function Challans({ profile }) {
     }
   }
 
-  var showEventField = formType === 'event_dispatch' || formType === 'event_return'
   var showDestText = formType === 'repair'
   var showReturnFor = formType === 'event_return'
 
@@ -239,6 +253,7 @@ function Challans({ profile }) {
       driver_name: formDriver.trim() || null,
       driver_phone: formDriverPhone.trim() || null,
       notes: formNotes.trim() || null,
+      dispatch_date: formDispatchDate || null,
     }
 
     if (editChallan) {
@@ -579,8 +594,10 @@ function Challans({ profile }) {
     if (saving) return
     setSaving(true)
 
+    var returnType = activeChallan.type === 'inter_store' ? 'inter_store' : 'event_return'
+
     var payload = {
-      type: 'event_return',
+      type: returnType,
       source_venue_id: activeChallan.destination_venue_id,
       destination_venue_id: activeChallan.source_venue_id,
       event_id: activeChallan.event_id || null,
@@ -752,7 +769,7 @@ function Challans({ profile }) {
           {/* Type */}
           <div>
             <label className="block text-xs font-semibold text-gray-500 mb-1">Movement Type *</label>
-            <select value={formType} onChange={function (e) { setFormType(e.target.value); setFormDispatchDate(''); setDateEvents([]); setFormEvent('') }}
+            <select value={formType} onChange={function (e) { setFormType(e.target.value); setFormEventDate(''); setFormDispatchDate(''); setDateEvents([]); setFormEvent('') }}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
               {Object.keys(TYPE_LABELS).map(function (k) {
                 return <option key={k} value={k}>{TYPE_LABELS[k]}</option>
@@ -793,16 +810,27 @@ function Challans({ profile }) {
             </div>
           </div>
 
-          {/* Event picker — dispatch: date-filtered, return: full list */}
+          {/* Event dispatch: event date → event picker → dispatch date */}
           {formType === 'event_dispatch' && (
             <div className="space-y-3">
-              <div>
-                <label className="block text-xs font-semibold text-gray-500 mb-1">Dispatch Date</label>
-                <input type="date" value={formDispatchDate}
-                  onChange={function (e) { setFormDispatchDate(e.target.value); setFormEvent(''); loadEventsByDate(e.target.value) }}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 mb-1">Event Date *</label>
+                  <input type="date" value={formEventDate}
+                    onChange={function (e) { setFormEventDate(e.target.value); setFormEvent(''); loadEventsByDate(e.target.value) }}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 mb-1">Dispatch Date</label>
+                  <input type="date" value={formDispatchDate}
+                    onChange={function (e) { setFormDispatchDate(e.target.value) }}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                  {formEventDate && formDispatchDate && formDispatchDate > formEventDate && (
+                    <p className="text-[10px] text-red-500 mt-1">Dispatch date is after event date</p>
+                  )}
+                </div>
               </div>
-              {formDispatchDate && (
+              {formEventDate && (
                 <div>
                   <label className="block text-xs font-semibold text-gray-500 mb-1">
                     Event {dateEventsLoading ? '(loading...)' : '(' + dateEvents.length + ' on this date)'}
@@ -936,6 +964,7 @@ function Challans({ profile }) {
             <div><strong className="text-gray-500">To:</strong> {activeChallan.destination_text || venueName(activeChallan.destination_venue_id)}</div>
             {activeChallan.vehicle_no && <div><strong className="text-gray-500">Vehicle:</strong> {activeChallan.vehicle_no}</div>}
             {activeChallan.driver_name && <div><strong className="text-gray-500">Driver:</strong> {activeChallan.driver_name}{activeChallan.driver_phone ? ' (' + activeChallan.driver_phone + ')' : ''}</div>}
+            {activeChallan.dispatch_date && <div><strong className="text-gray-500">Planned Dispatch:</strong> {formatDate(activeChallan.dispatch_date)}</div>}
             {activeChallan.dispatched_at && <div><strong className="text-gray-500">Dispatched:</strong> {formatDate(activeChallan.dispatched_at)}</div>}
             {activeChallan.received_at && <div><strong className="text-gray-500">Received:</strong> {formatDate(activeChallan.received_at)}</div>}
           </div>
@@ -974,7 +1003,7 @@ function Challans({ profile }) {
               {saving ? '...' : '🔒 Close Challan'}
             </button>
           )}
-          {isReceived && activeChallan.type === 'event_dispatch' && (
+          {isReceived && (activeChallan.type === 'event_dispatch' || activeChallan.type === 'inter_store') && (
             <button onClick={createReturnChallan} disabled={saving}
               className="px-4 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors">
               {saving ? '...' : '🔄 Create Return Challan'}
