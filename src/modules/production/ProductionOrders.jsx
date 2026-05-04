@@ -22,6 +22,21 @@ var NEXT_STATUS = {
   in_progress: 'completed',
 }
 
+function RefImage({ path }) {
+  var [url, setUrl] = useState('')
+  useEffect(function () {
+    supabase.storage.from('production-images')
+      .createSignedUrl(path, 3600)
+      .then(function (r) { if (r.data?.signedUrl) setUrl(r.data.signedUrl) })
+  }, [path])
+  if (!url) return <div className="w-full h-40 bg-gray-100 rounded-lg flex items-center justify-center text-gray-400 text-sm">Loading...</div>
+  return (
+    <a href={url} target="_blank" rel="noopener noreferrer">
+      <img src={url} alt="Reference" className="max-h-64 rounded-lg border border-gray-200 object-contain hover:border-indigo-400 transition-colors" />
+    </a>
+  )
+}
+
 function ProductionOrders({ profile }) {
   var [view, setView] = useState('list')
   var [orders, setOrders] = useState([])
@@ -59,6 +74,9 @@ function ProductionOrders({ profile }) {
   var [fNotes, setFNotes] = useState('')
   var [fCat, setFCat] = useState('')
   var [fSubCat, setFSubCat] = useState('')
+  var [fRefImage, setFRefImage] = useState(null) // File object
+  var [fRefPreview, setFRefPreview] = useState('') // preview URL or existing signed URL
+  var [refUploading, setRefUploading] = useState(false)
 
   // Detail
   var [activeOrder, setActiveOrder] = useState(null)
@@ -106,7 +124,7 @@ function ProductionOrders({ profile }) {
     setLoading(true)
     var { data } = await supabase
       .from('production_orders')
-      .select('id, event_id, item_id, item_source, qty_ordered, qty_completed, description, department, assigned_to, deadline, status, cost_paise, completed_at, notes, created_by, created_at')
+      .select('id, event_id, item_id, item_source, qty_ordered, qty_completed, description, department, assigned_to, deadline, status, cost_paise, completed_at, notes, reference_image, created_by, created_at')
       .order('created_at', { ascending: false })
       .limit(200)
 
@@ -189,7 +207,41 @@ function ProductionOrders({ profile }) {
     setFSearchResults([])
     setFCat(order?.item_cat_id ? String(order.item_cat_id) : '')
     setFSubCat('')
+    setFRefImage(null)
+    setFRefPreview('')
+    if (order?.reference_image) {
+      supabase.storage.from('production-images')
+        .createSignedUrl(order.reference_image, 3600)
+        .then(function (r) { if (r.data?.signedUrl) setFRefPreview(r.data.signedUrl) })
+    }
     setView('form')
+  }
+
+  async function uploadRefImage(file) {
+    if (!file) return null
+    var blob = file
+    if (file.size > 2 * 1024 * 1024) {
+      blob = await new Promise(function (resolve) {
+        var img = new Image()
+        img.onload = function () {
+          var canvas = document.createElement('canvas')
+          var maxDim = 1600; var w = img.width; var h = img.height
+          if (w > maxDim || h > maxDim) {
+            if (w > h) { h = Math.round(h * maxDim / w); w = maxDim }
+            else { w = Math.round(w * maxDim / h); h = maxDim }
+          }
+          canvas.width = w; canvas.height = h
+          canvas.getContext('2d').drawImage(img, 0, 0, w, h)
+          canvas.toBlob(function (b) { resolve(b) }, 'image/jpeg', 0.7)
+        }
+        img.src = URL.createObjectURL(file)
+      })
+    }
+    var ext = file.name.split('.').pop() || 'jpg'
+    var path = 'ref/' + Date.now() + '.' + ext
+    var { error } = await supabase.storage.from('production-images').upload(path, blob, { upsert: false, contentType: 'image/jpeg' })
+    if (error) { alert('Upload failed: ' + error.message); return null }
+    return path
   }
 
   async function saveOrder() {
@@ -207,6 +259,12 @@ function ProductionOrders({ profile }) {
       deadline: fDeadline || null,
       cost_paise: fCost ? Math.round(Number(fCost) * 100) : 0,
       notes: fNotes.trim() || null,
+    }
+
+    // Upload reference image if new file selected
+    if (fRefImage) {
+      var imgPath = await uploadRefImage(fRefImage)
+      if (imgPath) payload.reference_image = imgPath
     }
 
     if (editOrder) {
@@ -513,12 +571,6 @@ function ProductionOrders({ profile }) {
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
                 <option value="">Unassigned</option>
                 {filteredProfiles.map(function (p) { return <option key={p.id} value={p.id}>{p.name}</option> })}
-                {fDept && filteredProfiles.length > 0 && profiles.length > filteredProfiles.length && (
-                  <option disabled>── other users ──</option>
-                )}
-                {fDept && profiles.filter(function (p) { return filteredProfiles.indexOf(p) === -1 }).map(function (p) {
-                  return <option key={p.id} value={p.id} className="text-gray-400">{p.name}</option>
-                })}
               </select>
             </div>
           </div>
@@ -531,6 +583,34 @@ function ProductionOrders({ profile }) {
               placeholder="What needs to be fabricated/assembled..."
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
           </div>
+          {/* Reference Image */}
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 mb-1">Reference Image</label>
+            <p className="text-[10px] text-gray-400 mb-2">Upload a photo of what needs to be produced — visible to production team</p>
+            {fRefPreview && (
+              <div className="relative inline-block mb-2">
+                <img src={fRefPreview} alt="Reference" className="h-40 rounded-lg border border-gray-200 object-cover" />
+                <button type="button" onClick={function () { setFRefImage(null); setFRefPreview('') }}
+                  className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full text-xs flex items-center justify-center shadow-sm hover:bg-red-600">✕</button>
+              </div>
+            )}
+            {!fRefPreview && (
+              <label className={"inline-block text-xs px-4 py-2 rounded-lg font-semibold cursor-pointer transition-colors " +
+                "border border-gray-300 text-gray-600 hover:bg-gray-50"}>
+                📷 Choose Image
+                <input type="file" accept="image/*" capture="environment" className="hidden"
+                  onChange={function (e) {
+                    var file = e.target.files?.[0]
+                    if (file) {
+                      setFRefImage(file)
+                      setFRefPreview(URL.createObjectURL(file))
+                    }
+                    e.target.value = ''
+                  }} />
+              </label>
+            )}
+          </div>
+
           <div>
             <label className="block text-xs font-semibold text-gray-500 mb-1">Notes</label>
             <textarea value={fNotes} onChange={function (e) { setFNotes(e.target.value) }}
@@ -591,6 +671,14 @@ function ProductionOrders({ profile }) {
           {activeOrder.description && <p className="text-xs text-gray-500">{activeOrder.description}</p>}
           {activeOrder.notes && <p className="text-xs text-gray-400 italic">{activeOrder.notes}</p>}
         </div>
+
+        {/* Reference image */}
+        {activeOrder.reference_image && (
+          <div className="bg-white rounded-xl border border-gray-200 p-4">
+            <p className="text-xs font-bold text-gray-500 uppercase mb-2">Reference Image</p>
+            <RefImage path={activeOrder.reference_image} />
+          </div>
+        )}
 
         {/* Progress */}
         <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
