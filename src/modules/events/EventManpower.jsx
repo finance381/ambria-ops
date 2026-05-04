@@ -68,7 +68,7 @@ function EventManpower({ eventId, profile, departments }) {
         .eq('event_id', eventId)
         .order('created_at'),
       supabase.from('staff_roles').select('id, name, department, default_rate_paise').eq('is_active', true).order('sort_order').order('name'),
-      supabase.from('profiles').select('id, name').eq('is_active', true).order('name'),
+      supabase.from('profiles').select('id, name, event_dept_ids').eq('active', true).order('name'),
       supabase.from('vendors').select('id, name, contact_person, phone').eq('is_active', true).order('name'),
     ])
 

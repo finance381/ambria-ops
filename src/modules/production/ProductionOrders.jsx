@@ -57,6 +57,8 @@ function ProductionOrders({ profile }) {
   var [fDeadline, setFDeadline] = useState('')
   var [fCost, setFCost] = useState('')
   var [fNotes, setFNotes] = useState('')
+  var [fCat, setFCat] = useState('')
+  var [fSubCat, setFSubCat] = useState('')
 
   // Detail
   var [activeOrder, setActiveOrder] = useState(null)
@@ -77,7 +79,7 @@ function ProductionOrders({ profile }) {
       supabase.from('events_safe').select('id, contract_date, client_name, venue_name, event_name')
         .gte('contract_date', new Date(Date.now() - 90 * 86400000).toISOString().split('T')[0])
         .order('contract_date', { ascending: false }).limit(200),
-      supabase.from('profiles').select('id, name, event_dept_ids').eq('is_active', true).order('name'),
+      supabase.from('profiles').select('id, name, event_dept_ids').eq('active', true).order('name'),
       supabase.from('departments').select('id, name').eq('active', true).order('name'),
       supabase.from('categories').select('id, name').order('name'),
       supabase.from('sub_categories').select('id, name, category_id').order('name'),
@@ -142,14 +144,22 @@ function ProductionOrders({ profile }) {
   async function searchItems(q) {
     if (!q || q.length < 2) { setFSearchResults([]); return }
     var results = []
-    var { data: inv } = await supabase.from('inventory_items')
-      .select('id, name, unit, category_id, image_path, categories(name), sub_categories(name)').eq('status', 'approved')
-      .ilike('name', '%' + q + '%').limit(10)
-    ;(inv || []).forEach(function (it) { results.push(Object.assign({}, it, { _source: 'inventory' })) })
-    var { data: cs } = await supabase.from('catering_store_items')
-      .select('id, name, unit, category_id, image_path, categories(name), sub_categories(name)').eq('status', 'approved')
-      .ilike('name', '%' + q + '%').limit(10)
-    ;(cs || []).forEach(function (it) { results.push(Object.assign({}, it, { _source: 'catering_store' })) })
+
+    var invQ = supabase.from('inventory_items')
+      .select('id, name, unit, category_id, sub_category_id, image_path, categories(name), sub_categories(name)')
+      .eq('status', 'approved').ilike('name', '%' + q + '%').limit(15)
+    if (fCat) invQ = invQ.eq('category_id', Number(fCat))
+    if (fSubCat) invQ = invQ.eq('sub_category_id', Number(fSubCat))
+
+    var csQ = supabase.from('catering_store_items')
+      .select('id, name, unit, category_id, sub_category_id, image_path, categories(name), sub_categories(name)')
+      .eq('status', 'approved').ilike('name', '%' + q + '%').limit(15)
+    if (fCat) csQ = csQ.eq('category_id', Number(fCat))
+    if (fSubCat) csQ = csQ.eq('sub_category_id', Number(fSubCat))
+
+    var [invRes, csRes] = await Promise.all([invQ, csQ])
+    ;(invRes.data || []).forEach(function (it) { results.push(Object.assign({}, it, { _source: 'inventory' })) })
+    ;(csRes.data || []).forEach(function (it) { results.push(Object.assign({}, it, { _source: 'catering_store' })) })
     setFSearchResults(results)
   }
 
@@ -177,6 +187,8 @@ function ProductionOrders({ profile }) {
     setFCost(order?.cost_paise ? String(order.cost_paise / 100) : '')
     setFNotes(order?.notes || '')
     setFSearchResults([])
+    setFCat(order?.item_cat_id ? String(order.item_cat_id) : '')
+    setFSubCat('')
     setView('form')
   }
 
@@ -377,9 +389,31 @@ function ProductionOrders({ profile }) {
             )}
           </div>
 
+          {/* Category → Sub-category → Item */}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 mb-1">Category</label>
+              <select value={fCat} onChange={function (e) { setFCat(e.target.value); setFSubCat(''); setFItem(null); setFItemSearch(''); setFSearchResults([]) }}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                <option value="">All categories</option>
+                {categories.map(function (c) { return <option key={c.id} value={c.id}>{c.name}</option> })}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 mb-1">Sub-category</label>
+              <select value={fSubCat} onChange={function (e) { setFSubCat(e.target.value); setFItem(null); setFItemSearch(''); setFSearchResults([]) }}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                <option value="">All sub-categories</option>
+                {subCategories.filter(function (sc) { return !fCat || sc.category_id === Number(fCat) }).map(function (sc) {
+                  return <option key={sc.id} value={sc.id}>{sc.name}</option>
+                })}
+              </select>
+            </div>
+          </div>
+
           {/* Item search */}
           <div>
-            <label className="block text-xs font-semibold text-gray-500 mb-1">Item *</label>
+            <label className="block text-xs font-semibold text-gray-500 mb-1">Item *{fCat ? '' : ' (select category to narrow results)'}</label>
             <div className="relative">
               <input type="text" value={fItemSearch}
                 onChange={function (e) {

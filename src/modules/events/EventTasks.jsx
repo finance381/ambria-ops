@@ -67,7 +67,7 @@ function EventTasks({ eventId, profile, departments }) {
 
   async function loadProfiles() {
     var { data } = await supabase.from('profiles').select('id, name')
-      .eq('is_active', true).order('name')
+      .eq('active', true).order('name')
     setProfiles(data || [])
   }
 
