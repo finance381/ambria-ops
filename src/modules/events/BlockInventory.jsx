@@ -52,7 +52,7 @@ function BlockInventory({ func, profile, onDone }) {
 
   async function loadData() {
     // 1. Load existing blocked items + categories only (not full catalog)
-    var catQuery = supabase.from('categories').select('id, name').eq('active', true).order('name')
+    var catQuery = supabase.from('categories').select('id, name').order('name')
     if (!isAdmin && myCatIds.length > 0) catQuery = catQuery.in('id', myCatIds)
 
     var [existingRes, catRes] = await Promise.all([
