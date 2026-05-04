@@ -571,7 +571,7 @@ function Challans({ profile }) {
     if (error) { alert('Failed: ' + error.message); setSaving(false); return }
 
     // Return type: update box statuses back to stored
-    if (activeChallan.type === 'event_return') {
+    if (activeChallan.type === 'event_return' || (activeChallan.type === 'inter_store' && activeChallan.return_for_challan_id)) {
       var boxIds = []
       challanItems.forEach(function (ci) {
         if (ci.box_id && boxIds.indexOf(ci.box_id) === -1) boxIds.push(ci.box_id)
