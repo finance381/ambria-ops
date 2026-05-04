@@ -619,11 +619,6 @@ function Events({ profile }) {
                           className="flex-1 py-3 text-sm font-bold text-green-600 hover:bg-green-50 active:bg-green-100 transition-colors">
                           ✓ Tasks
                         </button>
-                        <div className="w-px bg-gray-100" />
-                        <button onClick={function (e) { e.stopPropagation(); openFunctionDetail(f) }}
-                          className="flex-1 py-3 text-sm font-bold text-emerald-600 hover:bg-emerald-50 active:bg-emerald-100 transition-colors">
-                          ✓ Tasks
-                        </button>
                       </div>
                     </div>
                   )
