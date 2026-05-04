@@ -598,51 +598,29 @@ function Events({ profile }) {
               </h4>
               <div className="space-y-2">
                 {selectedGroup.functions.map(function (f) {
-                  var itemCount = (f.event_items || []).length
                   return (
-                    <div key={f.id} className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-                      <div onClick={function () { openFunctionDetail(f) }}
-                        className="p-4 hover:bg-gray-50 cursor-pointer transition-colors">
-                        <div className="flex items-start justify-between mb-2">
-                          <div>
-                            <h5 className="font-semibold text-gray-800">{f.event_name || f.contract_type || '—'}</h5>
-                            {f.contract_no && <span className="text-[11px] font-mono bg-gray-100 text-gray-600 px-2 py-0.5 rounded">#{f.contract_no}</span>}
+                    <div key={f.id} onClick={function () { openFunctionDetail(f) }}
+                      className="bg-white border border-gray-200 rounded-lg p-3 hover:bg-indigo-50 cursor-pointer transition-colors active:bg-indigo-100">
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <h5 className="font-semibold text-gray-800 text-sm truncate">{f.event_name || f.contract_type || '—'}</h5>
+                            {f.department && <Badge color="indigo">{f.department}</Badge>}
                           </div>
-                          {f.department && <Badge color="indigo">{f.department}</Badge>}
-                        </div>
-                        <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-500">
-                          <span>📅 {formatDate(f.contract_date)}</span>
-                          {f.venue_name && <span>🏛️ {f.venue_name}</span>}
-                          {f.session && <span>🕐 {f.session}</span>}
-                          {f.total_plates > 0 && <span>🍽️ {f.total_plates} plates</span>}
-                          {f.catering && <span>🍴 {f.catering}</span>}
-                          {(f.event_items || []).length > 0 && <span>📦 {(f.event_items || []).length} blocked</span>}
-                        </div>
-                        {isAdmin && f.balance_amount !== null && f.balance_amount !== 0 && (
-                          <div className="mt-2 pt-2 border-t border-gray-100">
-                            <span className={"text-xs font-medium " + (f.balance_amount < 0 ? "text-red-600" : "text-green-600")}>
-                              Balance: {formatPaise(Math.abs(f.balance_amount))} {f.balance_amount < 0 ? 'due' : 'advance'}
-                            </span>
+                          <div className="flex flex-wrap gap-x-2 gap-y-0.5 text-[11px] text-gray-500 mt-1">
+                            <span>{formatDate(f.contract_date)}</span>
+                            {f.venue_name && <span>· {f.venue_name}</span>}
+                            {f.session && <span>· {f.session}</span>}
+                            {f.blocked_count > 0 && <span>· 📦 {f.blocked_count}</span>}
                           </div>
-                        )}
+                        </div>
+                        <span className="text-gray-300 ml-2 flex-shrink-0">›</span>
                       </div>
-                      {/* Action buttons */}
-                      <div className="flex border-t border-gray-100">
-                        <button onClick={function (e) { e.stopPropagation(); setBlockingFunc(f); setSelectedGroup(null) }}
-                          className="flex-1 py-3 text-sm font-bold text-indigo-600 hover:bg-indigo-50 active:bg-indigo-100 transition-colors">
-                          🔒 Block
-                        </button>
-                        <div className="w-px bg-gray-100" />
-                        <button onClick={function (e) { e.stopPropagation(); setBriefFunc(f); setSelectedGroup(null) }}
-                          className="flex-1 py-3 text-sm font-bold text-amber-600 hover:bg-amber-50 active:bg-amber-100 transition-colors">
-                          📎 Brief
-                        </button>
-                        <div className="w-px bg-gray-100" />
-                        <button onClick={function (e) { e.stopPropagation(); openFunctionDetail(f) }}
-                          className="flex-1 py-3 text-sm font-bold text-green-600 hover:bg-green-50 active:bg-green-100 transition-colors">
-                          ✓ Tasks
-                        </button>
-                      </div>
+                      {isAdmin && f.balance_amount !== null && f.balance_amount !== 0 && (
+                        <p className={"text-[11px] font-medium mt-1 " + (f.balance_amount < 0 ? "text-red-600" : "text-green-600")}>
+                          {formatPaise(Math.abs(f.balance_amount))} {f.balance_amount < 0 ? 'due' : 'advance'}
+                        </p>
+                      )}
                     </div>
                   )
                 })}
