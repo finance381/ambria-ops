@@ -141,11 +141,7 @@ function BlockInventory({ func, profile, onDone }) {
 
   function getAvailable(item) {
     var entry = availMap[item.id]
-    var base = entry ? entry.available : item.qty
-    // Add back what's already blocked for THIS event (so user can adjust)
-    var existingSel = selections[item.id]
-    var alreadyBlocked = existingSel?.existingQty || 0
-    return base + alreadyBlocked
+    return entry ? entry.available : item.qty
   }
 
   function getTentative(item) {
