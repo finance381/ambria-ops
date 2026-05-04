@@ -6,6 +6,7 @@ import Modal from '../../components/ui/Modal'
 import BlockInventory from './BlockInventory'
 import EventTasks from './EventTasks'
 import EventManpower from './EventManpower'
+import EventPnL from './EventPnL'
 import BriefUpload from './BriefUpload'
 import { logActivity } from '../../lib/logger'
 
@@ -855,6 +856,13 @@ function Events({ profile }) {
                 departments={departments}
               />
             </div>
+
+            {/* P&L — admin only */}
+            {isAdmin && (
+              <div className="bg-white border border-gray-200 rounded-lg p-4">
+                <EventPnL eventId={selectedFunction.id} />
+              </div>
+            )}
 
             {selectedFunction.synced_at && (
               <p className="text-xs text-gray-400 text-right">Last synced: {formatDate(selectedFunction.synced_at)}</p>
