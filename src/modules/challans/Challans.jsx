@@ -93,6 +93,9 @@ function Challans({ profile }) {
   var [formDriver, setFormDriver] = useState('')
   var [formDriverPhone, setFormDriverPhone] = useState('')
   var [formNotes, setFormNotes] = useState('')
+  var [formDispatchDate, setFormDispatchDate] = useState('')
+  var [dateEvents, setDateEvents] = useState([])
+  var [dateEventsLoading, setDateEventsLoading] = useState(false)
 
   // Detail state
   var [activeChallan, setActiveChallan] = useState(null)
@@ -141,6 +144,29 @@ function Challans({ profile }) {
     setBoxes(results[2].value?.data || [])
   }
 
+  async function loadEventsByDate(date) {
+    if (!date) { setDateEvents([]); return }
+    setDateEventsLoading(true)
+    var { data } = await supabase.from('events_safe')
+      .select('id, contract_date, client_name, venue_name, event_name, contract_no')
+      .eq('contract_date', date)
+      .order('event_name')
+    setDateEvents(data || [])
+    setDateEventsLoading(false)
+  }
+
+  function onDispatchEventChange(eventId) {
+    setFormEvent(eventId)
+    if (!eventId) return
+    var ev = dateEvents.find(function (e) { return String(e.id) === eventId })
+    if (!ev || !ev.venue_name) return
+    // Match venue_name to venues list for auto-fill
+    var match = venues.find(function (v) {
+      return v.name === ev.venue_name || ev.venue_name.indexOf(v.name) !== -1 || ev.venue_name.indexOf(v.code) !== -1
+    })
+    if (match) setFormDestVenue(String(match.id))
+  }
+
   async function loadChallans() {
     setLoading(true)
     var { data, error } = await supabase
@@ -167,8 +193,9 @@ function Challans({ profile }) {
     setFormDriver(challan?.driver_name || '')
     setFormDriverPhone(challan?.driver_phone || '')
     setFormNotes(challan?.notes || '')
+    setFormDispatchDate('')
+    setDateEvents([])
     setView('form')
-
     // Load dispatch challans for return linking
     if (!challan || challan.type === 'event_return') {
       supabase.from('challans')
@@ -546,6 +573,51 @@ function Challans({ profile }) {
     loadChallans()
   }
 
+  // ── CREATE RETURN ──
+
+  async function createReturnChallan() {
+    if (saving) return
+    setSaving(true)
+
+    var payload = {
+      type: 'event_return',
+      source_venue_id: activeChallan.destination_venue_id,
+      destination_venue_id: activeChallan.source_venue_id,
+      event_id: activeChallan.event_id || null,
+      return_for_challan_id: activeChallan.id,
+      created_by: profile.id,
+      challan_no: '',
+    }
+
+    var { data: newChallan, error } = await supabase.from('challans').insert(payload).select().single()
+    if (error) { alert('Failed: ' + error.message); setSaving(false); return }
+
+    // Copy items — qty_sent = dispatch qty_received (what actually arrived)
+    if (challanItems.length > 0) {
+      var rows = challanItems.filter(function (ci) {
+        return (ci.qty_received || 0) > 0
+      }).map(function (ci) {
+        var row = {
+          challan_id: newChallan.id,
+          qty_sent: ci.qty_received != null ? ci.qty_received : ci.qty_sent,
+        }
+        if (ci.inventory_item_id) row.inventory_item_id = ci.inventory_item_id
+        if (ci.cs_item_id) row.cs_item_id = ci.cs_item_id
+        if (ci.event_item_id) row.event_item_id = ci.event_item_id
+        if (ci.box_id) row.box_id = ci.box_id
+        return row
+      })
+      if (rows.length > 0) {
+        await supabase.from('challan_items').insert(rows)
+      }
+    }
+
+    await logActivity('CHALLAN_CREATE', 'Return ' + newChallan.challan_no + ' for ' + activeChallan.challan_no)
+    setSaving(false)
+    openDetail(newChallan)
+    loadChallans()
+  }
+
   // ── PHOTOS ──
 
   async function loadPhotos(challanId) {
@@ -680,7 +752,7 @@ function Challans({ profile }) {
           {/* Type */}
           <div>
             <label className="block text-xs font-semibold text-gray-500 mb-1">Movement Type *</label>
-            <select value={formType} onChange={function (e) { setFormType(e.target.value) }}
+            <select value={formType} onChange={function (e) { setFormType(e.target.value); setFormDispatchDate(''); setDateEvents([]); setFormEvent('') }}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
               {Object.keys(TYPE_LABELS).map(function (k) {
                 return <option key={k} value={k}>{TYPE_LABELS[k]}</option>
@@ -721,8 +793,39 @@ function Challans({ profile }) {
             </div>
           </div>
 
-          {/* Event picker */}
-          {showEventField && (
+          {/* Event picker — dispatch: date-filtered, return: full list */}
+          {formType === 'event_dispatch' && (
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 mb-1">Dispatch Date</label>
+                <input type="date" value={formDispatchDate}
+                  onChange={function (e) { setFormDispatchDate(e.target.value); setFormEvent(''); loadEventsByDate(e.target.value) }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+              </div>
+              {formDispatchDate && (
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 mb-1">
+                    Event {dateEventsLoading ? '(loading...)' : '(' + dateEvents.length + ' on this date)'}
+                  </label>
+                  {dateEvents.length === 0 && !dateEventsLoading && (
+                    <p className="text-xs text-amber-600 py-1">No events on this date. You can still create the challan without linking an event.</p>
+                  )}
+                  {dateEvents.length > 0 && (
+                    <select value={formEvent} onChange={function (e) { onDispatchEventChange(e.target.value) }}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                      <option value="">Select event...</option>
+                      {dateEvents.map(function (ev) {
+                        return <option key={ev.id} value={ev.id}>
+                          {(ev.client_name || '') + ' — ' + (ev.venue_name || '') + ' — ' + (ev.event_name || '') + (ev.contract_no ? ' #' + ev.contract_no : '')}
+                        </option>
+                      })}
+                    </select>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+          {formType === 'event_return' && (
             <div>
               <label className="block text-xs font-semibold text-gray-500 mb-1">Event</label>
               <select value={formEvent} onChange={function (e) { setFormEvent(e.target.value) }}
@@ -871,29 +974,36 @@ function Challans({ profile }) {
               {saving ? '...' : '🔒 Close Challan'}
             </button>
           )}
+          {isReceived && activeChallan.type === 'event_dispatch' && (
+            <button onClick={createReturnChallan} disabled={saving}
+              className="px-4 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors">
+              {saving ? '...' : '🔄 Create Return Challan'}
+            </button>
+          )}
         </div>
 
         {/* Add items (draft only) */}
         {isDraft && (
           <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
-            <div className="flex items-center gap-2">
-              <p className="text-xs font-bold text-gray-500 uppercase flex-1">Add Items</p>
-              <button onClick={function () { setAddMode(addMode === 'item' ? '' : 'item') }}
-                className={"text-xs px-3 py-1 rounded-lg font-medium transition-colors " +
-                  (addMode === 'item' ? 'bg-indigo-100 text-indigo-700' : 'border border-gray-300 text-gray-600 hover:bg-gray-50')}>
+            <div className="flex items-center gap-2 border-b border-gray-100 pb-3">
+              <p className="text-xs font-bold text-gray-500 uppercase">Add Items</p>
+              <div className="flex-1" />
+              <button onClick={function () { setAddMode(addMode === 'item' ? '' : 'item'); setAddItemSearch(''); setSelectedItem(null); setSearchResults([]) }}
+                className={"text-xs px-4 py-1.5 rounded-lg font-semibold transition-colors " +
+                  (addMode === 'item' ? 'bg-indigo-600 text-white shadow-sm' : 'border border-gray-300 text-gray-600 hover:bg-gray-50')}>
                 + Item
               </button>
               <button onClick={function () { setAddMode(addMode === 'box' ? '' : 'box') }}
-                className={"text-xs px-3 py-1 rounded-lg font-medium transition-colors " +
-                  (addMode === 'box' ? 'bg-indigo-100 text-indigo-700' : 'border border-gray-300 text-gray-600 hover:bg-gray-50')}>
+                className={"text-xs px-4 py-1.5 rounded-lg font-semibold transition-colors " +
+                  (addMode === 'box' ? 'bg-indigo-600 text-white shadow-sm' : 'border border-gray-300 text-gray-600 hover:bg-gray-50')}>
                 + Box
               </button>
             </div>
 
-            {/* Add individual item */}
+            {/* Add individual item — single row layout */}
             {addMode === 'item' && (
-              <div className="space-y-2">
-                <div className="relative">
+              <div className="flex items-center gap-3">
+                <div className="relative flex-1 min-w-0">
                   <input type="text" value={addItemSearch}
                     onChange={function (e) {
                       setAddItemSearch(e.target.value)
@@ -901,16 +1011,16 @@ function Challans({ profile }) {
                       searchItems(e.target.value)
                     }}
                     placeholder="Search inventory..."
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                    className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
                   {searchResults.length > 0 && !selectedItem && (
-                    <div className="absolute z-20 top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                    <div className="absolute z-20 top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg max-h-56 overflow-y-auto">
                       {searchResults.map(function (item) {
                         return (
                           <button key={item.source_type + '-' + item.id}
                             onClick={function () { pickItem(item) }}
-                            className="w-full text-left px-3 py-2 hover:bg-gray-50 border-b border-gray-100 last:border-0">
+                            className="w-full text-left px-4 py-2.5 hover:bg-indigo-50 border-b border-gray-100 last:border-0 flex items-center justify-between">
                             <span className="text-sm font-medium text-gray-800">{item.name}</span>
-                            <span className="text-[10px] text-gray-400 ml-2">{item.unit} · Stock: {item.qty}</span>
+                            <span className="text-[10px] text-gray-400 ml-3 flex-shrink-0">{item.unit} · Stock: {item.qty}</span>
                           </button>
                         )
                       })}
@@ -918,47 +1028,48 @@ function Challans({ profile }) {
                   )}
                 </div>
                 {selectedItem && (
-                  <div className="flex items-center gap-3">
-                    <span className="text-sm text-gray-700 flex-1">{selectedItem.name}</span>
-                    <input type="number" value={addQty}
-                      onChange={function (e) { setAddQty(e.target.value) }}
-                      min="1" placeholder="Qty"
-                      className="w-20 px-2 py-1.5 border border-gray-300 rounded-lg text-sm text-center focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-                    <button onClick={addItemToChallan} disabled={saving}
-                      className="px-4 py-1.5 bg-green-600 text-white text-sm font-semibold rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors">
-                      {saving ? '...' : 'Add'}
-                    </button>
-                  </div>
+                  <input type="number" value={addQty}
+                    onChange={function (e) { setAddQty(e.target.value) }}
+                    min="1" placeholder="Qty"
+                    className="w-20 px-2 py-2.5 border border-gray-300 rounded-lg text-sm text-center focus:outline-none focus:ring-2 focus:ring-indigo-500 flex-shrink-0" />
+                )}
+                {selectedItem && (
+                  <button onClick={addItemToChallan} disabled={saving}
+                    className="px-5 py-2.5 bg-green-600 text-white text-sm font-semibold rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors flex-shrink-0">
+                    {saving ? '...' : '✓ Add'}
+                  </button>
                 )}
               </div>
             )}
 
-            {/* Add box */}
+            {/* Add box — grid layout */}
             {addMode === 'box' && (
-              <div className="space-y-2">
+              <div>
                 {boxes.length === 0 && (
-                  <p className="text-xs text-gray-400">No boxes available (stored/packed status only)</p>
+                  <p className="text-xs text-gray-400 py-2">No boxes available (stored/packed status only)</p>
                 )}
-                {boxes.map(function (box) {
-                  var alreadyAdded = challanItems.some(function (ci) { return ci.box_id === box.id })
-                  return (
-                    <div key={box.id} className="flex items-center gap-3 py-2 px-3 bg-gray-50 rounded-lg">
-                      <div className="flex-1">
-                        <span className="text-sm font-bold text-gray-800">{box.code}</span>
-                        {box.label && <span className="text-xs text-gray-500 ml-2">{box.label}</span>}
-                        <span className="text-[10px] text-gray-400 ml-2">{box.department}</span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                  {boxes.map(function (box) {
+                    var alreadyAdded = challanItems.some(function (ci) { return ci.box_id === box.id })
+                    return (
+                      <div key={box.id} className={"flex items-center gap-3 py-2.5 px-3 rounded-lg border transition-colors " +
+                        (alreadyAdded ? 'border-green-200 bg-green-50' : 'border-gray-200 bg-gray-50 hover:border-indigo-300')}>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-bold text-gray-800 truncate">{box.code}</p>
+                          <p className="text-[10px] text-gray-400 truncate">{box.label || box.department}</p>
+                        </div>
+                        {alreadyAdded ? (
+                          <span className="text-[10px] text-green-600 font-bold flex-shrink-0">✓ Added</span>
+                        ) : (
+                          <button onClick={function () { addBoxToChallan(box) }} disabled={saving}
+                            className="text-xs px-3 py-1.5 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 disabled:opacity-50 flex-shrink-0">
+                            {saving ? '...' : 'Add'}
+                          </button>
+                        )}
                       </div>
-                      {alreadyAdded ? (
-                        <span className="text-[10px] text-green-600 font-bold">Added</span>
-                      ) : (
-                        <button onClick={function () { addBoxToChallan(box) }} disabled={saving}
-                          className="text-xs px-3 py-1 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 disabled:opacity-50">
-                          {saving ? '...' : 'Add Box'}
-                        </button>
-                      )}
-                    </div>
-                  )
-                })}
+                    )
+                  })}
+                </div>
               </div>
             )}
           </div>
