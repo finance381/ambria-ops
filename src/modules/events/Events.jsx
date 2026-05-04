@@ -107,6 +107,9 @@ function Events({ profile }) {
   var [togglingStatus, setTogglingStatus] = useState({}) // { eventItemId: true }
   var [freedAlert, setFreedAlert] = useState(null)
   var [taskSummary, setTaskSummary] = useState(null)
+  var [manpowerSummary, setManpowerSummary] = useState(null)
+  var [pnlSummary, setPnlSummary] = useState(null)
+  var [detailTab, setDetailTab] = useState(null)
   
 
   var isAdmin = profile?.role === 'admin' || profile?.role === 'auditor'
@@ -180,9 +183,13 @@ function Events({ profile }) {
   async function openFunctionDetail(func) {
     setSelectedFunction(func)
     setTaskSummary(null)
-    var [{ data }, { data: taskData }] = await Promise.all([
+    setManpowerSummary(null)
+    setPnlSummary(null)
+    setDetailTab(null)
+    var [{ data }, { data: taskData }, { data: mpReqs }] = await Promise.all([
       supabase.from('event_items').select('*').eq('event_id', func.id),
       supabase.from('event_tasks').select('status, due_date').eq('event_id', func.id),
+      supabase.from('event_manpower').select('id, qty_required').eq('event_id', func.id),
     ])
     var today = new Date().toISOString().split('T')[0]
     var ts = { overdue: 0, pending: 0, in_progress: 0, done: 0 }
@@ -194,6 +201,22 @@ function Events({ profile }) {
       else { ts.pending++ }
     })
     setTaskSummary(ts)
+
+    // Manpower summary
+    var totalReq = (mpReqs || []).reduce(function (s, r) { return s + r.qty_required }, 0)
+    var totalAssigned = 0
+    if (mpReqs && mpReqs.length > 0) {
+      var reqIds = mpReqs.map(function (r) { return r.id })
+      var { count } = await supabase.from('manpower_assignments').select('id', { count: 'exact', head: true }).in('event_manpower_id', reqIds)
+      totalAssigned = count || 0
+    }
+    setManpowerSummary({ required: totalReq, assigned: totalAssigned })
+
+    // P&L summary (admin only)
+    if (profile?.role === 'admin' || profile?.role === 'auditor') {
+      var { data: pnl } = await supabase.rpc('event_pnl', { p_event_id: func.id })
+      setPnlSummary(pnl || null)
+    }
     var rows = data || []
     var itemIds = [...new Set(rows.map(function (r) { return r.item_id }).filter(Boolean))]
     if (itemIds.length > 0) {
@@ -630,7 +653,7 @@ function Events({ profile }) {
       </Modal>
 
       {/* ═══ FUNCTION DETAIL MODAL ═══ */}
-      <Modal open={!!selectedFunction} onClose={function () { setSelectedFunction(null); setEventItems([]); setTaskSummary(null) }}
+      <Modal open={!!selectedFunction} onClose={function () { setSelectedFunction(null); setEventItems([]); setTaskSummary(null); setManpowerSummary(null); setPnlSummary(null); setDetailTab(null) }}
         title={selectedFunction?.event_name || selectedFunction?.contract_type || ''} wide>
         {selectedFunction && (
           <div className="space-y-6">
@@ -695,25 +718,6 @@ function Events({ profile }) {
               )}
             </div>
 
-            {/* Task summary strip */}
-            {taskSummary && (taskSummary.overdue + taskSummary.pending + taskSummary.in_progress + taskSummary.done > 0) && (
-              <div className={"rounded-lg p-3 flex flex-wrap gap-3 items-center " +
-                (taskSummary.overdue > 0 ? "bg-red-50 border border-red-200" : "bg-gray-50 border border-gray-200")}>
-                {taskSummary.overdue > 0 && (
-                  <span className="text-xs font-bold text-red-600 bg-red-100 px-2 py-1 rounded-full">🔴 {taskSummary.overdue} overdue</span>
-                )}
-                {taskSummary.pending > 0 && (
-                  <span className="text-xs font-medium text-gray-600 bg-gray-100 px-2 py-1 rounded-full">{taskSummary.pending} pending</span>
-                )}
-                {taskSummary.in_progress > 0 && (
-                  <span className="text-xs font-medium text-amber-700 bg-amber-100 px-2 py-1 rounded-full">{taskSummary.in_progress} in progress</span>
-                )}
-                {taskSummary.done > 0 && (
-                  <span className="text-xs font-medium text-green-600 bg-green-100 px-2 py-1 rounded-full">✓ {taskSummary.done} done</span>
-                )}
-              </div>
-            )}
-
             {/* Financial — admin only */}
             {isAdmin && (selectedFunction.balance_received != null || selectedFunction.balance_bank != null || selectedFunction.balance_amount != null) && (
               <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
@@ -736,163 +740,292 @@ function Events({ profile }) {
                 </div>
               </div>
             )}
-              {freedAlert && (
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-3">
-                <div className="flex items-center justify-between mb-2">
-                  <h4 className="text-xs font-bold text-blue-700 uppercase tracking-wider">📢 Freed Inventory — {freedAlert.length} future event{freedAlert.length !== 1 ? 's' : ''} use these items</h4>
-                  <button onClick={function () { setFreedAlert(null) }}
-                    className="text-xs text-blue-400 hover:text-blue-600 font-semibold">Dismiss</button>
-                </div>
-                <div className="space-y-1.5">
-                  {freedAlert.map(function (evt) {
-                    return (
-                      <div key={evt.event_id} className="flex items-center justify-between bg-white rounded px-2.5 py-1.5 border border-blue-100">
-                        <div>
-                          <p className="text-sm font-medium text-gray-800">{evt.event_name || '—'}</p>
-                          <p className="text-[11px] text-gray-400">{evt.venue_name} · {evt.contract_date} · {evt.department}</p>
-                        </div>
-                        <div className="text-right">
-                          {(evt.items || []).map(function (it, ii) {
-                            return <p key={ii} className="text-[11px] text-blue-600 font-medium">{it.item_name}: {it.blocked_qty}</p>
-                          })}
-                        </div>
+              {/* ═══ DASHBOARD VIEW ═══ */}
+            {!detailTab && (function () {
+              var invConfirmed = eventItems.filter(function (ei) { return ei.block_status === 'confirmed' }).length
+              var invTentative = eventItems.filter(function (ei) { return ei.block_status === 'tentative' }).length
+              var invTotal = eventItems.length
+              var mpReq = manpowerSummary ? manpowerSummary.required : 0
+              var mpAsgn = manpowerSummary ? manpowerSummary.assigned : 0
+              var mpUnfilled = mpReq - mpAsgn
+              var tsTotal = taskSummary ? taskSummary.overdue + taskSummary.pending + taskSummary.in_progress + taskSummary.done : 0
+              var pnlProfit = pnlSummary ? pnlSummary.profit_paise : 0
+              var pnlRevenue = pnlSummary ? pnlSummary.revenue_paise : 0
+              var pnlMargin = pnlRevenue > 0 ? Math.round((pnlProfit / pnlRevenue) * 100) : 0
+              return (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    {/* Inventory card */}
+                    <div onClick={function () { setDetailTab('inventory') }}
+                      className={"rounded-xl border p-4 cursor-pointer hover:shadow-sm transition-shadow " +
+                        (invTentative > 0 ? "border-amber-200 bg-amber-50" : "border-gray-200 bg-white")}>
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="w-7 h-7 rounded-lg bg-indigo-100 flex items-center justify-center text-sm">📦</span>
+                        <span className="text-xs font-bold text-gray-500 uppercase">Inventory</span>
                       </div>
+                      <p className="text-2xl font-bold text-gray-800">{invTotal}</p>
+                      {invTotal > 0 ? (
+                        <p className="text-[11px] text-gray-500 mt-1">
+                          <span className="text-green-600 font-medium">{invConfirmed} confirmed</span>
+                          {invTentative > 0 && <span className="text-amber-600 font-medium"> · {invTentative} tentative</span>}
+                        </p>
+                      ) : (
+                        <p className="text-[11px] text-gray-400 mt-1">No items blocked</p>
+                      )}
+                    </div>
+
+                    {/* Manpower card */}
+                    <div onClick={function () { setDetailTab('manpower') }}
+                      className={"rounded-xl border p-4 cursor-pointer hover:shadow-sm transition-shadow " +
+                        (mpUnfilled > 0 ? "border-red-200 bg-red-50" : "border-gray-200 bg-white")}>
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="w-7 h-7 rounded-lg bg-blue-100 flex items-center justify-center text-sm">👷</span>
+                        <span className="text-xs font-bold text-gray-500 uppercase">Manpower</span>
+                      </div>
+                      <p className="text-2xl font-bold text-gray-800">{mpAsgn}<span className="text-base text-gray-400">/{mpReq}</span></p>
+                      {mpUnfilled > 0 ? (
+                        <p className="text-[11px] text-red-600 font-medium mt-1">{mpUnfilled} unfilled</p>
+                      ) : mpReq > 0 ? (
+                        <p className="text-[11px] text-green-600 font-medium mt-1">All filled</p>
+                      ) : (
+                        <p className="text-[11px] text-gray-400 mt-1">Not planned</p>
+                      )}
+                    </div>
+
+                    {/* Tasks card */}
+                    <div onClick={function () { setDetailTab('tasks') }}
+                      className={"rounded-xl border p-4 cursor-pointer hover:shadow-sm transition-shadow " +
+                        (taskSummary && taskSummary.overdue > 0 ? "border-red-200 bg-red-50" : "border-gray-200 bg-white")}>
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className={"w-7 h-7 rounded-lg flex items-center justify-center text-sm " +
+                          (taskSummary && taskSummary.overdue > 0 ? "bg-red-100" : "bg-green-100")}>✓</span>
+                        <span className="text-xs font-bold text-gray-500 uppercase">Tasks</span>
+                      </div>
+                      {taskSummary && taskSummary.overdue > 0 ? (
+                        <p className="text-2xl font-bold text-red-600">{taskSummary.overdue}</p>
+                      ) : (
+                        <p className="text-2xl font-bold text-gray-800">{tsTotal}</p>
+                      )}
+                      {taskSummary && taskSummary.overdue > 0 ? (
+                        <p className="text-[11px] text-red-600 font-medium mt-1">{taskSummary.overdue} overdue · {taskSummary.pending} pending</p>
+                      ) : tsTotal > 0 ? (
+                        <p className="text-[11px] text-gray-500 mt-1">{taskSummary ? taskSummary.pending + ' pending · ' + taskSummary.done + ' done' : ''}</p>
+                      ) : (
+                        <p className="text-[11px] text-gray-400 mt-1">No tasks yet</p>
+                      )}
+                    </div>
+
+                    {/* P&L card — admin only */}
+                    {isAdmin ? (
+                      <div onClick={function () { setDetailTab('pnl') }}
+                        className={"rounded-xl border p-4 cursor-pointer hover:shadow-sm transition-shadow " +
+                          (pnlSummary && pnlProfit < 0 ? "border-red-200 bg-red-50" : "border-gray-200 bg-white")}>
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="w-7 h-7 rounded-lg bg-green-100 flex items-center justify-center text-sm">📊</span>
+                          <span className="text-xs font-bold text-gray-500 uppercase">P&L</span>
+                        </div>
+                        {pnlSummary && pnlRevenue > 0 ? (
+                          <>
+                            <p className={"text-2xl font-bold " + (pnlProfit >= 0 ? "text-green-600" : "text-red-600")}>{pnlMargin}%</p>
+                            <p className="text-[11px] text-gray-500 mt-1">{formatPaise(Math.abs(pnlProfit))} {pnlProfit >= 0 ? 'profit' : 'loss'}</p>
+                          </>
+                        ) : (
+                          <>
+                            <p className="text-2xl font-bold text-gray-300">—</p>
+                            <p className="text-[11px] text-gray-400 mt-1">No financial data</p>
+                          </>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="rounded-xl border border-gray-200 bg-white p-4">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="w-7 h-7 rounded-lg bg-gray-100 flex items-center justify-center text-sm">📋</span>
+                          <span className="text-xs font-bold text-gray-500 uppercase">Brief</span>
+                        </div>
+                        <button onClick={function () { setBriefFunc(selectedFunction); setSelectedFunction(null) }}
+                          className="text-sm text-amber-600 font-medium">Upload brief →</button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Quick actions */}
+                  <div className="flex gap-2">
+                    <button onClick={function () { setBlockingFunc(selectedFunction); setSelectedFunction(null); setSelectedGroup(null) }}
+                      className="flex-1 py-2.5 text-xs font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors">
+                      + Block Items</button>
+                    <button onClick={function () { setDetailTab('tasks') }}
+                      className="flex-1 py-2.5 text-xs font-bold text-indigo-600 border border-indigo-200 rounded-lg hover:bg-indigo-50 transition-colors">
+                      + Add Task</button>
+                    <button onClick={function () { setDetailTab('manpower') }}
+                      className="flex-1 py-2.5 text-xs font-bold text-indigo-600 border border-indigo-200 rounded-lg hover:bg-indigo-50 transition-colors">
+                      + Add Staff</button>
+                  </div>
+                </div>
+              )
+            })()}
+
+            {/* ═══ TAB VIEW ═══ */}
+            {detailTab && (
+              <div className="space-y-4">
+                {/* Tab bar */}
+                <div className="flex border-b border-gray-200">
+                  <button onClick={function () { setDetailTab(null) }}
+                    className="px-3 py-2.5 text-xs font-medium text-indigo-600 hover:bg-indigo-50 transition-colors">← Overview</button>
+                  {['inventory', 'manpower', 'tasks', 'pnl'].filter(function (t) { return t !== 'pnl' || isAdmin }).map(function (tab) {
+                    var labels = { inventory: 'Inventory', manpower: 'Manpower', tasks: 'Tasks', pnl: 'P&L' }
+                    return (
+                      <button key={tab} onClick={function () { setDetailTab(tab) }}
+                        className={"flex-1 py-2.5 text-xs font-bold transition-colors " +
+                          (detailTab === tab ? "text-indigo-600 border-b-2 border-indigo-600" : "text-gray-400 hover:text-gray-600")}>
+                        {labels[tab]}
+                      </button>
                     )
                   })}
                 </div>
-              </div>
-            )}
 
-            {/* Blocked items */}
-            <div>
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-3">
-                  <h4 className="text-sm font-semibold text-gray-700">Blocked Items ({eventItems.length})</h4>
-                  {(function () {
-                    var confirmed = eventItems.filter(function (ei) { return ei.block_status === 'confirmed' }).length
-                    var tentative = eventItems.filter(function (ei) { return ei.block_status === 'tentative' }).length
-                    if (tentative === 0) return null
-                    return (
-                      <span className="text-[11px] text-gray-400">
-                        <span className="text-green-600 font-medium">{confirmed} confirmed</span>
-                        <span className="mx-1">·</span>
-                        <span className="text-amber-600 font-medium">{tentative} tentative</span>
-                      </span>
-                    )
-                  })()}
-                </div>
-                <div className="flex gap-2">
-                  {isAdmin && eventItems.some(function (ei) { return ei.block_status === 'tentative' }) && (
-                    <button onClick={confirmAllTentative}
-                      className="px-3 py-1.5 text-xs font-bold text-green-600 bg-green-50 border border-green-200 rounded-lg hover:bg-green-100 active:bg-green-200 transition-colors">
-                      ✓ Confirm All
-                    </button>
-                  )}
-                {eventItems.some(canRelease) && (
-                  <button onClick={releaseAll}
-                    className="px-3 py-1.5 text-xs font-bold text-red-600 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 active:bg-red-200 transition-colors">
-                    Release All ({eventItems.filter(canRelease).length})
-                  </button>
-                )}
-                </div>
-              </div>
-              {Object.entries(groupByDept(eventItems)).map(function (entry) {
-                var dept = entry[0]; var items = entry[1]
-                return (
-                  <div key={dept} className="mb-4">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Badge color="indigo">{dept}</Badge>
-                      <span className="text-xs text-gray-400">{items.length} items</span>
-                    </div>
-                    <div className="bg-gray-50 rounded-lg overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="border-b border-gray-200">
-                            <th className="text-left px-3 py-2 font-medium text-gray-600">Item</th>
-                            <th className="text-left px-3 py-2 font-medium text-gray-600">Type</th>
-                            <th className="text-right px-3 py-2 font-medium text-gray-600">Qty</th>
-                            <th className="text-left px-3 py-2 font-medium text-gray-600">Remark</th>
-                            <th className="text-center px-3 py-2 font-medium text-gray-600">Status</th>
-                            <th className="text-center px-3 py-2 font-medium text-gray-600 w-20"></th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {items.map(function (ei) {
+                {/* Inventory tab */}
+                {detailTab === 'inventory' && (
+                  <div className="space-y-4">
+                    {freedAlert && (
+                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                        <div className="flex items-center justify-between mb-2">
+                          <h4 className="text-xs font-bold text-blue-700 uppercase tracking-wider">📢 Freed Inventory — {freedAlert.length} future event{freedAlert.length !== 1 ? 's' : ''}</h4>
+                          <button onClick={function () { setFreedAlert(null) }}
+                            className="text-xs text-blue-400 hover:text-blue-600 font-semibold">Dismiss</button>
+                        </div>
+                        <div className="space-y-1.5">
+                          {freedAlert.map(function (evt) {
                             return (
-                              <tr key={ei.id} className="border-b border-gray-100">
-                                <td className="px-3 py-2 text-gray-800">{titleCase(ei.inventory_items?.name)}</td>
-                                <td className="px-3 py-2">
-                                  <span className={"text-[11px] font-bold uppercase px-2 py-0.5 rounded-full " +
-                                    (ei.inventory_items?.type === 'Premium' ? "bg-purple-100 text-purple-700" :
-                                     ei.inventory_items?.type === 'Outdoor' ? "bg-green-100 text-green-700" :
-                                     "bg-blue-100 text-blue-700")}>
-                                    {ei.inventory_items?.type || '—'}
-                                  </span>
-                                </td>
-                                <td className="px-3 py-2 text-right">{ei.qty} {ei.inventory_items?.unit}</td>
-                                <td className="px-3 py-2 text-gray-500 text-xs">{ei.remark || '—'}</td>
-                                <td className="px-3 py-2 text-center">
-                                  {isAdmin ? (
-                                    <button onClick={function () { toggleBlockStatus(ei) }}
-                                      disabled={togglingStatus[ei.id]}
-                                      className={"text-[11px] font-bold uppercase px-2 py-0.5 rounded-full cursor-pointer transition-colors " +
-                                        (ei.block_status === 'confirmed'
-                                          ? "bg-green-100 text-green-700 hover:bg-green-200"
-                                          : "bg-amber-100 text-amber-700 hover:bg-amber-200")}>
-                                      {togglingStatus[ei.id] ? '...' : ei.block_status === 'confirmed' ? 'Confirmed' : 'Tentative'}
-                                    </button>
-                                  ) : (
-                                    <span className={"text-[11px] font-bold uppercase px-2 py-0.5 rounded-full " +
-                                      (ei.block_status === 'confirmed' ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700")}>
-                                      {ei.block_status === 'confirmed' ? 'Confirmed' : 'Tentative'}
-                                    </span>
-                                  )}
-                                </td>
-                                <td className="px-3 py-2 text-center">
-                                  {canRelease(ei) && (
-                                    <button onClick={function () { releaseItem(ei) }}
-                                      disabled={releasing[ei.id]}
-                                      className="px-2 py-1 text-[11px] font-bold text-red-600 bg-red-50 border border-red-200 rounded hover:bg-red-100 disabled:opacity-50 transition-colors">
-                                      {releasing[ei.id] ? '...' : '✕ Release'}
-                                    </button>
-                                  )}
-                                </td>
-                              </tr>
+                              <div key={evt.event_id} className="flex items-center justify-between bg-white rounded px-2.5 py-1.5 border border-blue-100">
+                                <div>
+                                  <p className="text-sm font-medium text-gray-800">{evt.event_name || '—'}</p>
+                                  <p className="text-[11px] text-gray-400">{evt.venue_name} · {evt.contract_date}</p>
+                                </div>
+                                <div className="text-right">
+                                  {(evt.items || []).map(function (it, ii) {
+                                    return <p key={ii} className="text-[11px] text-blue-600 font-medium">{it.item_name}: {it.blocked_qty}</p>
+                                  })}
+                                </div>
+                              </div>
                             )
                           })}
-                        </tbody>
-                      </table>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <h4 className="text-sm font-semibold text-gray-700">Blocked Items ({eventItems.length})</h4>
+                        {(function () {
+                          var confirmed = eventItems.filter(function (ei) { return ei.block_status === 'confirmed' }).length
+                          var tentative = eventItems.filter(function (ei) { return ei.block_status === 'tentative' }).length
+                          if (tentative === 0) return null
+                          return (
+                            <span className="text-[11px] text-gray-400">
+                              <span className="text-green-600 font-medium">{confirmed} confirmed</span>
+                              <span className="mx-1">·</span>
+                              <span className="text-amber-600 font-medium">{tentative} tentative</span>
+                            </span>
+                          )
+                        })()}
+                      </div>
+                      <div className="flex gap-2">
+                        {isAdmin && eventItems.some(function (ei) { return ei.block_status === 'tentative' }) && (
+                          <button onClick={confirmAllTentative}
+                            className="px-3 py-1.5 text-xs font-bold text-green-600 bg-green-50 border border-green-200 rounded-lg hover:bg-green-100 active:bg-green-200 transition-colors">
+                            ✓ Confirm All
+                          </button>
+                        )}
+                        {eventItems.some(canRelease) && (
+                          <button onClick={releaseAll}
+                            className="px-3 py-1.5 text-xs font-bold text-red-600 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 active:bg-red-200 transition-colors">
+                            Release All ({eventItems.filter(canRelease).length})
+                          </button>
+                        )}
+                      </div>
                     </div>
+                    {Object.entries(groupByDept(eventItems)).map(function (entry) {
+                      var dept = entry[0]; var items = entry[1]
+                      return (
+                        <div key={dept} className="mb-4">
+                          <div className="flex items-center gap-2 mb-2">
+                            <Badge color="indigo">{dept}</Badge>
+                            <span className="text-xs text-gray-400">{items.length} items</span>
+                          </div>
+                          <div className="bg-gray-50 rounded-lg overflow-x-auto">
+                            <table className="w-full text-sm">
+                              <thead>
+                                <tr className="border-b border-gray-200">
+                                  <th className="text-left px-3 py-2 font-medium text-gray-600">Item</th>
+                                  <th className="text-right px-3 py-2 font-medium text-gray-600">Qty</th>
+                                  <th className="text-center px-3 py-2 font-medium text-gray-600">Status</th>
+                                  <th className="text-center px-3 py-2 font-medium text-gray-600 w-20"></th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {items.map(function (ei) {
+                                  return (
+                                    <tr key={ei.id} className="border-b border-gray-100">
+                                      <td className="px-3 py-2 text-gray-800">{titleCase(ei.inventory_items?.name)}</td>
+                                      <td className="px-3 py-2 text-right">{ei.qty} {ei.inventory_items?.unit}</td>
+                                      <td className="px-3 py-2 text-center">
+                                        {isAdmin ? (
+                                          <button onClick={function () { toggleBlockStatus(ei) }}
+                                            disabled={togglingStatus[ei.id]}
+                                            className={"text-[11px] font-bold uppercase px-2 py-0.5 rounded-full cursor-pointer transition-colors " +
+                                              (ei.block_status === 'confirmed'
+                                                ? "bg-green-100 text-green-700 hover:bg-green-200"
+                                                : "bg-amber-100 text-amber-700 hover:bg-amber-200")}>
+                                            {togglingStatus[ei.id] ? '...' : ei.block_status === 'confirmed' ? 'Confirmed' : 'Tentative'}
+                                          </button>
+                                        ) : (
+                                          <span className={"text-[11px] font-bold uppercase px-2 py-0.5 rounded-full " +
+                                            (ei.block_status === 'confirmed' ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700")}>
+                                            {ei.block_status === 'confirmed' ? 'Confirmed' : 'Tentative'}
+                                          </span>
+                                        )}
+                                      </td>
+                                      <td className="px-3 py-2 text-center">
+                                        {canRelease(ei) && (
+                                          <button onClick={function () { releaseItem(ei) }}
+                                            disabled={releasing[ei.id]}
+                                            className="px-2 py-1 text-[11px] font-bold text-red-600 bg-red-50 border border-red-200 rounded hover:bg-red-100 disabled:opacity-50 transition-colors">
+                                            {releasing[ei.id] ? '...' : '✕'}
+                                          </button>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  )
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      )
+                    })}
+                    {eventItems.length === 0 && (
+                      <p className="text-sm text-gray-400">No items blocked yet</p>
+                    )}
+                    <button onClick={function () { setBlockingFunc(selectedFunction); setSelectedFunction(null); setSelectedGroup(null) }}
+                      className="w-full py-2.5 text-sm font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors">
+                      + Block Items</button>
                   </div>
-                )
-              })}
-              {eventItems.length === 0 && (
-                <p className="text-sm text-gray-400">No items blocked yet</p>
-              )}
-            </div>
+                )}
 
-            {/* Tasks checklist */}
-            <div className="bg-white border border-gray-200 rounded-lg p-4">
-              <EventTasks
-                eventId={selectedFunction.id}
-                profile={profile}
-                departments={departments}
-              />
-            </div>
+                {/* Tasks tab */}
+                {detailTab === 'tasks' && (
+                  <EventTasks eventId={selectedFunction.id} profile={profile} departments={departments} />
+                )}
 
-            {/* Manpower planning */}
-            <div className="bg-white border border-gray-200 rounded-lg p-4">
-              <EventManpower
-                eventId={selectedFunction.id}
-                profile={profile}
-                departments={departments}
-              />
-            </div>
+                {/* Manpower tab */}
+                {detailTab === 'manpower' && (
+                  <EventManpower eventId={selectedFunction.id} profile={profile} departments={departments} />
+                )}
 
-            {/* P&L — admin only */}
-            {isAdmin && (
-              <div className="bg-white border border-gray-200 rounded-lg p-4">
-                <EventPnL eventId={selectedFunction.id} />
+                {/* P&L tab */}
+                {detailTab === 'pnl' && isAdmin && (
+                  <EventPnL eventId={selectedFunction.id} />
+                )}
               </div>
             )}
 
@@ -901,7 +1034,7 @@ function Events({ profile }) {
             )}
 
             {/* Back to group */}
-            <button onClick={function () { setSelectedFunction(null); setEventItems([]); setFreedAlert(null); setTaskSummary(null) }} 
+            <button onClick={function () { setSelectedFunction(null); setEventItems([]); setFreedAlert(null); setTaskSummary(null); setManpowerSummary(null); setPnlSummary(null); setDetailTab(null) }} 
               className="text-sm text-indigo-600 font-medium hover:text-indigo-800 transition-colors">
               ← Back to functions
             </button>
