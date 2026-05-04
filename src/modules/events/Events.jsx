@@ -55,6 +55,12 @@ function groupEvents(events) {
   groups.sort(function (a, b) {
     var aMax = Math.max.apply(null, a.map(function (e) { return new Date(e.contract_date || 0).getTime() }))
     var bMax = Math.max.apply(null, b.map(function (e) { return new Date(e.contract_date || 0).getTime() }))
+    var now = Date.now()
+    var aUp = aMax >= now
+    var bUp = bMax >= now
+    if (aUp && !bUp) return -1
+    if (!aUp && bUp) return 1
+    if (aUp) return aMax - bMax
     return bMax - aMax
   })
 
@@ -100,6 +106,7 @@ function Events({ profile }) {
   var [releasing, setReleasing] = useState({}) // { eventItemId: true } while releasing
   var [togglingStatus, setTogglingStatus] = useState({}) // { eventItemId: true }
   var [freedAlert, setFreedAlert] = useState(null)
+  var [taskSummary, setTaskSummary] = useState(null)
   
 
   var isAdmin = profile?.role === 'admin' || profile?.role === 'auditor'
@@ -172,10 +179,21 @@ function Events({ profile }) {
 
   async function openFunctionDetail(func) {
     setSelectedFunction(func)
-    var { data } = await supabase
-      .from('event_items')
-      .select('*')
-      .eq('event_id', func.id)
+    setTaskSummary(null)
+    var [{ data }, { data: taskData }] = await Promise.all([
+      supabase.from('event_items').select('*').eq('event_id', func.id),
+      supabase.from('event_tasks').select('status, due_date').eq('event_id', func.id),
+    ])
+    var today = new Date().toISOString().split('T')[0]
+    var ts = { overdue: 0, pending: 0, in_progress: 0, done: 0 }
+    ;(taskData || []).forEach(function (t) {
+      if (t.status === 'done') { ts.done++ }
+      else if (t.status === 'cancelled') { /* skip */ }
+      else if (t.due_date && t.due_date < today) { ts.overdue++ }
+      else if (t.status === 'in_progress') { ts.in_progress++ }
+      else { ts.pending++ }
+    })
+    setTaskSummary(ts)
     var rows = data || []
     var itemIds = [...new Set(rows.map(function (r) { return r.item_id }).filter(Boolean))]
     if (itemIds.length > 0) {
@@ -598,8 +616,8 @@ function Events({ profile }) {
                         </button>
                         <div className="w-px bg-gray-100" />
                         <button onClick={function (e) { e.stopPropagation(); openFunctionDetail(f) }}
-                          className="flex-1 py-3 text-sm font-bold text-gray-500 hover:bg-gray-50 active:bg-gray-100 transition-colors">
-                          📋 Details
+                          className="flex-1 py-3 text-sm font-bold text-green-600 hover:bg-green-50 active:bg-green-100 transition-colors">
+                          ✓ Tasks
                         </button>
                         <div className="w-px bg-gray-100" />
                         <button onClick={function (e) { e.stopPropagation(); openFunctionDetail(f) }}
@@ -617,7 +635,7 @@ function Events({ profile }) {
       </Modal>
 
       {/* ═══ FUNCTION DETAIL MODAL ═══ */}
-      <Modal open={!!selectedFunction} onClose={function () { setSelectedFunction(null); setEventItems([]) }}
+      <Modal open={!!selectedFunction} onClose={function () { setSelectedFunction(null); setEventItems([]); setTaskSummary(null) }}
         title={selectedFunction?.event_name || selectedFunction?.contract_type || ''} wide>
         {selectedFunction && (
           <div className="space-y-6">
@@ -681,6 +699,25 @@ function Events({ profile }) {
                 </div>
               )}
             </div>
+
+            {/* Task summary strip */}
+            {taskSummary && (taskSummary.overdue + taskSummary.pending + taskSummary.in_progress + taskSummary.done > 0) && (
+              <div className={"rounded-lg p-3 flex flex-wrap gap-3 items-center " +
+                (taskSummary.overdue > 0 ? "bg-red-50 border border-red-200" : "bg-gray-50 border border-gray-200")}>
+                {taskSummary.overdue > 0 && (
+                  <span className="text-xs font-bold text-red-600 bg-red-100 px-2 py-1 rounded-full">🔴 {taskSummary.overdue} overdue</span>
+                )}
+                {taskSummary.pending > 0 && (
+                  <span className="text-xs font-medium text-gray-600 bg-gray-100 px-2 py-1 rounded-full">{taskSummary.pending} pending</span>
+                )}
+                {taskSummary.in_progress > 0 && (
+                  <span className="text-xs font-medium text-amber-700 bg-amber-100 px-2 py-1 rounded-full">{taskSummary.in_progress} in progress</span>
+                )}
+                {taskSummary.done > 0 && (
+                  <span className="text-xs font-medium text-green-600 bg-green-100 px-2 py-1 rounded-full">✓ {taskSummary.done} done</span>
+                )}
+              </div>
+            )}
 
             {/* Financial — admin only */}
             {isAdmin && (selectedFunction.balance_received != null || selectedFunction.balance_bank != null || selectedFunction.balance_amount != null) && (
@@ -869,7 +906,7 @@ function Events({ profile }) {
             )}
 
             {/* Back to group */}
-            <button onClick={function () { setSelectedFunction(null); setEventItems([]); setFreedAlert(null) }} 
+            <button onClick={function () { setSelectedFunction(null); setEventItems([]); setFreedAlert(null); setTaskSummary(null) }} 
               className="text-sm text-indigo-600 font-medium hover:text-indigo-800 transition-colors">
               ← Back to functions
             </button>
