@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { supabase } from '../../lib/supabase'
+import { supabase, getImageUrl } from '../../lib/supabase'
 import { formatDate, formatPaise, titleCase } from '../../lib/format'
 import { logActivity } from '../../lib/logger'
 
@@ -33,6 +33,12 @@ function ProductionOrders({ profile }) {
   var [profiles, setProfiles] = useState([])
   var [departments, setDepartments] = useState([])
 
+  // Event selection flow
+  var [orderMode, setOrderMode] = useState('') // 'event' | 'general'
+  var [fEventDate, setFEventDate] = useState('')
+  var [dateEvents, setDateEvents] = useState([])
+  var [dateEventsLoading, setDateEventsLoading] = useState(false)
+
   // Filters
   var [statusFilter, setStatusFilter] = useState('')
   var [deptFilter, setDeptFilter] = useState('')
@@ -63,17 +69,35 @@ function ProductionOrders({ profile }) {
     loadRefs()
   }, [])
 
+  var [categories, setCategories] = useState([])
+  var [subCategories, setSubCategories] = useState([])
+
   async function loadRefs() {
     var results = await Promise.allSettled([
       supabase.from('events_safe').select('id, contract_date, client_name, venue_name, event_name')
         .gte('contract_date', new Date(Date.now() - 90 * 86400000).toISOString().split('T')[0])
         .order('contract_date', { ascending: false }).limit(200),
-      supabase.from('profiles').select('id, name').eq('is_active', true).order('name'),
+      supabase.from('profiles').select('id, name, event_dept_ids').eq('is_active', true).order('name'),
       supabase.from('departments').select('id, name').eq('active', true).order('name'),
+      supabase.from('categories').select('id, name').order('name'),
+      supabase.from('sub_categories').select('id, name, category_id').order('name'),
     ])
     setEvents(results[0].value?.data || [])
     setProfiles(results[1].value?.data || [])
     setDepartments(results[2].value?.data || [])
+    setCategories(results[3].value?.data || [])
+    setSubCategories(results[4].value?.data || [])
+  }
+
+  async function loadEventsByDate(date) {
+    if (!date) { setDateEvents([]); return }
+    setDateEventsLoading(true)
+    var { data } = await supabase.from('events_safe')
+      .select('id, contract_date, client_name, venue_name, event_name')
+      .eq('contract_date', date)
+      .order('event_name')
+    setDateEvents(data || [])
+    setDateEventsLoading(false)
   }
 
   async function loadOrders() {
@@ -119,11 +143,11 @@ function ProductionOrders({ profile }) {
     if (!q || q.length < 2) { setFSearchResults([]); return }
     var results = []
     var { data: inv } = await supabase.from('inventory_items')
-      .select('id, name, unit, category_id').eq('status', 'approved')
+      .select('id, name, unit, category_id, image_path, categories(name), sub_categories(name)').eq('status', 'approved')
       .ilike('name', '%' + q + '%').limit(10)
     ;(inv || []).forEach(function (it) { results.push(Object.assign({}, it, { _source: 'inventory' })) })
     var { data: cs } = await supabase.from('catering_store_items')
-      .select('id, name, unit, category_id').eq('status', 'approved')
+      .select('id, name, unit, category_id, image_path, categories(name), sub_categories(name)').eq('status', 'approved')
       .ilike('name', '%' + q + '%').limit(10)
     ;(cs || []).forEach(function (it) { results.push(Object.assign({}, it, { _source: 'catering_store' })) })
     setFSearchResults(results)
@@ -139,6 +163,9 @@ function ProductionOrders({ profile }) {
 
   function openForm(order) {
     setEditOrder(order || null)
+    setOrderMode(order?.event_id ? 'event' : (order ? 'general' : ''))
+    setFEventDate('')
+    setDateEvents([])
     setFEvent(order?.event_id ? String(order.event_id) : '')
     setFItem(order ? { id: order.item_id, name: order.item_name, unit: order.item_unit, _source: order.item_source } : null)
     setFItemSearch(order?.item_name || '')
@@ -154,7 +181,7 @@ function ProductionOrders({ profile }) {
   }
 
   async function saveOrder() {
-    if (!fItem || !fQty || Number(fQty) <= 0 || saving) return
+    if (!orderMode || !fItem || !fQty || Number(fQty) <= 0 || saving) return
     setSaving(true)
 
     var payload = {
@@ -271,6 +298,17 @@ function ProductionOrders({ profile }) {
     return p ? p.name : null
   }
 
+  // Filtered profiles by selected department
+  var filteredProfiles = profiles
+  if (fDept) {
+    var deptObj = departments.find(function (d) { return d.name === fDept })
+    if (deptObj) {
+      filteredProfiles = profiles.filter(function (p) {
+        return (p.event_dept_ids || []).indexOf(deptObj.id) !== -1
+      })
+    }
+  }
+
   // ═══ RENDER ═══
 
   if (loading && view === 'list') {
@@ -290,18 +328,53 @@ function ProductionOrders({ profile }) {
         </div>
 
         <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
-          {/* Event (optional) */}
-          <div>
-            <label className="block text-xs font-semibold text-gray-500 mb-1">Event (optional)</label>
-            <select value={fEvent} onChange={function (e) { setFEvent(e.target.value) }}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
-              <option value="">No event — general production</option>
-              {events.map(function (ev) {
-                return <option key={ev.id} value={ev.id}>
-                  {formatDate(ev.contract_date) + ' — ' + (ev.client_name || '') + ' — ' + (ev.event_name || '')}
-                </option>
-              })}
-            </select>
+          {/* Event or General */}
+          <div className="space-y-3">
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 mb-1">Production For *</label>
+              <div className="flex gap-2">
+                <button type="button" onClick={function () { setOrderMode('event'); setFEvent('') }}
+                  className={"px-4 py-2 text-sm font-semibold rounded-lg transition-colors " +
+                    (orderMode === 'event' ? "bg-indigo-600 text-white" : "border border-gray-300 text-gray-600 hover:bg-gray-50")}>
+                  📅 Event
+                </button>
+                <button type="button" onClick={function () { setOrderMode('general'); setFEvent(''); setFEventDate(''); setDateEvents([]) }}
+                  className={"px-4 py-2 text-sm font-semibold rounded-lg transition-colors " +
+                    (orderMode === 'general' ? "bg-indigo-600 text-white" : "border border-gray-300 text-gray-600 hover:bg-gray-50")}>
+                  🔧 General Production
+                </button>
+              </div>
+            </div>
+            {orderMode === 'event' && (
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 mb-1">Event Date</label>
+                  <input type="date" value={fEventDate}
+                    onChange={function (e) { setFEventDate(e.target.value); setFEvent(''); loadEventsByDate(e.target.value) }}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 mb-1">
+                    Event {dateEventsLoading ? '(loading...)' : fEventDate ? '(' + dateEvents.length + ' found)' : ''}
+                  </label>
+                  {!fEventDate && <p className="text-xs text-gray-400 py-2">Select a date first</p>}
+                  {fEventDate && dateEvents.length === 0 && !dateEventsLoading && (
+                    <p className="text-xs text-amber-600 py-2">No events on this date</p>
+                  )}
+                  {dateEvents.length > 0 && (
+                    <select value={fEvent} onChange={function (e) { setFEvent(e.target.value) }}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                      <option value="">Select event...</option>
+                      {dateEvents.map(function (ev) {
+                        return <option key={ev.id} value={ev.id}>
+                          {(ev.client_name || '') + ' — ' + (ev.venue_name || '') + ' — ' + (ev.event_name || '')}
+                        </option>
+                      })}
+                    </select>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Item search */}
@@ -317,14 +390,24 @@ function ProductionOrders({ profile }) {
                 placeholder="Search inventory item..."
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
               {fSearchResults.length > 0 && !fItem && (
-                <div className="absolute z-20 top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg max-h-48 overflow-y-auto">
+                <div className="absolute z-20 top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg max-h-64 overflow-y-auto">
                   {fSearchResults.map(function (item) {
+                    var catName = item.categories?.name || '—'
+                    var subCatName = item.sub_categories?.name || ''
+                    var imgUrl = getImageUrl(item.image_path)
                     return (
                       <button key={item._source + '-' + item.id}
                         onClick={function () { pickItem(item) }}
-                        className="w-full text-left px-4 py-2.5 hover:bg-indigo-50 border-b border-gray-100 last:border-0 flex items-center justify-between">
-                        <span className="text-sm font-medium text-gray-800">{item.name}</span>
-                        <span className="text-[10px] text-gray-400 ml-3">{item.unit} · {item._source === 'catering_store' ? 'CS' : 'INV'}</span>
+                        className="w-full text-left px-3 py-2.5 hover:bg-indigo-50 border-b border-gray-100 last:border-0 flex items-center gap-3">
+                        {imgUrl ? (
+                          <img src={imgUrl} alt="" className="w-10 h-10 rounded object-cover border border-gray-200 flex-shrink-0" />
+                        ) : (
+                          <div className="w-10 h-10 rounded bg-gray-100 flex items-center justify-center text-gray-300 text-xs flex-shrink-0">📷</div>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-gray-800 truncate">{item.name}</p>
+                          <p className="text-[10px] text-gray-400">{catName}{subCatName ? ' > ' + subCatName : ''} · {item.unit} · {item._source === 'catering_store' ? 'CS' : 'INV'}</p>
+                        </div>
                       </button>
                     )
                   })}
@@ -332,9 +415,22 @@ function ProductionOrders({ profile }) {
               )}
             </div>
             {fItem && (
-              <p className="text-xs text-indigo-600 mt-1 font-medium">
-                {titleCase(fItem.name)} ({fItem.unit}) — {fItem._source === 'catering_store' ? 'Catering Store' : 'Inventory'}
-              </p>
+              <div className="flex items-center gap-3 mt-2 bg-indigo-50 rounded-lg p-2.5">
+                {(function () {
+                  var imgUrl = getImageUrl(fItem.image_path)
+                  return imgUrl ? (
+                    <img src={imgUrl} alt="" className="w-14 h-14 rounded object-cover border border-indigo-200 flex-shrink-0" />
+                  ) : (
+                    <div className="w-14 h-14 rounded bg-white flex items-center justify-center text-gray-300 text-lg flex-shrink-0">📷</div>
+                  )
+                })()}
+                <div>
+                  <p className="text-sm font-semibold text-indigo-800">{titleCase(fItem.name)}</p>
+                  <p className="text-[11px] text-indigo-600">
+                    {fItem.categories?.name || '—'}{fItem.sub_categories?.name ? ' > ' + fItem.sub_categories.name : ''} · {fItem.unit} · {fItem._source === 'catering_store' ? 'Catering Store' : 'Inventory'}
+                  </p>
+                </div>
+              </div>
             )}
           </div>
 
@@ -366,18 +462,29 @@ function ProductionOrders({ profile }) {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-semibold text-gray-500 mb-1">Department</label>
-              <select value={fDept} onChange={function (e) { setFDept(e.target.value) }}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+              <select value={fDept} onChange={function (e) { setFDept(e.target.value); setFAssigned('') }}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                onChange={function (e) { setFDept(e.target.value); setFAssigned('') }}>
                 <option value="">—</option>
                 {departments.map(function (d) { return <option key={d.id} value={d.name}>{d.name}</option> })}
               </select>
             </div>
             <div>
-              <label className="block text-xs font-semibold text-gray-500 mb-1">Assigned To</label>
+              <label className="block text-xs font-semibold text-gray-500 mb-1">
+                Assigned To
+                {fDept && filteredProfiles.length === 0 && <span className="text-[10px] text-amber-600 ml-1">(no users in this dept)</span>}
+                {fDept && filteredProfiles.length > 0 && <span className="text-[10px] text-gray-400 ml-1">({filteredProfiles.length} in dept)</span>}
+              </label>
               <select value={fAssigned} onChange={function (e) { setFAssigned(e.target.value) }}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
                 <option value="">Unassigned</option>
-                {profiles.map(function (p) { return <option key={p.id} value={p.id}>{p.name}</option> })}
+                {filteredProfiles.map(function (p) { return <option key={p.id} value={p.id}>{p.name}</option> })}
+                {fDept && filteredProfiles.length > 0 && profiles.length > filteredProfiles.length && (
+                  <option disabled>── other users ──</option>
+                )}
+                {fDept && profiles.filter(function (p) { return filteredProfiles.indexOf(p) === -1 }).map(function (p) {
+                  return <option key={p.id} value={p.id} className="text-gray-400">{p.name}</option>
+                })}
               </select>
             </div>
           </div>
@@ -398,7 +505,7 @@ function ProductionOrders({ profile }) {
           </div>
 
           <div className="flex gap-3 pt-2">
-            <button onClick={saveOrder} disabled={saving || !fItem || !fQty}
+            <button onClick={saveOrder} disabled={saving || !orderMode || !fItem || !fQty}
               className="px-5 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors">
               {saving ? 'Saving...' : (editOrder ? 'Update' : 'Create Order')}
             </button>
