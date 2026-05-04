@@ -94,6 +94,12 @@ var FEATURE_PERMS = [
     grants: ['feature_production'],
   },
   {
+    key: 'feature_manpower',
+    label: 'Manpower Planning',
+    icon: '👷',
+    grants: ['feature_manpower'],
+  },
+  {
    key: 'feature_admin',
    label: 'Admin Panel',
    icon: '⚙️',

@@ -5,6 +5,7 @@ import { formatDate, formatPaise, titleCase } from '../../lib/format'
 import Modal from '../../components/ui/Modal'
 import BlockInventory from './BlockInventory'
 import EventTasks from './EventTasks'
+import EventManpower from './EventManpower'
 import BriefUpload from './BriefUpload'
 import { logActivity } from '../../lib/logger'
 
@@ -840,6 +841,15 @@ function Events({ profile }) {
             {/* Tasks checklist */}
             <div className="bg-white border border-gray-200 rounded-lg p-4">
               <EventTasks
+                eventId={selectedFunction.id}
+                profile={profile}
+                departments={departments}
+              />
+            </div>
+
+            {/* Manpower planning */}
+            <div className="bg-white border border-gray-200 rounded-lg p-4">
+              <EventManpower
                 eventId={selectedFunction.id}
                 profile={profile}
                 departments={departments}

@@ -17,6 +17,7 @@ var Purchase = lazy(function () { return import('../../modules/purchase/Purchase
 var Calendar = lazy(function () { return import('../../modules/calendar/Calendar') })
 var Vendors = lazy(function () { return import('../../modules/vendors/Vendors') })
 var Requisitions = lazy(function () { return import('../../modules/requisitions/Requisitions') })
+var StaffRoles = lazy(function () { return import('../../modules/manpower/StaffRoles') })
 var Analytics = lazy(function () { return import('../../modules/analytics/Analytics') })
 var Overview = lazy(function () { return import('../../modules/overview/Overview') })
 
@@ -49,6 +50,7 @@ var SUB_TAB_CONFIG = {
   masters: [
     { key: 'categories', label: 'Categories', component: Categories },
     { key: 'ratecard', label: 'Rate Card', component: RateCardEditor },
+    { key: 'staff_roles', label: 'Staff Roles', component: StaffRoles },
   ],
   users: [
     { key: 'users', label: 'Users', component: Users },
