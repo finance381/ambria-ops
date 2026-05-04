@@ -11,6 +11,8 @@ function BlockInventory({ func, profile, onDone }) {
   var [search, setSearch] = useState('')
   var [catFilter, setCatFilter] = useState('')
   var [categoryList, setCategoryList] = useState([])
+  var [catSearch, setCatSearch] = useState(null)
+  var [catOpen, setCatOpen] = useState(false)
   var [existingItemDetails, setExistingItemDetails] = useState([])
   var [searchLoading, setSearchLoading] = useState(false)
   var [selections, setSelections] = useState({})
@@ -49,6 +51,15 @@ function BlockInventory({ func, profile, onDone }) {
     }, 300)
     return function () { clearTimeout(timer) }
   }, [search, catFilter])
+
+  useEffect(function () {
+    if (!catOpen) return
+    function closeDrop(e) {
+      if (!e.target.closest('.relative')) { setCatOpen(false); setCatSearch(null) }
+    }
+    document.addEventListener('mousedown', closeDrop)
+    return function () { document.removeEventListener('mousedown', closeDrop) }
+  }, [catOpen])
 
   async function loadData() {
     // 1. Load existing blocked items + categories only (not full catalog)
@@ -410,12 +421,35 @@ function BlockInventory({ func, profile, onDone }) {
           placeholder="Search items..."
           className="flex-1 min-w-[180px] px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
           style={{ fontSize: '16px' }} />
-        <select value={catFilter}
-          onChange={function (e) { setCatFilter(e.target.value) }}
-          className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
-          <option value="">All Categories</option>
-          {categoryList.map(function (c) { return <option key={c.id} value={c.id}>{c.name}</option> })}
-        </select>
+        <div className="relative min-w-[140px]">
+          <input type="text"
+            value={catSearch != null ? catSearch : (categoryList.find(function (c) { return String(c.id) === catFilter })?.name || '')}
+            onChange={function (e) { setCatSearch(e.target.value); setCatOpen(true) }}
+            onFocus={function () { setCatSearch(''); setCatOpen(true) }}
+            placeholder="All Categories"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            style={{ fontSize: '16px' }} />
+          {catFilter && (
+            <button onClick={function () { setCatFilter(''); setCatSearch(null); setCatOpen(false) }}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-sm">✕</button>
+          )}
+          {catOpen && (
+            <div className="absolute z-20 top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+              {categoryList.filter(function (c) {
+                return !catSearch || c.name.toLowerCase().indexOf(catSearch.toLowerCase()) !== -1
+              }).map(function (c) {
+                return (
+                  <div key={c.id}
+                    onClick={function () { setCatFilter(String(c.id)); setCatSearch(null); setCatOpen(false) }}
+                    className={"px-3 py-2 text-sm cursor-pointer hover:bg-indigo-50 " +
+                      (String(c.id) === catFilter ? "bg-indigo-50 text-indigo-700 font-medium" : "text-gray-700")}>
+                    {c.name}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Bulk action bar */}
