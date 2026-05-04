@@ -10,6 +10,9 @@ function BlockInventory({ func, profile, onDone }) {
   var [saving, setSaving] = useState(false)
   var [search, setSearch] = useState('')
   var [catFilter, setCatFilter] = useState('')
+  var [categoryList, setCategoryList] = useState([])
+  var [existingItemDetails, setExistingItemDetails] = useState([])
+  var [searchLoading, setSearchLoading] = useState(false)
   var [selections, setSelections] = useState({})
   var [error, setError] = useState('')
   var [checked, setChecked] = useState({})
@@ -40,34 +43,42 @@ function BlockInventory({ func, profile, onDone }) {
 
   useEffect(function () { loadData() }, [])
 
+  useEffect(function () {
+    var timer = setTimeout(function () {
+      searchItems(search, catFilter)
+    }, 300)
+    return function () { clearTimeout(timer) }
+  }, [search, catFilter])
+
   async function loadData() {
-    var invQuery = supabase
-      .from('inventory_items')
-      .select('id, name, name_hindi, qty, unit, type, category_id, image_path, categories(name), sub_categories(name)')
-      .eq('status', 'approved')
-      .order('name')
+    // 1. Load existing blocked items + categories only (not full catalog)
+    var catQuery = supabase.from('categories').select('id, name').eq('active', true).order('name')
+    if (!isAdmin && myCatIds.length > 0) catQuery = catQuery.in('id', myCatIds)
 
-    var csQuery = supabase
-      .from('catering_store_items')
-      .select('id, name, name_hindi, qty, unit, type, category_id, image_path, categories(name), sub_categories(name)')
-      .eq('status', 'approved')
-      .order('name')
-
-    if (!isAdmin && myCatIds.length > 0) {
-      invQuery = invQuery.in('category_id', myCatIds)
-      csQuery = csQuery.in('category_id', myCatIds)
-    }
-
-    var [itemsRes, csRes, existingRes] = await Promise.all([
-      invQuery,
-      csQuery,
+    var [existingRes, catRes] = await Promise.all([
       supabase.from('event_items').select('*').eq('event_id', func.id),
+      catQuery,
     ])
-
-    var allItems = (itemsRes.data || []).map(function (i) { return Object.assign({}, i, { _source: 'inventory' }) })
-      .concat((csRes.data || []).map(function (i) { return Object.assign({}, i, { _source: 'catering_store' }) }))
-    setItems(allItems)
     setExisting(existingRes.data || [])
+    setCategoryList(catRes.data || [])
+
+    // 2. Load item details for existing blocks only
+    var existItemIds = [...new Set((existingRes.data || []).map(function (r) { return r.item_id }).filter(Boolean))]
+    var existItems = []
+    if (existItemIds.length > 0) {
+      var [invRes, csRes] = await Promise.all([
+        supabase.from('inventory_items')
+          .select('id, name, name_hindi, qty, unit, type, category_id, image_path, categories(name), sub_categories(name)')
+          .in('id', existItemIds),
+        supabase.from('catering_store_items')
+          .select('id, name, name_hindi, qty, unit, type, category_id, image_path, categories(name), sub_categories(name)')
+          .in('id', existItemIds),
+      ])
+      existItems = (invRes.data || []).map(function (i) { return Object.assign({}, i, { _source: 'inventory' }) })
+        .concat((csRes.data || []).map(function (i) { return Object.assign({}, i, { _source: 'catering_store' }) }))
+    }
+    setExistingItemDetails(existItems)
+    setItems(existItems)
 
     var sel = {}
     ;(existingRes.data || []).forEach(function (ei) {
@@ -123,6 +134,41 @@ function BlockInventory({ func, profile, onDone }) {
     }
 
     setLoading(false)
+  }
+
+  async function searchItems(query, catId) {
+    var needsQuery = (query && query.length >= 2) || catId
+    if (!needsQuery) { setItems(existingItemDetails); return }
+    setSearchLoading(true)
+
+    var fields = 'id, name, name_hindi, qty, unit, type, category_id, image_path, categories(name), sub_categories(name)'
+    var invQ = supabase.from('inventory_items').select(fields).eq('status', 'approved').order('name').limit(50)
+    var csQ = supabase.from('catering_store_items').select(fields).eq('status', 'approved').order('name').limit(50)
+
+    if (query && query.length >= 2) {
+      var pattern = '%' + query + '%'
+      invQ = invQ.or('name.ilike.' + pattern + ',name_hindi.ilike.' + pattern)
+      csQ = csQ.or('name.ilike.' + pattern + ',name_hindi.ilike.' + pattern)
+    }
+    if (catId) {
+      invQ = invQ.eq('category_id', catId)
+      csQ = csQ.eq('category_id', catId)
+    }
+    if (!isAdmin && myCatIds.length > 0) {
+      invQ = invQ.in('category_id', myCatIds)
+      csQ = csQ.in('category_id', myCatIds)
+    }
+
+    var [invRes, csRes] = await Promise.all([invQ, csQ])
+    var results = (invRes.data || []).map(function (i) { return Object.assign({}, i, { _source: 'inventory' }) })
+      .concat((csRes.data || []).map(function (i) { return Object.assign({}, i, { _source: 'catering_store' }) }))
+
+    // Merge: existing items always visible, search results added (deduped)
+    var existIds = {}
+    existingItemDetails.forEach(function (i) { existIds[i.id] = true })
+    var merged = existingItemDetails.concat(results.filter(function (r) { return !existIds[r.id] }))
+    setItems(merged)
+    setSearchLoading(false)
   }
 
   function updateSelection(itemId, field, value) {
@@ -318,17 +364,7 @@ function BlockInventory({ func, profile, onDone }) {
   }
 
   // Filter items
-  var categories = [...new Set(items.map(function (i) { return i.categories?.name }).filter(Boolean))].sort()
-  var searchLower = search.toLowerCase()
-  var filtered = items.filter(function (item) {
-    var matchSearch = !search ||
-      item.name.toLowerCase().includes(searchLower) ||
-      (item.name_hindi || '').toLowerCase().includes(searchLower) ||
-      (item.categories?.name || '').toLowerCase().includes(searchLower) ||
-      (item.sub_categories?.name || '').toLowerCase().includes(searchLower)
-    var matchCat = !catFilter || item.categories?.name === catFilter
-    return matchSearch && matchCat
-  })
+  var filtered = items
 
   // Sort: selected items first, then by name
   var sorted = filtered.slice().sort(function (a, b) {
@@ -378,7 +414,7 @@ function BlockInventory({ func, profile, onDone }) {
           onChange={function (e) { setCatFilter(e.target.value) }}
           className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
           <option value="">All Categories</option>
-          {categories.map(function (c) { return <option key={c} value={c}>{c}</option> })}
+          {categoryList.map(function (c) { return <option key={c.id} value={c.id}>{c.name}</option> })}
         </select>
       </div>
 
@@ -542,8 +578,14 @@ function BlockInventory({ func, profile, onDone }) {
             </div>
           )
         })}
-        {sorted.length === 0 && (
-          <p className="text-sm text-gray-400 text-center py-8">No items available in your categories</p>
+        {searchLoading && (
+          <p className="text-sm text-gray-400 text-center py-4">Searching...</p>
+        )}
+        {!searchLoading && sorted.length === 0 && !search && !catFilter && (
+          <p className="text-sm text-gray-400 text-center py-8">Search or pick a category to find items</p>
+        )}
+        {!searchLoading && sorted.length === 0 && (search || catFilter) && (
+          <p className="text-sm text-gray-400 text-center py-8">No items found</p>
         )}
       </div>
     </div>

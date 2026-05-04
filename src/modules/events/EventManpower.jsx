@@ -41,7 +41,7 @@ function EventManpower({ eventId, profile, departments }) {
   var [showReqForm, setShowReqForm] = useState(false)
   var [rRole, setRRole] = useState('')
   var [rDept, setRDept] = useState('')
-  var [rQty, setRQty] = useState('1')
+  var [rQty, setRQty] = useState('0')
   var [rNotes, setRNotes] = useState('')
   var [rSlots, setRSlots] = useState([])
 
@@ -134,12 +134,12 @@ function EventManpower({ eventId, profile, departments }) {
   }
 
   function resetReqForm() {
-    setRRole(''); setRDept(''); setRQty('1'); setRNotes(''); setRSlots([])
+    setRRole(''); setRDept(''); setRQty('0'); setRNotes(''); setRSlots([])
     setShowReqForm(false)
   }
 
   async function addRequirement() {
-    if (!rRole || !rQty || saving) return
+    if (!rRole || !rQty || Number(rQty) < 1 || saving) return
     setSaving(true)
     var { data: reqRow, error } = await supabase.from('event_manpower').insert({
       event_id: eventId,
@@ -320,7 +320,7 @@ function EventManpower({ eventId, profile, departments }) {
             </div>
             <div>
               <label className="block text-[10px] text-gray-500 mb-0.5">Qty Needed *</label>
-              <input type="number" min="1" value={rQty} onChange={function (e) {
+              <input type="number" min="0" value={rQty} onChange={function (e) {
                 setRQty(e.target.value)
                 var role = roles.find(function (r) { return r.id === Number(rRole) })
                 var defRate = role?.default_rate_paise ? String(role.default_rate_paise / 100) : ''
