@@ -45,6 +45,7 @@ var GROUPS = [
     key: 'logistics', label: 'Logistics', icon: '🚛', items: [
       { key: 'feature_receive', label: 'Receive Items', icon: '📦', tab: 'receive' },
       { key: 'feature_challans', label: 'Challans', icon: '🚛', tab: 'challans' },
+      { key: 'feature_production', label: 'Production Orders', icon: '🔧' },
     ]
   },
   {

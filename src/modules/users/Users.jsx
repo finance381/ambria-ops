@@ -88,6 +88,12 @@ var FEATURE_PERMS = [
     grants: ['feature_challans'],
   },
   {
+    key: 'feature_production',
+    label: 'Production Orders',
+    icon: '🔧',
+    grants: ['feature_production'],
+  },
+  {
    key: 'feature_admin',
    label: 'Admin Panel',
    icon: '⚙️',
