@@ -35,6 +35,22 @@ var STATUS_COLORS = {
 
 var PAGE_SIZE = 50
 
+var REPAIR_STATUS_LABELS = {
+  sent: 'Sent',
+  in_progress: 'In Progress',
+  ready: 'Ready for Pickup',
+  returned: 'Returned',
+  write_off: 'Written Off',
+}
+
+var REPAIR_STATUS_COLORS = {
+  sent: 'bg-blue-100 text-blue-700',
+  in_progress: 'bg-amber-100 text-amber-700',
+  ready: 'bg-green-100 text-green-700',
+  returned: 'bg-gray-200 text-gray-600',
+  write_off: 'bg-red-100 text-red-600',
+}
+
 function PhotoThumb({ photo, onDelete }) {
   var [url, setUrl] = useState('')
 
@@ -120,6 +136,10 @@ function Challans({ profile }) {
   var [photos, setPhotos] = useState([])
   var [photosLoading, setPhotosLoading] = useState(false)
   var [uploading, setUploading] = useState(false)
+
+  // Repair tracking
+  var [repairDetail, setRepairDetail] = useState(null)
+  var [repairSaving, setRepairSaving] = useState(false)
 
   // Dispatch challans for return linking
   var [dispatchChallans, setDispatchChallans] = useState([])
@@ -267,6 +287,14 @@ function Challans({ profile }) {
       if (error) { alert('Save failed: ' + error.message); setSaving(false); return }
       await logActivity('CHALLAN_CREATE', 'Created ' + newChallan.challan_no + ' (' + TYPE_LABELS[formType] + ')')
 
+      // Auto-create repair_details row for repair challans
+      if (formType === 'repair' && newChallan) {
+        await supabase.from('repair_details').insert({
+          challan_id: newChallan.id,
+          vendor_name: formDestText.trim() || null,
+        })
+      }
+
       // Auto-copy items from dispatch challan into return challan
       if (formType === 'event_return' && formReturnFor) {
         var { data: dispatchItems } = await supabase
@@ -313,6 +341,39 @@ function Challans({ profile }) {
     setPhotos([])
     loadChallanItems(challan.id)
     loadPhotos(challan.id)
+    setRepairDetail(null)
+    if (challan.type === 'repair') loadRepairDetail(challan.id)
+  }
+
+  async function loadRepairDetail(challanId) {
+    var { data } = await supabase.from('repair_details')
+      .select('*').eq('challan_id', challanId).maybeSingle()
+    setRepairDetail(data || null)
+  }
+
+  async function saveRepairField(field, value) {
+    if (!repairDetail) return
+    setRepairSaving(true)
+    var update = {}
+    update[field] = value
+    var { error } = await supabase.from('repair_details').update(update).eq('id', repairDetail.id)
+    if (!error) {
+      setRepairDetail(Object.assign({}, repairDetail, update))
+    }
+    setRepairSaving(false)
+  }
+
+  async function advanceRepairStatus(newStatus) {
+    if (!repairDetail || repairSaving) return
+    setRepairSaving(true)
+    var update = { repair_status: newStatus }
+    if (newStatus === 'returned') update.actual_return_date = new Date().toISOString().split('T')[0]
+    var { error } = await supabase.from('repair_details').update(update).eq('id', repairDetail.id)
+    if (!error) {
+      setRepairDetail(Object.assign({}, repairDetail, update))
+      try { await logActivity('REPAIR_STATUS', activeChallan.challan_no + ' → ' + REPAIR_STATUS_LABELS[newStatus]) } catch (_) {}
+    }
+    setRepairSaving(false)
   }
 
   async function loadChallanItems(challanId) {
@@ -653,6 +714,12 @@ function Challans({ profile }) {
     if (status === 'dispatched') return 'delivery'
     if (status === 'received') return 'return'
     return 'loading'
+  }
+
+  function repairPhotoStage() {
+    if (!repairDetail) return 'before_repair'
+    if (repairDetail.repair_status === 'returned' || repairDetail.repair_status === 'ready') return 'after_repair'
+    return 'before_repair'
   }
 
   async function uploadPhoto(file, stage) {
@@ -1011,6 +1078,135 @@ function Challans({ profile }) {
           )}
         </div>
 
+        {/* Repair tracking (repair challans only) */}
+        {activeChallan.type === 'repair' && repairDetail && (
+          <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-bold text-gray-500 uppercase">Repair Tracking</p>
+              <span className={"text-[10px] px-2 py-0.5 rounded-full font-bold uppercase " + (REPAIR_STATUS_COLORS[repairDetail.repair_status] || '')}>
+                {REPAIR_STATUS_LABELS[repairDetail.repair_status] || repairDetail.repair_status}
+              </span>
+            </div>
+
+            {/* Vendor info */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[10px] text-gray-500 mb-0.5">Vendor Name</label>
+                <input type="text" value={repairDetail.vendor_name || ''}
+                  onChange={function (e) { setRepairDetail(Object.assign({}, repairDetail, { vendor_name: e.target.value })) }}
+                  onBlur={function (e) { saveRepairField('vendor_name', e.target.value.trim() || null) }}
+                  placeholder="Vendor / workshop"
+                  className="w-full px-2 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+              </div>
+              <div>
+                <label className="block text-[10px] text-gray-500 mb-0.5">Vendor Contact</label>
+                <input type="text" value={repairDetail.vendor_contact || ''}
+                  onChange={function (e) { setRepairDetail(Object.assign({}, repairDetail, { vendor_contact: e.target.value })) }}
+                  onBlur={function (e) { saveRepairField('vendor_contact', e.target.value.trim() || null) }}
+                  placeholder="Phone / email"
+                  className="w-full px-2 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+              </div>
+            </div>
+
+            {/* Cost + dates */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div>
+                <label className="block text-[10px] text-gray-500 mb-0.5">Est. Cost (₹)</label>
+                <input type="number" min="0" step="1"
+                  value={repairDetail.estimated_cost_paise ? (repairDetail.estimated_cost_paise / 100) : ''}
+                  onChange={function (e) { setRepairDetail(Object.assign({}, repairDetail, { estimated_cost_paise: Math.round(Number(e.target.value || 0) * 100) })) }}
+                  onBlur={function () { saveRepairField('estimated_cost_paise', repairDetail.estimated_cost_paise || 0) }}
+                  placeholder="0"
+                  className="w-full px-2 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+              </div>
+              <div>
+                <label className="block text-[10px] text-gray-500 mb-0.5">Actual Cost (₹)</label>
+                <input type="number" min="0" step="1"
+                  value={repairDetail.actual_cost_paise ? (repairDetail.actual_cost_paise / 100) : ''}
+                  onChange={function (e) { setRepairDetail(Object.assign({}, repairDetail, { actual_cost_paise: Math.round(Number(e.target.value || 0) * 100) })) }}
+                  onBlur={function () { saveRepairField('actual_cost_paise', repairDetail.actual_cost_paise || 0) }}
+                  placeholder="0"
+                  className="w-full px-2 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+              </div>
+              <div>
+                <label className="block text-[10px] text-gray-500 mb-0.5">Expected Return</label>
+                <input type="date" value={repairDetail.expected_return_date || ''}
+                  onChange={function (e) { saveRepairField('expected_return_date', e.target.value || null) }}
+                  className="w-full px-2 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+              </div>
+              <div>
+                <label className="block text-[10px] text-gray-500 mb-0.5">Actual Return</label>
+                <input type="date" value={repairDetail.actual_return_date || ''}
+                  onChange={function (e) { saveRepairField('actual_return_date', e.target.value || null) }}
+                  className="w-full px-2 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+              </div>
+            </div>
+
+            {/* Cost variance */}
+            {repairDetail.estimated_cost_paise > 0 && repairDetail.actual_cost_paise > 0 && (
+              <p className={"text-xs font-medium " +
+                (repairDetail.actual_cost_paise > repairDetail.estimated_cost_paise ? "text-red-600" : "text-green-600")}>
+                Variance: ₹{((repairDetail.actual_cost_paise - repairDetail.estimated_cost_paise) / 100).toLocaleString('en-IN')}
+              </p>
+            )}
+
+            {/* Status actions */}
+            <div className="flex gap-2 flex-wrap pt-1 border-t border-gray-100">
+              {repairDetail.repair_status === 'sent' && (
+                <button onClick={function () { advanceRepairStatus('in_progress') }} disabled={repairSaving}
+                  className="text-xs px-3 py-1.5 bg-amber-500 text-white rounded-lg font-semibold hover:bg-amber-600 disabled:opacity-50 transition-colors">
+                  🔧 Mark In Progress
+                </button>
+              )}
+              {repairDetail.repair_status === 'in_progress' && (
+                <button onClick={function () { advanceRepairStatus('ready') }} disabled={repairSaving}
+                  className="text-xs px-3 py-1.5 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 disabled:opacity-50 transition-colors">
+                  ✓ Ready for Pickup
+                </button>
+              )}
+              {repairDetail.repair_status === 'ready' && (
+                <button onClick={function () { advanceRepairStatus('returned') }} disabled={repairSaving}
+                  className="text-xs px-3 py-1.5 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 disabled:opacity-50 transition-colors">
+                  📥 Returned
+                </button>
+              )}
+              {repairDetail.repair_status !== 'returned' && repairDetail.repair_status !== 'write_off' && (
+                <button onClick={function () { if (confirm('Write off these items? This marks them as unrecoverable.')) advanceRepairStatus('write_off') }} disabled={repairSaving}
+                  className="text-xs px-3 py-1.5 border border-red-300 text-red-600 rounded-lg font-semibold hover:bg-red-50 disabled:opacity-50 transition-colors">
+                  ✕ Write Off
+                </button>
+              )}
+            </div>
+
+            {/* Repair photos */}
+            {!isClosed && (
+              <div className="flex gap-2 pt-1">
+                <label className={"text-xs px-3 py-1.5 rounded-lg font-semibold cursor-pointer transition-colors " +
+                  (uploading ? 'bg-gray-100 text-gray-400' : 'bg-orange-100 text-orange-700 hover:bg-orange-200')}>
+                  {uploading ? '...' : '📷 ' + (repairPhotoStage() === 'before_repair' ? 'Before Repair' : 'After Repair')}
+                  <input type="file" accept="image/*" capture="environment" className="hidden"
+                    disabled={uploading}
+                    onChange={function (e) {
+                      var file = e.target.files?.[0]
+                      if (file) uploadPhoto(file, repairPhotoStage())
+                      e.target.value = ''
+                    }} />
+                </label>
+              </div>
+            )}
+
+            {/* Notes */}
+            <div>
+              <label className="block text-[10px] text-gray-500 mb-0.5">Repair Notes</label>
+              <textarea value={repairDetail.notes || ''} rows={2}
+                onChange={function (e) { setRepairDetail(Object.assign({}, repairDetail, { notes: e.target.value })) }}
+                onBlur={function (e) { saveRepairField('notes', e.target.value.trim() || null) }}
+                placeholder="Repair details, condition notes..."
+                className="w-full px-2 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none" />
+            </div>
+          </div>
+        )}
+
         {/* Add items (draft only) */}
         {isDraft && (
           <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
@@ -1243,7 +1439,7 @@ function Challans({ profile }) {
 
           {!photosLoading && photos.length > 0 && (
             <div className="p-4">
-              {['loading', 'delivery', 'return', 'damage'].map(function (stage) {
+              {['loading', 'delivery', 'return', 'damage', 'before_repair', 'after_repair'].map(function (stage) {
                 var stagePhotos = photos.filter(function (p) { return p.stage === stage })
                 if (stagePhotos.length === 0) return null
                 return (
