@@ -716,7 +716,7 @@ function SeasonCalendar({ config, onSave, saving }) {
 var TABS = ['Venues', 'Rentals', 'DJ', 'TTD', 'Menu', 'Décor', 'Season']
 
 function RateCardEditor({ profile }) {
-  if (profile.role !== 'admin') return (
+  if (profile.role !== 'admin' && profile.role !== 'auditor' && (profile.permissions || []).indexOf('feature_ratecard') === -1) return (
     <div style={{ padding: 40, textAlign: 'center', color: C.muted, fontSize: 14 }}>Admin access required</div>
   )
 
