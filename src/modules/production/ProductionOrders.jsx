@@ -737,27 +737,28 @@ function ProductionOrders({ profile }) {
   // ── LIST ──
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div className="flex gap-2 flex-wrap flex-1">
-          <input type="text" value={search}
-            onChange={function (e) { setSearch(e.target.value) }}
-            placeholder="Search item, description..."
-            className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 w-48" />
+      <div className="space-y-2">
+        <input type="text" value={search}
+          onChange={function (e) { setSearch(e.target.value) }}
+          placeholder="Search item, description..."
+          className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          style={{ fontSize: '16px' }} />
+        <div className="flex gap-2 flex-wrap items-center">
           <select value={statusFilter} onChange={function (e) { setStatusFilter(e.target.value) }}
-            className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            className="flex-1 min-w-[100px] px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
             <option value="">All Status</option>
             {Object.keys(STATUS_LABELS).map(function (k) { return <option key={k} value={k}>{STATUS_LABELS[k]}</option> })}
           </select>
           <select value={deptFilter} onChange={function (e) { setDeptFilter(e.target.value) }}
-            className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            className="flex-1 min-w-[100px] px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
             <option value="">All Depts</option>
             {departments.map(function (d) { return <option key={d.id} value={d.name}>{d.name}</option> })}
           </select>
+          <button onClick={function () { openForm(null) }}
+            className="px-4 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-lg hover:bg-indigo-700 transition-colors whitespace-nowrap">
+            + New Order
+          </button>
         </div>
-        <button onClick={function () { openForm(null) }}
-          className="ml-3 px-4 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-lg hover:bg-indigo-700 transition-colors flex-shrink-0">
-          + New Order
-        </button>
       </div>
 
       <p className="text-xs text-gray-400">{filtered.length} order{filtered.length !== 1 ? 's' : ''}</p>

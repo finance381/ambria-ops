@@ -15,6 +15,7 @@ import Expenses from '../../modules/expenses/Expenses'
 import ProductionOrders from '../../modules/production/ProductionOrders'
 import Boxes from '../../modules/boxes/Boxes'
 import Challans from '../../modules/challans/Challans'
+import RateCardEditor from '../../modules/quote/RateCardEditor'
 
 var GROUPS = [
   {
@@ -34,7 +35,9 @@ var GROUPS = [
   {
     key: 'events', label: 'Events', icon: '📅', items: [
       { key: 'feature_events', label: 'Events', icon: '📅', tab: 'events' },
+      { key: 'feature_events', label: 'Events', icon: '📅', tab: 'events' },
       { key: 'feature_quote', label: 'Quote Calc', icon: '🧮', tab: 'quote' },
+      { key: 'feature_ratecard', label: 'Rate Card', icon: '💲', tab: 'ratecard' },
     ]
   },
   {
@@ -444,6 +447,9 @@ function Shell({ profile, onSignOut }) {
         )}
         {tab === 'challans' && (
           <Challans profile={profile} />
+        )}
+        {tab === 'ratecard' && (
+          <RateCardEditor profile={profile} />
         )}
         {tab === 'admin' && isAdmin && (
           <AdminMobile profile={profile} />

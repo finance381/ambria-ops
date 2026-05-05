@@ -55,6 +55,12 @@ var FEATURE_PERMS = [
      grants: ['feature_quote'],
   },
   {
+     key: 'feature_ratecard',
+     label: 'Rate Card Editor',
+     icon: '💲',
+     grants: ['feature_ratecard'],
+  },
+  {
     key: 'feature_expenses',
     label: 'PC & Direct Expenses',
     icon: '💰',
