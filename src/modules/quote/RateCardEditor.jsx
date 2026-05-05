@@ -888,9 +888,10 @@ function RateCardEditor({ profile }) {
   var isWide = WIDE_TABS.indexOf(tab) >= 0
 
   return (
-    <div style={{ fontFamily: 'Segoe UI, sans-serif', color: '#3D2B2B', maxWidth: isWide ? 960 : 560, margin: '0 auto' }}>
+    <div style={{ fontFamily: 'Segoe UI, sans-serif', color: '#3D2B2B', maxWidth: isWide ? 960 : 560, margin: '0 auto', overflow: 'hidden' }}>
       {/* Tab bar — scrollable */}
-      <div style={{ display: 'flex', gap: 5, marginBottom: 14, overflowX: 'auto', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none', paddingBottom: 2 }}>
+      <div style={{ display: 'flex', gap: 5, marginBottom: 14, overflowX: 'auto', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none', paddingBottom: 2, maxWidth: '100%', width: '100%' }}>
+        <style>{'div::-webkit-scrollbar{display:none}'}</style>
         {TABS.map(function (t) {
           var on = tab === t.key
           return (
