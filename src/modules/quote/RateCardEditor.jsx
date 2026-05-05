@@ -889,17 +889,16 @@ function RateCardEditor({ profile }) {
 
   return (
     <div style={{ fontFamily: 'Segoe UI, sans-serif', color: '#3D2B2B', maxWidth: isWide ? 960 : 560, margin: '0 auto', overflow: 'hidden' }}>
-      {/* Tab bar — scrollable */}
-      <div style={{ display: 'flex', gap: 5, marginBottom: 14, overflowX: 'auto', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none', paddingBottom: 2, maxWidth: '100%', width: '100%' }}>
-        <style>{'div::-webkit-scrollbar{display:none}'}</style>
+      {/* Tab bar */}
+      <div style={{ display: 'flex', gap: 4, marginBottom: 14, flexWrap: 'wrap' }}>
         {TABS.map(function (t) {
           var on = tab === t.key
           return (
             <button key={t.key} onClick={function () { setTab(t.key) }} style={{
-              padding: '7px 12px', borderRadius: 9, whiteSpace: 'nowrap', flexShrink: 0,
+              padding: '7px 0', borderRadius: 8, flex: '1 1 auto', minWidth: 'calc(25% - 4px)', textAlign: 'center',
               border: '2px solid ' + (on ? C.maroon2 : C.border),
               background: on ? 'linear-gradient(135deg,#4A1111,#8B2D2D)' : '#fff',
-              color: on ? '#fff' : C.muted, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+              color: on ? '#fff' : C.muted, fontSize: 11, fontWeight: 700, cursor: 'pointer',
             }}>{t.label}</button>
           )
         })}
