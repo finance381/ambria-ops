@@ -418,8 +418,8 @@ function MenuEditor({ config, onSave, saving }) {
 // ══════════════════════════════════════
 
 var DECOR_SECTIONS = [
-  { key: 'decor', label: 'Pushpanjali', tiers: 3, defaultLabels: ['Premium', 'Standard', 'Banquet'] },
-  { key: 'decor_eg', label: 'EG / Aura', tiers: 2, defaultLabels: ['Standard', 'Banquet'] },
+  { key: 'decor', label: 'Pushpanjali', tiers: 4, defaultLabels: ['Premium', 'Standard', 'Banquet', 'Lunch'] },
+  { key: 'decor_eg', label: 'EG / Aura', tiers: 3, defaultLabels: ['Standard', 'Banquet', 'Lunch'] },
   { key: 'decor_valencia', label: 'Valencia', tiers: 0, defaultLabels: [] },
 ]
 
@@ -512,12 +512,12 @@ function DecorEditor({ config, onSave, saving }) {
           return (
             <div key={tierIdx} style={{ marginBottom: 18 }}>
               <div style={{ fontSize: 12, fontWeight: 700, color: C.maroon2, marginBottom: 8 }}>{tierLabel}</div>
-              <div style={{ display: 'grid', gridTemplateColumns: '72px 1fr 1fr 1fr', gap: 6, alignItems: 'center' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '56px 1fr 1fr 1fr', gap: 5, alignItems: 'center' }}>
                 <TierHeader />
                 {CAT_LABELS.map(function (catLabel, catIdx) {
                   return (
                     <div key={catIdx} style={{ display: 'contents' }}>
-                      <div style={{ fontSize: 11, fontWeight: 600, color: CAT_COLORS[catIdx] }}>{catLabel}</div>
+                      <div style={{ fontSize: 10, fontWeight: 600, color: CAT_COLORS[catIdx] }}>{catLabel}</div>
                       {TIERS.map(function (tier) {
                         return <NumCell key={tier} value={(draft[tier][tierIdx] || [])[catIdx] || 0} onChange={function (v) { updateTiered(tier, tierIdx, catIdx, v) }} />
                       })}
@@ -532,12 +532,12 @@ function DecorEditor({ config, onSave, saving }) {
         {/* Flat grid (Valencia) */}
         {isFlat && (
           <div style={{ marginBottom: 12 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '72px 1fr 1fr 1fr', gap: 6, alignItems: 'center' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '56px 1fr 1fr 1fr', gap: 5, alignItems: 'center' }}>
               <TierHeader />
               {CAT_LABELS.map(function (catLabel, catIdx) {
                 return (
                   <div key={catIdx} style={{ display: 'contents' }}>
-                    <div style={{ fontSize: 11, fontWeight: 600, color: CAT_COLORS[catIdx] }}>{catLabel}</div>
+                    <div style={{ fontSize: 10, fontWeight: 600, color: CAT_COLORS[catIdx] }}>{catLabel}</div>
                     {TIERS.map(function (tier) {
                       return <NumCell key={tier} value={(draft[tier] || [])[catIdx] || 0} onChange={function (v) { updateFlat(tier, catIdx, v) }} />
                     })}
@@ -759,15 +759,15 @@ function RateCardEditor({ profile }) {
   return (
     <div style={{ fontFamily: 'Segoe UI, sans-serif', color: '#3D2B2B', maxWidth: tab === 6 ? 960 : 600, margin: '0 auto' }}>
       {/* Tab bar */}
-      <div style={{ display: 'flex', gap: 6, marginBottom: 16, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: 6, marginBottom: 16, overflowX: 'auto', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none', paddingBottom: 2 }}>
         {TABS.map(function (label, idx) {
           var on = tab === idx
           return (
             <button key={idx} onClick={function () { setTab(idx) }} style={{
-              padding: '9px 16px', borderRadius: 9,
+              padding: '8px 12px', borderRadius: 9, whiteSpace: 'nowrap', flexShrink: 0,
               border: '2px solid ' + (on ? C.maroon2 : C.border),
               background: on ? 'linear-gradient(135deg,#4A1111,#8B2D2D)' : '#fff',
-              color: on ? '#fff' : C.muted, fontSize: 13, fontWeight: 700, cursor: 'pointer',
+              color: on ? '#fff' : C.muted, fontSize: 12, fontWeight: 700, cursor: 'pointer',
             }}>{label}</button>
           )
         })}
