@@ -139,8 +139,9 @@ function Shell({ profile, onSignOut }) {
 
   async function loadBadges(isStale) {
     var counts = {}
-    var isDeptAppr = perms.indexOf('dept_approve') !== -1
     var isAdminRole = profile.role === 'admin' || profile.role === 'auditor'
+    var isDeptAppr = perms.indexOf('dept_approve') >= 0
+    var hasExpApprove = perms.indexOf('expense_approve') >= 0
 
     var promises = []
 
@@ -199,8 +200,8 @@ function Shell({ profile, onSignOut }) {
     // Expenses badge
     if (perms.indexOf('feature_expenses') !== -1) {
       var expStatuses = []
-      if (isAdminRole) expStatuses = isDeptAppr ? ['pending_dept', 'pending'] : ['pending']
-      else if (isDeptAppr) expStatuses = ['pending_dept']
+      if (isAdminRole) expStatuses = hasExpApprove ? ['pending_dept', 'pending'] : ['pending']
+      else if (hasExpApprove) expStatuses = ['pending_dept']
       if (expStatuses.length > 0) {
         promises.push(
           supabase.from('expenses')
@@ -248,12 +249,16 @@ function Shell({ profile, onSignOut }) {
           .then(function (res) { counts.feature_challans = res.count || 0 })
       )
     }
+
+    // Receive badge
+    if (perms.indexOf('feature_receive') !== -1) {
       promises.push(
         supabase.from('purchase_order_items')
           .select('id', { count: 'exact', head: true })
           .eq('status', 'purchased')
           .then(function (res) { counts.feature_receive = res.count || 0 })
       )
+    }
     
 
     await Promise.allSettled(promises)

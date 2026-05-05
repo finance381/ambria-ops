@@ -65,10 +65,11 @@ function Expenses({ profile }) {
   var [typeSaving, setTypeSaving] = useState(false)
 
 
-  var isAdmin = profile?.role === 'admin'
+  var isAdmin = profile?.role === 'admin' || (profile?.permissions && profile.permissions.indexOf('expense_approve') >= 0)
   var isAuditor = profile?.role === 'auditor'
   var isDeptApprover = (profile?.permissions || []).indexOf('dept_approve') !== -1
-  var showApproveTab = isAdmin || isAuditor || isDeptApprover
+  var hasExpenseApprove = (profile?.permissions || []).indexOf('expense_approve') !== -1
+  var showApproveTab = isAdmin || isAuditor || hasExpenseApprove
 
   useEffect(function () {
     var timer = setTimeout(function () { setExpSearchDebounced(expSearch) }, 400)

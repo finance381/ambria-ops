@@ -35,10 +35,11 @@ function Requisitions({ profile, onBack }) {
   var [editItems, setEditItems] = useState([])
   var [departments, setDepartments] = useState([])
 
-  var isAdmin = profile?.role === 'admin'
+  var isAdmin = profile?.role === 'admin' || (profile?.permissions && profile.permissions.indexOf('feature_requisitions') >= 0 && (profile.permissions.indexOf('dept_approve') >= 0 || profile.permissions.indexOf('admin_approve') >= 0))
   var isAuditor = profile?.role === 'auditor'
   var isDeptApprover = (profile?.permissions || []).indexOf('dept_approve') !== -1
-  var showApproveTab = isAdmin || isAuditor || isDeptApprover
+  var hasReqApprove = isAdmin || isAuditor || isDeptApprover
+  var showApproveTab = hasReqApprove && (profile?.permissions || []).indexOf('feature_requisitions') !== -1
 
   // Derive dept names for scoping non-admin dept approvers
   var approverDeptNames = []
