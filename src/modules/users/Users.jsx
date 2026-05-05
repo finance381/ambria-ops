@@ -5,117 +5,33 @@ import { logActivity } from '../../lib/logger'
 
 var DEFAULT_ROLES = ['admin', 'auditor', 'sales', 'production', 'logistics']
 
-var FEATURE_PERMS = [
-  {
-    key: 'feature_add',
-    label: 'Add Items',
-    icon: '📝',
-    grants: ['feature_add', 'inventory_add'],
-  },
-  {
-    key: 'feature_items',
-    label: 'View & Edit Items',
-    icon: '📋',
-    grants: ['feature_items', 'inventory_view', 'inventory_edit'],
-    optional: [
-      { key: 'inventory_delete', label: 'Delete items' },
-    ],
-  },
-  {
-    key: 'feature_dept_review',
-    label: 'Dept Review',
-    icon: '✅',
-    grants: ['feature_dept_review', 'dept_approve'],
-  },
-  {
-    key: 'feature_pending',
-    label: 'Pending Review',
-    icon: '⏳',
-    grants: ['feature_pending', 'admin_approve'],
-  },
-  {
-    key: 'feature_events',
-    label: 'Events',
-    icon: '📅',
-    grants: ['feature_events'],
-    optional: [
-      { key: 'event_buffer', label: 'Set setup/teardown days' },
-    ],
-  },
-  {
-    key: 'feature_requisitions',
-    label: 'Requisitions',
-    icon: '📋',
-    grants: ['feature_requisitions'],
-  },
-  {
-     key: 'feature_quote',
-     label: 'Quote Calculator',
-     icon: '🧮',
-     grants: ['feature_quote'],
-  },
-  {
-     key: 'feature_ratecard',
-     label: 'Rate Card Editor',
-     icon: '💲',
-     grants: ['feature_ratecard'],
-  },
-  {
-    key: 'feature_expenses',
-    label: 'PC & Direct Expenses',
-    icon: '💰',
-    grants: ['feature_expenses', 'expense_submit'],
-    optional: [
-      { key: 'expense_approve', label: 'Approve/reject expenses' },
-    ],
-  },
-  {
-    key: 'feature_purchase',
-    label: 'Purchase Orders',
-    icon: '🛒',
-    grants: ['feature_purchase'],
-  },
-  {
-    key: 'feature_receive',
-    label: 'Receiving',
-    icon: '🛒',
-    grants: ['feature_receive'],
-  },
-  {
-    key: 'feature_boxes',
-    label: 'Boxes',
-    icon: '📦',
-    grants: ['feature_boxes'],
-  },
-  {
-    key: 'feature_challans',
-    label: 'Challans',
-    icon: '🚛',
-    grants: ['feature_challans'],
-  },
-  {
-    key: 'feature_production',
-    label: 'Production Orders',
-    icon: '🔧',
-    grants: ['feature_production'],
-  },
-  {
-    key: 'feature_manpower',
-    label: 'Manpower Planning',
-    icon: '👷',
-    grants: ['feature_manpower'],
-  },
-  {
-   key: 'feature_admin',
-   label: 'Admin Panel',
-   icon: '⚙️',
-   grants: ['feature_admin'],
-   optional: [
-     { key: 'admin_masters', label: 'Manage masters' },
-     { key: 'admin_users', label: 'Manage users' },
-     { key: 'admin_approve', label: 'Approve items' },
-   ],
- },
+var PERM_GROUPS = [
+  { group: 'Inventory', icon: '📦', children: [
+    { key: 'feature_add', label: 'Add Items', grants: ['feature_add', 'inventory_add'] },
+    { key: 'feature_items', label: 'View & Edit', grants: ['feature_items', 'inventory_view', 'inventory_edit'], optional: [{ key: 'inventory_delete', label: 'Delete items' }] },
+    { key: 'feature_dept_review', label: 'Dept Review', grants: ['feature_dept_review', 'dept_approve'] },
+    { key: 'feature_pending', label: 'Pending Review', grants: ['feature_pending', 'admin_approve'] },
+  ]},
+  { group: 'Events', icon: '📅', children: [
+    { key: 'feature_events', label: 'Events', grants: ['feature_events'], optional: [{ key: 'event_buffer', label: 'Set setup/teardown days' }] },
+    { key: 'feature_requisitions', label: 'Requisitions', grants: ['feature_requisitions'] },
+    { key: 'feature_production', label: 'Production Orders', grants: ['feature_production'] },
+    { key: 'feature_manpower', label: 'Manpower', grants: ['feature_manpower'] },
+  ]},
+  { group: 'Finance', icon: '💰', children: [
+    { key: 'feature_quote', label: 'Quote Calculator', grants: ['feature_quote'] },
+    { key: 'feature_ratecard', label: 'Rate Card Editor', grants: ['feature_ratecard'] },
+    { key: 'feature_expenses', label: 'Expenses', grants: ['feature_expenses', 'expense_submit'], optional: [{ key: 'expense_approve', label: 'Approve/reject expenses' }] },
+  ]},
+  { group: 'Operations', icon: '🚚', children: [
+    { key: 'feature_purchase', label: 'Purchase Orders', grants: ['feature_purchase'] },
+    { key: 'feature_receive', label: 'Receiving', grants: ['feature_receive'] },
+    { key: 'feature_boxes', label: 'Boxes', grants: ['feature_boxes'] },
+    { key: 'feature_challans', label: 'Challans', grants: ['feature_challans'] },
+  ]},
+  { group: 'Admin', icon: '⚙️', children: [
+    { key: 'feature_admin', label: 'Admin Panel', grants: ['feature_admin'], optional: [{ key: 'admin_masters', label: 'Manage masters' }, { key: 'admin_users', label: 'Manage users' }, { key: 'admin_approve', label: 'Approve items' }] },
+  ]},
 ]
 
 function Users() {
@@ -698,52 +614,83 @@ function Users() {
               </div>
             </div>
 
-            {/* Permissions */}
+            {/* Permissions — Grouped */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Permissions</label>
               <div className="space-y-2">
-                {FEATURE_PERMS.map(function (feat) {
-                  var isOn = feat.grants.every(function (g) { return editPerms.includes(g) })
-                  var isPartial = !isOn && feat.grants.some(function (g) { return editPerms.includes(g) })
+                {PERM_GROUPS.map(function (grp) {
+                  var allChildKeys = []
+                  grp.children.forEach(function (ch) { ch.grants.forEach(function (g) { if (allChildKeys.indexOf(g) === -1) allChildKeys.push(g) }) })
+                  var groupOn = allChildKeys.every(function (g) { return editPerms.indexOf(g) >= 0 })
+                  var groupPartial = !groupOn && allChildKeys.some(function (g) { return editPerms.indexOf(g) >= 0 })
+
                   return (
-                    <div key={feat.key} className={"rounded-lg border transition-colors " + (isOn ? "bg-indigo-50 border-indigo-200" : isPartial ? "bg-amber-50 border-amber-200" : "bg-gray-50 border-gray-200")}>
+                    <div key={grp.group} className="rounded-xl border border-gray-200 overflow-hidden">
                       <button type="button" onClick={function () {
-                        if (isOn) {
-                          // Turn off: remove all granted + optional perms
-                          var allKeys = feat.grants.concat((feat.optional || []).map(function (o) { return o.key }))
-                          setEditPerms(function (prev) { return prev.filter(function (p) { return allKeys.indexOf(p) === -1 }) })
+                        if (groupOn) {
+                          var rm = []
+                          grp.children.forEach(function (ch) {
+                            ch.grants.forEach(function (g) { rm.push(g) });
+                            (ch.optional || []).forEach(function (o) { rm.push(o.key) })
+                          })
+                          setEditPerms(function (prev) { return prev.filter(function (p) { return rm.indexOf(p) === -1 }) })
                         } else {
-                          // Turn on: add only granted perms (optional stays unchecked for user to fine-tune)
                           setEditPerms(function (prev) {
-                            var merged = prev.slice()
-                            feat.grants.forEach(function (g) { if (merged.indexOf(g) === -1) merged.push(g) })
-                            return merged
+                            var m = prev.slice()
+                            grp.children.forEach(function (ch) { ch.grants.forEach(function (g) { if (m.indexOf(g) === -1) m.push(g) }) })
+                            return m
                           })
                         }
-                      }} className="w-full flex items-center justify-between px-4 py-3">
-                        <div className="flex items-center gap-3">
-                          <span className="text-lg">{feat.icon}</span>
-                          <span className="text-sm font-semibold text-gray-800">{feat.label}</span>
+                      }} className={"w-full flex items-center justify-between px-4 py-3 " + (groupOn ? "bg-indigo-50" : groupPartial ? "bg-amber-50" : "bg-gray-50")}>
+                        <div className="flex items-center gap-2">
+                          <span className="text-lg">{grp.icon}</span>
+                          <span className="text-sm font-bold text-gray-800">{grp.group}</span>
+                          <span className="text-[10px] text-gray-400 ml-1">{grp.children.length}</span>
                         </div>
-                        <div className={"w-10 h-6 rounded-full transition-colors relative " + (isOn ? "bg-indigo-600" : isPartial ? "bg-amber-400" : "bg-gray-300")}>
-                          <div className={"absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform " + (isOn || isPartial ? "translate-x-4" : "translate-x-0.5")} />
+                        <div className={"w-10 h-6 rounded-full transition-colors relative " + (groupOn ? "bg-indigo-600" : groupPartial ? "bg-amber-400" : "bg-gray-300")}>
+                          <div className={"absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform " + (groupOn || groupPartial ? "translate-x-4" : "translate-x-0.5")} />
                         </div>
                       </button>
-                      {isOn && feat.optional && feat.optional.length > 0 && (
-                        <div className="px-4 pb-3 pt-1 border-t border-indigo-100">
-                          <p className="text-[11px] text-gray-400 uppercase tracking-wider font-bold mb-2">Fine-tune</p>
-                          <div className="flex flex-wrap gap-x-4 gap-y-1.5">
-                            {feat.optional.map(function (opt) {
-                              var optChecked = editPerms.includes(opt.key)
-                              return (
-                                <label key={opt.key} className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
-                                  <input type="checkbox" checked={optChecked} onChange={function () { togglePerm(opt.key) }}
-                                    className="w-3.5 h-3.5 accent-indigo-600" />
-                                  <span className="text-[12px]">{opt.label}</span>
-                                </label>
-                              )
-                            })}
-                          </div>
+                      {(groupOn || groupPartial) && (
+                        <div className="border-t border-gray-100 px-3 py-2 space-y-1 bg-white">
+                          {grp.children.map(function (feat) {
+                            var isOn = feat.grants.every(function (g) { return editPerms.indexOf(g) >= 0 })
+                            return (
+                              <div key={feat.key}>
+                                <button type="button" onClick={function () {
+                                  if (isOn) {
+                                    var ak = feat.grants.concat((feat.optional || []).map(function (o) { return o.key }))
+                                    setEditPerms(function (prev) { return prev.filter(function (p) { return ak.indexOf(p) === -1 }) })
+                                  } else {
+                                    setEditPerms(function (prev) {
+                                      var m = prev.slice()
+                                      feat.grants.forEach(function (g) { if (m.indexOf(g) === -1) m.push(g) })
+                                      return m
+                                    })
+                                  }
+                                }} className="w-full flex items-center justify-between py-2 px-2 rounded-lg hover:bg-gray-50">
+                                  <span className={"text-[13px] font-medium " + (isOn ? "text-indigo-700" : "text-gray-500")}>{feat.label}</span>
+                                  <div className={"w-8 h-5 rounded-full transition-colors relative " + (isOn ? "bg-indigo-500" : "bg-gray-300")}>
+                                    <div className={"absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform " + (isOn ? "translate-x-3" : "translate-x-0.5")} />
+                                  </div>
+                                </button>
+                                {isOn && feat.optional && feat.optional.length > 0 && (
+                                  <div className="pl-4 pb-1 flex flex-wrap gap-x-4 gap-y-1">
+                                    {feat.optional.map(function (opt) {
+                                      var optChecked = editPerms.indexOf(opt.key) >= 0
+                                      return (
+                                        <label key={opt.key} className="flex items-center gap-1.5 text-gray-600 cursor-pointer">
+                                          <input type="checkbox" checked={optChecked} onChange={function () { togglePerm(opt.key) }}
+                                            className="w-3 h-3 accent-indigo-600" />
+                                          <span className="text-[11px]">{opt.label}</span>
+                                        </label>
+                                      )
+                                    })}
+                                  </div>
+                                )}
+                              </div>
+                            )
+                          })}
                         </div>
                       )}
                     </div>

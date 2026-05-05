@@ -843,7 +843,7 @@ var TABS = [
 var WIDE_TABS = ['season', 'rentals']
 
 function RateCardEditor({ profile }) {
-  var canEdit = profile.role === 'admin' || (profile.permissions && profile.permissions.indexOf('rate_card_edit') >= 0)
+  var canEdit = profile.role === 'admin' || (profile.permissions && profile.permissions.indexOf('feature_ratecard') >= 0)
   if (!canEdit) return (
     <div style={{ padding: 40, textAlign: 'center', color: C.muted, fontSize: 14 }}>Rate card edit access required</div>
   )
