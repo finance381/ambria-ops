@@ -1,70 +1,167 @@
-import { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 
 /* ═══════════════════════════════════════════════════════
-   RATE CARD EDITOR — Admin-only quote_config manager
-   Phase 1: Venues, Rentals, DJ, TTD
+   RATE CARD EDITOR — Fully dynamic, admin-only
+   All sections: add/remove items, responsive layout
    ═══════════════════════════════════════════════════════ */
 
 var C = {
   maroon: '#4A1111', maroon2: '#8B2D2D', gold: '#D4872C',
   cream: '#F5E6D3', border: '#E8DDD0', muted: '#8B7355', bg: '#FAF7F5',
+  red: '#991B1B', green: '#166534', blue: '#0369A1',
 }
-var CAT_LABELS = ["King's", 'Perfect', 'Filler']
-var CAT_COLORS = ['#D4872C', '#8B2D2D', '#6B5B4E']
-var SLOT_LABELS = ['Dinner', 'Sundowner', 'Lunch']
 var TIERS = ['q', 't', 'f']
 var TIER_LABELS = ['Quote', 'Target', 'Floor']
-var TIER_COLORS = ['#4A1111', '#0369A1', '#991B1B']
+var TIER_COLORS = [C.maroon, C.blue, C.red]
+
+var DEFAULT_CATS = [{ label: "King's", color: '#D4872C' }, { label: 'Perfect', color: '#8B2D2D' }, { label: 'Filler', color: '#6B5B4E' }]
+var DEFAULT_SLOTS = ['Dinner', 'Sundowner', 'Lunch']
 var DECOR_OPTS = [
-  { val: 'p', label: 'Pushpanjali' },
-  { val: 'eg', label: 'EG/Aura' },
-  { val: 'f', label: 'Valencia' },
-  { val: '', label: 'None' },
+  { val: 'p', label: 'Pushpanjali' }, { val: 'eg', label: 'EG/Aura' },
+  { val: 'f', label: 'Valencia' }, { val: '', label: 'None' },
 ]
 
 function clone(o) { return JSON.parse(JSON.stringify(o)) }
 
-// ── Shared sub-components (stable refs, defined outside) ──
+// ── Shared UI atoms ──
 
-function SectionCard({ title, children }) {
+function Card({ title, children, style }) {
   return (
-    <div style={{ background: '#fff', borderRadius: 12, padding: 18, marginBottom: 12, border: '1px solid ' + C.border }}>
-      {title && <div style={{ fontSize: 11, fontWeight: 700, color: C.maroon2, textTransform: 'uppercase', letterSpacing: 1.5, paddingBottom: 8, borderBottom: '2px solid ' + C.cream, marginBottom: 12 }}>{title}</div>}
+    <div style={Object.assign({ background: '#fff', borderRadius: 12, padding: 16, marginBottom: 12, border: '1px solid ' + C.border }, style || {})}>
+      {title && <div style={{ fontSize: 11, fontWeight: 700, color: C.maroon2, textTransform: 'uppercase', letterSpacing: 1.2, paddingBottom: 8, borderBottom: '2px solid ' + C.cream, marginBottom: 12 }}>{title}</div>}
       {children}
     </div>
   )
 }
 
-function SaveBtn({ onClick, saving, label }) {
+function Btn({ label, onClick, disabled, variant, style }) {
+  var isPrimary = variant === 'primary'
+  var isDanger = variant === 'danger'
+  var isSmall = variant === 'small' || variant === 'danger'
   return (
-    <button onClick={onClick} disabled={saving} style={{
-      width: '100%', padding: 13, borderRadius: 10, border: 'none', marginTop: 12,
-      background: 'linear-gradient(135deg,#4A1111,#8B2D2D)', color: '#fff',
-      fontSize: 14, fontWeight: 700, cursor: 'pointer', opacity: saving ? 0.5 : 1,
-    }}>{saving ? 'Saving...' : (label || 'Save Changes')}</button>
+    <button onClick={onClick} disabled={disabled} style={Object.assign({
+      padding: isSmall ? '5px 10px' : '12px 16px', borderRadius: isSmall ? 7 : 10, cursor: 'pointer',
+      border: isPrimary ? 'none' : isDanger ? '1px solid #FCA5A5' : '1px solid ' + C.border,
+      background: isPrimary ? 'linear-gradient(135deg,#4A1111,#8B2D2D)' : isDanger ? '#FEF2F2' : '#fff',
+      color: isPrimary ? '#fff' : isDanger ? C.red : C.muted,
+      fontSize: isSmall ? 11 : 13, fontWeight: 700, opacity: disabled ? 0.5 : 1,
+    }, style || {})}>{label}</button>
   )
 }
 
-function NumCell({ value, onChange, step }) {
+function Num({ value, onChange }) {
   return (
-    <input type="number" inputMode="decimal" step={step || 'any'} value={value || ''}
+    <input type="number" inputMode="decimal" step="any" value={value == null ? '' : value}
       onInput={function (e) { onChange(e.target.value === '' ? 0 : +e.target.value) }}
       style={{
-        width: '100%', padding: '8px 4px', borderRadius: 7, border: '1px solid ' + C.border,
+        width: '100%', padding: '7px 4px', borderRadius: 7, border: '1px solid ' + C.border,
         fontSize: 13, fontWeight: 600, textAlign: 'center', color: C.maroon, background: C.bg,
-        fontFamily: 'inherit', outline: 'none',
+        fontFamily: 'inherit', outline: 'none', minWidth: 0,
       }} />
   )
 }
 
-function TierHeader() {
+function TextIn({ value, onChange, placeholder, style }) {
   return (
-    <>
+    <input value={value || ''} placeholder={placeholder}
+      onChange={function (e) { onChange(e.target.value) }}
+      style={Object.assign({
+        padding: 8, borderRadius: 7, border: '1px solid ' + C.border,
+        fontSize: 12, fontWeight: 600, color: C.maroon, fontFamily: 'inherit', minWidth: 0, width: '100%',
+      }, style || {})} />
+  )
+}
+
+function AddRow({ label, onClick }) {
+  return (
+    <button onClick={onClick} style={{
+      width: '100%', padding: 10, borderRadius: 9, border: '2px dashed ' + C.border,
+      background: 'transparent', color: C.gold, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+      marginTop: 8,
+    }}>+ {label}</button>
+  )
+}
+
+function RemoveBtn({ onClick }) {
+  return (
+    <button onClick={onClick} style={{
+      width: 22, height: 22, borderRadius: 6, border: '1px solid #FCA5A5',
+      background: '#FEF2F2', color: C.red, fontSize: 12, fontWeight: 700,
+      cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+      flexShrink: 0,
+    }}>×</button>
+  )
+}
+
+function TierGrid({ cats, children }) {
+  var cols = '56px ' + TIERS.map(function () { return '1fr' }).join(' ')
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: cols, gap: 5, alignItems: 'center' }}>
       <div />
       {TIER_LABELS.map(function (l, i) {
-        return <div key={i} style={{ fontSize: 10, fontWeight: 700, color: TIER_COLORS[i], textAlign: 'center', paddingBottom: 4 }}>{l}</div>
+        return <div key={i} style={{ fontSize: 10, fontWeight: 700, color: TIER_COLORS[i], textAlign: 'center', paddingBottom: 2 }}>{l}</div>
       })}
+      {children}
+    </div>
+  )
+}
+
+// ══════════════════════════════════════
+//  CATEGORIES & SLOTS EDITOR
+// ══════════════════════════════════════
+
+function CategoriesEditor({ config, onSave, saving }) {
+  var [cats, setCats] = useState(clone(config.categories || DEFAULT_CATS))
+  var [slots, setSlots] = useState(clone(config.slots || DEFAULT_SLOTS))
+
+  useEffect(function () { setCats(clone(config.categories || DEFAULT_CATS)) }, [config.categories])
+  useEffect(function () { setSlots(clone(config.slots || DEFAULT_SLOTS)) }, [config.slots])
+
+  function updCat(idx, field, val) { var d = clone(cats); d[idx][field] = val; setCats(d) }
+  function addCat() { setCats(cats.concat([{ label: 'New Category', color: '#6B5B4E' }])) }
+  function rmCat(idx) { var d = clone(cats); d.splice(idx, 1); setCats(d) }
+
+  function updSlot(idx, val) { var d = clone(slots); d[idx] = val; setSlots(d) }
+  function addSlot() { setSlots(slots.concat(['New Slot'])) }
+  function rmSlot(idx) { var d = clone(slots); d.splice(idx, 1); setSlots(d) }
+
+  return (
+    <>
+      <Card title="Date Categories">
+        <div style={{ fontSize: 11, color: C.muted, marginBottom: 10 }}>Define pricing tiers by date demand. Order matters: index 0 = highest.</div>
+        {cats.map(function (c, idx) {
+          return (
+            <div key={idx} style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+              <input type="color" value={c.color || '#6B5B4E'} onChange={function (e) { updCat(idx, 'color', e.target.value) }}
+                style={{ width: 32, height: 32, border: 'none', borderRadius: 6, cursor: 'pointer', flexShrink: 0 }} />
+              <TextIn value={c.label} onChange={function (v) { updCat(idx, 'label', v) }} style={{ flex: 1 }} />
+              {cats.length > 1 && <RemoveBtn onClick={function () { rmCat(idx) }} />}
+            </div>
+          )
+        })}
+        <AddRow label="Add Category" onClick={addCat} />
+        <div style={{ marginTop: 12 }}>
+          <Btn label="Save Categories" variant="primary" onClick={function () { onSave('categories', cats) }} disabled={saving} style={{ width: '100%' }} />
+        </div>
+      </Card>
+
+      <Card title="Time Slots">
+        <div style={{ fontSize: 11, color: C.muted, marginBottom: 10 }}>Slots available for booking. Order = column index in rental grids.</div>
+        {slots.map(function (s, idx) {
+          return (
+            <div key={idx} style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+              <div style={{ width: 24, textAlign: 'center', fontSize: 11, fontWeight: 700, color: C.muted, flexShrink: 0 }}>{idx}</div>
+              <TextIn value={s} onChange={function (v) { updSlot(idx, v) }} style={{ flex: 1 }} />
+              {slots.length > 1 && <RemoveBtn onClick={function () { rmSlot(idx) }} />}
+            </div>
+          )
+        })}
+        <AddRow label="Add Slot" onClick={addSlot} />
+        <div style={{ marginTop: 12 }}>
+          <Btn label="Save Slots" variant="primary" onClick={function () { onSave('slots', slots) }} disabled={saving} style={{ width: '100%' }} />
+        </div>
+      </Card>
     </>
   )
 }
@@ -78,38 +175,35 @@ function VenuesEditor({ config, onSave, saving }) {
   var [draft, setDraft] = useState(clone(raw))
   useEffect(function () { setDraft(clone(config.venues || [])) }, [config.venues])
 
-  function upd(idx, field, val) {
-    var d = clone(draft)
-    d[idx][field] = val
-    setDraft(d)
-  }
+  function upd(idx, field, val) { var d = clone(draft); d[idx][field] = val; setDraft(d) }
+  function addVenue() { setDraft(draft.concat([{ name: '', location: '', decor_mode: null, status: 'placeholder' }])) }
+  function rmVenue(idx) { var d = clone(draft); d.splice(idx, 1); setDraft(d) }
 
   return (
-    <SectionCard title="Venues">
+    <Card title="Venues">
       {draft.map(function (v, idx) {
         return (
           <div key={idx} style={{
             marginBottom: 10, padding: 12, borderRadius: 10,
             border: '1px solid ' + C.border, background: v.status === 'placeholder' ? '#F9F5F0' : '#fff',
           }}>
-            <div style={{ fontSize: 10, fontWeight: 700, color: C.muted, marginBottom: 8 }}>IDX {idx}</div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: C.muted }}>IDX {idx}</div>
+              {draft.length > 1 && <RemoveBtn onClick={function () { rmVenue(idx) }} />}
+            </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
-              <input value={v.name || ''} placeholder="Venue name"
-                onChange={function (e) { upd(idx, 'name', e.target.value) }}
-                style={{ padding: 9, borderRadius: 7, border: '1px solid ' + C.border, fontSize: 13, fontWeight: 600, color: C.maroon, fontFamily: 'inherit' }} />
-              <input value={v.location || ''} placeholder="Location"
-                onChange={function (e) { upd(idx, 'location', e.target.value) }}
-                style={{ padding: 9, borderRadius: 7, border: '1px solid ' + C.border, fontSize: 13, color: C.muted, fontFamily: 'inherit' }} />
+              <TextIn value={v.name} onChange={function (val) { upd(idx, 'name', val) }} placeholder="Venue name" />
+              <TextIn value={v.location} onChange={function (val) { upd(idx, 'location', val) }} placeholder="Location" />
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
               <select value={v.decor_mode || ''}
                 onChange={function (e) { upd(idx, 'decor_mode', e.target.value || null) }}
-                style={{ padding: 9, borderRadius: 7, border: '1px solid ' + C.border, fontSize: 12, color: C.muted, background: '#fff', fontFamily: 'inherit' }}>
+                style={{ padding: 8, borderRadius: 7, border: '1px solid ' + C.border, fontSize: 12, color: C.muted, background: '#fff', fontFamily: 'inherit' }}>
                 {DECOR_OPTS.map(function (o) { return <option key={o.val} value={o.val}>{o.label}</option> })}
               </select>
               <select value={v.status || 'live'}
                 onChange={function (e) { upd(idx, 'status', e.target.value) }}
-                style={{ padding: 9, borderRadius: 7, border: '1px solid ' + C.border, fontSize: 12, color: v.status === 'placeholder' ? '#D97706' : '#166534', background: '#fff', fontFamily: 'inherit' }}>
+                style={{ padding: 8, borderRadius: 7, border: '1px solid ' + C.border, fontSize: 12, color: v.status === 'placeholder' ? '#D97706' : C.green, background: '#fff', fontFamily: 'inherit' }}>
                 <option value="live">Live</option>
                 <option value="placeholder">Placeholder</option>
               </select>
@@ -117,8 +211,9 @@ function VenuesEditor({ config, onSave, saving }) {
           </div>
         )
       })}
-      <SaveBtn onClick={function () { onSave('venues', draft) }} saving={saving} label="Save Venues" />
-    </SectionCard>
+      <AddRow label="Add Venue" onClick={addVenue} />
+      <Btn label="Save Venues" variant="primary" onClick={function () { onSave('venues', draft) }} disabled={saving} style={{ width: '100%', marginTop: 12 }} />
+    </Card>
   )
 }
 
@@ -126,40 +221,68 @@ function VenuesEditor({ config, onSave, saving }) {
 //  RENTALS EDITOR
 // ══════════════════════════════════════
 
-var EMPTY_RENTAL = { q: [[0,0,0],[0,0,0],[0,0,0]], t: [[0,0,0],[0,0,0],[0,0,0]], f: [[0,0,0],[0,0,0],[0,0,0]] }
-
 function RentalsEditor({ config, onSave, saving }) {
   var rentals = config.rentals || {}
   var venues = config.venues || []
+  var cats = config.categories || DEFAULT_CATS
+  var slots = config.slots || DEFAULT_SLOTS
   var [draft, setDraft] = useState(clone(rentals))
   var [selV, setSelV] = useState(-1)
 
   useEffect(function () { setDraft(clone(config.rentals || {})) }, [config.rentals])
 
-  // Find live venue idxs
   var liveIdxs = []
   venues.forEach(function (v, i) { if (v.status === 'live') liveIdxs.push(i) })
   if (selV === -1 && liveIdxs.length > 0) setSelV(liveIdxs[0])
 
+  function emptyRental() {
+    var r = {}
+    TIERS.forEach(function (tier) {
+      r[tier] = []
+      for (var c = 0; c < cats.length; c++) {
+        var row = []
+        for (var s = 0; s < slots.length; s++) row.push(0)
+        r[tier].push(row)
+      }
+    })
+    return r
+  }
+
+  function padRental(rd) {
+    var d = clone(rd)
+    TIERS.forEach(function (tier) {
+      if (!d[tier]) d[tier] = []
+      while (d[tier].length < cats.length) {
+        var row = []
+        for (var s = 0; s < slots.length; s++) row.push(0)
+        d[tier].push(row)
+      }
+      d[tier].forEach(function (row, ci) {
+        while (row.length < slots.length) row.push(0)
+      })
+    })
+    return d
+  }
+
   function updateCell(tier, catIdx, slotIdx, val) {
     var d = clone(draft)
     var key = selV + ''
-    if (!d[key]) d[key] = clone(EMPTY_RENTAL)
+    if (!d[key]) d[key] = emptyRental()
+    d[key] = padRental(d[key])
     d[key][tier][catIdx][slotIdx] = val
     setDraft(d)
   }
 
-  var vd = draft[selV + ''] || clone(EMPTY_RENTAL)
+  var vd = padRental(draft[selV + ''] || emptyRental())
 
   return (
-    <SectionCard title="Rental Rates (₹L)">
-      {/* Venue pills */}
+    <Card title="Rental Rates (₹L)">
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 16 }}>
         {liveIdxs.map(function (idx) {
           var on = selV === idx
           return (
             <button key={idx} onClick={function () { setSelV(idx) }} style={{
-              padding: '8px 14px', borderRadius: 9, border: '2px solid ' + (on ? C.maroon2 : C.border),
+              padding: '7px 12px', borderRadius: 9, border: '2px solid ' + (on ? C.maroon2 : C.border),
               background: on ? C.cream : '#fff', color: on ? C.maroon : C.muted,
               fontSize: 12, fontWeight: on ? 700 : 600, cursor: 'pointer',
             }}>{venues[idx].name}</button>
@@ -167,29 +290,32 @@ function RentalsEditor({ config, onSave, saving }) {
         })}
       </div>
 
-      {/* Per category grid */}
-      {CAT_LABELS.map(function (catLabel, catIdx) {
+      {cats.map(function (cat, catIdx) {
+        var slotCols = '56px ' + slots.map(function () { return '1fr' }).join(' ')
         return (
           <div key={catIdx} style={{ marginBottom: 18 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: CAT_COLORS[catIdx], marginBottom: 8 }}>{catLabel}</div>
-            <div style={{ display: 'grid', gridTemplateColumns: '72px 1fr 1fr 1fr', gap: 6, alignItems: 'center' }}>
-              <TierHeader />
-              {SLOT_LABELS.map(function (slotLabel, slotIdx) {
+            <div style={{ fontSize: 12, fontWeight: 700, color: cat.color || C.muted, marginBottom: 6 }}>{cat.label}</div>
+            <div style={{ display: 'grid', gridTemplateColumns: slotCols, gap: 5, alignItems: 'center' }}>
+              <div />
+              {slots.map(function (s, si) {
+                return <div key={si} style={{ fontSize: 10, fontWeight: 700, color: C.muted, textAlign: 'center' }}>{s}</div>
+              })}
+              {TIERS.map(function (tier, ti) {
                 return (
-                  <div key={slotIdx} style={{ display: 'contents' }}>
-                    <div style={{ fontSize: 11, fontWeight: 600, color: C.muted }}>{slotLabel}</div>
-                    {TIERS.map(function (tier, ti) {
-                      return <NumCell key={tier} value={vd[tier][catIdx][slotIdx]} onChange={function (v) { updateCell(tier, catIdx, slotIdx, v) }} />
+                  <React.Fragment key={tier}>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: TIER_COLORS[ti] }}>{TIER_LABELS[ti]}</div>
+                    {slots.map(function (s, si) {
+                      return <Num key={si} value={vd[tier][catIdx] ? vd[tier][catIdx][si] : 0} onChange={function (v) { updateCell(tier, catIdx, si, v) }} />
                     })}
-                  </div>
+                  </React.Fragment>
                 )
               })}
             </div>
           </div>
         )
       })}
-      <SaveBtn onClick={function () { onSave('rentals', draft) }} saving={saving} label="Save Rentals" />
-    </SectionCard>
+      <Btn label="Save Rentals" variant="primary" onClick={function () { onSave('rentals', draft) }} disabled={saving} style={{ width: '100%', marginTop: 8 }} />
+    </Card>
   )
 }
 
@@ -202,59 +328,66 @@ function DJEditor({ config, onSave, saving }) {
   var [draft, setDraft] = useState(clone(raw))
   useEffect(function () { setDraft(clone(config.dj || raw)) }, [config.dj])
 
-  function updateCell(group, tier, optIdx, val) {
+  var labels = draft.labels || []
+  var groups = [{ key: 'pushpanjali', label: 'Pushpanjali' }, { key: 'other', label: 'Other Venues' }]
+
+  function updateLabel(idx, val) { var d = clone(draft); d.labels[idx] = val; setDraft(d) }
+  function updateCell(grp, tier, idx, val) { var d = clone(draft); d[grp][tier][idx] = val; setDraft(d) }
+
+  function addOption() {
     var d = clone(draft)
-    d[group][tier][optIdx] = val
+    d.labels.push('New Option')
+    groups.forEach(function (g) {
+      TIERS.forEach(function (tier) { d[g.key][tier].push(0) })
+    })
     setDraft(d)
   }
 
-  function updateLabel(idx, val) {
+  function rmOption(idx) {
     var d = clone(draft)
-    d.labels[idx] = val
+    d.labels.splice(idx, 1)
+    groups.forEach(function (g) {
+      TIERS.forEach(function (tier) { d[g.key][tier].splice(idx, 1) })
+    })
     setDraft(d)
   }
-
-  var labels = draft.labels || ['Std', 'LED']
-  var groups = [
-    { key: 'pushpanjali', label: 'Pushpanjali' },
-    { key: 'other', label: 'Other Venues' },
-  ]
 
   return (
-    <SectionCard title="DJ Rates (₹L)">
-      {/* Labels */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 16 }}>
+    <Card title="DJ Rates (₹L)">
+      <div style={{ marginBottom: 14 }}>
         {labels.map(function (l, i) {
           return (
-            <input key={i} value={l} onChange={function (e) { updateLabel(i, e.target.value) }}
-              style={{ padding: 9, borderRadius: 7, border: '1px solid ' + C.border, fontSize: 12, fontWeight: 600, color: C.maroon, fontFamily: 'inherit' }} />
+            <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 }}>
+              <TextIn value={l} onChange={function (v) { updateLabel(i, v) }} style={{ flex: 1 }} />
+              {labels.length > 1 && <RemoveBtn onClick={function () { rmOption(i) }} />}
+            </div>
           )
         })}
+        <AddRow label="Add DJ Option" onClick={addOption} />
       </div>
 
       {groups.map(function (grp) {
-        var gd = draft[grp.key] || { q: [0,0], t: [0,0], f: [0,0] }
+        var gd = draft[grp.key] || {}
         return (
-          <div key={grp.key} style={{ marginBottom: 18 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: C.maroon2, marginBottom: 8 }}>{grp.label}</div>
-            <div style={{ display: 'grid', gridTemplateColumns: '72px 1fr 1fr 1fr', gap: 6, alignItems: 'center' }}>
-              <TierHeader />
+          <div key={grp.key} style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: C.maroon2, marginBottom: 6 }}>{grp.label}</div>
+            <TierGrid>
               {labels.map(function (optLabel, optIdx) {
                 return (
-                  <div key={optIdx} style={{ display: 'contents' }}>
-                    <div style={{ fontSize: 11, fontWeight: 600, color: C.muted }}>{optLabel.length > 10 ? optLabel.substring(0, 10) + '..' : optLabel}</div>
+                  <React.Fragment key={optIdx}>
+                    <div style={{ fontSize: 10, fontWeight: 600, color: C.muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{optLabel}</div>
                     {TIERS.map(function (tier) {
-                      return <NumCell key={tier} value={gd[tier][optIdx]} onChange={function (v) { updateCell(grp.key, tier, optIdx, v) }} />
+                      return <Num key={tier} value={(gd[tier] || [])[optIdx] || 0} onChange={function (v) { updateCell(grp.key, tier, optIdx, v) }} />
                     })}
-                  </div>
+                  </React.Fragment>
                 )
               })}
-            </div>
+            </TierGrid>
           </div>
         )
       })}
-      <SaveBtn onClick={function () { onSave('dj', draft) }} saving={saving} label="Save DJ Rates" />
-    </SectionCard>
+      <Btn label="Save DJ Rates" variant="primary" onClick={function () { onSave('dj', draft) }} disabled={saving} style={{ width: '100%', marginTop: 8 }} />
+    </Card>
   )
 }
 
@@ -267,45 +400,51 @@ function TTDEditor({ config, onSave, saving }) {
   var [draft, setDraft] = useState(clone(raw))
   useEffect(function () { setDraft(clone(config.ttd || raw)) }, [config.ttd])
 
-  function updateLabel(idx, val) {
+  function updateLabel(idx, val) { var d = clone(draft); d.labels[idx] = val; setDraft(d) }
+  function updateDiscount(idx, pctVal) { var d = clone(draft); d.discounts[idx] = pctVal / 100; setDraft(d) }
+
+  function addTier() {
     var d = clone(draft)
-    d.labels[idx] = val
+    d.labels.push('New Tier')
+    d.discounts.push(0)
     setDraft(d)
   }
 
-  function updateDiscount(idx, pctVal) {
+  function rmTier(idx) {
     var d = clone(draft)
-    d.discounts[idx] = pctVal / 100
+    d.labels.splice(idx, 1)
+    d.discounts.splice(idx, 1)
     setDraft(d)
   }
 
   return (
-    <SectionCard title="Time-to-Date Discounts">
-      <div style={{ fontSize: 11, color: C.muted, marginBottom: 12 }}>Applied to rental only. Enter discount as percentage.</div>
+    <Card title="Time-to-Date Discounts">
+      <div style={{ fontSize: 11, color: C.muted, marginBottom: 10 }}>Applied to rental only. Enter discount as percentage.</div>
       {(draft.labels || []).map(function (label, idx) {
         var pct = Math.round((draft.discounts[idx] || 0) * 10000) / 100
         return (
           <div key={idx} style={{
-            display: 'grid', gridTemplateColumns: '1fr 90px', gap: 10, alignItems: 'center',
-            marginBottom: 8, padding: '8px 12px', borderRadius: 9, border: '1px solid ' + C.border,
+            display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8,
+            padding: '8px 10px', borderRadius: 9, border: '1px solid ' + C.border,
           }}>
-            <input value={label} onChange={function (e) { updateLabel(idx, e.target.value) }}
-              style={{ padding: 8, borderRadius: 7, border: '1px solid ' + C.border, fontSize: 13, fontWeight: 600, color: C.maroon, fontFamily: 'inherit' }} />
-            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <TextIn value={label} onChange={function (v) { updateLabel(idx, v) }} style={{ flex: 1 }} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0, width: 80 }}>
               <input type="number" inputMode="decimal" step="0.5" value={pct}
                 onInput={function (e) { updateDiscount(idx, +e.target.value || 0) }}
                 style={{
-                  width: '100%', padding: '8px 4px', borderRadius: 7, border: '1px solid ' + C.border,
-                  fontSize: 13, fontWeight: 700, textAlign: 'center', color: pct > 0 ? '#DC2626' : '#166534', background: C.bg,
+                  width: '100%', padding: '7px 4px', borderRadius: 7, border: '1px solid ' + C.border,
+                  fontSize: 13, fontWeight: 700, textAlign: 'center', color: pct > 0 ? C.red : C.green, background: C.bg,
                   fontFamily: 'inherit', outline: 'none',
                 }} />
               <span style={{ fontSize: 12, fontWeight: 700, color: C.muted }}>%</span>
             </div>
+            {draft.labels.length > 1 && <RemoveBtn onClick={function () { rmTier(idx) }} />}
           </div>
         )
       })}
-      <SaveBtn onClick={function () { onSave('ttd', draft) }} saving={saving} label="Save TTD" />
-    </SectionCard>
+      <AddRow label="Add TTD Tier" onClick={addTier} />
+      <Btn label="Save TTD" variant="primary" onClick={function () { onSave('ttd', draft) }} disabled={saving} style={{ width: '100%', marginTop: 12 }} />
+    </Card>
   )
 }
 
@@ -313,102 +452,96 @@ function TTDEditor({ config, onSave, saving }) {
 //  MENU EDITOR
 // ══════════════════════════════════════
 
-var MENU_DEFAULTS = {
-  labels: ['Magnum', 'Double Magnum', 'Multi Cuisine', 'Luxury'],
-  base_rate: [1250, 1350, 0, 0], nv_upgrade: 300,
-  flat_add: [0, 0, 0, 3], max_pax: [250, 300, 0, 0],
-  is_sliding: [false, false, true, true],
-}
-var FORMULA_DEFAULTS = {
-  start_rate: 1450, start_pax: 300, step: 50, step_pax: 100,
-  floor_rate: 800, reset_pax: 800, reset_rate: 1350, reset_floor: 400,
-}
 var FORMULA_FIELDS = [
-  { key: 'start_rate', label: 'Start Rate (₹/hd)', hint: 'Phase 1 starting per-head' },
-  { key: 'start_pax', label: 'Start Pax', hint: 'Pax where Phase 1 begins' },
-  { key: 'step', label: 'Step (₹)', hint: 'Rate drop per step' },
-  { key: 'step_pax', label: 'Step Pax', hint: 'Pax interval per step' },
-  { key: 'floor_rate', label: 'Floor Rate (₹/hd)', hint: 'Phase 1 minimum rate' },
-  { key: 'reset_pax', label: 'Reset Pax', hint: 'Pax where Phase 2 starts' },
-  { key: 'reset_rate', label: 'Reset Rate (₹/hd)', hint: 'Phase 2 starting rate' },
-  { key: 'reset_floor', label: 'Reset Floor (₹/hd)', hint: 'Phase 2 minimum rate' },
+  { key: 'start_rate', label: 'Start Rate (₹/hd)' }, { key: 'start_pax', label: 'Start Pax' },
+  { key: 'step', label: 'Step (₹)' }, { key: 'step_pax', label: 'Step Pax' },
+  { key: 'floor_rate', label: 'Floor Rate (₹/hd)' }, { key: 'reset_pax', label: 'Reset Pax' },
+  { key: 'reset_rate', label: 'Reset Rate (₹/hd)' }, { key: 'reset_floor', label: 'Reset Floor (₹/hd)' },
 ]
-
-var fieldLabel = { fontSize: 10, fontWeight: 600, color: C.muted, marginBottom: 3 }
+var FORMULA_DEFAULTS = { start_rate: 1450, start_pax: 300, step: 50, step_pax: 100, floor_rate: 800, reset_pax: 800, reset_rate: 1350, reset_floor: 400 }
 
 function MenuEditor({ config, onSave, saving }) {
-  var menuRaw = config.menu || MENU_DEFAULTS
-  var formulaRaw = config.menu_formula || FORMULA_DEFAULTS
-  var [menu, setMenu] = useState(clone(menuRaw))
-  var [formula, setFormula] = useState(clone(formulaRaw))
+  var MENU_DEFAULTS = { labels: ['Magnum', 'Double Magnum', 'Multi Cuisine', 'Luxury'], base_rate: [1250, 1350, 0, 0], nv_upgrade: 300, flat_add: [0, 0, 0, 3], max_pax: [250, 300, 0, 0], is_sliding: [false, false, true, true] }
+  var [menu, setMenu] = useState(clone(config.menu || MENU_DEFAULTS))
+  var [formula, setFormula] = useState(clone(config.menu_formula || FORMULA_DEFAULTS))
 
   useEffect(function () { setMenu(clone(config.menu || MENU_DEFAULTS)) }, [config.menu])
   useEffect(function () { setFormula(clone(config.menu_formula || FORMULA_DEFAULTS)) }, [config.menu_formula])
 
-  function updArr(field, idx, val) {
+  function updArr(field, idx, val) { var d = clone(menu); d[field][idx] = val; setMenu(d) }
+
+  function addMenu() {
     var d = clone(menu)
-    d[field][idx] = val
+    d.labels.push('New Menu')
+    d.base_rate.push(0)
+    d.flat_add.push(0)
+    d.max_pax.push(0)
+    d.is_sliding.push(false)
     setMenu(d)
   }
 
+  function rmMenu(idx) {
+    var d = clone(menu)
+    d.labels.splice(idx, 1)
+    d.base_rate.splice(idx, 1)
+    d.flat_add.splice(idx, 1)
+    d.max_pax.splice(idx, 1)
+    d.is_sliding.splice(idx, 1)
+    setMenu(d)
+  }
+
+  var fl = { fontSize: 10, fontWeight: 600, color: C.muted, marginBottom: 3 }
+
   return (
     <>
-      <SectionCard title="Menu Rates">
-        {/* NV Upgrade */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, padding: 10, borderRadius: 9, background: C.bg, border: '1px solid ' + C.border }}>
+      <Card title="Menu Rates">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, padding: 10, borderRadius: 9, background: C.bg, border: '1px solid ' + C.border }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: C.maroon2, flex: 1 }}>NV Upgrade (₹/hd)</div>
-          <div style={{ width: 90 }}>
-            <NumCell value={menu.nv_upgrade} onChange={function (v) { var d = clone(menu); d.nv_upgrade = v; setMenu(d) }} />
+          <div style={{ width: 80 }}>
+            <Num value={menu.nv_upgrade} onChange={function (v) { var d = clone(menu); d.nv_upgrade = v; setMenu(d) }} />
           </div>
         </div>
 
-        {/* Per-menu cards */}
         {(menu.labels || []).map(function (label, idx) {
           return (
-            <div key={idx} style={{ marginBottom: 12, padding: 12, borderRadius: 10, border: '1px solid ' + C.border, background: '#fff' }}>
-              <input value={label} onChange={function (e) { updArr('labels', idx, e.target.value) }}
-                style={{ width: '100%', padding: 9, borderRadius: 7, border: '1px solid ' + C.border, fontSize: 13, fontWeight: 700, color: C.maroon, fontFamily: 'inherit', marginBottom: 10 }} />
+            <div key={idx} style={{ marginBottom: 10, padding: 12, borderRadius: 10, border: '1px solid ' + C.border }}>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 10 }}>
+                <TextIn value={label} onChange={function (v) { updArr('labels', idx, v) }} style={{ flex: 1, fontWeight: 700 }} />
+                {menu.labels.length > 1 && <RemoveBtn onClick={function () { rmMenu(idx) }} />}
+              </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 8 }}>
-                <div>
-                  <div style={fieldLabel}>Base Rate (₹/hd)</div>
-                  <NumCell value={menu.base_rate[idx]} onChange={function (v) { updArr('base_rate', idx, v) }} />
-                </div>
-                <div>
-                  <div style={fieldLabel}>Flat Add (₹L)</div>
-                  <NumCell value={menu.flat_add[idx]} onChange={function (v) { updArr('flat_add', idx, v) }} />
-                </div>
-                <div>
-                  <div style={fieldLabel}>Max Pax (0=∞)</div>
-                  <NumCell value={menu.max_pax[idx]} onChange={function (v) { updArr('max_pax', idx, v) }} />
-                </div>
+                <div><div style={fl}>Base Rate (₹/hd)</div><Num value={menu.base_rate[idx]} onChange={function (v) { updArr('base_rate', idx, v) }} /></div>
+                <div><div style={fl}>Flat Add (₹L)</div><Num value={menu.flat_add[idx]} onChange={function (v) { updArr('flat_add', idx, v) }} /></div>
+                <div><div style={fl}>Max Pax (0=∞)</div><Num value={menu.max_pax[idx]} onChange={function (v) { updArr('max_pax', idx, v) }} /></div>
               </div>
               <button onClick={function () { updArr('is_sliding', idx, !menu.is_sliding[idx]) }}
                 style={{
-                  padding: '6px 14px', borderRadius: 7, fontSize: 11, fontWeight: 700, cursor: 'pointer',
-                  border: '2px solid ' + (menu.is_sliding[idx] ? '#D4872C' : C.border),
+                  padding: '5px 12px', borderRadius: 7, fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                  border: '2px solid ' + (menu.is_sliding[idx] ? C.gold : C.border),
                   background: menu.is_sliding[idx] ? '#FFF8F0' : '#fff',
-                  color: menu.is_sliding[idx] ? '#D4872C' : C.muted,
+                  color: menu.is_sliding[idx] ? C.gold : C.muted,
                 }}>{menu.is_sliding[idx] ? 'Sliding: ON' : 'Sliding: OFF'}</button>
             </div>
           )
         })}
-        <SaveBtn onClick={function () { onSave('menu', menu) }} saving={saving} label="Save Menu Rates" />
-      </SectionCard>
+        <AddRow label="Add Menu" onClick={addMenu} />
+        <Btn label="Save Menu Rates" variant="primary" onClick={function () { onSave('menu', menu) }} disabled={saving} style={{ width: '100%', marginTop: 12 }} />
+      </Card>
 
-      <SectionCard title="Sliding Scale Formula">
-        <div style={{ fontSize: 11, color: C.muted, marginBottom: 12 }}>Phase 1: start_rate at start_pax, drops by step every step_pax, floor at floor_rate. Phase 2: resets at reset_pax.</div>
+      <Card title="Sliding Scale Formula">
+        <div style={{ fontSize: 11, color: C.muted, marginBottom: 10 }}>Phase 1: start_rate at start_pax, drops by step every step_pax. Phase 2: resets at reset_pax.</div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
           {FORMULA_FIELDS.map(function (f) {
             return (
               <div key={f.key}>
-                <div style={fieldLabel}>{f.label}</div>
-                <NumCell value={formula[f.key]} onChange={function (v) { var d = clone(formula); d[f.key] = v; setFormula(d) }} />
+                <div style={{ fontSize: 10, fontWeight: 600, color: C.muted, marginBottom: 3 }}>{f.label}</div>
+                <Num value={formula[f.key]} onChange={function (v) { var d = clone(formula); d[f.key] = v; setFormula(d) }} />
               </div>
             )
           })}
         </div>
-        <SaveBtn onClick={function () { onSave('menu_formula', formula) }} saving={saving} label="Save Formula" />
-      </SectionCard>
+        <Btn label="Save Formula" variant="primary" onClick={function () { onSave('menu_formula', formula) }} disabled={saving} style={{ width: '100%', marginTop: 12 }} />
+      </Card>
     </>
   )
 }
@@ -418,67 +551,73 @@ function MenuEditor({ config, onSave, saving }) {
 // ══════════════════════════════════════
 
 var DECOR_SECTIONS = [
-  { key: 'decor', label: 'Pushpanjali', tiers: 4, defaultLabels: ['Premium', 'Standard', 'Banquet', 'Lunch'] },
-  { key: 'decor_eg', label: 'EG / Aura', tiers: 3, defaultLabels: ['Standard', 'Banquet', 'Lunch'] },
-  { key: 'decor_valencia', label: 'Valencia', tiers: 0, defaultLabels: [] },
+  { key: 'decor', label: 'Pushpanjali' },
+  { key: 'decor_eg', label: 'EG / Aura' },
+  { key: 'decor_valencia', label: 'Valencia' },
 ]
 
-function makeEmptyDecor(tierCount) {
-  if (tierCount === 0) return { nw_offset: -0.5, q: [0, 0, 0], t: [0, 0, 0], f: [0, 0, 0] }
-  var empty = []
-  for (var i = 0; i < tierCount; i++) empty.push([0, 0, 0])
-  return { labels: DECOR_SECTIONS[tierCount === 3 ? 0 : 1].defaultLabels.slice(), nw_offset: -0.5, q: clone(empty), t: clone(empty), f: clone(empty) }
-}
-
 function DecorEditor({ config, onSave, saving }) {
+  var cats = config.categories || DEFAULT_CATS
   var [subTab, setSubTab] = useState(0)
   var sec = DECOR_SECTIONS[subTab]
-
-  var raw = config[sec.key] || makeEmptyDecor(sec.tiers)
+  var raw = config[sec.key] || { labels: [], nw_offset: -0.5, q: [], t: [], f: [] }
   var [draft, setDraft] = useState(clone(raw))
 
   useEffect(function () {
     var s = DECOR_SECTIONS[subTab]
-    setDraft(clone(config[s.key] || makeEmptyDecor(s.tiers)))
+    var d = clone(config[s.key] || { labels: [], nw_offset: -0.5, q: [], t: [], f: [] })
+    // Pad each tier's category arrays
+    if (d.labels && d.labels.length > 0) {
+      d.labels.forEach(function (_, tierIdx) {
+        TIERS.forEach(function (tier) {
+          if (!d[tier][tierIdx]) d[tier][tierIdx] = []
+          while (d[tier][tierIdx].length < cats.length) d[tier][tierIdx].push(0)
+        })
+      })
+    } else if (!d.labels) {
+      // Flat mode (Valencia) — pad flat arrays
+      TIERS.forEach(function (tier) {
+        if (!Array.isArray(d[tier])) d[tier] = []
+        while (d[tier].length < cats.length) d[tier].push(0)
+      })
+    }
+    setDraft(d)
   }, [subTab, config])
 
-  function updateOffset(val) {
+  function updateOffset(val) { var d = clone(draft); d.nw_offset = val; setDraft(d) }
+  function updateLabel(idx, val) { var d = clone(draft); d.labels[idx] = val; setDraft(d) }
+  function updateTiered(tier, tierIdx, catIdx, val) { var d = clone(draft); d[tier][tierIdx][catIdx] = val; setDraft(d) }
+  function updateFlat(tier, catIdx, val) { var d = clone(draft); d[tier][catIdx] = val; setDraft(d) }
+
+  var isFlat = !draft.labels || draft.labels.length === 0
+
+  function addTier() {
     var d = clone(draft)
-    d.nw_offset = val
+    if (!d.labels) d.labels = []
+    d.labels.push('New Tier')
+    TIERS.forEach(function (tier) {
+      var row = []
+      for (var c = 0; c < cats.length; c++) row.push(0)
+      d[tier].push(row)
+    })
     setDraft(d)
   }
 
-  function updateLabel(idx, val) {
+  function rmTier(idx) {
     var d = clone(draft)
-    d.labels[idx] = val
+    d.labels.splice(idx, 1)
+    TIERS.forEach(function (tier) { d[tier].splice(idx, 1) })
     setDraft(d)
   }
-
-  // For tiered venues: tier × category × Q/T/F
-  function updateTiered(tier, tierIdx, catIdx, val) {
-    var d = clone(draft)
-    d[tier][tierIdx][catIdx] = val
-    setDraft(d)
-  }
-
-  // For Valencia: flat category × Q/T/F
-  function updateFlat(tier, catIdx, val) {
-    var d = clone(draft)
-    d[tier][catIdx] = val
-    setDraft(d)
-  }
-
-  var isFlat = sec.tiers === 0
 
   return (
     <>
-      {/* Sub-tabs */}
-      <div style={{ display: 'flex', gap: 6, marginBottom: 16 }}>
+      <div style={{ display: 'flex', gap: 6, marginBottom: 14, flexWrap: 'wrap' }}>
         {DECOR_SECTIONS.map(function (s, idx) {
           var on = subTab === idx
           return (
             <button key={idx} onClick={function () { setSubTab(idx) }} style={{
-              padding: '8px 14px', borderRadius: 9, border: '2px solid ' + (on ? C.gold : C.border),
+              padding: '7px 12px', borderRadius: 9, border: '2px solid ' + (on ? C.gold : C.border),
               background: on ? '#FFF8F0' : '#fff', color: on ? C.gold : C.muted,
               fontSize: 12, fontWeight: 700, cursor: 'pointer',
             }}>{s.label}</button>
@@ -486,45 +625,44 @@ function DecorEditor({ config, onSave, saving }) {
         })}
       </div>
 
-      <SectionCard title={sec.label + ' Décor (₹L)'}>
-        {/* NW Offset */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, padding: 10, borderRadius: 9, background: C.bg, border: '1px solid ' + C.border }}>
+      <Card title={sec.label + ' Décor (₹L)'}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, padding: 10, borderRadius: 9, background: C.bg, border: '1px solid ' + C.border }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: C.maroon2, flex: 1 }}>NW Offset (₹L)</div>
-          <div style={{ width: 90 }}>
-            <NumCell value={draft.nw_offset} onChange={updateOffset} />
-          </div>
+          <div style={{ width: 80 }}><Num value={draft.nw_offset} onChange={updateOffset} /></div>
         </div>
 
-        {/* Tier labels (not for Valencia) */}
+        {/* Tier labels */}
         {!isFlat && draft.labels && (
-          <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+          <div style={{ marginBottom: 12 }}>
             {draft.labels.map(function (l, i) {
               return (
-                <input key={i} value={l} onChange={function (e) { updateLabel(i, e.target.value) }}
-                  style={{ flex: 1, padding: 8, borderRadius: 7, border: '1px solid ' + C.border, fontSize: 12, fontWeight: 600, color: C.maroon, fontFamily: 'inherit' }} />
+                <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 }}>
+                  <TextIn value={l} onChange={function (v) { updateLabel(i, v) }} style={{ flex: 1 }} />
+                  {draft.labels.length > 1 && <RemoveBtn onClick={function () { rmTier(i) }} />}
+                </div>
               )
             })}
+            <AddRow label="Add Décor Tier" onClick={addTier} />
           </div>
         )}
 
-        {/* Tiered grids (Pushpanjali / EG) */}
+        {/* Tiered grids */}
         {!isFlat && (draft.labels || []).map(function (tierLabel, tierIdx) {
           return (
             <div key={tierIdx} style={{ marginBottom: 18 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: C.maroon2, marginBottom: 8 }}>{tierLabel}</div>
-              <div style={{ display: 'grid', gridTemplateColumns: '56px 1fr 1fr 1fr', gap: 5, alignItems: 'center' }}>
-                <TierHeader />
-                {CAT_LABELS.map(function (catLabel, catIdx) {
+              <div style={{ fontSize: 12, fontWeight: 700, color: C.maroon2, marginBottom: 6 }}>{tierLabel}</div>
+              <TierGrid>
+                {cats.map(function (cat, catIdx) {
                   return (
-                    <div key={catIdx} style={{ display: 'contents' }}>
-                      <div style={{ fontSize: 10, fontWeight: 600, color: CAT_COLORS[catIdx] }}>{catLabel}</div>
+                    <React.Fragment key={catIdx}>
+                      <div style={{ fontSize: 10, fontWeight: 600, color: cat.color || C.muted }}>{cat.label}</div>
                       {TIERS.map(function (tier) {
-                        return <NumCell key={tier} value={(draft[tier][tierIdx] || [])[catIdx] || 0} onChange={function (v) { updateTiered(tier, tierIdx, catIdx, v) }} />
+                        return <Num key={tier} value={(draft[tier][tierIdx] || [])[catIdx] || 0} onChange={function (v) { updateTiered(tier, tierIdx, catIdx, v) }} />
                       })}
-                    </div>
+                    </React.Fragment>
                   )
                 })}
-              </div>
+              </TierGrid>
             </div>
           )
         })}
@@ -532,24 +670,24 @@ function DecorEditor({ config, onSave, saving }) {
         {/* Flat grid (Valencia) */}
         {isFlat && (
           <div style={{ marginBottom: 12 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '56px 1fr 1fr 1fr', gap: 5, alignItems: 'center' }}>
-              <TierHeader />
-              {CAT_LABELS.map(function (catLabel, catIdx) {
+            <TierGrid>
+              {cats.map(function (cat, catIdx) {
                 return (
-                  <div key={catIdx} style={{ display: 'contents' }}>
-                    <div style={{ fontSize: 10, fontWeight: 600, color: CAT_COLORS[catIdx] }}>{catLabel}</div>
+                  <React.Fragment key={catIdx}>
+                    <div style={{ fontSize: 10, fontWeight: 600, color: cat.color || C.muted }}>{cat.label}</div>
                     {TIERS.map(function (tier) {
-                      return <NumCell key={tier} value={(draft[tier] || [])[catIdx] || 0} onChange={function (v) { updateFlat(tier, catIdx, v) }} />
+                      return <Num key={tier} value={(draft[tier] || [])[catIdx] || 0} onChange={function (v) { updateFlat(tier, catIdx, v) }} />
                     })}
-                  </div>
+                  </React.Fragment>
                 )
               })}
-            </div>
+            </TierGrid>
+            <AddRow label="Convert to Tiered" onClick={addTier} />
           </div>
         )}
 
-        <SaveBtn onClick={function () { onSave(sec.key, draft) }} saving={saving} label={'Save ' + sec.label} />
-      </SectionCard>
+        <Btn label={'Save ' + sec.label} variant="primary" onClick={function () { onSave(sec.key, draft) }} disabled={saving} style={{ width: '100%', marginTop: 8 }} />
+      </Card>
     </>
   )
 }
@@ -558,17 +696,13 @@ function DecorEditor({ config, onSave, saving }) {
 //  SEASON DATE CALENDAR
 // ══════════════════════════════════════
 
-var MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December']
+var MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 var DAY_HEADERS = ['Su','Mo','Tu','We','Th','Fr','Sa']
-var BRUSH_OPTS = [
-  { cat: 0, label: "King's", color: '#D4872C', bg: '#FFF8F0' },
-  { cat: 1, label: 'Perfect', color: '#8B2D2D', bg: '#FDF2F2' },
-  { cat: 2, label: 'Filler', color: '#6B5B4E', bg: '#F7F5F3' },
-]
 
 function pad2(n) { return n < 10 ? '0' + n : '' + n }
 
 function SeasonCalendar({ config, onSave, saving }) {
+  var cats = config.categories || DEFAULT_CATS
   var raw = config.season_dates || {}
   var [draft, setDraft] = useState(clone(raw))
   var [brush, setBrush] = useState(0)
@@ -581,11 +715,7 @@ function SeasonCalendar({ config, onSave, saving }) {
   function toggleDate(mm, dd) {
     var key = pad2(mm + 1) + '-' + pad2(dd)
     var d = clone(draft)
-    if (d[key] === brush) {
-      delete d[key]
-    } else {
-      d[key] = brush
-    }
+    if (d[key] === brush) { delete d[key] } else { d[key] = brush }
     setDraft(d)
   }
 
@@ -597,7 +727,7 @@ function SeasonCalendar({ config, onSave, saving }) {
     var cur = new Date(start)
     while (cur <= end) {
       var mm = cur.getMonth(), dd = cur.getDate()
-      var key = (mm + 1 < 10 ? '0' : '') + (mm + 1) + '-' + (dd < 10 ? '0' : '') + dd
+      var key = pad2(mm + 1) + '-' + pad2(dd)
       d[key] = brush
       cur.setDate(cur.getDate() + 1)
     }
@@ -609,103 +739,90 @@ function SeasonCalendar({ config, onSave, saving }) {
     return draft[key] != null ? draft[key] : -1
   }
 
+  function renderDay(monthIdx, day) {
+    var cat = getCat(monthIdx, day)
+    var catObj = cats[cat] || null
+    var bgColor = catObj ? catObj.color + '18' : '#fff'
+    var textColor = catObj ? catObj.color : C.muted
+    return (
+      <div key={day}
+        onPointerDown={function (e) { e.preventDefault(); setPointer(true); lastPainted.current = { m: monthIdx, d: day }; toggleDate(monthIdx, day) }}
+        onPointerEnter={function () { if (pointer) { if (lastPainted.current) fillRange(lastPainted.current.m, lastPainted.current.d, monthIdx, day); lastPainted.current = { m: monthIdx, d: day } } }}
+        style={{
+          aspectRatio: '1', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+          borderRadius: 6, cursor: 'pointer', fontSize: 11, fontWeight: 600,
+          background: bgColor, color: textColor,
+          border: '1px solid ' + (catObj ? catObj.color + '33' : 'transparent'),
+          userSelect: 'none', touchAction: 'none',
+        }}>
+        {day}
+        {cat >= 0 && <div style={{ width: 4, height: 4, borderRadius: 2, background: textColor, marginTop: 1 }} />}
+      </div>
+    )
+  }
+
   function renderMonth(monthIdx) {
     var firstDay = new Date(viewYear, monthIdx, 1).getDay()
     var daysInMonth = new Date(viewYear, monthIdx + 1, 0).getDate()
     var cells = []
-    for (var blank = 0; blank < firstDay; blank++) {
-      cells.push(<div key={'b' + blank} />)
-    }
-    for (var day = 1; day <= daysInMonth; day++) {
-      cells.push(renderDay(monthIdx, day))
-    }
+    for (var blank = 0; blank < firstDay; blank++) cells.push(<div key={'b' + blank} />)
+    for (var day = 1; day <= daysInMonth; day++) cells.push(renderDay(monthIdx, day))
     return cells
   }
 
-  function renderDay(monthIdx, day) {
-      var cat = getCat(monthIdx, day)
-      var dotColor = cat === 0 ? '#D4872C' : cat === 1 ? '#8B2D2D' : cat === 2 ? '#6B5B4E' : 'transparent'
-      var bgColor = cat === 0 ? '#FFF8F0' : cat === 1 ? '#FDF2F2' : cat === 2 ? '#F7F5F3' : '#fff'
-      return (
-        <div key={day}
-          onPointerDown={function (e) { e.preventDefault(); setPointer(true); lastPainted.current = { m: monthIdx, d: day }; toggleDate(monthIdx, day) }}
-          onPointerEnter={function () { if (pointer) { if (lastPainted.current) fillRange(lastPainted.current.m, lastPainted.current.d, monthIdx, day); lastPainted.current = { m: monthIdx, d: day } }}}
-          style={{
-            aspectRatio: '1', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-            borderRadius: 7, cursor: 'pointer', fontSize: 12, fontWeight: 600,
-            background: bgColor, color: cat >= 0 ? BRUSH_OPTS[cat].color : C.muted,
-            border: '1px solid ' + (cat >= 0 ? BRUSH_OPTS[cat].color + '44' : 'transparent'),
-            userSelect: 'none', touchAction: 'none',
-          }}>
-          {day}
-          {cat >= 0 && <div style={{ width: 4, height: 4, borderRadius: 2, background: dotColor, marginTop: 1 }} />}
-        </div>
-      )
-  }
-
-  // Stats
-  var kings = 0, perfect = 0
-  Object.keys(draft).forEach(function (k) { if (draft[k] === 0) kings++; if (draft[k] === 1) perfect++ })
+  // Stats per category
+  var counts = {}
+  cats.forEach(function (c, i) { counts[i] = 0 })
+  Object.keys(draft).forEach(function (k) { if (counts[draft[k]] != null) counts[draft[k]]++ })
 
   return (
-    <>
-      <SectionCard title="Season Dates">
-        {/* Brush selector */}
-        <div style={{ display: 'flex', gap: 6, marginBottom: 16 }}>
-          {BRUSH_OPTS.map(function (b) {
-            var on = brush === b.cat
-            return (
-              <button key={b.cat} onClick={function () { setBrush(b.cat) }} style={{
-                flex: 1, padding: '9px 6px', borderRadius: 9,
-                border: '2px solid ' + (on ? b.color : C.border),
-                background: on ? b.bg : '#fff', color: on ? b.color : C.muted,
-                fontSize: 12, fontWeight: 700, cursor: 'pointer',
-              }}>{b.label}</button>
-            )
-          })}
-        </div>
+    <Card title="Season Dates">
+      {/* Brush selector */}
+      <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
+        {cats.map(function (c, idx) {
+          var on = brush === idx
+          return (
+            <button key={idx} onClick={function () { setBrush(idx) }} style={{
+              flex: 1, minWidth: 70, padding: '8px 6px', borderRadius: 9,
+              border: '2px solid ' + (on ? c.color : C.border),
+              background: on ? c.color + '18' : '#fff', color: on ? c.color : C.muted,
+              fontSize: 11, fontWeight: 700, cursor: 'pointer',
+            }}>{c.label} ({counts[idx] || 0})</button>
+          )
+        })}
+      </div>
 
-        <div style={{ fontSize: 10, color: C.muted, marginBottom: 12, textAlign: 'center' }}>
-          Tap dates to tag. Untagged = Filler by default.
-          &nbsp;&nbsp;👑 {kings} &nbsp; ⚔️ {perfect}
-        </div>
+      <div style={{ fontSize: 10, color: C.muted, marginBottom: 10, textAlign: 'center' }}>
+        Click or drag to paint. Untagged dates default to last category.
+      </div>
 
-        {/* Year nav */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16, marginBottom: 16 }}
-          onPointerUp={function () { setPointer(false) }}
-          onPointerCancel={function () { setPointer(false) }}>
-          <button onClick={function () { setViewYear(viewYear - 1) }} style={{
-            width: 32, height: 32, borderRadius: 8, border: '1px solid ' + C.border,
-            background: '#fff', cursor: 'pointer', fontSize: 14, fontWeight: 700, color: C.maroon,
-          }}>‹</button>
-          <div style={{ fontSize: 16, fontWeight: 800, color: C.maroon }}>{viewYear}</div>
-          <button onClick={function () { setViewYear(viewYear + 1) }} style={{
-            width: 32, height: 32, borderRadius: 8, border: '1px solid ' + C.border,
-            background: '#fff', cursor: 'pointer', fontSize: 14, fontWeight: 700, color: C.maroon,
-          }}>›</button>
-        </div>
+      {/* Year nav */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16, marginBottom: 14 }}>
+        <button onClick={function () { setViewYear(viewYear - 1) }} style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid ' + C.border, background: '#fff', cursor: 'pointer', fontSize: 14, fontWeight: 700, color: C.maroon }}>‹</button>
+        <div style={{ fontSize: 16, fontWeight: 800, color: C.maroon }}>{viewYear}</div>
+        <button onClick={function () { setViewYear(viewYear + 1) }} style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid ' + C.border, background: '#fff', cursor: 'pointer', fontSize: 14, fontWeight: 700, color: C.maroon }}>›</button>
+      </div>
 
-        {/* Month grids */}
-        <div onPointerUp={function () { setPointer(false) }} onPointerLeave={function () { setPointer(false) }}
-          style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 20 }}>
-          {MONTH_NAMES.map(function (mName, mIdx) {
-            return (
-              <div key={mIdx} style={{ padding: 12, borderRadius: 10, border: '1px solid ' + C.border, background: '#fff' }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: C.maroon2, marginBottom: 8, textAlign: 'center' }}>{mName}</div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 3 }}>
-                  {DAY_HEADERS.map(function (dh) {
-                    return <div key={dh} style={{ textAlign: 'center', fontSize: 10, fontWeight: 700, color: C.muted, paddingBottom: 4 }}>{dh}</div>
-                  })}
-                  {renderMonth(mIdx)}
-                </div>
+      {/* Month grids — responsive */}
+      <div onPointerUp={function () { setPointer(false) }} onPointerLeave={function () { setPointer(false) }}
+        style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 12 }}>
+        {MONTH_NAMES.map(function (mName, mIdx) {
+          return (
+            <div key={mIdx} style={{ padding: 10, borderRadius: 10, border: '1px solid ' + C.border, background: '#fff' }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: C.maroon2, marginBottom: 6, textAlign: 'center' }}>{mName}</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 2 }}>
+                {DAY_HEADERS.map(function (dh) {
+                  return <div key={dh} style={{ textAlign: 'center', fontSize: 9, fontWeight: 700, color: C.muted, paddingBottom: 2 }}>{dh}</div>
+                })}
+                {renderMonth(mIdx)}
               </div>
-            )
-          })}
-        </div>
+            </div>
+          )
+        })}
+      </div>
 
-        <SaveBtn onClick={function () { onSave('season_dates', draft) }} saving={saving} label="Save Season Dates" />
-      </SectionCard>
-    </>
+      <Btn label="Save Season Dates" variant="primary" onClick={function () { onSave('season_dates', draft) }} disabled={saving} style={{ width: '100%', marginTop: 14 }} />
+    </Card>
   )
 }
 
@@ -713,14 +830,24 @@ function SeasonCalendar({ config, onSave, saving }) {
 //  MAIN COMPONENT
 // ══════════════════════════════════════
 
-var TABS = ['Venues', 'Rentals', 'DJ', 'TTD', 'Menu', 'Décor', 'Season']
+var TABS = [
+  { key: 'config', label: 'Config' },
+  { key: 'venues', label: 'Venues' },
+  { key: 'rentals', label: 'Rentals' },
+  { key: 'dj', label: 'DJ' },
+  { key: 'ttd', label: 'TTD' },
+  { key: 'menu', label: 'Menu' },
+  { key: 'decor', label: 'Décor' },
+  { key: 'season', label: 'Season' },
+]
+var WIDE_TABS = ['season', 'rentals']
 
 function RateCardEditor({ profile }) {
-  if (profile.role !== 'admin' && profile.role !== 'auditor' && (profile.permissions || []).indexOf('feature_ratecard') === -1) return (
+  if (profile.role !== 'admin') return (
     <div style={{ padding: 40, textAlign: 'center', color: C.muted, fontSize: 14 }}>Admin access required</div>
   )
 
-  var [tab, setTab] = useState(0)
+  var [tab, setTab] = useState('venues')
   var [config, setConfig] = useState({})
   var [loading, setLoading] = useState(true)
   var [saving, setSaving] = useState(false)
@@ -739,9 +866,11 @@ function RateCardEditor({ profile }) {
 
   async function saveKey(key, value) {
     setSaving(true); setSaveMsg('')
-    var { error } = await supabase.from('quote_config')
-      .update({ value: value, updated_at: new Date().toISOString() })
-      .eq('key', key)
+    // Upsert — insert if missing, update if exists
+    var { error } = await supabase.from('quote_config').upsert(
+      { key: key, value: value, updated_at: new Date().toISOString() },
+      { onConflict: 'key' }
+    )
     if (error) {
       setSaveMsg('Error: ' + error.message)
     } else {
@@ -756,19 +885,21 @@ function RateCardEditor({ profile }) {
 
   if (loading) return <div style={{ padding: 40, textAlign: 'center', color: C.muted }}>Loading config...</div>
 
+  var isWide = WIDE_TABS.indexOf(tab) >= 0
+
   return (
-    <div style={{ fontFamily: 'Segoe UI, sans-serif', color: '#3D2B2B', maxWidth: tab === 6 ? 960 : 600, margin: '0 auto' }}>
-      {/* Tab bar */}
-      <div style={{ display: 'flex', gap: 6, marginBottom: 16, overflowX: 'auto', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none', paddingBottom: 2 }}>
-        {TABS.map(function (label, idx) {
-          var on = tab === idx
+    <div style={{ fontFamily: 'Segoe UI, sans-serif', color: '#3D2B2B', maxWidth: isWide ? 960 : 560, margin: '0 auto' }}>
+      {/* Tab bar — scrollable */}
+      <div style={{ display: 'flex', gap: 5, marginBottom: 14, overflowX: 'auto', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none', paddingBottom: 2 }}>
+        {TABS.map(function (t) {
+          var on = tab === t.key
           return (
-            <button key={idx} onClick={function () { setTab(idx) }} style={{
-              padding: '8px 12px', borderRadius: 9, whiteSpace: 'nowrap', flexShrink: 0,
+            <button key={t.key} onClick={function () { setTab(t.key) }} style={{
+              padding: '7px 12px', borderRadius: 9, whiteSpace: 'nowrap', flexShrink: 0,
               border: '2px solid ' + (on ? C.maroon2 : C.border),
               background: on ? 'linear-gradient(135deg,#4A1111,#8B2D2D)' : '#fff',
               color: on ? '#fff' : C.muted, fontSize: 12, fontWeight: 700, cursor: 'pointer',
-            }}>{label}</button>
+            }}>{t.label}</button>
           )
         })}
       </div>
@@ -776,20 +907,20 @@ function RateCardEditor({ profile }) {
       {/* Save feedback */}
       {saveMsg && (
         <div style={{
-          textAlign: 'center', marginBottom: 12, fontSize: 12, padding: 10, borderRadius: 9,
+          textAlign: 'center', marginBottom: 10, fontSize: 12, padding: 9, borderRadius: 9,
           background: saveMsg.indexOf('Error') === 0 ? '#FEE2E2' : '#DCFCE7',
-          color: saveMsg.indexOf('Error') === 0 ? '#991B1B' : '#166534',
-          fontWeight: 600,
+          color: saveMsg.indexOf('Error') === 0 ? C.red : C.green, fontWeight: 600,
         }}>{saveMsg}</div>
       )}
 
-      {tab === 0 && <VenuesEditor config={config} onSave={saveKey} saving={saving} />}
-      {tab === 1 && <RentalsEditor config={config} onSave={saveKey} saving={saving} />}
-      {tab === 2 && <DJEditor config={config} onSave={saveKey} saving={saving} />}
-      {tab === 3 && <TTDEditor config={config} onSave={saveKey} saving={saving} />}
-      {tab === 4 && <MenuEditor config={config} onSave={saveKey} saving={saving} />}
-      {tab === 5 && <DecorEditor config={config} onSave={saveKey} saving={saving} />}
-      {tab === 6 && <SeasonCalendar config={config} onSave={saveKey} saving={saving} />}
+      {tab === 'config' && <CategoriesEditor config={config} onSave={saveKey} saving={saving} />}
+      {tab === 'venues' && <VenuesEditor config={config} onSave={saveKey} saving={saving} />}
+      {tab === 'rentals' && <RentalsEditor config={config} onSave={saveKey} saving={saving} />}
+      {tab === 'dj' && <DJEditor config={config} onSave={saveKey} saving={saving} />}
+      {tab === 'ttd' && <TTDEditor config={config} onSave={saveKey} saving={saving} />}
+      {tab === 'menu' && <MenuEditor config={config} onSave={saveKey} saving={saving} />}
+      {tab === 'decor' && <DecorEditor config={config} onSave={saveKey} saving={saving} />}
+      {tab === 'season' && <SeasonCalendar config={config} onSave={saveKey} saving={saving} />}
     </div>
   )
 }
