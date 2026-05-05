@@ -843,10 +843,10 @@ var TABS = [
 var WIDE_TABS = ['season', 'rentals']
 
 function RateCardEditor({ profile }) {
-  if (profile.role !== 'admin') return (
-    <div style={{ padding: 40, textAlign: 'center', color: C.muted, fontSize: 14 }}>Admin access required</div>
+  var canEdit = profile.role === 'admin' || (profile.permissions && profile.permissions.indexOf('rate_card_edit') >= 0)
+  if (!canEdit) return (
+    <div style={{ padding: 40, textAlign: 'center', color: C.muted, fontSize: 14 }}>Rate card edit access required</div>
   )
-
   var [tab, setTab] = useState('venues')
   var [config, setConfig] = useState({})
   var [loading, setLoading] = useState(true)
