@@ -35,7 +35,6 @@ var GROUPS = [
   {
     key: 'events', label: 'Events', icon: '📅', items: [
       { key: 'feature_events', label: 'Events', icon: '📅', tab: 'events' },
-      { key: 'feature_events', label: 'Events', icon: '📅', tab: 'events' },
       { key: 'feature_quote', label: 'Quote Calc', icon: '🧮', tab: 'quote' },
       { key: 'feature_ratecard', label: 'Rate Card', icon: '💲', tab: 'ratecard' },
     ]
