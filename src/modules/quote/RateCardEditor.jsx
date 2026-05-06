@@ -596,10 +596,12 @@ function DecorEditor({ config, onSave, saving }) {
   function addTier() {
     var d = clone(draft)
     if (!d.labels) d.labels = []
+    var wasFlat = d.labels.length === 0
     d.labels.push('New Tier')
     TIERS.forEach(function (tier) {
       var row = []
       for (var c = 0; c < cats.length; c++) row.push(0)
+      if (wasFlat) d[tier] = []
       d[tier].push(row)
     })
     setDraft(d)
@@ -740,10 +742,12 @@ function LunchRatesEditor({ config, onSave, saving }) {
   function addTier() {
     var d = clone(draft)
     if (!d.labels) d.labels = []
+    var wasFlat = d.labels.length === 0
     d.labels.push('New Tier')
     TIERS.forEach(function (tier) {
       var row = []
       for (var c = 0; c < cats.length; c++) row.push(0)
+      if (wasFlat) d[tier] = []
       d[tier].push(row)
     })
     setDraft(d)
