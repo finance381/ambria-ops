@@ -360,17 +360,11 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved }) {
         payload.status = 'approved'
       } else {
         // Check if a dept approver exists for this category (other than the submitter)
-        var { data: allDeptApprovers } = await supabase
-          .from('profiles')
-          .select('id, category_ids')
-          .contains('permissions', ['dept_approve'])
-          .eq('active', true)
-          .neq('id', profile.id)
         var catIdNum = Number(categoryId)
-        var deptApprovers = (allDeptApprovers || []).filter(function (p) {
-          return (p.category_ids || []).includes(catIdNum)
+        var { data: hasDeptApprover } = await supabase.rpc('has_category_dept_approver', {
+          p_category_id: catIdNum,
+          p_exclude_id: profile.id,
         })
-        var hasDeptApprover = deptApprovers && deptApprovers.length > 0
         // If submitter IS a dept approver for this category, skip dept tier
         var selfIsDeptApprover = (profile?.permissions || []).includes('dept_approve') && (profile?.category_ids || []).includes(Number(categoryId))
         if (selfIsDeptApprover) {

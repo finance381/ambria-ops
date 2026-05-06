@@ -21,7 +21,7 @@ serve(async (req) => {
     const since = new Date(Date.now() - 30 * 86400000).toISOString().split("T")[0]
     const { data: quotes, error: qErr } = await supabase
       .from("quotes")
-      .select("venue_idx, venue_name, event_date, date_category, slot, pax, food_pref, is_wedding, menu_idx, menu_label, per_head_rate, decor_idx, dj_idx, ttd_idx, total_q_paise, total_t_paise, total_f_paise, deal_value_paise, status, notes, created_at")
+      .select("venue_idx, venue_name, event_date, date_category, slot, pax, food_pref, is_wedding, menu_idx, menu_label, per_head_rate, decor_idx, dj_idx, ttd_idx, total_q_paise, total_t_paise, total_f_paise, deal_value_paise, status, created_at")
       .gte("created_at", since)
       .order("created_at", { ascending: false })
       .limit(200)

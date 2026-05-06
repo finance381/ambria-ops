@@ -21,7 +21,7 @@ function Login() {
     var { error: authError } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: 'https://finance381.github.io/ambria-ops/',
+        redirectTo: window.location.origin + '/ambria-ops/',
       }
     })
     if (authError) {
@@ -90,7 +90,7 @@ function Login() {
         </div>
 
         <p className="mt-8 text-center text-[11px] text-gray-300 tracking-wider">
-          Ambria <span className="text-amber-400">●</span> Inventory Manager
+          Ambria <span className="text-amber-400">●</span> Ops
         </p>
       </div>
     </div>

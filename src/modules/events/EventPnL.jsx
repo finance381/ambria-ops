@@ -2,12 +2,12 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { formatPaise } from '../../lib/format'
 
-function EventPnL({ eventId }) {
-  var [data, setData] = useState(null)
-  var [loading, setLoading] = useState(true)
+function EventPnL({ eventId, profile, cachedData }) {
+  var [data, setData] = useState(cachedData || null)
+  var [loading, setLoading] = useState(!cachedData)
   var [error, setError] = useState('')
 
-  useEffect(function () { loadPnL() }, [eventId])
+  useEffect(function () { if (!cachedData) loadPnL() }, [eventId])
 
   async function loadPnL() {
     setLoading(true)
@@ -21,6 +21,7 @@ function EventPnL({ eventId }) {
   if (loading) return <p className="text-sm text-gray-400 text-center py-3">Loading P&L...</p>
   if (error) return <p className="text-xs text-red-500 py-2">{error}</p>
   if (!data) return null
+  if (profile?.role !== 'admin' && profile?.role !== 'auditor') return null
 
   var revenue = data.revenue_paise || 0
   var totalCost = data.total_cost_paise || 0

@@ -1,7 +1,7 @@
 import { useState, useEffect, lazy, Suspense } from 'react'
 import { ROLE_COLORS } from '../../lib/constants'
-import RateCardEditor from '../../modules/quote/RateCardEditor'
 
+var RateCardEditor = lazy(function () { return import('../../modules/quote/RateCardEditor') })
 var PendingReview = lazy(function () { return import('../../modules/categories/PendingReview') })
 var Events = lazy(function () { return import('../../modules/events/Events') })
 var AdminItems = lazy(function () { return import('../../modules/inventory/AdminItems') })

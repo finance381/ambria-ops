@@ -36,6 +36,21 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     const supabase = createClient(supabaseUrl, supabaseKey)
 
+    // Verify caller is admin/auditor
+    const authHeader = req.headers.get("Authorization")
+    if (authHeader) {
+      const token = authHeader.replace("Bearer ", "")
+      const { data: { user } } = await supabase.auth.getUser(token)
+      if (user) {
+        const { data: prof } = await supabase.from("profiles").select("role").eq("id", user.id).maybeSingle()
+        if (!prof || (prof.role !== "admin" && prof.role !== "auditor")) {
+          return new Response(JSON.stringify({ error: "Forbidden" }), {
+            status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" }
+          })
+        }
+      }
+    }
+
     let totalSynced = 0
     let totalEvents = 0
     const errors: string[] = []

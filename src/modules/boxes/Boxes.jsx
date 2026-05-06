@@ -263,14 +263,16 @@ function Boxes({ profile }) {
   async function removeItem(biId) {
     if (saving) return
     setSaving(true)
-    await supabase.from('box_items').delete().eq('id', biId)
+    var { error } = await supabase.from('box_items').delete().eq('id', biId)
+    if (error) { alert('Delete failed: ' + error.message); setSaving(false); return }
     await loadBoxItems(activeBox.id)
     setSaving(false)
   }
 
   async function updateItemQty(biId, newQty) {
     if (newQty <= 0) return removeItem(biId)
-    await supabase.from('box_items').update({ qty: newQty }).eq('id', biId)
+    var { error } = await supabase.from('box_items').update({ qty: newQty }).eq('id', biId)
+    if (error) { alert('Update failed: ' + error.message); return }
     await loadBoxItems(activeBox.id)
   }
 
@@ -279,7 +281,8 @@ function Boxes({ profile }) {
   async function deleteBox(box) {
     if (!confirm('Delete box ' + box.code + '? All contents will be removed.')) return
     setSaving(true)
-    await supabase.from('boxes').delete().eq('id', box.id)
+    var { error } = await supabase.from('boxes').delete().eq('id', box.id)
+    if (error) { alert('Delete failed: ' + error.message); setSaving(false); return }
     await logActivity('BOX_DELETE', 'Deleted box ' + box.code)
     setSaving(false)
     setView('list')

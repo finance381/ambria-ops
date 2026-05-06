@@ -57,17 +57,35 @@ function EventTasks({ eventId, profile, departments }) {
     setLoading(true)
     var { data } = await supabase
       .from('event_tasks')
-      .select('id, title, description, department, assigned_to, due_date, priority, status, completed_at, completed_by, created_by, created_at, assignee:assigned_to(name), creator:created_by(name)')
+      .select('id, title, description, department, assigned_to, due_date, priority, status, completed_at, completed_by, created_by, created_at')
       .eq('event_id', eventId)
       .order('due_date', { ascending: true, nullsFirst: false })
       .order('created_at', { ascending: false })
-    setTasks(data || [])
+    var rows = data || []
+    // Resolve names via RPC
+    var userIds = []
+    rows.forEach(function (t) {
+      if (t.assigned_to && userIds.indexOf(t.assigned_to) === -1) userIds.push(t.assigned_to)
+      if (t.created_by && userIds.indexOf(t.created_by) === -1) userIds.push(t.created_by)
+      if (t.completed_by && userIds.indexOf(t.completed_by) === -1) userIds.push(t.completed_by)
+    })
+    var nameMap = {}
+    if (userIds.length > 0) {
+      var { data: names } = await supabase.rpc('get_profile_names', { p_ids: userIds })
+      ;(names || []).forEach(function (n) { nameMap[n.id] = n.name })
+    }
+    rows = rows.map(function (t) {
+      return Object.assign({}, t, {
+        assignee: { name: nameMap[t.assigned_to] || null },
+        creator: { name: nameMap[t.created_by] || null },
+      })
+    })
+    setTasks(rows)
     setLoading(false)
   }
 
   async function loadProfiles() {
-    var { data } = await supabase.from('profiles').select('id, name')
-      .eq('active', true).order('name')
+    var { data } = await supabase.rpc('get_all_profile_names')
     setProfiles(data || [])
   }
 
@@ -131,7 +149,8 @@ function EventTasks({ eventId, profile, departments }) {
       update.completed_at = new Date().toISOString()
       update.completed_by = profile.id
     }
-    await supabase.from('event_tasks').update(update).eq('id', task.id)
+    var { error: advErr } = await supabase.from('event_tasks').update(update).eq('id', task.id)
+    if (advErr) { alert('Status update failed: ' + advErr.message); return }
     try { await logActivity('TASK_STATUS', task.title + ' → ' + STATUS_LABELS[next]) } catch (_) {}
     loadTasks()
   }

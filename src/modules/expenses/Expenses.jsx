@@ -142,7 +142,7 @@ function Expenses({ profile }) {
     if (statuses.length === 0) { setApprovalExpenses([]); return }
 
     var query = supabase.from('expenses')
-      .select('id, user_id, category_id, sub_category_id, expense_type_id, amount_paise, description, status, expense_date, receipt_path, created_at, rejection_reason, vendor_name, travel_from, travel_to, travel_mode, categories(name), expense_types(name), profiles:user_id(name)')
+      .select('id, user_id, category_id, sub_category_id, expense_type_id, amount_paise, description, status, expense_date, receipt_path, created_at, rejection_reason, vendor_name, travel_from, travel_to, travel_mode, categories(name), expense_types(name)')
       .neq('user_id', profile.id)
       .in('status', statuses)
       .order('created_at', { ascending: false })
@@ -155,6 +155,15 @@ function Expenses({ profile }) {
     var hasMore = rows.length > PAGE_SIZE
     if (hasMore) rows = rows.slice(0, PAGE_SIZE)
 
+    // Resolve submitter names
+    var eUserIds = []
+    rows.forEach(function (r) { if (r.user_id && eUserIds.indexOf(r.user_id) === -1) eUserIds.push(r.user_id) })
+    if (eUserIds.length > 0) {
+      var { data: eNames } = await supabase.rpc('get_profile_names', { p_ids: eUserIds })
+      var eMap = {}
+      ;(eNames || []).forEach(function (n) { eMap[n.id] = n.name })
+      rows = rows.map(function (r) { return Object.assign({}, r, { profiles: { name: eMap[r.user_id] || null } }) })
+    }
     if (append) {
       setApprovalExpenses(function (prev) { return prev.concat(rows) })
     } else {
@@ -286,7 +295,7 @@ function Expenses({ profile }) {
     else setAllExpLoading(true)
 
     var query = supabase.from('expenses')
-      .select('id, user_id, category_id, sub_category_id, expense_type_id, amount_paise, description, status, expense_date, receipt_path, created_at, rejection_reason, vendor_name, travel_from, travel_to, travel_mode, categories(name), expense_types(name), profiles:user_id(name)')
+      .select('id, user_id, category_id, sub_category_id, expense_type_id, amount_paise, description, status, expense_date, receipt_path, created_at, rejection_reason, vendor_name, travel_from, travel_to, travel_mode, categories(name), expense_types(name)')
       .order('created_at', { ascending: false })
       .range(offset, offset + PAGE_SIZE)
 
@@ -302,6 +311,14 @@ function Expenses({ profile }) {
     var hasMore = rows.length > PAGE_SIZE
     if (hasMore) rows = rows.slice(0, PAGE_SIZE)
 
+    var aUserIds = []
+    rows.forEach(function (r) { if (r.user_id && aUserIds.indexOf(r.user_id) === -1) aUserIds.push(r.user_id) })
+    if (aUserIds.length > 0) {
+      var { data: aNames } = await supabase.rpc('get_profile_names', { p_ids: aUserIds })
+      var aMap = {}
+      ;(aNames || []).forEach(function (n) { aMap[n.id] = n.name })
+      rows = rows.map(function (r) { return Object.assign({}, r, { profiles: { name: aMap[r.user_id] || null } }) })
+    }
     if (append) {
       setAllExps(function (prev) { return prev.concat(rows) })
     } else {
@@ -1295,14 +1312,8 @@ function ExpenseEditForm({ profile, editExp, walletBalance, onCancel, onSaved })
           deptApprovedBy = profile.id
           deptApprovedAt = new Date().toISOString()
         } else {
-          var { data: approvers } = await supabase
-            .from('profiles')
-            .select('id')
-            .contains('permissions', ['dept_approve'])
-            .eq('active', true)
-            .neq('id', profile.id)
-            .limit(1)
-          if (!approvers || approvers.length === 0) {
+          var { data: hasAppr } = await supabase.rpc('has_dept_approvers', { p_exclude_id: profile.id })
+          if (!hasAppr) {
             status = 'pending'
           }
         }

@@ -94,9 +94,22 @@ function Purchase({ profile, mode }) {
 
     var { data: reqs } = await supabase
       .from('requisitions')
-      .select('id, purpose, department, urgency, needed_by, status, requested_by, profiles:requested_by(name)')
+      .select('id, purpose, department, urgency, needed_by, status, requested_by')
       .in('id', reqIds)
       .eq('status', 'approved')
+
+    var reqUserIds = []
+    ;(reqs || []).forEach(function (r) {
+      if (r.requested_by && reqUserIds.indexOf(r.requested_by) === -1) reqUserIds.push(r.requested_by)
+    })
+    var reqNameMap = {}
+    if (reqUserIds.length > 0) {
+      var { data: reqNames } = await supabase.rpc('get_profile_names', { p_ids: reqUserIds })
+      ;(reqNames || []).forEach(function (n) { reqNameMap[n.id] = n.name })
+    }
+    reqs = (reqs || []).map(function (r) {
+      return Object.assign({}, r, { profiles: { name: reqNameMap[r.requested_by] || null } })
+    })
 
     var reqMap = {}
     ;(reqs || []).forEach(function (r) { reqMap[r.id] = r })
@@ -110,36 +123,40 @@ function Purchase({ profile, mode }) {
   }
 
   // ─── PO LIST ───
-  var PO_BASE_COLS = 'id, status, notes, assigned_to, created_at, updated_at, profiles:created_by(name)'
+  var PO_BASE_COLS = 'id, status, notes, assigned_to, created_by, created_at, updated_at'
 
   async function loadPos() {
-    function buildQuery(cols) {
-      var q = supabase.from('purchase_orders').select(cols).order('created_at', { ascending: false }).limit(100)
-      if (poStatusFilter) q = q.eq('status', poStatusFilter)
-      if (isPurchaser) q = q.eq('assigned_to', profile.id)
-      return q
-    }
+    var q = supabase.from('purchase_orders').select(PO_BASE_COLS).order('created_at', { ascending: false }).limit(100)
+    if (poStatusFilter) q = q.eq('status', poStatusFilter)
+    if (isPurchaser) q = q.eq('assigned_to', profile.id)
 
-    var { data, error } = await buildQuery(PO_BASE_COLS + ', assignee:assigned_to(name)')
-    if (error) {
-      var { data: fb } = await buildQuery(PO_BASE_COLS)
-      data = fb
+    var { data } = await q
+    var rows = data || []
+    // Resolve names
+    var userIds = []
+    rows.forEach(function (r) {
+      if (r.created_by && userIds.indexOf(r.created_by) === -1) userIds.push(r.created_by)
+      if (r.assigned_to && userIds.indexOf(r.assigned_to) === -1) userIds.push(r.assigned_to)
+    })
+    var nameMap = {}
+    if (userIds.length > 0) {
+      var { data: names } = await supabase.rpc('get_profile_names', { p_ids: userIds })
+      ;(names || []).forEach(function (n) { nameMap[n.id] = n.name })
     }
-    setPoList(data || [])
+    rows = rows.map(function (r) {
+      return Object.assign({}, r, {
+        profiles: { name: nameMap[r.created_by] || null },
+        assignee: { name: nameMap[r.assigned_to] || null },
+      })
+    })
+    setPoList(rows)
     setLoading(false)
   }
 
   // ─── STAFF LIST for assigning purchaser ───
   async function loadStaff() {
-    var { data } = await supabase
-      .from('profiles')
-      .select('id, name, role, permissions')
-      .eq('active', true)
-      .order('name')
-    var purchasers = (data || []).filter(function (s) {
-      return (s.permissions || []).indexOf('feature_purchase') !== -1
-    })
-    setStaffList(purchasers)
+    var { data } = await supabase.rpc('get_all_profile_names')
+    setStaffList(data || [])
   }
   // ─── RECEIVING: load purchased items awaiting receive ───
   async function loadReceiving() {
@@ -168,9 +185,20 @@ function Purchase({ profile, mode }) {
     if (poIds.length > 0) {
       var { data: pos } = await supabase
         .from('purchase_orders')
-        .select('id, notes, created_at, profiles:created_by(name)')
+        .select('id, notes, created_at, created_by')
         .in('id', poIds)
-      ;(pos || []).forEach(function (p) { poMap[p.id] = p })
+      var poUserIds = []
+      ;(pos || []).forEach(function (p) {
+        if (p.created_by && poUserIds.indexOf(p.created_by) === -1) poUserIds.push(p.created_by)
+      })
+      var poNameMap = {}
+      if (poUserIds.length > 0) {
+        var { data: poNames } = await supabase.rpc('get_profile_names', { p_ids: poUserIds })
+        ;(poNames || []).forEach(function (n) { poNameMap[n.id] = n.name })
+      }
+      ;(pos || []).forEach(function (p) {
+        poMap[p.id] = Object.assign({}, p, { profiles: { name: poNameMap[p.created_by] || null } })
+      })
     }
     setReceivingItems((data || []).map(function (it) { return Object.assign({}, it, { po: poMap[it.po_id] || null }) }))
     setReceivingLoading(false)

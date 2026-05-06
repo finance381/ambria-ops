@@ -49,7 +49,6 @@ var GROUPS = [
     key: 'logistics', label: 'Logistics', icon: '🚛', items: [
       { key: 'feature_receive', label: 'Receive Items', icon: '📦', tab: 'receive' },
       { key: 'feature_challans', label: 'Challans', icon: '🚛', tab: 'challans' },
-      { key: 'feature_production', label: 'Production Orders', icon: '🔧' },
     ]
   },
   {
@@ -74,6 +73,7 @@ function Shell({ profile, onSignOut }) {
   var { lang, switchLang } = useLang()
 
   var [badges, setBadges] = useState({})
+  var [lastBadgeLoad, setLastBadgeLoad] = useState(0)
 
   // Filter groups: only show groups where user has at least one sub-feature permission
   var visibleGroups = GROUPS.map(function (g) {
@@ -122,7 +122,7 @@ function Shell({ profile, onSignOut }) {
   var currentGroup = activeGroup ? visibleGroups.find(function (g) { return g.key === activeGroup }) : null
 
   // Header title
-  var headerTitle = 'Inventory Manager'
+  var headerTitle = 'Ambria Ops'
   if (tab && currentGroup) {
     var currentItem = currentGroup.items.find(function (f) { return f.tab === tab })
     headerTitle = currentItem?.label || currentGroup.label
@@ -132,6 +132,7 @@ function Shell({ profile, onSignOut }) {
 
   useEffect(function () {
     if (activeGroup || tab) return
+    if (Date.now() - lastBadgeLoad < 30000) return
     var stale = false
     loadBadges(function () { return stale })
     return function () { stale = true }
@@ -264,6 +265,7 @@ function Shell({ profile, onSignOut }) {
     await Promise.allSettled(promises)
     if (isStale && isStale()) return
     setBadges(counts)
+    setLastBadgeLoad(Date.now())
   }
 
   function handleSaved() {

@@ -1002,7 +1002,7 @@ function Events({ profile }) {
 
                 {/* P&L tab */}
                 {detailTab === 'pnl' && isAdmin && (
-                  <EventPnL eventId={selectedFunction.id} />
+                  <EventPnL eventId={selectedFunction.id} profile={profile} cachedData={pnlSummary} />
                 )}
               </div>
             )}

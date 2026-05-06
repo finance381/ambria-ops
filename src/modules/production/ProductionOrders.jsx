@@ -97,7 +97,7 @@ function ProductionOrders({ profile }) {
       supabase.from('events_safe').select('id, contract_date, client_name, venue_name, event_name')
         .gte('contract_date', new Date(Date.now() - 90 * 86400000).toISOString().split('T')[0])
         .order('contract_date', { ascending: false }).limit(200),
-      supabase.from('profiles').select('id, name, event_dept_ids').eq('active', true).order('name'),
+      supabase.rpc('get_profiles_with_dept'),
       supabase.from('departments').select('id, name').eq('active', true).order('name'),
       supabase.from('categories').select('id, name').order('name'),
       supabase.from('sub_categories').select('id, name, category_id').order('name'),
@@ -302,10 +302,9 @@ function ProductionOrders({ profile }) {
       update.qty_completed = activeOrder.qty_ordered
     }
     var { error } = await supabase.from('production_orders').update(update).eq('id', activeOrder.id)
-    if (!error) {
-      setActiveOrder(Object.assign({}, activeOrder, update))
-      try { await logActivity('PROD_STATUS', activeOrder.item_name + ' → ' + STATUS_LABELS[next]) } catch (_) {}
-    }
+    if (error) { alert('Status update failed: ' + error.message); setSaving(false); return }
+    setActiveOrder(Object.assign({}, activeOrder, update))
+    try { await logActivity('PROD_STATUS', activeOrder.item_name + ' → ' + STATUS_LABELS[next]) } catch (_) {}
     setSaving(false)
     loadOrders()
   }
@@ -321,9 +320,8 @@ function ProductionOrders({ profile }) {
       update.completed_at = new Date().toISOString()
     }
     var { error } = await supabase.from('production_orders').update(update).eq('id', activeOrder.id)
-    if (!error) {
-      setActiveOrder(Object.assign({}, activeOrder, update))
-    }
+    if (error) { alert('Update failed: ' + error.message); setSaving(false); return }
+    setActiveOrder(Object.assign({}, activeOrder, update))
     setSaving(false)
     loadOrders()
   }
@@ -333,10 +331,9 @@ function ProductionOrders({ profile }) {
     if (!confirm('Cancel this production order?')) return
     setSaving(true)
     var { error } = await supabase.from('production_orders').update({ status: 'cancelled' }).eq('id', activeOrder.id)
-    if (!error) {
-      setActiveOrder(Object.assign({}, activeOrder, { status: 'cancelled' }))
-      try { await logActivity('PROD_CANCEL', activeOrder.item_name) } catch (_) {}
-    }
+    if (error) { alert('Cancel failed: ' + error.message); setSaving(false); return }
+    setActiveOrder(Object.assign({}, activeOrder, { status: 'cancelled' }))
+    try { await logActivity('PROD_CANCEL', activeOrder.item_name) } catch (_) {}
     setSaving(false)
     loadOrders()
   }

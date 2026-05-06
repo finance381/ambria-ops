@@ -512,7 +512,8 @@ function Challans({ profile }) {
     if (error) { alert('Failed: ' + error.message); setSaving(false); return }
 
     // Update box status
-    await supabase.from('boxes').update({ status: 'packed' }).eq('id', box.id)
+    var { error: boxErr } = await supabase.from('boxes').update({ status: 'packed' }).eq('id', box.id)
+    if (boxErr) alert('Box status update failed: ' + boxErr.message)
 
     setAddMode('')
     await loadChallanItems(activeChallan.id)
@@ -522,7 +523,8 @@ function Challans({ profile }) {
   async function removeItem(ciId) {
     if (saving) return
     setSaving(true)
-    await supabase.from('challan_items').delete().eq('id', ciId)
+    var { error: delErr } = await supabase.from('challan_items').delete().eq('id', ciId)
+    if (delErr) { alert('Delete failed: ' + delErr.message); setSaving(false); return }
     await loadChallanItems(activeChallan.id)
     setSaving(false)
   }
@@ -552,7 +554,8 @@ function Challans({ profile }) {
       if (ci.box_id && boxIds.indexOf(ci.box_id) === -1) boxIds.push(ci.box_id)
     })
     if (boxIds.length > 0) {
-      await supabase.from('boxes').update({ status: 'dispatched' }).in('id', boxIds)
+      var { error: bxErr } = await supabase.from('boxes').update({ status: 'dispatched' }).in('id', boxIds)
+      if (bxErr) alert('Box status update failed: ' + bxErr.message)
     }
 
     await logActivity('CHALLAN_DISPATCH', activeChallan.challan_no + ' dispatched')
@@ -702,10 +705,19 @@ function Challans({ profile }) {
     setPhotosLoading(true)
     var { data } = await supabase
       .from('challan_photos')
-      .select('id, stage, storage_path, uploaded_by, uploaded_at, profiles:uploaded_by(name)')
+      .select('id, stage, storage_path, uploaded_by, uploaded_at')
       .eq('challan_id', challanId)
       .order('uploaded_at', { ascending: false })
-    setPhotos(data || [])
+    var rows = data || []
+    var userIds = []
+    rows.forEach(function (r) { if (r.uploaded_by && userIds.indexOf(r.uploaded_by) === -1) userIds.push(r.uploaded_by) })
+    if (userIds.length > 0) {
+      var { data: names } = await supabase.rpc('get_profile_names', { p_ids: userIds })
+      var nameMap = {}
+      ;(names || []).forEach(function (n) { nameMap[n.id] = n.name })
+      rows = rows.map(function (r) { return Object.assign({}, r, { profiles: { name: nameMap[r.uploaded_by] || null } }) })
+    }
+    setPhotos(rows)
     setPhotosLoading(false)
   }
 

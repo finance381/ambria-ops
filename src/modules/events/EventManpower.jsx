@@ -69,7 +69,7 @@ function EventManpower({ eventId, profile, departments }) {
         .eq('event_id', eventId)
         .order('created_at'),
       supabase.from('staff_roles').select('id, name, department, default_rate_paise').eq('is_active', true).order('sort_order').order('name'),
-      supabase.from('profiles').select('id, name, event_dept_ids').eq('active', true).order('name'),
+      canManage ? supabase.rpc('get_all_profile_names') : Promise.resolve({ data: [] }),
       supabase.from('vendors').select('id, name, contact_person, phone').eq('is_active', true).order('name'),
     ])
 
@@ -192,7 +192,8 @@ function EventManpower({ eventId, profile, departments }) {
 
   async function updateReqQty(req, newQty) {
     if (newQty < 1) return
-    await supabase.from('event_manpower').update({ qty_required: newQty }).eq('id', req.id)
+    var { error: qErr } = await supabase.from('event_manpower').update({ qty_required: newQty }).eq('id', req.id)
+    if (qErr) { alert('Update failed: ' + qErr.message); return }
     loadAll()
   }
 
@@ -247,7 +248,8 @@ function EventManpower({ eventId, profile, departments }) {
   }
 
   async function updateAssignStatus(assign, newStatus) {
-    await supabase.from('manpower_assignments').update({ status: newStatus }).eq('id', assign.id)
+    var { error: sErr } = await supabase.from('manpower_assignments').update({ status: newStatus }).eq('id', assign.id)
+    if (sErr) { alert('Update failed: ' + sErr.message); return }
     loadAll()
   }
 

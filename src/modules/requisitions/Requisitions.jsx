@@ -107,7 +107,7 @@ function Requisitions({ profile, onBack }) {
     if (statuses.length === 0) { setApprovalReqs([]); return }
 
     var query = supabase.from('requisitions')
-      .select('id, department, urgency, purpose, status, created_at, needed_by, requested_by, rejection_reason, profiles:requested_by(name)')
+      .select('id, department, urgency, purpose, status, created_at, needed_by, requested_by, rejection_reason')
       .neq('requested_by', profile.id)
       .in('status', statuses)
       .order('created_at', { ascending: false })
@@ -124,6 +124,15 @@ function Requisitions({ profile, onBack }) {
     var rows = data || []
     var hasMore = rows.length > PAGE_SIZE
     if (hasMore) rows = rows.slice(0, PAGE_SIZE)
+    // Resolve requester names
+    var rUserIds = []
+    rows.forEach(function (r) { if (r.requested_by && rUserIds.indexOf(r.requested_by) === -1) rUserIds.push(r.requested_by) })
+    if (rUserIds.length > 0) {
+      var { data: rNames } = await supabase.rpc('get_profile_names', { p_ids: rUserIds })
+      var rMap = {}
+      ;(rNames || []).forEach(function (n) { rMap[n.id] = n.name })
+      rows = rows.map(function (r) { return Object.assign({}, r, { profiles: { name: rMap[r.requested_by] || null } }) })
+    }
 
     if (append) {
       setApprovalReqs(function (prev) { return prev.concat(rows) })
@@ -517,14 +526,8 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
           deptApprovedBy = profile.id
           deptApprovedAt = new Date().toISOString()
         } else {
-          var { data: approvers } = await supabase
-            .from('profiles')
-            .select('id')
-            .contains('permissions', ['dept_approve'])
-            .eq('active', true)
-            .neq('id', profile.id)
-            .limit(1)
-          if (approvers && approvers.length > 0) {
+          var { data: hasAppr } = await supabase.rpc('has_dept_approvers', { p_exclude_id: profile.id })
+          if (hasAppr) {
             status = 'pending_dept'
           } else {
             status = 'pending'
