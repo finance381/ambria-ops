@@ -570,12 +570,16 @@ function DecorEditor({ config, onSave, saving }) {
     var d = clone(config[s.key] || { labels: [], nw_offset: -0.5, q: [], t: [], f: [] })
     // Pad each tier's category arrays
     if (d.labels && d.labels.length > 0) {
+      var clean = {}
+      TIERS.forEach(function (tier) { clean[tier] = [] })
       d.labels.forEach(function (_, tierIdx) {
         TIERS.forEach(function (tier) {
-          if (!d[tier][tierIdx]) d[tier][tierIdx] = []
-          while (d[tier][tierIdx].length < cats.length) d[tier][tierIdx].push(0)
+          var existing = Array.isArray(d[tier][tierIdx]) ? d[tier][tierIdx] : []
+          while (existing.length < cats.length) existing.push(0)
+          clean[tier].push(existing)
         })
       })
+      TIERS.forEach(function (tier) { d[tier] = clean[tier] })
     } else if (!d.labels || d.labels.length === 0) {
       // Flat mode (Valencia) — pad flat arrays
       TIERS.forEach(function (tier) {
@@ -717,12 +721,16 @@ function LunchRatesEditor({ config, onSave, saving }) {
     var s = LUNCH_SECTIONS[subTab]
     var d = clone(config[s.key] || { labels: [], nw_offset: -0.5, q: [], t: [], f: [] })
     if (d.labels && d.labels.length > 0) {
+      var clean = {}
+      TIERS.forEach(function (tier) { clean[tier] = [] })
       d.labels.forEach(function (_, tierIdx) {
         TIERS.forEach(function (tier) {
-          if (!d[tier][tierIdx]) d[tier][tierIdx] = []
-          while (d[tier][tierIdx].length < cats.length) d[tier][tierIdx].push(0)
+          var existing = Array.isArray(d[tier][tierIdx]) ? d[tier][tierIdx] : []
+          while (existing.length < cats.length) existing.push(0)
+          clean[tier].push(existing)
         })
       })
+      TIERS.forEach(function (tier) { d[tier] = clean[tier] })
     } else if (!d.labels || d.labels.length === 0) {
       TIERS.forEach(function (tier) {
         if (!Array.isArray(d[tier])) d[tier] = []
