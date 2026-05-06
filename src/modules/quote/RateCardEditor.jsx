@@ -695,6 +695,149 @@ function DecorEditor({ config, onSave, saving }) {
 }
 
 // ══════════════════════════════════════
+//  LUNCH RATES EDITOR
+// ══════════════════════════════════════
+
+var LUNCH_SECTIONS = [
+  { key: 'lunch_decor', label: 'Pushpanjali' },
+  { key: 'lunch_decor_eg', label: 'EG / Aura' },
+  { key: 'lunch_decor_valencia', label: 'Valencia' },
+]
+
+function LunchRatesEditor({ config, onSave, saving }) {
+  var cats = config.categories || DEFAULT_CATS
+  var [subTab, setSubTab] = useState(0)
+  var sec = LUNCH_SECTIONS[subTab]
+  var raw = config[sec.key] || { labels: [], nw_offset: -0.5, q: [], t: [], f: [] }
+  var [draft, setDraft] = useState(clone(raw))
+
+  useEffect(function () {
+    var s = LUNCH_SECTIONS[subTab]
+    var d = clone(config[s.key] || { labels: [], nw_offset: -0.5, q: [], t: [], f: [] })
+    if (d.labels && d.labels.length > 0) {
+      d.labels.forEach(function (_, tierIdx) {
+        TIERS.forEach(function (tier) {
+          if (!d[tier][tierIdx]) d[tier][tierIdx] = []
+          while (d[tier][tierIdx].length < cats.length) d[tier][tierIdx].push(0)
+        })
+      })
+    } else if (!d.labels || d.labels.length === 0) {
+      TIERS.forEach(function (tier) {
+        if (!Array.isArray(d[tier])) d[tier] = []
+        while (d[tier].length < cats.length) d[tier].push(0)
+      })
+    }
+    setDraft(d)
+  }, [subTab, config])
+
+  function updateOffset(val) { var d = clone(draft); d.nw_offset = val; setDraft(d) }
+  function updateLabel(idx, val) { var d = clone(draft); d.labels[idx] = val; setDraft(d) }
+  function updateTiered(tier, tierIdx, catIdx, val) { var d = clone(draft); d[tier][tierIdx][catIdx] = val; setDraft(d) }
+  function updateFlat(tier, catIdx, val) { var d = clone(draft); d[tier][catIdx] = val; setDraft(d) }
+
+  var isFlat = !draft.labels || draft.labels.length === 0
+
+  function addTier() {
+    var d = clone(draft)
+    if (!d.labels) d.labels = []
+    d.labels.push('New Tier')
+    TIERS.forEach(function (tier) {
+      var row = []
+      for (var c = 0; c < cats.length; c++) row.push(0)
+      d[tier].push(row)
+    })
+    setDraft(d)
+  }
+
+  function rmTier(idx) {
+    var d = clone(draft)
+    d.labels.splice(idx, 1)
+    TIERS.forEach(function (tier) { d[tier].splice(idx, 1) })
+    setDraft(d)
+  }
+
+  return (
+    <>
+      <div style={{ display: 'flex', gap: 6, marginBottom: 14, flexWrap: 'wrap' }}>
+        {LUNCH_SECTIONS.map(function (s, idx) {
+          var on = subTab === idx
+          return (
+            <button key={idx} onClick={function () { setSubTab(idx) }} style={{
+              padding: '7px 12px', borderRadius: 9, border: '2px solid ' + (on ? C.gold : C.border),
+              background: on ? '#FFF8F0' : '#fff', color: on ? C.gold : C.muted,
+              fontSize: 12, fontWeight: 700, cursor: 'pointer',
+            }}>{s.label}</button>
+          )
+        })}
+      </div>
+
+      <Card title={sec.label + ' Lunch Décor (₹L)'}>
+        <div style={{ fontSize: 11, color: C.muted, marginBottom: 10 }}>Décor rates applied when Lunch slot is selected. Overrides standard décor for lunch bookings.</div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, padding: 10, borderRadius: 9, background: C.bg, border: '1px solid ' + C.border }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: C.maroon2, flex: 1 }}>NW Offset (₹L)</div>
+          <div style={{ width: 80 }}><Num value={draft.nw_offset} onChange={updateOffset} /></div>
+        </div>
+
+        {!isFlat && draft.labels && (
+          <div style={{ marginBottom: 12 }}>
+            {draft.labels.map(function (l, i) {
+              return (
+                <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 }}>
+                  <TextIn value={l} onChange={function (v) { updateLabel(i, v) }} style={{ flex: 1 }} />
+                  {draft.labels.length > 1 && <RemoveBtn onClick={function () { rmTier(i) }} />}
+                </div>
+              )
+            })}
+            <AddRow label="Add Lunch Tier" onClick={addTier} />
+          </div>
+        )}
+
+        {!isFlat && (draft.labels || []).map(function (tierLabel, tierIdx) {
+          return (
+            <div key={tierIdx} style={{ marginBottom: 18 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: C.maroon2, marginBottom: 6 }}>{tierLabel}</div>
+              <TierGrid>
+                {cats.map(function (cat, catIdx) {
+                  return (
+                    <React.Fragment key={catIdx}>
+                      <div style={{ fontSize: 10, fontWeight: 600, color: cat.color || C.muted }}>{cat.label}</div>
+                      {TIERS.map(function (tier) {
+                        return <Num key={tier} value={(draft[tier][tierIdx] || [])[catIdx] || 0} onChange={function (v) { updateTiered(tier, tierIdx, catIdx, v) }} />
+                      })}
+                    </React.Fragment>
+                  )
+                })}
+              </TierGrid>
+            </div>
+          )
+        })}
+
+        {isFlat && (
+          <div style={{ marginBottom: 12 }}>
+            <TierGrid>
+              {cats.map(function (cat, catIdx) {
+                return (
+                  <React.Fragment key={catIdx}>
+                    <div style={{ fontSize: 10, fontWeight: 600, color: cat.color || C.muted }}>{cat.label}</div>
+                    {TIERS.map(function (tier) {
+                      return <Num key={tier} value={(draft[tier] || [])[catIdx] || 0} onChange={function (v) { updateFlat(tier, catIdx, v) }} />
+                    })}
+                  </React.Fragment>
+                )
+              })}
+            </TierGrid>
+            <AddRow label="Convert to Tiered" onClick={addTier} />
+          </div>
+        )}
+
+        <Btn label={'Save ' + sec.label + ' Lunch'} variant="primary" onClick={function () { onSave(sec.key, draft) }} disabled={saving} style={{ width: '100%', marginTop: 8 }} />
+      </Card>
+    </>
+  )
+}
+
+// ══════════════════════════════════════
 //  SEASON DATE CALENDAR
 // ══════════════════════════════════════
 
@@ -840,6 +983,7 @@ var TABS = [
   { key: 'ttd', label: 'TTD' },
   { key: 'menu', label: 'Menu' },
   { key: 'decor', label: 'Décor' },
+  { key: 'lunch', label: 'Lunch' },
   { key: 'season', label: 'Season' },
 ]
 var WIDE_TABS = ['season', 'rentals']
@@ -922,6 +1066,7 @@ function RateCardEditor({ profile }) {
       {tab === 'ttd' && <TTDEditor config={config} onSave={saveKey} saving={saving} />}
       {tab === 'menu' && <MenuEditor config={config} onSave={saveKey} saving={saving} />}
       {tab === 'decor' && <DecorEditor config={config} onSave={saveKey} saving={saving} />}
+      {tab === 'lunch' && <LunchRatesEditor config={config} onSave={saveKey} saving={saving} />}
       {tab === 'season' && <SeasonCalendar config={config} onSave={saveKey} saving={saving} />}
     </div>
   )
