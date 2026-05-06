@@ -134,6 +134,22 @@ function CatPills({ items, value, onChange }) {
   )
 }
 
+function Toggle({ on, onToggle }) {
+  return (
+    <div onClick={onToggle} style={{
+      width: 36, height: 20, borderRadius: 10, cursor: 'pointer',
+      background: on ? 'linear-gradient(135deg,#4A1111,#8B2D2D)' : '#D1D5DB',
+      padding: 2, transition: 'background .2s',
+    }}>
+      <div style={{
+        width: 16, height: 16, borderRadius: 8, background: '#fff',
+        transform: on ? 'translateX(16px)' : 'translateX(0)',
+        transition: 'transform .2s', boxShadow: '0 1px 3px rgba(0,0,0,.2)',
+      }} />
+    </div>
+  )
+}
+
 function StatusBar({ quoteStatus, onUpdate }) {
   return (
     <div style={{ marginTop: 10, borderTop: '1px solid rgba(255,255,255,.1)', paddingTop: 10 }}>
@@ -231,7 +247,7 @@ function QuoteCalculator({ profile }) {
   var currentET = eventTypes[eventTypeIdx] || eventTypes[0] || { label: 'Wedding', wedding: true }
   var isWedding = currentET.wedding
   var dc = classifyDate(eventDate, seasonDates)
-  var ct = dc >= 0 ? dc : catOverride
+  var ct = catOverride
 
   // ── RPC call ──
   async function fetchCalc() {
@@ -705,7 +721,7 @@ function QuoteCalculator({ profile }) {
           {eventDate && (<div style={{
             padding: '7px 11px', borderRadius: 7, fontSize: 12, fontWeight: 600, marginBottom: 7,
             background: CAT_BG[ct], color: CAT_COLORS[ct], border: '1px solid ' + C.border,
-          }}>{fmtDate(eventDate)} – {CAT_LABELS[ct]}</div>)}
+          }}>{fmtDate(eventDate)} – {CAT_LABELS[ct]}{dc >= 0 && dc !== ct ? '  (auto: ' + CAT_LABELS[dc] + ')' : ''}</div>)}
           <CatPills items={CAT_LABELS} value={ct} onChange={setCatOverride} />
 
           <div style={{ fontSize: 12, color: C.muted, marginBottom: 5, fontWeight: 600 }}>Slot</div>
@@ -733,10 +749,10 @@ function QuoteCalculator({ profile }) {
 
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 5 }}>
             <div style={{ fontSize: 12, color: C.muted, fontWeight: 600 }}>Menu ({foodPref === 0 ? 'Veg' : 'NV'})</div>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer', fontSize: 11, fontWeight: 700, color: includeMenu ? '#166534' : C.muted }}>
-              <input type="checkbox" checked={includeMenu} onChange={function () { setIncludeMenu(!includeMenu) }} style={{ accentColor: C.maroon2, width: 15, height: 15 }} />
-              {includeMenu ? 'Included' : 'Off'}
-            </label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: includeMenu ? '#166534' : C.muted }}>{includeMenu ? 'Included' : 'Off'}</span>
+              <Toggle on={includeMenu} onToggle={function () { setIncludeMenu(!includeMenu) }} />
+            </div>
           </div>
           {ct === 0 && includeMenu && (<div style={{ padding: '7px 11px', borderRadius: 7, fontSize: 11, marginBottom: 7, background: '#FFF8F0', color: C.gold, border: '1px solid ' + C.border }}>
             {"King's – Lux/MC only"}
@@ -790,10 +806,10 @@ function QuoteCalculator({ profile }) {
         {/* DÉCOR */}
         <SectionCard title="Décor">
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', marginTop: -8, marginBottom: 8 }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer', fontSize: 11, fontWeight: 700, color: includeDecor ? '#166534' : C.muted }}>
-              <input type="checkbox" checked={includeDecor} onChange={function () { setIncludeDecor(!includeDecor) }} style={{ accentColor: C.maroon2, width: 15, height: 15 }} />
-              {includeDecor ? 'Included' : 'Off'}
-            </label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: includeDecor ? '#166534' : C.muted }}>{includeDecor ? 'Included' : 'Off'}</span>
+              <Toggle on={includeDecor} onToggle={function () { setIncludeDecor(!includeDecor) }} />
+            </div>
           </div>
           <div style={{ opacity: includeDecor ? 1 : 0.3, pointerEvents: includeDecor ? 'auto' : 'none' }}>
           {venDecorMode === 'p' ? (
@@ -831,10 +847,10 @@ function QuoteCalculator({ profile }) {
         {/* DJ */}
         <SectionCard title="DJ">
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', marginTop: -8, marginBottom: 8 }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer', fontSize: 11, fontWeight: 700, color: includeDj ? '#166534' : C.muted }}>
-              <input type="checkbox" checked={includeDj} onChange={function () { setIncludeDj(!includeDj) }} style={{ accentColor: C.maroon2, width: 15, height: 15 }} />
-              {includeDj ? 'Included' : 'Off'}
-            </label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: includeDj ? '#166534' : C.muted }}>{includeDj ? 'Included' : 'Off'}</span>
+              <Toggle on={includeDj} onToggle={function () { setIncludeDj(!includeDj) }} />
+            </div>
           </div>
           <div style={{ opacity: includeDj ? 1 : 0.3, pointerEvents: includeDj ? 'auto' : 'none' }}>
           <div style={{ display: 'flex', gap: 10, marginBottom: 10 }}>
