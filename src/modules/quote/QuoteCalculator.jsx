@@ -63,7 +63,7 @@ function fmtDate(val) {
 
 // ── Formatting ──
 function fmtL(n) { return '\u20B9' + (n % 1 === 0 ? n : n.toFixed(2)) + 'L' }
-function fmtRound(n) { return '\u20B9' + (Math.round(n * 2) / 2) + 'L' }
+function fmtRound(n) { return '\u20B9' + (Math.ceil(n * 2) / 2) + 'L' }
 function fmtK(n) { return n >= 1 ? '\u20B9' + n + 'L' : '\u20B9' + Math.round(n * 100) + 'K' }
 function fmtINR(n) { return '\u20B9' + Math.round(n * 100000).toLocaleString('en-IN') }
 function rd(n) { return Math.round(n * 100) / 100 }
@@ -258,7 +258,7 @@ function QuoteCalculator({ profile }) {
     if (debounceRef.current) clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(fetchCalc, 300)
     return function () { if (debounceRef.current) clearTimeout(debounceRef.current) }
-  }, [venueIdx, pax, slot, ct, menuIdx, decorIdx, djIdx, ttdIdx, foodPref, eventTypeIdx])
+  }, [venueIdx, pax, slot, ct, menuIdx, decorIdx, djIdx, ttdIdx, foodPref, isWedding])
 
   // Safe accessors
   var r = calcResult || {}
@@ -298,6 +298,8 @@ function QuoteCalculator({ profile }) {
   function handleEventType(idx) {
     setEventTypeIdx(idx)
     var wed = (eventTypes[idx] || {}).wedding
+    if (wed && (decorIdx === 2 || decorIdx === 3)) setDecorIdx(0)
+    if (!wed && (decorIdx === 0 || decorIdx === 1)) setDecorIdx(2)
   }
 
   function handleDateChange(val) {
@@ -402,7 +404,7 @@ function QuoteCalculator({ profile }) {
     setEventTypeIdx(etIdx); setVenueIdx(q.venue_idx || 0)
     setFoodPref(q.food_pref || 0); setPax(q.pax || 400); setSlot(q.slot || 0)
     setCatOverride(q.date_category || 2); setMenuIdx(q.menu_idx != null ? q.menu_idx : 3)
-    setDecorIdx(0); setDjIdx(1); setTtdIdx(q.ttd_idx != null ? q.ttd_idx : autoTtdIdx(q.event_date)); setPackageVal(''); setDealVal(14); setTaxMode(0); setSplit5(50)
+    setDecorIdx(q.decor_idx != null ? q.decor_idx : 0); setDjIdx(q.dj_idx != null ? q.dj_idx : 1); setTtdIdx(q.ttd_idx != null ? q.ttd_idx : autoTtdIdx(q.event_date)); setPackageVal(''); setDealVal(14); setTaxMode(0); setSplit5(50)
     if (q.deal_value_paise != null) { setPackageVal(String(fromPaise(q.deal_value_paise))); setTaxMode(q.tax_mode || 0); setSplit5(q.split_5_pct || 50) }
     setSavedId(q.id); setQuoteStatus(q.status || 'draft'); setNotes(q.notes || '')
     setShowQuotes(false); setShowProposal(false); setPage(0)
@@ -635,7 +637,7 @@ function QuoteCalculator({ profile }) {
 
           <div style={{ fontSize: 12, color: C.muted, marginBottom: 5, fontWeight: 600 }}>Pax: {pax}</div>
           <input type="range" min={100} max={1000} step={50} value={pax}
-            onChange={function (e) { setPax(+e.target.value) }} style={{ width: '100%', accentColor: C.maroon2 }} />
+            onInput={function (e) { setPax(+e.target.value) }} style={{ width: '100%', accentColor: C.maroon2 }} />
         </SectionCard>
 
         <button onClick={function () { setTtdIdx(autoTtdIdx(eventDate)); setPage(1) }} style={{
@@ -701,7 +703,7 @@ function QuoteCalculator({ profile }) {
 
           <div style={{ fontSize: 12, color: C.muted, marginBottom: 5, fontWeight: 600 }}>Pax: {pax}</div>
           <input type="range" min={100} max={1000} step={50} value={pax}
-            onChange={function (e) { setPax(+e.target.value) }} style={{ width: '100%', accentColor: C.maroon2, marginBottom: 10 }} />
+            onInput={function (e) { setPax(+e.target.value) }} style={{ width: '100%', accentColor: C.maroon2, marginBottom: 10 }} />
 
           <div style={{ fontSize: 12, color: C.muted, marginBottom: 5, fontWeight: 600 }}>Food</div>
           <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>

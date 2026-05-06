@@ -233,7 +233,9 @@ function RentalsEditor({ config, onSave, saving }) {
 
   var liveIdxs = []
   venues.forEach(function (v, i) { if (v.status === 'live') liveIdxs.push(i) })
-  if (selV === -1 && liveIdxs.length > 0) setSelV(liveIdxs[0])
+  useEffect(function () {
+    if (selV === -1 && liveIdxs.length > 0) setSelV(liveIdxs[0])
+  }, [liveIdxs.length])
 
   function emptyRental() {
     var r = {}
@@ -574,7 +576,7 @@ function DecorEditor({ config, onSave, saving }) {
           while (d[tier][tierIdx].length < cats.length) d[tier][tierIdx].push(0)
         })
       })
-    } else if (!d.labels) {
+    } else if (!d.labels || d.labels.length === 0) {
       // Flat mode (Valencia) — pad flat arrays
       TIERS.forEach(function (tier) {
         if (!Array.isArray(d[tier])) d[tier] = []
