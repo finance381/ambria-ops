@@ -202,6 +202,9 @@ function QuoteCalculator({ profile }) {
   var [quoteStatus, setQuoteStatus] = useState('draft')
   var [seasonDates, setSeasonDates] = useState(null)
   var [notes, setNotes] = useState('')
+  var [includeMenu, setIncludeMenu] = useState(true)
+  var [includeDecor, setIncludeDecor] = useState(true)
+  var [includeDj, setIncludeDj] = useState(true)
 
   // DB-driven lists
   var [inquiryModes, setInquiryModes] = useState(FALLBACK_MODES)
@@ -279,6 +282,16 @@ function QuoteCalculator({ profile }) {
   var venDecorMode = r.venue_decor_mode || 'p'
   var isSummer = eventDate ? (function () { var m = new Date(eventDate + 'T00:00:00').getMonth(); return m >= 3 && m <= 7 })() : false
 
+  // Adjusted values for custom combos (toggle menu/decor/dj)
+  var adjVm = includeMenu ? vm : rental
+  var adjDecor = includeDecor ? decor : { q: 0, t: 0, f: 0 }
+  var adjDj = includeDj ? dj : { q: 0, t: 0, f: 0 }
+  var adjTotal = {
+    q: (adjVm.q || 0) + (adjDecor.q || 0) + (adjDj.q || 0),
+    t: (adjVm.t || 0) + (adjDecor.t || 0) + (adjDj.t || 0),
+    f: (adjVm.f || 0) + (adjDecor.f || 0) + (adjDj.f || 0)
+  }
+
   // Tax calc (client-side)
   var a5 = rd(dealVal * split5 / 100), a18 = rd(dealVal * (1 - split5 / 100))
   var t5 = rd(a5 * 0.05), t18 = rd(a18 * 0.18), ttx = rd(t5 + t18)
@@ -288,11 +301,11 @@ function QuoteCalculator({ profile }) {
 
   // Sync deal slider to quote total when calc result changes
   useEffect(function () {
-    if (total.q) {
-      var rounded = Math.round(total.q * 2) / 2
+    if (adjTotal.q) {
+      var rounded = Math.round(adjTotal.q * 2) / 2
       setDealVal(Math.max(5, Math.min(60, rounded)))
     }
-  }, [total.q])
+  }, [adjTotal.q])
 
   // Handlers
   function handleEventType(idx) {
@@ -327,22 +340,21 @@ function QuoteCalculator({ profile }) {
   
 
   // Proposal text
-  var proposalText = 'AMBRIA PROPOSAL\n========================\nVenue: ' + venName +
-    '\nBy: ' + profile.name +
-    '\nGuest: ' + (guestName || '-') + ' | ' + (guestPhone || '-') +
-    '\nMode: ' + (inquiryMode || '-') +
-    '\n' + currentET.label + ' | ' + (foodPref === 0 ? 'Veg' : 'NV') +
-    '\nDate: ' + fmtDate(eventDate) + ' (' + CAT_LABELS[ct] + ') | ' + SLOTS[slot] + ' | ' + pax + 'pax' +
-    '\nMenu: ' + (r.menu_label || MENU_LABELS[activeMenu]) + ' Rs.' + perHead + '/hd' +
-    '\n========================' +
-    '\n1)V+M: ' + fmtRound(vm.q || 0) + ' > ' + fmtRound(vm.f || 0) +
-    '\n2)Dec: ' + fmtRound(decor.q || 0) + ' > ' + fmtRound(decor.f || 0) +
-    '\n3)DJ: ' + fmtK(dj.q || 0) + ' > ' + fmtK(dj.f || 0) +
-    '\n========================' +
-    '\nQUOTE: ' + fmtRound(total.q || 0) +
-    '\nTARGET: ' + fmtRound(total.t || 0) +
-    '\nFLOOR: ' + fmtRound(total.f || 0) +
-    '\n========================'
+  var proposalLines = ['AMBRIA PROPOSAL', '========================', 'Venue: ' + venName,
+    'By: ' + profile.name, 'Guest: ' + (guestName || '-') + ' | ' + (guestPhone || '-'),
+    'Mode: ' + (inquiryMode || '-'), currentET.label + ' | ' + (foodPref === 0 ? 'Veg' : 'NV'),
+    'Date: ' + fmtDate(eventDate) + ' (' + CAT_LABELS[ct] + ') | ' + SLOTS[slot] + ' | ' + pax + 'pax']
+  if (includeMenu) proposalLines.push('Menu: ' + (r.menu_label || MENU_LABELS[activeMenu]) + ' Rs.' + perHead + '/hd')
+  proposalLines.push('========================')
+  proposalLines.push('1)' + (includeMenu ? 'V+M' : 'Rental') + ': ' + fmtRound(adjVm.q || 0) + ' > ' + fmtRound(adjVm.f || 0))
+  if (includeDecor) proposalLines.push('2)Dec: ' + fmtRound(decor.q || 0) + ' > ' + fmtRound(decor.f || 0))
+  if (includeDj) proposalLines.push('3)DJ: ' + fmtK(dj.q || 0) + ' > ' + fmtK(dj.f || 0))
+  proposalLines.push('========================')
+  proposalLines.push('QUOTE: ' + fmtRound(adjTotal.q || 0))
+  proposalLines.push('TARGET: ' + fmtRound(adjTotal.t || 0))
+  proposalLines.push('FLOOR: ' + fmtRound(adjTotal.f || 0))
+  proposalLines.push('========================')
+  var proposalText = proposalLines.join('\n')
 
   // ── Persistence ──
   function toPaise(lakhs) { return Math.round(lakhs * 10000000) }
@@ -408,6 +420,7 @@ function QuoteCalculator({ profile }) {
     if (q.deal_value_paise != null) { setPackageVal(String(fromPaise(q.deal_value_paise))); setTaxMode(q.tax_mode || 0); setSplit5(q.split_5_pct || 50) }
     setSavedId(q.id); setQuoteStatus(q.status || 'draft'); setNotes(q.notes || '')
     setShowQuotes(false); setShowProposal(false); setPage(0)
+    setIncludeMenu(true); setIncludeDecor(true); setIncludeDj(true)
   }
 
   function newQuote() {
@@ -415,6 +428,7 @@ function QuoteCalculator({ profile }) {
     setVenueIdx(0); setFoodPref(0); setPax(400); setSlot(0); setCatOverride(2); setMenuIdx(3)
     setDecorIdx(0); setDjIdx(1); setTtdIdx(0); setDealVal(14); setTaxMode(0); setSplit5(50)
     setQuoteStatus('draft'); setSavedId(null); setNotes(''); setShowQuotes(false); setShowProposal(false); setPage(0)
+    setIncludeMenu(true); setIncludeDecor(true); setIncludeDj(true)
   }
 
   async function updateStatus(s) {
@@ -717,10 +731,17 @@ function QuoteCalculator({ profile }) {
             })}
           </div>
 
-          <div style={{ fontSize: 12, color: C.muted, marginBottom: 5, fontWeight: 600 }}>Menu ({foodPref === 0 ? 'Veg' : 'NV'})</div>
-          {ct === 0 && (<div style={{ padding: '7px 11px', borderRadius: 7, fontSize: 11, marginBottom: 7, background: '#FFF8F0', color: C.gold, border: '1px solid ' + C.border }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 5 }}>
+            <div style={{ fontSize: 12, color: C.muted, fontWeight: 600 }}>Menu ({foodPref === 0 ? 'Veg' : 'NV'})</div>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer', fontSize: 11, fontWeight: 700, color: includeMenu ? '#166534' : C.muted }}>
+              <input type="checkbox" checked={includeMenu} onChange={function () { setIncludeMenu(!includeMenu) }} style={{ accentColor: C.maroon2, width: 15, height: 15 }} />
+              {includeMenu ? 'Included' : 'Off'}
+            </label>
+          </div>
+          {ct === 0 && includeMenu && (<div style={{ padding: '7px 11px', borderRadius: 7, fontSize: 11, marginBottom: 7, background: '#FFF8F0', color: C.gold, border: '1px solid ' + C.border }}>
             {"King's – Lux/MC only"}
           </div>)}
+          <div style={{ opacity: includeMenu ? 1 : 0.3, pointerEvents: includeMenu ? 'auto' : 'none' }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 12 }}>
             {allMenus.map(function (m) {
               var midx = m.idx; var on = activeMenu === midx; var dis = !m.available
@@ -737,13 +758,15 @@ function QuoteCalculator({ profile }) {
               </button>)
             })}
           </div>
+          </div>
 
           <div style={{ background: C.cream, borderRadius: 10, padding: 13, border: '1px solid ' + C.border }}>
-            <div style={{ fontSize: 13, color: C.maroon, fontWeight: 700 }}>Rs.{perHead}/hd x {pax} = {fmtL(menuCost)}</div>
+            {includeMenu && <div style={{ fontSize: 13, color: C.maroon, fontWeight: 700 }}>Rs.{perHead}/hd x {pax} = {fmtL(menuCost)}</div>}
+            {!includeMenu && <div style={{ fontSize: 13, color: C.muted, fontWeight: 700 }}>Rental only</div>}
             {rental.q != null && (<div style={{ fontSize: 11, color: C.muted, marginTop: 4 }}>
               Rental: {fmtRound(rental.q || 0)} / {fmtRound(rental.t || 0)} / {fmtRound(rental.f || 0)}
             </div>)}
-            <RateRow showAll={true} q={fmtRound(vm.q || 0)} t={fmtRound(vm.t || 0)} f={fmtRound(vm.f || 0)} />
+            <RateRow showAll={true} q={fmtRound(adjVm.q || 0)} t={fmtRound(adjVm.t || 0)} f={fmtRound(adjVm.f || 0)} />
           </div>
 
           {/* Time-to-date (admin only) */}
@@ -766,6 +789,13 @@ function QuoteCalculator({ profile }) {
 
         {/* DÉCOR */}
         <SectionCard title="Décor">
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', marginTop: -8, marginBottom: 8 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer', fontSize: 11, fontWeight: 700, color: includeDecor ? '#166534' : C.muted }}>
+              <input type="checkbox" checked={includeDecor} onChange={function () { setIncludeDecor(!includeDecor) }} style={{ accentColor: C.maroon2, width: 15, height: 15 }} />
+              {includeDecor ? 'Included' : 'Off'}
+            </label>
+          </div>
+          <div style={{ opacity: includeDecor ? 1 : 0.3, pointerEvents: includeDecor ? 'auto' : 'none' }}>
           {venDecorMode === 'p' ? (
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 10 }}>
               {[0, 1, 2].map(function (dx) {
@@ -794,11 +824,19 @@ function QuoteCalculator({ profile }) {
               <strong>{venName}</strong> | {isWedding ? 'Wedding' : 'Non-Wedding'}
             </div>
           )}
-          <RateRow showAll={true} q={fmtRound(decor.q || 0)} t={fmtRound(decor.t || 0)} f={fmtRound(decor.f || 0)} />
+          </div>
+          <RateRow showAll={true} q={fmtRound(adjDecor.q || 0)} t={fmtRound(adjDecor.t || 0)} f={fmtRound(adjDecor.f || 0)} />
         </SectionCard>
 
         {/* DJ */}
         <SectionCard title="DJ">
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', marginTop: -8, marginBottom: 8 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer', fontSize: 11, fontWeight: 700, color: includeDj ? '#166534' : C.muted }}>
+              <input type="checkbox" checked={includeDj} onChange={function () { setIncludeDj(!includeDj) }} style={{ accentColor: C.maroon2, width: 15, height: 15 }} />
+              {includeDj ? 'Included' : 'Off'}
+            </label>
+          </div>
+          <div style={{ opacity: includeDj ? 1 : 0.3, pointerEvents: includeDj ? 'auto' : 'none' }}>
           <div style={{ display: 'flex', gap: 10, marginBottom: 10 }}>
             {[1, 0].map(function (idx) {
               var on = djIdx === idx
@@ -809,15 +847,16 @@ function QuoteCalculator({ profile }) {
               }}>{DJ_LABELS[idx]}</button>)
             })}
           </div>
-          <RateRow showAll={true} q={fmtK(dj.q || 0)} t={fmtK(dj.t || 0)} f={fmtK(dj.f || 0)} />
+          </div>
+          <RateRow showAll={true} q={fmtK(adjDj.q || 0)} t={fmtK(adjDj.t || 0)} f={fmtK(adjDj.f || 0)} />
         </SectionCard>
 
         {/* GRAND TOTAL */}
         <div style={{ background: 'linear-gradient(135deg,#4A1111,#8B2D2D)', borderRadius: 14, padding: 18, marginBottom: 12, color: '#fff' }}>
           <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1.5, textTransform: 'uppercase', opacity: 0.5, marginBottom: 12 }}>Grand Total</div>
-          <RateRow showAll={true} q={fmtRound(total.q || 0)} t={fmtRound(total.t || 0)} f={fmtRound(total.f || 0)} />
+          <RateRow showAll={true} q={fmtRound(adjTotal.q || 0)} t={fmtRound(adjTotal.t || 0)} f={fmtRound(adjTotal.f || 0)} />
           {(<div style={{ fontSize: 10, color: 'rgba(255,255,255,.35)', textAlign: 'center', marginTop: 8 }}>
-            Exact: {fmtL(total.q || 0)} / {fmtL(total.t || 0)} / {fmtL(total.f || 0)}
+            Exact: {fmtL(adjTotal.q || 0)} / {fmtL(adjTotal.t || 0)} / {fmtL(adjTotal.f || 0)}
           </div>)}
 
           <button onClick={function () { setShowProposal(!showProposal) }} style={{
@@ -861,11 +900,11 @@ function QuoteCalculator({ profile }) {
               style={{ flex: 1, padding: 11, borderRadius: 9, border: '2px solid ' + C.border, fontSize: 16, fontWeight: 700, color: C.maroon }} />
             <span style={{ fontSize: 14, color: C.muted, fontWeight: 600 }}>₹L</span>
           </div>
-          {packageVal && total.q && (<div style={{ marginTop: 10, display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+          {packageVal && adjTotal.q && (<div style={{ marginTop: 10, display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
             {[
-              { label: 'vs QUOTE', val: total.q, color: C.maroon, bg: C.cream },
-              { label: 'vs TARGET', val: total.t, color: '#0369A1', bg: '#E0F2FE' },
-              { label: 'vs FLOOR', val: total.f, color: '#991B1B', bg: '#FEE2E2' },
+              { label: 'vs QUOTE', val: adjTotal.q, color: C.maroon, bg: C.cream },
+              { label: 'vs TARGET', val: adjTotal.t, color: '#0369A1', bg: '#E0F2FE' },
+              { label: 'vs FLOOR', val: adjTotal.f, color: '#991B1B', bg: '#FEE2E2' },
             ].map(function (x) {
               var diff = rd(+packageVal - x.val)
               var pct = rd((diff / x.val) * 100)
