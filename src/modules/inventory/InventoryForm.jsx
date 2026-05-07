@@ -119,6 +119,7 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved }) {
     supabase.from('catering_store_items')
       .select('brand')
       .eq('category_id', Number(categoryId))
+      .ilike('name', name.trim())
       .eq('status', 'approved')
       .not('brand', 'is', null)
       .order('brand')
@@ -126,7 +127,7 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved }) {
         var brands = [...new Set((res.data || []).map(function (r) { return r.brand }).filter(Boolean))].sort()
         setBrandList(brands)
       })
-  }, [categoryId, cateringStoreSubDeptId])
+  }, [categoryId, cateringStoreSubDeptId, name])
   useEffect(function () {
     if (categoryId) {
       var isCatStore = false
