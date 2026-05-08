@@ -22,7 +22,7 @@ function daysBetween(a, b) {
 function groupEvents(events) {
   // Sort by date ascending for grouping
   var sorted = events.slice().sort(function (a, b) {
-    return new Date(a.contract_date || 0) - new Date(b.contract_date || 0)
+    return new Date(a.function_date || a.contract_date || 0) - new Date(b.function_date || b.contract_date || 0)
   })
 
   // Bucket by client key (client_name + contact_number)
@@ -53,8 +53,8 @@ function groupEvents(events) {
 
   // Sort groups by latest date descending
   groups.sort(function (a, b) {
-    var aMax = Math.max.apply(null, a.map(function (e) { return new Date(e.contract_date || 0).getTime() }))
-    var bMax = Math.max.apply(null, b.map(function (e) { return new Date(e.contract_date || 0).getTime() }))
+    var aMax = Math.max.apply(null, a.map(function (e) { return new Date(e.function_date || e.contract_date || 0).getTime() }))
+    var bMax = Math.max.apply(null, b.map(function (e) { return new Date(e.function_date || e.contract_date || 0).getTime() }))
     var now = Date.now()
     var aUp = aMax >= now
     var bUp = bMax >= now
@@ -65,7 +65,7 @@ function groupEvents(events) {
   })
 
   return groups.map(function (functions) {
-    var dates = functions.map(function (f) { return f.contract_date }).filter(Boolean).sort()
+    var dates = functions.map(function (f) { return f.function_date || f.contract_date }).filter(Boolean).sort()
     var totalItems = functions.reduce(function (sum, f) { return sum + (f.item_count || 0) }, 0)
     var totalPlates = functions.reduce(function (sum, f) { return sum + (f.total_plates || 0) }, 0)
     return {

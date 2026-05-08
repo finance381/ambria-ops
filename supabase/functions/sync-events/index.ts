@@ -15,6 +15,11 @@ const DEPARTMENTS = [
     h: "fisc_", d: "fiscd_",
     entryNo: "fisc_entryno",
     contactNo: "fisc_client_mobile",
+    functionDate: "fiscd_function_date",
+    funcCode: "fiscd_function_type",
+    pax: "fiscd_pax_no",
+    freePax: "fiscd_free_pax_no",
+    extraPlate: "fiscd_extra_plate_charge",
   },
   {
     name: "Catering",
@@ -23,6 +28,11 @@ const DEPARTMENTS = [
     h: "chc_", d: "chcd_",
     entryNo: "chc_entry_no",
     contactNo: "chc_contact_no",
+    functionDate: "chcd_date",
+    funcCode: "chcd_function",
+    pax: "chcd_pax",
+    freePax: "chcd_freepax",
+    extraPlate: "chcd_extra_plate",
   },
   {
     name: "Decor",
@@ -31,6 +41,11 @@ const DEPARTMENTS = [
     h: "dhc_", d: "dhcd_",
     entryNo: "dhc_entry_no",
     contactNo: "dhc_contact_no",
+    functionDate: "dhcd_date",
+    funcCode: "dhcd_function",
+    pax: null,
+    freePax: null,
+    extraPlate: null,
   },
   {
     name: "Entertainment",
@@ -39,12 +54,17 @@ const DEPARTMENTS = [
     h: "ehc_", d: "ehcd_",
     entryNo: "ehc_entry_no",
     contactNo: "ehc_contact_no",
+    functionDate: "ehcd_date",
+    funcCode: "ehcd_function",
+    pax: null,
+    freePax: null,
+    extraPlate: null,
   },
 ]
 
 const BASE_URL = "https://gyv.inqcrm.in/api/v1/processerp_api/"
 const PAGE_SIZE = 10
-const MAX_PAGES = 50 // safety cap
+const MAX_PAGES = Infinity // no cap — loop stops when API returns empty
 
 function normalizeVenue(venueName: string, department: string): string {
   const v = (venueName || "").toLowerCase().trim()
@@ -74,7 +94,7 @@ function mapRow(e: any, dep: typeof DEPARTMENTS[0]): any {
   const d = dep.d  // detail prefix
 
   const entryNo = (e[dep.entryNo] || "").trim()
-  const funcCode = e[d + "function"] || e.headid || e.id || ""
+  const funcCode = e[dep.funcCode] || e.headid || e.id || ""
 
   return {
     // Dedup key: Dept_EntryNo_FunctionCode (matches old pattern)
@@ -90,10 +110,10 @@ function mapRow(e: any, dep: typeof DEPARTMENTS[0]): any {
     event_name: (e.functionname || "").trim(),
     client_name: e[h + "guest_name"] || null,
     session: e[d + "session"] || null,
-    catering: e[d + "menu"] || e[d + "catering"] || null,
-    total_plates: safeInt(e[d + "pax"] || e[d + "min_guarante"] || 0),
-    complementary_plates: safeInt(e[d + "freepax"] || 0),
-    extra_plates_charge: safePaise(e[d + "extra_plate"] || 0),
+    catering: e[d + "catering"] || e[d + "menu"] || null,
+    total_plates: dep.pax ? safeInt(e[dep.pax] || 0) : 0,
+    complementary_plates: dep.freePax ? safeInt(e[dep.freePax] || 0) : 0,
+    extra_plates_charge: dep.extraPlate ? safePaise(e[dep.extraPlate] || 0) : 0,
     balance_received: safePaise(e[h + "advance_cash"] || 0) + safePaise(e[h + "advance_chq"] || 0),
     balance_bank: 0,
     balance_amount: safePaise(e[h + "balance"] || 0),
@@ -108,7 +128,7 @@ function mapRow(e: any, dep: typeof DEPARTMENTS[0]): any {
     enquiry_mode: e[h + "enquiry_mode"] || null,
     priority: e[h + "priority"] || null,
     address: e[h + "address"] || null,
-    function_date: e[d + "date"] || null,
+    function_date: e[dep.functionDate] || null,
     total_amount_paise: safePaise(e[h + "total_amt"] || 0),
     net_amount_paise: safePaise(e[h + "net_amt"] || 0),
     advance_paise: safePaise(e[h + "advance_cash"] || 0) + safePaise(e[h + "advance_chq"] || 0),
@@ -180,7 +200,11 @@ serve(async (req) => {
           if (contracts.length === 0) break
 
           for (const c of contracts) {
-            allRows.push(mapRow(c, dep))
+            const row = mapRow(c, dep)
+            if (!row.function_date && dep.name === "Venue") {
+              console.log("VNULL " + row.contract_no + " raw=" + String(c[dep.functionDate]) + " type=" + String(c["fiscd_function_type"]) + " head=" + String(c.headid))
+            }
+            allRows.push(row)
           }
 
           // If less than PAGE_SIZE, we've reached the end
@@ -188,10 +212,13 @@ serve(async (req) => {
           page++
         }
 
-        // Deduplicate by lms_event_id — keep last occurrence
+        // Deduplicate by lms_event_id — prefer row with function_date
         const seen = new Map()
         for (const row of allRows) {
-          seen.set(row.lms_event_id, row)
+          const existing = seen.get(row.lms_event_id)
+          if (!existing || (!existing.function_date && row.function_date)) {
+            seen.set(row.lms_event_id, row)
+          }
         }
         const uniqueRows = Array.from(seen.values())
 
