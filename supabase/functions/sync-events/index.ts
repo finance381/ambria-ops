@@ -6,12 +6,45 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 }
 
-const DEP_CODES = [
-  { code: "VENUE", name: "Venue" },
-  { code: "CD", name: "Catering" },
-  { code: "FD", name: "Decor" },
-  { code: "EE", name: "Entertainment" },
+// ═══ Per-department config ═══
+const DEPARTMENTS = [
+  {
+    name: "Venue",
+    endpoint: "get_venue_contract_information_list",
+    body: { loggeduserid: "", search_venue_contract: "", priority_search: "", venue_datetype: "", source_search: "", venue_search: "", balance_pending: "", contract_venue_search: "", contract_assginee_search: "", leadtype_search: "", report_fac: "", fromdate: "", uptodated: "" },
+    h: "fisc_", d: "fiscd_",
+    entryNo: "fisc_entryno",
+    contactNo: "fisc_client_mobile",
+  },
+  {
+    name: "Catering",
+    endpoint: "get_catering_contract_information_list",
+    body: { loggeduserid: "", search_catering_contract: "", priority_search: "", cater_datetype: "", source_search: "", balance_pending: "", contract_catering_search: "", contract_assginee_search: "", leadtype_search: "", report_fac: "", fromdate: "", uptodated: "" },
+    h: "chc_", d: "chcd_",
+    entryNo: "chc_entry_no",
+    contactNo: "chc_contact_no",
+  },
+  {
+    name: "Decor",
+    endpoint: "get_decor_contract_information_list",
+    body: { loggeduserid: "", entertain_search: "", source_search: "", lead_type_search: "", entertain_venue_search: "", priority_search: "", fromdate: "", uptodated: "", entertain_assginee_search: "", entertain_status_search: "", search_date_type: "", visited_search: "", follow_dated: "" },
+    h: "dhc_", d: "dhcd_",
+    entryNo: "dhc_entry_no",
+    contactNo: "dhc_contact_no",
+  },
+  {
+    name: "Entertainment",
+    endpoint: "get_entertain_contract_information_list",
+    body: { loggeduserid: "", fromdate: "", uptodated: "", search_entertain_contract: "", source_search: "", contract_venue_searche: "", balance_pending: "", contract_assginee_search: "", entertain_datetype: "", leadtype_search: "", report_fac: "" },
+    h: "ehc_", d: "ehcd_",
+    entryNo: "ehc_entry_no",
+    contactNo: "ehc_contact_no",
+  },
 ]
+
+const BASE_URL = "https://gyv.inqcrm.in/api/v1/processerp_api/"
+const PAGE_SIZE = 10
+const MAX_PAGES = 50 // safety cap
 
 function normalizeVenue(venueName: string, department: string): string {
   const v = (venueName || "").toLowerCase().trim()
@@ -26,119 +59,171 @@ function normalizeVenue(venueName: string, department: string): string {
   return "Outdoor Decor"
 }
 
+function safeInt(val: any): number {
+  const n = Number(val)
+  return isNaN(n) ? 0 : Math.round(n)
+}
+
+function safePaise(val: any): number {
+  const n = Number(val)
+  return isNaN(n) ? 0 : Math.round(n * 100)
+}
+
+function mapRow(e: any, dep: typeof DEPARTMENTS[0]): any {
+  const h = dep.h  // header prefix
+  const d = dep.d  // detail prefix
+
+  const entryNo = (e[dep.entryNo] || "").trim()
+  const funcCode = e[d + "function"] || e.headid || e.id || ""
+
+  return {
+    // Dedup key: Dept_EntryNo_FunctionCode (matches old pattern)
+    lms_event_id: dep.name + "_" + entryNo + "_" + funcCode,
+    contract_no: entryNo || null,
+    contract_date: e[h + "contract_date"] || null,
+    department: dep.name,
+    contract_type: e.functionname || null,
+    venue_name: normalizeVenue(e.venue1 || "", dep.name),
+    location: e[h + "location"] || null,
+    contact_person: null,
+    contact_number: e[dep.contactNo] || null,
+    event_name: (e.functionname || "").trim(),
+    client_name: e[h + "guest_name"] || null,
+    session: e[d + "session"] || null,
+    catering: e[d + "menu"] || e[d + "catering"] || null,
+    total_plates: safeInt(e[d + "pax"] || e[d + "min_guarante"] || 0),
+    complementary_plates: safeInt(e[d + "freepax"] || 0),
+    extra_plates_charge: safePaise(e[d + "extra_plate"] || 0),
+    balance_received: safePaise(e[h + "advance_cash"] || 0) + safePaise(e[h + "advance_chq"] || 0),
+    balance_bank: 0,
+    balance_amount: safePaise(e[h + "balance"] || 0),
+    created_user_name: e.username || null,
+    synced_at: new Date().toISOString(),
+    // New fields
+    ppt_link: e.pptLink || null,
+    pdf_link: e.pdfLink || null,
+    secondary_contact: e[h + "secondary_contact"] || null,
+    bride_name: e[h + "bride_name"] || null,
+    groom_name: e[h + "groom_name"] || null,
+    enquiry_mode: e[h + "enquiry_mode"] || null,
+    priority: e[h + "priority"] || null,
+    address: e[h + "address"] || null,
+    function_date: e[d + "date"] || null,
+    total_amount_paise: safePaise(e[h + "total_amt"] || 0),
+    net_amount_paise: safePaise(e[h + "net_amt"] || 0),
+    advance_paise: safePaise(e[h + "advance_cash"] || 0) + safePaise(e[h + "advance_chq"] || 0),
+    lms_head_id: safeInt(e.headid || e.id || 0) || null,
+  }
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders })
   }
 
   try {
+    // Auth check — only admin/auditor can trigger
+    const authHeader = req.headers.get("Authorization")
+    if (!authHeader) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" }
+      })
+    }
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     const supabase = createClient(supabaseUrl, supabaseKey)
 
-    // Verify caller is admin/auditor
-    const authHeader = req.headers.get("Authorization")
-    if (authHeader) {
-      const token = authHeader.replace("Bearer ", "")
-      const { data: { user } } = await supabase.auth.getUser(token)
-      if (user) {
-        const { data: prof } = await supabase.from("profiles").select("role").eq("id", user.id).maybeSingle()
-        if (!prof || (prof.role !== "admin" && prof.role !== "auditor")) {
-          return new Response(JSON.stringify({ error: "Forbidden" }), {
-            status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" }
-          })
-        }
-      }
+    // Verify caller role
+    const userClient = createClient(supabaseUrl, Deno.env.get("SUPABASE_ANON_KEY")!, {
+      global: { headers: { Authorization: authHeader } }
+    })
+    const { data: { user } } = await userClient.auth.getUser()
+    if (!user) {
+      return new Response(JSON.stringify({ error: "Invalid token" }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" }
+      })
+    }
+    const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).single()
+    if (!profile || (profile.role !== "admin" && profile.role !== "auditor")) {
+      return new Response(JSON.stringify({ error: "Admin only" }), {
+        status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" }
+      })
     }
 
+    const lmsUserId = Deno.env.get("LMS_USER_ID") || "1"
     let totalSynced = 0
-    let totalEvents = 0
+    let totalFetched = 0
     const errors: string[] = []
 
-    for (const dep of DEP_CODES) {
+    for (const dep of DEPARTMENTS) {
       try {
-        const lmsRes = await fetch("https://gyv.inqcrm.in/api/v1/processerp_api/get_event_with_contract", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            loggeduserid: "1",
-            depcode: dep.code,
-            dated: "",
-            vebuid: "",
-            contractno: ""
-          })
-        })
+        const allRows: any[] = []
+        let page = 1
 
-        if (!lmsRes.ok) {
-          const txt = await lmsRes.text()
-          console.log("LMS error for " + dep.code + ":", lmsRes.status, txt)
-          errors.push(dep.code + ": " + lmsRes.status)
-          continue
+        // Paginate until empty
+        while (page <= MAX_PAGES) {
+          const reqBody = { ...dep.body, loggeduserid: lmsUserId, page_limit: String(page) }
+          const lmsRes = await fetch(BASE_URL + dep.endpoint, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(reqBody),
+          })
+
+          if (!lmsRes.ok) {
+            errors.push(dep.name + ": HTTP " + lmsRes.status)
+            break
+          }
+
+          const lmsData = await lmsRes.json()
+          const contracts = lmsData.Contractinfo || []
+
+          if (contracts.length === 0) break
+
+          for (const c of contracts) {
+            allRows.push(mapRow(c, dep))
+          }
+
+          // If less than PAGE_SIZE, we've reached the end
+          if (contracts.length < PAGE_SIZE) break
+          page++
         }
 
-        const lmsText = await lmsRes.text()
-        const lmsData = JSON.parse(lmsText)
-        const events = lmsData.data || []
-        console.log(dep.code + " returned " + events.length + " events")
-        totalEvents += events.length
-
-        const rows = events.map((e: any) => ({
-          lms_event_id: dep.code + '_' + (e.ContractNo || '') + '_' + (e.EventId || ''),
-          contract_no: e.ContractNo || null,
-          contract_date: e.ContractDate || null,
-          department: dep.name,
-          contract_type: e.ContractType || null,
-          venue_name: normalizeVenue(e.VenueName || "", dep.name),
-          location: e.Location || null,
-          contact_person: e.ContactPerson || null,
-          contact_number: e.ContactNumber || null,
-          event_name: (e.EventName || "").trim(),
-          client_name: e.ClientName || null,
-          session: e.Session || null,
-          catering: e.Catering || null,
-          total_plates: e.TotalPlates || 0,
-          complementary_plates: e.ComplementryPlates || 0,
-          extra_plates_charge: Math.round((e.ExtraPlatesCharge || 0) * 100),
-          balance_received: Math.round((e.Balances?.factor_payment_received_sum || 0) * 100),
-          balance_bank: Math.round((e.Balances?.bank_payment || 0) * 100),
-          balance_amount: Math.round((e.Balances?.balance_amount || 0) * 100),
-          created_user_name: e.CreatedUserName || null,
-          synced_at: new Date().toISOString(),
-        }))
+        console.log(dep.name + ": " + allRows.length + " contracts (" + page + " pages)")
+        totalFetched += allRows.length
 
         // Batch upsert in chunks of 200
-        const CHUNK = 200
-        for (let i = 0; i < rows.length; i += CHUNK) {
-          const chunk = rows.slice(i, i + CHUNK)
+        for (let i = 0; i < allRows.length; i += 200) {
+          const chunk = allRows.slice(i, i + 200)
           const { error, count } = await supabase
             .from("events")
             .upsert(chunk, { onConflict: "lms_event_id", count: "exact" })
 
           if (error) {
-            console.log("Batch upsert error for " + dep.code + " chunk " + i + ":", error.message)
+            console.log("Upsert error " + dep.name + " chunk " + i + ":", error.message)
+            errors.push(dep.name + ": upsert - " + error.message)
           } else {
             totalSynced += count || chunk.length
           }
         }
       } catch (depErr) {
-        console.log("Error syncing " + dep.code + ":", (depErr as Error).message)
-        errors.push(dep.code + ": " + (depErr as Error).message)
+        console.log("Error " + dep.name + ":", (depErr as Error).message)
+        errors.push(dep.name + ": " + (depErr as Error).message)
       }
     }
 
-    console.log("Synced " + totalSynced + " of " + totalEvents + " across all departments")
+    console.log("Synced " + totalSynced + " of " + totalFetched)
     return new Response(JSON.stringify({
       synced: totalSynced,
-      total: totalEvents,
-      errors: errors.length > 0 ? errors : undefined
+      total: totalFetched,
+      errors: errors.length > 0 ? errors : undefined,
     }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" }
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
     })
 
   } catch (err) {
     console.log("Function error:", (err as Error).message)
     return new Response(JSON.stringify({ error: (err as Error).message }), {
-      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" }
+      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
     })
   }
 })

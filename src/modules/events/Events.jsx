@@ -137,9 +137,9 @@ function Events({ profile }) {
     var [eventsRes, deptRes] = await Promise.all([
       supabase
       .from('events_safe')
-      .select('id, lms_event_id, contract_no, contract_date, department, contract_type, venue_name, location, contact_person, contact_number, event_name, client_name, session, catering, total_plates, complementary_plates, extra_plates_charge, balance_received, balance_bank, balance_amount, status, setup_days, teardown_days, blocked_count, synced_at, created_user_name')
-      .gte('contract_date', dateFloorStr)
-      .order('contract_date', { ascending: false })
+      .select('id, lms_event_id, contract_no, contract_date, function_date, department, contract_type, venue_name, location, contact_person, contact_number, event_name, client_name, session, catering, total_plates, complementary_plates, extra_plates_charge, balance_received, balance_bank, balance_amount, status, setup_days, teardown_days, blocked_count, synced_at, created_user_name')
+      .gte('function_date', dateFloorStr)
+      .order('function_date', { ascending: false })
       .limit(2000),
       supabase.from('departments').select('id, name').eq('active', true),
     ])
