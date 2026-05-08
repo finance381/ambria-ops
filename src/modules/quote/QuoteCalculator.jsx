@@ -198,7 +198,9 @@ function QuoteCalculator({ profile }) {
   var [djIdx, setDjIdx] = useState(1)
   var [ttdIdx, setTtdIdx] = useState(0)
   var [showProposal, setShowProposal] = useState(false)
-  var [packageVal, setPackageVal] = useState('')
+  var [dealVm, setDealVm] = useState('')
+  var [dealDecor, setDealDecor] = useState('')
+  var [dealEnt, setDealEnt] = useState('')
   var [analysis, setAnalysis] = useState(null)
   var [analyzing, setAnalyzing] = useState(false)
   var [showAnalysis, setShowAnalysis] = useState(false)
@@ -308,6 +310,10 @@ function QuoteCalculator({ profile }) {
     f: (adjVm.f || 0) + (adjDecor.f || 0) + (adjDj.f || 0)
   }
 
+  // Negotiated deal total
+  var dealTotal = (+dealVm || 0) + (+dealDecor || 0) + (+dealEnt || 0)
+  var hasDeal = dealVm !== '' || dealDecor !== '' || dealEnt !== ''
+
   // Tax calc (client-side)
   var a5 = rd(dealVal * split5 / 100), a18 = rd(dealVal * (1 - split5 / 100))
   var t5 = rd(a5 * 0.05), t18 = rd(a18 * 0.18), ttx = rd(t5 + t18)
@@ -315,13 +321,14 @@ function QuoteCalculator({ profile }) {
   var guestPays = taxMode ? dealVal : rd(dealVal + ttx)
   var netToYou = taxMode ? rd(dealVal - ttx) : dealVal
 
-  // Sync deal slider to quote total when calc result changes
+  // Sync deal slider to negotiated total or quote total
   useEffect(function () {
-    if (adjTotal.q) {
-      var rounded = Math.round(adjTotal.q * 2) / 2
+    var val = hasDeal && dealTotal > 0 ? dealTotal : adjTotal.q
+    if (val) {
+      var rounded = Math.round(val * 2) / 2
       setDealVal(Math.max(5, Math.min(60, rounded)))
     }
-  }, [adjTotal.q])
+  }, [adjTotal.q, dealTotal])
 
   // Handlers
   function handleEventType(idx) {
@@ -369,6 +376,13 @@ function QuoteCalculator({ profile }) {
   proposalLines.push('QUOTE: ' + fmtRound(adjTotal.q || 0))
   proposalLines.push('TARGET: ' + fmtRound(adjTotal.t || 0))
   proposalLines.push('FLOOR: ' + fmtRound(adjTotal.f || 0))
+  if (hasDeal) {
+    proposalLines.push('========================')
+    proposalLines.push('NEGOTIATED: ' + fmtRound(dealTotal))
+    if (dealVm) proposalLines.push('  V+M: ₹' + dealVm + 'L')
+    if (dealDecor) proposalLines.push('  Décor: ₹' + dealDecor + 'L')
+    if (dealEnt) proposalLines.push('  Ent: ₹' + dealEnt + 'L')
+  }
   proposalLines.push('========================')
   var proposalText = proposalLines.join('\n')
 
@@ -396,7 +410,10 @@ function QuoteCalculator({ profile }) {
       total_q_paise: toPaise(total.q || 0), total_t_paise: toPaise(total.t || 0), total_f_paise: toPaise(total.f || 0),
       proposal_text: proposalText,
       notes: notes.trim() || null,
-      deal_value_paise: packageVal ? Math.round(+packageVal * 10000000) : null,
+      deal_value_paise: hasDeal ? toPaise(dealTotal) : null,
+      deal_vm_paise: dealVm ? toPaise(+dealVm) : null,
+      deal_decor_paise: dealDecor ? toPaise(+dealDecor) : null,
+      deal_ent_paise: dealEnt ? toPaise(+dealEnt) : null,
     }
     if (taxMode !== 0 || split5 !== 50) {
       row.tax_mode = taxMode; row.split_5_pct = split5
@@ -432,8 +449,12 @@ function QuoteCalculator({ profile }) {
     setEventTypeIdx(etIdx); setVenueIdx(q.venue_idx || 0)
     setFoodPref(q.food_pref || 0); setPax(q.pax || 400); setSlot(q.slot || 0)
     setCatOverride(q.date_category || 2); setMenuIdx(q.menu_idx != null ? q.menu_idx : 3)
-    setDecorIdx(q.decor_idx != null ? q.decor_idx : 0); setDjIdx(q.dj_idx != null ? q.dj_idx : 1); setTtdIdx(q.ttd_idx != null ? q.ttd_idx : autoTtdIdx(q.event_date)); setPackageVal(''); setDealVal(14); setTaxMode(0); setSplit5(50)
-    if (q.deal_value_paise != null) { setPackageVal(String(fromPaise(q.deal_value_paise))); setTaxMode(q.tax_mode || 0); setSplit5(q.split_5_pct || 50) }
+    setDecorIdx(q.decor_idx != null ? q.decor_idx : 0); setDjIdx(q.dj_idx != null ? q.dj_idx : 1); setTtdIdx(q.ttd_idx != null ? q.ttd_idx : autoTtdIdx(q.event_date)); setDealVm(''); setDealDecor(''); setDealEnt(''); setDealVal(14); setTaxMode(0); setSplit5(50)
+    if (q.deal_vm_paise != null) setDealVm(String(fromPaise(q.deal_vm_paise)))
+    if (q.deal_decor_paise != null) setDealDecor(String(fromPaise(q.deal_decor_paise)))
+    if (q.deal_ent_paise != null) setDealEnt(String(fromPaise(q.deal_ent_paise)))
+    if (q.deal_value_paise != null && !q.deal_vm_paise) { setDealVm(String(fromPaise(q.deal_value_paise))) }
+    if (q.tax_mode != null) { setTaxMode(q.tax_mode); setSplit5(q.split_5_pct || 50) }
     setSavedId(q.id); setQuoteStatus(q.status || 'draft'); setNotes(q.notes || '')
     setShowQuotes(false); setShowProposal(false); setPage(0)
     setIncludeMenu(true); setIncludeDecor(true); setIncludeDj(true)
@@ -445,6 +466,7 @@ function QuoteCalculator({ profile }) {
     setDecorIdx(0); setDjIdx(1); setTtdIdx(0); setDealVal(14); setTaxMode(0); setSplit5(50)
     setQuoteStatus('draft'); setSavedId(null); setNotes(''); setShowQuotes(false); setShowProposal(false); setPage(0)
     setIncludeMenu(true); setIncludeDecor(true); setIncludeDj(true)
+    setDealVm(''); setDealDecor(''); setDealEnt('')
   }
 
   async function updateStatus(s) {
@@ -473,7 +495,8 @@ function QuoteCalculator({ profile }) {
         menu: calcResult.menu_label, per_head: calcResult.per_head,
         rental: rental, vm: vm, decor: decor, dj: dj, total: total,
         ttd: ttdData[ttdIdx] || null,
-        package_value: packageVal ? +packageVal : null,
+        package_value: hasDeal ? dealTotal : null,
+        package_breakdown: hasDeal ? { vm: +dealVm || 0, decor: +dealDecor || 0, ent: +dealEnt || 0 } : null,
         demand: {
           same_date: (demandData || []).length,
           same_date_same_venue: (demandData || []).filter(function(q) { return q.venue_idx === venueIdx }).length,
@@ -683,6 +706,28 @@ function QuoteCalculator({ profile }) {
         <div style={{ background: 'linear-gradient(135deg,#4A1111,#8B2D2D)', borderRadius: 12, padding: '11px 16px', marginBottom: 12, color: '#fff', fontSize: 13 }}>
           <strong>{guestName || 'Guest'}</strong> | {venName} | {dc >= 0 ? CAT_LABELS[dc] : ''} | {pax}pax
         </div>
+
+        {/* Negotiation quick banner */}
+        {hasDeal && adjTotal.q > 0 && (function () {
+          var diff = rd(dealTotal - adjTotal.q)
+          var pct = rd((diff / adjTotal.q) * 100)
+          var isUp = diff >= 0
+          return (
+            <div style={{
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              padding: '8px 14px', borderRadius: 10, marginBottom: 10,
+              background: isUp ? '#F0FDF4' : '#FEF2F2',
+              border: '1px solid ' + (isUp ? '#BBF7D0' : '#FECACA'),
+            }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: C.muted }}>
+                Calc {fmtRound(adjTotal.q)} → Deal {fmtRound(dealTotal)}
+              </div>
+              <div style={{ fontSize: 13, fontWeight: 800, color: isUp ? '#166534' : '#DC2626' }}>
+                {isUp ? '+' : ''}{diff}L ({isUp ? '+' : ''}{pct}%)
+              </div>
+            </div>
+          )
+        })()}
 
         {/* Venue selector (synced) */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, marginBottom: 12 }}>
@@ -909,35 +954,54 @@ function QuoteCalculator({ profile }) {
 
         {/* DEAL VALUE */}
         <SectionCard title="Deal Value">
-          <div style={{ fontSize: 12, color: C.muted, marginBottom: 5, fontWeight: 600 }}>Negotiated Package (₹L)</div>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <input type="number" value={packageVal} placeholder={fmtL(total.q || 0).replace('₹', '').replace('L', '')}
-              onInput={function (e) { setPackageVal(e.target.value) }}
-              style={{ flex: 1, padding: 11, borderRadius: 9, border: '2px solid ' + C.border, fontSize: 16, fontWeight: 700, color: C.maroon }} />
-            <span style={{ fontSize: 14, color: C.muted, fontWeight: 600 }}>₹L</span>
+          <div style={{ fontSize: 11, color: C.muted, marginBottom: 10 }}>Enter negotiated amounts per component (₹L)</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 10 }}>
+            {[
+              { label: 'V+M', val: dealVm, set: setDealVm, ph: adjVm.q },
+              { label: 'Décor', val: dealDecor, set: setDealDecor, ph: adjDecor.q },
+              { label: 'Entertainment', val: dealEnt, set: setDealEnt, ph: adjDj.q },
+            ].map(function (f) {
+              return (
+                <div key={f.label}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: C.muted, marginBottom: 4 }}>{f.label}</div>
+                  <input type="number" inputMode="decimal" step="any" value={f.val}
+                    placeholder={f.ph ? rd(f.ph) : '0'}
+                    onInput={function (e) { f.set(e.target.value) }}
+                    style={{ width: '100%', padding: '9px 6px', borderRadius: 9, border: '2px solid ' + C.border, fontSize: 14, fontWeight: 700, color: C.maroon, textAlign: 'center', boxSizing: 'border-box' }} />
+                </div>
+              )
+            })}
           </div>
-          {packageVal && adjTotal.q && (<div style={{ marginTop: 10, display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+          {hasDeal && (
+            <div style={{ background: 'linear-gradient(135deg,#4A1111,#8B2D2D)', borderRadius: 10, padding: '10px 14px', color: '#fff', textAlign: 'center', marginBottom: 10 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, opacity: 0.5, letterSpacing: 1, marginBottom: 2 }}>NEGOTIATED TOTAL</div>
+              <div style={{ fontSize: 22, fontWeight: 800 }}>{fmtRound(dealTotal)}</div>
+            </div>
+          )}
+          {hasDeal && adjTotal.q > 0 && (<div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 10 }}>
             {[
               { label: 'vs QUOTE', val: adjTotal.q, color: C.maroon, bg: C.cream },
               { label: 'vs TARGET', val: adjTotal.t, color: '#0369A1', bg: '#E0F2FE' },
               { label: 'vs FLOOR', val: adjTotal.f, color: '#991B1B', bg: '#FEE2E2' },
             ].map(function (x) {
-              var diff = rd(+packageVal - x.val)
+              var diff = rd(dealTotal - x.val)
               var pct = rd((diff / x.val) * 100)
               return (<div key={x.label} style={{ background: x.bg, borderRadius: 10, padding: '8px 6px', textAlign: 'center' }}>
                 <div style={{ fontSize: 9, fontWeight: 700, color: x.color, marginBottom: 2 }}>{x.label}</div>
-                <div style={{ fontSize: 14, fontWeight: 800, color: diff >= 0 ? '#166534' : '#DC2626' }}>{diff >= 0 ? '+' : ''}{diff}L</div>
+                <div style={{ fontSize: 14, fontWeight: 800, color: diff >= 0 ? '#166534' : '#DC2626' }}>{diff >= 0 ? '+' : ''}{rd(diff)}L</div>
                 <div style={{ fontSize: 10, color: x.color, opacity: 0.6 }}>{pct >= 0 ? '+' : ''}{pct}%</div>
               </div>)
             })}
           </div>)}
-          {packageVal && (<button onClick={function () {
+          {hasDeal && (<button onClick={function () {
             var txt = 'AMBRIA DEAL\n' + venName + ' | ' + (guestName || 'Guest') + '\n' +
               currentET.label + ' | ' + fmtDate(eventDate) + ' | ' + pax + 'pax\n' +
-              '========================\nPackage: ₹' + packageVal + 'L\n========================'
+              '========================\n' +
+              'V+M: ₹' + (dealVm || 0) + 'L | Décor: ₹' + (dealDecor || 0) + 'L | Ent: ₹' + (dealEnt || 0) + 'L\n' +
+              'TOTAL: ₹' + rd(dealTotal) + 'L\n========================'
             navigator.clipboard.writeText(txt)
           }} style={{
-            width: '100%', marginTop: 10, padding: 12, borderRadius: 10, border: 'none',
+            width: '100%', marginTop: 4, padding: 12, borderRadius: 10, border: 'none',
             background: 'linear-gradient(135deg,#4A1111,#8B2D2D)', color: '#fff',
             fontSize: 14, fontWeight: 700, cursor: 'pointer',
           }}>Copy Deal Summary</button>)}
