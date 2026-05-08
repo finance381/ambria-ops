@@ -333,7 +333,9 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
   var [errors, setErrors] = useState({})
   var [activeSearchIndex, setActiveSearchIndex] = useState(-1)
   var [eventId, setEventId] = useState(editReq?.event_id ? String(editReq.event_id) : '')
+  var [eventDate, setEventDate] = useState('')
   var [events, setEvents] = useState([])
+  var [eventsLoading, setEventsLoading] = useState(false)
   var searchContainerRef = useRef(null)
 
   var isEditing = !!editReq
@@ -383,7 +385,7 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
   }, [])
 
   async function loadLookups() {
-    var [deptRes, catRes, invRes, csRes, evtRes] = await Promise.all([
+    var [deptRes, catRes, invRes, csRes] = await Promise.all([
       supabase.from('departments').select('id, name').eq('active', true).order('name'),
       supabase.from('categories').select('id, name, sub_department_id').order('name'),
       supabase.from('inventory_items')
@@ -396,19 +398,36 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
         .in('status', ['approved', 'pending', 'pending_dept'])
         .order('name')
         .limit(2000),
-      supabase.from('events')
-        .select('id, event_name, contract_date, venue_name')
-        .gte('contract_date', new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10))
-        .order('contract_date', { ascending: true })
-        .limit(100),
     ])
     setDepartments(deptRes.data || [])
     setCategories(catRes.data || [])
-    setEvents(evtRes.data || [])
+
+    // If editing, pre-load the linked event's date
+    if (editReq?.event_id) {
+      var { data: evtRow } = await supabase.from('events').select('id, event_name, contract_date, venue_name').eq('id', editReq.event_id).maybeSingle()
+      if (evtRow) {
+        setEventDate(evtRow.contract_date?.slice(0, 10) || '')
+        setEvents([evtRow])
+      }
+    }
 
     var inv = (invRes.data || []).map(function (i) { return Object.assign({}, i, { _source: 'inventory' }) })
     var cs = (csRes.data || []).map(function (i) { return Object.assign({}, i, { _source: 'catering_store' }) })
     setInventoryItems(inv.concat(cs))
+  }
+
+  async function loadEventsByDate(dateStr) {
+    if (!dateStr) { setEvents([]); setEventId(''); return }
+    setEventsLoading(true)
+    var { data } = await supabase.from('events')
+      .select('id, event_name, contract_date, venue_name')
+      .eq('contract_date', dateStr)
+      .order('event_name')
+    var rows = data || []
+    setEvents(rows)
+    setEventsLoading(false)
+    if (rows.length === 1) { setEventId(String(rows[0].id)) }
+    else if (!rows.some(function (r) { return String(r.id) === eventId })) { setEventId('') }
   }
 
   function updateCart(index, field, value) {
@@ -627,12 +646,19 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Linked Event <span className="text-gray-400 font-normal text-xs">(optional)</span></label>
-          <select value={eventId} onChange={function (e) { setEventId(e.target.value) }}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
-            style={{ fontSize: '16px' }}>
-            <option value="">No event linked</option>
-            {events.map(function (ev) { return <option key={ev.id} value={String(ev.id)}>{ev.event_name + ' · ' + (ev.venue_name || '') + ' · ' + formatDate(ev.contract_date)}</option> })}
-          </select>
+          <input type="date" value={eventDate} onChange={function (e) { setEventDate(e.target.value); loadEventsByDate(e.target.value) }}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            style={{ fontSize: '16px' }} />
+          {eventsLoading && <p className="text-xs text-gray-400 mt-1">Loading events...</p>}
+          {eventDate && !eventsLoading && events.length === 0 && <p className="text-xs text-gray-400 mt-1">No events on this date</p>}
+          {events.length > 0 && (
+            <select value={eventId} onChange={function (e) { setEventId(e.target.value) }}
+              className="w-full mt-2 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+              style={{ fontSize: '16px' }}>
+              <option value="">Select event...</option>
+              {events.map(function (ev) { return <option key={ev.id} value={String(ev.id)}>{ev.event_name + ' · ' + (ev.venue_name || '')}</option> })}
+            </select>
+          )}
         </div>
       </div>
 
