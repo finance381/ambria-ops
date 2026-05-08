@@ -39,8 +39,8 @@ function groupEvents(events) {
     var list = buckets[key]
     var cluster = [list[0]]
     for (var i = 1; i < list.length; i++) {
-      var prev = list[i - 1].contract_date
-      var curr = list[i].contract_date
+      var prev = list[i - 1].function_date || list[i - 1].contract_date
+      var curr = list[i].function_date || list[i].contract_date
       if (prev && curr && daysBetween(prev, curr) <= DAY_GAP) {
         cluster.push(list[i])
       } else {
@@ -489,7 +489,7 @@ function Events({ profile }) {
                          f.department === 'Catering' ? "bg-amber-100 text-amber-700" :
                          f.department === 'Entertainment' ? "bg-pink-100 text-pink-700" :
                          "bg-gray-100 text-gray-600")}>{f.department}</span>}
-                      <span className="text-gray-400">{formatDate(f.contract_date)}</span>
+                      <span className="text-gray-400">{formatDate(f.function_date || f.contract_date)}</span>
                       {f.contract_no && <span className="font-mono text-gray-400">#{f.contract_no}</span>}
                     </div>
                   )
@@ -608,7 +608,7 @@ function Events({ profile }) {
                             {f.department && <Badge color="indigo">{f.department}</Badge>}
                           </div>
                           <div className="flex flex-wrap gap-x-2 gap-y-0.5 text-[11px] text-gray-500 mt-1">
-                            <span>{formatDate(f.contract_date)}</span>
+                            <span>{formatDate(f.function_date || f.contract_date)}</span>
                             {f.venue_name && <span>· {f.venue_name}</span>}
                             {f.session && <span>· {f.session}</span>}
                             {f.blocked_count > 0 && <span>· 📦 {f.blocked_count}</span>}
@@ -638,7 +638,7 @@ function Events({ profile }) {
             <div className="bg-gray-50 rounded-lg p-4 space-y-2">
               <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-600">
                 {selectedFunction.contract_no && <span><strong>Contract:</strong> #{selectedFunction.contract_no}</span>}
-                {selectedFunction.contract_date && <span><strong>Date:</strong> {formatDate(selectedFunction.contract_date)}</span>}
+                {(selectedFunction.function_date || selectedFunction.contract_date) && <span><strong>Event Date:</strong> {formatDate(selectedFunction.function_date || selectedFunction.contract_date)}</span>}
                 {selectedFunction.contract_type && <span><strong>Type:</strong> {selectedFunction.contract_type}</span>}
                 {selectedFunction.department && <span><strong>Dept:</strong> {selectedFunction.department}</span>}
               </div>
@@ -658,11 +658,11 @@ function Events({ profile }) {
               {/* Buffer days */}
               <div className="flex items-center gap-3 pt-2 border-t border-gray-200 mt-2">
                 <span className="text-xs text-gray-500">🔒 Block range:</span>
-                {selectedFunction.contract_date && (
+                {(selectedFunction.function_date || selectedFunction.contract_date) && (
                   <span className="text-xs font-medium text-indigo-600">
-                    {new Date(new Date(selectedFunction.contract_date).getTime() - (selectedFunction.setup_days || 1) * 86400000).toLocaleDateString('en-IN', {day:'numeric',month:'short'})}
+                    {new Date(new Date(selectedFunction.function_date || selectedFunction.contract_date).getTime() - (selectedFunction.setup_days || 1) * 86400000).toLocaleDateString('en-IN', {day:'numeric',month:'short'})}
                     {' → '}
-                    {new Date(new Date(selectedFunction.contract_date).getTime() + (selectedFunction.teardown_days || 1) * 86400000).toLocaleDateString('en-IN', {day:'numeric',month:'short',year:'numeric'})}
+                    {new Date(new Date(selectedFunction.function_date || selectedFunction.contract_date).getTime() + (selectedFunction.teardown_days || 1) * 86400000).toLocaleDateString('en-IN', {day:'numeric',month:'short',year:'numeric'})}
                   </span>
                 )}
                 <span className="text-[11px] text-gray-400">({selectedFunction.setup_days ?? 1}d setup + {selectedFunction.teardown_days ?? 1}d teardown)</span>
@@ -877,7 +877,7 @@ function Events({ profile }) {
                               <div key={evt.event_id} className="flex items-center justify-between bg-white rounded px-2.5 py-1.5 border border-blue-100">
                                 <div>
                                   <p className="text-sm font-medium text-gray-800">{evt.event_name || '—'}</p>
-                                  <p className="text-[11px] text-gray-400">{evt.venue_name} · {evt.contract_date}</p>
+                                  <p className="text-[11px] text-gray-400">{evt.venue_name} · {formatDate(evt.function_date || evt.contract_date)}</p>
                                 </div>
                                 <div className="text-right">
                                   {(evt.items || []).map(function (it, ii) {

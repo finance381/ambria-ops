@@ -64,7 +64,19 @@ const DEPARTMENTS = [
 
 const BASE_URL = "https://gyv.inqcrm.in/api/v1/processerp_api/"
 const PAGE_SIZE = 10
-const MAX_PAGES = Infinity // no cap — loop stops when API returns empty
+const MAX_PAGES = Infinity
+
+const FUNC_NAMES: Record<string, string> = {
+  "1": "RING CEREMONY", "2": "BIRTHDAY", "3": "WEDDING", "4": "RECEPTION",
+  "5": "KUA POOJAN", "6": "ANNIVERSARY", "7": "LAGAN", "8": "SAGAN",
+  "9": "COCKTAIL", "10": "RELIGIOUS", "11": "CORPORATE", "14": "HALDI",
+  "15": "MEHENDI", "16": "ROKA CEREMONY", "17": "RESIDENTIAL WEDDING",
+  "19": "KOTHI BOOKING", "20": "SANGEET", "21": "BABY SHOWER",
+  "22": "ENGAGEMENT", "24": "BARAT ASSEMBLY", "25": "HOUSE PARTY",
+  "27": "BREAKFAST", "28": "DINNER FUNCTION", "30": "LUNCH",
+  "31": "KITTY PARTY", "32": "RESTAURANT SALE", "33": "LOHRI",
+  "34": "DIWALI PARTY", "35": "GET TOGETHER", "36": "MATA KI CHOWKI",
+}
 
 function normalizeVenue(venueName: string, department: string): string {
   const v = (venueName || "").toLowerCase().trim()
@@ -102,12 +114,12 @@ function mapRow(e: any, dep: typeof DEPARTMENTS[0]): any {
     contract_no: entryNo || null,
     contract_date: e[h + "contract_date"] || null,
     department: dep.name,
-    contract_type: e.functionname || null,
+    contract_type: e.functionname || FUNC_NAMES[e[dep.funcCode]] || null,
     venue_name: normalizeVenue(e.venue1 || "", dep.name),
     location: e[h + "location"] || null,
     contact_person: null,
     contact_number: e[dep.contactNo] || null,
-    event_name: (e.functionname || "").trim(),
+    event_name: (e.functionname || FUNC_NAMES[e[dep.funcCode]] || "").trim(),
     client_name: e[h + "guest_name"] || null,
     session: e[d + "session"] || null,
     catering: e[d + "catering"] || e[d + "menu"] || null,

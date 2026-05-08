@@ -95,9 +95,9 @@ function ProductionOrders({ profile }) {
 
   async function loadRefs() {
     var results = await Promise.allSettled([
-      supabase.from('events_safe').select('id, contract_date, client_name, venue_name, event_name')
-        .gte('contract_date', new Date(Date.now() - 90 * 86400000).toISOString().split('T')[0])
-        .order('contract_date', { ascending: false }).limit(200),
+      supabase.from('events_safe').select('id, contract_date, function_date, client_name, venue_name, event_name')
+        .or('function_date.gte.' + new Date(Date.now() - 90 * 86400000).toISOString().split('T')[0] + ',function_date.is.null')
+        .order('function_date', { ascending: false, nullsFirst: false }).limit(200),
       supabase.rpc('get_profiles_with_dept'),
       supabase.from('departments').select('id, name').eq('active', true).order('name'),
       supabase.from('categories').select('id, name').order('name'),
@@ -114,8 +114,8 @@ function ProductionOrders({ profile }) {
     if (!date) { setDateEvents([]); return }
     setDateEventsLoading(true)
     var { data } = await supabase.from('events_safe')
-      .select('id, contract_date, client_name, venue_name, event_name')
-      .eq('contract_date', date)
+      .select('id, contract_date, function_date, client_name, venue_name, event_name')
+      .eq('function_date', date)
       .order('event_name')
     setDateEvents(data || [])
     setDateEventsLoading(false)

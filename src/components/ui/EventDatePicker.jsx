@@ -21,13 +21,14 @@ function EventDatePicker({ value, onChange, label }) {
     var endStr = formatISO(endDate)
 
     var { data } = await supabase.from('events_safe')
-      .select('contract_date')
-      .gte('contract_date', startStr)
-      .lte('contract_date', endStr)
+      .select('function_date')
+      .not('function_date', 'is', null)
+      .gte('function_date', startStr)
+      .lte('function_date', endStr)
 
     var map = {}
     ;(data || []).forEach(function (row) {
-      var d = row.contract_date?.slice(0, 10)
+      var d = row.function_date?.slice(0, 10)
       if (d) map[d] = (map[d] || 0) + 1
     })
     setEventDates(map)

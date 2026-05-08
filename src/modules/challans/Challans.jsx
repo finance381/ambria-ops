@@ -155,9 +155,9 @@ function Challans({ profile }) {
   async function loadRefs() {
     var results = await Promise.allSettled([
       supabase.from('venues').select('id, code, name').eq('active', true).order('code'),
-      supabase.from('events_safe').select('id, contract_date, client_name, venue_name, event_name, contract_no')
-        .gte('contract_date', new Date(Date.now() - 90 * 86400000).toISOString().split('T')[0])
-        .order('contract_date', { ascending: false }).limit(200),
+      supabase.from('events_safe').select('id, contract_date, function_date, client_name, venue_name, event_name, contract_no')
+        .or('function_date.gte.' + new Date(Date.now() - 90 * 86400000).toISOString().split('T')[0] + ',function_date.is.null')
+        .order('function_date', { ascending: false, nullsFirst: false }).limit(200),
       supabase.from('boxes').select('id, code, label, venue_id, department, status')
         .in('status', ['stored', 'packed']).order('code'),
     ])
@@ -170,8 +170,8 @@ function Challans({ profile }) {
     if (!date) { setDateEvents([]); return }
     setDateEventsLoading(true)
     var { data } = await supabase.from('events_safe')
-      .select('id, contract_date, client_name, venue_name, event_name, contract_no')
-      .eq('contract_date', date)
+      .select('id, contract_date, function_date, client_name, venue_name, event_name, contract_no')
+      .eq('function_date', date)
       .order('event_name')
     setDateEvents(data || [])
     setDateEventsLoading(false)
@@ -221,8 +221,8 @@ function Challans({ profile }) {
     if ((challan?.type === 'event_dispatch') && challan?.event_id) {
       var linkedEv = events.find(function (e) { return e.id === challan.event_id })
       if (linkedEv) {
-        setFormEventDate(linkedEv.contract_date)
-        loadEventsByDate(linkedEv.contract_date)
+        setFormEventDate(linkedEv.function_date || linkedEv.contract_date)
+        loadEventsByDate(linkedEv.function_date || linkedEv.contract_date)
       } else {
         setFormEventDate('')
         setDateEvents([])

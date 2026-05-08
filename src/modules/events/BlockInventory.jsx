@@ -22,7 +22,7 @@ function BlockInventory({ func, profile, onDone }) {
   var [bulkRemark, setBulkRemark] = useState('')
   var [bulkStatus, setBulkStatus] = useState('confirmed')
   // Calculate blocking date range from function
-  var contractDate = func.contract_date
+  var contractDate = func.function_date || func.contract_date
   var setupDays = func.setup_days ?? 1
   var teardownDays = func.teardown_days ?? 1
 
