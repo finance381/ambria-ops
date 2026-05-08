@@ -132,7 +132,7 @@ function Events({ profile }) {
 
   async function loadEvents() {
     var dateFloor = new Date()
-    dateFloor.setDate(dateFloor.getDate() - 3)
+    dateFloor.setDate(dateFloor.getDate() - 7)
     var dateFloorStr = dateFloor.toISOString().split('T')[0]
     var [eventsRes, deptRes] = await Promise.all([
       supabase

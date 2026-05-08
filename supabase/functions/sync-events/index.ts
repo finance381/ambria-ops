@@ -188,12 +188,19 @@ serve(async (req) => {
           page++
         }
 
-        console.log(dep.name + ": " + allRows.length + " contracts (" + page + " pages)")
-        totalFetched += allRows.length
+        // Deduplicate by lms_event_id — keep last occurrence
+        const seen = new Map()
+        for (const row of allRows) {
+          seen.set(row.lms_event_id, row)
+        }
+        const uniqueRows = Array.from(seen.values())
+
+        console.log(dep.name + ": " + allRows.length + " fetched, " + uniqueRows.length + " unique (" + page + " pages)")
+        totalFetched += uniqueRows.length
 
         // Batch upsert in chunks of 200
-        for (let i = 0; i < allRows.length; i += 200) {
-          const chunk = allRows.slice(i, i + 200)
+        for (let i = 0; i < uniqueRows.length; i += 200) {
+          const chunk = uniqueRows.slice(i, i + 200)
           const { error, count } = await supabase
             .from("events")
             .upsert(chunk, { onConflict: "lms_event_id", count: "exact" })
