@@ -58,10 +58,10 @@ function groupEvents(events) {
     var now = Date.now()
     var aUp = aMax >= now
     var bUp = bMax >= now
-    if (aUp && !bUp) return -1
-    if (!aUp && bUp) return 1
-    if (aUp) return aMax - bMax
-    return bMax - aMax
+    if (!aUp && bUp) return -1
+    if (aUp && !bUp) return 1
+    if (!aUp) return bMax - aMax
+    return aMax - bMax
   })
 
   return groups.map(function (functions) {

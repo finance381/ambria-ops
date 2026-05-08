@@ -200,11 +200,11 @@ serve(async (req) => {
           if (contracts.length === 0) break
 
           for (const c of contracts) {
-            const row = mapRow(c, dep)
-            if (!row.function_date && dep.name === "Venue") {
-              console.log("VNULL " + row.contract_no + " raw=" + String(c[dep.functionDate]) + " type=" + String(c["fiscd_function_type"]) + " head=" + String(c.headid))
-            }
-            allRows.push(row)
+            // Skip cancelled contracts
+            const cancelRemarks = (c[dep.h + "cancel_remarks"] || "").trim()
+            if (cancelRemarks) continue
+
+            allRows.push(mapRow(c, dep))
           }
 
           // If less than PAGE_SIZE, we've reached the end
