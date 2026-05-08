@@ -397,9 +397,9 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
         .order('name')
         .limit(2000),
       supabase.from('events')
-        .select('id, event_name, event_date, venue')
-        .gte('event_date', new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10))
-        .order('event_date', { ascending: true })
+        .select('id, event_name, contract_date, venue_name')
+        .gte('contract_date', new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10))
+        .order('contract_date', { ascending: true })
         .limit(100),
     ])
     setDepartments(deptRes.data || [])
@@ -631,7 +631,7 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
             className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
             style={{ fontSize: '16px' }}>
             <option value="">No event linked</option>
-            {events.map(function (ev) { return <option key={ev.id} value={String(ev.id)}>{ev.event_name + ' · ' + (ev.venue || '') + ' · ' + formatDate(ev.event_date)}</option> })}
+            {events.map(function (ev) { return <option key={ev.id} value={String(ev.id)}>{ev.event_name + ' · ' + (ev.venue_name || '') + ' · ' + formatDate(ev.contract_date)}</option> })}
           </select>
         </div>
       </div>
