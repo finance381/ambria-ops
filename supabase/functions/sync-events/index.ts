@@ -63,7 +63,7 @@ const DEPARTMENTS = [
 ]
 
 const BASE_URL = "https://gyv.inqcrm.in/api/v1/processerp_api/"
-const PAGE_SIZE = 10
+const PAGE_SIZE = 50
 const MAX_PAGES = Infinity
 
 const FUNC_NAMES: Record<string, string> = {
@@ -101,6 +101,27 @@ function safePaise(val: any): number {
   return isNaN(n) ? 0 : Math.round(n * 100)
 }
 
+const FETCH_TIMEOUT_MS = 10000
+
+async function fetchRetry(url: string, opts: RequestInit, retries = 1): Promise<Response> {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    var controller = new AbortController()
+    var timer = setTimeout(function() { controller.abort() }, FETCH_TIMEOUT_MS)
+    try {
+      var res = await fetch(url, Object.assign({}, opts, { signal: controller.signal }))
+      clearTimeout(timer)
+      if (res.ok || attempt === retries) return res
+      if (res.status < 500) return res
+      await new Promise(function(r) { setTimeout(r, 1000 * (attempt + 1)) })
+    } catch (err) {
+      clearTimeout(timer)
+      if (attempt === retries) throw err
+      await new Promise(function(r) { setTimeout(r, 1000 * (attempt + 1)) })
+    }
+  }
+  throw new Error("fetchRetry exhausted")
+}
+
 function mapRow(e: any, dep: typeof DEPARTMENTS[0]): any {
   const h = dep.h  // header prefix
   const d = dep.d  // detail prefix
@@ -114,7 +135,7 @@ function mapRow(e: any, dep: typeof DEPARTMENTS[0]): any {
     contract_no: entryNo || null,
     contract_date: e[h + "contract_date"] || null,
     department: dep.name,
-    contract_type: e.functionname || FUNC_NAMES[e[dep.funcCode]] || null,
+    contract_type: e[dep.d + "lead_type"] || null,
     venue_name: normalizeVenue(e.venue1 || "", dep.name),
     location: e[h + "location"] || null,
     contact_person: null,
@@ -137,13 +158,12 @@ function mapRow(e: any, dep: typeof DEPARTMENTS[0]): any {
     secondary_contact: e[h + "secondary_contact"] || null,
     bride_name: e[h + "bride_name"] || null,
     groom_name: e[h + "groom_name"] || null,
-    enquiry_mode: e[h + "enquiry_mode"] || null,
+    enquiry_mode: e[h + "enquiry_mode"] || e[h + "enq_mode"] || null,
     priority: e[h + "priority"] || null,
     address: e[h + "address"] || null,
     function_date: e[dep.functionDate] || null,
     total_amount_paise: safePaise(e[h + "total_amt"] || 0),
     net_amount_paise: safePaise(e[h + "net_amt"] || 0),
-    advance_paise: safePaise(e[h + "advance_cash"] || 0) + safePaise(e[h + "advance_chq"] || 0),
     lms_head_id: safeInt(e.headid || e.id || 0) || null,
   }
 }
@@ -187,80 +207,112 @@ serve(async (req) => {
     let totalFetched = 0
     const errors: string[] = []
 
-    for (const dep of DEPARTMENTS) {
-      try {
-        const allRows: any[] = []
-        let page = 1
+    // Parallel sync all departments
+    var syncStartedAt = new Date().toISOString()
 
-        // Paginate until empty
-        while (page <= MAX_PAGES) {
-          const reqBody = { ...dep.body, loggeduserid: lmsUserId, page_limit: String(page) }
-          const lmsRes = await fetch(BASE_URL + dep.endpoint, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(reqBody),
-          })
+    async function syncDept(dep: typeof DEPARTMENTS[0]) {
+      var result = { synced: 0, fetched: 0, stale: 0, errors: [] as string[] }
+      var allRows: any[] = []
+      var page = 1
 
-          if (!lmsRes.ok) {
-            errors.push(dep.name + ": HTTP " + lmsRes.status)
-            break
-          }
+      while (page <= MAX_PAGES) {
+        var reqBody = Object.assign({}, dep.body, { loggeduserid: lmsUserId, page_limit: String(page) })
+        var lmsRes = await fetchRetry(BASE_URL + dep.endpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(reqBody),
+        })
 
-          const lmsData = await lmsRes.json()
-          const contracts = lmsData.Contractinfo || []
-
-          if (contracts.length === 0) break
-
-          for (const c of contracts) {
-            // Skip cancelled contracts
-            const cancelRemarks = (c[dep.h + "cancel_remarks"] || "").trim()
-            if (cancelRemarks) continue
-
-            allRows.push(mapRow(c, dep))
-          }
-
-          // If less than PAGE_SIZE, we've reached the end
-          if (contracts.length < PAGE_SIZE) break
-          page++
+        if (!lmsRes.ok) {
+          result.errors.push(dep.name + ": HTTP " + lmsRes.status)
+          break
         }
 
-        // Deduplicate by lms_event_id — prefer row with function_date
-        const seen = new Map()
-        for (const row of allRows) {
-          const existing = seen.get(row.lms_event_id)
-          if (!existing || (!existing.function_date && row.function_date)) {
-            seen.set(row.lms_event_id, row)
-          }
+        var lmsData: any
+        try {
+          lmsData = await lmsRes.json()
+        } catch (_) {
+          result.errors.push(dep.name + ": invalid JSON page " + page)
+          break
         }
-        const uniqueRows = Array.from(seen.values())
 
-        console.log(dep.name + ": " + allRows.length + " fetched, " + uniqueRows.length + " unique (" + page + " pages)")
-        totalFetched += uniqueRows.length
+        var contracts = lmsData.Contractinfo || []
+        if (contracts.length === 0) break
 
-        // Batch upsert in chunks of 200
-        for (let i = 0; i < uniqueRows.length; i += 200) {
-          const chunk = uniqueRows.slice(i, i + 200)
-          const { error, count } = await supabase
-            .from("events")
-            .upsert(chunk, { onConflict: "lms_event_id", count: "exact" })
-
-          if (error) {
-            console.log("Upsert error " + dep.name + " chunk " + i + ":", error.message)
-            errors.push(dep.name + ": upsert - " + error.message)
-          } else {
-            totalSynced += count || chunk.length
-          }
+        for (var ci = 0; ci < contracts.length; ci++) {
+          var c = contracts[ci]
+          var cancelRemarks = (c[dep.h + "cancel_remarks"] || "").trim()
+          if (cancelRemarks) continue
+          allRows.push(mapRow(c, dep))
         }
-      } catch (depErr) {
-        console.log("Error " + dep.name + ":", (depErr as Error).message)
-        errors.push(dep.name + ": " + (depErr as Error).message)
+
+        if (contracts.length < PAGE_SIZE) break
+        page++
+      }
+
+      // Deduplicate — prefer row with function_date
+      var seen = new Map()
+      for (var ri = 0; ri < allRows.length; ri++) {
+        var row = allRows[ri]
+        var existing = seen.get(row.lms_event_id)
+        if (!existing || (!existing.function_date && row.function_date)) {
+          seen.set(row.lms_event_id, row)
+        }
+      }
+      var uniqueRows = Array.from(seen.values())
+      result.fetched = uniqueRows.length
+
+      console.log(dep.name + ": " + allRows.length + " raw, " + uniqueRows.length + " unique (" + page + " pages)")
+
+      // Batch upsert
+      for (var i = 0; i < uniqueRows.length; i += 200) {
+        var chunk = uniqueRows.slice(i, i + 200)
+        var { error, count } = await supabase
+          .from("events")
+          .upsert(chunk, { onConflict: "lms_event_id", count: "exact" })
+
+        if (error) {
+          console.log("Upsert error " + dep.name + " chunk " + i + ":", error.message)
+          result.errors.push(dep.name + ": upsert - " + error.message)
+        } else {
+          result.synced += count || chunk.length
+        }
+      }
+
+      // Stale detection — rows not touched by this sync
+      var { count: staleCount } = await supabase
+        .from("events")
+        .select("id", { count: "exact", head: true })
+        .like("lms_event_id", dep.name + "_%")
+        .lt("synced_at", syncStartedAt)
+
+      result.stale = staleCount || 0
+      if (result.stale > 0) {
+        console.log(dep.name + ": " + result.stale + " stale rows (possibly cancelled in LMS)")
+      }
+
+      return result
+    }
+
+    var deptResults = await Promise.allSettled(DEPARTMENTS.map(function(dep) { return syncDept(dep) }))
+
+    for (var di = 0; di < deptResults.length; di++) {
+      var r = deptResults[di]
+      if (r.status === "fulfilled") {
+        totalSynced += r.value.synced
+        totalFetched += r.value.fetched
+        errors.push.apply(errors, r.value.errors)
+      } else {
+        errors.push(DEPARTMENTS[di].name + ": " + r.reason)
       }
     }
 
-    console.log("Synced " + totalSynced + " of " + totalFetched)
+    var staleTotal = deptResults.reduce(function(sum, r) { return sum + (r.status === "fulfilled" ? r.value.stale : 0) }, 0)
+    console.log("Synced " + totalSynced + " of " + totalFetched + ", stale: " + staleTotal)
     return new Response(JSON.stringify({
       synced: totalSynced,
       total: totalFetched,
+      stale: staleTotal || undefined,
       errors: errors.length > 0 ? errors : undefined,
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },

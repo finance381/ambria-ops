@@ -185,6 +185,7 @@ function QuoteCalculator({ profile }) {
   var [page, setPage] = useState(0)
   var [guestName, setGuestName] = useState('')
   var [guestPhone, setGuestPhone] = useState('')
+  var [guestAddress, setGuestAddress] = useState('')
   var [eventDate, setEventDate] = useState('')
   var [inquiryMode, setInquiryMode] = useState('')
   var [eventTypeIdx, setEventTypeIdx] = useState(0)
@@ -394,7 +395,7 @@ function QuoteCalculator({ profile }) {
     if (saving || !calcResult) return
     setSaving(true); setSaveMsg('')
     var row = {
-      created_by: profile.id, guest_name: guestName, guest_phone: guestPhone,
+      created_by: profile.id, guest_name: guestName, guest_phone: guestPhone, guest_address: guestAddress || null,
       inquiry_mode: inquiryMode,
       event_type: currentET.label, event_date: eventDate || null,
       venue_idx: venueIdx, venue_name: venName, food_pref: foodPref, pax: pax,
@@ -442,7 +443,7 @@ function QuoteCalculator({ profile }) {
   }
 
   function loadQuote(q) {
-    setGuestName(q.guest_name || ''); setGuestPhone(q.guest_phone || ''); setEventDate(q.event_date || '')
+    setGuestName(q.guest_name || ''); setGuestPhone(q.guest_phone || ''); setGuestAddress(q.guest_address || ''); setEventDate(q.event_date || '')
     setInquiryMode(q.inquiry_mode || '')
     var etIdx = 0
     for (var i = 0; i < eventTypes.length; i++) { if (eventTypes[i].label === q.event_type) { etIdx = i; break } }
@@ -461,7 +462,7 @@ function QuoteCalculator({ profile }) {
   }
 
   function newQuote() {
-    setGuestName(''); setGuestPhone(''); setEventDate(''); setInquiryMode(''); setEventTypeIdx(0)
+    setGuestName(''); setGuestPhone(''); setGuestAddress(''); setEventDate(''); setInquiryMode(''); setEventTypeIdx(0)
     setVenueIdx(0); setFoodPref(0); setPax(400); setSlot(0); setCatOverride(2); setMenuIdx(3)
     setDecorIdx(0); setDjIdx(1); setTtdIdx(0); setDealVal(14); setTaxMode(0); setSplit5(50)
     setQuoteStatus('draft'); setSavedId(null); setNotes(''); setShowQuotes(false); setShowProposal(false); setPage(0)
@@ -595,6 +596,11 @@ function QuoteCalculator({ profile }) {
           <div style={{ fontSize: 12, color: C.muted, marginBottom: 5, fontWeight: 600 }}>Guest Name</div>
           <input type="text" value={guestName} placeholder="Full name"
             onChange={function (e) { setGuestName(e.target.value) }}
+            style={{ width: '100%', padding: 11, borderRadius: 9, border: '2px solid ' + C.border, fontSize: 14, marginBottom: 10 }} />
+
+          <div style={{ fontSize: 12, color: C.muted, marginBottom: 5, fontWeight: 600 }}>Address</div>
+          <input type="text" value={guestAddress} placeholder="Locality / Area"
+            onChange={function (e) { setGuestAddress(e.target.value) }}
             style={{ width: '100%', padding: 11, borderRadius: 9, border: '2px solid ' + C.border, fontSize: 14, marginBottom: 10 }} />
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
