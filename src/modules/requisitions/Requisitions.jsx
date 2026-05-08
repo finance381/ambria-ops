@@ -5,6 +5,7 @@ import { logActivity } from '../../lib/logger'
 import Modal from '../../components/ui/Modal'
 import { Badge } from '../../components/ui/Badge'
 import { APPROVAL_STATUS_COLORS, APPROVAL_STATUS_LABELS } from '../../lib/constants'
+import EventDatePicker from '../../components/ui/EventDatePicker'
 
 var PAGE_SIZE = 20
 var URGENCY_COLORS = {
@@ -644,22 +645,18 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
             style={{ fontSize: '16px' }} />
           {errors.purpose && <p className="text-xs text-red-500 mt-1">{errors.purpose}</p>}
         </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Linked Event <span className="text-gray-400 font-normal text-xs">(optional)</span></label>
-          <input type="date" value={eventDate} onChange={function (e) { setEventDate(e.target.value); loadEventsByDate(e.target.value) }}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            style={{ fontSize: '16px' }} />
-          {eventsLoading && <p className="text-xs text-gray-400 mt-1">Loading events...</p>}
-          {eventDate && !eventsLoading && events.length === 0 && <p className="text-xs text-gray-400 mt-1">No events on this date</p>}
-          {events.length > 0 && (
-            <select value={eventId} onChange={function (e) { setEventId(e.target.value) }}
-              className="w-full mt-2 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
-              style={{ fontSize: '16px' }}>
-              <option value="">Select event...</option>
-              {events.map(function (ev) { return <option key={ev.id} value={String(ev.id)}>{ev.event_name + ' · ' + (ev.venue_name || '')}</option> })}
-            </select>
-          )}
-        </div>
+        <EventDatePicker label="Linked Event (optional)" value={eventDate}
+          onChange={function (dateStr) { setEventDate(dateStr); loadEventsByDate(dateStr) }} />
+        {eventsLoading && <p className="text-xs text-gray-400 mt-1">Loading events...</p>}
+        {eventDate && !eventsLoading && events.length === 0 && <p className="text-xs text-gray-400 mt-1">No events on this date</p>}
+        {events.length > 0 && (
+          <select value={eventId} onChange={function (e) { setEventId(e.target.value) }}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+            style={{ fontSize: '16px' }}>
+            <option value="">Select event...</option>
+            {events.map(function (ev) { return <option key={ev.id} value={String(ev.id)}>{ev.event_name + ' · ' + (ev.venue_name || '')}</option> })}
+          </select>
+        )}
       </div>
 
       {/* Cart items */}

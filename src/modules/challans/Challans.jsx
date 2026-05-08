@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { formatDate } from '../../lib/format'
 import { logActivity } from '../../lib/logger'
+import EventDatePicker from '../../components/ui/EventDatePicker'
 
 var TYPE_LABELS = {
   event_dispatch: 'Event Dispatch',
@@ -892,22 +893,16 @@ function Challans({ profile }) {
           {/* Event dispatch: event date → event picker → dispatch date */}
           {formType === 'event_dispatch' && (
             <div className="space-y-3">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-gray-500 mb-1">Event Date *</label>
-                  <input type="date" value={formEventDate}
-                    onChange={function (e) { setFormEventDate(e.target.value); setFormEvent(''); loadEventsByDate(e.target.value) }}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-gray-500 mb-1">Dispatch Date</label>
-                  <input type="date" value={formDispatchDate}
-                    onChange={function (e) { setFormDispatchDate(e.target.value) }}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-                  {formEventDate && formDispatchDate && formDispatchDate > formEventDate && (
-                    <p className="text-[10px] text-red-500 mt-1">Dispatch date is after event date</p>
-                  )}
-                </div>
+              <EventDatePicker label="Event Date *" value={formEventDate}
+                onChange={function (dateStr) { setFormEventDate(dateStr); setFormEvent(''); loadEventsByDate(dateStr) }} />
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 mb-1">Dispatch Date</label>
+                <input type="date" value={formDispatchDate}
+                  onChange={function (e) { setFormDispatchDate(e.target.value) }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                {formEventDate && formDispatchDate && formDispatchDate > formEventDate && (
+                  <p className="text-[10px] text-red-500 mt-1">Dispatch date is after event date</p>
+                )}
               </div>
               {formEventDate && (
                 <div>

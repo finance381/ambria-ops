@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase, getImageUrl } from '../../lib/supabase'
 import { formatDate, formatPaise, titleCase } from '../../lib/format'
 import { logActivity } from '../../lib/logger'
+import EventDatePicker from '../../components/ui/EventDatePicker'
 
 var STATUS_LABELS = {
   pending: 'Pending',
@@ -413,22 +414,16 @@ function ProductionOrders({ profile }) {
               </div>
             </div>
             {orderMode === 'event' && (
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-gray-500 mb-1">Event Date</label>
-                  <input type="date" value={fEventDate}
-                    onChange={function (e) { setFEventDate(e.target.value); setFEvent(''); loadEventsByDate(e.target.value) }}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-gray-500 mb-1">
-                    Event {dateEventsLoading ? '(loading...)' : fEventDate ? '(' + dateEvents.length + ' found)' : ''}
-                  </label>
-                  {!fEventDate && <p className="text-xs text-gray-400 py-2">Select a date first</p>}
-                  {fEventDate && dateEvents.length === 0 && !dateEventsLoading && (
-                    <p className="text-xs text-amber-600 py-2">No events on this date</p>
-                  )}
-                  {dateEvents.length > 0 && (
+              <div className="space-y-3">
+                <EventDatePicker label="Event Date" value={fEventDate}
+                  onChange={function (dateStr) { setFEventDate(dateStr); setFEvent(''); loadEventsByDate(dateStr) }} />
+                {dateEventsLoading && <p className="text-xs text-gray-400">Loading events...</p>}
+                {fEventDate && !dateEventsLoading && dateEvents.length === 0 && (
+                  <p className="text-xs text-amber-600">No events on this date</p>
+                )}
+                {dateEvents.length > 0 && (
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-500 mb-1">Event ({dateEvents.length} found)</label>
                     <select value={fEvent} onChange={function (e) { setFEvent(e.target.value) }}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
                       <option value="">Select event...</option>
@@ -438,8 +433,8 @@ function ProductionOrders({ profile }) {
                         </option>
                       })}
                     </select>
-                  )}
-                </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
