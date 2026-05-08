@@ -120,9 +120,13 @@ function EventDatePicker({ value, onChange, label }) {
             } else if (hasEvent) {
               colorClass = "bg-indigo-50 text-indigo-700 hover:bg-indigo-100 font-semibold"
             } else if (isToday) {
-              colorClass = "bg-gray-100 text-gray-900"
+              colorClass = "bg-gray-100 text-gray-900 font-semibold"
             } else {
               colorClass = "text-gray-600 hover:bg-gray-50"
+            }
+
+            if (isToday && !isSelected) {
+              baseClass += "ring-2 ring-indigo-400 "
             }
 
             return (
