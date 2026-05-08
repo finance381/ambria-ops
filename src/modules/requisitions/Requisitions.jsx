@@ -68,7 +68,7 @@ function Requisitions({ profile, onBack }) {
     else setLoadingMore(true)
 
     var query = supabase.from('requisitions')
-      .select('id, department, urgency, purpose, status, created_at, needed_by, requested_by, rejection_reason, profiles:requested_by(name)')
+      .select('id, department, urgency, purpose, status, created_at, needed_by, requested_by, rejection_reason, event_id, events(event_name), profiles:requested_by(name)')
       .eq('requested_by', profile.id)
       .order('created_at', { ascending: false })
       .range(offset, offset + PAGE_SIZE)
@@ -283,6 +283,7 @@ function Requisitions({ profile, onBack }) {
                   <p className="text-xs text-gray-400 mt-0.5">
                     {view === 'approve' ? (req.profiles?.name || '—') + ' · ' : ''}
                     {req.department} · {formatDate(req.created_at)}{req.needed_by ? ' · Need by ' + formatDate(req.needed_by) : ''}
+                    {req.events?.event_name ? ' · 📅 ' + req.events.event_name : ''}
                   </p>
                 </div>
                 <div className="flex gap-1.5 flex-shrink-0 ml-2">
@@ -331,6 +332,8 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
   var [saving, setSaving] = useState(false)
   var [errors, setErrors] = useState({})
   var [activeSearchIndex, setActiveSearchIndex] = useState(-1)
+  var [eventId, setEventId] = useState(editReq?.event_id ? String(editReq.event_id) : '')
+  var [events, setEvents] = useState([])
   var searchContainerRef = useRef(null)
 
   var isEditing = !!editReq
@@ -380,7 +383,7 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
   }, [])
 
   async function loadLookups() {
-    var [deptRes, catRes, invRes, csRes] = await Promise.all([
+    var [deptRes, catRes, invRes, csRes, evtRes] = await Promise.all([
       supabase.from('departments').select('id, name').eq('active', true).order('name'),
       supabase.from('categories').select('id, name, sub_department_id').order('name'),
       supabase.from('inventory_items')
@@ -393,9 +396,15 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
         .in('status', ['approved', 'pending', 'pending_dept'])
         .order('name')
         .limit(2000),
+      supabase.from('events')
+        .select('id, event_name, event_date, venue')
+        .gte('event_date', new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10))
+        .order('event_date', { ascending: true })
+        .limit(100),
     ])
     setDepartments(deptRes.data || [])
     setCategories(catRes.data || [])
+    setEvents(evtRes.data || [])
 
     var inv = (invRes.data || []).map(function (i) { return Object.assign({}, i, { _source: 'inventory' }) })
     var cs = (csRes.data || []).map(function (i) { return Object.assign({}, i, { _source: 'catering_store' }) })
@@ -496,6 +505,7 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
           urgency: urgency,
           purpose: purpose.trim(),
           needed_by: neededBy || null,
+          event_id: eventId ? Number(eventId) : null,
         }).eq('id', editReq.id)
         if (updErr) throw new Error(updErr.message)
 
@@ -540,6 +550,7 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
           urgency: urgency,
           purpose: purpose.trim(),
           needed_by: neededBy || null,
+          event_id: eventId ? Number(eventId) : null,
           status: status,
           dept_approved_by: deptApprovedBy,
           dept_approved_at: deptApprovedAt,
@@ -613,6 +624,15 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
             className={"w-full px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none " + (errors.purpose ? "border-red-300" : "border-gray-300")}
             style={{ fontSize: '16px' }} />
           {errors.purpose && <p className="text-xs text-red-500 mt-1">{errors.purpose}</p>}
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Linked Event <span className="text-gray-400 font-normal text-xs">(optional)</span></label>
+          <select value={eventId} onChange={function (e) { setEventId(e.target.value) }}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+            style={{ fontSize: '16px' }}>
+            <option value="">No event linked</option>
+            {events.map(function (ev) { return <option key={ev.id} value={String(ev.id)}>{ev.event_name + ' · ' + (ev.venue || '') + ' · ' + formatDate(ev.event_date)}</option> })}
+          </select>
         </div>
       </div>
 
@@ -949,6 +969,7 @@ function RequisitionDetail({ req, items, profile, isAdmin, isDeptApprover, onBac
             <h2 className="text-lg font-bold text-gray-900">{req.purpose || 'Requisition #' + req.id}</h2>
             <p className="text-xs text-gray-400 mt-0.5">
               {req.profiles?.name || '—'} · {req.department} · {formatDate(req.created_at)}
+              {req.events?.event_name ? ' · 📅 ' + req.events.event_name : ''}
             </p>
           </div>
           <div className="flex gap-1.5 flex-shrink-0">
