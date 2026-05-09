@@ -715,8 +715,10 @@ function QuoteCalculator({ profile }) {
 
         {/* Negotiation quick banner */}
         {hasDeal && adjTotal.q > 0 && (function () {
-          var diff = rd(dealTotal - adjTotal.q)
-          var pct = rd((diff / adjTotal.q) * 100)
+          var rCalc = Math.ceil(adjTotal.q * 2) / 2
+          var rDeal = Math.ceil(dealTotal * 2) / 2
+          var diff = rd(rDeal - rCalc)
+          var pct = rd((diff / rCalc) * 100)
           var isUp = diff >= 0
           return (
             <div style={{
