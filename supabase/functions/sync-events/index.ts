@@ -137,7 +137,9 @@ function mapRow(e: any, dep: typeof DEPARTMENTS[0]): any {
     department: dep.name,
     contract_type: e[dep.d + "lead_type"] || null,
     venue_name: normalizeVenue(e.venue1 || "", dep.name),
-    location: e[h + "location"] || null,
+    location: (e[dep.d + "lead_type"] === "O" && e[dep.d + "venue2"])
+      ? (e[dep.d + "venue2"] + (e[dep.d + "address2"] ? ", " + e[dep.d + "address2"] : "")).trim()
+      : null,
     contact_person: null,
     contact_number: e[dep.contactNo] || null,
     event_name: (e.functionname || FUNC_NAMES[e[dep.funcCode]] || "").trim(),

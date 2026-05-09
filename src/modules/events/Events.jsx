@@ -481,7 +481,7 @@ function Events({ profile }) {
               <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-500 mb-3">
                 <span>📅 {dateRange}</span>
                 {group.venues.map(function (v) { return <span key={v}>🏛️ {v}</span> })}
-                {group.location && <span>📍 {group.location}</span>}
+                {group.location && !group.venues.some(function (v) { return v.toLowerCase().indexOf(group.location.toLowerCase()) !== -1 || group.location.toLowerCase().indexOf(v.toLowerCase()) !== -1 }) && <span>📍 {group.location}</span>}
               </div>
 
               {/* Functions list */}
