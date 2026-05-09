@@ -228,14 +228,16 @@ function QuoteCalculator({ profile }) {
   // DB-driven lists
   var [inquiryModes, setInquiryModes] = useState(FALLBACK_MODES)
   var [eventTypes, setEventTypes] = useState(FALLBACK_ET)
+  var [venueList, setVenueList] = useState(null)
 
   useEffect(function () {
-    supabase.from('quote_config').select('key, value').in('key', ['inquiry_modes', 'event_types', 'season_dates']).then(function (res) {
+    supabase.from('quote_config').select('key, value').in('key', ['inquiry_modes', 'event_types', 'season_dates', 'venues']).then(function (res) {
       if (!res.data) return
       res.data.forEach(function (row) {
         if (row.key === 'inquiry_modes' && Array.isArray(row.value)) setInquiryModes(row.value)
         if (row.key === 'event_types' && Array.isArray(row.value)) setEventTypes(row.value)
         if (row.key === 'season_dates' && row.value) setSeasonDates(row.value)
+        if (row.key === 'venues' && Array.isArray(row.value)) setVenueList(row.value)
       })
     })
   }, [])
@@ -245,6 +247,9 @@ function QuoteCalculator({ profile }) {
   var [calcLoading, setCalcLoading] = useState(false)
   var debounceRef = useRef(null)
   var firstCall = useRef(true)
+
+  // Venues — config-driven with hardcoded fallback
+  var venues = venueList ? venueList.map(function (v) { return [v.name, v.location, v.status || 'live'] }) : VENUE_NAMES
 
   // Derived
   var currentET = eventTypes[eventTypeIdx] || eventTypes[0] || { label: 'Wedding', wedding: true }
@@ -296,7 +301,7 @@ function QuoteCalculator({ profile }) {
   var menuCost = r.menu_cost || 0
   var ttdData = r.ttd || []
   var decorRel = r.decor_relevance || []
-  var venName = r.venue_name || VENUE_NAMES[venueIdx][0]
+  var venName = r.venue_name || (venues[venueIdx] || venues[0])[0]
   var isPlaceholder = r.is_placeholder || false
   var venDecorMode = r.venue_decor_mode || 'p'
   var isSummer = eventDate ? (function () { var m = new Date(eventDate + 'T00:00:00').getMonth(); return m >= 3 && m <= 7 })() : false
@@ -422,10 +427,8 @@ function QuoteCalculator({ profile }) {
     }
     try {
       if (savedId) {
-        var { data, error } = await supabase.from('quotes').update(Object.assign(row, { revision: undefined }))
-          .eq('id', savedId).select('id, revision').single()
+        var { error } = await supabase.from('quotes').update(row).eq('id', savedId)
         if (error) throw error
-        await supabase.from('quotes').update({ revision: (data.revision || 1) + 1 }).eq('id', savedId)
         setSaveMsg('Updated')
       } else {
         var { data, error } = await supabase.from('quotes').insert(row).select('id').single()
@@ -670,7 +673,7 @@ function QuoteCalculator({ profile }) {
 
           <div style={{ fontSize: 12, color: C.muted, marginBottom: 5, fontWeight: 600 }}>Venue</div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
-            {VENUE_NAMES.map(function (v, idx) {
+            {venues.map(function (v, idx) {
               var on = venueIdx === idx
               var isPh = v[2] === 'placeholder'
               return (<button key={idx} onClick={function () { if (!isPh) setVenueIdx(idx) }} style={{
@@ -739,7 +742,7 @@ function QuoteCalculator({ profile }) {
 
         {/* Venue selector (synced) */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, marginBottom: 12 }}>
-          {VENUE_NAMES.map(function (v, idx) {
+          {venues.map(function (v, idx) {
             var on = venueIdx === idx
             var isPh = v[2] === 'placeholder'
             return (<button key={idx} onClick={function () { if (!isPh) { setVenueIdx(idx); setDecorIdx(0) } }} style={{
