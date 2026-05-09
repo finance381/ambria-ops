@@ -370,7 +370,7 @@ function QuoteCalculator({ profile }) {
 
   // Proposal text
   var proposalLines = ['AMBRIA PROPOSAL', '========================', 'Venue: ' + venName,
-    'By: ' + profile.name, 'Guest: ' + (guestName || '-') + ' | ' + (guestPhone || '-'),
+    'Prepared by: ' + profile.name, 'Guest: ' + (guestName || '-') + ' | ' + (guestPhone || '-'),
     'Mode: ' + (inquiryMode || '-'), currentET.label + ' | ' + (foodPref === 0 ? 'Veg' : 'NV'),
     'Date: ' + fmtDate(eventDate) + ' (' + CAT_LABELS[ct] + ') | ' + SLOTS[slot] + ' | ' + pax + 'pax']
   if (includeMenu) proposalLines.push('Menu: ' + (r.menu_label || MENU_LABELS[activeMenu]) + ' Rs.' + perHead + '/hd')
