@@ -77,8 +77,10 @@
         supabase.from('vendors').select('id, name, phone, address', { count: 'exact' }).eq('active', true).limit(200),
 
         // 7: Events this week
-        supabase.from('events_safe').select('id, contract_date, venue_name, department, status')
-          .gte('contract_date', today).lte('contract_date', weekOut).order('contract_date').limit(50),
+        supabase.from('events_safe').select('id, function_date, contract_date, venue_name, department, status')
+          .or('function_date.gte.' + today + ',function_date.is.null')
+          .lte('function_date', weekOut)
+          .order('function_date', { ascending: true, nullsFirst: false }).limit(50),
 
         // 8: Pending catering store items
         supabase.from('catering_store_items').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
@@ -233,7 +235,7 @@
                       <span className="text-xs font-medium text-gray-700">{ev.venue_name || '—'}</span>
                       <span className="text-[10px] text-gray-400 ml-2">{ev.department || ''}</span>
                     </div>
-                    <span className="text-[11px] font-bold text-indigo-600 flex-shrink-0">{formatDate(ev.contract_date)}</span>
+                    <span className="text-[11px] font-bold text-indigo-600 flex-shrink-0">{formatDate(ev.function_date || ev.contract_date)}</span>
                   </div>
                 )
               })}

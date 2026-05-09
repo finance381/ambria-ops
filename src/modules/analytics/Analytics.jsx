@@ -172,9 +172,9 @@ function Analytics({ profile }) {
 
       // 7: Upcoming events
       supabase.from('events_safe')
-        .select('id, contract_date, venue_name, department, total_plates, status')
-        .gte('contract_date', today)
-        .order('contract_date')
+        .select('id, function_date, contract_date, venue_name, department, total_plates, status')
+        .or('function_date.gte.' + today + ',function_date.is.null')
+        .order('function_date', { ascending: true, nullsFirst: false })
         .limit(500),
 
       // 8: Profiles for name lookup
