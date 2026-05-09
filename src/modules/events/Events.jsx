@@ -51,16 +51,15 @@ function groupEvents(events) {
     groups.push(cluster)
   })
 
-  // Sort groups by latest date descending
+  // Sort groups: past (asc) then upcoming (asc)
+  var todayStart = new Date(); todayStart.setHours(0, 0, 0, 0); var todayMs = todayStart.getTime()
   groups.sort(function (a, b) {
     var aMax = Math.max.apply(null, a.map(function (e) { return new Date(e.function_date || e.contract_date || 0).getTime() }))
     var bMax = Math.max.apply(null, b.map(function (e) { return new Date(e.function_date || e.contract_date || 0).getTime() }))
-    var now = Date.now()
-    var aUp = aMax >= now
-    var bUp = bMax >= now
+    var aUp = aMax >= todayMs
+    var bUp = bMax >= todayMs
     if (!aUp && bUp) return -1
     if (aUp && !bUp) return 1
-    if (!aUp) return bMax - aMax
     return aMax - bMax
   })
 
@@ -69,6 +68,7 @@ function groupEvents(events) {
     var totalItems = functions.reduce(function (sum, f) { return sum + (f.item_count || 0) }, 0)
     var totalPlates = functions.reduce(function (sum, f) { return sum + (f.total_plates || 0) }, 0)
     return {
+      isUpcoming: Math.max.apply(null, functions.map(function (f) { return new Date(f.function_date || f.contract_date || 0).getTime() })) >= todayMs,
       id: functions.map(function (f) { return f.id }).join('-'),
       client_name: functions[0].client_name || '—',
       contact_person: functions[0].contact_person || '',
@@ -451,7 +451,14 @@ function Events({ profile }) {
       )}
 
       <div className="grid gap-3 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
-        {paged.map(function (group) {
+        {paged.flatMap(function (group, idx) {
+          var elements = []
+          if (!group.isUpcoming && idx === 0) {
+            elements.push(<div key="past-hdr" className="col-span-1 md:col-span-2 lg:col-span-3 flex items-center gap-2 text-xs text-gray-500 uppercase tracking-wider font-semibold py-1"><span>Past Events</span><span className="flex-1 border-t border-gray-300"></span></div>)
+          }
+          if (group.isUpcoming && (idx === 0 || !paged[idx - 1].isUpcoming)) {
+            elements.push(<div key="upcoming-hdr" className="col-span-1 md:col-span-2 lg:col-span-3 flex items-center gap-2 text-xs text-indigo-500 uppercase tracking-wider font-semibold py-1"><span>Upcoming</span><span className="flex-1 border-t border-indigo-300"></span></div>)
+          }
           var dateRange = group.date_start === group.date_end
             ? formatDate(group.date_start)
             : formatDate(group.date_start) + ' – ' + formatDate(group.date_end)
@@ -517,6 +524,7 @@ function Events({ profile }) {
               })()}
             </div>
           )
+          return elements
         })}
       </div>
 
