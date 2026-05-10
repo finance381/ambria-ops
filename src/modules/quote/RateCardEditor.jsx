@@ -909,6 +909,7 @@ function SeasonCalendar({ config, onSave, saving }) {
   var lastPainted = useRef(null)
   var draftRef = useRef(draft)
   var rafRef = useRef(null)
+  var paintMode = useRef('paint')
 
   useEffect(function () { draftRef.current = draft }, [draft])
   useEffect(function () { var d = clone(config.season_dates || {}); setDraft(d); draftRef.current = d }, [config.season_dates])
@@ -934,7 +935,8 @@ function SeasonCalendar({ config, onSave, saving }) {
     var cur = new Date(start)
     while (cur <= end) {
       var mm = cur.getMonth(), dd = cur.getDate()
-      draftRef.current[pad2(mm + 1) + '-' + pad2(dd)] = brush
+      var key = pad2(mm + 1) + '-' + pad2(dd)
+      if (paintMode.current === 'erase') { delete draftRef.current[key] } else { draftRef.current[key] = brush }
       cur.setDate(cur.getDate() + 1)
     }
     flushDraft()
@@ -953,7 +955,7 @@ function SeasonCalendar({ config, onSave, saving }) {
     var textColor = catObj ? catObj.color : C.muted
     return (
       <div key={day}
-        onPointerDown={function (e) { e.preventDefault(); setPointer(true); lastPainted.current = { m: monthIdx, d: day }; toggleDate(monthIdx, day) }}
+        onPointerDown={function (e) { e.preventDefault(); paintMode.current = draftRef.current[pad2(monthIdx + 1) + '-' + pad2(day)] === brush ? 'erase' : 'paint'; setPointer(true); lastPainted.current = { m: monthIdx, d: day }; toggleDate(monthIdx, day) }}
         onPointerEnter={function () { if (pointer) { if (lastPainted.current) fillRange(lastPainted.current.m, lastPainted.current.d, monthIdx, day); lastPainted.current = { m: monthIdx, d: day } } }}
         style={{
           aspectRatio: '1', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
