@@ -1450,6 +1450,26 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, ve
               </button>
             )}
 
+            {/* PDF Downloads */}
+            <div className="flex gap-2">
+              <button onClick={function () { generatePoPdf(po, items, po.profiles?.name) }}
+                className="flex-1 py-2 text-xs font-bold text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
+                🖨️ PO PDF
+              </button>
+              {totalActualPaise > 0 && (
+                <button onClick={function () { generateComparisonPdf(po, items, po.profiles?.name) }}
+                  className="flex-1 py-2 text-xs font-bold text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
+                  📊 Comparison
+                </button>
+              )}
+              {receivedCount > 0 && (
+                <button onClick={function () { generateReceivingPdf(po, items, po.profiles?.name) }}
+                  className="flex-1 py-2 text-xs font-bold text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
+                  📥 Receiving
+                </button>
+              )}
+            </div>
+
             {/* Actions */}
             <div className="space-y-2">
               {canConfirm && (

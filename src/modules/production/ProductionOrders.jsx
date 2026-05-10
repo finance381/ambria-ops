@@ -547,8 +547,7 @@ function ProductionOrders({ profile }) {
             <div>
               <label className="block text-xs font-semibold text-gray-500 mb-1">Department</label>
               <select value={fDept} onChange={function (e) { setFDept(e.target.value); setFAssigned('') }}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                onChange={function (e) { setFDept(e.target.value); setFAssigned('') }}>
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
                 <option value="">—</option>
                 {departments.map(function (d) { return <option key={d.id} value={d.name}>{d.name}</option> })}
               </select>
