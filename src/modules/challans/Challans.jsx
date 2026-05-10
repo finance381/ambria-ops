@@ -1405,7 +1405,7 @@ function Challans({ profile }) {
                   {/* Remove (draft only) */}
                   {isDraft && (
                     <button onClick={function () { removeItem(ci.id) }}
-                      className="text-xs text-red-400 hover:text-red-600 font-medium">✕</button>
+                      className="text-xs text-red-400 hover:text-red-600 hover:bg-red-50 font-medium p-2 rounded-lg transition-colors">✕</button>
                   )}
                 </div>
               </div>

@@ -664,7 +664,7 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
         <div className="flex items-center justify-between">
           <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Items</h3>
           <button type="button" onClick={addCartItem}
-            className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 transition-colors">+ Add Item</button>
+            className="text-xs font-semibold text-indigo-600 hover:bg-indigo-50 px-3 py-1.5 rounded-lg transition-colors">+ Add Item</button>
         </div>
         {errors.cart && <p className="text-xs text-red-500">{errors.cart}</p>}
 
@@ -691,7 +691,7 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
                   </button>
                   {cart.length > 1 && (
                     <button type="button" onClick={function () { removeCartItem(index) }}
-                      className="text-xs text-red-400 hover:text-red-600 font-semibold">✕</button>
+                      className="text-xs text-red-400 hover:text-red-600 hover:bg-red-50 font-semibold p-2 rounded-lg transition-colors">✕</button>
                   )}
                 </div>
               </div>

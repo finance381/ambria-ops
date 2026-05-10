@@ -357,7 +357,7 @@ function EventTasks({ eventId, profile, departments }) {
                   </div>
                   {isAdmin && (
                     <button onClick={function () { deleteTask(task) }}
-                      className="text-[10px] text-gray-400 hover:text-red-500 transition-colors">🗑</button>
+                      className="text-[10px] text-gray-400 hover:text-red-500 hover:bg-red-50 p-2 rounded-lg transition-colors">🗑</button>
                   )}
                 </div>
               )
@@ -380,7 +380,7 @@ function EventTasks({ eventId, profile, departments }) {
                   <p className="text-sm text-gray-400 line-through flex-1">{task.title}</p>
                   {isAdmin && (
                     <button onClick={function () { deleteTask(task) }}
-                      className="text-[10px] text-gray-400 hover:text-red-500 transition-colors">🗑</button>
+                      className="text-[10px] text-gray-400 hover:text-red-500 hover:bg-red-50 p-2 rounded-lg transition-colors">🗑</button>
                   )}
                 </div>
               )

@@ -785,9 +785,9 @@ if (allExpView && (isAdmin || isAuditor)) {
               </p>
               <div className="flex gap-2">
                 <button onClick={function () { var all = {}; filteredWallets.forEach(function (w) { all[w.user_id] = true }); setBulkSelected(all) }}
-                  className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800">Select All</button>
+                  className="text-[10px] font-bold text-indigo-600 hover:bg-indigo-50 px-2.5 py-1.5 rounded-lg transition-colors">Select All</button>
                 <button onClick={function () { setBulkSelected({}) }}
-                  className="text-[10px] font-bold text-gray-500 hover:text-gray-700">Clear</button>
+                  className="text-[10px] font-bold text-gray-500 hover:bg-gray-100 px-2.5 py-1.5 rounded-lg transition-colors">Clear</button>
               </div>
             </div>
             <div className="flex gap-2">
@@ -1188,7 +1188,7 @@ if (allExpView && (isAdmin || isAuditor)) {
             </div>
             {typeEditId && (
               <button onClick={function () { setTypeEditId(null); setTypeName('') }}
-                className="text-xs text-gray-500 hover:text-gray-700">Cancel edit</button>
+                className="text-xs text-gray-500 hover:bg-gray-100 px-3 py-1.5 rounded-lg transition-colors">Cancel edit</button>
             )}
           </div>
         </BottomSheet>

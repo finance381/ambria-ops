@@ -458,7 +458,7 @@ function BlockInventory({ func, profile, onDone }) {
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-indigo-700">{checkedCount} items checked</span>
             <button onClick={function () { setChecked({}) }}
-              className="text-[11px] text-gray-500 hover:text-gray-700">✕ Clear</button>
+              className="text-[11px] text-gray-500 hover:bg-gray-100 px-2.5 py-1.5 rounded-lg transition-colors">✕ Clear</button>
           </div>
           <div className="flex gap-2 flex-wrap items-end">
             <div>

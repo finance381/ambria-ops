@@ -1393,22 +1393,22 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, ve
 
                     {/* Action buttons */}
                     {it.status === 'pending' && !isEditingVendor && !isPurchasing && (
-                      <div className="flex gap-3">
+                      <div className="flex gap-2 flex-wrap">
                         {canEdit && (
                           <button onClick={function (e) { e.stopPropagation(); startVendorEdit(it) }}
-                            className="text-[11px] font-semibold text-blue-600 hover:text-blue-800 transition-colors">
+                            className="text-[11px] font-semibold text-blue-600 hover:bg-blue-50 px-3 py-1.5 rounded-lg transition-colors">
                             {it.vendor_name ? '✎ Edit Vendor' : '+ Assign Vendor'}
                           </button>
                         )}
                         {canDelete && (
                           <button onClick={function (e) { e.stopPropagation(); if (confirm('Remove this item from PO?')) onRemoveItem(po.id, it.id) }}
-                            className="text-[11px] font-semibold text-red-500 hover:text-red-700 transition-colors">
+                            className="text-[11px] font-semibold text-red-500 hover:bg-red-50 px-3 py-1.5 rounded-lg transition-colors">
                             ✕ Remove
                           </button>
                         )}
                         {canPurchase && (
                           <button onClick={function (e) { e.stopPropagation(); startPurchase(it) }}
-                            className="text-[11px] font-semibold text-green-600 hover:text-green-800 transition-colors">
+                            className="text-[11px] font-semibold text-green-600 hover:bg-green-50 px-3 py-1.5 rounded-lg transition-colors">
                             🛒 Mark Purchased
                           </button>
                         )}
@@ -1536,7 +1536,7 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, ve
               </div>
             )}
             {!editingNotes && canEdit && (
-              <button onClick={function () { setEditingNotes(true) }} className="text-[11px] font-medium text-blue-600 hover:text-blue-800 transition-colors">
+              <button onClick={function () { setEditingNotes(true) }} className="text-[11px] font-medium text-blue-600 hover:bg-blue-50 px-3 py-1.5 rounded-lg transition-colors">
                 {notesText ? '✎ Edit Notes' : '+ Add Notes'}
               </button>
             )}
