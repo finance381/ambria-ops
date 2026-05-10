@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { titleCase, formatDate, formatPaise } from '../../lib/format'
 import { logActivity } from '../../lib/logger'
-import { generatePoPdf, generateComparisonPdf, generateReceivingPdf } from '../../lib/pdf'
+import { generatePoPdf, generateComparisonPdf, generateReceivingPdf, generateReceivingListPdf } from '../../lib/pdf'
 import SearchDropdown from '../../components/ui/SearchDropdown'
 import InventoryForm from '../inventory/InventoryForm'
 
@@ -782,6 +782,14 @@ function Purchase({ profile, mode }) {
       )}
 
       {/* ═══ RECEIVING TAB (Admin) ═══ */}
+      {tab === 'receiving' && receivingItems.length > 0 && (
+        <div className="flex justify-end">
+          <button onClick={function () { generateReceivingListPdf(receivingItems) }}
+            className="px-3 py-1.5 text-xs font-semibold text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
+            🖨️ Export PDF
+          </button>
+        </div>
+      )}
       {tab === 'receiving' && (
         <ReceivingContent
           items={receivingItems} loading={receivingLoading}
@@ -829,7 +837,17 @@ function ReceivingContent({ items, loading, receivingItem, setReceivingItem, rec
 
   return (
     <div className="space-y-3">
-      {title && <h2 className="text-lg font-bold text-gray-900">{title}</h2>}
+      {title && (
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-bold text-gray-900">{title}</h2>
+          {items.length > 0 && (
+            <button onClick={function () { generateReceivingListPdf(items) }}
+              className="px-3 py-1.5 text-xs font-semibold text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
+              🖨️ PDF
+            </button>
+          )}
+        </div>
+      )}
       {loading && <p className="text-gray-400 text-sm text-center py-8">Loading...</p>}
       {!loading && items.length === 0 && (
         <div className="bg-white rounded-lg border border-gray-200 p-8 text-center">

@@ -301,3 +301,42 @@ export function generateReceivingPdf(po, items, creatorName) {
   y = addSignatures(doc, y + 4, ['Received By', 'Verified By'])
   doc.save('Receiving_PO_' + (po.po_number || po.id.slice(0, 8)) + '.pdf')
 }
+
+// ═══════════════════════════════════════
+// RECEIVING LIST PDF (all pending items)
+// ═══════════════════════════════════════
+export function generateReceivingListPdf(items) {
+  var doc = newDoc('landscape')
+  var y = addHeader(doc, 'Pending Receiving Report', items.length + ' items awaiting receipt')
+
+  y = addMeta(doc, y, [
+    ['Date', new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })],
+    ['Total Items', items.length],
+  ])
+
+  var headers = ['#', 'Item', 'Category', 'PO #', 'Vendor', 'Qty Ordered', 'Qty Bought', 'Unit', 'Purchased On']
+  var rows = items.map(function (it, idx) {
+    return [
+      idx + 1,
+      titleCase(it.item_name),
+      it.categories?.name || '—',
+      it.po_id ? it.po_id.slice(0, 8) : '—',
+      it.vendor_name || '—',
+      it.qty_ordered,
+      it.actual_qty || '—',
+      it.unit || '',
+      it.purchased_at ? formatDate(it.purchased_at) : '—',
+    ]
+  })
+
+  y = addTable(doc, y, headers, rows)
+
+  doc.setFontSize(9)
+  doc.setTextColor(DARK[0], DARK[1], DARK[2])
+  var totalQty = 0
+  items.forEach(function (it) { totalQty += (it.actual_qty || it.qty_ordered || 0) })
+  doc.text('Total Qty: ' + totalQty + '   |   Items: ' + items.length, 14, y)
+
+  y = addSignatures(doc, y + 4, ['Store Keeper', 'Verified By'])
+  doc.save('Receiving_Pending_' + new Date().toISOString().split('T')[0] + '.pdf')
+}
