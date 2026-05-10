@@ -341,6 +341,9 @@ function DJEditor({ config, onSave, saving }) {
     var s = DJ_SECTIONS[subTab]
     var d = clone(config[s.key] || { labels: ['Std DJ - No LED', 'DJ + LED'], q: [], t: [], f: [] })
     if (d.labels && d.labels.length > 0) {
+      TIERS.forEach(function (tier) {
+        if (!Array.isArray(d[tier])) d[tier] = []
+      })
       var clean = {}
       TIERS.forEach(function (tier) { clean[tier] = [] })
       d.labels.forEach(function (_, optIdx) {
