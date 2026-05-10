@@ -859,7 +859,7 @@ function Challans({ profile }) {
           </div>
 
           {/* Source / Destination */}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-semibold text-gray-500 mb-1">Source Venue *</label>
               <select value={formSourceVenue} onChange={function (e) { setFormSourceVenue(e.target.value) }}
@@ -958,7 +958,7 @@ function Challans({ profile }) {
           )}
 
           {/* Vehicle details */}
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
               <label className="block text-xs font-semibold text-gray-500 mb-1">Vehicle No</label>
               <input type="text" value={formVehicle}
@@ -1034,7 +1034,7 @@ function Challans({ profile }) {
 
         {/* Info card */}
         <div className="bg-white rounded-xl border border-gray-200 p-4">
-          <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm text-gray-600">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm text-gray-600">
             <div><strong className="text-gray-500">From:</strong> {venueName(activeChallan.source_venue_id)}</div>
             <div><strong className="text-gray-500">To:</strong> {activeChallan.destination_text || venueName(activeChallan.destination_venue_id)}</div>
             {activeChallan.vehicle_no && <div><strong className="text-gray-500">Vehicle:</strong> {activeChallan.vehicle_no}</div>}
@@ -1105,7 +1105,7 @@ function Challans({ profile }) {
             </div>
 
             {/* Vendor info */}
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="block text-[10px] text-gray-500 mb-0.5">Vendor Name</label>
                 <input type="text" value={repairDetail.vendor_name || ''}

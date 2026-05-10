@@ -5,6 +5,7 @@ import { logActivity } from '../../lib/logger'
 import SearchDropdown from '../../components/ui/SearchDropdown'
 import ExpenseFormMulti from './ExpenseForm'
 import { APPROVAL_STATUS_COLORS, APPROVAL_STATUS_LABELS } from '../../lib/constants'
+import BottomSheet from '../../components/ui/BottomSheet'
 
 var PAGE_SIZE = 20
 
@@ -811,17 +812,16 @@ if (allExpView && (isAdmin || isAuditor)) {
         )}
         {/* Issue Points Modal */}
         {issueModal && (
-          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={function () { setIssueModal(null) }}>
-            <div className="bg-white rounded-xl p-6 w-full max-w-sm space-y-4" onClick={function (e) { e.stopPropagation() }}>
-              <div className="flex items-center justify-between">
-                <h3 className="text-base font-bold text-gray-900">{issueType === 'debit' ? 'Deduct Points' : 'Issue Points'}</h3>
+          <BottomSheet open={true} onClose={function () { setIssueModal(null) }} title={issueType === 'debit' ? 'Deduct Points' : 'Issue Points'}>
+            <div className="space-y-4">
+              <div className="flex justify-end">
                 <div className="flex bg-gray-100 rounded-lg p-0.5">
                   <button onClick={function () { setIssueType('credit') }}
-                    className={"px-3 py-1 text-xs font-bold rounded-md transition-colors " + (issueType === 'credit' ? "bg-white text-green-700 shadow-sm" : "text-gray-500")}>
+                    className={"px-3 py-1.5 text-xs font-bold rounded-md transition-colors " + (issueType === 'credit' ? "bg-white text-green-700 shadow-sm" : "text-gray-500")}>
                     + Credit
                   </button>
                   <button onClick={function () { setIssueType('debit') }}
-                    className={"px-3 py-1 text-xs font-bold rounded-md transition-colors " + (issueType === 'debit' ? "bg-white text-red-700 shadow-sm" : "text-gray-500")}>
+                    className={"px-3 py-1.5 text-xs font-bold rounded-md transition-colors " + (issueType === 'debit' ? "bg-white text-red-700 shadow-sm" : "text-gray-500")}>
                     − Debit
                   </button>
                 </div>
@@ -832,26 +832,26 @@ if (allExpView && (isAdmin || isAuditor)) {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Amount (Points)</label>
                 <input type="number" min="1" step="any" inputMode="decimal" value={issueAmount}
                   onChange={function (e) { setIssueAmount(e.target.value) }}
-                  placeholder="0" className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  placeholder="0" className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   style={{ fontSize: '16px' }} />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
                 <input type="text" value={issueDesc} onChange={function (e) { setIssueDesc(e.target.value) }}
                   placeholder="e.g. Weekly allowance, Reimbursement..."
-                  maxLength="300" className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  maxLength="300" className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   style={{ fontSize: '16px' }} />
               </div>
-              <div className="flex gap-3">
+              <div className="flex gap-3 pt-2">
                 <button onClick={function () { setIssueModal(null) }}
-                  className="flex-1 py-2.5 text-sm text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors font-medium">Cancel</button>
+                  className="flex-1 py-3 text-sm text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors font-semibold">Cancel</button>
                 <button onClick={issuePoints} disabled={issueSaving || !issueAmount || Number(issueAmount) <= 0}
-                  className="flex-1 py-2.5 text-sm text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors font-medium">
+                  className="flex-1 py-3 text-sm text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition-colors font-semibold">
                   {issueSaving ? (issueType === 'debit' ? 'Deducting...' : 'Issuing...') : (issueType === 'debit' ? 'Deduct ' : 'Issue ') + (issueAmount && Number(issueAmount) > 0 ? Number(issueAmount).toLocaleString('en-IN') + ' pts' : '')}
                 </button>
               </div>
             </div>
-          </div>
+          </BottomSheet>
         )}
       </div>
     )
@@ -938,34 +938,33 @@ if (allExpView && (isAdmin || isAuditor)) {
         </div>
         {/* Issue modal (reuse same one) */}
         {issueModal && (
-          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={function () { setIssueModal(null) }}>
-            <div className="bg-white rounded-xl p-6 w-full max-w-sm space-y-4" onClick={function (e) { e.stopPropagation() }}>
-              <h3 className="text-base font-bold text-gray-900">Issue Points</h3>
+          <BottomSheet open={true} onClose={function () { setIssueModal(null) }} title="Issue Points">
+            <div className="space-y-4">
               <p className="text-sm text-gray-500">To: <span className="font-medium text-gray-800">{walletProfiles[issueModal.user_id]?.name || '—'}</span></p>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Amount (Points)</label>
                 <input type="number" min="1" step="any" inputMode="decimal" value={issueAmount}
                   onChange={function (e) { setIssueAmount(e.target.value) }}
-                  placeholder="0" className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  placeholder="0" className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   style={{ fontSize: '16px' }} />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
                 <input type="text" value={issueDesc} onChange={function (e) { setIssueDesc(e.target.value) }}
                   placeholder="e.g. Weekly allowance" maxLength="300"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   style={{ fontSize: '16px' }} />
               </div>
-              <div className="flex gap-3">
+              <div className="flex gap-3 pt-2">
                 <button onClick={function () { setIssueModal(null) }}
-                  className="flex-1 py-2.5 text-sm text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors font-medium">Cancel</button>
+                  className="flex-1 py-3 text-sm text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors font-semibold">Cancel</button>
                 <button onClick={issuePoints} disabled={issueSaving || !issueAmount || Number(issueAmount) <= 0}
-                  className="flex-1 py-2.5 text-sm text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors font-medium">
+                  className="flex-1 py-3 text-sm text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition-colors font-semibold">
                   {issueSaving ? 'Issuing...' : 'Issue ' + (issueAmount && Number(issueAmount) > 0 ? Number(issueAmount).toLocaleString('en-IN') + ' pts' : '')}
                 </button>
               </div>
             </div>
-          </div>
+          </BottomSheet>
         )}
       </div>
     )
@@ -1151,24 +1150,23 @@ if (allExpView && (isAdmin || isAuditor)) {
       )}
 
       {typesModal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={function () { setTypesModal(false); setTypeName(''); setTypeEditId(null) }}>
-          <div className="bg-white rounded-xl p-5 w-full max-w-sm space-y-4" onClick={function (e) { e.stopPropagation() }}>
-            <h3 className="text-base font-bold text-gray-900">Expense Types</h3>
+        <BottomSheet open={true} onClose={function () { setTypesModal(false); setTypeName(''); setTypeEditId(null) }} title="Expense Types">
+          <div className="space-y-4">
             <div className="space-y-2 max-h-60 overflow-y-auto">
               {expTypes.map(function (et) {
                 return (
-                  <div key={et.id} className="flex items-center justify-between p-2 rounded-lg bg-gray-50">
+                  <div key={et.id} className="flex items-center justify-between p-2.5 rounded-lg bg-gray-50">
                     <div className="flex items-center gap-2 flex-1 min-w-0">
                       <span className={"text-sm font-medium truncate " + (et.active ? "text-gray-800" : "text-gray-400 line-through")}>{et.name}</span>
                       {et.extra_fields && et.extra_fields.length > 0 && (
                         <span className="text-[10px] text-purple-500 bg-purple-50 px-1.5 py-0.5 rounded">{et.extra_fields.length} fields</span>
                       )}
                     </div>
-                    <div className="flex gap-1 flex-shrink-0">
+                    <div className="flex gap-1.5 flex-shrink-0">
                       <button onClick={function () { setTypeEditId(et.id); setTypeName(et.name) }}
-                        className="text-xs px-2 py-1 rounded bg-gray-200 text-gray-600 hover:bg-gray-300">✎</button>
+                        className="text-xs px-2.5 py-1.5 rounded-lg bg-gray-200 text-gray-600 hover:bg-gray-300">✎</button>
                       <button onClick={function () { toggleExpType(et.id, et.active) }}
-                        className={"text-xs px-2 py-1 rounded " + (et.active ? "bg-green-100 text-green-700 hover:bg-green-200" : "bg-red-100 text-red-600 hover:bg-red-200")}>
+                        className={"text-xs px-2.5 py-1.5 rounded-lg " + (et.active ? "bg-green-100 text-green-700 hover:bg-green-200" : "bg-red-100 text-red-600 hover:bg-red-200")}>
                         {et.active ? 'On' : 'Off'}
                       </button>
                     </div>
@@ -1180,10 +1178,11 @@ if (allExpView && (isAdmin || isAuditor)) {
             <div className="flex gap-2">
               <input type="text" value={typeName} onChange={function (e) { setTypeName(e.target.value) }}
                 placeholder={typeEditId ? 'Rename...' : 'New type name...'}
-                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-400"
+                className="flex-1 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-400"
+                style={{ fontSize: '16px' }}
                 onKeyDown={function (e) { if (e.key === 'Enter') saveExpType() }} />
               <button onClick={saveExpType} disabled={typeSaving || !typeName.trim()}
-                className="px-4 py-2 text-sm font-bold text-white bg-purple-600 rounded-lg hover:bg-purple-700 disabled:opacity-50 transition-colors">
+                className="px-4 py-2.5 text-sm font-bold text-white bg-purple-600 rounded-lg hover:bg-purple-700 disabled:opacity-50 transition-colors">
                 {typeEditId ? 'Save' : 'Add'}
               </button>
             </div>
@@ -1192,7 +1191,7 @@ if (allExpView && (isAdmin || isAuditor)) {
                 className="text-xs text-gray-500 hover:text-gray-700">Cancel edit</button>
             )}
           </div>
-        </div>
+        </BottomSheet>
       )}
     </div>
   )

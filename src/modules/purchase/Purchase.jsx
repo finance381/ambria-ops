@@ -5,6 +5,7 @@ import { logActivity } from '../../lib/logger'
 import { generatePoPdf, generateComparisonPdf, generateReceivingPdf, generateReceivingListPdf } from '../../lib/pdf'
 import SearchDropdown from '../../components/ui/SearchDropdown'
 import InventoryForm from '../inventory/InventoryForm'
+import BottomSheet from '../../components/ui/BottomSheet'
 
 var PO_STATUS_LABELS = {
   draft: 'Draft',
@@ -577,7 +578,7 @@ function Purchase({ profile, mode }) {
 
       {/* ═══ QUEUE TAB ═══ */}
       {tab === 'queue' && (
-        <div className="flex gap-5">
+        <div className="flex flex-col lg:flex-row gap-5">
           {/* Left: Queue table */}
           <div className="flex-1 min-w-0 space-y-3">
             {queueItems.length === 0 && (
@@ -599,7 +600,7 @@ function Purchase({ profile, mode }) {
                   </label>
                   <span className="text-[11px] text-gray-400 ml-auto">{queueItems.length} items in queue</span>
                 </div>
-                <div className="grid grid-cols-12 gap-2 px-4 py-2 bg-gray-50 border-b border-gray-100 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                <div className="hidden lg:grid grid-cols-12 gap-2 px-4 py-2 bg-gray-50 border-b border-gray-100 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
                   <div className="col-span-1"></div>
                   <div className="col-span-3">Item</div>
                   <div className="col-span-2">Category / Source</div>
@@ -609,13 +610,43 @@ function Purchase({ profile, mode }) {
                 </div>
                 {/* Rows */}
                 <div className="max-h-[60vh] overflow-y-auto">
+                  {/* Mobile cards */}
                   {queueItems.map(function (q, qi) {
                     var isSelected = selectedQueue.indexOf(q.id) !== -1
                     var req = q.requisitions || {}
                     return (
                       <div key={q.id}
                         onClick={function () { toggleQueueItem(q.id) }}
-                        className={"grid grid-cols-12 gap-2 px-4 py-3 items-center cursor-pointer transition-colors border-b border-gray-50 " +
+                        className={"px-4 py-3 cursor-pointer transition-colors border-b border-gray-50 lg:hidden " +
+                          (isSelected ? "bg-indigo-50/60" : "hover:bg-gray-50")}>
+                        <div className="flex items-center gap-3">
+                          <input type="checkbox" checked={isSelected} readOnly
+                            className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 pointer-events-none flex-shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <p className="text-sm font-semibold text-gray-800 truncate">{titleCase(q.item_name)}</p>
+                              <span className={"text-[10px] font-bold flex-shrink-0 " + (q._source === 'new' ? "text-amber-600" : "text-indigo-600")}>
+                                {q._source === 'new' ? 'New' : q._source === 'catering_store' ? 'CS' : 'INV'}
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-gray-400 mt-0.5">
+                              {q.categories?.name || '—'} · {q.qty} {q.unit || 'Pcs'}
+                              {q.estimated_cost_paise > 0 ? ' · ' + formatPaise(q.estimated_cost_paise) : ''}
+                            </p>
+                            <p className="text-[11px] text-gray-400 truncate">{req.purpose || '—'} · {req.profiles?.name || '—'}</p>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                  {/* Desktop grid */}
+                  {queueItems.map(function (q, qi) {
+                    var isSelected = selectedQueue.indexOf(q.id) !== -1
+                    var req = q.requisitions || {}
+                    return (
+                      <div key={q.id}
+                        onClick={function () { toggleQueueItem(q.id) }}
+                        className={"hidden lg:grid grid-cols-12 gap-2 px-4 py-3 items-center cursor-pointer transition-colors border-b border-gray-50 " +
                           (isSelected ? "bg-indigo-50/60" : "hover:bg-gray-50")}>
                         <div className="col-span-1">
                           <input type="checkbox" checked={isSelected} readOnly
@@ -656,8 +687,25 @@ function Purchase({ profile, mode }) {
             )}
           </div>
 
+          {/* Mobile cart bar */}
+          {selectedQueue.length > 0 && (
+            <div className="lg:hidden sticky bottom-0 bg-white border-t border-gray-200 rounded-xl p-3 shadow-lg flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-sm font-bold text-gray-900">{selectedQueue.length} item{selectedQueue.length !== 1 ? 's' : ''}</p>
+                <p className="text-[11px] text-gray-400 truncate">Est: {formatPaise(
+                  queueItems.filter(function (q) { return selectedQueue.indexOf(q.id) !== -1 })
+                    .reduce(function (sum, q) { return sum + (q.estimated_cost_paise || 0) }, 0)
+                )}</p>
+              </div>
+              <button onClick={createPo} disabled={saving}
+                className="px-5 py-2.5 text-sm font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors flex-shrink-0">
+                {saving ? '...' : 'Create PO →'}
+              </button>
+            </div>
+          )}
+
           {/* Right: Cart sidebar */}
-          <div className="w-72 flex-shrink-0">
+          <div className="hidden lg:block w-72 flex-shrink-0">
             <div className="sticky top-[120px] bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
               <div className="px-4 py-3 bg-gray-900 text-white">
                 <p className="text-xs font-bold uppercase tracking-wider">PO Cart</p>
@@ -732,7 +780,7 @@ function Purchase({ profile, mode }) {
           {poList.length > 0 && (
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
               {/* Header */}
-              <div className="grid grid-cols-12 gap-3 px-5 py-3 bg-gray-50 border-b border-gray-100 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+              <div className="hidden lg:grid grid-cols-12 gap-3 px-5 py-3 bg-gray-50 border-b border-gray-100 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
                 <div className="col-span-2">PO #</div>
                 <div className="col-span-2">Created</div>
                 <div className="col-span-2">Created By</div>
@@ -741,12 +789,37 @@ function Purchase({ profile, mode }) {
                 <div className="col-span-3 text-right">Notes</div>
               </div>
               {/* Rows */}
+              {/* Mobile cards */}
               {poList.map(function (po, pi) {
                 var assigneeName = po.assignee?.name || null
                 return (
                   <div key={po.id}
                     onClick={function () { openPoDetail(po) }}
-                    className={"grid grid-cols-12 gap-3 px-5 py-4 items-center cursor-pointer transition-colors " +
+                    className={"px-4 py-3 cursor-pointer transition-colors border-b border-gray-50 hover:bg-indigo-50/40 lg:hidden"}>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-bold text-indigo-600">#{po.id.slice(0, 8)}</p>
+                        <span className={"text-[10px] font-bold uppercase px-2 py-0.5 rounded-full " + (PO_STATUS_COLORS[po.status] || '')}>
+                          {PO_STATUS_LABELS[po.status] || po.status}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-gray-400">{formatDate(po.created_at)}</p>
+                    </div>
+                    <p className="text-[11px] text-gray-500 mt-1">
+                      {po.profiles?.name || '—'}
+                      {assigneeName ? ' · 🛒 ' + assigneeName : ' · Unassigned'}
+                    </p>
+                    {po.notes && <p className="text-[11px] text-gray-400 mt-0.5 truncate">{po.notes}</p>}
+                  </div>
+                )
+              })}
+              {/* Desktop grid */}
+              {poList.map(function (po, pi) {
+                var assigneeName = po.assignee?.name || null
+                return (
+                  <div key={po.id}
+                    onClick={function () { openPoDetail(po) }}
+                    className={"hidden lg:grid grid-cols-12 gap-3 px-5 py-4 items-center cursor-pointer transition-colors " +
                       (pi < poList.length - 1 ? "border-b border-gray-50 " : "") +
                       "hover:bg-indigo-50/40"}>
                     <div className="col-span-2">
@@ -1518,24 +1591,23 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, ve
 
       {/* Add vendor to master prompt */}
       {showAddVendor && (
-        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50" onClick={function () { setShowAddVendor(null) }}>
-          <div className="bg-white rounded-xl shadow-lg p-5 mx-4 max-w-sm w-full space-y-3" onClick={function (e) { e.stopPropagation() }}>
-            <p className="text-sm font-bold text-gray-900">Add to Vendor Master?</p>
-            <p className="text-xs text-gray-500">
+        <BottomSheet open={true} onClose={function () { setShowAddVendor(null) }} title="Add to Vendor Master?">
+          <div className="space-y-4">
+            <p className="text-sm text-gray-500">
               "<span className="font-semibold text-gray-700">{showAddVendor.name}</span>" is not in your vendor list. Save for future use?
             </p>
-            <div className="flex gap-2">
+            <div className="flex gap-3">
               <button onClick={function () { setShowAddVendor(null) }}
-                className="flex-1 py-2 text-xs text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors font-semibold">
+                className="flex-1 py-3 text-sm text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors font-semibold">
                 Skip
               </button>
               <button onClick={addVendorToMaster}
-                className="flex-1 py-2 text-xs text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors font-semibold">
+                className="flex-1 py-3 text-sm text-white bg-blue-600 rounded-xl hover:bg-blue-700 transition-colors font-semibold">
                 + Add Vendor
               </button>
             </div>
           </div>
-        </div>
+        </BottomSheet>
       )}
     </div>
   )
