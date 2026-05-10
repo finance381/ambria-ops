@@ -349,12 +349,10 @@ function QuoteCalculator({ profile }) {
     setTtdIdx(autoTtdIdx(val))
     var c = classifyDate(val, seasonDates)
     if (c >= 0) setCatOverride(c)
-    if (c === 0) setMenuIdx(3)
   }
 
   function handleFoodPref(fp) {
     setFoodPref(fp)
-    if (ct === 0) setMenuIdx(3)
   }
 
   function handleWedToggle(idx) {
@@ -618,7 +616,7 @@ function QuoteCalculator({ profile }) {
               <input type="date" value={eventDate} onChange={function (e) { handleDateChange(e.target.value) }}
                 style={{ width: '100%', padding: 11, borderRadius: 9, border: '2px solid ' + C.border, fontSize: 14, marginBottom: 10 }} />
               {dc >= 0 && (<div style={{ padding: '6px 10px', borderRadius: 7, fontSize: 11, fontWeight: 600, background: CAT_BG[dc], color: CAT_COLORS[dc], border: '1px solid ' + C.border }}>
-                {fmtDate(eventDate)} – {CAT_LABELS[dc]}{dc === 0 ? (venueIdx === 0 ? ' | Luxury only' : ' | Lux/MC') : dc === 1 ? ' | Lux/MC' : ' | All'}
+                {fmtDate(eventDate)} – {CAT_LABELS[dc]}
               </div>)}
               {isSummer && (<div style={{ padding: '6px 10px', borderRadius: 7, fontSize: 11, fontWeight: 600, marginTop: 4, background: '#FFFBEB', color: '#B45309', border: '1px solid #FDE68A' }}>
                 ☀️ Summer – Consider Banquet
@@ -810,23 +808,19 @@ function QuoteCalculator({ profile }) {
               <Toggle on={includeMenu} onToggle={function () { setIncludeMenu(!includeMenu) }} />
             </div>
           </div>
-          {ct === 0 && includeMenu && (<div style={{ padding: '7px 11px', borderRadius: 7, fontSize: 11, marginBottom: 7, background: '#FFF8F0', color: C.gold, border: '1px solid ' + C.border }}>
-            {"King's – Lux/MC only"}
-          </div>)}
           <div style={{ opacity: includeMenu ? 1 : 0.3, pointerEvents: includeMenu ? 'auto' : 'none' }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 12 }}>
             {allMenus.map(function (m) {
-              var midx = m.idx; var on = activeMenu === midx; var dis = !m.available
-              return (<button key={midx} onClick={function () { if (!dis) setMenuIdx(midx) }} style={{
+              var midx = m.idx; var on = activeMenu === midx
+              return (<button key={midx} onClick={function () { setMenuIdx(midx) }} style={{
                 textAlign: 'center', width: '100%', padding: '10px 8px', borderRadius: 9,
                 border: '2px solid ' + (on ? C.maroon2 : C.border), background: on ? C.cream : '#fff',
                 color: on ? C.maroon : C.muted, fontSize: 12, fontWeight: on ? 700 : 600,
-                cursor: dis ? 'not-allowed' : 'pointer', opacity: dis ? 0.4 : 1,
+                cursor: 'pointer',
               }}>
                 {m.label}<br />
                 <span style={{ fontSize: 10, opacity: 0.6 }}>Rs.{m.per_head}{m.flat_add ? ' +' + m.flat_add + 'L' : ''}</span>
-                {dis && m.reason && <br />}
-                {dis && m.reason && <span style={{ fontSize: 9, color: '#DC2626' }}>{m.reason}</span>}
+                {m.max_pax > 0 && pax > m.max_pax && <><br /><span style={{ fontSize: 9, color: '#B45309' }}>{'⚠ Max ' + m.max_pax + ' pax'}</span></>}
               </button>)
             })}
           </div>

@@ -325,22 +325,47 @@ function RentalsEditor({ config, onSave, saving }) {
 //  DJ EDITOR
 // ══════════════════════════════════════
 
-function DJEditor({ config, onSave, saving }) {
-  var raw = config.dj || { labels: ['Std DJ - No LED', 'DJ + LED'], pushpanjali: { q: [0,0], t: [0,0], f: [0,0] }, other: { q: [0,0], t: [0,0], f: [0,0] } }
-  var [draft, setDraft] = useState(clone(raw))
-  useEffect(function () { setDraft(clone(config.dj || raw)) }, [config.dj])
+var DJ_SECTIONS = [
+  { key: 'dj', label: 'Pushpanjali' },
+  { key: 'dj_eg', label: 'EG / Aura' },
+  { key: 'dj_valencia', label: 'Valencia' },
+]
 
-  var labels = draft.labels || []
-  var groups = [{ key: 'pushpanjali', label: 'Pushpanjali' }, { key: 'other', label: 'Other Venues' }]
+function DJEditor({ config, onSave, saving }) {
+  var cats = config.categories || DEFAULT_CATS
+  var [subTab, setSubTab] = useState(0)
+  var sec = DJ_SECTIONS[subTab]
+  var [draft, setDraft] = useState({ labels: [], q: [], t: [], f: [] })
+
+  useEffect(function () {
+    var s = DJ_SECTIONS[subTab]
+    var d = clone(config[s.key] || { labels: ['Std DJ - No LED', 'DJ + LED'], q: [], t: [], f: [] })
+    if (d.labels && d.labels.length > 0) {
+      var clean = {}
+      TIERS.forEach(function (tier) { clean[tier] = [] })
+      d.labels.forEach(function (_, optIdx) {
+        TIERS.forEach(function (tier) {
+          var existing = Array.isArray(d[tier][optIdx]) ? d[tier][optIdx] : []
+          while (existing.length < cats.length) existing.push(0)
+          clean[tier].push(existing)
+        })
+      })
+      TIERS.forEach(function (tier) { d[tier] = clean[tier] })
+    }
+    setDraft(d)
+  }, [subTab, config])
 
   function updateLabel(idx, val) { var d = clone(draft); d.labels[idx] = val; setDraft(d) }
-  function updateCell(grp, tier, idx, val) { var d = clone(draft); d[grp][tier][idx] = val; setDraft(d) }
+  function updateTiered(tier, optIdx, catIdx, val) { var d = clone(draft); d[tier][optIdx][catIdx] = val; setDraft(d) }
 
   function addOption() {
     var d = clone(draft)
+    if (!d.labels) d.labels = []
     d.labels.push('New Option')
-    groups.forEach(function (g) {
-      TIERS.forEach(function (tier) { d[g.key][tier].push(0) })
+    TIERS.forEach(function (tier) {
+      var row = []
+      for (var c = 0; c < cats.length; c++) row.push(0)
+      d[tier].push(row)
     })
     setDraft(d)
   }
@@ -348,48 +373,61 @@ function DJEditor({ config, onSave, saving }) {
   function rmOption(idx) {
     var d = clone(draft)
     d.labels.splice(idx, 1)
-    groups.forEach(function (g) {
-      TIERS.forEach(function (tier) { d[g.key][tier].splice(idx, 1) })
-    })
+    TIERS.forEach(function (tier) { d[tier].splice(idx, 1) })
     setDraft(d)
   }
 
   return (
-    <Card title="DJ Rates (₹L)">
-      <div style={{ marginBottom: 14 }}>
-        {labels.map(function (l, i) {
+    <>
+      <div style={{ display: 'flex', gap: 6, marginBottom: 14, flexWrap: 'wrap' }}>
+        {DJ_SECTIONS.map(function (s, idx) {
+          var on = subTab === idx
           return (
-            <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 }}>
-              <TextIn value={l} onChange={function (v) { updateLabel(i, v) }} style={{ flex: 1 }} />
-              {labels.length > 1 && <RemoveBtn onClick={function () { rmOption(i) }} />}
+            <button key={idx} onClick={function () { setSubTab(idx) }} style={{
+              padding: '7px 12px', borderRadius: 9, border: '2px solid ' + (on ? C.gold : C.border),
+              background: on ? '#FFF8F0' : '#fff', color: on ? C.gold : C.muted,
+              fontSize: 12, fontWeight: 700, cursor: 'pointer',
+            }}>{s.label}</button>
+          )
+        })}
+      </div>
+
+      <Card title={sec.label + ' DJ Rates (₹L)'}>
+        <div style={{ marginBottom: 12 }}>
+          {(draft.labels || []).map(function (l, i) {
+            return (
+              <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 }}>
+                <TextIn value={l} onChange={function (v) { updateLabel(i, v) }} style={{ flex: 1 }} />
+                {draft.labels.length > 1 && <RemoveBtn onClick={function () { rmOption(i) }} />}
+              </div>
+            )
+          })}
+          <AddRow label="Add DJ Option" onClick={addOption} />
+        </div>
+
+        {(draft.labels || []).map(function (optLabel, optIdx) {
+          return (
+            <div key={optIdx} style={{ marginBottom: 18 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: C.maroon2, marginBottom: 6 }}>{optLabel}</div>
+              <TierGrid>
+                {cats.map(function (cat, catIdx) {
+                  return (
+                    <React.Fragment key={catIdx}>
+                      <div style={{ fontSize: 10, fontWeight: 600, color: cat.color || C.muted }}>{cat.label}</div>
+                      {TIERS.map(function (tier) {
+                        return <Num key={tier} value={(draft[tier][optIdx] || [])[catIdx] || 0} onChange={function (v) { updateTiered(tier, optIdx, catIdx, v) }} />
+                      })}
+                    </React.Fragment>
+                  )
+                })}
+              </TierGrid>
             </div>
           )
         })}
-        <AddRow label="Add DJ Option" onClick={addOption} />
-      </div>
 
-      {groups.map(function (grp) {
-        var gd = draft[grp.key] || {}
-        return (
-          <div key={grp.key} style={{ marginBottom: 16 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: C.maroon2, marginBottom: 6 }}>{grp.label}</div>
-            <TierGrid>
-              {labels.map(function (optLabel, optIdx) {
-                return (
-                  <React.Fragment key={optIdx}>
-                    <div style={{ fontSize: 10, fontWeight: 600, color: C.muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{optLabel}</div>
-                    {TIERS.map(function (tier) {
-                      return <Num key={tier} value={(gd[tier] || [])[optIdx] || 0} onChange={function (v) { updateCell(grp.key, tier, optIdx, v) }} />
-                    })}
-                  </React.Fragment>
-                )
-              })}
-            </TierGrid>
-          </div>
-        )
-      })}
-      <Btn label="Save DJ Rates" variant="primary" onClick={function () { onSave('dj', draft) }} disabled={saving} style={{ width: '100%', marginTop: 8 }} />
-    </Card>
+        <Btn label={'Save ' + sec.label + ' DJ'} variant="primary" onClick={function () { onSave(sec.key, draft) }} disabled={saving} style={{ width: '100%', marginTop: 8 }} />
+      </Card>
+    </>
   )
 }
 
