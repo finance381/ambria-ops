@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { formatDate } from '../../lib/format'
 import { logActivity } from '../../lib/logger'
+import { generateChallanPdf } from '../../lib/pdf'
 import EventDatePicker from '../../components/ui/EventDatePicker'
 
 var TYPE_LABELS = {
@@ -1071,6 +1072,14 @@ function Challans({ profile }) {
               Cancel
             </button>
           )}
+          <button onClick={function () {
+              var venueMap = {}
+              venues.forEach(function (v) { venueMap[v.id] = v.name })
+              generateChallanPdf(activeChallan, challanItems, venueMap)
+            }}
+            className="px-4 py-2 border border-gray-300 text-sm font-medium rounded-lg text-gray-600 hover:bg-gray-50 transition-colors">
+            🖨️ PDF
+          </button>
           {isReceived && (
             <button onClick={closeChallan} disabled={saving}
               className="px-4 py-2 bg-gray-700 text-white text-sm font-semibold rounded-lg hover:bg-gray-800 disabled:opacity-50 transition-colors">

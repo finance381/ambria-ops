@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { titleCase, formatDate, formatPaise } from '../../lib/format'
 import { logActivity } from '../../lib/logger'
+import { generatePoPdf, generateComparisonPdf, generateReceivingPdf } from '../../lib/pdf'
 import SearchDropdown from '../../components/ui/SearchDropdown'
 import InventoryForm from '../inventory/InventoryForm'
 
