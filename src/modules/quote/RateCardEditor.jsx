@@ -907,34 +907,43 @@ function SeasonCalendar({ config, onSave, saving }) {
   var [viewYear, setViewYear] = useState(new Date().getFullYear())
   var [pointer, setPointer] = useState(false)
   var lastPainted = useRef(null)
+  var draftRef = useRef(draft)
+  var rafRef = useRef(null)
 
-  useEffect(function () { setDraft(clone(config.season_dates || {})) }, [config.season_dates])
+  useEffect(function () { draftRef.current = draft }, [draft])
+  useEffect(function () { var d = clone(config.season_dates || {}); setDraft(d); draftRef.current = d }, [config.season_dates])
+
+  function flushDraft() {
+    if (rafRef.current) cancelAnimationFrame(rafRef.current)
+    rafRef.current = requestAnimationFrame(function () {
+      rafRef.current = null
+      setDraft(Object.assign({}, draftRef.current))
+    })
+  }
 
   function toggleDate(mm, dd) {
     var key = pad2(mm + 1) + '-' + pad2(dd)
-    var d = clone(draft)
-    if (d[key] === brush) { delete d[key] } else { d[key] = brush }
-    setDraft(d)
+    if (draftRef.current[key] === brush) { delete draftRef.current[key] } else { draftRef.current[key] = brush }
+    flushDraft()
   }
 
   function fillRange(fromMonth, fromDay, toMonth, toDay) {
-    var d = clone(draft)
     var start = new Date(viewYear, fromMonth, fromDay)
     var end = new Date(viewYear, toMonth, toDay)
     if (end < start) { var tmp = start; start = end; end = tmp }
     var cur = new Date(start)
     while (cur <= end) {
       var mm = cur.getMonth(), dd = cur.getDate()
-      var key = pad2(mm + 1) + '-' + pad2(dd)
-      d[key] = brush
+      draftRef.current[pad2(mm + 1) + '-' + pad2(dd)] = brush
       cur.setDate(cur.getDate() + 1)
     }
-    setDraft(d)
+    flushDraft()
   }
 
   function getCat(mm, dd) {
     var key = pad2(mm + 1) + '-' + pad2(dd)
-    return draft[key] != null ? draft[key] : -1
+    var val = draftRef.current[key]
+    return val != null ? val : -1
   }
 
   function renderDay(monthIdx, day) {
@@ -1002,7 +1011,7 @@ function SeasonCalendar({ config, onSave, saving }) {
       </div>
 
       {/* Month grids — responsive */}
-      <div onPointerUp={function () { setPointer(false) }} onPointerLeave={function () { setPointer(false) }}
+      <div onPointerUp={function () { setPointer(false); setDraft(Object.assign({}, draftRef.current)) }} onPointerLeave={function () { setPointer(false); setDraft(Object.assign({}, draftRef.current)) }}
         style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 12 }}>
         {MONTH_NAMES.map(function (mName, mIdx) {
           return (
@@ -1019,7 +1028,7 @@ function SeasonCalendar({ config, onSave, saving }) {
         })}
       </div>
 
-      <Btn label="Save Season Dates" variant="primary" onClick={function () { onSave('season_dates', draft) }} disabled={saving} style={{ width: '100%', marginTop: 14 }} />
+      <Btn label="Save Season Dates" variant="primary" onClick={function () { onSave('season_dates', draftRef.current) }} disabled={saving} style={{ width: '100%', marginTop: 14 }} />
     </Card>
   )
 }

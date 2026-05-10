@@ -414,6 +414,9 @@ function QuoteCalculator({ profile }) {
       total_q_paise: toPaise(total.q || 0), total_t_paise: toPaise(total.t || 0), total_f_paise: toPaise(total.f || 0),
       proposal_text: proposalText,
       notes: notes.trim() || null,
+      include_menu: includeMenu,
+      include_decor: includeDecor,
+      include_dj: includeDj,
       deal_value_paise: hasDeal ? toPaise(dealTotal) : null,
       deal_vm_paise: dealVm ? toPaise(+dealVm) : null,
       deal_decor_paise: dealDecor ? toPaise(+dealDecor) : null,
@@ -459,7 +462,7 @@ function QuoteCalculator({ profile }) {
     if (q.tax_mode != null) { setTaxMode(q.tax_mode); setSplit5(q.split_5_pct || 50) }
     setSavedId(q.id); setQuoteStatus(q.status || 'draft'); setNotes(q.notes || '')
     setShowQuotes(false); setShowProposal(false); setPage(0)
-    setIncludeMenu(true); setIncludeDecor(true); setIncludeDj(true)
+    setIncludeMenu(q.include_menu != null ? q.include_menu : true); setIncludeDecor(q.include_decor != null ? q.include_decor : true); setIncludeDj(q.include_dj != null ? q.include_dj : true)
   }
 
   function newQuote() {
