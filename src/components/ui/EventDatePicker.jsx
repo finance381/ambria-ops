@@ -3,15 +3,19 @@ import { supabase } from '../../lib/supabase'
 
 var DAY_NAMES = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
 
-function EventDatePicker({ value, onChange, label }) {
+function EventDatePicker({ value, onChange, label, collapsible }) {
   var today = new Date()
   var initDate = value ? new Date(value + 'T00:00:00') : today
   var [viewYear, setViewYear] = useState(initDate.getFullYear())
   var [viewMonth, setViewMonth] = useState(initDate.getMonth())
+  var [open, setOpen] = useState(!collapsible)
   var [eventDates, setEventDates] = useState({})
   var [loading, setLoading] = useState(false)
 
   useEffect(function () { fetchEventDates() }, [viewYear, viewMonth])
+  useEffect(function () {
+    if (value) { var d = new Date(value + 'T00:00:00'); if (!isNaN(d)) { setViewYear(d.getFullYear()); setViewMonth(d.getMonth()) } }
+  }, [value])
 
   async function fetchEventDates() {
     setLoading(true)
@@ -53,8 +57,9 @@ function EventDatePicker({ value, onChange, label }) {
   }
 
   function selectDate(dateStr) {
-    if (value === dateStr) { onChange(''); return }
+    if (value === dateStr) { onChange(''); if (collapsible) setOpen(false); return }
     onChange(dateStr)
+    if (collapsible) setOpen(false)
   }
 
   // Build calendar grid
@@ -82,11 +87,19 @@ function EventDatePicker({ value, onChange, label }) {
 
   var todayStr = formatISO(today)
   var monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+  var shortMonths = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
   return (
     <div>
       {label && <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>}
-      <div className="bg-white border border-gray-200 rounded-lg p-3">
+      {collapsible && (
+        <button type="button" onClick={function () { setOpen(!open) }}
+          className={"w-full flex items-center justify-between px-3 py-2 border rounded-lg text-sm " + (value ? "border-indigo-300 bg-indigo-50 text-gray-900 font-medium" : "border-gray-200 text-gray-400")}>
+          <span>{value ? new Date(value + 'T00:00:00').getDate() + ' ' + shortMonths[new Date(value + 'T00:00:00').getMonth()] + ' ' + new Date(value + 'T00:00:00').getFullYear() : 'Select date'}</span>
+          <span className="text-[10px] text-gray-400">{open ? '▲' : '▼'}</span>
+        </button>
+      )}
+      {open && <div className={"bg-white border border-gray-200 rounded-lg p-3" + (collapsible ? " mt-2" : "")}>
         {/* Month nav */}
         <div className="flex items-center justify-between mb-3">
           <button type="button" onClick={prevMonth} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-500 transition-colors">‹</button>
@@ -156,7 +169,7 @@ function EventDatePicker({ value, onChange, label }) {
               className="text-[11px] text-red-500 font-medium hover:text-red-700 transition-colors">Clear</button>
           )}
         </div>
-      </div>
+      </div>}
     </div>
   )
 }
