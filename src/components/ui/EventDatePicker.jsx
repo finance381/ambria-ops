@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 
 var DAY_NAMES = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
@@ -9,6 +9,13 @@ function EventDatePicker({ value, onChange, label, collapsible }) {
   var [viewYear, setViewYear] = useState(initDate.getFullYear())
   var [viewMonth, setViewMonth] = useState(initDate.getMonth())
   var [open, setOpen] = useState(!collapsible)
+  var wrapRef = useRef(null)
+  useEffect(function () {
+    if (!collapsible || !open) return
+    function handleClick(e) { if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false) }
+    document.addEventListener('pointerdown', handleClick)
+    return function () { document.removeEventListener('pointerdown', handleClick) }
+  }, [collapsible, open])
   var [eventDates, setEventDates] = useState({})
   var [loading, setLoading] = useState(false)
 
@@ -90,7 +97,7 @@ function EventDatePicker({ value, onChange, label, collapsible }) {
   var shortMonths = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
   return (
-    <div>
+    <div ref={wrapRef} className={collapsible ? "relative" : ""}>
       {label && <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>}
       {collapsible && (
         <button type="button" onClick={function () { setOpen(!open) }}
@@ -99,7 +106,7 @@ function EventDatePicker({ value, onChange, label, collapsible }) {
           <span className="text-[10px] text-gray-400">{open ? '▲' : '▼'}</span>
         </button>
       )}
-      {open && <div className={"bg-white border border-gray-200 rounded-lg p-3" + (collapsible ? " mt-2" : "")}>
+      {open && <div className={"bg-white border border-gray-200 rounded-lg p-3" + (collapsible ? " mt-2 absolute left-0 right-0 z-50 shadow-lg min-w-[280px]" : "")}>
         {/* Month nav */}
         <div className="flex items-center justify-between mb-3">
           <button type="button" onClick={prevMonth} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-500 transition-colors">‹</button>
