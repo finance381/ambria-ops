@@ -617,7 +617,7 @@ function QuoteCalculator({ profile }) {
             </div>
             <div>
               <div style={{ fontSize: 12, color: C.muted, marginBottom: 5, fontWeight: 600 }}>Event Date</div>
-              <EventDatePicker value={eventDate} onChange={handleDateChange} label="" />
+              <EventDatePicker value={eventDate} onChange={handleDateChange} label="" collapsible />
               {dc >= 0 && (<div style={{ padding: '6px 10px', borderRadius: 7, fontSize: 11, fontWeight: 600, background: CAT_BG[dc], color: CAT_COLORS[dc], border: '1px solid ' + C.border }}>
                 {fmtDate(eventDate)} – {CAT_LABELS[dc]}
               </div>)}
