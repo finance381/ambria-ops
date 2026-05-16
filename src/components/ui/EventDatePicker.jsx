@@ -106,7 +106,7 @@ function EventDatePicker({ value, onChange, label, collapsible }) {
           <span className="text-[10px] text-gray-400">{open ? '▲' : '▼'}</span>
         </button>
       )}
-      {open && <div className={"bg-white border border-gray-200 rounded-lg p-3" + (collapsible ? " mt-2 absolute left-0 right-0 z-50 shadow-lg min-w-[280px]" : "")}>
+      {open && <div className={"bg-white border border-gray-200 rounded-lg p-3" + (collapsible ? " mt-2 absolute right-0 z-50 shadow-lg min-w-[300px]" : "")}>
         {/* Month nav */}
         <div className="flex items-center justify-between mb-3">
           <button type="button" onClick={prevMonth} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-500 transition-colors">‹</button>
