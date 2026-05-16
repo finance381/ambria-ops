@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
+import EventDatePicker from '../../components/ui/EventDatePicker'
 
 /* ═══════════════════════════════════════════════════════
    AMBRIA QUOTE CALCULATOR — Server-Side Pricing
@@ -616,8 +617,7 @@ function QuoteCalculator({ profile }) {
             </div>
             <div>
               <div style={{ fontSize: 12, color: C.muted, marginBottom: 5, fontWeight: 600 }}>Event Date</div>
-              <input type="date" value={eventDate} onChange={function (e) { handleDateChange(e.target.value) }}
-                style={{ width: '100%', padding: 11, borderRadius: 9, border: '2px solid ' + C.border, fontSize: 14, marginBottom: 10 }} />
+              <EventDatePicker value={eventDate} onChange={handleDateChange} label="" />
               {dc >= 0 && (<div style={{ padding: '6px 10px', borderRadius: 7, fontSize: 11, fontWeight: 600, background: CAT_BG[dc], color: CAT_COLORS[dc], border: '1px solid ' + C.border }}>
                 {fmtDate(eventDate)} – {CAT_LABELS[dc]}
               </div>)}
@@ -698,8 +698,13 @@ function QuoteCalculator({ profile }) {
             })}
           </div>
 
-          <div style={{ fontSize: 12, color: C.muted, marginBottom: 5, fontWeight: 600 }}>Pax: {pax}</div>
-          <input type="range" min={100} max={1000} step={50} value={pax}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
+            <div style={{ fontSize: 12, color: C.muted, fontWeight: 600 }}>Pax:</div>
+            <input type="number" inputMode="numeric" min={50} max={2000} value={pax}
+              onChange={function (e) { var v = +e.target.value; if (v >= 0 && v <= 2000) setPax(v) }}
+              style={{ width: 64, padding: '4px 6px', borderRadius: 7, border: '1px solid ' + C.border, fontSize: 14, fontWeight: 700, textAlign: 'center', color: C.maroon, background: C.bg, fontFamily: 'inherit' }} />
+          </div>
+          <input type="range" min={50} max={2000} step={5} value={pax}
             onInput={function (e) { setPax(+e.target.value) }} style={{ width: '100%', accentColor: C.maroon2 }} />
         </SectionCard>
 
