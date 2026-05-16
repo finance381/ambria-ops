@@ -62,6 +62,94 @@ serve(async (req) => {
       .slice(0, 15)
       .map(([date, count]) => date + ": " + count + " quotes")
 
+    // ── LMS Lead Intelligence (venue leads, last 60 days) ──
+    let leadSummary = "Unavailable"
+    try {
+      const lmsBase = Deno.env.get("LMS_API_BASE") || "https://gyv.inqcrm.in"
+      const lmsUser = Deno.env.get("LMS_API_USER") || "1"
+      const ld30 = new Date(Date.now() - 60 * 86400000).toISOString().split("T")[0]
+      const ldRes = await fetch(lmsBase + "/api/v1/processerp_api/get_venue_information_list", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          loggeduserid: lmsUser,
+          fromdate: ld30,
+          uptodated: today,
+          search_date_type: "entry",
+          page_limit: "500",
+        }),
+      })
+      if (ldRes.ok) {
+        const ldData = await ldRes.json()
+        const leads = ldData.leadinfo || []
+        console.log("LMS leads fetched: " + leads.length)
+
+        if (leads.length > 0) {
+          // Aggregate — zero PII leaves this function
+          const byStatus: Record<string, number> = {}
+          const byMode: Record<string, number> = {}
+          const byPriority: Record<string, number> = {}
+          const byVenue: Record<string, number> = {}
+          const dealValues: number[] = []
+          const paxValues: number[] = []
+          const sessionCount: Record<string, number> = {}
+          let visited = 0, totalWithDate = 0
+          const lmsDemand: Record<string, number> = {}
+
+          for (const l of leads) {
+            const st = (l.fis_status || "unknown").toLowerCase()
+            byStatus[st] = (byStatus[st] || 0) + 1
+            const mode = l.fis_enq_mode || "unknown"
+            byMode[mode] = (byMode[mode] || 0) + 1
+            const pri = l.fis_priority || "unknown"
+            byPriority[pri] = (byPriority[pri] || 0) + 1
+            const ven = l.venuename || "unknown"
+            byVenue[ven] = (byVenue[ven] || 0) + 1
+            if (l.fis_total_amt > 0) dealValues.push(l.fis_total_amt)
+            if (l.fisd_pax_no > 0) paxValues.push(l.fisd_pax_no)
+            const sess = l.fisd_session || ""
+            if (sess) sessionCount[sess] = (sessionCount[sess] || 0) + 1
+            if (l.fis_visit_status === "Y") visited++
+            if (l.fisd_function_date) {
+              totalWithDate++
+              const fd = l.fisd_function_date.substring(0, 10)
+              if (fd >= today) lmsDemand[fd] = (lmsDemand[fd] || 0) + 1
+            }
+          }
+
+          const avg = (arr: number[]) => arr.length ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) : 0
+          const med = (arr: number[]) => {
+            if (!arr.length) return 0
+            const s = arr.slice().sort((a, b) => a - b)
+            const m = Math.floor(s.length / 2)
+            return s.length % 2 ? s[m] : Math.round((s[m - 1] + s[m]) / 2)
+          }
+
+          const lmsHotDates = Object.entries(lmsDemand)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 10)
+            .map(([d, c]) => d + ":" + c)
+            .join(", ")
+
+          leadSummary = `Total: ${leads.length} leads (last 60d)
+Status: ${JSON.stringify(byStatus)}
+Inquiry mode: ${JSON.stringify(byMode)}
+Priority: ${JSON.stringify(byPriority)}
+By venue: ${JSON.stringify(byVenue)}
+Deal values (where >0): avg ₹${avg(dealValues)}, median ₹${med(dealValues)}, count ${dealValues.length}
+Pax (where >0): avg ${avg(paxValues)}, median ${med(paxValues)}, range ${Math.min(...paxValues) || 0}-${Math.max(...paxValues) || 0}
+Sessions: ${JSON.stringify(sessionCount)}
+Visit rate: ${visited}/${leads.length} (${leads.length ? Math.round(visited / leads.length * 100) : 0}%)
+Leads with function date: ${totalWithDate}
+LMS hot dates (future): ${lmsHotDates || "none"}`
+        }
+      } else {
+        console.log("LMS API returned " + ldRes.status)
+      }
+    } catch (lmsErr) {
+      console.log("LMS lead fetch skipped: " + (lmsErr as Error).message)
+    }
+
     const prompt = `You maintain a business knowledge base for Ambria, a wedding/banquet venue company.
 
 PREVIOUS DYNAMIC PATTERNS:
@@ -70,9 +158,12 @@ ${currentDynamic || "(none yet)"}
 NEW QUOTE DATA (last 30 days, ${(quotes || []).length} quotes, PII already stripped):
 ${JSON.stringify(quotes || [], null, 1)}
 
-DEMAND SNAPSHOT (next 60 days):
+DEMAND SNAPSHOT (next 60 days, from QuoteCalc):
 Hot dates: ${hotDates.join(", ") || "none"}
 Per-venue demand: ${JSON.stringify(venueDemand)}
+
+LMS LEAD PIPELINE (from CRM, PII stripped, pre-aggregated):
+${leadSummary}
 
 TASK:
 Generate a fresh dynamic patterns file from the quote data. Rules:
@@ -82,6 +173,7 @@ Generate a fresh dynamic patterns file from the quote data. Rules:
    - DEMAND FORECAST: hot dates, per-venue demand for next 60 days
    - RECENT QUOTE PATTERNS: avg quote values by venue, popular menus, common pax ranges, conversion rates (status=accepted vs total)
    - PRICING INTELLIGENCE: deal values closing at vs quoted, TTD discount usage
+   - LMS PIPELINE: lead volume trends, inquiry source conversion, priority distribution, visit-to-deal conversion, pax/session patterns. Compare LMS deal values to QuoteCalc quoted values where overlap exists.
    - REP INSIGHTS: recurring themes from sales rep notes (special requests, negotiation patterns, objections raised)
 4. Do NOT repeat any information from the base knowledge file — this file supplements it.
 5. Strip any PII. No guest names, phones, emails.

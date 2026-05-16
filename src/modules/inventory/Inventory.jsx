@@ -27,12 +27,14 @@ function Inventory({ profile }) {
     var query = supabase
       .from('inventory_items')
       .select('*, categories(name), sub_categories(name), venue_allocations(qty, venues(code, name))')
+      .in('status', ['approved', 'pending', 'pending_dept'])
       .order('created_at', { ascending: false })
       .limit(500)
 
     var csQuery = supabase
       .from('catering_store_items')
       .select('*, categories(name), sub_categories(name), cs_venue_allocations(qty, venues(code, name))')
+      .in('status', ['approved', 'pending', 'pending_dept'])
       .order('created_at', { ascending: false })
       .limit(500)
 
