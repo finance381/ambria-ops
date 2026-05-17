@@ -3,6 +3,24 @@ import { supabase } from '../../lib/supabase'
 
 var DAY_NAMES = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
 
+var VENUE_COLORS = {
+  'Ambria Pushpanjali': '#6B21A8',
+  'Ambria Manaktala':   '#16A34A',
+  'Ambria Exotica':     '#EA580C',
+  'Ambria Restro':      '#DC2626',
+  'Villa':              '#374151',
+  'Ambria Design & Decor': '#CA8A04',
+  'Ambria Cuisine':     '#0D9488',
+  'Ambria Events':      '#DB2777',
+  'Tender':             '#115E59',
+  'Wedding Services':   '#3B82F6',
+  'Outdoor Decor':      '#CA8A04',
+  'Outdoor Catering':   '#0D9488',
+  'Outdoor Venue':      '#374151',
+  'Outdoor Entertainment': '#DB2777',
+}
+var DEFAULT_DOT_COLOR = '#6366F1'
+
 function EventDatePicker({ value, onChange, label, collapsible }) {
   var today = new Date()
   var initDate = value ? new Date(value + 'T00:00:00') : today
@@ -32,7 +50,7 @@ function EventDatePicker({ value, onChange, label, collapsible }) {
     var endStr = formatISO(endDate)
 
     var { data } = await supabase.from('events_safe')
-      .select('function_date')
+      .select('function_date, venue_name')
       .not('function_date', 'is', null)
       .gte('function_date', startStr)
       .lte('function_date', endStr)
@@ -40,7 +58,10 @@ function EventDatePicker({ value, onChange, label, collapsible }) {
     var map = {}
     ;(data || []).forEach(function (row) {
       var d = row.function_date?.slice(0, 10)
-      if (d) map[d] = (map[d] || 0) + 1
+      if (!d) return
+      if (!map[d]) map[d] = []
+      var v = row.venue_name || 'Other'
+      if (map[d].indexOf(v) === -1) map[d].push(v)
     })
     setEventDates(map)
     setLoading(false)
@@ -130,8 +151,8 @@ function EventDatePicker({ value, onChange, label, collapsible }) {
 
             var isSelected = value === cell.dateStr
             var isToday = cell.dateStr === todayStr
-            var eventCount = eventDates[cell.dateStr] || 0
-            var hasEvent = eventCount > 0
+            var venues = eventDates[cell.dateStr] || []
+            var hasEvent = venues.length > 0
 
             var baseClass = "relative mx-auto w-9 h-9 flex flex-col items-center justify-center rounded-full text-xs font-medium cursor-pointer transition-colors "
 
@@ -156,7 +177,11 @@ function EventDatePicker({ value, onChange, label, collapsible }) {
                   className={baseClass + colorClass}>
                   {cell.day}
                   {hasEvent && (
-                    <span className={"absolute bottom-0.5 w-1.5 h-1.5 rounded-full " + (isSelected ? "bg-white" : "bg-indigo-500")} />
+                    <span className="absolute bottom-0 flex gap-px justify-center">
+                      {venues.slice(0, 3).map(function (v, vi) {
+                        return <span key={vi} className="w-1.5 h-1.5 rounded-full" style={{ background: isSelected ? '#fff' : (VENUE_COLORS[v] || DEFAULT_DOT_COLOR) }} />
+                      })}
+                    </span>
                   )}
                 </button>
               </div>
@@ -166,10 +191,12 @@ function EventDatePicker({ value, onChange, label, collapsible }) {
 
         {/* Legend + clear */}
         <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-100">
-          <div className="flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
-            <span className="text-[10px] text-gray-400">Has events</span>
-            {loading && <span className="text-[10px] text-gray-300 ml-2">Loading...</span>}
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="w-1.5 h-1.5 rounded-full" style={{ background: '#6B21A8' }} /><span className="text-[10px] text-gray-400">AP</span>
+            <span className="w-1.5 h-1.5 rounded-full" style={{ background: '#16A34A' }} /><span className="text-[10px] text-gray-400">AM</span>
+            <span className="w-1.5 h-1.5 rounded-full" style={{ background: '#EA580C' }} /><span className="text-[10px] text-gray-400">AE</span>
+            <span className="w-1.5 h-1.5 rounded-full" style={{ background: '#DC2626' }} /><span className="text-[10px] text-gray-400">AR</span>
+            {loading && <span className="text-[10px] text-gray-300 ml-1">...</span>}
           </div>
           {value && (
             <button type="button" onClick={function () { onChange('') }}
