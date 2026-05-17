@@ -49,10 +49,12 @@ function EventDatePicker({ value, onChange, label, collapsible }) {
     var startStr = formatISO(startDate)
     var endStr = formatISO(endDate)
 
+    var todayISO = formatISO(today)
+    var fromStr = startStr > todayISO ? startStr : todayISO
     var { data } = await supabase.from('events_safe')
       .select('function_date, venue_name')
       .not('function_date', 'is', null)
-      .gte('function_date', startStr)
+      .gte('function_date', fromStr)
       .lte('function_date', endStr)
 
     var map = {}
