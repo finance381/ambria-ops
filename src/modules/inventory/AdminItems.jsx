@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { supabase, getImageUrl } from '../../lib/supabase'
+import { supabase, getImageUrl, fetchAll } from '../../lib/supabase'
 import { formatDate, titleCase } from '../../lib/format'
 import { logActivity } from '../../lib/logger'
 import Modal from '../../components/ui/Modal'
@@ -42,15 +42,13 @@ function AdminItems({ profile }) {
 
   async function loadData() {
     try {
-      var [itemsRes, csRes, deptRes, venueRes, profilesRes, catRes, subCatRes, subDeptRes, subVenueRes] = await Promise.all([
-        supabase.from('inventory_items')
+      var [invAll, csAll, deptRes, venueRes, profilesRes, catRes, subCatRes, subDeptRes, subVenueRes] = await Promise.all([
+        fetchAll(supabase.from('inventory_items')
           .select('id, name, name_hindi, inventory_id, qty, blocked, unit, type, status, department, category_id, sub_category_id, rate_paise, min_order_qty, reorder_qty, is_asset, image_path, submitted_by, entry_date, description, categories(name), sub_categories(name), venue_allocations(qty, venues(code, name), sub_venue_id)')
-          .order('created_at', { ascending: false })
-          .limit(1000),
-        supabase.from('catering_store_items')
+          .order('created_at', { ascending: false })),
+        fetchAll(supabase.from('catering_store_items')
           .select('id, name, name_hindi, inventory_id, qty, unit, type, status, department, category_id, sub_category_id, rate_paise, is_asset, image_path, submitted_by, entry_date, description, brand, pack_size_qty, pack_size_unit, season_reorder_qty, off_season_reorder_qty, categories(name), sub_categories(name), cs_venue_allocations(qty, venues(code, name), sub_venue_id)')
-          .order('created_at', { ascending: false })
-          .limit(1000),
+          .order('created_at', { ascending: false })),
         supabase.from('departments').select('id, name, category_ids').eq('active', true).order('name'),
         supabase.from('venues').select('id, code, name').eq('active', true).order('code'),
         supabase.from('profiles').select('id, name, email'),
@@ -61,10 +59,10 @@ function AdminItems({ profile }) {
       ])
       var profileMap = {}
       ;(profilesRes.data || []).forEach(function (p) { profileMap[p.id] = p })
-      var invItems = (itemsRes.data || []).map(function (item) {
+      var invItems = (invAll || []).map(function (item) {
         return Object.assign({}, item, { _source: 'inventory', profiles: profileMap[item.submitted_by] || null })
       })
-      var csItems = (csRes.data || []).map(function (item) {
+      var csItems = (csAll || []).map(function (item) {
         return Object.assign({}, item, {
           _source: 'catering_store',
           blocked: 0,
