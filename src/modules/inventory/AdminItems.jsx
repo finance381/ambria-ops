@@ -178,7 +178,8 @@ function AdminItems({ profile }) {
         rows.push(row)
       }
       if (rows.length === 0) { alert('No valid data rows found'); return }
-      setImportModal({ rows: rows, header: header, fileName: file.name })
+      var hasIdCol = header.indexOf('id') !== -1
+      setImportModal({ rows: rows, header: header, fileName: file.name, hasId: hasIdCol })
       setImportMode('add')
       setImportProgress(null)
     }
@@ -192,6 +193,7 @@ function AdminItems({ profile }) {
 
   async function runImport() {
     if (!importModal || importing) return
+    if (importMode === 'update' && !importModal.hasId) { alert('Update mode requires an "id" column in your CSV. Use Export to get a CSV with IDs.'); return }
     setImporting(true)
     var rows = importModal.rows
     var done = 0; var skipped = 0
@@ -237,11 +239,19 @@ function AdminItems({ profile }) {
     var tableName = isCatStore ? 'catering_store_items' : 'inventory_items'
     var allocTable = isCatStore ? 'cs_venue_allocations' : 'venue_allocations'
 
-    var matchQuery = supabase.from(tableName).select('id, qty').eq('name', itemName).eq('status', 'approved')
-    if (catId) matchQuery = matchQuery.eq('category_id', catId)
-    if (subCatId) matchQuery = matchQuery.eq('sub_category_id', subCatId)
-    if (isCatStore && brand) matchQuery = matchQuery.eq('brand', brand)
-    var { data: existing } = await matchQuery.limit(1).maybeSingle()
+    var existing = null
+    var rowId = findCol(r, ['id'])
+    if (importMode === 'update' && rowId) {
+      var { data: idMatch } = await supabase.from(tableName).select('id, qty').eq('id', Number(rowId)).eq('status', 'approved').limit(1).maybeSingle()
+      existing = idMatch
+    } else {
+      var matchQuery = supabase.from(tableName).select('id, qty').eq('name', itemName).eq('status', 'approved')
+      if (catId) matchQuery = matchQuery.eq('category_id', catId)
+      if (subCatId) matchQuery = matchQuery.eq('sub_category_id', subCatId)
+      if (isCatStore && brand) matchQuery = matchQuery.eq('brand', brand)
+      var { data: nameMatch } = await matchQuery.limit(1).maybeSingle()
+      existing = nameMatch
+    }
 
     var newQty = Number(findCol(r, ['qty', 'quantity'])) || 0
     var venueCode = findCol(r, ['venue code', 'venue_code', 'venue'])
@@ -797,7 +807,7 @@ function AdminItems({ profile }) {
               <p className="text-[11px] text-gray-400 mt-2">
                 {importMode === 'add'
                   ? 'Existing items: qty will be added. New items: will be created as approved.'
-                  : 'Existing items: info fields updated (qty unchanged). Items not found: skipped.'}
+                  : 'Matches items by ID column. Info fields updated (qty unchanged). Items without matching ID: skipped.'}
               </p>
             </div>
 

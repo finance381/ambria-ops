@@ -37,7 +37,7 @@ const DEPARTMENTS = [
   {
     name: "Decor",
     endpoint: "get_decor_contract_information_list",
-    body: { loggeduserid: "", entertain_search: "", source_search: "", lead_type_search: "", entertain_venue_search: "", priority_search: "", fromdate: "", uptodated: "", entertain_assginee_search: "", entertain_status_search: "", search_date_type: "", visited_search: "", follow_dated: "" },
+    body: { loggeduserid: "", decor_search: "", source_search: "", lead_type_search: "", decor_venue_search: "", priority_search: "", fromdate: "", uptodated: "", decor_assginee_search: "", decor_status_search: "", search_date_type: "", visited_search: "", follow_dated: "" },
     h: "dhc_", d: "dhcd_",
     entryNo: "dhc_entry_no",
     contactNo: "dhc_contact_no",
@@ -72,8 +72,9 @@ const FUNC_NAMES: Record<string, string> = {
   "9": "COCKTAIL", "10": "RELIGIOUS", "11": "CORPORATE", "14": "HALDI",
   "15": "MEHENDI", "16": "ROKA CEREMONY", "17": "RESIDENTIAL WEDDING",
   "19": "KOTHI BOOKING", "20": "SANGEET", "21": "BABY SHOWER",
-  "22": "ENGAGEMENT", "24": "BARAT ASSEMBLY", "25": "HOUSE PARTY",
-  "27": "BREAKFAST", "28": "DINNER FUNCTION", "30": "LUNCH",
+  "12": "PROPOSAL CEREMONY", "18": "DESTINATION WEDDING",
+  "22": "ENGAGEMENT", "23": "TENDER", "24": "BARAT ASSEMBLY", "25": "HOUSE PARTY",
+  "26": "LUNCH FUNCTION", "27": "BREAKFAST FUNCTION", "28": "DINNER FUNCTION", "29": "BREAKFAST", "30": "LUNCH",
   "31": "KITTY PARTY", "32": "RESTAURANT SALE", "33": "LOHRI",
   "34": "DIWALI PARTY", "35": "GET TOGETHER", "36": "MATA KI CHOWKI",
 }
@@ -127,22 +128,20 @@ function mapRow(e: any, dep: typeof DEPARTMENTS[0]): any {
   const d = dep.d  // detail prefix
 
   const entryNo = (e[dep.entryNo] || "").trim()
-  const funcCode = e[dep.funcCode] || e.headid || e.id || ""
+  const headId = e.headid || e.id || ""
 
   return {
-    // Dedup key: Dept_EntryNo_FunctionCode (matches old pattern)
-    lms_event_id: dep.name + "_" + entryNo + "_" + funcCode,
+    // Dedup key: Dept_EntryNo_HeadId (unique per contract row)
+    lms_event_id: dep.name + "_" + entryNo + "_" + headId,
     contract_no: entryNo || null,
     contract_date: e[h + "contract_date"] || null,
     department: dep.name,
     contract_type: e[dep.d + "lead_type"] || null,
     venue_name: normalizeVenue(e.venue1 || "", dep.name),
-    location: (e[dep.d + "lead_type"] === "O" && e[dep.d + "venue2"])
-      ? (e[dep.d + "venue2"] + (e[dep.d + "address2"] ? ", " + e[dep.d + "address2"] : "")).trim()
-      : null,
+    location: e[dep.d + "venue2"] ? ((e[dep.d + "venue2"] || "") + " " + (e[dep.d + "address2"] || "")).trim() || null : null,
     contact_person: null,
     contact_number: e[dep.contactNo] || null,
-    event_name: (e.functionname || FUNC_NAMES[e[dep.funcCode]] || "").trim(),
+    event_name: (e.functionname || FUNC_NAMES[String(e[dep.funcCode])] || "").trim(),
     client_name: e[h + "guest_name"] || null,
     session: e[d + "session"] || null,
     catering: e[d + "catering"] || e[d + "menu"] || null,
@@ -157,10 +156,8 @@ function mapRow(e: any, dep: typeof DEPARTMENTS[0]): any {
     // New fields
     ppt_link: e.pptLink || null,
     pdf_link: e.pdfLink || null,
-    secondary_contact: e[h + "secondary_contact"] || null,
-    bride_name: e[h + "bride_name"] || null,
-    groom_name: e[h + "groom_name"] || null,
-    enquiry_mode: e[h + "enquiry_mode"] || e[h + "enq_mode"] || null,
+    secondary_contact: e[h + "secondary_mobileno"] || null,
+    enquiry_mode: e[h + "enq_mode"] || null,
     priority: e[h + "priority"] || null,
     address: e[h + "address"] || null,
     function_date: e[dep.functionDate] || null,
