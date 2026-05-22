@@ -1,4 +1,4 @@
-import { supabase, getImageUrl } from '../../lib/supabase'
+import { supabase, getImageUrl, fetchAll } from '../../lib/supabase'
 import { useState, useEffect } from 'react'
 import { formatDate, titleCase } from '../../lib/format'
 import Modal from '../../components/ui/Modal'
@@ -33,6 +33,7 @@ function Inventory({ profile }) {
     var csQuery = supabase
       .from('catering_store_items')
       .select('*, categories(name), sub_categories(name), cs_venue_allocations(qty, venues(code, name))')
+      .in('status', ['approved', 'pending', 'pending_dept'])
       .order('created_at', { ascending: false })
 
     if (isAdmin) {
@@ -45,9 +46,9 @@ function Inventory({ profile }) {
       csQuery = csQuery.eq('submitted_by', profile.id)
     }
 
-    var [invRes, csRes] = await Promise.all([query, csQuery])
-    var invItems = (invRes.data || []).map(function (i) { return Object.assign({}, i, { _source: 'inventory' }) })
-    var csItems = (csRes.data || []).map(function (i) {
+    var [invRes, csRes] = await Promise.all([fetchAll(query), fetchAll(csQuery)])
+    var invItems = (invRes || []).map(function (i) { return Object.assign({}, i, { _source: 'inventory' }) })
+    var csItems = (csRes || []).map(function (i) {
       return Object.assign({}, i, {
         _source: 'catering_store',
         venue_allocations: i.cs_venue_allocations || [],

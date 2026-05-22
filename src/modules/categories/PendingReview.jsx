@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { supabase, getImageUrl } from '../../lib/supabase'
+import { supabase, getImageUrl, fetchAll } from '../../lib/supabase'
 import { titleCase, formatDate } from '../../lib/format'
 import { logActivity } from '../../lib/logger'
 import Modal from '../../components/ui/Modal'
@@ -31,16 +31,14 @@ function PendingReview({ profile }) {
     var [pendCat, pendSub, pendItem, pendCsItem, deptRes, catRes, subCatRes, subDeptRes] = await Promise.all([
       supabase.from('categories').select('*, profiles:added_by(name, email)').eq('status', 'pending'),
       supabase.from('sub_categories').select('*, categories(name), profiles:added_by(name, email)').eq('status', 'pending'),
-      supabase.from('inventory_items')
+      fetchAll(supabase.from('inventory_items')
         .select('*, categories(name, code), sub_categories(name), profiles:submitted_by(name, email), dept_approver:dept_approved_by(name, email), venue_allocations(qty, venues(code, name))')
         .eq('status', 'pending')
-        .order('created_at', { ascending: false })
-        .limit(200),
-      supabase.from('catering_store_items')
+        .order('created_at', { ascending: false })),
+      fetchAll(supabase.from('catering_store_items')
         .select('*, categories(name, code), sub_categories(name), profiles:submitted_by(name, email), dept_approver:dept_approved_by(name, email), cs_venue_allocations(qty, venues(code, name))')
         .eq('status', 'pending')
-        .order('created_at', { ascending: false })
-        .limit(200),
+        .order('created_at', { ascending: false })),
       supabase.from('departments').select('id, name, category_ids').eq('active', true).order('name'),
       supabase.from('categories').select('id, name, sub_department_id').order('name'),
       supabase.from('sub_categories').select('id, name, category_id').order('name'),
@@ -55,8 +53,8 @@ function PendingReview({ profile }) {
     })
 
     setPendingMasters(masters)
-    var invItems = (pendItem.data || []).map(function (i) { return Object.assign({}, i, { _source: 'inventory' }) })
-    var csItems = (pendCsItem.data || []).map(function (i) {
+    var invItems = (pendItem || []).map(function (i) { return Object.assign({}, i, { _source: 'inventory' }) })
+    var csItems = (pendCsItem || []).map(function (i) {
       return Object.assign({}, i, { _source: 'catering_store', venue_allocations: i.cs_venue_allocations || [] })
     })
     setPendingItems(invItems.concat(csItems).sort(function (a, b) {

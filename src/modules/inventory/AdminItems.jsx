@@ -95,14 +95,21 @@ function AdminItems({ profile }) {
   function exportItems() {
     var headers = ['ID', 'Inventory ID', 'Name', 'Name Hindi', 'Category', 'Sub-category', 'Type', 'Qty', 'Unit', 'Department', 'Description', 'Status', 'Source', 'Brand', 'Pack Size Qty', 'Pack Size Unit', 'Min Order / Season Reorder', 'Reorder / Off Season Reorder', 'Rate (₹)', 'Is Asset', 'Venue Code', 'Sub-Venue', 'Venue Qty', 'Image URL', 'Date Added']
     var rows = filtered.map(function (i) {
-      var venueCodes = (i.venue_allocations || []).map(function (va) { return va.venues?.code || '' }).join('; ')
-      var venueSubVenues = (i.venue_allocations || []).map(function (va) { var sv = subVenues.find(function (s) { return s.id === va.sub_venue_id }); return sv?.name || '' }).join('; ')
-      var venueQtys = (i.venue_allocations || []).map(function (va) { return va.qty }).join('; ')
+      var allocs = i.venue_allocations || []
+      if (venueFilter) {
+        allocs = allocs.filter(function (va) { return va.venues && String(va.venues.code || '') === String(venues.find(function (v) { return String(v.id) === venueFilter })?.code || '') })
+      }
+      if (subVenueFilter) {
+        allocs = allocs.filter(function (va) { return String(va.sub_venue_id || '') === subVenueFilter })
+      }
+      var venueCodes = allocs.map(function (va) { return va.venues?.code || '' }).join('; ')
+      var venueSubVenues = allocs.map(function (va) { var sv = subVenues.find(function (s) { return s.id === va.sub_venue_id }); return sv?.name || '' }).join('; ')
+      var venueQtys = allocs.map(function (va) { return va.qty }).join('; ')
       var imgUrl = i.image_path ? supabase.storage.from('images').getPublicUrl(i.image_path).data?.publicUrl || '' : ''
       return [
         i.id, i.inventory_id || '', i.name, i.name_hindi || '',
         i.categories?.name || '', i.sub_categories?.name || '',
-        i.type || '', i.qty, i.unit || '', i.department || '',
+        i.type || '', venueFilter ? allocs.reduce(function (sum, va) { return sum + (va.qty || 0) }, 0) : i.qty, i.unit || '', i.department || '',
         i.description || '', i.status, i._source || 'inventory',
         i.brand || '', i.pack_size_qty || '', i.pack_size_unit || '',
         i.season_reorder_qty || i.min_order_qty || '',
