@@ -160,6 +160,10 @@ function PendingReview({ profile }) {
     deptCatIds = selectedDept?.category_ids || []
   }
 
+  function resetFilters() {
+    setSearch(''); setDeptFilter(''); setSubDeptFilter(''); setCatFilter(''); setSubCatFilter(''); setPage(0)
+  }
+
   var searchLower = search.toLowerCase()
   var filteredItems = pendingItems.filter(function (item) {
     var matchSearch = !search ||
@@ -253,6 +257,10 @@ function PendingReview({ profile }) {
           {subCatOptions.map(function (sc) { return <option key={sc.id} value={String(sc.id)}>{sc.name}</option> })}
         </select>
       </div>
+      {(search || deptFilter || subDeptFilter || catFilter || subCatFilter) && (
+        <button onClick={resetFilters}
+          className="px-3 py-2.5 text-sm text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-colors font-medium">✕ Reset</button>
+      )}
 
       {totalCount === 0 && (
         <div className="bg-white border border-gray-200 rounded-lg p-8 text-center">

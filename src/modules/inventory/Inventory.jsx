@@ -94,7 +94,11 @@ function Inventory({ profile }) {
     return { id: sid, name: item?.sub_categories?.name || '—' }
   }).sort(function (a, b) { return a.name.localeCompare(b.name) })
 
-   var searchLower = search.toLowerCase()
+   function resetFilters() {
+    setSearch(''); setCatFilter(''); setSubCatFilter('')
+  }
+
+  var searchLower = search.toLowerCase()
    var filtered = items.filter(function (item) {
    var matchSearch = !search ||
      item.name.toLowerCase().includes(searchLower) ||
@@ -130,7 +134,13 @@ function Inventory({ profile }) {
            {subCatOptions.map(function (sc) { return <option key={sc.id} value={String(sc.id)}>{sc.name}</option> })}
          </select>
        </div>
-       <div className="text-[11px] text-gray-400">{filtered.length} / {items.length} items</div>
+       <div className="flex items-center gap-2">
+         <div className="text-[11px] text-gray-400">{filtered.length} / {items.length} items</div>
+         {(search || catFilter || subCatFilter) && (
+           <button onClick={resetFilters}
+             className="px-2 py-1 text-[11px] text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-colors font-medium">✕ Reset</button>
+         )}
+       </div>
      </div>
 
      {filtered.length === 0 && (
