@@ -283,13 +283,17 @@ function AdminItems({ profile }) {
     if (importMode === 'update') {
       if (!existing) return false
       var updatePayload = {}
+      if (itemName) updatePayload.name = itemName
       if (nameHindi) updatePayload.name_hindi = nameHindi
+      if (catId) updatePayload.category_id = catId
+      if (subCatId) updatePayload.sub_category_id = subCatId
       if (unit) updatePayload.unit = unit
       if (dept) updatePayload.department = dept
       if (type) updatePayload.type = type
       if (desc) updatePayload.description = desc
       if (rate) updatePayload.rate_paise = Math.round(Number(rate) * 100)
       if (isAsset) updatePayload.is_asset = isAsset
+      if (newQty > 0 && !venueCode) updatePayload.qty = newQty
       if (isCatStore) {
         if (brand) updatePayload.brand = brand
         if (packQty) updatePayload.pack_size_qty = Number(packQty)
@@ -303,6 +307,29 @@ function AdminItems({ profile }) {
       if (Object.keys(updatePayload).length > 0) {
         var { error: updErr } = await supabase.from(tableName).update(updatePayload).eq('id', existing.id)
         if (updErr) return false
+      }
+      // Update venue allocations if provided
+      if (venueCode) {
+        var venue = venues.find(function (v) { return v.code.toLowerCase() === venueCode.toLowerCase() })
+        if (venue) {
+          var subVenueId = null
+          if (subVenueName) {
+            var sv = subVenues.find(function (s) { return s.name.toLowerCase() === subVenueName.toLowerCase() && s.venue_id === venue.id })
+            if (sv) subVenueId = sv.id
+          }
+          var { data: existAlloc } = await supabase.from(allocTable).select('id, qty').eq('item_id', existing.id).eq('venue_id', venue.id).limit(1).maybeSingle()
+          if (existAlloc) {
+            await supabase.from(allocTable).update({ qty: venueQty }).eq('id', existAlloc.id)
+          } else {
+            var allocPayload = { item_id: existing.id, venue_id: venue.id, qty: venueQty }
+            if (subVenueId) allocPayload.sub_venue_id = subVenueId
+            await supabase.from(allocTable).insert(allocPayload)
+          }
+          // Recalculate total from all allocations
+          var { data: allAllocs } = await supabase.from(allocTable).select('qty').eq('item_id', existing.id)
+          var totalFromAllocs = (allAllocs || []).reduce(function (sum, a) { return sum + (a.qty || 0) }, 0)
+          await supabase.from(tableName).update({ qty: totalFromAllocs }).eq('id', existing.id)
+        }
       }
       return true
     }
