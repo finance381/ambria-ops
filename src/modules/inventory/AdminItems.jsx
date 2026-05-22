@@ -254,8 +254,13 @@ function AdminItems({ profile }) {
     var existing = null
     var rowId = findCol(r, ['id'])
     if (importMode === 'update' && rowId) {
-      var { data: idMatch } = await supabase.from(tableName).select('id, qty').eq('id', Number(rowId)).eq('status', 'approved').limit(1).maybeSingle()
-      existing = idMatch
+      var { data: idMatch } = await supabase.from('inventory_items').select('id, qty').eq('id', Number(rowId)).eq('status', 'approved').limit(1).maybeSingle()
+      if (idMatch) {
+        existing = idMatch; tableName = 'inventory_items'; allocTable = 'venue_allocations'
+      } else {
+        var { data: csMatch } = await supabase.from('catering_store_items').select('id, qty').eq('id', Number(rowId)).eq('status', 'approved').limit(1).maybeSingle()
+        if (csMatch) { existing = csMatch; tableName = 'catering_store_items'; allocTable = 'cs_venue_allocations' }
+      }
     } else {
       var matchQuery = supabase.from(tableName).select('id, qty').eq('name', itemName).eq('status', 'approved')
       if (catId) matchQuery = matchQuery.eq('category_id', catId)
