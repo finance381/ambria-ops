@@ -916,7 +916,7 @@ function AdminItems({ profile }) {
             <div className="flex gap-3 justify-end pt-1">
               <button onClick={function () { setImportModal(null); setImportProgress(null) }} disabled={importing}
                 className="px-4 py-2 text-sm text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors font-medium disabled:opacity-50">Cancel</button>
-              <button onClick={runImport} disabled={importing || (importProgress && importProgress.done + importProgress.skipped >= importProgress.total)}
+              <button onClick={importProgress && !importing ? function () { setImportModal(null); setImportProgress(null) } : runImport} disabled={importing}
                 className="px-6 py-2 text-sm text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors font-medium disabled:opacity-50">
                 {importing ? 'Importing...' : importProgress ? 'Done' : 'Start Import'}</button>
             </div>
