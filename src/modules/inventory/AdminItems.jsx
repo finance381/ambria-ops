@@ -300,7 +300,7 @@ function AdminItems({ profile }) {
       if (type) updatePayload.type = type
       if (desc) updatePayload.description = desc
       if (rate) updatePayload.rate_paise = Math.round(Number(rate) * 100)
-      if (isAsset) updatePayload.is_asset = isAsset
+      if (isAsset) updatePayload.is_asset = isAsset.toLowerCase()
       if (newQty > 0 && !venueCode) updatePayload.qty = newQty
       if (isCatStore) {
         if (brand) updatePayload.brand = brand
