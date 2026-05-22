@@ -44,10 +44,10 @@ function AdminItems({ profile }) {
     try {
       var [invAll, csAll, deptRes, venueRes, profilesRes, catRes, subCatRes, subDeptRes, subVenueRes] = await Promise.all([
         fetchAll(supabase.from('inventory_items')
-          .select('id, name, name_hindi, inventory_id, qty, blocked, unit, type, status, department, category_id, sub_category_id, rate_paise, min_order_qty, reorder_qty, is_asset, image_path, submitted_by, entry_date, description, categories(name), sub_categories(name), venue_allocations(qty, venues(code, name), sub_venue_id)')
+          .select('id, name, name_hindi, inventory_id, qty, blocked, unit, type, status, department, category_id, sub_category_id, rate_paise, min_order_qty, reorder_qty, is_asset, image_path, submitted_by, entry_date, description, categories(name), sub_categories(name), venue_allocations(venue_id, qty, venues(code, name), sub_venue_id)')
           .order('created_at', { ascending: false })),
         fetchAll(supabase.from('catering_store_items')
-          .select('id, name, name_hindi, inventory_id, qty, unit, type, status, department, category_id, sub_category_id, rate_paise, is_asset, image_path, submitted_by, entry_date, description, brand, pack_size_qty, pack_size_unit, season_reorder_qty, off_season_reorder_qty, categories(name), sub_categories(name), cs_venue_allocations(qty, venues(code, name), sub_venue_id)')
+          .select('id, name, name_hindi, inventory_id, qty, unit, type, status, department, category_id, sub_category_id, rate_paise, is_asset, image_path, submitted_by, entry_date, description, brand, pack_size_qty, pack_size_unit, season_reorder_qty, off_season_reorder_qty, categories(name), sub_categories(name), cs_venue_allocations(venue_id, qty, venues(code, name), sub_venue_id)')
           .order('created_at', { ascending: false })),
         supabase.from('departments').select('id, name, category_ids').eq('active', true).order('name'),
         supabase.from('venues').select('id, code, name').eq('active', true).order('code'),
@@ -97,7 +97,7 @@ function AdminItems({ profile }) {
     var rows = filtered.map(function (i) {
       var allocs = i.venue_allocations || []
       if (venueFilter) {
-        allocs = allocs.filter(function (va) { return va.venues && String(va.venues.code || '') === String(venues.find(function (v) { return String(v.id) === venueFilter })?.code || '') })
+        allocs = allocs.filter(function (va) { return String(va.venue_id) === venueFilter })
       }
       if (subVenueFilter) {
         allocs = allocs.filter(function (va) { return String(va.sub_venue_id || '') === subVenueFilter })
