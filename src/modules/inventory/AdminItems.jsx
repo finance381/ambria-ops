@@ -97,7 +97,7 @@ function AdminItems({ profile }) {
     var rows = filtered.map(function (i) {
       var allocs = i.venue_allocations || []
       if (venueFilter) {
-        allocs = allocs.filter(function (va) { return String(va.venue_id) === venueFilter })
+        allocs = allocs.filter(function (va) { return va.venues && va.venues.code === venueFilter })
       }
       if (subVenueFilter) {
         allocs = allocs.filter(function (va) { return String(va.sub_venue_id || '') === subVenueFilter })
