@@ -216,8 +216,11 @@ function AdminItems({ profile }) {
       var results = await Promise.allSettled(chunk.map(function (r) {
         return processImportRow(r)
       }))
-      results.forEach(function (res) {
-        if (res.status === 'fulfilled' && res.value) done++; else skipped++
+      results.forEach(function (res, idx) {
+        if (res.status === 'fulfilled' && res.value) { done++ } else {
+          skipped++
+          console.error('Import row ' + (c + idx) + ' failed:', res.status === 'rejected' ? res.reason : 'returned false')
+        }
       })
       setImportProgress({ done: done, total: rows.length, skipped: skipped })
     }
