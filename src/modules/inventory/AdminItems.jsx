@@ -323,6 +323,16 @@ function AdminItems({ profile }) {
             if (sv) subVenueId = sv.id
           }
           var { data: existAlloc } = await supabase.from(allocTable).select('id, qty').eq('item_id', existing.id).eq('venue_id', venue.id).limit(1).maybeSingle()
+          // Calculate new total BEFORE updating allocation (trigger checks total)
+          var { data: allAllocs } = await supabase.from(allocTable).select('id, venue_id, qty').eq('item_id', existing.id)
+          var oldVenueQty = existAlloc ? existAlloc.qty : 0
+          var otherAllocsTotal = (allAllocs || []).reduce(function (sum, a) {
+            return sum + (existAlloc && a.id === existAlloc.id ? 0 : (a.qty || 0))
+          }, 0)
+          var newTotal = otherAllocsTotal + venueQty
+          // Update item qty first
+          await supabase.from(tableName).update({ qty: newTotal }).eq('id', existing.id)
+          // Now update allocation (trigger will pass since qty >= alloc total)
           if (existAlloc) {
             await supabase.from(allocTable).update({ qty: venueQty }).eq('id', existAlloc.id)
           } else {
@@ -330,10 +340,6 @@ function AdminItems({ profile }) {
             if (subVenueId) allocPayload.sub_venue_id = subVenueId
             await supabase.from(allocTable).insert(allocPayload)
           }
-          // Recalculate total from all allocations
-          var { data: allAllocs } = await supabase.from(allocTable).select('qty').eq('item_id', existing.id)
-          var totalFromAllocs = (allAllocs || []).reduce(function (sum, a) { return sum + (a.qty || 0) }, 0)
-          await supabase.from(tableName).update({ qty: totalFromAllocs }).eq('id', existing.id)
         }
       }
       return true
