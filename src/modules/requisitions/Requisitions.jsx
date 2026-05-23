@@ -578,7 +578,11 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
         if (reqErr) throw new Error(reqErr.message)
 
         if (lineItems.length > 0) {
-          var itemsWithId = lineItems.map(function (li) { return Object.assign({}, li, { requisition_id: req.id }) })
+          var itemsWithId = lineItems.map(function (li) {
+            var row = Object.assign({}, li, { requisition_id: req.id })
+            if (isAdminRole) { row.item_status = 'po_queued'; row.fulfillment_type = 'purchase' }
+            return row
+          })
           var { error: itemsErr } = await supabase.from('requisition_items').insert(itemsWithId)
           if (itemsErr) throw new Error(itemsErr.message)
         }

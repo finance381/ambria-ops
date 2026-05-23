@@ -222,6 +222,7 @@ function Shell({ profile, onSignOut }) {
           supabase.from('requisition_items')
             .select('id, requisitions!inner(status)', { count: 'exact', head: true })
             .is('po_item_id', null)
+            .eq('item_status', 'po_queued')
             .eq('requisitions.status', 'approved')
             .then(function (res) { counts.feature_purchase = res.count || 0 })
             .catch(function () {
