@@ -262,7 +262,7 @@ function AdminItems({ profile }) {
         if (csMatch) { existing = csMatch; tableName = 'catering_store_items'; allocTable = 'cs_venue_allocations'; isCatStore = true }
       }
     } else {
-      var matchQuery = supabase.from(tableName).select('id, qty').eq('name', itemName).eq('status', 'approved')
+      var matchQuery = supabase.from(tableName).select('id, qty').ilike('name', itemName.replace(/%/g, '\\%').replace(/_/g, '\\_')).eq('status', 'approved')
       if (catId) matchQuery = matchQuery.eq('category_id', catId)
       if (subCatId) matchQuery = matchQuery.eq('sub_category_id', subCatId)
       if (isCatStore && brand) matchQuery = matchQuery.eq('brand', brand)
