@@ -211,15 +211,14 @@ function AdminItems({ profile }) {
     var done = 0; var skipped = 0
     var CHUNK = 50
 
-    for (var c = 0; c < rows.length; c += CHUNK) {
-      var chunk = rows.slice(c, c + CHUNK)
-      var results = await Promise.allSettled(chunk.map(function (r) {
-        return processImportRow(r)
-      }))
-      results.forEach(function (res) {
-        if (res.status === 'fulfilled' && res.value) done++; else skipped++
-      })
-      setImportProgress({ done: done, total: rows.length, skipped: skipped })
+    for (var c = 0; c < rows.length; c++) {
+      try {
+        var result = await processImportRow(rows[c])
+        if (result) done++; else skipped++
+      } catch (_) { skipped++ }
+      if ((c + 1) % 20 === 0 || c === rows.length - 1) {
+        setImportProgress({ done: done, total: rows.length, skipped: skipped })
+      }
     }
 
     try { await logActivity('IMPORT_CSV', importMode.toUpperCase() + ' | ' + done + ' processed, ' + skipped + ' skipped') } catch (_) {}
@@ -254,15 +253,15 @@ function AdminItems({ profile }) {
     var existing = null
     var rowId = findCol(r, ['id'])
     if (importMode === 'update' && rowId) {
-      var { data: idMatch } = await supabase.from('inventory_items').select('id, qty').eq('id', Number(rowId)).eq('status', 'approved').limit(1).maybeSingle()
+      var { data: idMatch } = await supabase.from('inventory_items').select('id, qty').eq('id', Number(rowId)).limit(1).maybeSingle()
       if (idMatch) {
         existing = idMatch; tableName = 'inventory_items'; allocTable = 'venue_allocations'; isCatStore = false
       } else {
-        var { data: csMatch } = await supabase.from('catering_store_items').select('id, qty').eq('id', Number(rowId)).eq('status', 'approved').limit(1).maybeSingle()
+        var { data: csMatch } = await supabase.from('catering_store_items').select('id, qty').eq('id', Number(rowId)).limit(1).maybeSingle()
         if (csMatch) { existing = csMatch; tableName = 'catering_store_items'; allocTable = 'cs_venue_allocations'; isCatStore = true }
       }
     } else {
-      var matchQuery = supabase.from(tableName).select('id, qty').ilike('name', itemName.replace(/%/g, '\\%').replace(/_/g, '\\_')).eq('status', 'approved')
+      var matchQuery = supabase.from(tableName).select('id, qty').ilike('name', itemName.replace(/%/g, '\\%').replace(/_/g, '\\_'))
       if (catId) matchQuery = matchQuery.eq('category_id', catId)
       if (subCatId) matchQuery = matchQuery.eq('sub_category_id', subCatId)
       if (isCatStore && brand) matchQuery = matchQuery.eq('brand', brand)
