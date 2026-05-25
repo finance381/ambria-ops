@@ -356,6 +356,15 @@ function ExpenseForm({ profile, onDone }) {
       }
 
       try {
+        await supabase.rpc('wallet_self_debit', {
+          p_amount_paise: paise,
+          p_description: 'Expense: ' + e.description.trim().slice(0, 50),
+          p_ref_type: 'expense',
+          p_ref_id: String(exp.id),
+        })
+      } catch (_) {}
+
+      try {
         await logActivity('EXPENSE_SUBMIT', (paise / 100) + ' pts | ' + e.description.trim().slice(0, 50))
       } catch (_) {}
 

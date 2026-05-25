@@ -77,6 +77,13 @@ function Expenses({ profile }) {
   var [transferConfirmModal, setTransferConfirmModal] = useState(null)
   var [transferConfirmImage, setTransferConfirmImage] = useState(null)
   var [transferConfirmSaving, setTransferConfirmSaving] = useState(false)
+  var [collectModal, setCollectModal] = useState(false)
+  var [collectEvents, setCollectEvents] = useState([])
+  var [collectEventId, setCollectEventId] = useState('')
+  var [collectAmount, setCollectAmount] = useState('')
+  var [collectDesc, setCollectDesc] = useState('')
+  var [collectImage, setCollectImage] = useState(null)
+  var [collectSaving, setCollectSaving] = useState(false)
   var [subCatMap, setSubCatMap] = useState({})
   var [typesModal, setTypesModal] = useState(false)
   var [expTypes, setExpTypes] = useState([])
@@ -423,6 +430,61 @@ function Expenses({ profile }) {
     supabase.from('wallets').select('balance_paise').eq('user_id', profile.id).maybeSingle()
       .then(function (res) { setWalletBalance(res.data?.balance_paise || 0) })
     loadTransfers()
+  }
+
+  async function openCollectModal() {
+    setCollectModal(true)
+    setCollectEventId('')
+    setCollectAmount('')
+    setCollectDesc('')
+    setCollectImage(null)
+    if (collectEvents.length === 0) {
+      var { data } = await supabase.from('events')
+        .select('id, event_name, function_date, venue_name')
+        .order('function_date', { ascending: false })
+        .limit(200)
+      setCollectEvents(data || [])
+    }
+  }
+
+  async function submitCollection() {
+    if (collectSaving || !collectEventId || !collectAmount || Number(collectAmount) <= 0) return
+    setCollectSaving(true)
+    var amountPaise = Math.round(Number(collectAmount) * 100)
+    var imagePath = null
+    if (collectImage) {
+      var ext = collectImage.name.split('.').pop()
+      var path = 'wallet/collection/' + profile.id + '_' + Date.now() + '.' + ext
+      var { error: upErr } = await supabase.storage.from('receipts').upload(path, collectImage, { upsert: true })
+      if (upErr) { alert('Image upload failed: ' + upErr.message); setCollectSaving(false); return }
+      imagePath = path
+    }
+    var evtName = (collectEvents.find(function (e) { return String(e.id) === collectEventId }) || {}).event_name || ''
+    var desc = (collectDesc.trim() || 'Collection') + ' — ' + evtName
+    var { error } = await supabase.rpc('wallet_self_credit', {
+      p_amount_paise: amountPaise,
+      p_description: desc,
+      p_ref_type: 'collection',
+      p_ref_id: collectEventId,
+    })
+    if (error) { alert('Collection failed: ' + error.message); setCollectSaving(false); return }
+    if (imagePath) {
+      var { data: latestTxn } = await supabase.from('wallet_transactions')
+        .select('id')
+        .eq('wallet_id', (myWallet || {}).id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single()
+      if (latestTxn) {
+        await supabase.from('wallet_transactions').update({ received_image_path: imagePath }).eq('id', latestTxn.id)
+      }
+    }
+    try { await logActivity('WALLET_COLLECTION', evtName + ' | ' + formatPoints(amountPaise)) } catch (_) {}
+    setCollectModal(false)
+    setCollectSaving(false)
+    supabase.from('wallets').select('balance_paise').eq('user_id', profile.id).maybeSingle()
+      .then(function (res) { setWalletBalance(res.data?.balance_paise || 0) })
+    openWalletTxns(null)
   }
 
   async function runBulkIssue() {
@@ -1097,6 +1159,12 @@ if (allExpView && (isAdmin || isAuditor)) {
             </div>
             <div className="flex gap-2">
               {selectedWallet && selectedWallet.user_id === profile.id && (
+                <button onClick={openCollectModal}
+                  className="px-3 py-1.5 text-xs font-bold text-blue-600 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors">
+                  ↓ Collect
+                </button>
+              )}
+              {selectedWallet && selectedWallet.user_id === profile.id && (
                 <button onClick={openTransferModal}
                   className="px-3 py-1.5 text-xs font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 transition-colors">
                   ↗ Transfer
@@ -1324,6 +1392,57 @@ if (allExpView && (isAdmin || isAuditor)) {
             </div>
           </BottomSheet>
         )}
+        {/* Collection modal */}
+        {collectModal && (
+          <BottomSheet open={true} onClose={function () { setCollectModal(false) }} title="Collect Payment">
+            <div className="space-y-4">
+              <SearchDropdown label="Event" required
+                items={collectEvents.map(function (e) { return { label: e.event_name + (e.function_date ? ' · ' + e.function_date : '') + (e.venue_name ? ' · ' + e.venue_name : ''), value: String(e.id) } })}
+                value={collectEventId}
+                onChange={function (val) { setCollectEventId(val) }}
+                placeholder="Search event..." />
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Amount (Points)</label>
+                <input type="number" min="1" step="any" inputMode="decimal" value={collectAmount}
+                  onChange={function (e) { setCollectAmount(e.target.value) }}
+                  placeholder="0" className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  style={{ fontSize: '16px' }} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                <input type="text" value={collectDesc} onChange={function (e) { setCollectDesc(e.target.value) }}
+                  placeholder="e.g. Advance payment, Final settlement..."
+                  maxLength="300" className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  style={{ fontSize: '16px' }} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">📷 Receipt Photo</label>
+                {collectImage ? (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-green-600 font-medium truncate flex-1">✓ {collectImage.name}</span>
+                    <button onClick={function () { setCollectImage(null) }} className="text-xs text-red-500 font-bold hover:text-red-700">✕</button>
+                  </div>
+                ) : (
+                  <label className="block w-full py-2.5 text-center text-sm text-blue-600 border border-dashed border-blue-300 rounded-lg cursor-pointer hover:bg-blue-50 transition-colors">
+                    Tap to attach photo
+                    <input type="file" accept="image/*" capture="environment" className="hidden"
+                      onChange={function (e) { if (e.target.files?.[0]) setCollectImage(e.target.files[0]); e.target.value = '' }} />
+                  </label>
+                )}
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button onClick={function () { setCollectModal(false) }}
+                  className="flex-1 py-3 text-sm text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors font-semibold">Cancel</button>
+                <button onClick={submitCollection}
+                  disabled={collectSaving || !collectEventId || !collectAmount || Number(collectAmount) <= 0}
+                  className="flex-1 py-3 text-sm text-white bg-blue-600 rounded-xl hover:bg-blue-700 disabled:opacity-50 transition-colors font-semibold">
+                  {collectSaving ? 'Saving...' : 'Collect ' + (collectAmount && Number(collectAmount) > 0 ? Number(collectAmount).toLocaleString('en-IN') + ' pts' : '')}
+                </button>
+              </div>
+            </div>
+          </BottomSheet>
+        )}
+
         {/* Transfer initiation */}
         {transferModal && (
           <BottomSheet open={true} onClose={function () { setTransferModal(false) }} title="Transfer Cash">
@@ -1869,6 +1988,14 @@ function ExpenseEditForm({ profile, editExp, walletBalance, onCancel, onSaved })
           }
         }
 
+        try {
+          await supabase.rpc('wallet_self_debit', {
+            p_amount_paise: amountPaise,
+            p_description: 'Expense: ' + description.trim().slice(0, 50),
+            p_ref_type: 'expense',
+            p_ref_id: String(newExp.id),
+          })
+        } catch (_) {}
         try { await logActivity('EXPENSE_SUBMIT', description.trim() + ' | ' + formatPoints(amountPaise)) } catch (_) {}
       }
 
@@ -2045,6 +2172,24 @@ function ExpenseDetail({ exp, profile, subCatMap, isAdmin, isDeptApprover, onBac
       reviewed_at: new Date().toISOString(),
     }).eq('id', exp.id)
     if (error) { alert('Reject failed: ' + error.message); setSaving(false); return }
+    try {
+      await supabase.rpc('wallet_admin_credit', {
+        p_user_id: exp.user_id,
+        p_amount_paise: exp.amount_paise,
+        p_description: 'Refund: rejected expense',
+        p_ref_type: 'expense_refund',
+        p_ref_id: String(exp.id),
+      })
+    } catch (_) {}
+    try {
+      await supabase.rpc('wallet_admin_credit', {
+        p_user_id: exp.user_id,
+        p_amount_paise: exp.amount_paise,
+        p_description: 'Refund: rejected expense',
+        p_ref_type: 'expense_refund',
+        p_ref_id: String(exp.id),
+      })
+    } catch (_) {}
     try { await logActivity('EXPENSE_REJECT', (exp.description || 'Expense') + ' | ' + rejectReason.trim()) } catch (_) {}
     setSaving(false)
     onUpdated()
@@ -2060,6 +2205,24 @@ function ExpenseDetail({ exp, profile, subCatMap, isAdmin, isDeptApprover, onBac
     }
     var { error } = await supabase.from('expenses').delete().eq('id', exp.id)
     if (error) { alert('Delete failed: ' + error.message); setSaving(false); return }
+    try {
+      if (exp.user_id === profile?.id) {
+        await supabase.rpc('wallet_self_credit', {
+          p_amount_paise: exp.amount_paise,
+          p_description: 'Refund: deleted expense',
+          p_ref_type: 'expense_refund',
+          p_ref_id: String(exp.id),
+        })
+      } else {
+        await supabase.rpc('wallet_admin_credit', {
+          p_user_id: exp.user_id,
+          p_amount_paise: exp.amount_paise,
+          p_description: 'Refund: deleted expense',
+          p_ref_type: 'expense_refund',
+          p_ref_id: String(exp.id),
+        })
+      }
+    } catch (_) {}
     try { await logActivity('EXPENSE_DELETE', exp.description || 'Expense') } catch (_) {}
     setSaving(false)
     onUpdated()
