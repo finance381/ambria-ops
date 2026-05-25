@@ -1142,12 +1142,101 @@ if (allExpView && (isAdmin || isAuditor)) {
   }
 
   // ═══════════════════════════════════════════════
+  // EXPENSE TYPES — Admin config
+  // ═══════════════════════════════════════════════
+  if (typesModal) {
+    return (
+      <div className="space-y-4">
+        <div>
+          <button onClick={function () { setTypesModal(false); setTypeName(''); setTypeEditId(null) }}
+            className="text-sm text-indigo-600 font-medium hover:text-indigo-800 transition-colors mb-1">← Back to Expenses</button>
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-bold text-gray-900">Expense Types</h2>
+              <p className="text-xs text-gray-400">{expTypes.length} types configured</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          {expTypes.map(function (et) {
+            var isEditing = typeEditId === et.id
+            return (
+              <div key={et.id} className={"bg-white border rounded-xl p-4 transition-all " + (et.active ? "border-gray-200" : "border-gray-100 opacity-60")}>
+                <div className="flex items-center justify-between">
+                  <div className="flex-1 min-w-0">
+                    {isEditing ? (
+                      <div className="flex gap-2">
+                        <input type="text" value={typeName} onChange={function (e) { setTypeName(e.target.value) }}
+                          className="flex-1 px-3 py-1.5 border border-indigo-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                          style={{ fontSize: '16px' }}
+                          onKeyDown={function (e) { if (e.key === 'Enter') saveExpType(); if (e.key === 'Escape') { setTypeEditId(null); setTypeName('') } }}
+                          autoFocus />
+                        <button onClick={saveExpType} disabled={typeSaving || !typeName.trim()}
+                          className="px-3 py-1.5 text-xs font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors">
+                          Save
+                        </button>
+                        <button onClick={function () { setTypeEditId(null); setTypeName('') }}
+                          className="px-3 py-1.5 text-xs font-bold text-gray-500 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors">
+                          ✕
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <p className={"text-sm font-semibold " + (et.active ? "text-gray-900" : "text-gray-400 line-through")}>{et.name}</p>
+                        {et.extra_fields && et.extra_fields.length > 0 && (
+                          <span className="text-[10px] text-purple-600 bg-purple-50 border border-purple-200 px-1.5 py-0.5 rounded-full font-bold">{et.extra_fields.length} fields</span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  {!isEditing && (
+                    <div className="flex gap-2 flex-shrink-0 ml-3">
+                      <button onClick={function () { setTypeEditId(et.id); setTypeName(et.name) }}
+                        className="w-8 h-8 flex items-center justify-center text-xs rounded-lg bg-gray-100 text-gray-500 hover:bg-gray-200 transition-colors">✎</button>
+                      <button onClick={function () { toggleExpType(et.id, et.active) }}
+                        className={"px-3 py-1.5 text-[10px] font-bold rounded-lg transition-colors " + (et.active ? "bg-green-100 text-green-700 hover:bg-green-200 border border-green-200" : "bg-red-50 text-red-500 hover:bg-red-100 border border-red-200")}>
+                        {et.active ? 'Active' : 'Off'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+          {expTypes.length === 0 && (
+            <div className="bg-white border border-gray-200 rounded-xl p-8 text-center">
+              <p className="text-gray-400 text-sm">No expense types yet</p>
+            </div>
+          )}
+        </div>
+
+        <div className="bg-white border border-gray-200 rounded-xl p-4">
+          <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Add New Type</p>
+          <div className="flex gap-2">
+            <input type="text" value={typeEditId ? '' : typeName} onChange={function (e) { if (!typeEditId) setTypeName(e.target.value) }}
+              disabled={!!typeEditId}
+              placeholder="Type name..."
+              className="flex-1 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-400 disabled:opacity-40"
+              style={{ fontSize: '16px' }}
+              onKeyDown={function (e) { if (e.key === 'Enter' && !typeEditId) saveExpType() }} />
+            <button onClick={function () { if (!typeEditId) saveExpType() }} disabled={typeSaving || !typeName.trim() || !!typeEditId}
+              className="px-4 py-2.5 text-sm font-bold text-white bg-purple-600 rounded-lg hover:bg-purple-700 disabled:opacity-50 transition-colors">
+              Add
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // ═══════════════════════════════════════════════
   // LIST / APPROVE VIEW
   // ═══════════════════════════════════════════════
   return (
     <div className="space-y-4">
       {/* Two cards: Wallet + Expenses */}
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <div className={"rounded-xl p-4 border cursor-pointer active:scale-[0.98] transition-transform relative " + (walletBalance < 0 ? "bg-red-50 border-red-200" : "bg-green-50 border-green-200")}
           onClick={function () {
             if (isAdmin || isAuditor) { setWalletView('wallets'); loadAllWallets() }
@@ -1165,17 +1254,16 @@ if (allExpView && (isAdmin || isAuditor)) {
           {!(isAdmin || isAuditor) && pendingReceiveCount > 0 && <p className="text-[10px] text-amber-600 font-medium mt-1">{pendingReceiveCount} pending →</p>}
           {!(isAdmin || isAuditor) && pendingReceiveCount === 0 && <p className="text-[10px] text-gray-400 font-medium mt-1">View history →</p>}
         </div>
-        <div className="rounded-xl p-4 border border-indigo-200 bg-indigo-50 cursor-pointer active:scale-[0.98] transition-transform"
-          onClick={function () { setEditExp(null); setView('form') }}>
+        <div className="rounded-xl p-4 border border-gray-200 bg-gray-50">
           <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Expenses</p>
-          <p className="text-xl font-bold mt-1 text-indigo-700">{myExpenses.length}</p>
-          <p className="text-[10px] text-indigo-600 font-medium mt-1">+ New Expense</p>
+          <p className="text-xl font-bold mt-1 text-gray-800">{myExpenses.length}</p>
+          <p className="text-[10px] text-gray-400 mt-1">{myTotal > 0 ? formatPoints(myTotal) + ' total' : 'No expenses yet'}</p>
         </div>
       </div>
 
       {/* Admin shortcuts */}
       {(isAdmin || isAuditor) && (
-        <div className="flex gap-2">
+        <div className="flex gap-2 md:hidden">
           <button onClick={function () { setReportView(true); loadReport() }}
             className="flex-1 py-2.5 text-xs font-bold text-amber-600 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 transition-colors">
             📊 Reports
@@ -1204,6 +1292,24 @@ if (allExpView && (isAdmin || isAuditor)) {
           </p>
         </div>
         <div className="flex gap-2">
+          {(isAdmin || isAuditor) && (
+            <div className="hidden md:flex gap-2">
+              <button onClick={function () { setReportView(true); loadReport() }}
+                className="px-3 py-2 text-xs font-bold text-amber-600 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 transition-colors">
+                📊 Reports
+              </button>
+              <button onClick={function () { setAllExpView(true); loadAllExps(false) }}
+                className="px-3 py-2 text-xs font-bold text-gray-600 bg-gray-50 border border-gray-200 rounded-lg hover:bg-gray-100 transition-colors">
+                📋 All
+              </button>
+              {(profile?.permissions || []).indexOf('admin_masters') !== -1 && (
+                <button onClick={function () { setTypesModal(true); loadExpTypes() }}
+                  className="px-3 py-2 text-xs font-bold text-purple-600 bg-purple-50 border border-purple-200 rounded-lg hover:bg-purple-100 transition-colors">
+                  ⚙ Types
+                </button>
+              )}
+            </div>
+          )}
           {view === 'list' && myExpenses.length > 0 && (
             <button onClick={exportExpenseCSV}
               className="px-3 py-2 text-sm font-bold text-green-600 bg-green-50 border border-green-200 rounded-lg hover:bg-green-100 transition-colors">
@@ -1337,51 +1443,6 @@ if (allExpView && (isAdmin || isAuditor)) {
           className="w-full py-3 text-sm font-medium text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 disabled:opacity-50 transition-colors">
           {loadingMore ? 'Loading...' : 'Load More'}
         </button>
-      )}
-
-      {typesModal && (
-        <BottomSheet open={true} onClose={function () { setTypesModal(false); setTypeName(''); setTypeEditId(null) }} title="Expense Types">
-          <div className="space-y-4">
-            <div className="space-y-2 max-h-60 overflow-y-auto">
-              {expTypes.map(function (et) {
-                return (
-                  <div key={et.id} className="flex items-center justify-between p-2.5 rounded-lg bg-gray-50">
-                    <div className="flex items-center gap-2 flex-1 min-w-0">
-                      <span className={"text-sm font-medium truncate " + (et.active ? "text-gray-800" : "text-gray-400 line-through")}>{et.name}</span>
-                      {et.extra_fields && et.extra_fields.length > 0 && (
-                        <span className="text-[10px] text-purple-500 bg-purple-50 px-1.5 py-0.5 rounded">{et.extra_fields.length} fields</span>
-                      )}
-                    </div>
-                    <div className="flex gap-1.5 flex-shrink-0">
-                      <button onClick={function () { setTypeEditId(et.id); setTypeName(et.name) }}
-                        className="text-xs px-2.5 py-1.5 rounded-lg bg-gray-200 text-gray-600 hover:bg-gray-300">✎</button>
-                      <button onClick={function () { toggleExpType(et.id, et.active) }}
-                        className={"text-xs px-2.5 py-1.5 rounded-lg " + (et.active ? "bg-green-100 text-green-700 hover:bg-green-200" : "bg-red-100 text-red-600 hover:bg-red-200")}>
-                        {et.active ? 'On' : 'Off'}
-                      </button>
-                    </div>
-                  </div>
-                )
-              })}
-              {expTypes.length === 0 && <p className="text-sm text-gray-400 text-center py-2">No types yet</p>}
-            </div>
-            <div className="flex gap-2">
-              <input type="text" value={typeName} onChange={function (e) { setTypeName(e.target.value) }}
-                placeholder={typeEditId ? 'Rename...' : 'New type name...'}
-                className="flex-1 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-400"
-                style={{ fontSize: '16px' }}
-                onKeyDown={function (e) { if (e.key === 'Enter') saveExpType() }} />
-              <button onClick={saveExpType} disabled={typeSaving || !typeName.trim()}
-                className="px-4 py-2.5 text-sm font-bold text-white bg-purple-600 rounded-lg hover:bg-purple-700 disabled:opacity-50 transition-colors">
-                {typeEditId ? 'Save' : 'Add'}
-              </button>
-            </div>
-            {typeEditId && (
-              <button onClick={function () { setTypeEditId(null); setTypeName('') }}
-                className="text-xs text-gray-500 hover:bg-gray-100 px-3 py-1.5 rounded-lg transition-colors">Cancel edit</button>
-            )}
-          </div>
-        </BottomSheet>
       )}
     </div>
   )
