@@ -452,6 +452,17 @@ function Purchase({ profile, mode }) {
       }
     }
 
+    if (actualCostPaise > 0) {
+      try {
+        var itemName = (activePoItems.find(function (p) { return p.id === poItemId }) || {}).item_name || 'PO Item'
+        await supabase.rpc('wallet_self_debit', {
+          p_amount_paise: actualCostPaise,
+          p_description: 'Purchase: ' + titleCase(itemName),
+          p_ref_type: 'purchase_order',
+          p_ref_id: String(poItemId),
+        })
+      } catch (_) {}
+    }
     try { await logActivity('PO_ITEM_PURCHASED', titleCase(activePoItems.find(function (p) { return p.id === poItemId })?.item_name || '') + ' | ₹' + (actualCostPaise / 100)) } catch (_) {}
     setSaving(false)
   }
