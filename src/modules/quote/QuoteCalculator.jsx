@@ -33,7 +33,7 @@ var FALLBACK_ET = [
 ]
 
 // venueIdx → LMS venue ID (null = placeholder, no LMS push)
-var LMS_VENUE_IDS = [3, 6, null, 19, 19, null]
+var LMS_VENUE_IDS = [3, 6, 6, 19, 19, null]
 
 // ── Date classification (non-financial, stays client-side) ──
 var MONTHS = 'Jan,Feb,Mar,Apr,May,Jun,Jul,Aug,Sep,Oct,Nov,Dec'.split(',')
