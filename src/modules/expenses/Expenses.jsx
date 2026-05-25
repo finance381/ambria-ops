@@ -357,8 +357,8 @@ function Expenses({ profile }) {
     setTransferDesc('')
     setTransferImage(null)
     if (transferUsers.length === 0) {
-      var { data } = await supabase.from('profiles').select('id, name, email').eq('active', true).order('name')
-      setTransferUsers((data || []).filter(function (p) { return p.id !== profile.id }))
+      var { data } = await supabase.rpc('get_transfer_users')
+      setTransferUsers(data || [])
     }
   }
 
@@ -1309,17 +1309,11 @@ if (allExpView && (isAdmin || isAuditor)) {
         {transferModal && (
           <BottomSheet open={true} onClose={function () { setTransferModal(false) }} title="Transfer Cash">
             <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Send to</label>
-                <select value={transferTo} onChange={function (e) { setTransferTo(e.target.value) }}
-                  className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white"
-                  style={{ fontSize: '16px' }}>
-                  <option value="">Select user...</option>
-                  {transferUsers.map(function (u) {
-                    return <option key={u.id} value={u.id}>{u.name} ({u.email})</option>
-                  })}
-                </select>
-              </div>
+              <SearchDropdown label="Send to" required
+                items={transferUsers.map(function (u) { return { label: u.name, value: u.id } })}
+                value={transferTo}
+                onChange={function (val) { setTransferTo(val) }}
+                placeholder="Search user..." />
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Amount (Points)</label>
                 <input type="number" min="1" step="any" inputMode="decimal" value={transferAmount}
