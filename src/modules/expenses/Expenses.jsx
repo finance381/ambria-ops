@@ -58,6 +58,11 @@ function Expenses({ profile }) {
   var [bulkAmount, setBulkAmount] = useState('')
   var [bulkDesc, setBulkDesc] = useState('')
   var [bulkSaving, setBulkSaving] = useState(false)
+  var [issueImage, setIssueImage] = useState(null)
+  var [receiveModal, setReceiveModal] = useState(null)
+  var [receiveImage, setReceiveImage] = useState(null)
+  var [receiveSaving, setReceiveSaving] = useState(false)
+  var [enlargedWalletImg, setEnlargedWalletImg] = useState(null)
   var [subCatMap, setSubCatMap] = useState({})
   var [typesModal, setTypesModal] = useState(false)
   var [expTypes, setExpTypes] = useState([])
@@ -210,7 +215,7 @@ function Expenses({ profile }) {
     var wid = (wallet || selectedWallet)?.id
     if (!wid) return
     var query = supabase.from('wallet_transactions')
-      .select('id, type, amount_paise, balance_after_paise, description, reference_type, reference_id, performed_by, created_at')
+      .select('id, type, amount_paise, balance_after_paise, description, reference_type, reference_id, performed_by, created_at, issued_image_path, received_image_path, received_at, wallet_id')
       .eq('wallet_id', wid)
       .order('created_at', { ascending: false })
       .limit(500)
@@ -229,10 +234,19 @@ function Expenses({ profile }) {
     var amountPaise = Math.round(Number(issueAmount) * 100)
     var rpcName = issueType === 'debit' ? 'deduct_money' : 'issue_money'
     var defaultDesc = issueType === 'debit' ? 'Points deducted by admin' : 'Points issued by admin'
+    var imagePath = null
+    if (issueImage) {
+      var ext = issueImage.name.split('.').pop()
+      var path = 'wallet/issued/' + issueModal.user_id + '_' + Date.now() + '.' + ext
+      var { error: upErr } = await supabase.storage.from('receipts').upload(path, issueImage, { upsert: true })
+      if (upErr) { alert('Image upload failed: ' + upErr.message); setIssueSaving(false); return }
+      imagePath = path
+    }
     var { error } = await supabase.rpc(rpcName, {
       p_user_id: issueModal.user_id,
       p_amount_paise: amountPaise,
       p_description: issueDesc.trim() || defaultDesc,
+      p_issued_image: imagePath,
     })
     if (error) { alert((issueType === 'debit' ? 'Deduct' : 'Issue') + ' failed: ' + error.message); setIssueSaving(false); return }
     var logAction = issueType === 'debit' ? 'WALLET_DEDUCT' : 'WALLET_ISSUE'
@@ -240,9 +254,32 @@ function Expenses({ profile }) {
     setIssueModal(null)
     setIssueAmount('')
     setIssueDesc('')
+    setIssueImage(null)
     setIssueSaving(false)
     loadAllWallets()
   }
+  async function confirmReceive() {
+    if (receiveSaving || !receiveModal) return
+    setReceiveSaving(true)
+    var imagePath = null
+    if (receiveImage) {
+      var ext = receiveImage.name.split('.').pop()
+      var path = 'wallet/received/' + profile.id + '_' + Date.now() + '.' + ext
+      var { error: upErr } = await supabase.storage.from('receipts').upload(path, receiveImage, { upsert: true })
+      if (upErr) { alert('Image upload failed: ' + upErr.message); setReceiveSaving(false); return }
+      imagePath = path
+    }
+    var { error } = await supabase.from('wallet_transactions')
+      .update({ received_image_path: imagePath, received_at: new Date().toISOString() })
+      .eq('id', receiveModal.id)
+    if (error) { alert('Confirm failed: ' + error.message); setReceiveSaving(false); return }
+    try { await logActivity('WALLET_RECEIVE_CONFIRM', formatPoints(Math.abs(receiveModal.amount_paise)) + ' | Txn #' + receiveModal.id) } catch (_) {}
+    setReceiveModal(null)
+    setReceiveImage(null)
+    setReceiveSaving(false)
+    openWalletTxns(null)
+  }
+
   async function runBulkIssue() {
     var userIds = Object.keys(bulkSelected).filter(function (k) { return bulkSelected[k] })
     if (bulkSaving || !userIds.length || !bulkAmount || Number(bulkAmount) <= 0) return
@@ -842,8 +879,24 @@ if (allExpView && (isAdmin || isAuditor)) {
                   maxLength="300" className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   style={{ fontSize: '16px' }} />
               </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">📷 Cash Photo</label>
+                {issueImage ? (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-green-600 font-medium truncate flex-1">✓ {issueImage.name}</span>
+                    <button onClick={function () { setIssueImage(null) }}
+                      className="text-xs text-red-500 font-bold hover:text-red-700">✕</button>
+                  </div>
+                ) : (
+                  <label className="block w-full py-2.5 text-center text-sm text-indigo-600 border border-dashed border-indigo-300 rounded-lg cursor-pointer hover:bg-indigo-50 transition-colors">
+                    Tap to attach photo
+                    <input type="file" accept="image/*" capture="environment" className="hidden"
+                      onChange={function (e) { if (e.target.files?.[0]) setIssueImage(e.target.files[0]); e.target.value = '' }} />
+                  </label>
+                )}
+              </div>
               <div className="flex gap-3 pt-2">
-                <button onClick={function () { setIssueModal(null) }}
+                <button onClick={function () { setIssueModal(null); setIssueImage(null) }}
                   className="flex-1 py-3 text-sm text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors font-semibold">Cancel</button>
                 <button onClick={issuePoints} disabled={issueSaving || !issueAmount || Number(issueAmount) <= 0}
                   className="flex-1 py-3 text-sm text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition-colors font-semibold">
@@ -914,8 +967,12 @@ if (allExpView && (isAdmin || isAuditor)) {
         <div className="space-y-2">
           {walletTxns.map(function (t) {
             var isCredit = t.type === 'credit'
+            var issuedUrl = t.issued_image_path ? supabase.storage.from('receipts').getPublicUrl(t.issued_image_path).data?.publicUrl : null
+            var receivedUrl = t.received_image_path ? supabase.storage.from('receipts').getPublicUrl(t.received_image_path).data?.publicUrl : null
+            var isOwnWallet = selectedWallet && selectedWallet.user_id === profile.id
+            var canConfirm = isCredit && !t.received_at && t.issued_image_path && isOwnWallet
             return (
-              <div key={t.id} className="bg-white border border-gray-200 rounded-lg p-3">
+              <div key={t.id} className={"bg-white border rounded-lg p-3 " + (isCredit && t.issued_image_path && !t.received_at ? "border-amber-300 bg-amber-50/30" : "border-gray-200")}>
                 <div className="flex items-start justify-between">
                   <div className="flex-1 min-w-0">
                     <p className="text-sm text-gray-800">{t.description || '—'}</p>
@@ -924,12 +981,33 @@ if (allExpView && (isAdmin || isAuditor)) {
                       {t.reference_type ? ' · ' + t.reference_type : ''}
                       {t.performed_by && walletProfiles[t.performed_by] ? ' · by ' + walletProfiles[t.performed_by].name : ''}
                     </p>
+                    {t.received_at && <p className="text-[10px] text-green-600 font-medium mt-0.5">✓ Confirmed {formatDate(t.received_at)}</p>}
+                    <div className="flex gap-2 mt-1.5">
+                      {issuedUrl && (
+                        <div className="relative cursor-pointer" onClick={function () { setEnlargedWalletImg(issuedUrl) }}>
+                          <img src={issuedUrl} alt="" className="w-10 h-10 rounded border border-gray-200 object-cover" />
+                          <span className="absolute -top-1 -left-1 text-[8px] bg-blue-600 text-white px-1 rounded font-bold">Sent</span>
+                        </div>
+                      )}
+                      {receivedUrl && (
+                        <div className="relative cursor-pointer" onClick={function () { setEnlargedWalletImg(receivedUrl) }}>
+                          <img src={receivedUrl} alt="" className="w-10 h-10 rounded border border-gray-200 object-cover" />
+                          <span className="absolute -top-1 -left-1 text-[8px] bg-green-600 text-white px-1 rounded font-bold">Rcvd</span>
+                        </div>
+                      )}
+                    </div>
                   </div>
                   <div className="text-right flex-shrink-0 ml-2">
                     <p className={"text-sm font-bold " + (isCredit ? "text-green-600" : "text-red-600")}>
                       {isCredit ? '+' : '−'}{formatPoints(Math.abs(t.amount_paise))}
                     </p>
                     <p className="text-[10px] text-gray-400">bal: {formatPoints(t.balance_after_paise)}</p>
+                    {canConfirm && (
+                      <button onClick={function () { setReceiveModal(t); setReceiveImage(null) }}
+                        className="mt-1.5 px-2 py-1 text-[10px] font-bold text-amber-700 bg-amber-100 border border-amber-300 rounded hover:bg-amber-200 transition-colors">
+                        📷 Confirm Received
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -938,7 +1016,7 @@ if (allExpView && (isAdmin || isAuditor)) {
         </div>
         {/* Issue modal (reuse same one) */}
         {issueModal && (
-          <BottomSheet open={true} onClose={function () { setIssueModal(null) }} title="Issue Points">
+          <BottomSheet open={true} onClose={function () { setIssueModal(null); setIssueImage(null) }} title="Issue Points">
             <div className="space-y-4">
               <p className="text-sm text-gray-500">To: <span className="font-medium text-gray-800">{walletProfiles[issueModal.user_id]?.name || '—'}</span></p>
               <div>
@@ -955,8 +1033,24 @@ if (allExpView && (isAdmin || isAuditor)) {
                   className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   style={{ fontSize: '16px' }} />
               </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">📷 Cash Photo</label>
+                {issueImage ? (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-green-600 font-medium truncate flex-1">✓ {issueImage.name}</span>
+                    <button onClick={function () { setIssueImage(null) }}
+                      className="text-xs text-red-500 font-bold hover:text-red-700">✕</button>
+                  </div>
+                ) : (
+                  <label className="block w-full py-2.5 text-center text-sm text-indigo-600 border border-dashed border-indigo-300 rounded-lg cursor-pointer hover:bg-indigo-50 transition-colors">
+                    Tap to attach photo
+                    <input type="file" accept="image/*" capture="environment" className="hidden"
+                      onChange={function (e) { if (e.target.files?.[0]) setIssueImage(e.target.files[0]); e.target.value = '' }} />
+                  </label>
+                )}
+              </div>
               <div className="flex gap-3 pt-2">
-                <button onClick={function () { setIssueModal(null) }}
+                <button onClick={function () { setIssueModal(null); setIssueImage(null) }}
                   className="flex-1 py-3 text-sm text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors font-semibold">Cancel</button>
                 <button onClick={issuePoints} disabled={issueSaving || !issueAmount || Number(issueAmount) <= 0}
                   className="flex-1 py-3 text-sm text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition-colors font-semibold">
@@ -965,6 +1059,45 @@ if (allExpView && (isAdmin || isAuditor)) {
               </div>
             </div>
           </BottomSheet>
+        )}
+        {/* Confirm Receive modal */}
+        {receiveModal && (
+          <BottomSheet open={true} onClose={function () { setReceiveModal(null); setReceiveImage(null) }} title="Confirm Cash Received">
+            <div className="space-y-4">
+              <p className="text-sm text-gray-500">Amount: <span className="font-bold text-green-700">{formatPoints(Math.abs(receiveModal.amount_paise))}</span></p>
+              <p className="text-xs text-gray-400">{receiveModal.description || '—'}</p>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">📷 Receipt Photo</label>
+                {receiveImage ? (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-green-600 font-medium truncate flex-1">✓ {receiveImage.name}</span>
+                    <button onClick={function () { setReceiveImage(null) }}
+                      className="text-xs text-red-500 font-bold hover:text-red-700">✕</button>
+                  </div>
+                ) : (
+                  <label className="block w-full py-3 text-center text-sm text-amber-700 border-2 border-dashed border-amber-300 rounded-lg cursor-pointer hover:bg-amber-50 transition-colors font-medium">
+                    📷 Take photo of cash received
+                    <input type="file" accept="image/*" capture="environment" className="hidden"
+                      onChange={function (e) { if (e.target.files?.[0]) setReceiveImage(e.target.files[0]); e.target.value = '' }} />
+                  </label>
+                )}
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button onClick={function () { setReceiveModal(null); setReceiveImage(null) }}
+                  className="flex-1 py-3 text-sm text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors font-semibold">Cancel</button>
+                <button onClick={confirmReceive} disabled={receiveSaving || !receiveImage}
+                  className="flex-1 py-3 text-sm text-white bg-green-600 rounded-xl hover:bg-green-700 disabled:opacity-50 transition-colors font-semibold">
+                  {receiveSaving ? 'Confirming...' : '✓ Confirm Received'}
+                </button>
+              </div>
+            </div>
+          </BottomSheet>
+        )}
+        {/* Enlarged wallet image */}
+        {enlargedWalletImg && (
+          <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4" onClick={function () { setEnlargedWalletImg(null) }}>
+            <img src={enlargedWalletImg} alt="" className="max-w-full max-h-[80vh] rounded-lg" />
+          </div>
         )}
       </div>
     )
