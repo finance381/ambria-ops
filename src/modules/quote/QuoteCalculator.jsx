@@ -32,6 +32,9 @@ var FALLBACK_ET = [
   { label: 'Reception', icon: '🥂', wedding: false },
 ]
 
+// venueIdx → LMS venue ID (null = placeholder, no LMS push)
+var LMS_VENUE_IDS = [3, 6, null, 19, 19, null]
+
 // ── Date classification (non-financial, stays client-side) ──
 var MONTHS = 'Jan,Feb,Mar,Apr,May,Jun,Jul,Aug,Sep,Oct,Nov,Dec'.split(',')
 function classifyDate(val, seasonDates) {
@@ -226,19 +229,25 @@ function QuoteCalculator({ profile }) {
   var [includeDecor, setIncludeDecor] = useState(true)
   var [includeDj, setIncludeDj] = useState(true)
 
+  // Location (LMS hall/lawn)
+  var [locationId, setLocationId] = useState('')
+  var [locationName, setLocationName] = useState('')
+  var [lmsLocations, setLmsLocations] = useState(null)
+
   // DB-driven lists
   var [inquiryModes, setInquiryModes] = useState(FALLBACK_MODES)
   var [eventTypes, setEventTypes] = useState(FALLBACK_ET)
   var [venueList, setVenueList] = useState(null)
 
   useEffect(function () {
-    supabase.from('quote_config').select('key, value').in('key', ['inquiry_modes', 'event_types', 'season_dates', 'venues']).then(function (res) {
+    supabase.from('quote_config').select('key, value').in('key', ['inquiry_modes', 'event_types', 'season_dates', 'venues', 'lms_locations']).then(function (res) {
       if (!res.data) return
       res.data.forEach(function (row) {
         if (row.key === 'inquiry_modes' && Array.isArray(row.value)) setInquiryModes(row.value)
         if (row.key === 'event_types' && Array.isArray(row.value)) setEventTypes(row.value)
         if (row.key === 'season_dates' && row.value) setSeasonDates(row.value)
         if (row.key === 'venues' && Array.isArray(row.value)) setVenueList(row.value)
+        if (row.key === 'lms_locations' && row.value) setLmsLocations(row.value)
       })
     })
   }, [])
@@ -422,6 +431,8 @@ function QuoteCalculator({ profile }) {
       deal_vm_paise: dealVm ? toPaise(+dealVm) : null,
       deal_decor_paise: dealDecor ? toPaise(+dealDecor) : null,
       deal_ent_paise: dealEnt ? toPaise(+dealEnt) : null,
+      location_id: locationId || null,
+      location_name: locationName || null,
     }
     if (taxMode !== 0 || split5 !== 50) {
       row.tax_mode = taxMode; row.split_5_pct = split5
@@ -462,6 +473,7 @@ function QuoteCalculator({ profile }) {
     if (q.deal_value_paise != null && !q.deal_vm_paise) { setDealVm(String(fromPaise(q.deal_value_paise))) }
     if (q.tax_mode != null) { setTaxMode(q.tax_mode); setSplit5(q.split_5_pct || 50) }
     setSavedId(q.id); setQuoteStatus(q.status || 'draft'); setNotes(q.notes || '')
+    setLocationId(q.location_id || ''); setLocationName(q.location_name || '')
     setShowQuotes(false); setShowProposal(false); setPage(0)
     setIncludeMenu(q.include_menu != null ? q.include_menu : true); setIncludeDecor(q.include_decor != null ? q.include_decor : true); setIncludeDj(q.include_dj != null ? q.include_dj : true)
   }
@@ -470,7 +482,8 @@ function QuoteCalculator({ profile }) {
     setGuestName(''); setGuestPhone(''); setGuestAddress(''); setEventDate(''); setInquiryMode(''); setEventTypeIdx(0)
     setVenueIdx(0); setFoodPref(0); setPax(400); setSlot(0); setCatOverride(2); setMenuIdx(3)
     setDecorIdx(0); setDjIdx(1); setTtdIdx(0); setDealVal(14); setTaxMode(0); setSplit5(50)
-    setQuoteStatus('draft'); setSavedId(null); setNotes(''); setShowQuotes(false); setShowProposal(false); setPage(0)
+    setQuoteStatus('draft'); setSavedId(null); setNotes(''); setLocationId(''); setLocationName('')
+    setShowQuotes(false); setShowProposal(false); setPage(0)
     setIncludeMenu(true); setIncludeDecor(true); setIncludeDj(true)
     setDealVm(''); setDealDecor(''); setDealEnt('')
   }
@@ -677,7 +690,7 @@ function QuoteCalculator({ profile }) {
             {venues.map(function (v, idx) {
               var on = venueIdx === idx
               var isPh = v[2] === 'placeholder'
-              return (<button key={idx} onClick={function () { if (!isPh) setVenueIdx(idx) }} style={{
+              return (<button key={idx} onClick={function () { if (!isPh) { setVenueIdx(idx); setLocationId(''); setLocationName('') } }} style={{
                 textAlign: 'left', width: '100%', padding: 11, borderRadius: 10,
                 border: '2px solid ' + (on && !isPh ? C.gold : C.border), background: on && !isPh ? '#FFF8F0' : '#fff',
                 color: isPh ? '#ccc' : on ? C.maroon : C.muted, fontSize: 12, fontWeight: on ? 700 : 600,
@@ -685,6 +698,25 @@ function QuoteCalculator({ profile }) {
               }}><div>{isPh ? '🚧 ' : ''}{v[0]}</div><div style={{ fontSize: 10, opacity: 0.6, marginTop: 2 }}>{isPh ? 'Coming soon' : v[1]}</div></button>)
             })}
           </div>
+
+          {(function () {
+            var locs = lmsLocations ? lmsLocations[String(venueIdx)] : null
+            if (!locs || locs.length === 0) return null
+            return (<>
+              <div style={{ fontSize: 12, color: C.muted, marginBottom: 5, fontWeight: 600 }}>Location / Hall</div>
+              <select value={locationId} onChange={function (e) {
+                var sel = locs.find(function (l) { return l.id === e.target.value })
+                setLocationId(e.target.value)
+                setLocationName(sel ? sel.name : '')
+              }} style={{
+                width: '100%', padding: 11, borderRadius: 9, border: '2px solid ' + (locationId ? C.gold : C.border),
+                fontSize: 14, marginBottom: 10, background: '#fff', color: locationId ? C.maroon : C.muted,
+              }}>
+                <option value="">Select location...</option>
+                {locs.map(function (l) { return <option key={l.id} value={l.id}>{l.name}</option> })}
+              </select>
+            </>)
+          })()}
 
           <div style={{ fontSize: 12, color: C.muted, marginBottom: 5, fontWeight: 600 }}>Food</div>
           <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
@@ -751,7 +783,7 @@ function QuoteCalculator({ profile }) {
           {venues.map(function (v, idx) {
             var on = venueIdx === idx
             var isPh = v[2] === 'placeholder'
-            return (<button key={idx} onClick={function () { if (!isPh) { setVenueIdx(idx); setDecorIdx(0) } }} style={{
+            return (<button key={idx} onClick={function () { if (!isPh) { setVenueIdx(idx); setDecorIdx(0); setLocationId(''); setLocationName('') } }} style={{
               padding: '8px 4px', borderRadius: 9, border: '2px solid ' + (on && !isPh ? C.gold : C.border),
               background: on && !isPh ? '#FFF8F0' : '#fff', color: isPh ? '#ccc' : on ? C.maroon : C.muted,
               fontSize: 11, fontWeight: on ? 700 : 600, cursor: isPh ? 'not-allowed' : 'pointer',
