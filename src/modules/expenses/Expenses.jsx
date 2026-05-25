@@ -1108,38 +1108,46 @@ if (allExpView && (isAdmin || isAuditor)) {
   // ═══════════════════════════════════════════════
   return (
     <div className="space-y-4">
-      {/* Wallet balance */}
-      <div className={"flex items-center justify-between rounded-xl p-4 border " + (walletBalance < 0 ? "bg-red-50 border-red-200" : "bg-green-50 border-green-200")}>
-        <div>
-          <p className="text-xs font-medium text-gray-500">My Wallet Balance</p>
-          <p className={"text-xl font-bold " + (walletBalance < 0 ? "text-red-700" : "text-green-700")}>{formatPoints(walletBalance)}</p>
+      {/* Two cards: Wallet + Expenses */}
+      <div className="grid grid-cols-2 gap-3">
+        <div className={"rounded-xl p-4 border cursor-pointer active:scale-[0.98] transition-transform " + (walletBalance < 0 ? "bg-red-50 border-red-200" : "bg-green-50 border-green-200")}
+          onClick={function () { if (isAdmin || isAuditor) { setWalletView('wallets'); loadAllWallets() } }}>
+          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Wallet</p>
+          <p className={"text-xl font-bold mt-1 " + (walletBalance < 0 ? "text-red-700" : "text-green-700")}>{formatPoints(walletBalance)}</p>
+          {(isAdmin || isAuditor) && <p className="text-[10px] text-indigo-600 font-medium mt-1">Manage →</p>}
         </div>
-        {(isAdmin || isAuditor) && (<>
-          <button onClick={function () { setWalletView('wallets'); loadAllWallets() }}
-            className="px-3 py-1.5 text-xs font-bold text-indigo-600 bg-white border border-indigo-200 rounded-lg hover:bg-indigo-50 transition-colors">
-            Manage Wallets
-          </button>
+        <div className="rounded-xl p-4 border border-indigo-200 bg-indigo-50 cursor-pointer active:scale-[0.98] transition-transform"
+          onClick={function () { setEditExp(null); setView('form') }}>
+          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Expenses</p>
+          <p className="text-xl font-bold mt-1 text-indigo-700">{myExpenses.length}</p>
+          <p className="text-[10px] text-indigo-600 font-medium mt-1">+ New Expense</p>
+        </div>
+      </div>
+
+      {/* Admin shortcuts */}
+      {(isAdmin || isAuditor) && (
+        <div className="flex gap-2">
           <button onClick={function () { setReportView(true); loadReport() }}
-            className="px-3 py-1.5 text-xs font-bold text-amber-600 bg-white border border-amber-200 rounded-lg hover:bg-amber-50 transition-colors">
+            className="flex-1 py-2.5 text-xs font-bold text-amber-600 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 transition-colors">
             📊 Reports
           </button>
           <button onClick={function () { setAllExpView(true); loadAllExps(false) }}
-            className="px-3 py-1.5 text-xs font-bold text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
-            📋 All
+            className="flex-1 py-2.5 text-xs font-bold text-gray-600 bg-gray-50 border border-gray-200 rounded-lg hover:bg-gray-100 transition-colors">
+            📋 All Expenses
           </button>
           {(profile?.permissions || []).indexOf('admin_masters') !== -1 && (
             <button onClick={function () { setTypesModal(true); loadExpTypes() }}
-              className="px-3 py-1.5 text-xs font-bold text-purple-600 bg-white border border-purple-200 rounded-lg hover:bg-purple-50 transition-colors">
+              className="flex-1 py-2.5 text-xs font-bold text-purple-600 bg-purple-50 border border-purple-200 rounded-lg hover:bg-purple-100 transition-colors">
               ⚙ Types
             </button>
           )}
-        </>)}
-      </div>
+        </div>
+      )}
 
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-bold text-gray-900">PC & Direct Expenses</h2>
+          <h2 className="text-lg font-bold text-gray-900">My Expenses</h2>
           <p className="text-xs text-gray-400">
             {view === 'approve'
               ? approvalExpenses.length + ' pending approval'
@@ -1155,7 +1163,7 @@ if (allExpView && (isAdmin || isAuditor)) {
           )}
           <button onClick={function () { setEditExp(null); setView('form') }}
             className="px-4 py-2 text-sm font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 active:bg-indigo-800 transition-colors">
-            + New Expense
+            + New
           </button>
         </div>
       </div>
