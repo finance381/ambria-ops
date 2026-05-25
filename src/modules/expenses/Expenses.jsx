@@ -928,24 +928,29 @@ if (allExpView && (isAdmin || isAuditor)) {
                 </button>
               )}
             </div>
-            {myWallet && (
-              <button onClick={function () {
-                setWalletProfiles(function (prev) { var n = Object.assign({}, prev); n[profile.id] = profile; return n })
-                openWalletTxns(myWallet)
-              }}
-                className="relative px-3 py-1.5 text-xs font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 transition-colors">
-                My Wallet →
-                {(pendingIncoming.length > 0) && (
-                  <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center">{pendingIncoming.length}</span>
-                )}
-              </button>
-            )}
+            
           </div>
         </div>
         <input type="text" value={walletSearch} onChange={function (e) { setWalletSearch(e.target.value) }}
           placeholder="Search name, email, role..."
           className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
           style={{ fontSize: '16px' }} />
+        {myWallet && (
+          <div onClick={function () {
+            setWalletProfiles(function (prev) { var n = Object.assign({}, prev); n[profile.id] = profile; return n })
+            openWalletTxns(myWallet)
+          }}
+            className="relative bg-emerald-50 border border-emerald-200 rounded-xl p-4 flex items-center justify-between cursor-pointer active:scale-[0.98] transition-transform">
+            <div>
+              <p className="text-sm font-bold text-emerald-800">My Wallet</p>
+              <p className="text-xs text-emerald-600">{formatPoints(walletBalance)} · View transactions →</p>
+            </div>
+            {pendingIncoming.length > 0 && (
+              <span className="px-2.5 py-1 text-[10px] font-bold text-amber-700 bg-amber-100 border border-amber-300 rounded-full">{pendingIncoming.length} incoming</span>
+            )}
+          </div>
+        )}
+
         <div className="space-y-2">
           {filteredWallets.map(function (w) {
             var p = walletProfiles[w.user_id] || {}
