@@ -928,6 +928,18 @@ if (allExpView && (isAdmin || isAuditor)) {
                 </button>
               )}
             </div>
+            {myWallet && (
+              <button onClick={function () {
+                setWalletProfiles(function (prev) { var n = Object.assign({}, prev); n[profile.id] = profile; return n })
+                openWalletTxns(myWallet)
+              }}
+                className="relative px-3 py-1.5 text-xs font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 transition-colors">
+                My Wallet →
+                {(pendingIncoming.length > 0) && (
+                  <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center">{pendingIncoming.length}</span>
+                )}
+              </button>
+            )}
           </div>
         </div>
         <input type="text" value={walletSearch} onChange={function (e) { setWalletSearch(e.target.value) }}
