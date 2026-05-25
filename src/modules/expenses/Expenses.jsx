@@ -204,18 +204,22 @@ function Expenses({ profile }) {
   }
 
   async function loadAllWallets() {
-    var [wRes, pRes] = await Promise.all([
+    var [wRes, pRes, pendRes] = await Promise.all([
       supabase.from('wallets').select('id, user_id, balance_paise, updated_at'),
       supabase.from('profiles').select('id, name, email, role').eq('active', true).order('name'),
+      supabase.from('wallet_transactions').select('wallet_id').eq('status', 'pending'),
     ])
     var pMap = {}
     ;(pRes.data || []).forEach(function (p) { pMap[p.id] = p })
     setWalletProfiles(pMap)
+    var pendingMap = {}
+    ;(pendRes.data || []).forEach(function (t) { pendingMap[t.wallet_id] = (pendingMap[t.wallet_id] || 0) + 1 })
     var wMap = {}
     ;(wRes.data || []).forEach(function (w) { wMap[w.user_id] = w })
     var combined = (pRes.data || []).map(function (p) {
       var w = wMap[p.id]
-      return { id: w?.id || 'no_wallet_' + p.id, user_id: p.id, balance_paise: w?.balance_paise || 0, updated_at: w?.updated_at || null, _hasWallet: !!w }
+      var wid = w?.id || 'no_wallet_' + p.id
+      return { id: wid, user_id: p.id, balance_paise: w?.balance_paise || 0, updated_at: w?.updated_at || null, _hasWallet: !!w, _pendingCount: pendingMap[wid] || 0 }
     })
     setAllWallets(combined)
   }
@@ -830,6 +834,9 @@ if (allExpView && (isAdmin || isAuditor)) {
                   <p className="text-xs text-gray-400">{p.email || '—'} · {p.role || '—'}</p>
                 </div>
                 <div className="flex items-center gap-3 flex-shrink-0">
+                  {w._pendingCount > 0 && (
+                    <span className="px-2 py-0.5 text-[10px] font-bold text-amber-700 bg-amber-100 border border-amber-300 rounded-full">{w._pendingCount} pending</span>
+                  )}
                   <span className={"text-sm font-bold " + ((w.balance_paise || 0) < 0 ? "text-red-600" : "text-green-700")}>{formatPoints(w.balance_paise)}</span>
                   <button onClick={function () { setIssueModal(w); setIssueAmount(''); setIssueDesc(''); setIssueType('credit') }}
                     className="px-3 py-1.5 text-xs font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors">
