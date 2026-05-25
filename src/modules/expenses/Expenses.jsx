@@ -215,7 +215,7 @@ function Expenses({ profile }) {
     var wid = (wallet || selectedWallet)?.id
     if (!wid) return
     var query = supabase.from('wallet_transactions')
-      .select('id, type, amount_paise, balance_after_paise, description, reference_type, reference_id, performed_by, created_at, issued_image_path, received_image_path, received_at, wallet_id')
+      .select('id, type, amount_paise, balance_after_paise, description, reference_type, reference_id, performed_by, created_at, issued_image_path, received_image_path, received_at, wallet_id, status')
       .eq('wallet_id', wid)
       .order('created_at', { ascending: false })
       .limit(500)
@@ -269,24 +269,25 @@ function Expenses({ profile }) {
     loadAllWallets()
   }
   async function confirmReceive() {
-    if (receiveSaving || !receiveModal) return
+    if (receiveSaving || !receiveModal || !receiveImage) return
     setReceiveSaving(true)
     var imagePath = null
-    if (receiveImage) {
-      var ext = receiveImage.name.split('.').pop()
-      var path = 'wallet/received/' + profile.id + '_' + Date.now() + '.' + ext
-      var { error: upErr } = await supabase.storage.from('receipts').upload(path, receiveImage, { upsert: true })
-      if (upErr) { alert('Image upload failed: ' + upErr.message); setReceiveSaving(false); return }
-      imagePath = path
-    }
-    var { error } = await supabase.from('wallet_transactions')
-      .update({ received_image_path: imagePath, received_at: new Date().toISOString() })
-      .eq('id', receiveModal.id)
+    var ext = receiveImage.name.split('.').pop()
+    var path = 'wallet/received/' + profile.id + '_' + Date.now() + '.' + ext
+    var { error: upErr } = await supabase.storage.from('receipts').upload(path, receiveImage, { upsert: true })
+    if (upErr) { alert('Image upload failed: ' + upErr.message); setReceiveSaving(false); return }
+    imagePath = path
+    var { error } = await supabase.rpc('confirm_wallet_receive', {
+      p_txn_id: receiveModal.id,
+      p_received_image: imagePath,
+    })
     if (error) { alert('Confirm failed: ' + error.message); setReceiveSaving(false); return }
     try { await logActivity('WALLET_RECEIVE_CONFIRM', formatPoints(Math.abs(receiveModal.amount_paise)) + ' | Txn #' + receiveModal.id) } catch (_) {}
     setReceiveModal(null)
     setReceiveImage(null)
     setReceiveSaving(false)
+    supabase.from('wallets').select('balance_paise').eq('user_id', profile.id).maybeSingle()
+      .then(function (res) { setWalletBalance(res.data?.balance_paise || 0) })
     openWalletTxns(null)
   }
 
@@ -980,9 +981,9 @@ if (allExpView && (isAdmin || isAuditor)) {
             var issuedUrl = t.issued_image_path ? supabase.storage.from('receipts').getPublicUrl(t.issued_image_path).data?.publicUrl : null
             var receivedUrl = t.received_image_path ? supabase.storage.from('receipts').getPublicUrl(t.received_image_path).data?.publicUrl : null
             var isOwnWallet = selectedWallet && selectedWallet.user_id === profile.id
-            var canConfirm = isCredit && !t.received_at && t.issued_image_path && isOwnWallet
+            var canConfirm = isCredit && t.status === 'pending' && isOwnWallet
             return (
-              <div key={t.id} className={"bg-white border rounded-lg p-3 " + (isCredit && t.issued_image_path && !t.received_at ? "border-amber-300 bg-amber-50/30" : "border-gray-200")}>
+              <div key={t.id} className={"bg-white border rounded-lg p-3 " + (t.status === 'pending' ? "border-amber-300 bg-amber-50/30" : "border-gray-200")}>
                 <div className="flex items-start justify-between">
                   <div className="flex-1 min-w-0">
                     <p className="text-sm text-gray-800">{t.description || '—'}</p>
