@@ -246,9 +246,19 @@ function Expenses({ profile }) {
       p_user_id: issueModal.user_id,
       p_amount_paise: amountPaise,
       p_description: issueDesc.trim() || defaultDesc,
-      p_issued_image: imagePath,
     })
     if (error) { alert((issueType === 'debit' ? 'Deduct' : 'Issue') + ' failed: ' + error.message); setIssueSaving(false); return }
+    if (imagePath) {
+      var { data: latestTxn } = await supabase.from('wallet_transactions')
+        .select('id')
+        .eq('wallet_id', issueModal.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single()
+      if (latestTxn) {
+        await supabase.from('wallet_transactions').update({ issued_image_path: imagePath }).eq('id', latestTxn.id)
+      }
+    }
     var logAction = issueType === 'debit' ? 'WALLET_DEDUCT' : 'WALLET_ISSUE'
     try { await logActivity(logAction, (walletProfiles[issueModal.user_id]?.name || '—') + ' | ' + formatPoints(amountPaise) + ' | ' + (issueDesc.trim() || '—')) } catch (_) {}
     setIssueModal(null)
