@@ -938,7 +938,9 @@ if (allExpView && (isAdmin || isAuditor)) {
         {myWallet && (
           <div onClick={function () {
             setWalletProfiles(function (prev) { var n = Object.assign({}, prev); n[profile.id] = profile; return n })
-            openWalletTxns(myWallet)
+            var w = Object.assign({}, myWallet, { balance_paise: walletBalance })
+            openWalletTxns(w)
+            loadTransfers()
           }}
             className="relative bg-emerald-50 border border-emerald-200 rounded-xl p-4 flex items-center justify-between cursor-pointer active:scale-[0.98] transition-transform">
             <div>
