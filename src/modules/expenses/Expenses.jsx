@@ -65,6 +65,18 @@ function Expenses({ profile }) {
   var [enlargedWalletImg, setEnlargedWalletImg] = useState(null)
   var [pendingReceiveCount, setPendingReceiveCount] = useState(0)
   var [myWallet, setMyWallet] = useState(null)
+  var [pendingIncoming, setPendingIncoming] = useState([])
+  var [pendingOutgoing, setPendingOutgoing] = useState([])
+  var [transferModal, setTransferModal] = useState(false)
+  var [transferUsers, setTransferUsers] = useState([])
+  var [transferTo, setTransferTo] = useState('')
+  var [transferAmount, setTransferAmount] = useState('')
+  var [transferDesc, setTransferDesc] = useState('')
+  var [transferImage, setTransferImage] = useState(null)
+  var [transferSaving, setTransferSaving] = useState(false)
+  var [transferConfirmModal, setTransferConfirmModal] = useState(null)
+  var [transferConfirmImage, setTransferConfirmImage] = useState(null)
+  var [transferConfirmSaving, setTransferConfirmSaving] = useState(false)
   var [subCatMap, setSubCatMap] = useState({})
   var [typesModal, setTypesModal] = useState(false)
   var [expTypes, setExpTypes] = useState([])
@@ -107,6 +119,12 @@ function Expenses({ profile }) {
       .eq('status', 'pending')
       .eq('type', 'credit')
       .then(function (res) { setPendingReceiveCount(res.count || 0) })
+    supabase.from('wallet_transfers')
+      .select('id', { count: 'exact', head: true })
+      .eq('to_user_id', profile.id)
+      .eq('status', 'pending')
+      .then(function (res) { setPendingReceiveCount(function (prev) { return prev + (res.count || 0) }) })
+    loadTransfers()
     loadMyExpenses(false)
     loadApprovalExpenses(false)
   }, [statusFilter, dateFrom, dateTo, expSearchDebounced])
@@ -308,6 +326,103 @@ function Expenses({ profile }) {
       .eq('type', 'credit')
       .then(function (res) { setPendingReceiveCount(res.count || 0) })
     openWalletTxns(null)
+  }
+
+  async function loadTransfers() {
+    var [incRes, outRes] = await Promise.all([
+      supabase.from('wallet_transfers').select('id, from_user_id, amount_paise, description, sender_image_path, status, created_at').eq('to_user_id', profile.id).eq('status', 'pending').order('created_at', { ascending: false }),
+      supabase.from('wallet_transfers').select('id, to_user_id, amount_paise, description, sender_image_path, status, created_at').eq('from_user_id', profile.id).eq('status', 'pending').order('created_at', { ascending: false }),
+    ])
+    var inc = incRes.data || []
+    var out = outRes.data || []
+    // resolve names
+    var uids = []
+    inc.forEach(function (t) { if (uids.indexOf(t.from_user_id) === -1) uids.push(t.from_user_id) })
+    out.forEach(function (t) { if (uids.indexOf(t.to_user_id) === -1) uids.push(t.to_user_id) })
+    if (uids.length > 0) {
+      var { data: names } = await supabase.rpc('get_profile_names', { p_ids: uids })
+      var nMap = {}
+      ;(names || []).forEach(function (n) { nMap[n.id] = n.name })
+      inc = inc.map(function (t) { return Object.assign({}, t, { _fromName: nMap[t.from_user_id] || '—' }) })
+      out = out.map(function (t) { return Object.assign({}, t, { _toName: nMap[t.to_user_id] || '—' }) })
+    }
+    setPendingIncoming(inc)
+    setPendingOutgoing(out)
+  }
+
+  async function openTransferModal() {
+    setTransferModal(true)
+    setTransferTo('')
+    setTransferAmount('')
+    setTransferDesc('')
+    setTransferImage(null)
+    if (transferUsers.length === 0) {
+      var { data } = await supabase.from('profiles').select('id, name, email').eq('active', true).order('name')
+      setTransferUsers((data || []).filter(function (p) { return p.id !== profile.id }))
+    }
+  }
+
+  async function initiateTransfer() {
+    if (transferSaving || !transferTo || !transferAmount || Number(transferAmount) <= 0) return
+    setTransferSaving(true)
+    var amountPaise = Math.round(Number(transferAmount) * 100)
+    var imagePath = null
+    if (transferImage) {
+      var ext = transferImage.name.split('.').pop()
+      var path = 'wallet/transfer/' + profile.id + '_' + Date.now() + '.' + ext
+      var { error: upErr } = await supabase.storage.from('receipts').upload(path, transferImage, { upsert: true })
+      if (upErr) { alert('Image upload failed: ' + upErr.message); setTransferSaving(false); return }
+      imagePath = path
+    }
+    var { data: tid, error } = await supabase.rpc('initiate_transfer', {
+      p_to_user_id: transferTo,
+      p_amount_paise: amountPaise,
+      p_description: transferDesc.trim() || 'Cash transfer',
+      p_sender_image: imagePath,
+    })
+    if (error) { alert('Transfer failed: ' + error.message); setTransferSaving(false); return }
+    var toName = (transferUsers.find(function (u) { return u.id === transferTo }) || {}).name || '—'
+    try { await logActivity('WALLET_TRANSFER', toName + ' | ' + formatPoints(amountPaise)) } catch (_) {}
+    setTransferModal(false)
+    setTransferSaving(false)
+    supabase.from('wallets').select('balance_paise').eq('user_id', profile.id).maybeSingle()
+      .then(function (res) { setWalletBalance(res.data?.balance_paise || 0) })
+    loadTransfers()
+  }
+
+  async function confirmTransferReceive() {
+    if (transferConfirmSaving || !transferConfirmModal) return
+    setTransferConfirmSaving(true)
+    var imagePath = null
+    if (transferConfirmImage) {
+      var ext = transferConfirmImage.name.split('.').pop()
+      var path = 'wallet/transfer/' + profile.id + '_recv_' + Date.now() + '.' + ext
+      var { error: upErr } = await supabase.storage.from('receipts').upload(path, transferConfirmImage, { upsert: true })
+      if (upErr) { alert('Image upload failed: ' + upErr.message); setTransferConfirmSaving(false); return }
+      imagePath = path
+    }
+    var { error } = await supabase.rpc('confirm_transfer', {
+      p_transfer_id: transferConfirmModal.id,
+      p_receiver_image: imagePath,
+    })
+    if (error) { alert('Confirm failed: ' + error.message); setTransferConfirmSaving(false); return }
+    try { await logActivity('WALLET_TRANSFER_CONFIRM', formatPoints(transferConfirmModal.amount_paise) + ' from ' + (transferConfirmModal._fromName || '—')) } catch (_) {}
+    setTransferConfirmModal(null)
+    setTransferConfirmImage(null)
+    setTransferConfirmSaving(false)
+    supabase.from('wallets').select('balance_paise').eq('user_id', profile.id).maybeSingle()
+      .then(function (res) { setWalletBalance(res.data?.balance_paise || 0) })
+    loadTransfers()
+  }
+
+  async function cancelTransfer(t) {
+    if (!confirm('Cancel this transfer? ' + formatPoints(t.amount_paise) + ' will be refunded.')) return
+    var { error } = await supabase.rpc('cancel_transfer', { p_transfer_id: t.id })
+    if (error) { alert('Cancel failed: ' + error.message); return }
+    try { await logActivity('WALLET_TRANSFER_CANCEL', formatPoints(t.amount_paise)) } catch (_) {}
+    supabase.from('wallets').select('balance_paise').eq('user_id', profile.id).maybeSingle()
+      .then(function (res) { setWalletBalance(res.data?.balance_paise || 0) })
+    loadTransfers()
   }
 
   async function runBulkIssue() {
@@ -962,6 +1077,12 @@ if (allExpView && (isAdmin || isAuditor)) {
               <p className="text-xs text-gray-400">{txnUser.email || '—'} · Balance: <span className={"font-bold " + ((selectedWallet.balance_paise || 0) < 0 ? "text-red-600" : "text-green-700")}>{formatPoints(selectedWallet.balance_paise)}</span></p>
             </div>
             <div className="flex gap-2">
+              {selectedWallet && selectedWallet.user_id === profile.id && (
+                <button onClick={openTransferModal}
+                  className="px-3 py-1.5 text-xs font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 transition-colors">
+                  ↗ Transfer
+                </button>
+              )}
               {(isAdmin || isAuditor) && (
                 <button onClick={function () { setIssueModal(selectedWallet); setIssueAmount(''); setIssueDesc('') }}
                   className="px-3 py-1.5 text-xs font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors">
@@ -997,7 +1118,60 @@ if (allExpView && (isAdmin || isAuditor)) {
             </button>
           )}
         </div>
-        {walletTxns.length === 0 && (
+        {/* Pending incoming transfers */}
+        {selectedWallet && selectedWallet.user_id === profile.id && pendingIncoming.length > 0 && (
+          <div className="space-y-2">
+            <p className="text-[10px] font-bold text-amber-600 uppercase tracking-wider">Incoming Transfers</p>
+            {pendingIncoming.map(function (t) {
+              var imgUrl = t.sender_image_path ? supabase.storage.from('receipts').getPublicUrl(t.sender_image_path).data?.publicUrl : null
+              return (
+                <div key={t.id} className="bg-amber-50/50 border border-amber-300 rounded-lg p-3">
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-gray-900">{t._fromName} sent you {formatPoints(t.amount_paise)}</p>
+                      <p className="text-xs text-gray-500 mt-0.5">{t.description || '—'} · {formatDate(t.created_at)}</p>
+                      {imgUrl && (
+                        <div className="mt-1.5 relative inline-block cursor-pointer" onClick={function () { setEnlargedWalletImg(imgUrl) }}>
+                          <img src={imgUrl} alt="" className="w-10 h-10 rounded border border-gray-200 object-cover" />
+                          <span className="absolute -top-1 -left-1 text-[8px] bg-blue-600 text-white px-1 rounded font-bold">Sent</span>
+                        </div>
+                      )}
+                    </div>
+                    <button onClick={function () { setTransferConfirmModal(t); setTransferConfirmImage(null) }}
+                      className="px-3 py-1.5 text-[10px] font-bold text-amber-700 bg-amber-100 border border-amber-300 rounded-lg hover:bg-amber-200 transition-colors flex-shrink-0 ml-2">
+                      📷 Confirm
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+
+        {/* Pending outgoing transfers */}
+        {selectedWallet && selectedWallet.user_id === profile.id && pendingOutgoing.length > 0 && (
+          <div className="space-y-2">
+            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Outgoing Transfers (Pending)</p>
+            {pendingOutgoing.map(function (t) {
+              return (
+                <div key={t.id} className="bg-white border border-gray-200 rounded-lg p-3">
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-gray-800">Sent {formatPoints(t.amount_paise)} to {t._toName}</p>
+                      <p className="text-xs text-gray-400 mt-0.5">{t.description || '—'} · {formatDate(t.created_at)}</p>
+                    </div>
+                    <button onClick={function () { cancelTransfer(t) }}
+                      className="px-3 py-1.5 text-[10px] font-bold text-red-500 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 transition-colors flex-shrink-0 ml-2">
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+
+        {walletTxns.length === 0 && pendingIncoming.length === 0 && pendingOutgoing.length === 0 && (
           <div className="bg-white border border-gray-200 rounded-xl p-8 text-center">
             <p className="text-gray-400 text-sm">No transactions yet</p>
           </div>
@@ -1131,6 +1305,100 @@ if (allExpView && (isAdmin || isAuditor)) {
             </div>
           </BottomSheet>
         )}
+        {/* Transfer initiation */}
+        {transferModal && (
+          <BottomSheet open={true} onClose={function () { setTransferModal(false) }} title="Transfer Cash">
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Send to</label>
+                <select value={transferTo} onChange={function (e) { setTransferTo(e.target.value) }}
+                  className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white"
+                  style={{ fontSize: '16px' }}>
+                  <option value="">Select user...</option>
+                  {transferUsers.map(function (u) {
+                    return <option key={u.id} value={u.id}>{u.name} ({u.email})</option>
+                  })}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Amount (Points)</label>
+                <input type="number" min="1" step="any" inputMode="decimal" value={transferAmount}
+                  onChange={function (e) { setTransferAmount(e.target.value) }}
+                  placeholder="0" className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  style={{ fontSize: '16px' }} />
+                {transferAmount && Number(transferAmount) > 0 && walletBalance > 0 && Math.round(Number(transferAmount) * 100) > walletBalance && (
+                  <p className="text-xs text-red-500 mt-1">Exceeds balance ({formatPoints(walletBalance)})</p>
+                )}
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                <input type="text" value={transferDesc} onChange={function (e) { setTransferDesc(e.target.value) }}
+                  placeholder="e.g. Repayment, Lunch money..." maxLength="300"
+                  className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  style={{ fontSize: '16px' }} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">📷 Cash Photo</label>
+                {transferImage ? (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-green-600 font-medium truncate flex-1">✓ {transferImage.name}</span>
+                    <button onClick={function () { setTransferImage(null) }} className="text-xs text-red-500 font-bold hover:text-red-700">✕</button>
+                  </div>
+                ) : (
+                  <label className="block w-full py-2.5 text-center text-sm text-emerald-600 border border-dashed border-emerald-300 rounded-lg cursor-pointer hover:bg-emerald-50 transition-colors">
+                    Tap to attach photo
+                    <input type="file" accept="image/*" capture="environment" className="hidden"
+                      onChange={function (e) { if (e.target.files?.[0]) setTransferImage(e.target.files[0]); e.target.value = '' }} />
+                  </label>
+                )}
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button onClick={function () { setTransferModal(false) }}
+                  className="flex-1 py-3 text-sm text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors font-semibold">Cancel</button>
+                <button onClick={initiateTransfer}
+                  disabled={transferSaving || !transferTo || !transferAmount || Number(transferAmount) <= 0}
+                  className="flex-1 py-3 text-sm text-white bg-emerald-600 rounded-xl hover:bg-emerald-700 disabled:opacity-50 transition-colors font-semibold">
+                  {transferSaving ? 'Sending...' : 'Send ' + (transferAmount && Number(transferAmount) > 0 ? Number(transferAmount).toLocaleString('en-IN') + ' pts' : '')}
+                </button>
+              </div>
+            </div>
+          </BottomSheet>
+        )}
+
+        {/* Transfer confirm */}
+        {transferConfirmModal && (
+          <BottomSheet open={true} onClose={function () { setTransferConfirmModal(null); setTransferConfirmImage(null) }} title="Confirm Transfer Received">
+            <div className="space-y-4">
+              <p className="text-sm text-gray-500">From: <span className="font-bold text-gray-900">{transferConfirmModal._fromName}</span></p>
+              <p className="text-sm text-gray-500">Amount: <span className="font-bold text-green-700">{formatPoints(transferConfirmModal.amount_paise)}</span></p>
+              <p className="text-xs text-gray-400">{transferConfirmModal.description || '—'}</p>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">📷 Receipt Photo</label>
+                {transferConfirmImage ? (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-green-600 font-medium truncate flex-1">✓ {transferConfirmImage.name}</span>
+                    <button onClick={function () { setTransferConfirmImage(null) }} className="text-xs text-red-500 font-bold hover:text-red-700">✕</button>
+                  </div>
+                ) : (
+                  <label className="block w-full py-3 text-center text-sm text-amber-700 border-2 border-dashed border-amber-300 rounded-lg cursor-pointer hover:bg-amber-50 transition-colors font-medium">
+                    📷 Take photo of cash received
+                    <input type="file" accept="image/*" capture="environment" className="hidden"
+                      onChange={function (e) { if (e.target.files?.[0]) setTransferConfirmImage(e.target.files[0]); e.target.value = '' }} />
+                  </label>
+                )}
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button onClick={function () { setTransferConfirmModal(null); setTransferConfirmImage(null) }}
+                  className="flex-1 py-3 text-sm text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors font-semibold">Cancel</button>
+                <button onClick={confirmTransferReceive} disabled={transferConfirmSaving || !transferConfirmImage}
+                  className="flex-1 py-3 text-sm text-white bg-green-600 rounded-xl hover:bg-green-700 disabled:opacity-50 transition-colors font-semibold">
+                  {transferConfirmSaving ? 'Confirming...' : '✓ Confirm Received'}
+                </button>
+              </div>
+            </div>
+          </BottomSheet>
+        )}
+
         {/* Enlarged wallet image */}
         {enlargedWalletImg && (
           <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4" onClick={function () { setEnlargedWalletImg(null) }}>
