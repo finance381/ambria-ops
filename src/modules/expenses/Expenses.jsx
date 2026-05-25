@@ -63,6 +63,8 @@ function Expenses({ profile }) {
   var [receiveImage, setReceiveImage] = useState(null)
   var [receiveSaving, setReceiveSaving] = useState(false)
   var [enlargedWalletImg, setEnlargedWalletImg] = useState(null)
+  var [pendingReceiveCount, setPendingReceiveCount] = useState(0)
+  var [myWallet, setMyWallet] = useState(null)
   var [subCatMap, setSubCatMap] = useState({})
   var [typesModal, setTypesModal] = useState(false)
   var [expTypes, setExpTypes] = useState([])
@@ -95,8 +97,16 @@ function Expenses({ profile }) {
   }, [])
 
    useEffect(function () {
-    supabase.from('wallets').select('balance_paise').eq('user_id', profile.id).maybeSingle()
-      .then(function (res) { setWalletBalance(res.data?.balance_paise || 0) })
+    supabase.from('wallets').select('id, balance_paise, user_id').eq('user_id', profile.id).maybeSingle()
+      .then(function (res) {
+        setWalletBalance(res.data?.balance_paise || 0)
+        if (res.data) setMyWallet(res.data)
+      })
+    supabase.from('wallet_transactions')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'pending')
+      .eq('type', 'credit')
+      .then(function (res) { setPendingReceiveCount(res.count || 0) })
     loadMyExpenses(false)
     loadApprovalExpenses(false)
   }, [statusFilter, dateFrom, dateTo, expSearchDebounced])
@@ -288,6 +298,11 @@ function Expenses({ profile }) {
     setReceiveSaving(false)
     supabase.from('wallets').select('balance_paise').eq('user_id', profile.id).maybeSingle()
       .then(function (res) { setWalletBalance(res.data?.balance_paise || 0) })
+    supabase.from('wallet_transactions')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'pending')
+      .eq('type', 'credit')
+      .then(function (res) { setPendingReceiveCount(res.count || 0) })
     openWalletTxns(null)
   }
 
@@ -929,18 +944,23 @@ if (allExpView && (isAdmin || isAuditor)) {
     return (
       <div className="space-y-4">
         <div>
-          <button onClick={function () { setWalletView('wallets'); setSelectedWallet(null); setWalletTxns([]); setTxnFrom(''); setTxnTo('') }}
-            className="text-sm text-indigo-600 font-medium hover:text-indigo-800 transition-colors mb-1">← Back to Wallets</button>
+          <button onClick={function () {
+            if (isAdmin || isAuditor) { setWalletView('wallets') } else { setWalletView(null) }
+            setSelectedWallet(null); setWalletTxns([]); setTxnFrom(''); setTxnTo('')
+          }}
+            className="text-sm text-indigo-600 font-medium hover:text-indigo-800 transition-colors mb-1">{(isAdmin || isAuditor) ? '← Back to Wallets' : '← Back to Expenses'}</button>
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-lg font-bold text-gray-900">{txnUser.name || '—'}</h2>
               <p className="text-xs text-gray-400">{txnUser.email || '—'} · Balance: <span className={"font-bold " + ((selectedWallet.balance_paise || 0) < 0 ? "text-red-600" : "text-green-700")}>{formatPoints(selectedWallet.balance_paise)}</span></p>
             </div>
             <div className="flex gap-2">
-              <button onClick={function () { setIssueModal(selectedWallet); setIssueAmount(''); setIssueDesc('') }}
-                className="px-3 py-1.5 text-xs font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors">
-                + Issue
-              </button>
+              {(isAdmin || isAuditor) && (
+                <button onClick={function () { setIssueModal(selectedWallet); setIssueAmount(''); setIssueDesc('') }}
+                  className="px-3 py-1.5 text-xs font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors">
+                  + Issue
+                </button>
+              )}
               {walletTxns.length > 0 && (
                 <button onClick={exportWalletCSV}
                   className="px-3 py-1.5 text-xs font-bold text-green-600 bg-green-50 border border-green-200 rounded-lg hover:bg-green-100 transition-colors">
@@ -1121,11 +1141,22 @@ if (allExpView && (isAdmin || isAuditor)) {
     <div className="space-y-4">
       {/* Two cards: Wallet + Expenses */}
       <div className="grid grid-cols-2 gap-3">
-        <div className={"rounded-xl p-4 border cursor-pointer active:scale-[0.98] transition-transform " + (walletBalance < 0 ? "bg-red-50 border-red-200" : "bg-green-50 border-green-200")}
-          onClick={function () { if (isAdmin || isAuditor) { setWalletView('wallets'); loadAllWallets() } }}>
+        <div className={"rounded-xl p-4 border cursor-pointer active:scale-[0.98] transition-transform relative " + (walletBalance < 0 ? "bg-red-50 border-red-200" : "bg-green-50 border-green-200")}
+          onClick={function () {
+            if (isAdmin || isAuditor) { setWalletView('wallets'); loadAllWallets() }
+            else if (myWallet) {
+              setWalletProfiles(function (prev) { var n = Object.assign({}, prev); n[profile.id] = profile; return n })
+              openWalletTxns(myWallet)
+            }
+          }}>
+          {pendingReceiveCount > 0 && (
+            <span className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">{pendingReceiveCount}</span>
+          )}
           <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Wallet</p>
           <p className={"text-xl font-bold mt-1 " + (walletBalance < 0 ? "text-red-700" : "text-green-700")}>{formatPoints(walletBalance)}</p>
           {(isAdmin || isAuditor) && <p className="text-[10px] text-indigo-600 font-medium mt-1">Manage →</p>}
+          {!(isAdmin || isAuditor) && pendingReceiveCount > 0 && <p className="text-[10px] text-amber-600 font-medium mt-1">{pendingReceiveCount} pending →</p>}
+          {!(isAdmin || isAuditor) && pendingReceiveCount === 0 && <p className="text-[10px] text-gray-400 font-medium mt-1">View history →</p>}
         </div>
         <div className="rounded-xl p-4 border border-indigo-200 bg-indigo-50 cursor-pointer active:scale-[0.98] transition-transform"
           onClick={function () { setEditExp(null); setView('form') }}>
