@@ -1946,6 +1946,23 @@ function ExpenseEditForm({ profile, editExp, walletBalance, onCancel, onSaved })
         }
 
         try { await logActivity('EXPENSE_EDIT', description.trim() + ' | ' + formatPoints(amountPaise)) } catch (_) {}
+
+        // Wallet diff adjustment
+        var oldPaise = editExp.amount_paise || 0
+        var diffPaise = amountPaise - oldPaise
+        if (diffPaise !== 0) {
+          var wRpc = diffPaise > 0 ? 'wallet_self_debit' : 'wallet_self_credit'
+          var wAmt = Math.abs(diffPaise)
+          var wRef = diffPaise > 0 ? 'expense' : 'expense_refund'
+          var wDesc = 'Expense edited: ' + (diffPaise > 0 ? '+' : '-') + formatPoints(wAmt)
+          var { error: wErr } = await supabase.rpc(wRpc, {
+            p_amount_paise: wAmt,
+            p_description: wDesc,
+            p_ref_type: wRef,
+            p_ref_id: editExp.id,
+          })
+          if (wErr) console.warn('Wallet adjust failed:', wErr.message)
+        }
       } else {
         // Determine status — same two-tier logic
         var selfIsDeptApprover = (profile?.permissions || []).indexOf('dept_approve') !== -1
