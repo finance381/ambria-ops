@@ -193,6 +193,7 @@ function QuoteCalculator({ profile }) {
   var [eventDate, setEventDate] = useState('')
   var [inquiryMode, setInquiryMode] = useState('')
   var [priority, setPriority] = useState('')
+  var [etSearch, setEtSearch] = useState('')
   var [eventTypeIdx, setEventTypeIdx] = useState(0)
   var [venueIdx, setVenueIdx] = useState(0)
   var [foodPref, setFoodPref] = useState(0)
@@ -709,15 +710,44 @@ function QuoteCalculator({ profile }) {
             </select>
 
           <div style={{ fontSize: 12, color: C.muted, marginBottom: 5, fontWeight: 600 }}>Event Type</div>
-            <select value={eventTypeIdx} onChange={function (e) { handleEventType(+e.target.value) }}
-              style={{
-                width: '100%', padding: 11, borderRadius: 9, border: '2px solid ' + C.border,
-                fontSize: 14, marginBottom: 6, background: '#fff', color: C.maroon,
-              }}>
-              {eventTypes.map(function (et, idx) {
-                return <option key={idx} value={idx}>{et.icon} {et.label}</option>
-              })}
-            </select>
+            <div style={{ position: 'relative', marginBottom: 6 }}>
+              <input value={etSearch} placeholder={currentET.icon + ' ' + currentET.label}
+                onChange={function (e) { setEtSearch(e.target.value) }}
+                onFocus={function () { setEtSearch('') }}
+                onBlur={function () { setTimeout(function () { setEtSearch('') }, 200) }}
+                style={{
+                  width: '100%', padding: 11, borderRadius: 9, border: '2px solid ' + C.border,
+                  fontSize: 14, background: '#fff', color: etSearch ? C.maroon : C.muted,
+                  fontFamily: 'inherit', boxSizing: 'border-box',
+                }} />
+              {etSearch !== '' && (function () {
+                var filtered = []
+                for (var i = 0; i < eventTypes.length; i++) {
+                  if (eventTypes[i].label.toLowerCase().indexOf(etSearch.toLowerCase()) >= 0) filtered.push({ et: eventTypes[i], idx: i })
+                }
+                if (filtered.length === 0) return null
+                return (
+                  <div style={{
+                    position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50,
+                    background: '#fff', border: '2px solid ' + C.border, borderRadius: 9,
+                    maxHeight: 200, overflowY: 'auto', marginTop: 2,
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+                  }}>
+                    {filtered.map(function (f) {
+                      return (
+                        <button key={f.idx} onMouseDown={function () { handleEventType(f.idx); setEtSearch('') }}
+                          style={{
+                            width: '100%', padding: '10px 12px', border: 'none', background: eventTypeIdx === f.idx ? '#FFF8F0' : '#fff',
+                            color: C.maroon, fontSize: 13, fontWeight: eventTypeIdx === f.idx ? 700 : 500,
+                            cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit',
+                            borderBottom: '1px solid ' + C.border, display: 'flex', alignItems: 'center', gap: 6,
+                          }}>{f.et.icon} {f.et.label} {f.et.wedding ? '💒' : ''}</button>
+                      )
+                    })}
+                  </div>
+                )
+              })()}
+            </div>
             <div style={{ display: 'flex', gap: 6, marginBottom: 10, flexWrap: 'wrap' }}>
               {eventTypes.map(function (et, idx) {
                 if (!et.pinned) return null
