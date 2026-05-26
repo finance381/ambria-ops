@@ -215,6 +215,11 @@ function QuoteCalculator({ profile }) {
   var [taxMode, setTaxMode] = useState(0)
   var [split5, setSplit5] = useState(50)
 
+  // LMS push
+  var [lmsRef, setLmsRef] = useState(null)
+  var [pushing, setPushing] = useState(false)
+  var [showLmsPush, setShowLmsPush] = useState(false)
+
   // Persistence
   var [savedId, setSavedId] = useState(null)
   var [quotes, setQuotes] = useState([])
@@ -446,7 +451,7 @@ function QuoteCalculator({ profile }) {
       } else {
         var { data, error } = await supabase.from('quotes').insert(row).select('id').single()
         if (error) throw error
-        setSavedId(data.id); setQuoteStatus('draft'); setSaveMsg('Saved')
+        setSavedId(data.id); setQuoteStatus('draft'); setLmsRef(null); setSaveMsg('Saved')
       }
     } catch (e) { setSaveMsg('Error: ' + (e.message || 'Save failed')) }
     setSaving(false); setTimeout(function () { setSaveMsg('') }, 3000)
@@ -473,6 +478,7 @@ function QuoteCalculator({ profile }) {
     if (q.deal_value_paise != null && !q.deal_vm_paise) { setDealVm(String(fromPaise(q.deal_value_paise))) }
     if (q.tax_mode != null) { setTaxMode(q.tax_mode); setSplit5(q.split_5_pct || 50) }
     setSavedId(q.id); setQuoteStatus(q.status || 'draft'); setNotes(q.notes || '')
+    setLmsRef(q.lms_ref || null)
     setLocationId(q.location_id || ''); setLocationName(q.location_name || '')
     setShowQuotes(false); setShowProposal(false); setPage(0)
     setIncludeMenu(q.include_menu != null ? q.include_menu : true); setIncludeDecor(q.include_decor != null ? q.include_decor : true); setIncludeDj(q.include_dj != null ? q.include_dj : true)
@@ -482,7 +488,8 @@ function QuoteCalculator({ profile }) {
     setGuestName(''); setGuestPhone(''); setGuestAddress(''); setEventDate(''); setInquiryMode(''); setEventTypeIdx(0)
     setVenueIdx(0); setFoodPref(0); setPax(400); setSlot(0); setCatOverride(2); setMenuIdx(3)
     setDecorIdx(0); setDjIdx(1); setTtdIdx(0); setDealVal(14); setTaxMode(0); setSplit5(50)
-    setQuoteStatus('draft'); setSavedId(null); setNotes(''); setLocationId(''); setLocationName('')
+    setQuoteStatus('draft'); setSavedId(null); setNotes(''); setLmsRef(null)
+    setLocationId(''); setLocationName('')
     setShowQuotes(false); setShowProposal(false); setPage(0)
     setIncludeMenu(true); setIncludeDecor(true); setIncludeDj(true)
     setDealVm(''); setDealDecor(''); setDealEnt('')
@@ -490,9 +497,36 @@ function QuoteCalculator({ profile }) {
 
   async function updateStatus(s) {
     if (!savedId) return
+    if (s === 'sent') {
+      if (lmsRef) { setSaveMsg('Already pushed as lead ' + lmsRef); setTimeout(function () { setSaveMsg('') }, 3000); return }
+      if (!locationId) { setSaveMsg('Select a location first'); setTimeout(function () { setSaveMsg('') }, 3000); return }
+      if (!guestName) { setSaveMsg('Guest name required'); setTimeout(function () { setSaveMsg('') }, 3000); return }
+      if (!eventDate) { setSaveMsg('Event date required'); setTimeout(function () { setSaveMsg('') }, 3000); return }
+      if (!profile.lms_user_id) { setSaveMsg('LMS user not mapped, contact admin'); setTimeout(function () { setSaveMsg('') }, 3000); return }
+      setShowLmsPush(true)
+      return
+    }
     var { error } = await supabase.from('quotes').update({ status: s }).eq('id', savedId)
     if (error) { setSaveMsg('Error: ' + error.message); return }
     setQuoteStatus(s)
+  }
+
+  async function pushToLms() {
+    if (pushing || !savedId) return
+    setPushing(true); setShowLmsPush(false); setSaveMsg('')
+    try {
+      var res = await fetch(
+        import.meta.env.VITE_SUPABASE_URL + '/functions/v1/lms-push',
+        { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + (await supabase.auth.getSession()).data.session.access_token }, body: JSON.stringify({ quote_id: savedId }) }
+      )
+      var data = await res.json()
+      if (data.error) throw new Error(data.error)
+      setLmsRef(data.fis_entryno); setQuoteStatus('sent')
+      setSaveMsg('Pushed to LMS — Lead #' + data.fis_entryno)
+    } catch (e) {
+      setSaveMsg('Error: ' + (e.message || 'LMS push failed'))
+    }
+    setPushing(false); setTimeout(function () { setSaveMsg('') }, 5000)
   }
   async function askAI() {
     if (analyzing || !calcResult) return
@@ -599,6 +633,7 @@ function QuoteCalculator({ profile }) {
                       color: q.status === 'draft' ? '#6B7280' : q.status === 'sent' ? '#1D4ED8' : q.status === 'accepted' ? '#059669' : q.status === 'converted' ? '#D97706' : '#DC2626',
                       textTransform: 'uppercase',
                     }}>{q.status}{q.revision > 1 ? ' v' + q.revision : ''}</span>
+                    {q.lms_ref && <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 5px', borderRadius: 8, background: '#DBEAFE', color: '#1D4ED8' }}>#{q.lms_ref}</span>}
                     <span style={{ fontSize: 10, color: '#9CA3AF' }}>{ago}</span>
                   </div>
                 </div>
@@ -971,11 +1006,11 @@ function QuoteCalculator({ profile }) {
             color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer',
           }}>{showProposal ? 'Hide' : 'Proposal'}</button>
 
-          <button onClick={saveQuote} disabled={saving || !calcResult} style={{
+          <button onClick={saveQuote} disabled={saving || pushing || !calcResult} style={{
             width: '100%', marginTop: 8, padding: 13, borderRadius: 10,
             border: '2px solid rgba(212,135,44,.4)', background: 'rgba(212,135,44,.15)',
             color: '#FBBF24', fontSize: 14, fontWeight: 700, cursor: 'pointer',
-            opacity: (saving || !calcResult) ? 0.5 : 1,
+            opacity: (saving || pushing || !calcResult) ? 0.5 : 1,
           }}>{saving ? 'Saving...' : savedId ? 'Update Quote' : 'Save Quote'}</button>
           <button onClick={askAI} disabled={analyzing || !calcResult} style={{
             width: '100%', marginTop: 8, padding: 13, borderRadius: 10,
@@ -987,7 +1022,42 @@ function QuoteCalculator({ profile }) {
           {saveMsg && (<div style={{ textAlign: 'center', marginTop: 6, fontSize: 12, color: saveMsg.startsWith('Error') ? '#FCA5A5' : '#86EFAC' }}>{saveMsg}</div>)}
 
           {savedId && <StatusBar quoteStatus={quoteStatus} onUpdate={updateStatus} />}
+          {savedId && lmsRef && (
+            <div style={{ marginTop: 8, padding: '8px 12px', borderRadius: 8, background: '#DBEAFE', border: '1px solid #93C5FD', fontSize: 12, fontWeight: 600, color: '#1D4ED8', textAlign: 'center' }}>
+              LMS Lead #{lmsRef}
+            </div>
+          )}
+          {pushing && (
+            <div style={{ marginTop: 8, textAlign: 'center', fontSize: 12, color: '#FBBF24', fontWeight: 600 }}>Pushing to LMS...</div>
+          )}
         </div>
+
+        {showLmsPush && (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', zIndex: 999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+            <div style={{ background: '#fff', borderRadius: 14, padding: 20, maxWidth: 340, width: '100%' }}>
+              <div style={{ fontSize: 15, fontWeight: 700, color: C.maroon, marginBottom: 10 }}>Send to LMS?</div>
+              <div style={{ fontSize: 12, color: C.muted, lineHeight: 1.6, marginBottom: 6 }}>
+                This will create a venue lead in LMS under <strong>{profile.name}</strong>.
+              </div>
+              <div style={{ fontSize: 12, color: '#333', lineHeight: 1.6, marginBottom: 14, padding: 10, background: C.bg, borderRadius: 8, border: '1px solid ' + C.border }}>
+                <div><strong>{guestName}</strong> · {guestPhone || 'No phone'}</div>
+                <div>{venName} · {locationName}</div>
+                <div>{fmtDate(eventDate)} · {SLOTS[slot]} · {pax}pax</div>
+              </div>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button onClick={function () { setShowLmsPush(false) }} style={{
+                  flex: 1, padding: 11, borderRadius: 9, border: '2px solid ' + C.border,
+                  background: '#fff', color: C.muted, fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                }}>Cancel</button>
+                <button onClick={pushToLms} style={{
+                  flex: 1, padding: 11, borderRadius: 9, border: 'none',
+                  background: 'linear-gradient(135deg,#1D4ED8,#2563EB)', color: '#fff',
+                  fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                }}>Push to LMS</button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* NOTES */}
         <SectionCard title="Notes">
