@@ -30,6 +30,11 @@ const FUNC_TYPE_MAP: Record<string, string> = {
   "Haldi": "14", "Mehendi": "15", "Sangeet": "20", "Sagan": "8", "Lagan": "7",
   "Baby Shower": "21", "Roka Ceremony": "16", "Religious": "10", "Kua Poojan": "5",
   "House Party": "25", "Kitty Party": "31", "Get Together": "35",
+  "Proposal Ceremony": "12", "Residential Wedding": "17", "Destination Wedding": "18",
+  "Kothi Booking": "19", "Barat Assembly": "24", "Lunch Function": "26",
+  "Breakfast Function": "27", "Dinner Function": "28", "Breakfast": "29",
+  "Lunch": "30", "Restaurant Sale": "32", "Lohri": "33",
+  "Diwali Party": "34", "Mata Ki Chowki": "36",
 }
 
 const SLOT_TIMING: Record<number, string> = {
@@ -106,9 +111,8 @@ serve(async (req) => {
     const rentalRupees = paiseToRupees(q.rental_q_paise)
     const totalRupees = paiseToRupees(q.deal_value_paise || q.total_q_paise)
 
-    const body: Record<string, string> = {
+    const body: Record<string, string | number> = {
       loggeduserid: String(profile.lms_user_id),
-      footerid: "",
       fisd_function_date: q.event_date,
       fisd_function_timings: slotTiming,
       fisd_function_type: funcType,
@@ -116,76 +120,39 @@ serve(async (req) => {
       fisd_venue_id: venueId,
       fisd_location_id: q.location_id,
       fisd_venue_name: venueName,
-      fisd_location_name: q.location_name || "",
+      fisd_location_name: q.location_name || "-",
       fisd_menu: MENU_ID_MAP[menuKey] || "8",
-      fisd_menu_type: "",
-      fisd_session: "",
       fisd_pax_no: String(q.pax || 0),
-      fisd_free_pax_no: "0",
+      fisd_free_pax_no: "1",
       fisd_menu_rate: perHeadRupees,
-      fisd_menu_value: menuValueRupees,
-      fisd_decoration_lumpsum: decorRupees,
-      fisd_decoration_remarks: "",
-      fisd_entertainment_lumpsum: djRupees,
-      fisd_entertainment_remarks: "",
-      fisd_entertain_type: "",
-      fisd_decor_type: "",
+      fisd_extra_plate_charge: perHeadRupees,
       fisd_venue_value: totalRupees,
-      fisd_rent: rentalRupees,
-      fisd_extra_plate_charge: "0",
-      mid: "",
-      fis_entryno: "",
-      current_contact: "",
-      current_zone: "",
-      current_branch: "",
-      fis_proposal: q.proposal_text || "",
-      fis_flwup_dt: "",
-      fis_flwup_rmrk: "",
-      fis_flwup_sts: "",
-      fis_function_date_from: q.event_date,
-      fis_function_date_upto: q.event_date,
-      fis_total_amt: totalRupees,
-      fis_cash_part: "",
-      fis_cheque: "",
-      fis_tax_c_amt: "",
-      fis_tax_d_amt: "",
-      fis_tax_percent_c: "",
-      fis_tax_percent_d: "",
-      fis_tax_percent: "",
-      fis_tax_amt: "",
-      fis_net_amt: "",
-      fis_advance_cash: "",
-      fis_balance: "",
-      fis_advance_chq: "",
-      fis_guestinfo_id: "",
-      fis_priority: "Silver",
-      fis_secondary_mobileno: "",
-      fis_venue: venueId,
+      fisd_decoration_lumpsum: decorRupees,
+      fisd_decoration_remarks: "Empanelled",
+      fisd_decor_type: "Empanelled",
+      fisd_entertainment_lumpsum: djRupees,
+      fisd_entertainment_remarks: "Empanelled",
+      fisd_entertain_type: "Empanelled",
       fis_guest_name: q.guest_name,
-      fis_client_mobile: q.guest_phone || "",
-      fis_address: q.guest_address || "",
+      fis_client_mobile: q.guest_phone || "-",
+      fis_address: q.guest_address || "-",
       fis_state: "1483",
       fis_city: "delhi",
-      fis_pin: "",
-      fis_client_email: "",
-      fis_enq_mode: "",
-      fis_reference_name: "",
-      fis_reference_mobile: "",
-      fis_addon: "",
-      fis_charges: "",
-      fis_food_taste_no: "",
-      fis_food_tax: "",
-      fis_addtional_remrks: q.notes || "",
-      fis_factor_zero: "",
+      fis_venue: venueId,
+      fis_priority: q.priority || "Silver",
+      fis_enq_mode: q.inquiry_mode || "Walk-in",
+      fis_total_amt: totalRupees,
     }
 
     // POST to LMS
     const lmsBase = Deno.env.get("LMS_API_BASE") || "https://gyv.inqcrm.in"
+    console.log("LMS request body:", JSON.stringify(body))
     const lmsRes = await fetch(
       lmsBase + "/api/v1/createcommon_api/create_venue_lead_detail",
       { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
     )
     const lmsData = await lmsRes.json()
+    console.log("LMS response:", JSON.stringify(lmsData))
 
     if (!lmsData.status) throw new Error("LMS rejected: " + (lmsData.message || "Unknown error"))
 

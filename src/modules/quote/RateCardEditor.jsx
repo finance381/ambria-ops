@@ -167,6 +167,114 @@ function CategoriesEditor({ config, onSave, saving }) {
 }
 
 // ══════════════════════════════════════
+//  EVENT TYPES EDITOR
+// ══════════════════════════════════════
+
+function EventTypesEditor({ config, onSave, saving }) {
+  var [types, setTypes] = useState(clone(config.event_types || []))
+  useEffect(function () { setTypes(clone(config.event_types || [])) }, [config.event_types])
+
+  function upd(idx, field, val) { var d = clone(types); d[idx][field] = val; setTypes(d) }
+  function addType() { setTypes(types.concat([{ label: '', icon: '', wedding: false, pinned: false }])) }
+  function rmType(idx) { var d = clone(types); d.splice(idx, 1); setTypes(d) }
+  function moveUp(idx) { if (idx === 0) return; var d = clone(types); var t = d[idx]; d[idx] = d[idx - 1]; d[idx - 1] = t; setTypes(d) }
+
+  return (
+    <Card title="Event Types">
+      <div style={{ fontSize: 11, color: C.muted, marginBottom: 10 }}>Manage event types for quotes. Toggle Wedding for wedding-tier pricing. Pinned types show as quick-select chips.</div>
+      <div style={{ display: 'grid', gridTemplateColumns: '28px 40px 1fr 56px 56px 22px 22px', gap: 4, alignItems: 'center', marginBottom: 6 }}>
+        <div style={{ fontSize: 9, fontWeight: 700, color: C.muted, textAlign: 'center' }}>#</div>
+        <div style={{ fontSize: 9, fontWeight: 700, color: C.muted, textAlign: 'center' }}>Icon</div>
+        <div style={{ fontSize: 9, fontWeight: 700, color: C.muted }}>Label</div>
+        <div style={{ fontSize: 9, fontWeight: 700, color: C.muted, textAlign: 'center' }}>Wedding</div>
+        <div style={{ fontSize: 9, fontWeight: 700, color: C.muted, textAlign: 'center' }}>Pinned</div>
+        <div /><div />
+      </div>
+      {types.map(function (t, idx) {
+        return (
+          <div key={idx} style={{ display: 'grid', gridTemplateColumns: '28px 40px 1fr 56px 56px 22px 22px', gap: 4, alignItems: 'center', marginBottom: 4 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: C.muted, textAlign: 'center' }}>{idx}</div>
+            <input value={t.icon || ''} onChange={function (e) { upd(idx, 'icon', e.target.value) }}
+              placeholder="💍" maxLength={4}
+              style={{ padding: 4, borderRadius: 6, border: '1px solid ' + C.border, fontSize: 14, textAlign: 'center', width: '100%', fontFamily: 'inherit' }} />
+            <TextIn value={t.label} onChange={function (v) { upd(idx, 'label', v) }} placeholder="Event name" />
+            <div style={{ textAlign: 'center' }}>
+              <button onClick={function () { upd(idx, 'wedding', !t.wedding) }} style={{
+                width: 36, height: 24, borderRadius: 12, border: 'none', cursor: 'pointer',
+                background: t.wedding ? '#8B2D2D' : '#E8DDD0',
+                position: 'relative', transition: 'background 0.2s',
+              }}>
+                <div style={{
+                  width: 18, height: 18, borderRadius: 9, background: '#fff',
+                  position: 'absolute', top: 3, transition: 'left 0.2s',
+                  left: t.wedding ? 15 : 3,
+                }} />
+              </button>
+            </div>
+            <div style={{ textAlign: 'center' }}>
+              <button onClick={function () { upd(idx, 'pinned', !t.pinned) }} style={{
+                width: 36, height: 24, borderRadius: 12, border: 'none', cursor: 'pointer',
+                background: t.pinned ? '#D4872C' : '#E8DDD0',
+                position: 'relative', transition: 'background 0.2s',
+              }}>
+                <div style={{
+                  width: 18, height: 18, borderRadius: 9, background: '#fff',
+                  position: 'absolute', top: 3, transition: 'left 0.2s',
+                  left: t.pinned ? 15 : 3,
+                }} />
+              </button>
+            </div>
+            <button onClick={function () { moveUp(idx) }} style={{
+              width: 22, height: 22, borderRadius: 6, border: '1px solid ' + C.border,
+              background: '#fff', color: C.muted, fontSize: 11, fontWeight: 700,
+              cursor: idx === 0 ? 'default' : 'pointer', opacity: idx === 0 ? 0.3 : 1,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+            }}>↑</button>
+            <RemoveBtn onClick={function () { rmType(idx) }} />
+          </div>
+        )
+      })}
+      <AddRow label="Add Event Type" onClick={addType} />
+      <div style={{ marginTop: 12 }}>
+        <Btn label="Save Event Types" variant="primary" onClick={function () { onSave('event_types', types) }} disabled={saving} style={{ width: '100%' }} />
+      </div>
+    </Card>
+  )
+}
+
+// ══════════════════════════════════════
+//  INQUIRY MODES EDITOR
+// ══════════════════════════════════════
+
+function InquiryModesEditor({ config, onSave, saving }) {
+  var [modes, setModes] = useState(clone(config.inquiry_modes || []))
+  useEffect(function () { setModes(clone(config.inquiry_modes || [])) }, [config.inquiry_modes])
+
+  function updMode(idx, val) { var d = clone(modes); d[idx] = val; setModes(d) }
+  function addMode() { setModes(modes.concat([''])) }
+  function rmMode(idx) { var d = clone(modes); d.splice(idx, 1); setModes(d) }
+
+  return (
+    <Card title="Inquiry Modes">
+      <div style={{ fontSize: 11, color: C.muted, marginBottom: 10 }}>Modes of inquiry shown in quote form dropdown. Maps to LMS fis_enq_mode.</div>
+      {modes.map(function (m, idx) {
+        return (
+          <div key={idx} style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 }}>
+            <div style={{ width: 24, textAlign: 'center', fontSize: 11, fontWeight: 700, color: C.muted, flexShrink: 0 }}>{idx}</div>
+            <TextIn value={m} onChange={function (v) { updMode(idx, v) }} placeholder="Mode name" style={{ flex: 1 }} />
+            {modes.length > 1 && <RemoveBtn onClick={function () { rmMode(idx) }} />}
+          </div>
+        )
+      })}
+      <AddRow label="Add Mode" onClick={addMode} />
+      <div style={{ marginTop: 12 }}>
+        <Btn label="Save Inquiry Modes" variant="primary" onClick={function () { onSave('inquiry_modes', modes) }} disabled={saving} style={{ width: '100%' }} />
+      </div>
+    </Card>
+  )
+}
+
+// ══════════════════════════════════════
 //  VENUES EDITOR
 // ══════════════════════════════════════
 
@@ -1040,6 +1148,7 @@ function SeasonCalendar({ config, onSave, saving }) {
 // ══════════════════════════════════════
 
 var TABS = [
+  { key: 'masters', label: 'Masters' },
   { key: 'config', label: 'Config' },
   { key: 'venues', label: 'Venues' },
   { key: 'rentals', label: 'Rentals' },
@@ -1123,6 +1232,7 @@ function RateCardEditor({ profile }) {
         }}>{saveMsg}</div>
       )}
 
+      {tab === 'masters' && <><EventTypesEditor config={config} onSave={saveKey} saving={saving} /><InquiryModesEditor config={config} onSave={saveKey} saving={saving} /></>}
       {tab === 'config' && <CategoriesEditor config={config} onSave={saveKey} saving={saving} />}
       {tab === 'venues' && <VenuesEditor config={config} onSave={saveKey} saving={saving} />}
       {tab === 'rentals' && <RentalsEditor config={config} onSave={saveKey} saving={saving} />}

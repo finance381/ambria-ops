@@ -192,6 +192,7 @@ function QuoteCalculator({ profile }) {
   var [guestAddress, setGuestAddress] = useState('')
   var [eventDate, setEventDate] = useState('')
   var [inquiryMode, setInquiryMode] = useState('')
+  var [priority, setPriority] = useState('')
   var [eventTypeIdx, setEventTypeIdx] = useState(0)
   var [venueIdx, setVenueIdx] = useState(0)
   var [foodPref, setFoodPref] = useState(0)
@@ -384,7 +385,7 @@ function QuoteCalculator({ profile }) {
   // Proposal text
   var proposalLines = ['AMBRIA PROPOSAL', '========================', 'Venue: ' + venName,
     'Prepared by: ' + profile.name, 'Guest: ' + (guestName || '-') + ' | ' + (guestPhone || '-'),
-    'Mode: ' + (inquiryMode || '-'), currentET.label + ' | ' + (foodPref === 0 ? 'Veg' : 'NV'),
+    'Mode: ' + (inquiryMode || '-') + ' | Priority: ' + (priority || '-'), currentET.label + ' | ' + (foodPref === 0 ? 'Veg' : 'NV'),
     'Date: ' + fmtDate(eventDate) + ' (' + CAT_LABELS[ct] + ') | ' + SLOTS[slot] + ' | ' + pax + 'pax']
   if (includeMenu) proposalLines.push('Menu: ' + (r.menu_label || MENU_LABELS[activeMenu]) + ' Rs.' + perHead + '/hd')
   proposalLines.push('========================')
@@ -415,6 +416,7 @@ function QuoteCalculator({ profile }) {
     var row = {
       created_by: profile.id, guest_name: guestName, guest_phone: guestPhone, guest_address: guestAddress || null,
       inquiry_mode: inquiryMode,
+      priority: priority || null,
       event_type: currentET.label, event_date: eventDate || null,
       venue_idx: venueIdx, venue_name: venName, food_pref: foodPref, pax: pax,
       slot: slot, date_category: ct, is_wedding: isWedding,
@@ -466,6 +468,7 @@ function QuoteCalculator({ profile }) {
   function loadQuote(q) {
     setGuestName(q.guest_name || ''); setGuestPhone(q.guest_phone || ''); setGuestAddress(q.guest_address || ''); setEventDate(q.event_date || '')
     setInquiryMode(q.inquiry_mode || '')
+    setPriority(q.priority || '')
     var etIdx = 0
     for (var i = 0; i < eventTypes.length; i++) { if (eventTypes[i].label === q.event_type) { etIdx = i; break } }
     setEventTypeIdx(etIdx); setVenueIdx(q.venue_idx || 0)
@@ -485,7 +488,7 @@ function QuoteCalculator({ profile }) {
   }
 
   function newQuote() {
-    setGuestName(''); setGuestPhone(''); setGuestAddress(''); setEventDate(''); setInquiryMode(''); setEventTypeIdx(0)
+    setGuestName(''); setGuestPhone(''); setGuestAddress(''); setEventDate(''); setInquiryMode(''); setPriority(''); setEventTypeIdx(0)
     setVenueIdx(0); setFoodPref(0); setPax(400); setSlot(0); setCatOverride(2); setMenuIdx(3)
     setDecorIdx(0); setDjIdx(1); setTtdIdx(0); setDealVal(14); setTaxMode(0); setSplit5(50)
     setQuoteStatus('draft'); setSavedId(null); setNotes(''); setLmsRef(null)
@@ -690,6 +693,19 @@ function QuoteCalculator({ profile }) {
               }}>
               <option value="">Select mode...</option>
               {inquiryModes.map(function (m) { return <option key={m} value={m}>{m}</option> })}
+            </select>
+
+          <div style={{ fontSize: 12, color: C.muted, marginBottom: 5, fontWeight: 600 }}>Priority</div>
+            <select value={priority} onChange={function (e) { setPriority(e.target.value) }}
+              style={{
+                width: '100%', padding: 11, borderRadius: 9, border: '2px solid ' + C.border,
+                fontSize: 14, marginBottom: 10, background: '#fff', color: priority ? C.maroon : C.muted,
+              }}>
+              <option value="">Select priority...</option>
+              <option value="Silver">Silver</option>
+              <option value="Gold">Gold</option>
+              <option value="Platinum">Platinum</option>
+              <option value="Diamond">Diamond</option>
             </select>
 
           <div style={{ fontSize: 12, color: C.muted, marginBottom: 5, fontWeight: 600 }}>Event Type</div>
