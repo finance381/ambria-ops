@@ -676,17 +676,48 @@ function Expenses({ profile }) {
     var { data } = await supabase.from('expense_types').select('id, name, extra_fields, active, sort_order').order('sort_order')
     setExpTypes(data || [])
   }
+  var AVAILABLE_FIELDS = [
+    { key: 'vendor_name', label: 'Vendor Name' },
+    { key: 'travel_from', label: 'Travel From' },
+    { key: 'travel_to', label: 'Travel To' },
+    { key: 'travel_mode', label: 'Travel Mode' },
+    { key: 'utility_type', label: 'Utility Type' },
+    { key: 'asset_name', label: 'Asset / Location' },
+    { key: 'event_name', label: 'Event Name' },
+    { key: 'vehicle_number', label: 'Vehicle Number' },
+    { key: 'km_reading', label: 'KM Reading' },
+    { key: 'tracking_number', label: 'Tracking #' },
+    { key: 'client_name', label: 'Client Name' },
+  ]
+
+  var [typeFields, setTypeFields] = useState([])
+
+  function startEditType(et) {
+    setTypeEditId(et.id)
+    setTypeName(et.name)
+    setTypeFields(et.extra_fields || [])
+  }
+
+  function toggleTypeField(key) {
+    if (typeFields.indexOf(key) >= 0) {
+      setTypeFields(typeFields.filter(function (f) { return f !== key }))
+    } else {
+      setTypeFields(typeFields.concat([key]))
+    }
+  }
+
   async function saveExpType() {
     if (typeSaving || !typeName.trim()) return
     setTypeSaving(true)
     if (typeEditId) {
-      await supabase.from('expense_types').update({ name: typeName.trim() }).eq('id', typeEditId)
+      await supabase.from('expense_types').update({ name: typeName.trim(), extra_fields: typeFields }).eq('id', typeEditId)
     } else {
       var maxSort = expTypes.reduce(function (m, t) { return t.sort_order > m ? t.sort_order : m }, 0)
-      await supabase.from('expense_types').insert({ name: typeName.trim(), sort_order: maxSort + 1 })
+      await supabase.from('expense_types').insert({ name: typeName.trim(), extra_fields: typeFields, sort_order: maxSort + 1 })
     }
     setTypeName('')
     setTypeEditId(null)
+    setTypeFields([])
     setTypeSaving(false)
     loadExpTypes()
   }

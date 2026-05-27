@@ -5,15 +5,6 @@ import { logActivity } from '../../lib/logger'
 
 function Categories() {
   var [tab, setTab] = useState('departments')
-  var [quoteModes, setQuoteModes] = useState([])
-  var [quoteEventTypes, setQuoteEventTypes] = useState([])
-  var [quoteLoading, setQuoteLoading] = useState(false)
-  var [quoteSaving, setQuoteSaving] = useState(false)
-  var [quoteMsg, setQuoteMsg] = useState('')
-  var [newMode, setNewMode] = useState('')
-  var [newETLabel, setNewETLabel] = useState('')
-  var [newETIcon, setNewETIcon] = useState('📋')
-  var [newETWed, setNewETWed] = useState(false)
   var [departments, setDepartments] = useState([])
   var [categories, setCategories] = useState([])
   var [subCategories, setSubCategories] = useState([])
@@ -57,55 +48,7 @@ function Categories() {
   var [newDimName, setNewDimName] = useState('')
   var [newSubName, setNewSubName] = useState('')
 
-  useEffect(function () { loadAll(); loadQuoteConfig() }, [])
-
-  async function loadQuoteConfig() {
-    setQuoteLoading(true)
-    var { data } = await supabase.from('quote_config').select('key, value').in('key', ['inquiry_modes', 'event_types'])
-    if (data) {
-      data.forEach(function (row) {
-        if (row.key === 'inquiry_modes' && Array.isArray(row.value)) setQuoteModes(row.value)
-        if (row.key === 'event_types' && Array.isArray(row.value)) setQuoteEventTypes(row.value)
-      })
-    }
-    setQuoteLoading(false)
-  }
-
-  async function saveQuoteConfig(key, value) {
-    setQuoteSaving(true); setQuoteMsg('')
-    var { error: err } = await supabase.from('quote_config').upsert({ key: key, value: value }, { onConflict: 'key' })
-    if (err) { setQuoteMsg('Error: ' + err.message) } else {
-      setQuoteMsg('Saved')
-      logActivity('QUOTE_CONFIG_UPDATE', key)
-    }
-    setQuoteSaving(false); setTimeout(function () { setQuoteMsg('') }, 2000)
-  }
-
-  function addInquiryMode() {
-    if (!newMode.trim() || quoteModes.includes(newMode.trim())) return
-    var updated = quoteModes.concat(newMode.trim())
-    setQuoteModes(updated); setNewMode('')
-    saveQuoteConfig('inquiry_modes', updated)
-  }
-
-  function removeInquiryMode(idx) {
-    var updated = quoteModes.filter(function (_, i) { return i !== idx })
-    setQuoteModes(updated)
-    saveQuoteConfig('inquiry_modes', updated)
-  }
-
-  function addEventType() {
-    if (!newETLabel.trim()) return
-    var updated = quoteEventTypes.concat({ label: newETLabel.trim(), icon: newETIcon || '📋', wedding: newETWed })
-    setQuoteEventTypes(updated); setNewETLabel(''); setNewETIcon('📋'); setNewETWed(false)
-    saveQuoteConfig('event_types', updated)
-  }
-
-  function removeEventType(idx) {
-    var updated = quoteEventTypes.filter(function (_, i) { return i !== idx })
-    setQuoteEventTypes(updated)
-    saveQuoteConfig('event_types', updated)
-  }
+  useEffect(function () { loadAll() }, [])
 
   async function loadAll() {
     var [deptRes, catRes, subRes, venueRes, subDeptRes, subVenueRes] = await Promise.all([
@@ -415,8 +358,8 @@ function Categories() {
     <div className="space-y-4">
       {/* Tabs */}
       <div className="flex gap-0 bg-white border border-gray-200 rounded-lg overflow-hidden">
-        {['departments', 'categories', 'venues', 'quote'].map(function (t) {
-          var labels = { departments: 'Departments', categories: 'Categories', venues: 'Venues', quote: 'Quote' }
+        {['departments', 'categories', 'venues'].map(function (t) {
+          var labels = { departments: 'Departments', categories: 'Categories', venues: 'Venues' }
           return (
             <button
               key={t}
@@ -822,101 +765,6 @@ function Categories() {
               <div className="px-4 py-6 text-center text-gray-400 text-sm">No venues yet</div>
             )}
           </div>
-        </div>
-      )}
-
-      {/* ═══ QUOTE MASTERS ═══ */}
-      {tab === 'quote' && (
-        <div className="bg-white border border-gray-200 rounded-lg">
-          <div className="px-4 py-3 border-b border-gray-200">
-            <h3 className="text-sm font-bold text-gray-700">Quote Calculator Config</h3>
-            <p className="text-xs text-gray-400 mt-0.5">Manage inquiry modes and event types for the Quote Calculator</p>
-          </div>
-
-          {quoteLoading ? (
-            <div className="px-4 py-8 text-center text-gray-400 text-sm">Loading...</div>
-          ) : (
-            <div className="p-4 space-y-6">
-              {/* Inquiry Modes */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Inquiry Modes</label>
-                <div className="bg-gray-50 rounded-lg p-3 space-y-2">
-                  {quoteModes.map(function (m, idx) {
-                    return (
-                      <div key={idx} className="flex items-center justify-between bg-white rounded-lg px-3 py-2 border border-gray-200">
-                        <span className="text-sm text-gray-800">{m}</span>
-                        <button type="button" onClick={function () { removeInquiryMode(idx) }}
-                          className="text-red-400 hover:text-red-600 text-sm">×</button>
-                      </div>
-                    )
-                  })}
-                  {quoteModes.length === 0 && <p className="text-xs text-gray-400">No modes defined</p>}
-                  <div className="flex gap-2 pt-1">
-                    <input type="text" value={newMode} onChange={function (e) { setNewMode(e.target.value) }}
-                      placeholder="New inquiry mode..."
-                      className="flex-1 px-2 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                      onKeyDown={function (e) { if (e.key === 'Enter') { e.preventDefault(); addInquiryMode() } }} />
-                    <button type="button" onClick={addInquiryMode} disabled={!newMode.trim() || quoteSaving}
-                      className="px-3 py-1.5 text-xs text-white bg-indigo-600 rounded hover:bg-indigo-700 disabled:opacity-50 transition-colors font-medium">+ Add</button>
-                  </div>
-                </div>
-              </div>
-
-              {/* Event Types */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Event Types</label>
-                <div className="bg-gray-50 rounded-lg p-3 space-y-2">
-                  {quoteEventTypes.map(function (et, idx) {
-                    return (
-                      <div key={idx} className="flex items-center justify-between bg-white rounded-lg px-3 py-2 border border-gray-200">
-                        <div className="flex items-center gap-2">
-                          <span className="text-lg">{et.icon}</span>
-                          <span className="text-sm text-gray-800">{et.label}</span>
-                          {et.wedding && <span className="text-[10px] font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">WED PRICING</span>}
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <label className="flex items-center gap-1 text-xs text-gray-500 cursor-pointer">
-                            <input type="checkbox" checked={!!et.pinned} onChange={function () {
-                              var updated = quoteEventTypes.map(function (t, i) {
-                                return i === idx ? Object.assign({}, t, { pinned: !t.pinned }) : t
-                              })
-                              setQuoteEventTypes(updated)
-                              saveQuoteConfig('event_types', updated)
-                            }} className="w-3.5 h-3.5 accent-amber-500" />
-                            Quick pick
-                          </label>
-                          <button type="button" onClick={function () { removeEventType(idx) }}
-                            className="text-red-400 hover:text-red-600 text-sm">×</button>
-                        </div>
-                      </div>
-                    )
-                  })}
-                  {quoteEventTypes.length === 0 && <p className="text-xs text-gray-400">No event types defined</p>}
-                  <div className="flex gap-2 items-center pt-1">
-                    <input type="text" value={newETIcon} onChange={function (e) { setNewETIcon(e.target.value) }}
-                      className="w-10 px-1 py-1.5 border border-gray-300 rounded text-center text-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-                    <input type="text" value={newETLabel} onChange={function (e) { setNewETLabel(e.target.value) }}
-                      placeholder="New event type..."
-                      className="flex-1 px-2 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                      onKeyDown={function (e) { if (e.key === 'Enter') { e.preventDefault(); addEventType() } }} />
-                    <label className="flex items-center gap-1 text-xs text-gray-600 whitespace-nowrap cursor-pointer">
-                      <input type="checkbox" checked={newETWed} onChange={function () { setNewETWed(!newETWed) }}
-                        className="w-3.5 h-3.5 accent-amber-500" />
-                      Wedding
-                    </label>
-                    <button type="button" onClick={addEventType} disabled={!newETLabel.trim() || quoteSaving}
-                      className="px-3 py-1.5 text-xs text-white bg-indigo-600 rounded hover:bg-indigo-700 disabled:opacity-50 transition-colors font-medium">+ Add</button>
-                  </div>
-                </div>
-              </div>
-
-              {quoteMsg && (
-                <div className={"text-sm px-3 py-2 rounded-md " + (quoteMsg.startsWith('Error') ? "text-red-600 bg-red-50 border border-red-200" : "text-green-600 bg-green-50 border border-green-200")}>
-                  {quoteMsg}
-                </div>
-              )}
-            </div>
-          )}
         </div>
       )}
 
