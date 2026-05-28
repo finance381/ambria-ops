@@ -418,13 +418,13 @@ function QuoteCalculator({ profile }) {
     var sl = SLOTS[slot] || '-'
     var et = currentET.label || '-'
     var today = new Date(); var dd = String(today.getDate()).padStart(2,'0'); var mm = String(today.getMonth()+1).padStart(2,'0'); var yy = today.getFullYear(); var todayStr = dd + '-' + mm + '-' + yy
-    function fmtAmt(n) { var rupees = Math.round(n * 1000000); return '\u20B9' + rupees.toLocaleString('en-IN') }
+    function fmtAmt(n) { var rupees = Math.round(n * 100000); return '\u20B9' + rupees.toLocaleString('en-IN') }
 
     var rows = []
-    if (includeMenu) rows.push([1, 'Venue + Menu (' + ml + ' ' + fp + ', ' + pax + ' pax)', '\u20B9' + perHead + '/head', fmtAmt(adjVm.q || 0)])
-    else if (rental.q) rows.push([1, 'Venue Rental', '-', fmtAmt(rental.q || 0)])
-    if (includeDecor) rows.push([1, 'Decoration (Empanelled)', '-', fmtAmt(adjDecor.q || 0)])
-    if (includeDj) rows.push([1, 'DJ / Entertainment', '-', fmtAmt(adjDj.q || 0)])
+    if (includeMenu) rows.push([1, 'Venue + Menu (' + ml + ' ' + fp + ', ' + pax + ' pax)', fmtAmt(adjVm.q || 0)])
+    else if (rental.q) rows.push([1, 'Venue Rental', fmtAmt(rental.q || 0)])
+    if (includeDecor) rows.push([1, 'Decoration - ' + DECOR_LABELS[decorIdx], fmtAmt(adjDecor.q || 0)])
+    if (includeDj) rows.push([1, DJ_LABELS[djIdx] || 'DJ / Entertainment', fmtAmt(adjDj.q || 0)])
     var totalAmt = (includeMenu ? (adjVm.q || 0) : (rental.q || 0)) + (includeDecor ? (adjDecor.q || 0) : 0) + (includeDj ? (adjDj.q || 0) : 0)
 
     var html = '<!DOCTYPE html><html><head><title>Quote - ' + (guestName || 'Guest') + '</title>'
@@ -448,10 +448,10 @@ function QuoteCalculator({ profile }) {
       + 'table.items thead{background:#222;color:#fff;}'
       + 'table.items th{padding:10px 12px;font-size:11px;text-transform:uppercase;letter-spacing:1px;font-weight:600;}'
       + 'table.items th:first-child{width:40px;text-align:center;}'
-      + 'table.items th:nth-child(3),table.items th:nth-child(4){text-align:right;}'
+      + 'table.items th:nth-child(3){text-align:right;}'
       + 'table.items td{padding:12px;border-bottom:1px solid #ddd;font-size:13px;}'
       + 'table.items td:first-child{text-align:center;}'
-      + 'table.items td:nth-child(3),table.items td:nth-child(4){text-align:right;}'
+      + 'table.items td:nth-child(3){text-align:right;}'
       + '.totals{width:100%;margin-top:0;}'
       + '.totals td{padding:8px 12px;font-size:13px;}'
       + '.totals td:first-child{text-align:right;width:75%;}'
@@ -460,9 +460,6 @@ function QuoteCalculator({ profile }) {
       + '.notes{margin-top:28px;}'
       + '.notes strong{font-size:12px;font-weight:700;}'
       + '.notes p{margin-top:6px;font-size:12px;line-height:1.7;color:#444;}'
-      + '.sig{margin-top:60px;text-align:right;padding-top:8px;}'
-      + '.sig-line{display:inline-block;width:200px;border-bottom:1px solid #999;margin-bottom:4px;}'
-      + '.sig span{font-size:11px;color:#888;}'
       + '@media print{body{padding:30px 40px;}}'
       + '</style></head><body>'
 
@@ -484,10 +481,10 @@ function QuoteCalculator({ profile }) {
       + '<tr><td>Pax</td><td>' + pax + '</td></tr>'
       + '</table></div></div>'
 
-      + '<table class="items"><thead><tr><th>Qty</th><th>Description</th><th>Unit Price</th><th>Amount</th></tr></thead><tbody>'
+      + '<table class="items"><thead><tr><th>Qty</th><th>Description</th><th>Amount</th></tr></thead><tbody>'
 
     for (var i = 0; i < rows.length; i++) {
-      html += '<tr><td>' + rows[i][0] + '</td><td>' + rows[i][1] + '</td><td>' + rows[i][2] + '</td><td>' + rows[i][3] + '</td></tr>'
+      html += '<tr><td>' + rows[i][0] + '</td><td>' + rows[i][1] + '</td><td>' + rows[i][2] + '</td></tr>'
     }
 
     html += '</tbody></table>'
@@ -500,12 +497,8 @@ function QuoteCalculator({ profile }) {
       + '<div class="notes"><strong>Terms &amp; Conditions</strong>'
       + '<p>'
       + (notes ? notes.replace(/\n/g, '<br/>') + '<br/><br/>' : '')
-      + 'All amounts exclusive of applicable GST.<br/>'
-      + 'Final discount to be discussed with guest.<br/>'
-      + 'Rates valid for 7 days from quote date.'
+      + 'All amounts exclusive of applicable GST.'
       + '</p></div>'
-
-      + '<div class="sig"><div class="sig-line"></div><br/><span>Customer Signature</span></div>'
 
       + '<script>window.onload=function(){window.print()}<\/script>'
       + '</body></html>'

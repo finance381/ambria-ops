@@ -95,6 +95,8 @@ serve(async (req) => {
     if (!q.location_id) throw new Error("Location not selected")
     if (!q.guest_name) throw new Error("Guest name required")
     if (!q.event_date) throw new Error("Event date required")
+    const phone = (q.guest_phone || "").replace(/\D/g, "").slice(-10)
+    if (!phone || phone.length < 10) throw new Error("Valid 10-digit phone required")
 
     // Build LMS payload
     const venueIdx = q.venue_idx ?? 0
@@ -109,7 +111,8 @@ serve(async (req) => {
     const decorRupees = paiseToRupees(q.decor_q_paise)
     const djRupees = paiseToRupees(q.dj_q_paise)
     const rentalRupees = paiseToRupees(q.rental_q_paise)
-    const totalRupees = paiseToRupees(q.deal_value_paise || q.total_q_paise)
+    const inclTotal = (q.vm_q_paise || 0) + (q.include_decor !== false ? (q.decor_q_paise || 0) : 0) + (q.include_dj !== false ? (q.dj_q_paise || 0) : 0)
+    const totalRupees = paiseToRupees(q.deal_value_paise || inclTotal || q.total_q_paise)
 
     const body: Record<string, string | number> = {
       loggeduserid: String(profile.lms_user_id),
@@ -126,7 +129,9 @@ serve(async (req) => {
       fisd_free_pax_no: "1",
       fisd_menu_rate: perHeadRupees,
       fisd_extra_plate_charge: perHeadRupees,
-      fisd_venue_value: totalRupees,
+      fisd_menu_value: menuValueRupees,
+      fisd_session: ["Dinner", "Sundowner", "Lunch"][q.slot ?? 0] || "Dinner",
+      fisd_venue_value: menuValueRupees,
       fisd_decoration_lumpsum: decorRupees,
       fisd_decoration_remarks: "Empanelled",
       fisd_decor_type: "Empanelled",
@@ -134,7 +139,7 @@ serve(async (req) => {
       fisd_entertainment_remarks: "Empanelled",
       fisd_entertain_type: "Empanelled",
       fis_guest_name: q.guest_name,
-      fis_client_mobile: q.guest_phone || "-",
+      fis_client_mobile: phone,
       fis_address: q.guest_address || "-",
       fis_state: "1483",
       fis_city: "delhi",
