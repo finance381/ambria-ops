@@ -37,6 +37,8 @@ function Categories() {
   var [editingSubDept, setEditingSubDept] = useState(null) // { id, name }
   var [editSubDeptName, setEditSubDeptName] = useState('')
   var [editSubDeptCatIds, setEditSubDeptCatIds] = useState([])
+  var [newSubDeptCode, setNewSubDeptCode] = useState({})
+  var [editSubDeptCode, setEditSubDeptCode] = useState('')
 
   // Category edit modal
   var [editCat, setEditCat] = useState(null)
@@ -99,10 +101,12 @@ function Categories() {
     var val = (newSubDept[deptId] || '').trim()
     if (!val) return
     setSaving(true); setError('')
-    var { error: err } = await supabase.from('sub_departments').insert({ name: val, department_id: deptId })
+    var code = (newSubDeptCode[deptId] || '').trim().toUpperCase() || null
+    var { error: err } = await supabase.from('sub_departments').insert({ name: val, department_id: deptId, code: code })
     if (err) { setError(err.message) } else {
-      logActivity('SUB_DEPT_CREATE', val)
+      logActivity('SUB_DEPT_CREATE', (code ? code + ' — ' : '') + val)
       setNewSubDept(function (prev) { return Object.assign({}, prev, { [deptId]: '' }) })
+      setNewSubDeptCode(function (prev) { return Object.assign({}, prev, { [deptId]: '' }) })
       loadAll()
     }
     setSaving(false)
@@ -121,6 +125,7 @@ function Categories() {
   function openEditSubDept(sd) {
     setEditingSubDept(sd)
     setEditSubDeptName(sd.name)
+    setEditSubDeptCode(sd.code || '')
     var catIds = categories.filter(function (c) { return c.sub_department_id === sd.id }).map(function (c) { return c.id })
     setEditSubDeptCatIds(catIds)
   }
@@ -129,7 +134,7 @@ function Categories() {
     if (!editingSubDept || !editSubDeptName.trim()) return
     setSaving(true); setError('')
     // Update sub-dept name
-    await supabase.from('sub_departments').update({ name: editSubDeptName.trim() }).eq('id', editingSubDept.id)
+    await supabase.from('sub_departments').update({ name: editSubDeptName.trim(), code: editSubDeptCode.trim().toUpperCase() || null }).eq('id', editingSubDept.id)
     // Remove sub_department_id from categories no longer selected
     var oldCatIds = categories.filter(function (c) { return c.sub_department_id === editingSubDept.id }).map(function (c) { return c.id })
     var toRemove = oldCatIds.filter(function (id) { return !editSubDeptCatIds.includes(id) })
@@ -483,10 +488,18 @@ function Categories() {
                               var deptCats = categories.filter(function (c) { return deptCatIds.includes(c.id) && c.status === 'approved' })
                               return (
                                 <div key={sd.id} className="text-xs bg-indigo-50 border border-indigo-200 rounded-lg px-3 py-3 space-y-2">
-                                  <input type="text" value={editSubDeptName}
-                                    onChange={function (e) { setEditSubDeptName(e.target.value) }}
-                                    className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                                    style={{ fontSize: '16px' }} />
+                                  <div className="flex gap-2">
+                                    <input type="text" value={editSubDeptCode}
+                                      onChange={function (e) { setEditSubDeptCode(e.target.value) }}
+                                      placeholder="Code"
+                                      className="w-20 px-2 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 uppercase"
+                                      style={{ fontSize: '16px' }} />
+                                    <input type="text" value={editSubDeptName}
+                                      onChange={function (e) { setEditSubDeptName(e.target.value) }}
+                                      placeholder="Name"
+                                      className="flex-1 px-2 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                      style={{ fontSize: '16px' }} />
+                                  </div>
                                   <div>
                                     <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">Assign Categories</label>
                                     <div className="flex flex-wrap gap-2 mt-1">
@@ -522,7 +535,7 @@ function Categories() {
                             return (
                               <div key={sd.id} className="flex items-center justify-between text-xs bg-gray-50 rounded px-3 py-2">
                                 <div className="flex items-center gap-2">
-                                  <span className={"font-medium " + (sd.active ? "text-gray-700" : "text-gray-400")}>{sd.name}</span>
+                                  <span className={"font-medium " + (sd.active ? "text-gray-700" : "text-gray-400")}>{sd.code ? sd.code + ' — ' : ''}{sd.name}</span>
                                   {sdCats.length > 0 && (
                                     <span className="text-gray-400">{sdCats.map(function (c) { return c.name }).join(', ')}</span>
                                   )}
@@ -541,6 +554,10 @@ function Categories() {
 
                       {/* Add sub-department inline */}
                       <div className="mt-2 ml-4 flex gap-2">
+                        <input type="text" value={newSubDeptCode[dept.id] || ''}
+                          onChange={function (e) { setNewSubDeptCode(function (prev) { return Object.assign({}, prev, { [dept.id]: e.target.value }) }) }}
+                          placeholder="Code"
+                          className="w-16 px-2 py-1.5 border border-gray-200 rounded text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 uppercase" />
                         <input type="text" value={newSubDept[dept.id] || ''}
                           onChange={function (e) { setNewSubDept(function (prev) { return Object.assign({}, prev, { [dept.id]: e.target.value }) }) }}
                           placeholder="Add sub-department..."
