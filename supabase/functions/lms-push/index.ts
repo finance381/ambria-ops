@@ -104,7 +104,7 @@ serve(async (req) => {
     const venueId = VENUE_ID_MAP[venueIdx] || "3"
     const venueName = VENUE_NAME_MAP[venueIdx] || "Ambria Pushpanjali"
 
-    const perHeadRupees = q.per_head_rate ? String(Math.round(q.per_head_rate / 200)) : "0"
+    const perHeadRupees = (q.vm_q_paise && q.pax) ? String(Math.round(q.vm_q_paise / q.pax / 200)) : "0"
     const menuValueRupees = paiseToRupees(q.vm_q_paise)
     const decorRupees = paiseToRupees(q.decor_q_paise)
     const djRupees = paiseToRupees(q.dj_q_paise)

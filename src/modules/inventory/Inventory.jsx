@@ -14,6 +14,8 @@ function Inventory({ profile }) {
   var [search, setSearch] = useState('')
   var [catFilter, setCatFilter] = useState('')
   var [subCatFilter, setSubCatFilter] = useState('')
+  var RENDER_SIZE = 50
+  var [renderCount, setRenderCount] = useState(50)
 
   useEffect(function () {
     loadMyItems()
@@ -116,26 +118,26 @@ function Inventory({ profile }) {
      {/* Filters */}
      <div className="space-y-2">
        <input type="text" value={search}
-         onChange={function (e) { setSearch(e.target.value) }}
+         onChange={function (e) { setSearch(e.target.value); setRenderCount(RENDER_SIZE) }}
          placeholder="Search item name, ID..."
          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
          style={{ fontSize: '16px' }} />
        <div className="flex gap-2">
          <select value={catFilter}
-           onChange={function (e) { setCatFilter(e.target.value); setSubCatFilter('') }}
+           onChange={function (e) { setCatFilter(e.target.value); setSubCatFilter(''); setRenderCount(RENDER_SIZE) }}
            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
            <option value="">All Categories</option>
            {catOptions.map(function (c) { return <option key={c.id} value={String(c.id)}>{c.name}</option> })}
          </select>
          <select value={subCatFilter}
-           onChange={function (e) { setSubCatFilter(e.target.value) }}
+           onChange={function (e) { setSubCatFilter(e.target.value); setRenderCount(RENDER_SIZE) }}
            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
            <option value="">All Sub-categories</option>
            {subCatOptions.map(function (sc) { return <option key={sc.id} value={String(sc.id)}>{sc.name}</option> })}
          </select>
        </div>
        <div className="flex items-center gap-2">
-         <div className="text-[11px] text-gray-400">{filtered.length} / {items.length} items</div>
+         <div className="text-[11px] text-gray-400">{Math.min(renderCount, filtered.length)} / {filtered.length} items{filtered.length < items.length ? ' (filtered from ' + items.length + ')' : ''}</div>
          {(search || catFilter || subCatFilter) && (
            <button onClick={resetFilters}
              className="px-2 py-1 text-[11px] text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-colors font-medium">✕ Reset</button>
@@ -149,7 +151,7 @@ function Inventory({ profile }) {
        </div>
      )}
 
-     {filtered.map(function (item) {
+     {filtered.slice(0, renderCount).map(function (item) {
         var venueAllocs = item.venue_allocations || []
 
         return (
@@ -236,6 +238,12 @@ function Inventory({ profile }) {
           </div>
         )
       })}
+      {renderCount < filtered.length && (
+        <button onClick={function () { setRenderCount(renderCount + RENDER_SIZE) }}
+          className="w-full py-3 text-sm font-medium text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors">
+          Load More ({renderCount} of {filtered.length})
+        </button>
+      )}
       <Modal open={!!editItem} onClose={function () { setEditItem(null) }} title="Edit Entry">
         {editItem && (
           <InventoryForm
