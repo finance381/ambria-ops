@@ -409,6 +409,76 @@ function QuoteCalculator({ profile }) {
 
   // ── Persistence ──
   function toPaise(lakhs) { return Math.round(lakhs * 10000000) }
+
+  function printQuote() {
+    var vn = r.venue_name || (venues[venueIdx] || venues[0])[0]
+    var ml = r.menu_label || MENU_LABELS[activeMenu]
+    var fp = foodPref === 0 ? 'Veg' : 'Non-Veg'
+    var dt = eventDate ? fmtDate(eventDate) : '-'
+    var sl = SLOTS[slot] || '-'
+    var et = currentET.label || '-'
+    var vmAmt = includeMenu ? (adjVm.q || 0) : 0
+    var decAmt = includeDecor ? (adjDecor.q || 0) : 0
+    var djAmt = includeDj ? (adjDj.q || 0) : 0
+    var totalAmt = vmAmt + decAmt + djAmt
+    function fmtP(n) { return '\u20B9 ' + (n >= 1 ? n.toFixed(2) + ' L' : Math.round(n * 100) + ',000') }
+
+    var rows = []
+    if (includeMenu) rows.push(['Venue + Menu', fmtP(vmAmt)])
+    else if (rental.q) rows.push(['Venue Rental', fmtP(rental.q || 0)])
+    if (includeDecor) rows.push(['Decor', fmtP(decAmt)])
+    if (includeDj) rows.push(['DJ / Entertainment', fmtP(djAmt)])
+
+    var html = '<!DOCTYPE html><html><head><title>Quote - ' + (guestName || 'Guest') + '</title>'
+      + '<style>'
+      + 'body{font-family:Georgia,serif;margin:0;padding:40px 50px;color:#2D1810;}'
+      + '.header{text-align:center;border-bottom:3px double #8B6914;padding-bottom:20px;margin-bottom:30px;}'
+      + '.header h1{font-size:22px;margin:0 0 4px;color:#4A1111;letter-spacing:2px;}'
+      + '.header h2{font-size:15px;margin:0;color:#8B7355;font-weight:400;}'
+      + '.info{display:flex;flex-wrap:wrap;gap:6px 24px;margin-bottom:24px;padding:12px 16px;background:#FAF7F5;border-radius:8px;border:1px solid #E8DDD0;}'
+      + '.info span{font-size:12px;color:#6B5B4E;}'
+      + '.info strong{color:#4A1111;}'
+      + 'table{width:100%;border-collapse:collapse;margin:20px 0;}'
+      + 'th{text-align:left;font-size:11px;color:#8B7355;text-transform:uppercase;letter-spacing:1px;padding:8px 12px;border-bottom:2px solid #D4872C;}'
+      + 'td{padding:12px;font-size:14px;border-bottom:1px solid #E8DDD0;}'
+      + 'td:last-child{text-align:right;font-weight:700;font-size:15px;color:#4A1111;}'
+      + '.total td{border-top:3px double #8B6914;border-bottom:none;font-size:16px;font-weight:800;}'
+      + '.notes{margin-top:24px;padding:14px 16px;background:#FFF8F0;border:1px solid #E8DDD0;border-radius:8px;font-size:13px;color:#6B5B4E;line-height:1.7;}'
+      + '.footer{margin-top:30px;font-size:11px;color:#8B7355;text-align:center;border-top:1px solid #E8DDD0;padding-top:14px;}'
+      + '.badge{display:inline-block;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700;background:#FFF8F0;border:1px solid #D4872C;color:#D4872C;margin-left:8px;}'
+      + '@media print{body{padding:30px 40px;} .no-print{display:none!important;}}'
+      + '</style></head><body>'
+      + '<div class="header"><h1>' + vn.toUpperCase() + '</h1>'
+      + '<h2>' + et + (currentET.wedding ? ' <span class="badge">Wedding</span>' : '') + '</h2></div>'
+      + '<div class="info">'
+      + '<span><strong>Guest:</strong> ' + (guestName || '-') + '</span>'
+      + '<span><strong>Phone:</strong> ' + (guestPhone || '-') + '</span>'
+      + '<span><strong>Date:</strong> ' + dt + '</span>'
+      + '<span><strong>Slot:</strong> ' + sl + '</span>'
+      + '<span><strong>Pax:</strong> ' + pax + '</span>'
+      + (includeMenu ? '<span><strong>Menu:</strong> ' + ml + ' (' + fp + ') — \u20B9' + perHead + '/hd</span>' : '')
+      + '</div>'
+      + '<table><thead><tr><th>Particulars</th><th style="text-align:right">Amount</th></tr></thead><tbody>'
+
+    for (var i = 0; i < rows.length; i++) {
+      html += '<tr><td>' + rows[i][0] + '</td><td>' + rows[i][1] + '</td></tr>'
+    }
+    html += '<tr class="total"><td>Total</td><td>' + fmtP(totalAmt) + '</td></tr>'
+      + '</tbody></table>'
+      + '<div class="notes">'
+      + '<strong>Notes:</strong><br/>'
+      + (notes ? notes.replace(/\n/g, '<br/>') + '<br/><br/>' : '')
+      + '• All amounts exclusive of GST<br/>'
+      + '• Final discount to be discussed with guest'
+      + '</div>'
+      + '<div class="footer">Prepared by ' + profile.name + ' | AMBRIA</div>'
+      + '<script>window.onload=function(){window.print()}<\/script>'
+      + '</body></html>'
+
+    var w = window.open('', '_blank')
+    w.document.write(html)
+    w.document.close()
+  }
   function fromPaise(paise) { return paise / 10000000 }
 
   async function saveQuote() {
@@ -1051,6 +1121,13 @@ function QuoteCalculator({ profile }) {
             border: '2px solid rgba(255,255,255,.2)', background: 'rgba(255,255,255,.08)',
             color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer',
           }}>{showProposal ? 'Hide' : 'Proposal'}</button>
+
+          <button onClick={printQuote} disabled={!calcResult} style={{
+            width: '100%', marginTop: 8, padding: 13, borderRadius: 10,
+            border: '2px solid rgba(255,255,255,.2)', background: 'rgba(255,255,255,.08)',
+            color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer',
+            opacity: !calcResult ? 0.5 : 1,
+          }}>🖨️ Print Quote</button>
 
           <button onClick={saveQuote} disabled={saving || pushing || !calcResult} style={{
             width: '100%', marginTop: 8, padding: 13, borderRadius: 10,
