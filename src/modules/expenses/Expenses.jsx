@@ -686,35 +686,6 @@ function Expenses({ profile, masterMode }) {
     var { data } = await supabase.from('expense_types').select('id, name, extra_fields, active, sort_order').order('sort_order')
     setExpTypes(data || [])
   }
-  var AVAILABLE_FIELDS = [
-    { key: 'vendor_name', label: 'Vendor Name' },
-    { key: 'travel_from', label: 'Travel From' },
-    { key: 'travel_to', label: 'Travel To' },
-    { key: 'travel_mode', label: 'Travel Mode' },
-    { key: 'utility_type', label: 'Utility Type' },
-    { key: 'asset_name', label: 'Asset / Location' },
-    { key: 'event_name', label: 'Event Name' },
-    { key: 'vehicle_number', label: 'Vehicle Number' },
-    { key: 'km_reading', label: 'KM Reading' },
-    { key: 'tracking_number', label: 'Tracking #' },
-    { key: 'client_name', label: 'Client Name' },
-  ]
-
-  var [typeFields, setTypeFields] = useState([])
-
-  function startEditType(et) {
-    setTypeEditId(et.id)
-    setTypeName(et.name)
-    setTypeFields(et.extra_fields || [])
-  }
-
-  function toggleTypeField(key) {
-    if (typeFields.indexOf(key) >= 0) {
-      setTypeFields(typeFields.filter(function (f) { return f !== key }))
-    } else {
-      setTypeFields(typeFields.concat([key]))
-    }
-  }
 
   function startEditType(et) {
     setTypeEditId(et.id)
@@ -775,103 +746,6 @@ function Expenses({ profile, masterMode }) {
   async function toggleExpType(id, active) {
     await supabase.from('expense_types').update({ active: !active }).eq('id', id)
     loadExpTypes()
-  }
-
-  // ─── MASTER MODE (admin dash) ───
-  if (masterMode) {
-    if (!expTypes.length && !typeSaving) loadExpTypes()
-    return (
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="text-base font-bold text-gray-900">Expense Types</h3>
-            <p className="text-xs text-gray-400 mt-0.5">{expTypes.length} types · configure form fields per type</p>
-          </div>
-        </div>
-
-        <div className="space-y-2">
-          {expTypes.map(function (et) {
-            var isEditing = typeEditId === et.id
-            return (
-              <div key={et.id} className={"p-3 rounded-lg border transition-colors " + (isEditing ? "border-purple-400 bg-purple-50" : "border-gray-200 bg-white")}>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 flex-1 min-w-0">
-                    <span className={"text-sm font-medium truncate " + (et.active ? "text-gray-800" : "text-gray-400 line-through")}>{et.name}</span>
-                    {et.extra_fields && et.extra_fields.length > 0 && (
-                      <span className="text-[10px] text-purple-500 bg-purple-50 px-1.5 py-0.5 rounded">{et.extra_fields.length} fields</span>
-                    )}
-                  </div>
-                  <div className="flex gap-1.5 flex-shrink-0">
-                    <button onClick={function () { startEditType(et) }}
-                      className={"text-xs px-2.5 py-1.5 rounded-lg " + (isEditing ? "bg-purple-200 text-purple-700" : "bg-gray-100 text-gray-600 hover:bg-gray-200")}>✎</button>
-                    <button onClick={function () { toggleExpType(et.id, et.active) }}
-                      className={"text-xs px-2.5 py-1.5 rounded-lg " + (et.active ? "bg-green-100 text-green-700 hover:bg-green-200" : "bg-red-100 text-red-600 hover:bg-red-200")}>
-                      {et.active ? 'On' : 'Off'}
-                    </button>
-                  </div>
-                </div>
-                {et.extra_fields && et.extra_fields.length > 0 && !isEditing && (
-                  <div className="flex flex-wrap gap-1 mt-2">
-                    {et.extra_fields.map(function (f) {
-                      var af = AVAILABLE_FIELDS.find(function (a) { return a.key === f })
-                      return <span key={f} className="text-[10px] text-gray-500 bg-gray-50 border border-gray-200 px-1.5 py-0.5 rounded">{af ? af.label : f}</span>
-                    })}
-                  </div>
-                )}
-                {isEditing && (
-                  <div className="mt-3 pt-3 border-t border-purple-200 space-y-3">
-                    <input type="text" value={typeName} onChange={function (e) { setTypeName(e.target.value) }}
-                      placeholder="Type name..."
-                      className="w-full px-3 py-2 border border-purple-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-400"
-                      style={{ fontSize: '16px' }}
-                      onKeyDown={function (e) { if (e.key === 'Escape') { setTypeEditId(null); setTypeName(''); setTypeFields([]) } }}
-                      autoFocus />
-                    <div>
-                      <p className="text-xs font-medium text-gray-600 mb-1.5">Form fields for this type</p>
-                      <div className="flex flex-wrap gap-1.5">
-                        {AVAILABLE_FIELDS.map(function (af) {
-                          var on = typeFields.indexOf(af.key) >= 0
-                          return (
-                            <button key={af.key} onClick={function () { toggleTypeField(af.key) }}
-                              className={"text-[11px] px-2.5 py-1 rounded-full border font-medium transition-colors " +
-                                (on ? "bg-purple-600 text-white border-purple-600" : "bg-white text-gray-500 border-gray-200 hover:border-purple-300")}>
-                              {af.label}
-                            </button>
-                          )
-                        })}
-                      </div>
-                    </div>
-                    <div className="flex gap-2">
-                      <button onClick={function () { setTypeEditId(null); setTypeName(''); setTypeFields([]) }}
-                        className="px-4 py-2 text-sm text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors font-medium">Cancel</button>
-                      <button onClick={saveExpType} disabled={typeSaving || !typeName.trim()}
-                        className="flex-1 px-4 py-2 text-sm font-bold text-white bg-purple-600 rounded-lg hover:bg-purple-700 disabled:opacity-50 transition-colors">
-                        {typeSaving ? 'Saving...' : 'Update Type'}
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )
-          })}
-          {expTypes.length === 0 && <p className="text-sm text-gray-400 text-center py-4">No expense types yet</p>}
-        </div>
-
-        <div className="border-t border-gray-200 pt-4 space-y-3">
-          <p className="text-xs font-bold text-gray-500 uppercase tracking-wider">Add New Type</p>
-          <input type="text" value={typeEditId ? '' : typeName} onChange={function (e) { if (!typeEditId) setTypeName(e.target.value) }}
-            disabled={!!typeEditId}
-            placeholder="Type name..."
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-400 disabled:opacity-40"
-            style={{ fontSize: '16px' }}
-            onKeyDown={function (e) { if (e.key === 'Enter' && !typeEditId) saveExpType() }} />
-          <button onClick={function () { if (!typeEditId) saveExpType() }} disabled={typeSaving || !typeName.trim() || !!typeEditId}
-            className="w-full px-4 py-2 text-sm font-bold text-white bg-purple-600 rounded-lg hover:bg-purple-700 disabled:opacity-50 transition-colors">
-            Add Type
-          </button>
-        </div>
-      </div>
-    )
   }
 
   var displayList = view === 'approve' ? approvalExpenses : myExpenses
