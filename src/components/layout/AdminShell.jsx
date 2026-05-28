@@ -21,6 +21,9 @@ var StaffRoles = lazy(function () { return import('../../modules/manpower/StaffR
 var Analytics = lazy(function () { return import('../../modules/analytics/Analytics') })
 var Overview = lazy(function () { return import('../../modules/overview/Overview') })
 
+function ExpenseTypesMaster(props) {
+  return <Expenses profile={props.profile} masterMode={true} />
+}
 
 // ── Sub-tab switcher ──
 function SubTabs({ tabs, active, onChange }) {
@@ -51,6 +54,7 @@ var SUB_TAB_CONFIG = {
     { key: 'categories', label: 'Categories', component: Categories },
     { key: 'ratecard', label: 'Rate Card', component: RateCardEditor },
     { key: 'staff_roles', label: 'Staff Roles', component: StaffRoles },
+    { key: 'expense_types', label: 'Expense Types', component: ExpenseTypesMaster },
   ],
   users: [
     { key: 'users', label: 'Users', component: Users },
