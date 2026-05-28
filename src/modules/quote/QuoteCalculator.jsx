@@ -417,61 +417,96 @@ function QuoteCalculator({ profile }) {
     var dt = eventDate ? fmtDate(eventDate) : '-'
     var sl = SLOTS[slot] || '-'
     var et = currentET.label || '-'
-    var vmAmt = includeMenu ? (adjVm.q || 0) : 0
-    var decAmt = includeDecor ? (adjDecor.q || 0) : 0
-    var djAmt = includeDj ? (adjDj.q || 0) : 0
-    var totalAmt = vmAmt + decAmt + djAmt
-    function fmtP(n) { return '\u20B9 ' + (n >= 1 ? n.toFixed(2) + ' L' : Math.round(n * 100) + ',000') }
+    var today = new Date(); var dd = String(today.getDate()).padStart(2,'0'); var mm = String(today.getMonth()+1).padStart(2,'0'); var yy = today.getFullYear(); var todayStr = dd + '-' + mm + '-' + yy
+    function fmtAmt(n) { var rupees = Math.round(n * 1000000); return '\u20B9' + rupees.toLocaleString('en-IN') }
 
     var rows = []
-    if (includeMenu) rows.push(['Venue + Menu', fmtP(vmAmt)])
-    else if (rental.q) rows.push(['Venue Rental', fmtP(rental.q || 0)])
-    if (includeDecor) rows.push(['Decor', fmtP(decAmt)])
-    if (includeDj) rows.push(['DJ / Entertainment', fmtP(djAmt)])
+    if (includeMenu) rows.push([1, 'Venue + Menu (' + ml + ' ' + fp + ', ' + pax + ' pax)', '\u20B9' + perHead + '/head', fmtAmt(adjVm.q || 0)])
+    else if (rental.q) rows.push([1, 'Venue Rental', '-', fmtAmt(rental.q || 0)])
+    if (includeDecor) rows.push([1, 'Decoration (Empanelled)', '-', fmtAmt(adjDecor.q || 0)])
+    if (includeDj) rows.push([1, 'DJ / Entertainment', '-', fmtAmt(adjDj.q || 0)])
+    var totalAmt = (includeMenu ? (adjVm.q || 0) : (rental.q || 0)) + (includeDecor ? (adjDecor.q || 0) : 0) + (includeDj ? (adjDj.q || 0) : 0)
 
     var html = '<!DOCTYPE html><html><head><title>Quote - ' + (guestName || 'Guest') + '</title>'
       + '<style>'
-      + 'body{font-family:Georgia,serif;margin:0;padding:40px 50px;color:#2D1810;}'
-      + '.header{text-align:center;border-bottom:3px double #8B6914;padding-bottom:20px;margin-bottom:30px;}'
-      + '.header h1{font-size:22px;margin:0 0 4px;color:#4A1111;letter-spacing:2px;}'
-      + '.header h2{font-size:15px;margin:0;color:#8B7355;font-weight:400;}'
-      + '.info{display:flex;flex-wrap:wrap;gap:6px 24px;margin-bottom:24px;padding:12px 16px;background:#FAF7F5;border-radius:8px;border:1px solid #E8DDD0;}'
-      + '.info span{font-size:12px;color:#6B5B4E;}'
-      + '.info strong{color:#4A1111;}'
-      + 'table{width:100%;border-collapse:collapse;margin:20px 0;}'
-      + 'th{text-align:left;font-size:11px;color:#8B7355;text-transform:uppercase;letter-spacing:1px;padding:8px 12px;border-bottom:2px solid #D4872C;}'
-      + 'td{padding:12px;font-size:14px;border-bottom:1px solid #E8DDD0;}'
-      + 'td:last-child{text-align:right;font-weight:700;font-size:15px;color:#4A1111;}'
-      + '.total td{border-top:3px double #8B6914;border-bottom:none;font-size:16px;font-weight:800;}'
-      + '.notes{margin-top:24px;padding:14px 16px;background:#FFF8F0;border:1px solid #E8DDD0;border-radius:8px;font-size:13px;color:#6B5B4E;line-height:1.7;}'
-      + '.footer{margin-top:30px;font-size:11px;color:#8B7355;text-align:center;border-top:1px solid #E8DDD0;padding-top:14px;}'
-      + '.badge{display:inline-block;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700;background:#FFF8F0;border:1px solid #D4872C;color:#D4872C;margin-left:8px;}'
-      + '@media print{body{padding:30px 40px;} .no-print{display:none!important;}}'
+      + '*{margin:0;padding:0;box-sizing:border-box;}'
+      + 'body{font-family:Helvetica,Arial,sans-serif;padding:40px 50px;color:#222;font-size:13px;}'
+      + '.top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:30px;}'
+      + '.company{font-size:13px;line-height:1.6;}'
+      + '.company strong{font-size:16px;}'
+      + '.title{text-align:right;}'
+      + '.title h1{font-size:32px;font-weight:900;letter-spacing:2px;line-height:1.1;}'
+      + '.mid{display:flex;justify-content:space-between;margin-bottom:28px;padding-bottom:16px;border-bottom:2px solid #222;}'
+      + '.bill-to{}'
+      + '.bill-to .lbl{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;border-bottom:2px solid #222;display:inline-block;padding-bottom:2px;}'
+      + '.bill-to p{line-height:1.6;margin-top:4px;}'
+      + '.meta{text-align:right;}'
+      + '.meta table{margin-left:auto;}'
+      + '.meta td{padding:2px 0;font-size:12px;}'
+      + '.meta td:first-child{text-align:right;padding-right:12px;font-weight:700;}'
+      + 'table.items{width:100%;border-collapse:collapse;margin-bottom:0;}'
+      + 'table.items thead{background:#222;color:#fff;}'
+      + 'table.items th{padding:10px 12px;font-size:11px;text-transform:uppercase;letter-spacing:1px;font-weight:600;}'
+      + 'table.items th:first-child{width:40px;text-align:center;}'
+      + 'table.items th:nth-child(3),table.items th:nth-child(4){text-align:right;}'
+      + 'table.items td{padding:12px;border-bottom:1px solid #ddd;font-size:13px;}'
+      + 'table.items td:first-child{text-align:center;}'
+      + 'table.items td:nth-child(3),table.items td:nth-child(4){text-align:right;}'
+      + '.totals{width:100%;margin-top:0;}'
+      + '.totals td{padding:8px 12px;font-size:13px;}'
+      + '.totals td:first-child{text-align:right;width:75%;}'
+      + '.totals td:last-child{text-align:right;width:25%;}'
+      + '.totals .grand{border-top:2px solid #222;font-size:15px;font-weight:900;}'
+      + '.notes{margin-top:28px;}'
+      + '.notes strong{font-size:12px;font-weight:700;}'
+      + '.notes p{margin-top:6px;font-size:12px;line-height:1.7;color:#444;}'
+      + '.sig{margin-top:60px;text-align:right;padding-top:8px;}'
+      + '.sig-line{display:inline-block;width:200px;border-bottom:1px solid #999;margin-bottom:4px;}'
+      + '.sig span{font-size:11px;color:#888;}'
+      + '@media print{body{padding:30px 40px;}}'
       + '</style></head><body>'
-      + '<div class="header"><h1>' + vn.toUpperCase() + '</h1>'
-      + '<h2>' + et + (currentET.wedding ? ' <span class="badge">Wedding</span>' : '') + '</h2></div>'
-      + '<div class="info">'
-      + '<span><strong>Guest:</strong> ' + (guestName || '-') + '</span>'
-      + '<span><strong>Phone:</strong> ' + (guestPhone || '-') + '</span>'
-      + '<span><strong>Date:</strong> ' + dt + '</span>'
-      + '<span><strong>Slot:</strong> ' + sl + '</span>'
-      + '<span><strong>Pax:</strong> ' + pax + '</span>'
-      + (includeMenu ? '<span><strong>Menu:</strong> ' + ml + ' (' + fp + ') — \u20B9' + perHead + '/hd</span>' : '')
+
+      + '<div class="top">'
+      + '<div class="company"><strong>' + vn + '</strong><br/>By Ambria Group<br/>' + (guestAddress ? '' : 'Delhi, India') + '</div>'
+      + '<div class="title"><h1>EVENT<br/>QUOTE</h1></div>'
       + '</div>'
-      + '<table><thead><tr><th>Particulars</th><th style="text-align:right">Amount</th></tr></thead><tbody>'
+
+      + '<div class="mid">'
+      + '<div class="bill-to"><div class="lbl">Bill To</div>'
+      + '<p><strong>' + (guestName || '-') + '</strong><br/>'
+      + (guestPhone || '-') + '<br/>'
+      + (guestAddress || '-') + '</p></div>'
+      + '<div class="meta"><table>'
+      + '<tr><td>Quote date</td><td>' + todayStr + '</td></tr>'
+      + '<tr><td>Event date</td><td>' + dt + '</td></tr>'
+      + '<tr><td>Slot</td><td>' + sl + '</td></tr>'
+      + '<tr><td>Event type</td><td>' + et + '</td></tr>'
+      + '<tr><td>Pax</td><td>' + pax + '</td></tr>'
+      + '</table></div></div>'
+
+      + '<table class="items"><thead><tr><th>Qty</th><th>Description</th><th>Unit Price</th><th>Amount</th></tr></thead><tbody>'
 
     for (var i = 0; i < rows.length; i++) {
-      html += '<tr><td>' + rows[i][0] + '</td><td>' + rows[i][1] + '</td></tr>'
+      html += '<tr><td>' + rows[i][0] + '</td><td>' + rows[i][1] + '</td><td>' + rows[i][2] + '</td><td>' + rows[i][3] + '</td></tr>'
     }
-    html += '<tr class="total"><td>Total</td><td>' + fmtP(totalAmt) + '</td></tr>'
-      + '</tbody></table>'
-      + '<div class="notes">'
-      + '<strong>Notes:</strong><br/>'
+
+    html += '</tbody></table>'
+      + '<table class="totals">'
+      + '<tr><td>Subtotal</td><td>' + fmtAmt(totalAmt) + '</td></tr>'
+      + '<tr><td>GST</td><td>As applicable</td></tr>'
+      + '<tr class="grand"><td>Total</td><td>' + fmtAmt(totalAmt) + '</td></tr>'
+      + '</table>'
+
+      + '<div class="notes"><strong>Terms &amp; Conditions</strong>'
+      + '<p>'
       + (notes ? notes.replace(/\n/g, '<br/>') + '<br/><br/>' : '')
-      + '• All amounts exclusive of GST<br/>'
-      + '• Final discount to be discussed with guest'
-      + '</div>'
-      + '<div class="footer">Prepared by ' + profile.name + ' | AMBRIA</div>'
+      + 'All amounts exclusive of applicable GST.<br/>'
+      + 'Final discount to be discussed with guest.<br/>'
+      + 'Rates valid for 7 days from quote date.'
+      + '</p></div>'
+
+      + '<div class="sig"><div class="sig-line"></div><br/><span>Customer Signature</span></div>'
+
       + '<script>window.onload=function(){window.print()}<\/script>'
       + '</body></html>'
 
