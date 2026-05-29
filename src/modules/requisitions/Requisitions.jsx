@@ -918,7 +918,7 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
                 <div className="flex items-center gap-2">
                   <button type="button" onClick={function () { toggleMode(index) }}
                     className="flex items-center gap-2">
-                    <span className="text-[11px] font-bold text-gray-500">{item.mode === 'new' ? '✦ New' : '📦 Inventory'}</span>
+                    <span className="text-[11px] font-bold text-gray-500">{item.mode === 'new' ? '✦ New Item' : '📦 Inventory Item'}</span>
                     <div className={"relative w-9 h-5 rounded-full transition-colors " + (item.mode === 'new' ? "bg-amber-400" : "bg-indigo-500")}>
                       <div className={"absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform " + (item.mode === 'new' ? "translate-x-4" : "translate-x-0.5")} />
                     </div>
