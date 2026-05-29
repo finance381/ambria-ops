@@ -45,12 +45,21 @@ function Categories() {
   var [editCatName, setEditCatName] = useState('')
   var [editCatCode, setEditCatCode] = useState('')
   var [editCatConsumable, setEditCatConsumable] = useState(true)
+  var [expTypes, setExpTypes] = useState([])
+  var [editDeptExpTypes, setEditDeptExpTypes] = useState([])
+  var [editSubDeptExpTypes, setEditSubDeptExpTypes] = useState([])
+  var [editCatExpTypes, setEditCatExpTypes] = useState([])
   var [editCatDims, setEditCatDims] = useState([])
   var [editCatSubs, setEditCatSubs] = useState([])
   var [newDimName, setNewDimName] = useState('')
   var [newSubName, setNewSubName] = useState('')
 
-  useEffect(function () { loadAll() }, [])
+  useEffect(function () {
+    loadAll()
+    supabase.from('expense_types').select('id, name, active').eq('active', true).order('sort_order').then(function (res) {
+      setExpTypes(res.data || [])
+    })
+  }, [])
 
   async function loadAll() {
     var [deptRes, catRes, subRes, venueRes, subDeptRes, subVenueRes] = await Promise.all([
@@ -94,7 +103,7 @@ function Categories() {
 
   async function saveEditDept(dept) {
     if (!editVal.trim()) return
-    var { error: err } = await supabase.from('departments').update({ name: editVal.trim(), category_ids: editDeptCats }).eq('id', dept.id)
+    var { error: err } = await supabase.from('departments').update({ name: editVal.trim(), category_ids: editDeptCats, expense_type_ids: editDeptExpTypes }).eq('id', dept.id)
     if (err) { setError(err.message) } else { setEditing(null); loadAll() }
   }
   async function addSubDepartment(deptId) {
@@ -125,7 +134,7 @@ function Categories() {
   function openEditSubDept(sd) {
     setEditingSubDept(sd)
     setEditSubDeptName(sd.name)
-    setEditSubDeptCode(sd.code || '')
+    setEditSubDeptExpTypes(sd.expense_type_ids || [])
     var catIds = categories.filter(function (c) { return c.sub_department_id === sd.id }).map(function (c) { return c.id })
     setEditSubDeptCatIds(catIds)
   }
@@ -134,7 +143,7 @@ function Categories() {
     if (!editingSubDept || !editSubDeptName.trim()) return
     setSaving(true); setError('')
     // Update sub-dept name
-    await supabase.from('sub_departments').update({ name: editSubDeptName.trim(), code: editSubDeptCode.trim().toUpperCase() || null }).eq('id', editingSubDept.id)
+    await supabase.from('sub_departments').update({ name: editSubDeptName.trim(), expense_type_ids: editSubDeptExpTypes }).eq('id', editingSubDept.id)
     // Remove sub_department_id from categories no longer selected
     var oldCatIds = categories.filter(function (c) { return c.sub_department_id === editingSubDept.id }).map(function (c) { return c.id })
     var toRemove = oldCatIds.filter(function (id) { return !editSubDeptCatIds.includes(id) })
@@ -178,6 +187,7 @@ function Categories() {
     setEditCatDims(cat.dimension_fields || [])
     setEditCatSubs(subCategories.filter(function (s) { return s.category_id === cat.id }))
     setEditCatSubDept(cat.sub_department_id ? String(cat.sub_department_id) : '')
+    setEditCatExpTypes(cat.expense_type_ids || [])
     setNewDimName('')
     setNewSubName('')
     setError('')
@@ -240,6 +250,7 @@ function Categories() {
       dimension_fields: editCatDims,
       sub_department_id: editCatSubDept ? Number(editCatSubDept) : null,
       consumable: editCatConsumable,
+      expense_type_ids: editCatExpTypes,
     }).eq('id', editCat.id)
     if (err) { setError(err.message) } else {
       setEditCat(null)
@@ -415,7 +426,7 @@ function Categories() {
               return (
                 <div key={dept.id} className="px-4 py-3 border-b border-gray-100 last:border-0">
                   {isEditing ? (
-                    <div className="space-y-3">
+                    <div className="space-y-3 mb-3">
                       <div className="flex items-center gap-2">
                         <input type="text" value={editVal} onChange={function (e) { setEditVal(e.target.value) }}
                           className="flex-1 px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
@@ -424,7 +435,7 @@ function Categories() {
                         <button onClick={function () { setEditing(null) }} className="text-xs px-2 py-1 rounded bg-gray-100 text-gray-600">Cancel</button>
                       </div>
                       <div>
-                        <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">Tagged Categories</label>
+                        <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">Inventory Categories</label>
                         <div className="flex flex-wrap gap-2 mt-1">
                           {categories.filter(function (c) { return c.status === 'approved' }).map(function (cat) {
                             var checked = editDeptCats.includes(cat.id)
@@ -439,6 +450,27 @@ function Categories() {
                                   }}
                                   className="w-3.5 h-3.5 rounded" />
                                 {cat.name}
+                              </label>
+                            )
+                          })}
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">Expense Categories</label>
+                        <div className="flex flex-wrap gap-2 mt-1">
+                          {expTypes.map(function (et) {
+                            var checked = editDeptExpTypes.includes(et.id)
+                            return (
+                              <label key={et.id} className={"flex items-center gap-1.5 text-xs px-2 py-1.5 rounded-lg border cursor-pointer transition-colors " +
+                                (checked ? "bg-purple-50 border-purple-300 text-purple-700" : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50")}>
+                                <input type="checkbox" checked={checked}
+                                  onChange={function () {
+                                    setEditDeptExpTypes(function (prev) {
+                                      return checked ? prev.filter(function (id) { return id !== et.id }) : prev.concat([et.id])
+                                    })
+                                  }}
+                                  className="w-3.5 h-3.5 rounded" />
+                                {et.name}
                               </label>
                             )
                           })}
@@ -459,7 +491,7 @@ function Categories() {
                           )}
                         </div>
                         <div className="flex gap-2">
-                          <button onClick={function () { setEditing('dept-' + dept.id); setEditVal(dept.name); setEditDeptCats(dept.category_ids || []) }}
+                          <button onClick={function () { setEditing('dept-' + dept.id); setEditVal(dept.name); setEditDeptCats(dept.category_ids || []); setEditDeptExpTypes(dept.expense_type_ids || []) }}
                             className="text-xs px-2 py-1 rounded bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors">Edit</button>
                           <button onClick={function () { toggleDepartment(dept) }}
                             className="text-xs px-2 py-1 rounded bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors">
@@ -476,6 +508,8 @@ function Categories() {
                           })}
                         </div>
                       )}
+                    </div>
+                  )}
 
                       {/* Sub-departments */}
                       {deptSubDepts.map(function (sd) {
@@ -520,6 +554,27 @@ function Categories() {
                                         )
                                       })}
                                       {deptCats.length === 0 && <span className="text-gray-400">No categories tagged to this department</span>}
+                                    </div>
+                                  </div>
+                                  <div>
+                                    <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">Expense Categories</label>
+                                    <div className="flex flex-wrap gap-2 mt-1">
+                                      {expTypes.map(function (et) {
+                                        var checked = editSubDeptExpTypes.includes(et.id)
+                                        return (
+                                          <label key={et.id} className={"flex items-center gap-1.5 text-xs px-2 py-1.5 rounded-lg border cursor-pointer transition-colors " +
+                                            (checked ? "bg-purple-50 border-purple-300 text-purple-700" : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50")}>
+                                            <input type="checkbox" checked={checked}
+                                              onChange={function () {
+                                                setEditSubDeptExpTypes(function (prev) {
+                                                  return checked ? prev.filter(function (id) { return id !== et.id }) : prev.concat([et.id])
+                                                })
+                                              }}
+                                              className="w-3.5 h-3.5 rounded" />
+                                            {et.name}
+                                          </label>
+                                        )
+                                      })}
                                     </div>
                                   </div>
                                   <div className="flex gap-2 justify-end">
@@ -567,8 +622,6 @@ function Categories() {
                           disabled={!(newSubDept[dept.id] || '').trim() || saving}
                           className="px-2 py-1.5 text-xs text-white bg-indigo-600 rounded hover:bg-indigo-700 disabled:opacity-50 transition-colors">+ Add</button>
                       </div>
-                    </div>
-                  )}
                 </div>
               )
             })}
@@ -838,6 +891,28 @@ function Categories() {
               </p>
             </div>
 
+            {/* Expense Categories */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Expense Categories</label>
+              <div className="flex flex-wrap gap-2">
+                {expTypes.map(function (et) {
+                  var checked = editCatExpTypes.includes(et.id)
+                  return (
+                    <label key={et.id} className={"flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border cursor-pointer transition-colors " +
+                      (checked ? "bg-purple-50 border-purple-300 text-purple-700" : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50")}>
+                      <input type="checkbox" checked={checked}
+                        onChange={function () {
+                          setEditCatExpTypes(function (prev) {
+                            return checked ? prev.filter(function (id) { return id !== et.id }) : prev.concat([et.id])
+                          })
+                        }}
+                        className="w-3.5 h-3.5 rounded" />
+                      {et.name}
+                    </label>
+                  )
+                })}
+              </div>
+            </div>
             {/* Sub-categories */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Sub-categories</label>
