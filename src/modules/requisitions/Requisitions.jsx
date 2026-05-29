@@ -148,7 +148,7 @@ function Requisitions({ profile, onBack }) {
     setDetailReq(req)
     var { data } = await supabase
       .from('requisition_items')
-      .select('id, item_id, item_name, category_id, qty, unit, notes, _source, estimated_cost_paise, po_item_id, item_status, fulfillment_type, dispatched_by, dispatched_at, dispatched_note, acknowledged_at, auto_acknowledged, categories(name)')
+      .select('id, item_id, item_name, category_id, qty, unit, notes, _source, estimated_cost_paise, po_item_id, item_status, fulfillment_type, dispatched_by, dispatched_at, dispatched_note, acknowledged_at, auto_acknowledged, categories(name), requisition_item_allocations(venue_id, qty)')
       .eq('requisition_id', req.id)
     setDetailItems(data || [])
     setView('detail')
@@ -326,6 +326,7 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
   var [subDepartments, setSubDepartments] = useState([])
   var [categories, setCategories] = useState([])
   var [subCategories, setSubCategories] = useState([])
+  var [venues, setVenues] = useState([])
   var [inventoryItems, setInventoryItems] = useState([])
   var [department, setDepartment] = useState(editReq ? editReq.department : '')
   var [subDeptId, setSubDeptId] = useState(editReq?.sub_department_id ? String(editReq.sub_department_id) : '')
@@ -351,7 +352,7 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
   var SpeechRec = typeof window !== 'undefined' ? (window.SpeechRecognition || window.webkitSpeechRecognition) : null
 
   function emptyCartItem() {
-    return { mode: 'existing', item_id: null, item_name: '', category_id: '', qty: '1', unit: 'Pieces', notes: '', _source: 'new', search: '', estimated_cost: '' }
+    return { mode: 'existing', item_id: null, item_name: '', category_id: '', qty: '1', unit: 'Pieces', notes: '', _source: 'new', search: '', estimated_cost: '', allocations: [{ venue_id: '', qty: '' }] }
   }
 
   // Initialize cart — empty for new, pre-filled for edit
@@ -369,6 +370,9 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
           _source: li._source || 'new',
           search: li.item_name || '',
           estimated_cost: li.estimated_cost_paise ? String(li.estimated_cost_paise / 100) : '',
+          allocations: li.requisition_item_allocations && li.requisition_item_allocations.length > 0
+            ? li.requisition_item_allocations.map(function (a) { return { venue_id: String(a.venue_id), qty: String(a.qty) } })
+            : [{ venue_id: '', qty: '' }],
         }
       })
       setCart(prefilled)
@@ -429,11 +433,12 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
   }
 
   async function loadLookups() {
-    var [deptRes, subDeptRes, catRes, subCatRes, invRes, csRes] = await Promise.all([
+    var [deptRes, subDeptRes, catRes, subCatRes, venueRes, invRes, csRes] = await Promise.all([
       supabase.from('departments').select('id, name').eq('active', true).order('name'),
       supabase.from('sub_departments').select('id, name, department_id').eq('active', true).order('name'),
       supabase.from('categories').select('id, name, sub_department_id').order('name'),
       supabase.from('sub_categories').select('id, name, category_id').order('name'),
+      supabase.from('venues').select('id, code, name').order('name'),
       supabase.from('inventory_items')
         .select('id, name, unit, qty, category_id, status, categories(name)')
         .in('status', ['approved', 'pending', 'pending_dept'])
@@ -449,6 +454,7 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
     setSubDepartments(subDeptRes.data || [])
     setCategories(catRes.data || [])
     setSubCategories(subCatRes.data || [])
+    setVenues(venueRes.data || [])
 
     // If editing, pre-load the linked event's date
     if (editReq?.event_id) {
@@ -533,7 +539,7 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
       return prev.map(function (item, i) {
         if (i !== index) return item
         var newMode = item.mode === 'existing' ? 'new' : 'existing'
-        return Object.assign({}, emptyCartItem(), { mode: newMode, qty: item.qty, notes: item.notes })
+        return Object.assign({}, emptyCartItem(), { mode: newMode, qty: item.qty, notes: item.notes, allocations: item.allocations })
       })
     })
   }
@@ -546,6 +552,38 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
     setCart(function (prev) {
       if (prev.length <= 1) return prev
       return prev.filter(function (_, i) { return i !== index })
+    })
+  }
+
+  function updateAllocation(cartIndex, allocIndex, field, value) {
+    setCart(function (prev) {
+      return prev.map(function (item, i) {
+        if (i !== cartIndex) return item
+        var allocs = item.allocations.map(function (a, j) {
+          if (j !== allocIndex) return a
+          return Object.assign({}, a, { [field]: value })
+        })
+        return Object.assign({}, item, { allocations: allocs })
+      })
+    })
+  }
+
+  function addAllocation(cartIndex) {
+    setCart(function (prev) {
+      return prev.map(function (item, i) {
+        if (i !== cartIndex) return item
+        return Object.assign({}, item, { allocations: item.allocations.concat([{ venue_id: '', qty: '' }]) })
+      })
+    })
+  }
+
+  function removeAllocation(cartIndex, allocIndex) {
+    setCart(function (prev) {
+      return prev.map(function (item, i) {
+        if (i !== cartIndex) return item
+        if (item.allocations.length <= 1) return item
+        return Object.assign({}, item, { allocations: item.allocations.filter(function (_, j) { return j !== allocIndex }) })
+      })
     })
   }
 
@@ -569,6 +607,19 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
     if (!purpose.trim()) errs.purpose = 'Purpose required'
     var validItems = cart.filter(function (c) { return c.item_name.trim() && Number(c.qty) > 0 })
     if (validItems.length === 0) errs.cart = 'Add at least one item'
+    var allocErrs = []
+    cart.forEach(function (c, cartIdx) {
+      if (!c.item_name.trim() || Number(c.qty) <= 0) return
+      var filled = c.allocations.filter(function (a) { return a.venue_id && Number(a.qty) > 0 })
+      if (filled.length > 0) {
+        var sum = 0
+        filled.forEach(function (a) { sum += Number(a.qty) })
+        if (sum !== Number(c.qty)) {
+          allocErrs.push('Item #' + (cartIdx + 1) + ': allocated ' + sum + ' ≠ qty ' + c.qty)
+        }
+      }
+    })
+    if (allocErrs.length > 0) errs.alloc = allocErrs.join('. ')
     setErrors(errs)
     return Object.keys(errs).length === 0
   }
@@ -591,6 +642,7 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
             notes: c.notes.trim() || null,
             _source: c.mode === 'existing' ? c._source : 'new',
             estimated_cost_paise: c.estimated_cost ? Math.round(Number(c.estimated_cost) * 100) : null,
+            _allocations: c.allocations.filter(function (a) { return a.venue_id && Number(a.qty) > 0 }),
           }
         })
 
@@ -613,9 +665,22 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
         if (delErr) throw new Error(delErr.message)
 
         if (lineItems.length > 0) {
-          var itemsWithReqId = lineItems.map(function (li) { return Object.assign({}, li, { requisition_id: editReq.id }) })
-          var { error: insErr } = await supabase.from('requisition_items').insert(itemsWithReqId)
+          var itemsWithReqId = lineItems.map(function (li) {
+            var row = Object.assign({}, li, { requisition_id: editReq.id })
+            delete row._allocations
+            return row
+          })
+          var { data: insertedEditItems, error: insErr } = await supabase.from('requisition_items').insert(itemsWithReqId).select('id')
           if (insErr) throw new Error(insErr.message)
+          var editAllocs = []
+          ;(insertedEditItems || []).forEach(function (ins, idx) {
+            var la = lineItems[idx]._allocations || []
+            la.forEach(function (a) { editAllocs.push({ req_item_id: ins.id, venue_id: Number(a.venue_id), qty: Number(a.qty) }) })
+          })
+          if (editAllocs.length > 0) {
+            var { error: eaErr } = await supabase.from('requisition_item_allocations').insert(editAllocs)
+            if (eaErr) throw new Error('Allocation save failed: ' + eaErr.message)
+          }
         }
 
         logActivity('REQUISITION_EDIT', purpose.trim() + ' | ' + lineItems.length + ' items')
@@ -662,11 +727,21 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
         if (lineItems.length > 0) {
           var itemsWithId = lineItems.map(function (li) {
             var row = Object.assign({}, li, { requisition_id: req.id })
+            delete row._allocations
             if (isAdminRole) { row.item_status = 'po_queued'; row.fulfillment_type = 'purchase' }
             return row
           })
-          var { error: itemsErr } = await supabase.from('requisition_items').insert(itemsWithId)
+          var { data: insertedItems, error: itemsErr } = await supabase.from('requisition_items').insert(itemsWithId).select('id')
           if (itemsErr) throw new Error(itemsErr.message)
+          var allAllocs = []
+          ;(insertedItems || []).forEach(function (ins, idx) {
+            var la = lineItems[idx]._allocations || []
+            la.forEach(function (a) { allAllocs.push({ req_item_id: ins.id, venue_id: Number(a.venue_id), qty: Number(a.qty) }) })
+          })
+          if (allAllocs.length > 0) {
+            var { error: allocErr } = await supabase.from('requisition_item_allocations').insert(allAllocs)
+            if (allocErr) throw new Error('Allocation save failed: ' + allocErr.message)
+          }
         }
 
         try { await logActivity('REQUISITION_CREATE', purpose.trim() + ' | ' + lineItems.length + ' items | ' + urgency) } catch (_) {}
@@ -945,6 +1020,50 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
                     style={{ fontSize: '16px' }} />
                 </div>
               </div>
+
+              {/* Venue Allocations */}
+              <div className="border-t border-gray-100 pt-2 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-gray-400">Venue Allocation</span>
+                  <button type="button" onClick={function () { addAllocation(index) }}
+                    className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-800">+ Add</button>
+                </div>
+                {item.allocations.map(function (alloc, aIdx) {
+                  return (
+                    <div key={aIdx} className="flex gap-2 items-end">
+                      <div className="flex-1">
+                        <select value={alloc.venue_id}
+                          onChange={function (e) { updateAllocation(index, aIdx, 'venue_id', e.target.value) }}
+                          className="w-full px-2 py-1.5 border border-gray-200 rounded-md text-[12px] focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+                          style={{ fontSize: '16px' }}>
+                          <option value="">Venue...</option>
+                          {venues.map(function (v) { return <option key={v.id} value={String(v.id)}>{v.code ? v.code + ' — ' + v.name : v.name}</option> })}
+                        </select>
+                      </div>
+                      <div className="w-20">
+                        <input type="number" min="0" step="any" inputMode="numeric" value={alloc.qty}
+                          onChange={function (e) { updateAllocation(index, aIdx, 'qty', e.target.value) }}
+                          placeholder="Qty"
+                          className="w-full px-2 py-1.5 border border-gray-200 rounded-md text-[12px] focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                          style={{ fontSize: '16px' }} />
+                      </div>
+                      {item.allocations.length > 1 && (
+                        <button type="button" onClick={function () { removeAllocation(index, aIdx) }}
+                          className="text-xs text-red-400 hover:text-red-600 p-1">✕</button>
+                      )}
+                    </div>
+                  )
+                })}
+                {(function () {
+                  var filled = item.allocations.filter(function (a) { return a.venue_id && Number(a.qty) > 0 })
+                  if (filled.length === 0) return null
+                  var sum = 0
+                  filled.forEach(function (a) { sum += Number(a.qty) })
+                  var itemQty = Number(item.qty) || 0
+                  if (sum === itemQty) return <p className="text-[10px] text-green-600 font-medium">✓ Fully allocated</p>
+                  return <p className="text-[10px] text-red-500 font-medium">Allocated {sum} of {itemQty} — must match</p>
+                })()}
+              </div>
             </div>
           )
         })}
@@ -959,6 +1078,9 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
       )}
 
       {/* Submit */}
+      {errors.alloc && (
+        <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{errors.alloc}</div>
+      )}
       {errors.submit && (
         <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{errors.submit}</div>
       )}
