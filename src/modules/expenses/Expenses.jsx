@@ -731,10 +731,13 @@ function Expenses({ profile, masterMode }) {
   async function saveExpType() {
     if (typeSaving) return
     setTypeSaving(true)
+    var checkName = typeEditId ? typeEditName.trim() : typeName.trim()
+    if (!checkName) { setTypeSaving(false); return }
+    var dupe = expTypes.find(function (t) { return t.name.toLowerCase() === checkName.toLowerCase() && t.id !== typeEditId })
+    if (dupe) { alert('Expense type "' + dupe.name + '" already exists.'); setTypeSaving(false); return }
     if (typeEditId) {
       await supabase.from('expense_types').update({ name: typeEditName.trim(), extra_fields: typeFields }).eq('id', typeEditId)
     } else {
-      if (!typeName.trim()) { setTypeSaving(false); return }
       var maxSort = expTypes.reduce(function (m, t) { return t.sort_order > m ? t.sort_order : m }, 0)
       await supabase.from('expense_types').insert({ name: typeName.trim(), sort_order: maxSort + 1 })
     }
