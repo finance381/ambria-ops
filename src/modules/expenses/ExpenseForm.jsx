@@ -13,10 +13,7 @@ function makeEntry() {
     description: '',
     amount: '',
     expenseDate: new Date().toISOString().split('T')[0],
-    vendorName: '',
-    travelMode: '',
-    travelFrom: '',
-    travelTo: '',
+    fieldValues: {},
     allocations: [{ department: '', venueId: '', amountPaise: '' }],
     receiptFile: null,
     receiptPreview: '',
@@ -77,10 +74,7 @@ function ExpenseForm({ profile, onDone }) {
       copy[field] = val
       if (field === 'categoryId') copy.subCategoryId = ''
       if (field === 'expenseTypeId') {
-        copy.vendorName = ''
-        copy.travelMode = ''
-        copy.travelFrom = ''
-        copy.travelTo = ''
+        copy.fieldValues = {}
       }
       return copy
     })
@@ -177,6 +171,7 @@ function ExpenseForm({ profile, onDone }) {
       audioBlob: null,
       audioUrl: '',
       recording: false,
+      fieldValues: Object.assign({}, src.fieldValues),
       allocations: src.allocations.map(function (a) { return Object.assign({}, a) })
     })
     var updated = entries.slice()
@@ -223,17 +218,78 @@ function ExpenseForm({ profile, onDone }) {
     setEntries(updated)
   }
 
-  // ── Type-specific field check ──
+  // ── Type field helpers ──
 
-  function typeHasField(typeId, fieldName) {
+  function getTypeFields(typeId) {
     var t = expenseTypes.find(function (et) { return et.id === Number(typeId) })
-    if (!t || !t.extra_fields) return false
-    return t.extra_fields.indexOf(fieldName) !== -1
+    if (!t || !t.extra_fields) return []
+    return t.extra_fields
   }
 
   function getTypeName(typeId) {
     var t = expenseTypes.find(function (et) { return et.id === Number(typeId) })
     return t ? t.name : ''
+  }
+
+  function updateFieldValue(entryIdx, key, val) {
+    var updated = entries.map(function (e, i) {
+      if (i !== entryIdx) return e
+      var fv = Object.assign({}, e.fieldValues)
+      fv[key] = val
+      return Object.assign({}, e, { fieldValues: fv })
+    })
+    setEntries(updated)
+  }
+
+  function renderDynamicField(field, value, onChange) {
+    var cls = 'w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-300 focus:border-amber-400'
+    var sty = { fontSize: '16px' }
+    if (field.type === 'select') {
+      return (
+        <div key={field.key}>
+          <label className="block text-xs font-medium text-gray-600 mb-1">{field.label}{field.required && <span className="text-red-500"> *</span>}</label>
+          <select value={value || ''} onChange={function (e) { onChange(e.target.value) }}
+            className={cls + ' bg-white'} style={sty}>
+            <option value="">Select...</option>
+            {(field.options || []).map(function (opt) { return <option key={opt} value={opt}>{opt}</option> })}
+          </select>
+        </div>
+      )
+    }
+    if (field.type === 'textarea') {
+      return (
+        <div key={field.key}>
+          <label className="block text-xs font-medium text-gray-600 mb-1">{field.label}{field.required && <span className="text-red-500"> *</span>}</label>
+          <textarea value={value || ''} onChange={function (e) { onChange(e.target.value) }}
+            rows={2} className={cls + ' resize-none'} style={sty} />
+        </div>
+      )
+    }
+    if (field.type === 'date') {
+      return (
+        <div key={field.key}>
+          <label className="block text-xs font-medium text-gray-600 mb-1">{field.label}{field.required && <span className="text-red-500"> *</span>}</label>
+          <input type="date" value={value || ''} onChange={function (e) { onChange(e.target.value) }}
+            className={cls} style={sty} />
+        </div>
+      )
+    }
+    if (field.type === 'number') {
+      return (
+        <div key={field.key}>
+          <label className="block text-xs font-medium text-gray-600 mb-1">{field.label}{field.required && <span className="text-red-500"> *</span>}</label>
+          <input type="number" inputMode="numeric" value={value || ''} onChange={function (e) { onChange(e.target.value) }}
+            placeholder={field.label} className={cls} style={sty} />
+        </div>
+      )
+    }
+    return (
+      <div key={field.key}>
+        <label className="block text-xs font-medium text-gray-600 mb-1">{field.label}{field.required && <span className="text-red-500"> *</span>}</label>
+        <input type="text" value={value || ''} onChange={function (e) { onChange(e.target.value) }}
+          placeholder={field.label} className={cls} style={sty} />
+      </div>
+    )
   }
 
   // ── Validation ──
@@ -246,17 +302,13 @@ function ExpenseForm({ profile, onDone }) {
       if (!e.description.trim()) return 'Entry ' + (i + 1) + ': Add description'
       if (!e.amount || Number(e.amount) <= 0) return 'Entry ' + (i + 1) + ': Enter valid amount'
       if (!e.expenseDate) return 'Entry ' + (i + 1) + ': Select date'
-      if (typeHasField(e.expenseTypeId, 'vendor_name') && !e.vendorName.trim()) {
-        return 'Entry ' + (i + 1) + ': Enter vendor name'
-      }
-      if (typeHasField(e.expenseTypeId, 'travel_from') && !e.travelFrom.trim()) {
-        return 'Entry ' + (i + 1) + ': Enter travel from location'
-      }
-      if (typeHasField(e.expenseTypeId, 'travel_to') && !e.travelTo.trim()) {
-        return 'Entry ' + (i + 1) + ': Enter travel to location'
+      var fields = getTypeFields(e.expenseTypeId)
+      for (var f = 0; f < fields.length; f++) {
+        if (fields[f].required && !(e.fieldValues[fields[f].key] || '').toString().trim()) {
+          return 'Entry ' + (i + 1) + ': ' + fields[f].label + ' is required'
+        }
       }
       if (!e.receiptFile && !e.audioBlob) return 'Entry ' + (i + 1) + ': Receipt image or voice note is required'
-      // Validate allocations have at least dept
       for (var j = 0; j < e.allocations.length; j++) {
         var a = e.allocations[j]
         if (!a.department) return 'Entry ' + (i + 1) + ', Allocation ' + (j + 1) + ': Select department'
@@ -292,21 +344,11 @@ function ExpenseForm({ profile, onDone }) {
         description: e.description.trim(),
         expense_date: e.expenseDate,
         status: 'pending',
-        vendor_name: typeHasField(e.expenseTypeId, 'vendor_name') ? e.vendorName.trim() : null,
-        metadata: {
-          utility_type: e.utilityType || null,
-          location: e.maintLocation || null,
-          asset_name: e.assetName || null,
-          event_name: e.eventName || null,
-          vehicle_number: e.vehicleNumber || null,
-          km_reading: e.kmReading || null,
-          tracking_number: e.trackingNumber || null,
-          destination: e.courierDest || null,
-          client_name: e.clientName || null,
-        },
-        travel_from: typeHasField(e.expenseTypeId, 'travel_from') ? e.travelFrom.trim() : null,
-        travel_to: typeHasField(e.expenseTypeId, 'travel_to') ? e.travelTo.trim() : null,
-        travel_mode: typeHasField(e.expenseTypeId, 'travel_mode') ? e.travelMode : null
+        metadata: e.fieldValues,
+        vendor_name: e.fieldValues.vendor_name || null,
+        travel_from: e.fieldValues.travel_from || null,
+        travel_to: e.fieldValues.travel_to || null,
+        travel_mode: e.fieldValues.travel_mode || null,
       }
 
       var { data: exp, error: insErr } = await supabase
@@ -406,8 +448,6 @@ function ExpenseForm({ profile, onDone }) {
 
       {entries.map(function (entry, idx) {
         var subs = filteredSubCats(entry.categoryId)
-        var showVendor = typeHasField(entry.expenseTypeId, 'vendor_name')
-        var showTravel = typeHasField(entry.expenseTypeId, 'travel_from')
 
         return (
           <div key={entry._key} className="border border-amber-200 rounded-xl bg-white shadow-sm overflow-hidden">
@@ -494,146 +534,12 @@ function ExpenseForm({ profile, onDone }) {
                 />
               </div>
 
-              {/* Type-specific: Vendor Payment */}
-              {showVendor && (
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Vendor Name</label>
-                  <input
-                    type="text"
-                    value={entry.vendorName}
-                    onChange={function (e) { updateEntry(idx, 'vendorName', e.target.value) }}
-                    placeholder="Vendor / supplier name"
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-300 focus:border-amber-400"
-                  />
-                </div>
-              )}
-
-              {/* Type-specific: Travel */}
-              {showTravel && (
-                <div className="space-y-2">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Travel Mode</label>
-                    <div className="flex gap-2">
-                      {['Between Venues', 'Field Site'].map(function (mode) {
-                        var selected = entry.travelMode === mode
-                        return (
-                          <button
-                            key={mode}
-                            type="button"
-                            onClick={function () { updateEntry(idx, 'travelMode', mode) }}
-                            className={
-                              'px-3 py-1.5 rounded-lg text-sm border ' +
-                              (selected
-                                ? 'bg-blue-600 text-white border-blue-600'
-                                : 'bg-white text-gray-600 border-gray-200 hover:border-blue-300')
-                            }
-                          >{mode}</button>
-                        )
-                      })}
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">From</label>
-                      <input
-                        type="text"
-                        value={entry.travelFrom}
-                        onChange={function (e) { updateEntry(idx, 'travelFrom', e.target.value) }}
-                        placeholder="Starting point"
-                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-300 focus:border-amber-400"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">To</label>
-                      <input
-                        type="text"
-                        value={entry.travelTo}
-                        onChange={function (e) { updateEntry(idx, 'travelTo', e.target.value) }}
-                        placeholder="Destination"
-                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-300 focus:border-amber-400"
-                      />
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Type-specific: Utility */}
-              {typeHasField(entry.expenseTypeId, 'utility_type') && (
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Utility Type</label>
-                  <select value={entry.utilityType || ''} onChange={function (e) { updateEntry(idx, 'utilityType', e.target.value) }}
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-amber-300">
-                    <option value="">Select...</option>
-                    {['Electricity', 'Water', 'Internet', 'Phone'].map(function (u) { return <option key={u} value={u}>{u}</option> })}
-                  </select>
-                </div>
-              )}
-
-              {/* Type-specific: Maintenance */}
-              {typeHasField(entry.expenseTypeId, 'asset_name') && (
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Location</label>
-                    <input type="text" value={entry.maintLocation || ''} onChange={function (e) { updateEntry(idx, 'maintLocation', e.target.value) }}
-                      placeholder="Where" className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-300" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Asset Name</label>
-                    <input type="text" value={entry.assetName || ''} onChange={function (e) { updateEntry(idx, 'assetName', e.target.value) }}
-                      placeholder="What asset" className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-300" />
-                  </div>
-                </div>
-              )}
-
-              {/* Type-specific: Event Expense */}
-              {typeHasField(entry.expenseTypeId, 'event_name') && (
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Event Name</label>
-                  <input type="text" value={entry.eventName || ''} onChange={function (e) { updateEntry(idx, 'eventName', e.target.value) }}
-                    placeholder="Which event" className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-300" />
-                </div>
-              )}
-
-              {/* Type-specific: Fuel */}
-              {typeHasField(entry.expenseTypeId, 'vehicle_number') && (
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Vehicle Number</label>
-                    <input type="text" value={entry.vehicleNumber || ''} onChange={function (e) { updateEntry(idx, 'vehicleNumber', e.target.value) }}
-                      placeholder="DL-XX-XXXX" className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-300" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">KM Reading</label>
-                    <input type="number" inputMode="numeric" value={entry.kmReading || ''} onChange={function (e) { updateEntry(idx, 'kmReading', e.target.value) }}
-                      placeholder="0" className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-300" />
-                  </div>
-                </div>
-              )}
-
-              {/* Type-specific: Courier */}
-              {typeHasField(entry.expenseTypeId, 'tracking_number') && (
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Tracking #</label>
-                    <input type="text" value={entry.trackingNumber || ''} onChange={function (e) { updateEntry(idx, 'trackingNumber', e.target.value) }}
-                      placeholder="AWB / tracking" className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-300" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Destination</label>
-                    <input type="text" value={entry.courierDest || ''} onChange={function (e) { updateEntry(idx, 'courierDest', e.target.value) }}
-                      placeholder="Where to" className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-300" />
-                  </div>
-                </div>
-              )}
-
-              {/* Type-specific: Client Entertainment */}
-              {typeHasField(entry.expenseTypeId, 'client_name') && (
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Client Name</label>
-                  <input type="text" value={entry.clientName || ''} onChange={function (e) { updateEntry(idx, 'clientName', e.target.value) }}
-                    placeholder="Client / guest name" className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-300" />
-                </div>
-              )}
+              {/* Dynamic type-specific fields */}
+              {getTypeFields(entry.expenseTypeId).map(function (field) {
+                return renderDynamicField(field, entry.fieldValues[field.key] || '', function (val) {
+                  updateFieldValue(idx, field.key, val)
+                })
+              })}
 
               {/* Amount + Date row */}
               <div className="grid grid-cols-2 gap-3">
