@@ -342,6 +342,7 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
   var [eventDate, setEventDate] = useState('')
   var [events, setEvents] = useState([])
   var [eventsLoading, setEventsLoading] = useState(false)
+  var [isFunction, setIsFunction] = useState(!!editReq?.event_id)
   var [listening, setListening] = useState(false)
   var searchContainerRef = useRef(null)
   var recognitionRef = useRef(null)
@@ -451,7 +452,7 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
 
     // If editing, pre-load the linked event's date
     if (editReq?.event_id) {
-      var { data: evtRow } = await supabase.from('events').select('id, event_name, contract_date, venue_name').eq('id', editReq.event_id).maybeSingle()
+      var { data: evtRow } = await supabase.from('events').select('id, event_name, contract_date, function_date, contract_type, venue_name, session, client_name').eq('id', editReq.event_id).maybeSingle()
       if (evtRow) {
         setEventDate(evtRow.contract_date?.slice(0, 10) || '')
         setEvents([evtRow])
@@ -467,7 +468,7 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
     if (!dateStr) { setEvents([]); setEventId(''); return }
     setEventsLoading(true)
     var { data } = await supabase.from('events')
-      .select('id, event_name, contract_date, venue_name')
+      .select('id, event_name, contract_date, function_date, contract_type, venue_name, session, client_name')
       .eq('contract_date', dateStr)
       .order('event_name')
     var rows = data || []
@@ -493,6 +494,11 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
   function changeCategory(val) {
     setCategoryId(val)
     setSubCategoryId('')
+  }
+
+  function toggleFunction(val) {
+    setIsFunction(val)
+    if (!val) { setEventId(''); setEventDate(''); setEvents([]) }
   }
 
   function updateCart(index, field, value) {
@@ -767,17 +773,48 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
           </div>
           {errors.purpose && <p className="text-xs text-red-500 mt-1">{errors.purpose}</p>}
         </div>
-        <EventDatePicker label="Linked Event (optional)" value={eventDate}
-          onChange={function (dateStr) { setEventDate(dateStr); loadEventsByDate(dateStr) }} />
-        {eventsLoading && <p className="text-xs text-gray-400 mt-1">Loading events...</p>}
-        {eventDate && !eventsLoading && events.length === 0 && <p className="text-xs text-gray-400 mt-1">No events on this date</p>}
-        {events.length > 0 && (
-          <select value={eventId} onChange={function (e) { setEventId(e.target.value) }}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
-            style={{ fontSize: '16px' }}>
-            <option value="">Select event...</option>
-            {events.map(function (ev) { return <option key={ev.id} value={String(ev.id)}>{ev.event_name + ' · ' + (ev.venue_name || '')}</option> })}
-          </select>
+        <div>
+          <div className="flex items-center justify-between">
+            <label className="block text-sm font-medium text-gray-700">For a Function?</label>
+            <button type="button" onClick={function () { toggleFunction(!isFunction) }}
+              className="flex items-center gap-2">
+              <div className={"relative w-9 h-5 rounded-full transition-colors " + (isFunction ? "bg-indigo-500" : "bg-gray-300")}>
+                <div className={"absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform " + (isFunction ? "translate-x-4" : "translate-x-0.5")} />
+              </div>
+            </button>
+          </div>
+        </div>
+        {isFunction && (
+          <div className="space-y-2">
+            <EventDatePicker label="Function Date" value={eventDate}
+              onChange={function (dateStr) { setEventDate(dateStr); loadEventsByDate(dateStr) }} />
+            {eventsLoading && <p className="text-xs text-gray-400">Loading events...</p>}
+            {eventDate && !eventsLoading && events.length === 0 && <p className="text-xs text-gray-400">No events on this date</p>}
+            {events.length > 0 && (
+              <select value={eventId} onChange={function (e) { setEventId(e.target.value) }}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+                style={{ fontSize: '16px' }}>
+                <option value="">Select event...</option>
+                {events.map(function (ev) { return <option key={ev.id} value={String(ev.id)}>{ev.event_name + ' · ' + (ev.venue_name || '')}</option> })}
+              </select>
+            )}
+            {(function () {
+              var sel = eventId ? events.filter(function (ev) { return String(ev.id) === eventId })[0] : null
+              if (!sel) return null
+              return (
+                <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-3 space-y-1">
+                  <p className="text-xs font-bold text-indigo-700">{sel.event_name}</p>
+                  <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-[11px] text-indigo-600">
+                    {sel.function_date && <span>📅 {sel.function_date}</span>}
+                    {sel.contract_type && <span>🎉 {sel.contract_type}</span>}
+                    {sel.venue_name && <span>📍 {sel.venue_name}</span>}
+                    {sel.session && <span>🕐 {sel.session}</span>}
+                    {sel.client_name && <span>👤 {sel.client_name}</span>}
+                  </div>
+                </div>
+              )
+            })()}
+          </div>
         )}
       </div>
 
