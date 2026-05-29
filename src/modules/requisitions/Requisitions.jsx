@@ -69,7 +69,7 @@ function Requisitions({ profile, onBack }) {
     else setLoadingMore(true)
 
     var query = supabase.from('requisitions')
-      .select('id, department, urgency, purpose, status, created_at, needed_by, requested_by, rejection_reason, event_id, events(event_name), profiles:requested_by(name)')
+      .select('id, department, urgency, purpose, status, created_at, needed_by, requested_by, rejection_reason, event_id, sub_department_id, category_id, sub_category_id, events(event_name), profiles:requested_by(name)')
       .eq('requested_by', profile.id)
       .order('created_at', { ascending: false })
       .range(offset, offset + PAGE_SIZE)
@@ -323,9 +323,14 @@ function Requisitions({ profile, onBack }) {
 // ═══════════════════════════════════════════════════════════════
 function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
   var [departments, setDepartments] = useState([])
+  var [subDepartments, setSubDepartments] = useState([])
   var [categories, setCategories] = useState([])
+  var [subCategories, setSubCategories] = useState([])
   var [inventoryItems, setInventoryItems] = useState([])
   var [department, setDepartment] = useState(editReq ? editReq.department : '')
+  var [subDeptId, setSubDeptId] = useState(editReq?.sub_department_id ? String(editReq.sub_department_id) : '')
+  var [categoryId, setCategoryId] = useState(editReq?.category_id ? String(editReq.category_id) : '')
+  var [subCategoryId, setSubCategoryId] = useState(editReq?.sub_category_id ? String(editReq.sub_category_id) : '')
   var [urgency, setUrgency] = useState(editReq ? editReq.urgency : 'normal')
   var [purpose, setPurpose] = useState(editReq ? (editReq.purpose || '') : '')
   var [neededBy, setNeededBy] = useState(editReq && editReq.needed_by ? editReq.needed_by : '')
@@ -386,9 +391,11 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
   }, [])
 
   async function loadLookups() {
-    var [deptRes, catRes, invRes, csRes] = await Promise.all([
+    var [deptRes, subDeptRes, catRes, subCatRes, invRes, csRes] = await Promise.all([
       supabase.from('departments').select('id, name').eq('active', true).order('name'),
+      supabase.from('sub_departments').select('id, name, department_id').eq('active', true).order('name'),
       supabase.from('categories').select('id, name, sub_department_id').order('name'),
+      supabase.from('sub_categories').select('id, name, category_id').order('name'),
       supabase.from('inventory_items')
         .select('id, name, unit, qty, category_id, status, categories(name)')
         .in('status', ['approved', 'pending', 'pending_dept'])
@@ -401,7 +408,9 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
         .limit(2000),
     ])
     setDepartments(deptRes.data || [])
+    setSubDepartments(subDeptRes.data || [])
     setCategories(catRes.data || [])
+    setSubCategories(subCatRes.data || [])
 
     // If editing, pre-load the linked event's date
     if (editReq?.event_id) {
@@ -429,6 +438,24 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
     setEventsLoading(false)
     if (rows.length === 1) { setEventId(String(rows[0].id)) }
     else if (!rows.some(function (r) { return String(r.id) === eventId })) { setEventId('') }
+  }
+
+  function changeDepartment(name) {
+    setDepartment(name)
+    setSubDeptId('')
+    setCategoryId('')
+    setSubCategoryId('')
+  }
+
+  function changeSubDept(val) {
+    setSubDeptId(val)
+    setCategoryId('')
+    setSubCategoryId('')
+  }
+
+  function changeCategory(val) {
+    setCategoryId(val)
+    setSubCategoryId('')
   }
 
   function updateCart(index, field, value) {
@@ -487,6 +514,12 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
     }
   })
 
+  // Classification cascade (dept name → sub-dept → category → sub-category)
+  var selectedDept = departments.filter(function (d) { return d.name === department })[0]
+  var deptSubDepts = selectedDept ? subDepartments.filter(function (sd) { return sd.department_id === selectedDept.id }) : []
+  var subDeptCats = subDeptId ? categories.filter(function (c) { return c.sub_department_id === Number(subDeptId) }) : []
+  var catSubCats = categoryId ? subCategories.filter(function (sc) { return sc.category_id === Number(categoryId) }) : []
+
   function validate() {
     var errs = {}
     if (!department) errs.dept = 'Department required'
@@ -526,6 +559,9 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
           purpose: purpose.trim(),
           needed_by: neededBy || null,
           event_id: eventId ? Number(eventId) : null,
+          sub_department_id: subDeptId ? Number(subDeptId) : null,
+          category_id: categoryId ? Number(categoryId) : null,
+          sub_category_id: subCategoryId ? Number(subCategoryId) : null,
         }).eq('id', editReq.id)
         if (updErr) throw new Error(updErr.message)
 
@@ -571,6 +607,9 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
           purpose: purpose.trim(),
           needed_by: neededBy || null,
           event_id: eventId ? Number(eventId) : null,
+          sub_department_id: subDeptId ? Number(subDeptId) : null,
+          category_id: categoryId ? Number(categoryId) : null,
+          sub_category_id: subCategoryId ? Number(subCategoryId) : null,
           status: status,
           dept_approved_by: deptApprovedBy,
           dept_approved_at: deptApprovedAt,
@@ -608,7 +647,7 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
       <div className="bg-gray-50 rounded-lg border border-gray-200 p-4 space-y-3">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Department <span className="text-red-500">*</span></label>
-          <select value={department} onChange={function (e) { setDepartment(e.target.value) }}
+          <select value={department} onChange={function (e) { changeDepartment(e.target.value) }}
             className={"w-full px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white " + (errors.dept ? "border-red-300" : "border-gray-300")}
             style={{ fontSize: '16px' }}>
             <option value="">Select department...</option>
@@ -616,6 +655,39 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
           </select>
           {errors.dept && <p className="text-xs text-red-500 mt-1">{errors.dept}</p>}
         </div>
+        {deptSubDepts.length > 0 && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Sub-Department</label>
+            <select value={subDeptId} onChange={function (e) { changeSubDept(e.target.value) }}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+              style={{ fontSize: '16px' }}>
+              <option value="">Select sub-department...</option>
+              {deptSubDepts.map(function (sd) { return <option key={sd.id} value={String(sd.id)}>{sd.name}</option> })}
+            </select>
+          </div>
+        )}
+        {subDeptCats.length > 0 && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
+            <select value={categoryId} onChange={function (e) { changeCategory(e.target.value) }}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+              style={{ fontSize: '16px' }}>
+              <option value="">Select category...</option>
+              {subDeptCats.map(function (c) { return <option key={c.id} value={String(c.id)}>{c.name}</option> })}
+            </select>
+          </div>
+        )}
+        {catSubCats.length > 0 && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Sub-Category</label>
+            <select value={subCategoryId} onChange={function (e) { setSubCategoryId(e.target.value) }}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+              style={{ fontSize: '16px' }}>
+              <option value="">Select sub-category...</option>
+              {catSubCats.map(function (sc) { return <option key={sc.id} value={String(sc.id)}>{sc.name}</option> })}
+            </select>
+          </div>
+        )}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Urgency</label>
           <div className="flex gap-0 bg-white border border-gray-300 rounded-md overflow-hidden">
