@@ -111,12 +111,6 @@ Respond ONLY with this JSON, no markdown, no explanation:
       throw new Error("Gemini API error: " + (res?.status || "unknown"))
     }
 
-    if (!res.ok) {
-      const errText = await res.text()
-      console.log("Gemini error:", res.status, errText)
-      throw new Error("Gemini API error: " + res.status)
-    }
-
     const gemData = await res.json()
     console.log("Gemini raw:", JSON.stringify(gemData).substring(0, 2000))
     

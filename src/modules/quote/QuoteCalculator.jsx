@@ -162,9 +162,6 @@ function StatusBar({ quoteStatus, onUpdate }) {
         {[
           { key: 'draft', label: 'Draft', color: '#9CA3AF' },
           { key: 'sent', label: 'Sent', color: '#60A5FA' },
-          { key: 'accepted', label: 'Accepted', color: '#34D399' },
-          { key: 'rejected', label: 'Rejected', color: '#F87171' },
-          { key: 'converted', label: 'Converted', color: '#FBBF24' },
         ].map(function (st) {
           var isOn = quoteStatus === st.key
           return (
@@ -429,7 +426,6 @@ function QuoteCalculator({ profile }) {
   function toPaise(lakhs) { return Math.round(lakhs * 10000000) }
 
   function printQuote() {
-    var vn = r.venue_name || (venues[venueIdx] || venues[0])[0]
     var ml = r.menu_label || MENU_LABELS[activeMenu]
     var fp = foodPref === 0 ? 'Veg' : 'Non-Veg'
     var dt = eventDate ? fmtDate(eventDate) : '-'
@@ -482,7 +478,7 @@ function QuoteCalculator({ profile }) {
       + '</style></head><body>'
 
       + '<div class="top">'
-      + '<div class="company"><strong>' + vn + '</strong><br/>By Ambria Group<br/>' + (guestAddress ? '' : 'Delhi, India') + '</div>'
+      + '<div class="company"></div>'
       + '<div class="title"><h1>EVENT<br/>QUOTE</h1></div>'
       + '</div>'
 
@@ -522,10 +518,23 @@ function QuoteCalculator({ profile }) {
       + '</body></html>'
 
     var w = window.open('', '_blank')
+    if (!w) { setSaveMsg('Allow pop-ups to print'); setTimeout(function () { setSaveMsg('') }, 3000); return }
     w.document.write(html)
     w.document.close()
   }
   function fromPaise(paise) { return paise / 10000000 }
+
+  function copyText(txt) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(txt).then(function () {
+        setSaveMsg('Copied'); setTimeout(function () { setSaveMsg('') }, 2000)
+      }).catch(function () {
+        setSaveMsg('Copy failed — select manually'); setTimeout(function () { setSaveMsg('') }, 3000)
+      })
+    } else {
+      setSaveMsg('Copy failed — select manually'); setTimeout(function () { setSaveMsg('') }, 3000)
+    }
+  }
 
   async function saveQuote() {
     if (saving || !calcResult) return
@@ -930,6 +939,7 @@ function QuoteCalculator({ profile }) {
             <div style={{ fontSize: 12, color: C.muted, fontWeight: 600 }}>Pax:</div>
             <input type="number" inputMode="numeric" min={50} max={2000} value={pax}
               onChange={function (e) { var v = +e.target.value; if (v >= 0 && v <= 2000) setPax(v) }}
+              onBlur={function (e) { var v = +e.target.value; if (v < 50) setPax(50); else if (v > 2000) setPax(2000) }}
               style={{ width: 64, padding: '4px 6px', borderRadius: 7, border: '1px solid ' + C.border, fontSize: 14, fontWeight: 700, textAlign: 'center', color: C.maroon, background: C.bg, fontFamily: 'inherit' }} />
           </div>
           <input type="range" min={50} max={2000} step={5} value={pax}
@@ -1282,7 +1292,7 @@ function QuoteCalculator({ profile }) {
               '========================\n' +
               'V+M: ₹' + (dealVm || 0) + 'L | Décor: ₹' + (dealDecor || 0) + 'L | Ent: ₹' + (dealEnt || 0) + 'L\n' +
               'TOTAL: ₹' + rd(dealTotal) + 'L\n========================'
-            navigator.clipboard.writeText(txt)
+            copyText(txt)
           }} style={{
             width: '100%', marginTop: 4, padding: 12, borderRadius: 10, border: 'none',
             background: 'linear-gradient(135deg,#4A1111,#8B2D2D)', color: '#fff',
@@ -1322,7 +1332,7 @@ function QuoteCalculator({ profile }) {
         {showProposal && (
           <SectionCard title="Proposal">
             <pre style={{ fontSize: 11, lineHeight: 1.7, background: C.bg, borderRadius: 9, padding: 12, whiteSpace: 'pre-wrap', fontFamily: 'monospace', border: '1px solid ' + C.border, overflow: 'auto' }}>{proposalText}</pre>
-            <button onClick={function () { navigator.clipboard.writeText(proposalText) }} style={{
+            <button onClick={function () { copyText(proposalText) }} style={{
               width: '100%', padding: 14, borderRadius: 12, border: 'none',
               background: 'linear-gradient(135deg,#4A1111,#8B2D2D)', color: '#fff',
               fontSize: 15, fontWeight: 700, cursor: 'pointer', marginTop: 8,

@@ -41,6 +41,8 @@ const SLOT_TIMING: Record<number, string> = {
   0: "18:00", 1: "16:00", 2: "12:00",  // Dinner, Sundowner, Lunch
 }
 
+// NOTE: divides by 200, not 100 — converts paise→rupees AND halves the value
+// (LMS leads intentionally store half the real figure). Do not reuse as a plain paise→rupee.
 function paiseToRupees(p: number | null): string {
   if (!p) return "0"
   return String(Math.round(p / 200))
@@ -151,7 +153,7 @@ serve(async (req) => {
 
     // POST to LMS
     const lmsBase = Deno.env.get("LMS_API_BASE") || "https://gyv.inqcrm.in"
-    console.log("LMS request body:", JSON.stringify(body))
+    console.log("LMS push:", JSON.stringify({ quote_id, venue: venueId, func: funcType, pax: body.fisd_pax_no }))
     const lmsRes = await fetch(
       lmsBase + "/api/v1/createcommon_api/create_venue_lead_detail",
       { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
