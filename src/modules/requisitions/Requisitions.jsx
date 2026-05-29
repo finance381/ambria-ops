@@ -342,7 +342,9 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
   var [eventDate, setEventDate] = useState('')
   var [events, setEvents] = useState([])
   var [eventsLoading, setEventsLoading] = useState(false)
+  var [listening, setListening] = useState(false)
   var searchContainerRef = useRef(null)
+  var recognitionRef = useRef(null)
 
   var isEditing = !!editReq
 
