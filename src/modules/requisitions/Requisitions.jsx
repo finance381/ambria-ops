@@ -895,6 +895,8 @@ function RequisitionDetail({ req, items, profile, isAdmin, isDeptApprover, onBac
   var canApprove = canDeptApprove || canAdminApprove
   var canDelete = (req.requested_by === profile?.id && (req.status === 'pending_dept' || req.status === 'pending')) || isAdmin
   var canEdit = req.requested_by === profile?.id && (req.status === 'pending_dept' || req.status === 'pending')
+  var noneInPO = items.length > 0 && items.every(function (li) { return !li.po_item_id })
+  var canCancel = req.requested_by === profile?.id && req.status === 'approved' && noneInPO
 
   // Total cost
   var totalPaise = 0
@@ -976,6 +978,19 @@ function RequisitionDetail({ req, items, profile, isAdmin, isDeptApprover, onBac
     onUpdated()
   }
 
+  async function cancelReq() {
+    if (!confirm('Cancel this requisition? Items will be removed from the procurement queue.')) return
+    setSaving(true)
+    var { error: reqErr } = await supabase.from('requisitions').update({ status: 'cancelled' }).eq('id', req.id)
+    if (reqErr) { alert('Cancel failed: ' + reqErr.message); setSaving(false); return }
+    var itemIds = items.map(function (li) { return li.id })
+    if (itemIds.length > 0) {
+      await supabase.from('requisition_items').update({ item_status: 'cancelled' }).in('id', itemIds)
+    }
+    try { await logActivity('REQUISITION_CANCEL', req.purpose || 'Req #' + req.id) } catch (_) {}
+    setSaving(false)
+    onUpdated()
+  }
   async function deleteReq() {
     if (!confirm('Delete this requisition? This cannot be undone.')) return
     setSaving(true)
@@ -1222,6 +1237,12 @@ function RequisitionDetail({ req, items, profile, isAdmin, isDeptApprover, onBac
       )}
 
       {/* Delete button for owner */}
+      {canCancel && (
+        <button onClick={cancelReq} disabled={saving}
+          className="w-full py-3 text-sm font-bold text-orange-600 bg-orange-50 border border-orange-200 rounded-lg hover:bg-orange-100 disabled:opacity-50 transition-colors">
+          Cancel Requisition
+        </button>
+      )}
       {canDelete && !canApprove && (
         <button onClick={deleteReq} disabled={saving}
           className="w-full py-3 text-sm font-bold text-red-500 bg-white border border-red-200 rounded-lg hover:bg-red-50 disabled:opacity-50 transition-colors">
