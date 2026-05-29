@@ -347,6 +347,7 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
   var recognitionRef = useRef(null)
 
   var isEditing = !!editReq
+  var SpeechRec = typeof window !== 'undefined' ? (window.SpeechRecognition || window.webkitSpeechRecognition) : null
 
   function emptyCartItem() {
     return { mode: 'existing', item_id: null, item_name: '', category_id: '', qty: '1', unit: 'Pieces', notes: '', _source: 'new', search: '', estimated_cost: '' }
@@ -391,6 +392,40 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
       document.removeEventListener('touchstart', handleClickOutside)
     }
   }, [])
+
+  // Stop dictation on unmount
+  useEffect(function () {
+    return function () { if (recognitionRef.current) { try { recognitionRef.current.stop() } catch (_) {} } }
+  }, [])
+
+  function toggleDictation() {
+    if (!SpeechRec) return
+    if (listening) {
+      if (recognitionRef.current) { try { recognitionRef.current.stop() } catch (_) {} }
+      return
+    }
+    var rec = new SpeechRec()
+    rec.lang = 'en-IN'
+    rec.interimResults = false
+    rec.continuous = true
+    rec.onresult = function (e) {
+      var txt = ''
+      for (var i = e.resultIndex; i < e.results.length; i++) {
+        if (e.results[i].isFinal) txt += e.results[i][0].transcript
+      }
+      if (txt.trim()) {
+        setPurpose(function (prev) {
+          var next = (prev ? prev + ' ' : '') + txt.trim()
+          return next.slice(0, 500)
+        })
+      }
+    }
+    rec.onerror = function () { setListening(false) }
+    rec.onend = function () { setListening(false); recognitionRef.current = null }
+    recognitionRef.current = rec
+    rec.start()
+    setListening(true)
+  }
 
   async function loadLookups() {
     var [deptRes, subDeptRes, catRes, subCatRes, invRes, csRes] = await Promise.all([
@@ -717,10 +752,19 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Purpose / Reason <span className="text-red-500">*</span></label>
-          <textarea value={purpose} onChange={function (e) { setPurpose(e.target.value) }}
-            rows="2" maxLength="500" placeholder="e.g. Monthly stationery restock, new workstation setup..."
-            className={"w-full px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none " + (errors.purpose ? "border-red-300" : "border-gray-300")}
-            style={{ fontSize: '16px' }} />
+          <div className="relative">
+            <textarea value={purpose} onChange={function (e) { setPurpose(e.target.value) }}
+              rows="2" maxLength="500" placeholder="e.g. Monthly stationery restock, new workstation setup..."
+              className={"w-full px-3 py-2 pr-11 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none " + (errors.purpose ? "border-red-300" : "border-gray-300")}
+              style={{ fontSize: '16px' }} />
+            {SpeechRec && (
+              <button type="button" onClick={toggleDictation}
+                title={listening ? 'Stop' : 'Dictate'}
+                className={"absolute right-2 bottom-2 w-8 h-8 rounded-full flex items-center justify-center text-sm transition-colors " + (listening ? "bg-red-500 text-white animate-pulse" : "bg-gray-100 text-gray-500 hover:bg-gray-200")}>
+                {listening ? '■' : '🎤'}
+              </button>
+            )}
+          </div>
           {errors.purpose && <p className="text-xs text-red-500 mt-1">{errors.purpose}</p>}
         </div>
         <EventDatePicker label="Linked Event (optional)" value={eventDate}
