@@ -1016,6 +1016,27 @@ var DAY_HEADERS = ['Su','Mo','Tu','We','Th','Fr','Sa']
 
 function pad2(n) { return n < 10 ? '0' + n : '' + n }
 
+function cellFromEvent(e) {
+  var el = e.target && e.target.closest ? e.target.closest('[data-m]') : null
+  if (!el) return null
+  return { m: +el.getAttribute('data-m'), d: +el.getAttribute('data-d') }
+}
+
+var DayCell = React.memo(function DayCell({ monthIdx, day, cat, bg, fg }) {
+  return (
+    <div data-m={monthIdx} data-d={day} style={{
+      aspectRatio: '1', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+      borderRadius: 6, cursor: 'pointer', fontSize: 11, fontWeight: 600,
+      background: bg, color: fg,
+      border: '1px solid ' + (cat >= 0 ? fg + '33' : 'transparent'),
+      userSelect: 'none', touchAction: 'none',
+    }}>
+      {day}
+      {cat >= 0 && <div style={{ width: 4, height: 4, borderRadius: 2, background: fg, marginTop: 1 }} />}
+    </div>
+  )
+})
+
 function SeasonCalendar({ config, onSave, saving }) {
   var cats = config.categories || DEFAULT_CATS
   var raw = config.season_dates || {}
@@ -1065,26 +1086,29 @@ function SeasonCalendar({ config, onSave, saving }) {
     return val != null ? val : -1
   }
 
+  function onGridDown(e) {
+    var c = cellFromEvent(e); if (!c) return
+    e.preventDefault()
+    paintMode.current = draftRef.current[pad2(c.m + 1) + '-' + pad2(c.d)] === brush ? 'erase' : 'paint'
+    setPointer(true); lastPainted.current = { m: c.m, d: c.d }
+    toggleDate(c.m, c.d)
+  }
+
+  function onGridOver(e) {
+    if (!pointer) return
+    var c = cellFromEvent(e); if (!c) return
+    var lp = lastPainted.current
+    if (lp && lp.m === c.m && lp.d === c.d) return
+    if (lp) fillRange(lp.m, lp.d, c.m, c.d)
+    lastPainted.current = { m: c.m, d: c.d }
+  }
+
   function renderDay(monthIdx, day) {
     var cat = getCat(monthIdx, day)
     var catObj = cats[cat] || null
-    var bgColor = catObj ? catObj.color + '18' : '#fff'
-    var textColor = catObj ? catObj.color : C.muted
-    return (
-      <div key={day}
-        onPointerDown={function (e) { e.preventDefault(); paintMode.current = draftRef.current[pad2(monthIdx + 1) + '-' + pad2(day)] === brush ? 'erase' : 'paint'; setPointer(true); lastPainted.current = { m: monthIdx, d: day }; toggleDate(monthIdx, day) }}
-        onPointerEnter={function () { if (pointer) { if (lastPainted.current) fillRange(lastPainted.current.m, lastPainted.current.d, monthIdx, day); lastPainted.current = { m: monthIdx, d: day } } }}
-        style={{
-          aspectRatio: '1', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-          borderRadius: 6, cursor: 'pointer', fontSize: 11, fontWeight: 600,
-          background: bgColor, color: textColor,
-          border: '1px solid ' + (catObj ? catObj.color + '33' : 'transparent'),
-          userSelect: 'none', touchAction: 'none',
-        }}>
-        {day}
-        {cat >= 0 && <div style={{ width: 4, height: 4, borderRadius: 2, background: textColor, marginTop: 1 }} />}
-      </div>
-    )
+    var bg = catObj ? catObj.color + '18' : '#fff'
+    var fg = catObj ? catObj.color : C.muted
+    return <DayCell key={day} monthIdx={monthIdx} day={day} cat={cat} bg={bg} fg={fg} />
   }
 
   function renderMonth(monthIdx) {
@@ -1130,7 +1154,8 @@ function SeasonCalendar({ config, onSave, saving }) {
       </div>
 
       {/* Month grids — responsive */}
-      <div onPointerUp={function () { setPointer(false); setDraft(Object.assign({}, draftRef.current)) }} onPointerLeave={function () { setPointer(false); setDraft(Object.assign({}, draftRef.current)) }}
+      <div onPointerDown={onGridDown} onPointerOver={onGridOver}
+        onPointerUp={function () { setPointer(false); setDraft(Object.assign({}, draftRef.current)) }} onPointerLeave={function () { setPointer(false); setDraft(Object.assign({}, draftRef.current)) }}
         style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 12 }}>
         {MONTH_NAMES.map(function (mName, mIdx) {
           return (
@@ -1206,6 +1231,7 @@ function RateCardEditor({ profile }) {
       var updated = Object.assign({}, config)
       updated[key] = value
       setConfig(updated)
+      try { localStorage.removeItem('qc_config_v1') } catch (e) {}
     }
     setSaving(false)
     setTimeout(function () { setSaveMsg('') }, 3000)

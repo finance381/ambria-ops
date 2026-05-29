@@ -32,10 +32,16 @@ serve(async (req) => {
     // Cap at 50 strings per request
     const toTranslate = texts.slice(0, 50)
 
-    // Join with newlines — Google Translate preserves them
-    const joined = toTranslate.join("\n")
+    // Strip embedded newlines so the join/split line count stays aligned
+    const safe = toTranslate.map(function (t: string) { return String(t).replace(/[\r\n]+/g, " ") })
+    const joined = safe.join("\n")
 
     const res = await fetch(GT_URL + encodeURIComponent(joined))
+    if (!res.ok) {
+      return new Response(JSON.stringify({ results: {} }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      })
+    }
     const data = await res.json()
 
     // Extract translated text from Google's response format
