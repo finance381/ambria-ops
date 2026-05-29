@@ -454,7 +454,7 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
     if (editReq?.event_id) {
       var { data: evtRow } = await supabase.from('events').select('id, event_name, contract_date, function_date, contract_type, venue_name, session, client_name').eq('id', editReq.event_id).maybeSingle()
       if (evtRow) {
-        setEventDate(evtRow.contract_date?.slice(0, 10) || '')
+        setEventDate(evtRow.function_date?.slice(0, 10) || evtRow.contract_date?.slice(0, 10) || '')
         setEvents([evtRow])
       }
     }
@@ -469,7 +469,7 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
     setEventsLoading(true)
     var { data } = await supabase.from('events')
       .select('id, event_name, contract_date, function_date, contract_type, venue_name, session, client_name')
-      .eq('contract_date', dateStr)
+      .eq('function_date', dateStr)
       .order('event_name')
     var rows = data || []
     setEvents(rows)
