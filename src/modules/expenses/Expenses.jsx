@@ -151,7 +151,7 @@ function Expenses({ profile, masterMode }) {
     else setLoadingMore(true)
 
     var query = supabase.from('expenses')
-      .select('id, category_id, sub_category_id, expense_type_id, amount_paise, description, status, expense_date, receipt_path, created_at, rejection_reason, vendor_name, travel_from, travel_to, travel_mode, categories(name), expense_types(name)')
+      .select('id, category_id, sub_category_id, expense_type_id, amount_paise, description, status, expense_date, receipt_path, created_at, rejection_reason, vendor_name, travel_from, travel_to, travel_mode, metadata, categories(name), expense_types(name, extra_fields)')
       .eq('user_id', profile.id)
       .order('created_at', { ascending: false })
       .range(offset, offset + PAGE_SIZE)
@@ -193,7 +193,7 @@ function Expenses({ profile, masterMode }) {
     if (statuses.length === 0) { setApprovalExpenses([]); return }
 
     var query = supabase.from('expenses')
-      .select('id, user_id, category_id, sub_category_id, expense_type_id, amount_paise, description, status, expense_date, receipt_path, created_at, rejection_reason, vendor_name, travel_from, travel_to, travel_mode, categories(name), expense_types(name)')
+      .select('id, user_id, category_id, sub_category_id, expense_type_id, amount_paise, description, status, expense_date, receipt_path, created_at, rejection_reason, vendor_name, travel_from, travel_to, travel_mode, metadata, categories(name), expense_types(name, extra_fields)')
       .neq('user_id', profile.id)
       .in('status', statuses)
       .order('created_at', { ascending: false })
@@ -550,7 +550,7 @@ function Expenses({ profile, masterMode }) {
     else setAllExpLoading(true)
 
     var query = supabase.from('expenses')
-      .select('id, user_id, category_id, sub_category_id, expense_type_id, amount_paise, description, status, expense_date, receipt_path, created_at, rejection_reason, vendor_name, travel_from, travel_to, travel_mode, categories(name), expense_types(name)')
+      .select('id, user_id, category_id, sub_category_id, expense_type_id, amount_paise, description, status, expense_date, receipt_path, created_at, rejection_reason, vendor_name, travel_from, travel_to, travel_mode, metadata, categories(name), expense_types(name, extra_fields)')
       .order('created_at', { ascending: false })
       .range(offset, offset + PAGE_SIZE)
 
