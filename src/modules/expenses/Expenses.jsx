@@ -747,6 +747,12 @@ function Expenses({ profile, masterMode }) {
     await supabase.from('expense_types').update({ active: !active }).eq('id', id)
     loadExpTypes()
   }
+  async function deleteExpType(id, name) {
+    if (!confirm('Delete expense type "' + name + '"? This cannot be undone.')) return
+    var { error } = await supabase.from('expense_types').delete().eq('id', id)
+    if (error) { alert('Delete failed: ' + error.message + (error.message.indexOf('violates foreign key') !== -1 ? '\n\nThis type is used by existing expenses and cannot be deleted. Deactivate it instead.' : '')); return }
+    loadExpTypes()
+  }
 
   var displayList = view === 'approve' ? approvalExpenses : myExpenses
   var displayHasMore = view === 'approve' ? approvalHasMore : myHasMore
@@ -781,6 +787,8 @@ function Expenses({ profile, masterMode }) {
                       className={"text-xs px-2 py-1 rounded min-h-[32px] " + (et.active ? "bg-green-100 text-green-700 hover:bg-green-200" : "bg-red-100 text-red-600 hover:bg-red-200")}>
                       {et.active ? 'On' : 'Off'}
                     </button>
+                    <button onClick={function () { deleteExpType(et.id, et.name) }}
+                      className="text-xs px-2 py-1 rounded min-h-[32px] bg-red-50 text-red-400 hover:bg-red-100 hover:text-red-600">✕</button>
                   </div>
                 </div>
                 {isEditing && (

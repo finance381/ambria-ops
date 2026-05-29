@@ -120,11 +120,17 @@ function CategoriesEditor({ config, onSave, saving }) {
 
   function updCat(idx, field, val) { var d = clone(cats); d[idx][field] = val; setCats(d) }
   function addCat() { setCats(cats.concat([{ label: 'New Category', color: '#6B5B4E' }])) }
-  function rmCat(idx) { var d = clone(cats); d.splice(idx, 1); setCats(d) }
+  function rmCat(idx) {
+    if (!window.confirm('Delete this category? Saved quotes (date_category), rentals, and season dates reference categories by position. Deleting shifts all later indexes and can mis-map existing data.')) return
+    var d = clone(cats); d.splice(idx, 1); setCats(d)
+  }
 
   function updSlot(idx, val) { var d = clone(slots); d[idx] = val; setSlots(d) }
   function addSlot() { setSlots(slots.concat(['New Slot'])) }
-  function rmSlot(idx) { var d = clone(slots); d.splice(idx, 1); setSlots(d) }
+  function rmSlot(idx) {
+    if (!window.confirm('Delete this slot? Rental grids and saved quotes reference slots by column index. Deleting shifts columns and can mis-map rates.')) return
+    var d = clone(slots); d.splice(idx, 1); setSlots(d)
+  }
 
   return (
     <>
@@ -285,7 +291,10 @@ function VenuesEditor({ config, onSave, saving }) {
 
   function upd(idx, field, val) { var d = clone(draft); d[idx][field] = val; setDraft(d) }
   function addVenue() { setDraft(draft.concat([{ name: '', location: '', decor_mode: null, status: 'placeholder' }])) }
-  function rmVenue(idx) { var d = clone(draft); d.splice(idx, 1); setDraft(d) }
+  function rmVenue(idx) {
+    if (!window.confirm('Delete this venue? Rentals, decor, menu rates and saved quotes reference venues by index. Deleting shifts indexes and can mis-map existing data.')) return
+    var d = clone(draft); d.splice(idx, 1); setDraft(d)
+  }
 
   return (
     <Card title="Venues">
