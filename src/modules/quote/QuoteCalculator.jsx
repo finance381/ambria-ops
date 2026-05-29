@@ -247,15 +247,30 @@ function QuoteCalculator({ profile }) {
   var [venueList, setVenueList] = useState(null)
 
   useEffect(function () {
-    supabase.from('quote_config').select('key, value').in('key', ['inquiry_modes', 'event_types', 'season_dates', 'venues', 'lms_locations']).then(function (res) {
-      if (!res.data) return
-      res.data.forEach(function (row) {
+    var CACHE_KEY = 'qc_config_v1'
+    var TTL = 600000
+    function apply(rows) {
+      rows.forEach(function (row) {
         if (row.key === 'inquiry_modes' && Array.isArray(row.value)) setInquiryModes(row.value)
         if (row.key === 'event_types' && Array.isArray(row.value)) setEventTypes(row.value)
         if (row.key === 'season_dates' && row.value) setSeasonDates(row.value)
         if (row.key === 'venues' && Array.isArray(row.value)) setVenueList(row.value)
         if (row.key === 'lms_locations' && row.value) setLmsLocations(row.value)
       })
+    }
+    var fresh = false
+    try {
+      var raw = localStorage.getItem(CACHE_KEY)
+      if (raw) {
+        var c = JSON.parse(raw)
+        if (c && c.data) { apply(c.data); fresh = Date.now() - c.t < TTL }
+      }
+    } catch (e) {}
+    if (fresh) return
+    supabase.from('quote_config').select('key, value').in('key', ['inquiry_modes', 'event_types', 'season_dates', 'venues', 'lms_locations']).then(function (res) {
+      if (!res.data) return
+      apply(res.data)
+      try { localStorage.setItem(CACHE_KEY, JSON.stringify({ t: Date.now(), data: res.data })) } catch (e) {}
     })
   }, [])
 
@@ -264,6 +279,7 @@ function QuoteCalculator({ profile }) {
   var [calcLoading, setCalcLoading] = useState(false)
   var debounceRef = useRef(null)
   var firstCall = useRef(true)
+  var calcSeq = useRef(0)
 
   // Venues — config-driven with hardcoded fallback
   var venues = venueList ? venueList.map(function (v) { return [v.name, v.location, v.status || 'live'] }) : VENUE_NAMES
@@ -276,6 +292,7 @@ function QuoteCalculator({ profile }) {
 
   // ── RPC call ──
   async function fetchCalc() {
+    var seq = ++calcSeq.current
     setCalcLoading(true)
     var { data, error } = await supabase.rpc('calculate_quote', {
       p_venue_idx: venueIdx,
@@ -289,6 +306,7 @@ function QuoteCalculator({ profile }) {
       p_is_wedding: isWedding,
       p_food_pref: foodPref,
     })
+    if (seq !== calcSeq.current) return
     if (!error && data) setCalcResult(data)
     setCalcLoading(false)
   }
@@ -560,7 +578,8 @@ function QuoteCalculator({ profile }) {
 
   async function loadQuotes() {
     setLoadingQuotes(true)
-    var { data } = await supabase.from('quotes').select('*').order('updated_at', { ascending: false }).limit(50)
+    var cols = 'id,guest_name,guest_phone,guest_address,event_date,inquiry_mode,priority,event_type,venue_idx,venue_name,food_pref,pax,slot,date_category,menu_idx,decor_idx,dj_idx,ttd_idx,total_q_paise,deal_vm_paise,deal_decor_paise,deal_ent_paise,deal_value_paise,tax_mode,split_5_pct,status,revision,notes,lms_ref,location_id,location_name,include_menu,include_decor,include_dj,updated_at'
+    var { data } = await supabase.from('quotes').select(cols).order('updated_at', { ascending: false }).limit(50)
     setQuotes(data || []); setLoadingQuotes(false)
   }
 
@@ -634,15 +653,13 @@ function QuoteCalculator({ profile }) {
     if (analyzing || !calcResult) return
     setAnalyzing(true); setAnalysis(null); setShowAnalysis(true)
     try {
-      var { data: demandData } = await supabase
-          .from('quotes')
-          .select('id, venue_idx, status')
-          .eq('event_date', eventDate)
+      var weekEnd = new Date(new Date(eventDate + 'T00:00:00').getTime() + 6*86400000).toISOString().split('T')[0]
       var { data: weekData } = await supabase
           .from('quotes')
-          .select('id')
+          .select('id, venue_idx, event_date')
           .gte('event_date', eventDate)
-          .lte('event_date', new Date(new Date(eventDate + 'T00:00:00').getTime() + 6*86400000).toISOString().split('T')[0])
+          .lte('event_date', weekEnd)
+      var sameDate = (weekData || []).filter(function(q) { return q.event_date === eventDate })
       var quoteData = {
         venue: venName, date: fmtDate(eventDate), category: CAT_LABELS[ct],
         slot: SLOTS[slot], pax: pax, food: foodPref === 0 ? 'Veg' : 'Non-Veg',
@@ -653,8 +670,8 @@ function QuoteCalculator({ profile }) {
         package_value: hasDeal ? dealTotal : null,
         package_breakdown: hasDeal ? { vm: +dealVm || 0, decor: +dealDecor || 0, ent: +dealEnt || 0 } : null,
         demand: {
-          same_date: (demandData || []).length,
-          same_date_same_venue: (demandData || []).filter(function(q) { return q.venue_idx === venueIdx }).length,
+          same_date: sameDate.length,
+          same_date_same_venue: sameDate.filter(function(q) { return q.venue_idx === venueIdx }).length,
           same_week: (weekData || []).length,
         },
         notes: notes.trim() || null,
