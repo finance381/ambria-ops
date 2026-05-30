@@ -936,7 +936,7 @@ function Challans({ profile }) {
                 <option value="">None</option>
                 {events.map(function (ev) {
                   return <option key={ev.id} value={ev.id}>
-                    {formatDate(ev.contract_date) + ' — ' + (ev.client_name || '') + ' — ' + (ev.venue_name || '') + (ev.contract_no ? ' #' + ev.contract_no : '')}
+                    {formatDate(ev.function_date || ev.contract_date) + ' — ' + (ev.client_name || '') + ' — ' + (ev.venue_name || '') + (ev.contract_no ? ' #' + ev.contract_no : '')}
                   </option>
                 })}
               </select>
