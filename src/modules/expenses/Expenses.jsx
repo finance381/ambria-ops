@@ -291,10 +291,6 @@ function Expenses({ profile, masterMode }) {
       if (upErr) { alert('Image upload failed: ' + upErr.message); setIssueSaving(false); return }
       imagePath = path
     }
-    if (!issueModal._hasWallet) {
-      var { error: cwErr } = await supabase.from('wallets').insert({ user_id: issueModal.user_id, balance_paise: 0 }).select('id').maybeSingle()
-      if (cwErr && cwErr.code !== '23505') { alert('Failed to create wallet: ' + cwErr.message); setIssueSaving(false); return }
-    }
     var { error } = await supabase.rpc(rpcName, {
       p_user_id: issueModal.user_id,
       p_amount_paise: amountPaise,
