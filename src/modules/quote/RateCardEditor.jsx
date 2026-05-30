@@ -1043,7 +1043,7 @@ function SeasonCalendar({ config, onSave, saving }) {
   var [draft, setDraft] = useState(clone(raw))
   var [brush, setBrush] = useState(0)
   var [viewYear, setViewYear] = useState(new Date().getFullYear())
-  var [pointer, setPointer] = useState(false)
+  var pointerRef = useRef(false)
   var lastPainted = useRef(null)
   var draftRef = useRef(draft)
   var rafRef = useRef(null)
@@ -1090,12 +1090,12 @@ function SeasonCalendar({ config, onSave, saving }) {
     var c = cellFromEvent(e); if (!c) return
     e.preventDefault()
     paintMode.current = draftRef.current[pad2(c.m + 1) + '-' + pad2(c.d)] === brush ? 'erase' : 'paint'
-    setPointer(true); lastPainted.current = { m: c.m, d: c.d }
+    pointerRef.current = true; lastPainted.current = { m: c.m, d: c.d }
     toggleDate(c.m, c.d)
   }
 
   function onGridOver(e) {
-    if (!pointer) return
+    if (!pointerRef.current) return
     var c = cellFromEvent(e); if (!c) return
     var lp = lastPainted.current
     if (lp && lp.m === c.m && lp.d === c.d) return
@@ -1155,7 +1155,7 @@ function SeasonCalendar({ config, onSave, saving }) {
 
       {/* Month grids — responsive */}
       <div onPointerDown={onGridDown} onPointerOver={onGridOver}
-        onPointerUp={function () { setPointer(false); setDraft(Object.assign({}, draftRef.current)) }} onPointerLeave={function () { setPointer(false); setDraft(Object.assign({}, draftRef.current)) }}
+        onPointerUp={function () { pointerRef.current = false; setDraft(Object.assign({}, draftRef.current)) }} onPointerLeave={function () { pointerRef.current = false; setDraft(Object.assign({}, draftRef.current)) }}
         style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 12 }}>
         {MONTH_NAMES.map(function (mName, mIdx) {
           return (
