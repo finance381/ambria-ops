@@ -391,14 +391,14 @@ function Expenses({ profile, masterMode }) {
       if (upErr) { alert('Image upload failed: ' + upErr.message); setTransferSaving(false); return }
       imagePath = path
     }
+    var toName = (transferUsers.find(function (u) { return u.id === transferTo }) || {}).name || '—'
     var { data: tid, error } = await supabase.rpc('initiate_transfer', {
       p_to_user_id: transferTo,
       p_amount_paise: amountPaise,
-      p_description: transferDesc.trim() || 'Cash transfer',
+      p_description: (transferDesc.trim() || 'Cash transfer') + ' → ' + toName,
       p_sender_image: imagePath,
     })
     if (error) { alert('Transfer failed: ' + error.message); setTransferSaving(false); return }
-    var toName = (transferUsers.find(function (u) { return u.id === transferTo }) || {}).name || '—'
     try { await logActivity('WALLET_TRANSFER', toName + ' | ' + formatPoints(amountPaise)) } catch (_) {}
     setTransferModal(false)
     setTransferSaving(false)
