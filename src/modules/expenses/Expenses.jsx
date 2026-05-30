@@ -77,6 +77,7 @@ function Expenses({ profile, masterMode }) {
   var [transferConfirmModal, setTransferConfirmModal] = useState(null)
   var [transferConfirmImage, setTransferConfirmImage] = useState(null)
   var [transferConfirmSaving, setTransferConfirmSaving] = useState(false)
+  var [transferParties, setTransferParties] = useState({})
   var [collectModal, setCollectModal] = useState(false)
   var [collectEvents, setCollectEvents] = useState([])
   var [collectEventId, setCollectEventId] = useState('')
@@ -273,7 +274,17 @@ function Expenses({ profile, masterMode }) {
     if (f) query = query.gte('created_at', f + 'T00:00:00')
     if (t) query = query.lte('created_at', t + 'T23:59:59')
     var { data } = await query
-    setWalletTxns(data || [])
+    var txns = data || []
+    var tRefIds = txns.filter(function (t) { return t.reference_type === 'transfer' && t.reference_id }).map(function (t) { return t.reference_id })
+    if (tRefIds.length > 0) {
+      var { data: tData } = await supabase.from('wallet_transfers').select('id, from_user_id, to_user_id').in('id', tRefIds)
+      var tMap = {}
+      ;(tData || []).forEach(function (tr) { tMap[tr.id] = tr })
+      setTransferParties(tMap)
+    } else {
+      setTransferParties({})
+    }
+    setWalletTxns(txns)
     if (wallet) setWalletView('transactions')
   }
 
@@ -1476,7 +1487,16 @@ if (allExpView && (isAdmin || isAuditor)) {
               <div key={t.id} className={"bg-white border rounded-lg p-3 " + (t.status === 'pending' ? "border-amber-300 bg-amber-50/30" : "border-gray-200")}>
                 <div className="flex items-start justify-between">
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm text-gray-800">{t.description || '—'}</p>
+                    <p className="text-sm text-gray-800">
+                      {t.description || '—'}
+                      {t.reference_type === 'transfer' && t.reference_id && transferParties[t.reference_id] && (function () {
+                        var tr = transferParties[t.reference_id]
+                        var cpId = t.type === 'debit' ? tr.to_user_id : tr.from_user_id
+                        var cpName = walletProfiles[cpId]?.name
+                        if (!cpName) return null
+                        return ' ' + (t.type === 'debit' ? '→' : '←') + ' ' + cpName
+                      })()}
+                    </p>
                     <p className="text-[11px] text-gray-400">
                       {formatDate(t.created_at)}
                       {t.reference_type ? ' · ' + t.reference_type : ''}
