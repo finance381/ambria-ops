@@ -22,6 +22,8 @@ function PendingReview({ profile }) {
   var [subDepartments, setSubDepartments] = useState([])
   var [categories, setCategories] = useState([])
   var [subDeptFilter, setSubDeptFilter] = useState('')
+  var [venueFilter, setVenueFilter] = useState('')
+  var [subVenueFilter, setSubVenueFilter] = useState('')
   var [page, setPage] = useState(0)
   var PAGE_SIZE = 50
 
@@ -32,11 +34,11 @@ function PendingReview({ profile }) {
       supabase.from('categories').select('*, profiles:added_by(name, email)').eq('status', 'pending'),
       supabase.from('sub_categories').select('*, categories(name), profiles:added_by(name, email)').eq('status', 'pending'),
       fetchAll(supabase.from('inventory_items')
-        .select('*, categories(name, code), sub_categories(name), profiles:submitted_by(name, email), dept_approver:dept_approved_by(name, email), venue_allocations(qty, venues(code, name))')
+        .select('*, categories(name, code), sub_categories(name), profiles:submitted_by(name, email), dept_approver:dept_approved_by(name, email), venue_allocations(qty, venue_id, sub_venue_id, venues(code, name), sub_venues(name))')
         .eq('status', 'pending')
         .order('created_at', { ascending: false })),
       fetchAll(supabase.from('catering_store_items')
-        .select('*, categories(name, code), sub_categories(name), profiles:submitted_by(name, email), dept_approver:dept_approved_by(name, email), cs_venue_allocations(qty, venues(code, name))')
+        .select('*, categories(name, code), sub_categories(name), profiles:submitted_by(name, email), dept_approver:dept_approved_by(name, email), cs_venue_allocations(qty, venue_id, sub_venue_id, venues(code, name), sub_venues(name))')
         .eq('status', 'pending')
         .order('created_at', { ascending: false })),
       supabase.from('departments').select('id, name, category_ids').eq('active', true).order('name'),
@@ -184,7 +186,9 @@ function PendingReview({ profile }) {
     var matchCat = !catFilter || item.category_id === Number(catFilter)
     var matchSubCat = !subCatFilter || item.sub_category_id === Number(subCatFilter)
     var matchDeptCats = !deptCatIds || deptCatIds.indexOf(item.category_id) !== -1
-    return matchSearch && matchDept && matchSubDept && matchDeptCats && matchCat && matchSubCat
+    var matchVenue = !venueFilter || (item.venue_allocations || []).some(function (va) { return String(va.venue_id) === venueFilter })
+    var matchSubVenue = !subVenueFilter || (item.venue_allocations || []).some(function (va) { return String(va.sub_venue_id) === subVenueFilter })
+    return matchSearch && matchDept && matchSubDept && matchDeptCats && matchCat && matchSubCat && matchVenue && matchSubVenue
   })
 
   // Category options: if dept selected, only show tagged categories
@@ -206,6 +210,30 @@ function PendingReview({ profile }) {
   }).filter(function (sc) {
     return !catFilter || String(sc.category_id) === catFilter
   }).sort(function (a, b) { return a.name.localeCompare(b.name) })
+
+  var venueMap = {}
+  var venueOptions = []
+  pendingItems.forEach(function (item) {
+    (item.venue_allocations || []).forEach(function (va) {
+      if (va.venue_id && !venueMap[va.venue_id]) {
+        venueMap[va.venue_id] = va.venues ? va.venues.code + ' — ' + (va.venues.name || '') : String(va.venue_id)
+        venueOptions.push({ id: va.venue_id, name: venueMap[va.venue_id] })
+      }
+    })
+  })
+  venueOptions.sort(function (a, b) { return a.name.localeCompare(b.name) })
+
+  var svMap = {}
+  var subVenueOptions = []
+  pendingItems.forEach(function (item) {
+    (item.venue_allocations || []).forEach(function (va) {
+      if (va.sub_venue_id && !svMap[va.sub_venue_id] && (!venueFilter || String(va.venue_id) === venueFilter)) {
+        svMap[va.sub_venue_id] = va.sub_venues?.name || String(va.sub_venue_id)
+        subVenueOptions.push({ id: va.sub_venue_id, name: svMap[va.sub_venue_id] })
+      }
+    })
+  })
+  subVenueOptions.sort(function (a, b) { return a.name.localeCompare(b.name) })
 
   if (loading) {
     return <p className="text-gray-400 text-sm">Loading pending items...</p>
@@ -256,6 +284,20 @@ function PendingReview({ profile }) {
           <option value="">All Sub-categories</option>
           {subCatOptions.map(function (sc) { return <option key={sc.id} value={String(sc.id)}>{sc.name}</option> })}
         </select>
+        <select value={venueFilter}
+          onChange={function (e) { setVenueFilter(e.target.value); setSubVenueFilter('') }}
+          className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+          <option value="">All Venues</option>
+          {venueOptions.map(function (v) { return <option key={v.id} value={String(v.id)}>{v.name}</option> })}
+        </select>
+        {subVenueOptions.length > 0 && (
+          <select value={subVenueFilter}
+            onChange={function (e) { setSubVenueFilter(e.target.value) }}
+            className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            <option value="">All Sub-venues</option>
+            {subVenueOptions.map(function (sv) { return <option key={sv.id} value={String(sv.id)}>{sv.name}</option> })}
+          </select>
+        )}
       </div>
       {(search || deptFilter || subDeptFilter || catFilter || subCatFilter) && (
         <button onClick={resetFilters}
