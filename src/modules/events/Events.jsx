@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../../lib/supabase'
 import { Badge } from '../../components/ui/Badge'
 import { formatDate, formatPaise, titleCase } from '../../lib/format'
@@ -249,9 +249,10 @@ function Events({ profile }) {
       if (bufErr) throw bufErr
 
       // Recalculate block_from/block_to for all event_items of this event
-      var { data: evt } = await supabase.from('events').select('contract_date').eq('id', editingBuffer.id).maybeSingle()
-      if (evt?.contract_date) {
-        var d = new Date(evt.contract_date)
+      var { data: evt } = await supabase.from('events').select('function_date, contract_date').eq('id', editingBuffer.id).maybeSingle()
+      var bufferDate = evt?.function_date || evt?.contract_date
+      if (bufferDate) {
+        var d = new Date(bufferDate)
         var from = new Date(d); from.setDate(from.getDate() - editingBuffer.setup_days)
         var to = new Date(d); to.setDate(to.getDate() + editingBuffer.teardown_days)
         var fromStr = from.toISOString().split('T')[0]
@@ -368,7 +369,7 @@ function Events({ profile }) {
   var visibleEvents = hasEventDeptFilter
     ? events.filter(function (e) { return userEventDeptNames.includes(e.department) })
     : events
-  var allGroups = groupEvents(visibleEvents)
+  var allGroups = useMemo(function () { return groupEvents(visibleEvents) }, [visibleEvents])
 
   // Unique venues across all events
   var venueNames = [...new Set(events.map(function (e) { return e.venue_name }).filter(Boolean))]

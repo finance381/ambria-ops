@@ -183,7 +183,7 @@ function Shell({ profile, onSignOut }) {
               .select('id', { count: 'exact', head: true })
               .neq('requested_by', profile.id)
               .in('status', reqStatuses)
-              .then(function (res) { counts.feature_requisitions = (counts.feature_requisitions || 0) + (res.count || 0) })
+              .then(function (res) { counts._req_approval = res.count || 0 })
           )
         }
       }
@@ -193,7 +193,7 @@ function Shell({ profile, onSignOut }) {
           .select('id, requisitions!inner(requested_by)', { count: 'exact', head: true })
           .eq('item_status', 'dispatched')
           .eq('requisitions.requested_by', profile.id)
-          .then(function (res) { counts.feature_requisitions = (counts.feature_requisitions || 0) + (res.count || 0) })
+          .then(function (res) { counts._req_dispatch = res.count || 0 })
           .catch(function () {})
       )
     }
@@ -265,6 +265,7 @@ function Shell({ profile, onSignOut }) {
 
     await Promise.allSettled(promises)
     if (isStale && isStale()) return
+    counts.feature_requisitions = (counts._req_approval || 0) + (counts._req_dispatch || 0)
     setBadges(counts)
     setLastBadgeLoad(Date.now())
   }

@@ -64,7 +64,6 @@ const DEPARTMENTS = [
 
 const BASE_URL = "https://gyv.inqcrm.in/api/v1/processerp_api/"
 const PAGE_SIZE = 50
-const MAX_PAGES = Infinity
 
 const FUNC_NAMES: Record<string, string> = {
   "1": "RING CEREMONY", "2": "BIRTHDAY", "3": "WEDDING", "4": "RECEPTION",
@@ -214,7 +213,7 @@ serve(async (req) => {
       var allRows: any[] = []
       var page = 1
 
-      while (page <= MAX_PAGES) {
+      while (true) {
         var reqBody = Object.assign({}, dep.body, { loggeduserid: lmsUserId, page_limit: String(page) })
         var lmsRes = await fetchRetry(BASE_URL + dep.endpoint, {
           method: "POST",
