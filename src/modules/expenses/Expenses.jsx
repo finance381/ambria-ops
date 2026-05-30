@@ -291,6 +291,10 @@ function Expenses({ profile, masterMode }) {
       if (upErr) { alert('Image upload failed: ' + upErr.message); setIssueSaving(false); return }
       imagePath = path
     }
+    if (!issueModal._hasWallet) {
+      var { error: cwErr } = await supabase.from('wallets').insert({ user_id: issueModal.user_id, balance_paise: 0 }).select('id').maybeSingle()
+      if (cwErr && cwErr.code !== '23505') { alert('Failed to create wallet: ' + cwErr.message); setIssueSaving(false); return }
+    }
     var { error } = await supabase.rpc(rpcName, {
       p_user_id: issueModal.user_id,
       p_amount_paise: amountPaise,
@@ -2065,8 +2069,18 @@ function ExpenseEditForm({ profile, editExp, walletBalance, onCancel, onSaved })
   var [saving, setSaving] = useState(false)
   var [errors, setErrors] = useState({})
   var [dupeWarning, setDupeWarning] = useState('')
+  var [fieldValues, setFieldValues] = useState(function () {
+    if (!editExp) return {}
+    var fv = editExp.metadata && typeof editExp.metadata === 'object' ? Object.assign({}, editExp.metadata) : {}
+    if (!fv.vendor_name && editExp.vendor_name) fv.vendor_name = editExp.vendor_name
+    if (!fv.travel_from && editExp.travel_from) fv.travel_from = editExp.travel_from
+    if (!fv.travel_to && editExp.travel_to) fv.travel_to = editExp.travel_to
+    if (!fv.travel_mode && editExp.travel_mode) fv.travel_mode = editExp.travel_mode
+    return fv
+  })
 
   var isEditing = !!editExp
+  var typeFields = editExp?.expense_types?.extra_fields || []
 
   useEffect(function () {
     supabase.from('categories').select('id, name, status').order('name')
@@ -2108,8 +2122,64 @@ function ExpenseEditForm({ profile, editExp, walletBalance, onCancel, onSaved })
     if (!amount || Number(amount) <= 0) errs.amount = 'Amount required'
     if (!description.trim()) errs.desc = 'Description required'
     if (!expenseDate) errs.date = 'Date required'
+    for (var f = 0; f < typeFields.length; f++) {
+      if (typeFields[f].required && !(fieldValues[typeFields[f].key] || '').toString().trim()) {
+        errs.field = typeFields[f].label + ' is required'
+        break
+      }
+    }
     setErrors(errs)
     return Object.keys(errs).length === 0
+  }
+
+  function updateFieldValue(key, val) {
+    setFieldValues(function (prev) { return Object.assign({}, prev, { [key]: val }) })
+  }
+
+  function renderDynamicField(field, value, onChange) {
+    var cls = 'w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500'
+    var sty = { fontSize: '16px' }
+    if (field.type === 'select') {
+      return (
+        <div key={field.key}>
+          <label className="block text-sm font-medium text-gray-700 mb-1">{field.label}{field.required && <span className="text-red-500"> *</span>}</label>
+          <select value={value || ''} onChange={function (e) { onChange(e.target.value) }} className={cls + ' bg-white'} style={sty}>
+            <option value="">Select...</option>
+            {(field.options || []).map(function (opt) { return <option key={opt} value={opt}>{opt}</option> })}
+          </select>
+        </div>
+      )
+    }
+    if (field.type === 'number') {
+      return (
+        <div key={field.key}>
+          <label className="block text-sm font-medium text-gray-700 mb-1">{field.label}{field.required && <span className="text-red-500"> *</span>}</label>
+          <input type="number" inputMode="numeric" value={value || ''} onChange={function (e) { onChange(e.target.value) }} placeholder={field.label} className={cls} style={sty} />
+        </div>
+      )
+    }
+    if (field.type === 'textarea') {
+      return (
+        <div key={field.key}>
+          <label className="block text-sm font-medium text-gray-700 mb-1">{field.label}{field.required && <span className="text-red-500"> *</span>}</label>
+          <textarea value={value || ''} onChange={function (e) { onChange(e.target.value) }} rows={2} className={cls + ' resize-none'} style={sty} />
+        </div>
+      )
+    }
+    if (field.type === 'date') {
+      return (
+        <div key={field.key}>
+          <label className="block text-sm font-medium text-gray-700 mb-1">{field.label}{field.required && <span className="text-red-500"> *</span>}</label>
+          <input type="date" value={value || ''} onChange={function (e) { onChange(e.target.value) }} className={cls} style={sty} />
+        </div>
+      )
+    }
+    return (
+      <div key={field.key}>
+        <label className="block text-sm font-medium text-gray-700 mb-1">{field.label}{field.required && <span className="text-red-500"> *</span>}</label>
+        <input type="text" value={value || ''} onChange={function (e) { onChange(e.target.value) }} placeholder={field.label} className={cls} style={sty} />
+      </div>
+    )
   }
 
   async function uploadReceipt(expenseId) {
@@ -2136,6 +2206,11 @@ function ExpenseEditForm({ profile, editExp, walletBalance, onCancel, onSaved })
           amount_paise: amountPaise,
           description: description.trim(),
           expense_date: expenseDate,
+          metadata: fieldValues,
+          vendor_name: fieldValues.vendor_name || null,
+          travel_from: fieldValues.travel_from || null,
+          travel_to: fieldValues.travel_to || null,
+          travel_mode: fieldValues.travel_mode || null,
         }).eq('id', editExp.id)
         if (updErr) throw new Error(updErr.message)
 
@@ -2271,6 +2346,11 @@ function ExpenseEditForm({ profile, editExp, walletBalance, onCancel, onSaved })
             style={{ fontSize: '16px' }} />
           {errors.desc && <p className="text-xs text-red-500 mt-1">{errors.desc}</p>}
         </div>
+
+        {typeFields.map(function (field) {
+          return renderDynamicField(field, fieldValues[field.key] || '', function (val) { updateFieldValue(field.key, val) })
+        })}
+        {errors.field && <p className="text-xs text-red-500 mt-1">{errors.field}</p>}
 
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Receipt (optional)</label>
@@ -2495,18 +2575,16 @@ function ExpenseDetail({ exp, profile, subCatMap, isAdmin, isDeptApprover, onBac
             <span className="text-sm text-gray-800">{exp.expense_types.name}</span>
           </div>
         )}
-        {exp.vendor_name && (
-          <div className="flex justify-between">
-            <span className="text-sm text-gray-500">Vendor</span>
-            <span className="text-sm text-gray-800">{exp.vendor_name}</span>
-          </div>
-        )}
-        {exp.travel_from && (
-          <div className="flex justify-between">
-            <span className="text-sm text-gray-500">Travel</span>
-            <span className="text-sm text-gray-800">{(exp.travel_mode ? exp.travel_mode + ': ' : '') + exp.travel_from + ' → ' + (exp.travel_to || '—')}</span>
-          </div>
-        )}
+        {exp.expense_types?.extra_fields && exp.expense_types.extra_fields.map(function (field) {
+          var val = (exp.metadata && exp.metadata[field.key]) || exp[field.key] || null
+          if (!val) return null
+          return (
+            <div key={field.key} className="flex justify-between">
+              <span className="text-sm text-gray-500">{field.label}</span>
+              <span className="text-sm text-gray-800">{val}</span>
+            </div>
+          )
+        })}
         {exp.description && (
           <div>
             <span className="text-sm text-gray-500">Description</span>
