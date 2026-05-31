@@ -327,11 +327,13 @@ function Expenses({ profile, masterMode }) {
     if (receiveSaving || !receiveModal) return
     setReceiveSaving(true)
     var imagePath = null
-    var ext = receiveImage.name.split('.').pop()
-    var path = 'wallet/received/' + profile.id + '_' + Date.now() + '.' + ext
-    var { error: upErr } = await supabase.storage.from('receipts').upload(path, receiveImage, { upsert: true })
-    if (upErr) { alert('Image upload failed: ' + upErr.message); setReceiveSaving(false); return }
-    imagePath = path
+    if (receiveImage) {
+      var ext = receiveImage.name.split('.').pop()
+      var path = 'wallet/received/' + profile.id + '_' + Date.now() + '.' + ext
+      var { error: upErr } = await supabase.storage.from('receipts').upload(path, receiveImage, { upsert: true })
+      if (upErr) { alert('Image upload failed: ' + upErr.message); setReceiveSaving(false); return }
+      imagePath = path
+    }
     var { error } = await supabase.rpc('confirm_wallet_receive', {
       p_txn_id: receiveModal.id,
       p_received_image: imagePath,
