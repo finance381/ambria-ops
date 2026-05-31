@@ -200,9 +200,7 @@ function Shell({ profile, onSignOut }) {
 
     // Expenses badge
     if (perms.indexOf('feature_expenses') !== -1) {
-      var expStatuses = []
-      if (isAdminRole) expStatuses = hasExpApprove ? ['pending_dept', 'pending'] : ['pending']
-      else if (hasExpApprove) expStatuses = ['pending_dept']
+      var expStatuses = ['recorded']
       if (expStatuses.length > 0) {
         promises.push(
           supabase.from('expenses')
