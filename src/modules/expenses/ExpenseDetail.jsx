@@ -1,0 +1,319 @@
+import { useState, useEffect } from 'react'
+import { supabase } from '../../lib/supabase'
+import { formatDate, formatPoints } from '../../lib/format'
+import { logActivity } from '../../lib/logger'
+import { APPROVAL_STATUS_COLORS, APPROVAL_STATUS_LABELS } from '../../lib/constants'
+
+function ExpenseDetail({ exp, profile, subCatMap, isAdmin, isDeptApprover, onBack, onUpdated, onEdit }) {
+  var [saving, setSaving] = useState(false)
+  var [rejectMode, setRejectMode] = useState(false)
+  var [rejectReason, setRejectReason] = useState('')
+  var [penaltyAmount, setPenaltyAmount] = useState('')
+  var [allocations, setAllocations] = useState([])
+  var [allocVenues, setAllocVenues] = useState({})
+
+  useEffect(function () {
+    supabase.from('expense_allocations')
+      .select('id, department, venue_id, sub_venue_id, amount_paise')
+      .eq('expense_id', exp.id)
+      .then(function (res) {
+        var rows = res.data || []
+        setAllocations(rows)
+        if (rows.length > 0) {
+          var vIds = rows.map(function (r) { return r.venue_id }).filter(Boolean)
+          var svIds = rows.map(function (r) { return r.sub_venue_id }).filter(Boolean)
+          Promise.all([
+            vIds.length > 0 ? supabase.from('venues').select('id, code, name').in('id', vIds) : { data: [] },
+            svIds.length > 0 ? supabase.from('sub_venues').select('id, name').in('id', svIds) : { data: [] }
+          ]).then(function (results) {
+            var map = {}
+            ;(results[0].data || []).forEach(function (v) { map['v_' + v.id] = v.code + ' — ' + v.name })
+            ;(results[1].data || []).forEach(function (sv) { map['sv_' + sv.id] = sv.name })
+            setAllocVenues(map)
+          })
+        }
+      })
+  }, [exp.id])
+
+  var canReview = (isAdmin || isDeptApprover) && exp.status === 'recorded' && exp.user_id !== profile?.id
+  var canDelete = (exp.user_id === profile?.id && exp.status === 'recorded') || isAdmin
+  var canEdit = exp.user_id === profile?.id && exp.status === 'recorded'
+
+  async function acknowledge() {
+    if (saving) return
+    setSaving(true)
+    var { error } = await supabase.from('expenses').update({
+      status: 'acknowledged',
+      acknowledged_by: profile.id,
+      acknowledged_at: new Date().toISOString(),
+    }).eq('id', exp.id)
+    if (error) { alert('Acknowledge failed: ' + error.message); setSaving(false); return }
+    try { await logActivity('EXPENSE_ACKNOWLEDGE', (exp.description || 'Expense') + ' | ' + formatPoints(exp.amount_paise)) } catch (_) {}
+    setSaving(false)
+    onUpdated()
+  }
+
+  async function flag() {
+    if (!rejectReason.trim()) return
+    if (saving) return
+    setSaving(true)
+    var { error } = await supabase.from('expenses').update({
+      status: 'flagged',
+      flag_reason: rejectReason.trim(),
+      reviewed_by: profile.id,
+      reviewed_at: new Date().toISOString(),
+    }).eq('id', exp.id)
+    if (error) { alert('Flag failed: ' + error.message); setSaving(false); return }
+    try { await logActivity('EXPENSE_FLAG', (exp.description || 'Expense') + ' | ' + rejectReason.trim()) } catch (_) {}
+    setSaving(false)
+    onUpdated()
+  }
+
+  async function penalize() {
+    if (!rejectReason.trim() || !penaltyAmount || Number(penaltyAmount) <= 0) return
+    if (saving) return
+    setSaving(true)
+    var penaltyPaise = Math.round(Number(penaltyAmount) * 100)
+    var { error } = await supabase.from('expenses').update({
+      status: 'penalized',
+      flag_reason: rejectReason.trim(),
+      penalty_paise: penaltyPaise,
+      penalized_by: profile.id,
+      penalized_at: new Date().toISOString(),
+    }).eq('id', exp.id)
+    if (error) { alert('Penalize failed: ' + error.message); setSaving(false); return }
+    try {
+      await supabase.rpc('deduct_money', {
+        p_user_id: exp.user_id,
+        p_amount_paise: penaltyPaise,
+        p_description: 'Penalty: ' + rejectReason.trim().slice(0, 80),
+      })
+    } catch (_) {}
+    try { await logActivity('EXPENSE_PENALIZE', (exp.description || 'Expense') + ' | ' + formatPoints(penaltyPaise) + ' | ' + rejectReason.trim()) } catch (_) {}
+    setSaving(false)
+    onUpdated()
+  }
+
+  async function deleteExp() {
+    if (!confirm('Delete this expense? This cannot be undone.')) return
+    if (saving) return
+    setSaving(true)
+    if (exp.receipt_path) {
+      await supabase.storage.from('receipts').remove([exp.receipt_path])
+    }
+    var { error } = await supabase.from('expenses').delete().eq('id', exp.id)
+    if (error) { alert('Delete failed: ' + error.message); setSaving(false); return }
+    try {
+      if (exp.user_id === profile?.id) {
+        await supabase.rpc('wallet_self_credit', {
+          p_amount_paise: exp.amount_paise,
+          p_description: 'Refund: deleted expense',
+          p_ref_type: 'expense_refund',
+          p_ref_id: String(exp.id),
+        })
+      } else {
+        await supabase.rpc('wallet_admin_credit', {
+          p_user_id: exp.user_id,
+          p_amount_paise: exp.amount_paise,
+          p_description: 'Refund: deleted expense',
+          p_ref_type: 'expense_refund',
+          p_ref_id: String(exp.id),
+        })
+      }
+    } catch (_) {}
+    try { await logActivity('EXPENSE_DELETE', exp.description || 'Expense') } catch (_) {}
+    setSaving(false)
+    onUpdated()
+  }
+
+  var receiptUrl = exp.receipt_path ? supabase.storage.from('receipts').getPublicUrl(exp.receipt_path).data?.publicUrl : null
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <button onClick={onBack} className="text-sm text-indigo-600 font-medium hover:text-indigo-800 transition-colors mb-2">← Back</button>
+        <div className="flex items-start justify-between">
+          <div>
+            <h2 className="text-lg font-bold text-gray-900">{exp.description || 'Expense'}</h2>
+            <p className="text-xs text-gray-400 mt-0.5">
+              {exp.profiles?.name || '—'} · {formatDate(exp.expense_date)}
+            </p>
+          </div>
+          <span className={"text-[10px] font-bold uppercase px-2 py-0.5 rounded-full " + (APPROVAL_STATUS_COLORS[exp.status] || 'bg-gray-100 text-gray-600')}>
+            {APPROVAL_STATUS_LABELS[exp.status] || exp.status}
+          </span>
+        </div>
+      </div>
+
+      {exp.status === 'rejected' && exp.rejection_reason && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+          <p className="text-xs font-bold text-red-700 mb-0.5">Rejection Reason</p>
+          <p className="text-sm text-red-600">{exp.rejection_reason}</p>
+        </div>
+      )}
+
+      {(exp.status === 'flagged' || exp.status === 'penalized') && exp.flag_reason && (
+        <div className={"border rounded-lg p-3 " + (exp.status === 'penalized' ? "bg-red-50 border-red-200" : "bg-amber-50 border-amber-200")}>
+          <p className={"text-xs font-bold mb-0.5 " + (exp.status === 'penalized' ? "text-red-700" : "text-amber-700")}>{exp.status === 'penalized' ? '💰 Penalized' : '⚠ Flagged'}</p>
+          <p className={"text-sm " + (exp.status === 'penalized' ? "text-red-600" : "text-amber-600")}>{exp.flag_reason}</p>
+          {exp.penalty_paise > 0 && (
+            <p className="text-sm font-bold text-red-700 mt-1">Penalty: {formatPoints(exp.penalty_paise)}</p>
+          )}
+        </div>
+      )}
+
+      <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-3">
+        <div className="flex justify-between">
+          <span className="text-sm text-gray-500">Amount</span>
+          <span className="text-sm font-bold text-gray-900">{formatPoints(exp.amount_paise)}</span>
+        </div>
+        <div className="flex justify-between">
+          <span className="text-sm text-gray-500">Category</span>
+          <span className="text-sm text-gray-800">{exp.categories?.name || '—'}{exp.sub_category_id && subCatMap[exp.sub_category_id] ? ' > ' + subCatMap[exp.sub_category_id] : ''}</span>
+        </div>
+        <div className="flex justify-between">
+          <span className="text-sm text-gray-500">Date</span>
+          <span className="text-sm text-gray-800">{formatDate(exp.expense_date)}</span>
+        </div>
+        {exp.expense_types?.name && (
+          <div className="flex justify-between">
+            <span className="text-sm text-gray-500">Type</span>
+            <span className="text-sm text-gray-800">{exp.expense_types.name}</span>
+          </div>
+        )}
+        {exp.expense_types?.extra_fields && exp.expense_types.extra_fields.map(function (field) {
+          var val = (exp.metadata && exp.metadata[field.key]) || exp[field.key] || null
+          if (!val) return null
+          return (
+            <div key={field.key} className="flex justify-between">
+              <span className="text-sm text-gray-500">{field.label}</span>
+              <span className="text-sm text-gray-800">{val}</span>
+            </div>
+          )
+        })}
+        {exp.description && (
+          <div>
+            <span className="text-sm text-gray-500">Description</span>
+            <p className="text-sm text-gray-800 mt-0.5">{exp.description}</p>
+          </div>
+        )}
+      </div>
+
+      {allocations.length > 0 && (
+        <div className="bg-white border border-gray-200 rounded-lg p-4">
+          <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Allocations</p>
+          <div className="space-y-1.5">
+            {allocations.map(function (a) {
+              return (
+                <div key={a.id} className="flex items-center justify-between text-sm">
+                  <span className="text-gray-700">
+                    {a.department}
+                    {a.venue_id && allocVenues['v_' + a.venue_id] ? ' · ' + allocVenues['v_' + a.venue_id] : ''}
+                    {a.sub_venue_id && allocVenues['sv_' + a.sub_venue_id] ? ' > ' + allocVenues['sv_' + a.sub_venue_id] : ''}
+                  </span>
+                  {a.amount_paise > 0 && <span className="font-medium text-gray-800">{formatPoints(a.amount_paise)}</span>}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {receiptUrl && (
+        <div>
+          <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Receipt</p>
+          {/\.(webm|ogg|mp3|wav)$/i.test(exp.receipt_path || '') ? (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+              <p className="text-xs text-blue-600 font-medium mb-2">🎙 Voice Receipt</p>
+              <audio src={receiptUrl} controls className="w-full" />
+            </div>
+          ) : /\.(jpg|jpeg|png|gif|webp)$/i.test(exp.receipt_path || '') ? (
+            <a href={receiptUrl} target="_blank" rel="noopener noreferrer">
+              <img src={receiptUrl} alt="Receipt" className="w-full max-h-80 object-contain rounded-lg border border-gray-200 bg-gray-50" />
+            </a>
+          ) : (
+            <a href={receiptUrl} target="_blank" rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors">
+              📎 View Receipt
+            </a>
+          )}
+        </div>
+      )}
+
+      {canEdit && (
+        <button onClick={onEdit} disabled={saving}
+          className="w-full py-3 text-sm font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 disabled:opacity-50 transition-colors">
+          ✎ Edit Expense
+        </button>
+      )}
+
+      {canReview && !rejectMode && (
+        <div className="space-y-2">
+          <button onClick={acknowledge} disabled={saving}
+            className="w-full py-3 text-sm font-bold text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors">
+            {saving ? 'Saving...' : '✓ Acknowledge'}
+          </button>
+          <div className="flex gap-2">
+            <button onClick={function () { setRejectMode('flag') }} disabled={saving}
+              className="flex-1 py-3 text-sm font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 disabled:opacity-50 transition-colors">
+              ⚠ Flag
+            </button>
+            <button onClick={function () { setRejectMode('penalize') }} disabled={saving}
+              className="flex-1 py-3 text-sm font-bold text-red-600 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 disabled:opacity-50 transition-colors">
+              💰 Penalize
+            </button>
+          </div>
+        </div>
+      )}
+
+      {rejectMode && (
+        <div className="space-y-3">
+          <div className={"border rounded-lg p-3 " + (rejectMode === 'penalize' ? "bg-red-50 border-red-200" : "bg-amber-50 border-amber-200")}>
+            <label className={"block text-sm font-medium mb-1 " + (rejectMode === 'penalize' ? "text-red-700" : "text-amber-700")}>
+              {rejectMode === 'penalize' ? 'Penalty Reason' : 'Flag Reason'} <span className="text-red-500">*</span>
+            </label>
+            <textarea value={rejectReason}
+              onChange={function (e) { setRejectReason(e.target.value) }}
+              rows="3" maxLength="500" placeholder={rejectMode === 'penalize' ? 'Reason for penalty...' : 'What is the issue?'}
+              className={"w-full px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 resize-none " + (rejectMode === 'penalize' ? "border-red-300 focus:ring-red-500" : "border-amber-300 focus:ring-amber-500")}
+              style={{ fontSize: '16px' }} />
+            {rejectMode === 'penalize' && (
+              <div className="mt-2">
+                <label className="block text-sm font-medium text-red-700 mb-1">Penalty Amount (Points) <span className="text-red-500">*</span></label>
+                <input type="number" min="1" step="any" inputMode="decimal" value={penaltyAmount}
+                  onChange={function (e) { setPenaltyAmount(e.target.value) }}
+                  placeholder="0"
+                  className="w-full px-3 py-2 border border-red-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+                  style={{ fontSize: '16px' }} />
+              </div>
+            )}
+          </div>
+          <div className="flex gap-3">
+            <button onClick={function () { setRejectMode(false); setRejectReason(''); setPenaltyAmount('') }}
+              className="flex-1 py-3 text-sm text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors font-medium">Cancel</button>
+            {rejectMode === 'penalize' ? (
+              <button onClick={penalize} disabled={saving || !rejectReason.trim() || !penaltyAmount || Number(penaltyAmount) <= 0}
+                className="flex-1 py-3 text-sm text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors font-medium">
+                {saving ? 'Penalizing...' : '💰 Confirm Penalty'}
+              </button>
+            ) : (
+              <button onClick={flag} disabled={saving || !rejectReason.trim()}
+                className="flex-1 py-3 text-sm text-white bg-amber-600 rounded-lg hover:bg-amber-700 disabled:opacity-50 transition-colors font-medium">
+                {saving ? 'Flagging...' : '⚠ Confirm Flag'}
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {canDelete && !canReview && (
+        <button onClick={deleteExp} disabled={saving}
+          className="w-full py-3 text-sm font-bold text-red-500 bg-white border border-red-200 rounded-lg hover:bg-red-50 disabled:opacity-50 transition-colors">
+          Delete Expense
+        </button>
+      )}
+    </div>
+  )
+}
+
+export default ExpenseDetail
