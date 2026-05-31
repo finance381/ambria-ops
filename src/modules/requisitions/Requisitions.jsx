@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
-import { titleCase, formatDate } from '../../lib/format'
+import { titleCase, formatDate, formatPoints } from '../../lib/format'
 import { logActivity } from '../../lib/logger'
 import Modal from '../../components/ui/Modal'
 import { Badge } from '../../components/ui/Badge'
@@ -70,7 +70,7 @@ function Requisitions({ profile, onBack }) {
     else setLoadingMore(true)
 
     var query = supabase.from('requisitions')
-      .select('id, department, urgency, purpose, status, created_at, needed_by, requested_by, rejection_reason, event_id, sub_department_id, category_id, sub_category_id, events(event_name), profiles:requested_by(name)')
+      .select('id, department, urgency, purpose, status, created_at, needed_by, requested_by, rejection_reason, event_id, sub_department_id, category_id, sub_category_id, req_type, expense_type_id, expense_amount_paise, expense_date, receipt_path, events(event_name), expense_types(name), profiles:requested_by(name)')
       .eq('requested_by', profile.id)
       .order('created_at', { ascending: false })
       .range(offset, offset + PAGE_SIZE)
@@ -109,7 +109,7 @@ function Requisitions({ profile, onBack }) {
     if (statuses.length === 0) { setApprovalReqs([]); return }
 
     var query = supabase.from('requisitions')
-      .select('id, department, urgency, purpose, status, created_at, needed_by, requested_by, rejection_reason')
+      .select('id, department, urgency, purpose, status, created_at, needed_by, requested_by, rejection_reason, req_type, expense_type_id, expense_amount_paise, expense_date, receipt_path, expense_types(name)')
       .neq('requested_by', profile.id)
       .in('status', statuses)
       .order('created_at', { ascending: false })
@@ -147,6 +147,11 @@ function Requisitions({ profile, onBack }) {
 
   async function openDetail(req) {
     setDetailReq(req)
+    if (req.req_type === 'expense') {
+      setDetailItems([])
+      setView('detail')
+      return
+    }
     var { data } = await supabase
       .from('requisition_items')
       .select('id, item_id, item_name, category_id, qty, unit, notes, _source, estimated_cost_paise, po_item_id, item_status, fulfillment_type, dispatched_by, dispatched_at, dispatched_note, acknowledged_at, auto_acknowledged, categories(name), requisition_item_allocations(venue_id, qty)')
@@ -1532,6 +1537,56 @@ function RequisitionDetail({ req, items, profile, isAdmin, isDeptApprover, onBac
         </div>
       )}
 
+      {/* Expense-type detail */}
+      {req.req_type === 'expense' && (
+        <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-3">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">💰 Expense Request</span>
+          </div>
+          {req.expense_types?.name && (
+            <div className="flex justify-between">
+              <span className="text-sm text-gray-500">Expense Type</span>
+              <span className="text-sm text-gray-800">{req.expense_types.name}</span>
+            </div>
+          )}
+          <div className="flex justify-between">
+            <span className="text-sm text-gray-500">Amount</span>
+            <span className="text-sm font-bold text-gray-900">{formatPoints(req.expense_amount_paise)}</span>
+          </div>
+          {req.expense_date && (
+            <div className="flex justify-between">
+              <span className="text-sm text-gray-500">Expense Date</span>
+              <span className="text-sm text-gray-800">{formatDate(req.expense_date)}</span>
+            </div>
+          )}
+          {req.purpose && (
+            <div>
+              <span className="text-sm text-gray-500">Purpose</span>
+              <p className="text-sm text-gray-800 mt-0.5">{req.purpose}</p>
+            </div>
+          )}
+          {(function () {
+            var rUrl = req.receipt_path ? supabase.storage.from('receipts').getPublicUrl(req.receipt_path).data?.publicUrl : null
+            if (!rUrl) return null
+            return (
+              <div>
+                <span className="text-sm text-gray-500">Receipt</span>
+                {/\.(jpg|jpeg|png|gif|webp)$/i.test(req.receipt_path || '') ? (
+                  <a href={rUrl} target="_blank" rel="noopener noreferrer">
+                    <img src={rUrl} alt="Receipt" className="mt-1 w-full max-h-60 object-contain rounded-lg border border-gray-200 bg-gray-50" />
+                  </a>
+                ) : (
+                  <a href={rUrl} target="_blank" rel="noopener noreferrer"
+                    className="mt-1 inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors">
+                    📎 View Receipt
+                  </a>
+                )}
+              </div>
+            )
+          })()}
+        </div>
+      )}
+
       {/* Total cost summary */}
       {totalPaise > 0 && (
         <div className="flex items-center justify-between bg-indigo-50 border border-indigo-200 rounded-lg px-4 py-3">
@@ -1541,7 +1596,7 @@ function RequisitionDetail({ req, items, profile, isAdmin, isDeptApprover, onBac
       )}
 
       {/* Line items */}
-      <div className="space-y-2">
+      {req.req_type !== 'expense' && (<div className="space-y-2">
         <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">{items.length} Items</h3>
         {items.map(function (li) {
           return (
@@ -1673,7 +1728,7 @@ function RequisitionDetail({ req, items, profile, isAdmin, isDeptApprover, onBac
             </div>
           )
         })}
-      </div>
+      </div>)}
 
       {/* Edit button for owner on pending */}
       {canEdit && (
