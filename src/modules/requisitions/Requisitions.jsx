@@ -1522,7 +1522,7 @@ function RequisitionDetail({ req, items, profile, isAdmin, isDeptApprover, onBac
         })
       } catch (_) {}
 
-      var { error: updErr } = await supabase.from('requisitions').update({ status: 'fulfilled' }).eq('id', req.id)
+      var { error: updErr } = await supabase.rpc('fulfill_expense_requisition', { p_req_id: req.id, p_expense_id: newExp.id })
       if (updErr) console.warn('Requisition status update failed:', updErr.message)
 
       try { await logActivity('EXPENSE_FROM_REQ', (req.purpose || 'Req #' + req.id) + ' | ' + formatPoints(req.expense_amount_paise)) } catch (_) {}
