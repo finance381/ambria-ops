@@ -350,6 +350,8 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
   var [expAmount, setExpAmount] = useState(editReq?.expense_amount_paise ? String(editReq.expense_amount_paise / 100) : '')
   var [expDate, setExpDate] = useState(editReq?.expense_date || new Date().toISOString().slice(0, 10))
   var [expReceipt, setExpReceipt] = useState(null)
+  var [expTypeSearch, setExpTypeSearch] = useState('')
+  var [expTypeOpen, setExpTypeOpen] = useState(false)
   var [expAllocations, setExpAllocations] = useState([{ department: '', venue_id: '', amount: '' }])
   var [listening, setListening] = useState(false)
   var searchContainerRef = useRef(null)
@@ -443,7 +445,7 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
     var [deptRes, subDeptRes, catRes, subCatRes, venueRes, expTypeRes, invRes, csRes] = await Promise.all([
       supabase.from('departments').select('id, name').eq('active', true).order('name'),
       supabase.from('sub_departments').select('id, name, department_id').eq('active', true).order('name'),
-      supabase.from('categories').select('id, name, sub_department_id').order('name'),
+      supabase.from('categories').select('id, name, sub_department_id, expense_type_ids').order('name'),
       supabase.from('sub_categories').select('id, name, category_id').order('name'),
       supabase.from('venues').select('id, code, name').order('name'),
       supabase.from('expense_types').select('id, name').eq('active', true).order('name'),
@@ -604,11 +606,18 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
     }
   })
 
-  // Classification cascade (dept name → sub-dept → category → sub-category)
+ // Classification cascade (dept name → sub-dept → category → sub-category)
   var selectedDept = departments.filter(function (d) { return d.name === department })[0]
   var deptSubDepts = selectedDept ? subDepartments.filter(function (sd) { return sd.department_id === selectedDept.id }) : []
-  var subDeptCats = subDeptId ? categories.filter(function (c) { return c.sub_department_id === Number(subDeptId) }) : []
+  var userCatIds = profile?.category_ids || []
+  var isUnrestricted = !userCatIds.length || profile?.role === 'admin' || profile?.role === 'auditor'
+  var subDeptCats = subDeptId ? categories.filter(function (c) {
+    return c.sub_department_id === Number(subDeptId) && (isUnrestricted || userCatIds.indexOf(c.id) !== -1)
+  }) : []
   var catSubCats = categoryId ? subCategories.filter(function (sc) { return sc.category_id === Number(categoryId) }) : []
+  var selectedCatObj = categoryId ? categories.find(function (c) { return c.id === Number(categoryId) }) : null
+  var catExpTypeIds = selectedCatObj && Array.isArray(selectedCatObj.expense_type_ids) && selectedCatObj.expense_type_ids.length > 0 ? selectedCatObj.expense_type_ids : null
+  var filteredExpTypes = catExpTypeIds ? expenseTypes.filter(function (et) { return catExpTypeIds.indexOf(et.id) !== -1 }) : expenseTypes
 
   function validate() {
     var errs = {}
@@ -1151,14 +1160,43 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
       {reqType === 'expense' && (
         <div className="bg-amber-50 rounded-lg border border-amber-200 p-4 space-y-3">
           <h3 className="text-xs font-bold text-amber-700 uppercase tracking-wider">Planned Expense</h3>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Expense Type</label>
-            <select value={expTypeId} onChange={function (e) { setExpTypeId(e.target.value) }}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
-              style={{ fontSize: '16px' }}>
-              <option value="">Select type...</option>
-              {expenseTypes.map(function (et) { return <option key={et.id} value={String(et.id)}>{et.name}</option> })}
-            </select>
+          <div className="relative">
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Expense Type
+              {catExpTypeIds && <span className="text-[10px] text-amber-600 ml-1">({filteredExpTypes.length} allowed)</span>}
+            </label>
+            <div className="relative">
+              <input type="text"
+                value={expTypeOpen ? expTypeSearch : (expTypeId ? (filteredExpTypes.find(function (et) { return String(et.id) === expTypeId }) || {}).name || '' : '')}
+                placeholder="Search expense type..."
+                onFocus={function () { setExpTypeOpen(true); setExpTypeSearch('') }}
+                onBlur={function () { setTimeout(function () { setExpTypeOpen(false) }, 200) }}
+                onChange={function (e) { setExpTypeSearch(e.target.value); setExpTypeId('') }}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                style={{ fontSize: '16px' }} />
+              {expTypeId && (
+                <button type="button" onClick={function () { setExpTypeId(''); setExpTypeSearch('') }}
+                  className="absolute right-2 top-2.5 text-xs text-gray-400 hover:text-red-500">✕</button>
+              )}
+            </div>
+            {expTypeOpen && (function () {
+              var q = expTypeSearch.toLowerCase()
+              var matches = filteredExpTypes.filter(function (et) { return !q || et.name.toLowerCase().indexOf(q) !== -1 })
+              if (matches.length === 0) return <p className="text-[11px] text-gray-400 mt-1">{categoryId ? 'No expense types for this category' : 'Select a category first'}</p>
+              return (
+                <div className="absolute z-10 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-40 overflow-y-auto">
+                  {matches.map(function (et) {
+                    return (
+                      <button key={et.id} type="button"
+                        onMouseDown={function (e) { e.preventDefault(); setExpTypeId(String(et.id)); setExpTypeOpen(false); setExpTypeSearch('') }}
+                        className="w-full text-left px-3 py-2 hover:bg-amber-50 active:bg-amber-100 text-sm transition-colors border-b border-gray-100 last:border-0">
+                        {et.name}
+                      </button>
+                    )
+                  })}
+                </div>
+              )
+            })()}
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
