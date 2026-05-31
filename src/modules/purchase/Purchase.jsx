@@ -377,9 +377,10 @@ function Purchase({ profile, mode }) {
       if (it.status === 'pending') pendingIds.push(it.id)
       if (it.status === 'purchased') purchasedIds.push(it.id)
     })
-    // Cancel pending items
+    // Cancel pending items + unlink from requisitions so they return to queue
     if (pendingIds.length > 0) {
       await supabase.from('purchase_order_items').update({ status: 'cancelled' }).in('id', pendingIds)
+      await supabase.from('requisition_items').update({ po_item_id: null }).in('po_item_id', pendingIds)
     }
     // Move purchased → pending_return
     if (purchasedIds.length > 0) {
@@ -422,6 +423,8 @@ function Purchase({ profile, mode }) {
         })
       } catch (_) {}
     }
+    // Unlink requisition item so it can be re-ordered if needed
+    await supabase.from('requisition_items').update({ po_item_id: null }).match({ po_item_id: poItemId })
     // Update local state
     var updatedItems = activePoItems.map(function (it) {
       if (it.id === poItemId) return Object.assign({}, it, { status: 'returned' })
@@ -865,7 +868,7 @@ function Purchase({ profile, mode }) {
         <div className="space-y-3">
           {/* Status filters */}
           <div className="flex gap-2 flex-wrap">
-            {['', 'draft', 'confirmed', 'completed', 'closed'].map(function (s) {
+            {['', 'draft', 'confirmed', 'completed', 'closed', 'cancelling', 'cancelled'].map(function (s) {
               var label = s ? PO_STATUS_LABELS[s] : 'All'
               return (
                 <button key={s} onClick={function () { setPoStatusFilter(s === poStatusFilter ? '' : s) }}
