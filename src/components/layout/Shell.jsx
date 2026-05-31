@@ -3,7 +3,6 @@ import { supabase } from '../../lib/supabase'
 import { ROLE_COLORS } from '../../lib/constants'
 import Inventory from '../../modules/inventory/Inventory'
 import InventoryForm from '../../modules/inventory/InventoryForm'
-import AdminMobile from '../../modules/categories/AdminMobile'
 import Events from '../../modules/events/Events'
 import AdminReview from '../../modules/categories/AdminReview'
 import DeptReview from '../../modules/categories/DeptReview'
@@ -458,7 +457,12 @@ function Shell({ profile, onSignOut }) {
           <RateCardEditor profile={profile} />
         )}
         {tab === 'admin' && isAdmin && (
-          <AdminMobile profile={profile} />
+          <div className="space-y-4">
+            <button onClick={function () { window.location.search = '?view=admin' }}
+              className="w-full py-4 text-sm font-bold text-white bg-gray-900 rounded-xl hover:bg-gray-800 active:scale-[0.98] transition-all flex items-center justify-center gap-2">
+              🖥 Open Admin Dashboard
+            </button>
+          </div>
         )}
       </main>
 
