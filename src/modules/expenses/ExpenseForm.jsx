@@ -343,7 +343,7 @@ function ExpenseForm({ profile, onDone }) {
         amount_paise: paise,
         description: e.description.trim(),
         expense_date: e.expenseDate,
-        status: 'pending',
+        status: 'recorded',
         metadata: e.fieldValues,
         vendor_name: e.fieldValues.vendor_name || null,
         travel_from: e.fieldValues.travel_from || null,
