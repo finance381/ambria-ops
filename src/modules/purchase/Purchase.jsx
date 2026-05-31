@@ -12,6 +12,8 @@ var PO_STATUS_LABELS = {
   confirmed: 'Confirmed',
   completed: 'Completed',
   closed: 'Closed',
+  cancelling: 'Cancelling',
+  cancelled: 'Cancelled',
 }
 
 var PO_STATUS_COLORS = {
@@ -19,6 +21,8 @@ var PO_STATUS_COLORS = {
   confirmed: 'bg-blue-100 text-blue-700',
   completed: 'bg-green-100 text-green-700',
   closed: 'bg-gray-200 text-gray-500',
+  cancelling: 'bg-orange-100 text-orange-700',
+  cancelled: 'bg-red-100 text-red-600',
 }
 
 var ITEM_STATUS_COLORS = {
@@ -26,6 +30,17 @@ var ITEM_STATUS_COLORS = {
   purchased: 'bg-green-100 text-green-700',
   received: 'bg-indigo-100 text-indigo-700',
   cancelled: 'bg-red-100 text-red-600',
+  pending_return: 'bg-orange-100 text-orange-700',
+  returned: 'bg-teal-100 text-teal-700',
+}
+
+var ITEM_STATUS_LABELS = {
+  pending: 'Pending',
+  purchased: 'Purchased',
+  received: 'Received',
+  cancelled: 'Cancelled',
+  pending_return: 'Pending Return',
+  returned: 'Returned',
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -344,6 +359,86 @@ function Purchase({ profile, mode }) {
     loadPos()
   }
 
+  // ─── CANCEL PO (admin only — handles purchased item returns) ───
+  async function cancelPo(poId) {
+    if (saving) return
+    var hasReceived = activePoItems.some(function (it) { return it.status === 'received' })
+    if (hasReceived) { alert('Cannot cancel — some items already received into inventory. Close PO instead.'); return }
+    var hasPurchased = activePoItems.some(function (it) { return it.status === 'purchased' })
+    var msg = hasPurchased
+      ? 'Cancel this PO? Items already purchased will need to be returned before wallet refund.'
+      : 'Cancel this PO? All pending items will be cancelled.'
+    if (!confirm(msg)) return
+    setSaving(true)
+    // Split items by status
+    var pendingIds = []
+    var purchasedIds = []
+    activePoItems.forEach(function (it) {
+      if (it.status === 'pending') pendingIds.push(it.id)
+      if (it.status === 'purchased') purchasedIds.push(it.id)
+    })
+    // Cancel pending items
+    if (pendingIds.length > 0) {
+      await supabase.from('purchase_order_items').update({ status: 'cancelled' }).in('id', pendingIds)
+    }
+    // Move purchased → pending_return
+    if (purchasedIds.length > 0) {
+      await supabase.from('purchase_order_items').update({ status: 'pending_return' }).in('id', purchasedIds)
+    }
+    // PO status
+    var newPoStatus = purchasedIds.length > 0 ? 'cancelling' : 'cancelled'
+    await supabase.from('purchase_orders').update({ status: newPoStatus }).eq('id', poId)
+    // Update local state
+    setActivePoItems(activePoItems.map(function (it) {
+      if (it.status === 'pending') return Object.assign({}, it, { status: 'cancelled' })
+      if (it.status === 'purchased') return Object.assign({}, it, { status: 'pending_return' })
+      return it
+    }))
+    setActivePo(function (prev) { return prev ? Object.assign({}, prev, { status: newPoStatus }) : prev })
+    try { await logActivity('PO_CANCEL', 'PO ' + poId.slice(0, 8) + ' → ' + newPoStatus + ' | ' + purchasedIds.length + ' items pending return') } catch (_) {}
+    setSaving(false)
+    loadPos()
+  }
+
+  // ─── CONFIRM ITEM RETURN (admin only — credits wallet) ───
+  async function confirmReturn(poItemId) {
+    if (saving) return
+    var item = activePoItems.find(function (it) { return it.id === poItemId })
+    if (!item || item.status !== 'pending_return') return
+    if (!confirm('Confirm this item has been returned? Wallet will be credited ' + formatPaise(item.actual_cost_paise) + '.')) return
+    setSaving(true)
+    // Update item status
+    var { error } = await supabase.from('purchase_order_items').update({ status: 'returned' }).eq('id', poItemId)
+    if (error) { alert('Failed: ' + error.message); setSaving(false); return }
+    // Credit purchaser wallet
+    if (item.actual_cost_paise > 0 && item.purchased_by) {
+      try {
+        await supabase.rpc('wallet_admin_credit', {
+          p_user_id: item.purchased_by,
+          p_amount_paise: item.actual_cost_paise,
+          p_description: 'PO Return: ' + titleCase(item.item_name),
+          p_ref_type: 'po_return',
+          p_ref_id: String(poItemId),
+        })
+      } catch (_) {}
+    }
+    // Update local state
+    var updatedItems = activePoItems.map(function (it) {
+      if (it.id === poItemId) return Object.assign({}, it, { status: 'returned' })
+      return it
+    })
+    setActivePoItems(updatedItems)
+    // Check if all items resolved → PO fully cancelled
+    var allResolved = updatedItems.every(function (it) { return it.status === 'returned' || it.status === 'cancelled' })
+    if (allResolved && activePo) {
+      await supabase.from('purchase_orders').update({ status: 'cancelled' }).eq('id', activePo.id)
+      setActivePo(function (prev) { return prev ? Object.assign({}, prev, { status: 'cancelled' }) : prev })
+    }
+    try { await logActivity('PO_ITEM_RETURNED', titleCase(item.item_name) + ' returned | ' + formatPaise(item.actual_cost_paise) + ' credited') } catch (_) {}
+    setSaving(false)
+    loadPos()
+  }
+
   // ─── ASSIGN PURCHASER (admin only) ───
   async function assignPurchaser(poId, userId) {
     if (saving) return
@@ -492,6 +587,8 @@ function Purchase({ profile, mode }) {
         onMarkPurchased={markPurchased}
         onDeletePo={deletePo}
         onRemoveItem={removePoItem}
+        onCancelPo={cancelPo}
+        onConfirmReturn={confirmReturn}
       />
     )
   }
@@ -996,7 +1093,7 @@ function ReceivingContent({ items, loading, receivingItem, setReceivingItem, rec
 // ═══════════════════════════════════════════════════════════════
 // PO DETAIL
 // ═══════════════════════════════════════════════════════════════
-function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, vendorList, onBack, onStatusChange, onAssign, onSaveVendor, onMarkPurchased, onDeletePo, onRemoveItem }) {
+function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, vendorList, onBack, onStatusChange, onAssign, onSaveVendor, onMarkPurchased, onDeletePo, onRemoveItem, onCancelPo, onConfirmReturn }) {
   var [editingVendor, setEditingVendor] = useState(null)
   var [vendorForm, setVendorForm] = useState({ name: '', contact: '', rate: '' })
   var [vendorSearch, setVendorSearch] = useState('')
@@ -1013,23 +1110,28 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, ve
   var isPurchaser = po.assigned_to === profile?.id
   var canEdit = isAdmin && (po.status === 'draft' || po.status === 'confirmed')
   var canConfirm = isAdmin && po.status === 'draft' && items.length > 0
-  var allReceived = items.length > 0 && items.every(function (it) { return it.status === 'received' || it.status === 'cancelled' })
+  var allReceived = items.length > 0 && items.every(function (it) { return it.status === 'received' || it.status === 'cancelled' || it.status === 'returned' })
   var canClose = isAdmin && (po.status === 'completed' || po.status === 'confirmed') && allReceived
   var canDelete = isAdmin && po.status === 'draft'
   var canPurchase = isPurchaser && po.status === 'confirmed'
+  var canCancel = isAdmin && (po.status === 'confirmed' || po.status === 'completed')
+  var isCancelling = po.status === 'cancelling'
 
   var totalEstPaise = 0
   var totalActualPaise = 0
   var pendingCount = 0
   var purchasedCount = 0
+  var pendingReturnCount = 0
+  var returnedCount = 0
   items.forEach(function (it) {
     if (it.estimated_cost_paise) totalEstPaise += it.estimated_cost_paise
     if (it.actual_cost_paise) totalActualPaise += it.actual_cost_paise
     if (it.status === 'pending') pendingCount++
     if (it.status === 'purchased') purchasedCount++
     if (it.status === 'received') purchasedCount++
+    if (it.status === 'pending_return') pendingReturnCount++
+    if (it.status === 'returned') returnedCount++
   })
-
   var staffItems = staffList.map(function (s) { return { label: s.name + (s.role === 'admin' ? ' (Admin)' : ''), value: s.id } })
 
   function startVendorEdit(it) {
@@ -1168,6 +1270,17 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, ve
         </div>
       </div>
 
+      {/* Cancelling banner */}
+      {isCancelling && (
+        <div className="bg-orange-50 border border-orange-200 rounded-xl px-4 py-3 flex items-center gap-3">
+          <span className="text-orange-500 text-lg">⚠</span>
+          <div>
+            <p className="text-sm font-bold text-orange-700">Cancellation in progress</p>
+            <p className="text-xs text-orange-600">{pendingReturnCount} item{pendingReturnCount !== 1 ? 's' : ''} pending return — confirm returns to credit purchaser wallet</p>
+          </div>
+        </div>
+      )}
+
       {/* Two-column layout */}
       <div className="flex flex-col lg:flex-row gap-5 items-start">
         {/* ═══ LEFT: Items ═══ */}
@@ -1206,7 +1319,7 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, ve
                         <div className="flex items-center gap-2">
                           <p className="text-sm font-semibold text-gray-800">{titleCase(it.item_name)}</p>
                           <span className={"text-[10px] font-bold uppercase px-2 py-0.5 rounded-full " + (ITEM_STATUS_COLORS[it.status] || '')}>
-                            {it.status}
+                            {ITEM_STATUS_LABELS[it.status] || it.status}
                           </span>
                         </div>
                         <p className="text-[11px] text-gray-400 mt-0.5">
@@ -1403,6 +1516,15 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, ve
                     )}
 
                     {/* Action buttons */}
+                    {it.status === 'pending_return' && isAdmin && (
+                      <div className="flex gap-2">
+                        <button onClick={function (e) { e.stopPropagation(); onConfirmReturn(it.id) }} disabled={saving}
+                          className="text-[11px] font-semibold text-teal-700 bg-teal-50 border border-teal-200 hover:bg-teal-100 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
+                          {saving ? '...' : '↩ Confirm Return'}
+                        </button>
+                      </div>
+                    )}
+
                     {it.status === 'pending' && !isEditingVendor && !isPurchasing && (
                       <div className="flex gap-2 flex-wrap">
                         {canEdit && (
@@ -1593,6 +1715,12 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, ve
                 <button onClick={function () { if (confirm('Delete this draft PO? Items return to procurement queue.')) onDeletePo(po.id) }} disabled={saving}
                   className="w-full py-3 text-sm font-bold text-red-600 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 disabled:opacity-50 transition-colors">
                   {saving ? 'Deleting...' : '🗑 Delete Draft PO'}
+                </button>
+              )}
+              {canCancel && (
+                <button onClick={function () { onCancelPo(po.id) }} disabled={saving}
+                  className="w-full py-3 text-sm font-bold text-red-600 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 disabled:opacity-50 transition-colors">
+                  {saving ? 'Cancelling...' : '✕ Cancel PO'}
                 </button>
               )}
             </div>
