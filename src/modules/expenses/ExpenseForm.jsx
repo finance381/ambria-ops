@@ -315,10 +315,6 @@ function ExpenseForm({ profile, onDone }) {
         }
       }
       if (!e.receiptFile && !e.audioBlob) return 'Entry ' + (i + 1) + ': Receipt image or voice note is required'
-      for (var j = 0; j < e.allocations.length; j++) {
-        var a = e.allocations[j]
-        if (!a.department) return 'Entry ' + (i + 1) + ', Allocation ' + (j + 1) + ': Select department'
-      }
     }
     return null
   }
@@ -388,12 +384,13 @@ function ExpenseForm({ profile, onDone }) {
       }
 
       // Insert allocations
+      var deptName = entry.department ? (departments.find(function (d) { return String(d.id) === entry.department }) || {}).name || '' : ''
       var allocRows = e.allocations
-        .filter(function (a) { return a.department })
+        .filter(function (a) { return a.venueId })
         .map(function (a) {
           return {
             expense_id: exp.id,
-            department: a.department,
+            department: deptName,
             venue_id: a.venueId ? Number(a.venueId) : null,
             amount_paise: a.amountPaise ? Math.round(Number(a.amountPaise) * 100) : 0
           }
@@ -608,19 +605,7 @@ function ExpenseForm({ profile, onDone }) {
                   {entry.allocations.map(function (alloc, aIdx) {
                     return (
                       <div key={aIdx} className="flex gap-2 items-start">
-                        <div className="flex-1 grid grid-cols-3 gap-2">
-                          {/* Department */}
-                          <select
-                            value={alloc.department}
-                            onChange={function (e) { updateAllocation(idx, aIdx, 'department', e.target.value) }}
-                            className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs bg-white focus:ring-2 focus:ring-amber-300"
-                          >
-                            <option value="">Dept</option>
-                            {departments.map(function (d) {
-                              return <option key={d.id} value={d.name}>{d.name}</option>
-                            })}
-                          </select>
-
+                        <div className="flex-1 grid grid-cols-2 gap-2">
                           {/* Venue */}
                           <select
                             value={alloc.venueId}

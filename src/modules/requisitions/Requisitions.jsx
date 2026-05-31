@@ -888,17 +888,6 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
             </select>
           </div>
         )}
-        {catSubCats.length > 0 && (
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Sub-Category</label>
-            <select value={subCategoryId} onChange={function (e) { setSubCategoryId(e.target.value) }}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
-              style={{ fontSize: '16px' }}>
-              <option value="">Select sub-category...</option>
-              {catSubCats.map(function (sc) { return <option key={sc.id} value={String(sc.id)}>{sc.name}</option> })}
-            </select>
-          </div>
-        )}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Urgency</label>
           <div className="flex gap-0 bg-white border border-gray-300 rounded-md overflow-hidden">
@@ -1237,15 +1226,6 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
             {expAllocations.map(function (alloc, aIdx) {
               return (
                 <div key={aIdx} className="flex gap-2 items-end">
-                  <div className="flex-1">
-                    <select value={alloc.department}
-                      onChange={function (e) { setExpAllocations(function (p) { return p.map(function (a, j) { return j === aIdx ? Object.assign({}, a, { department: e.target.value }) : a }) }) }}
-                      className="w-full px-2 py-1.5 border border-gray-200 rounded-md text-[12px] focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
-                      style={{ fontSize: '16px' }}>
-                      <option value="">Dept</option>
-                      {departments.map(function (d) { return <option key={d.id} value={d.name}>{d.name}</option> })}
-                    </select>
-                  </div>
                   <div className="flex-1">
                     <select value={alloc.venue_id}
                       onChange={function (e) { setExpAllocations(function (p) { return p.map(function (a, j) { return j === aIdx ? Object.assign({}, a, { venue_id: e.target.value }) : a }) }) }}
