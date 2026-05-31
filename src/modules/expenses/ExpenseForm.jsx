@@ -3,12 +3,14 @@ import { supabase } from '../../lib/supabase'
 import { logActivity } from '../../lib/logger'
 import SearchDropdown from '../../components/ui/SearchDropdown'
 import { useVoice } from '../../hooks/useVoice'
+import { filterUserCategories } from '../../lib/categories'
 
 function makeEntry() {
   return {
     _key: Date.now() + '_' + Math.random().toString(36).slice(2, 8),
+    department: '',
+    subDeptId: '',
     categoryId: '',
-    subCategoryId: '',
     expenseTypeId: '',
     description: '',
     amount: '',
@@ -36,6 +38,7 @@ function ExpenseForm({ profile, onDone }) {
   var [expenseTypes, setExpenseTypes] = useState([])
   var [departments, setDepartments] = useState([])
   var [venues, setVenues] = useState([])
+  var [subDepartments, setSubDepartments] = useState([])
   var [loading, setLoading] = useState(true)
 
   // ── Form state ──
@@ -50,18 +53,20 @@ function ExpenseForm({ profile, onDone }) {
   }, [])
 
   async function loadRefData() {
-    var [catR, scR, etR, dR, vR, svR] = await Promise.all([
-      supabase.from('categories').select('id, name').order('name'),
+    var [catR, scR, etR, dR, vR, sdR] = await Promise.all([
+      supabase.from('categories').select('id, name, sub_department_id').order('name'),
       supabase.from('sub_categories').select('id, category_id, name').order('name'),
       supabase.from('expense_types').select('id, name, extra_fields, sort_order').eq('active', true).order('sort_order'),
       supabase.from('departments').select('id, name').eq('active', true).order('name'),
       supabase.from('venues').select('id, code, name').eq('active', true).order('name'),
+      supabase.from('sub_departments').select('id, name, department_id').eq('active', true).order('name'),
       ])
     setCategories(catR.data || [])
     setSubCategories(scR.data || [])
     setExpenseTypes(etR.data || [])
     setDepartments(dR.data || [])
     setVenues(vR.data || [])
+    setSubDepartments(sdR.data || [])
     setLoading(false)
   }
 
@@ -72,7 +77,8 @@ function ExpenseForm({ profile, onDone }) {
       if (i !== idx) return e
       var copy = Object.assign({}, e)
       copy[field] = val
-      if (field === 'categoryId') copy.subCategoryId = ''
+      if (field === 'department') { copy.subDeptId = ''; copy.categoryId = '' }
+      if (field === 'subDeptId') copy.categoryId = ''
       if (field === 'expenseTypeId') {
         copy.fieldValues = {}
       }
@@ -338,7 +344,7 @@ function ExpenseForm({ profile, onDone }) {
       var payload = {
         user_id: profile.id,
         category_id: Number(e.categoryId),
-        sub_category_id: e.subCategoryId ? Number(e.subCategoryId) : null,
+        sub_category_id: null,
         expense_type_id: Number(e.expenseTypeId),
         amount_paise: paise,
         description: e.description.trim(),
@@ -427,12 +433,7 @@ function ExpenseForm({ profile, onDone }) {
     }
   }
 
-  // ── Render helpers ──
-
-  function filteredSubCats(categoryId) {
-    if (!categoryId) return []
-    return subCategories.filter(function (sc) { return sc.category_id === Number(categoryId) })
-  }
+  // ── Render helpers ─
 
 
   if (loading) return <div className="text-center py-8 text-gray-500">Loading...</div>
@@ -447,7 +448,7 @@ function ExpenseForm({ profile, onDone }) {
       )}
 
       {entries.map(function (entry, idx) {
-        var subs = filteredSubCats(entry.categoryId)
+
 
         return (
           <div key={entry._key} className="border border-amber-200 rounded-xl bg-white shadow-sm overflow-hidden">
@@ -473,23 +474,49 @@ function ExpenseForm({ profile, onDone }) {
             </div>
 
             <div className="p-4 space-y-3">
-              {/* Row 1: Category + Sub-category */}
-              <div className="grid grid-cols-2 gap-3">
-                <SearchDropdown
-                  label="Category"
-                  items={categories.map(function (c) { return { label: c.name, value: String(c.id) } })}
-                  value={entry.categoryId}
-                  onChange={function (val) { updateEntry(idx, 'categoryId', val) }}
-                  placeholder="Select..."
-                />
-                <SearchDropdown
-                  label="Sub-category"
-                  items={subs.map(function (sc) { return { label: sc.name, value: String(sc.id) } })}
-                  value={entry.subCategoryId}
-                  onChange={function (val) { updateEntry(idx, 'subCategoryId', val) }}
-                  placeholder={subs.length ? 'Select...' : 'Pick category first'}
-                />
+              {/* Department */}
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Department</label>
+                <select value={entry.department} onChange={function (e) { updateEntry(idx, 'department', e.target.value) }}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-amber-300 focus:border-amber-400"
+                  style={{ fontSize: '16px' }}>
+                  <option value="">Select department...</option>
+                  {departments.map(function (d) { return <option key={d.id} value={String(d.id)}>{d.name}</option> })}
+                </select>
               </div>
+
+              {/* Sub-department */}
+              {entry.department && (function () {
+                var deptSubs = subDepartments.filter(function (sd) { return sd.department_id === Number(entry.department) })
+                if (deptSubs.length === 0) return null
+                return (
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Sub-Department</label>
+                    <select value={entry.subDeptId} onChange={function (e) { updateEntry(idx, 'subDeptId', e.target.value) }}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-amber-300 focus:border-amber-400"
+                      style={{ fontSize: '16px' }}>
+                      <option value="">Select sub-department...</option>
+                      {deptSubs.map(function (sd) { return <option key={sd.id} value={String(sd.id)}>{sd.name}</option> })}
+                    </select>
+                  </div>
+                )
+              })()}
+
+              {/* Category */}
+              {(function () {
+                var catList = entry.subDeptId
+                  ? filterUserCategories(categories, profile).filter(function (c) { return c.sub_department_id === Number(entry.subDeptId) })
+                  : filterUserCategories(categories, profile)
+                return (
+                  <SearchDropdown
+                    label="Category"
+                    items={catList.map(function (c) { return { label: c.name, value: String(c.id) } })}
+                    value={entry.categoryId}
+                    onChange={function (val) { updateEntry(idx, 'categoryId', val) }}
+                    placeholder="Select category..."
+                  />
+                )
+              })()}
 
               {/* Expense Type */}
               <div>
