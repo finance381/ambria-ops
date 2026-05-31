@@ -9,6 +9,8 @@ import { APPROVAL_STATUS_COLORS, APPROVAL_STATUS_LABELS } from '../../lib/consta
 import BottomSheet from '../../components/ui/BottomSheet'
 import WalletManager from './WalletManager'
 import ExpenseTypeMaster from './ExpenseTypeMaster'
+import AllExpenses from './AllExpenses'
+import ExpenseReport from './ExpenseReport'
 
 var PAGE_SIZE = 20
 
@@ -27,20 +29,7 @@ function Expenses({ profile, masterMode }) {
   var [expSearch, setExpSearch] = useState('')
   var [expSearchDebounced, setExpSearchDebounced] = useState('')
   var [reportView, setReportView] = useState(false)
-  var [reportData, setReportData] = useState(null)
-  var [reportFrom, setReportFrom] = useState(new Date().toISOString().slice(0, 7) + '-01')
-  var [reportTo, setReportTo] = useState(new Date().toISOString().split('T')[0])
-  var [reportLoading, setReportLoading] = useState(false)
   var [allExpView, setAllExpView] = useState(false)
-  var [allExps, setAllExps] = useState([])
-  var [allExpHasMore, setAllExpHasMore] = useState(false)
-  var [allExpStatus, setAllExpStatus] = useState('')
-  var [allExpFrom, setAllExpFrom] = useState('')
-  var [allExpTo, setAllExpTo] = useState('')
-  var [allExpSearch, setAllExpSearch] = useState('')
-  var [allExpSearchD, setAllExpSearchD] = useState('')
-  var [allExpLoading, setAllExpLoading] = useState(false)
-  var [allExpLoadingMore, setAllExpLoadingMore] = useState(false)
   var [editExp, setEditExp] = useState(null)
   var [walletBalance, setWalletBalance] = useState(0)
   var [pendingReceiveCount, setPendingReceiveCount] = useState(0)
@@ -60,10 +49,6 @@ function Expenses({ profile, masterMode }) {
     var timer = setTimeout(function () { setExpSearchDebounced(expSearch) }, 400)
     return function () { clearTimeout(timer) }
   }, [expSearch])
-  useEffect(function () {
-    var timer = setTimeout(function () { setAllExpSearchD(allExpSearch) }, 400)
-    return function () { clearTimeout(timer) }
-  }, [allExpSearch])
 
   useEffect(function () {
     supabase.from('sub_categories').select('id, name').then(function (res) {
@@ -179,126 +164,6 @@ function Expenses({ profile, masterMode }) {
       .then(function (res) { setWalletBalance(res.data?.balance_paise || 0) })
   }
 
-  
-  async function loadAllExps(append) {
-    var offset = append ? allExps.length : 0
-    if (append) setAllExpLoadingMore(true)
-    else setAllExpLoading(true)
-
-    var query = supabase.from('expenses')
-      .select('id, user_id, category_id, sub_category_id, expense_type_id, amount_paise, description, status, expense_date, receipt_path, created_at, rejection_reason, vendor_name, travel_from, travel_to, travel_mode, metadata, categories(name), expense_types(name, extra_fields)')
-      .order('created_at', { ascending: false })
-      .range(offset, offset + PAGE_SIZE)
-
-    if (allExpStatus) query = query.eq('status', allExpStatus)
-    if (allExpFrom) query = query.gte('expense_date', allExpFrom)
-    if (allExpTo) query = query.lte('expense_date', allExpTo)
-    if (allExpSearchD) query = query.ilike('description', '%' + allExpSearchD + '%')
-
-    var { data, error } = await query
-    if (error) { alert('Failed: ' + error.message); setAllExpLoading(false); setAllExpLoadingMore(false); return }
-
-    var rows = data || []
-    var hasMore = rows.length > PAGE_SIZE
-    if (hasMore) rows = rows.slice(0, PAGE_SIZE)
-
-    var aUserIds = []
-    rows.forEach(function (r) { if (r.user_id && aUserIds.indexOf(r.user_id) === -1) aUserIds.push(r.user_id) })
-    if (aUserIds.length > 0) {
-      var { data: aNames } = await supabase.rpc('get_profile_names', { p_ids: aUserIds })
-      var aMap = {}
-      ;(aNames || []).forEach(function (n) { aMap[n.id] = n.name })
-      rows = rows.map(function (r) { return Object.assign({}, r, { profiles: { name: aMap[r.user_id] || null } }) })
-    }
-    if (append) {
-      setAllExps(function (prev) { return prev.concat(rows) })
-    } else {
-      setAllExps(rows)
-    }
-    setAllExpHasMore(hasMore)
-    setAllExpLoading(false)
-    setAllExpLoadingMore(false)
-  }
-
-  function exportAllExpCSV() {
-    if (!allExps.length) return
-    var headers = ['Date', 'User', 'Category', 'Sub-Category', 'Amount (pts)', 'Description', 'Status']
-    var rows = allExps.map(function (e) {
-      return [
-        e.expense_date || '',
-        e.profiles?.name || '',
-        e.categories?.name || '',
-        subCatMap[e.sub_category_id] || '',
-        e.amount_paise ? (e.amount_paise / 100) : 0,
-        (e.description || '').replace(/,/g, ';'),
-        e.status || '',
-      ].join(',')
-    })
-    var csv = '\uFEFF' + headers.join(',') + '\n' + rows.join('\n')
-    var blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
-    var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'all_expenses_' + new Date().toISOString().split('T')[0] + '.csv'; a.click()
-  }
-  async function loadReport() {
-    setReportLoading(true)
-    var { data, error } = await supabase.from('expenses')
-      .select('id, user_id, category_id, amount_paise, status, expense_date, categories(name), profiles:user_id(name)')
-      .in('status', ['recorded', 'acknowledged', 'approved'])
-      .gte('expense_date', reportFrom)
-      .lte('expense_date', reportTo)
-      .order('expense_date', { ascending: false })
-      .limit(5000)
-    if (error) { alert('Report failed: ' + error.message); setReportLoading(false); return }
-    var rows = data || []
-    var totalPaise = 0
-    var byUser = {}
-    var byCat = {}
-    var byMonth = {}
-    rows.forEach(function (r) {
-      var amt = r.amount_paise || 0
-      totalPaise += amt
-      var uName = r.profiles?.name || '—'
-      byUser[uName] = (byUser[uName] || 0) + amt
-      var cName = r.categories?.name || 'Uncategorized'
-      byCat[cName] = (byCat[cName] || 0) + amt
-      var month = (r.expense_date || '').slice(0, 7)
-      if (month) byMonth[month] = (byMonth[month] || 0) + amt
-    })
-    var sortObj = function (obj) {
-      return Object.entries(obj).sort(function (a, b) { return b[1] - a[1] })
-    }
-    setReportData({
-      count: rows.length,
-      totalPaise: totalPaise,
-      byUser: sortObj(byUser),
-      byCat: sortObj(byCat),
-      byMonth: Object.entries(byMonth).sort(function (a, b) { return a[0].localeCompare(b[0]) }),
-    })
-    setReportLoading(false)
-  }
-
-  function exportReportCSV() {
-    if (!reportData) return
-    var sections = []
-    sections.push('Summary')
-    sections.push('Total Recorded,' + (reportData.totalPaise / 100))
-    sections.push('Count,' + reportData.count)
-    sections.push('')
-    sections.push('By User')
-    sections.push('User,Amount (pts)')
-    reportData.byUser.forEach(function (r) { sections.push(r[0] + ',' + (r[1] / 100)) })
-    sections.push('')
-    sections.push('By Category')
-    sections.push('Category,Amount (pts)')
-    reportData.byCat.forEach(function (r) { sections.push(r[0] + ',' + (r[1] / 100)) })
-    sections.push('')
-    sections.push('By Month')
-    sections.push('Month,Amount (pts)')
-    reportData.byMonth.forEach(function (r) { sections.push(r[0] + ',' + (r[1] / 100)) })
-    var csv = '\uFEFF' + sections.join('\n')
-    var blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
-    var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'expense_report_' + reportFrom + '_' + reportTo + '.csv'; a.click()
-  }
-
   function exportExpenseCSV() {
     if (!myExpenses.length) return
     var headers = ['Date', 'Category', 'Sub-Category', 'Amount (pts)', 'Description', 'Status', 'Created']
@@ -324,222 +189,21 @@ function Expenses({ profile, masterMode }) {
 
   // Total points for my expenses
   var myTotal = myExpenses.reduce(function (sum, e) { return sum + (e.amount_paise || 0) }, 0)
-  useEffect(function () {
-    if (allExpView) loadAllExps(false)
-  }, [allExpStatus, allExpFrom, allExpTo, allExpSearchD])
   if (masterMode) {
     return <ExpenseTypeMaster />
   }
-if (allExpView && (isAdmin || isAuditor)) {
-    var allExpTotal = allExps.reduce(function (s, e) { return s + (e.amount_paise || 0) }, 0)
+  if (allExpView && (isAdmin || isAuditor)) {
     return (
-      <div className="space-y-4">
-        <div>
-          <button onClick={function () { setAllExpView(false) }}
-            className="text-sm text-indigo-600 font-medium hover:text-indigo-800 transition-colors mb-1">← Back to Expenses</button>
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-lg font-bold text-gray-900">All Expenses</h2>
-              <p className="text-xs text-gray-400">{allExps.length} shown · {formatPoints(allExpTotal)} total</p>
-            </div>
-            {allExps.length > 0 && (
-              <button onClick={exportAllExpCSV}
-                className="px-3 py-1.5 text-xs font-bold text-green-600 bg-green-50 border border-green-200 rounded-lg hover:bg-green-100 transition-colors">
-                📥 CSV
-              </button>
-            )}
-          </div>
-        </div>
-
-        <input type="text" value={allExpSearch} onChange={function (e) { setAllExpSearch(e.target.value) }}
-          placeholder="Search description..."
-          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-          style={{ fontSize: '16px' }} />
-
-        <div className="flex gap-2 flex-wrap">
-          {['', 'recorded', 'acknowledged', 'flagged', 'penalized'].map(function (s) {
-            var label = s ? APPROVAL_STATUS_LABELS[s] : 'All'
-            return (
-              <button key={s} onClick={function () { setAllExpStatus(s === allExpStatus ? '' : s) }}
-                className={"px-3 py-1.5 text-[11px] font-bold rounded-full border transition-colors " +
-                  (allExpStatus === s ? "bg-gray-900 text-white border-gray-900" : "bg-white text-gray-500 border-gray-200 hover:bg-gray-50")}>
-                {label}
-              </button>
-            )
-          })}
-        </div>
-
-        <div className="flex gap-2">
-          <div className="flex-1">
-            <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">From</label>
-            <input type="date" value={allExpFrom} onChange={function (e) { setAllExpFrom(e.target.value) }}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              style={{ fontSize: '16px' }} />
-          </div>
-          <div className="flex-1">
-            <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">To</label>
-            <input type="date" value={allExpTo} onChange={function (e) { setAllExpTo(e.target.value) }}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              style={{ fontSize: '16px' }} />
-          </div>
-          {(allExpFrom || allExpTo) && (
-            <button onClick={function () { setAllExpFrom(''); setAllExpTo('') }}
-              className="self-end px-3 py-2 text-xs font-bold text-gray-500 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors mb-px">
-              Clear
-            </button>
-          )}
-        </div>
-
-        {allExpLoading && <p className="text-gray-400 text-sm text-center py-4">Loading...</p>}
-
-        {!allExpLoading && allExps.length === 0 && (
-          <div className="bg-white border border-gray-200 rounded-xl p-8 text-center">
-            <p className="text-gray-400 text-sm">No expenses found</p>
-          </div>
-        )}
-
-        {!allExpLoading && (
-          <div className="space-y-3">
-            {allExps.map(function (exp) {
-              return (
-                <div key={exp.id}
-                  onClick={function () {
-                    var e = Object.assign({}, exp, { _fromApprove: true })
-                    openDetail(e)
-                  }}
-                  className="bg-white border border-gray-200 rounded-xl p-4 hover:shadow-md active:bg-gray-50 cursor-pointer transition-all">
-                  <div className="flex items-start justify-between mb-1">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-gray-900 truncate">{exp.description || 'Expense'}</p>
-                      <p className="text-xs text-gray-400 mt-0.5">
-                        {exp.profiles?.name || '—'} · {exp.expense_types?.name ? exp.expense_types.name + ' · ' : ''}{exp.categories?.name || '—'}
-                        {exp.sub_category_id && subCatMap[exp.sub_category_id] ? ' > ' + subCatMap[exp.sub_category_id] : ''}
-                        {' · ' + formatDate(exp.expense_date)}
-                      </p>
-                    </div>
-                    <div className="flex flex-col items-end gap-1 flex-shrink-0 ml-2">
-                      <span className="text-sm font-bold text-gray-800">{formatPoints(exp.amount_paise)}</span>
-                      <span className={"text-[10px] font-bold uppercase px-2 py-0.5 rounded-full " + (APPROVAL_STATUS_COLORS[exp.status] || 'bg-gray-100 text-gray-600')}>
-                        {APPROVAL_STATUS_LABELS[exp.status] || exp.status}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        )}
-
-        {allExpHasMore && (
-          <button onClick={function () { loadAllExps(true) }} disabled={allExpLoadingMore}
-            className="w-full py-3 text-sm font-medium text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 disabled:opacity-50 transition-colors">
-            {allExpLoadingMore ? 'Loading...' : 'Load More'}
-          </button>
-        )}
-      </div>
+      <AllExpenses
+        subCatMap={subCatMap}
+        onBack={function () { setAllExpView(false) }}
+        onOpenDetail={function (exp) { setDetailExp(exp); setView('detail') }}
+      />
     )
   }
 
   if (reportView && (isAdmin || isAuditor)) {
-    return (
-      <div className="space-y-4">
-        <div>
-          <button onClick={function () { setReportView(false); setReportData(null) }}
-            className="text-sm text-indigo-600 font-medium hover:text-indigo-800 transition-colors mb-1">← Back to Expenses</button>
-          <h2 className="text-lg font-bold text-gray-900">Expense Report</h2>
-          <p className="text-xs text-gray-400">Recorded expenses summary</p>
-        </div>
-        <div className="flex gap-2 items-end">
-          <div className="flex-1">
-            <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">From</label>
-            <input type="date" value={reportFrom} onChange={function (e) { setReportFrom(e.target.value) }}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              style={{ fontSize: '16px' }} />
-          </div>
-          <div className="flex-1">
-            <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">To</label>
-            <input type="date" value={reportTo} onChange={function (e) { setReportTo(e.target.value) }}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              style={{ fontSize: '16px' }} />
-          </div>
-          <button onClick={loadReport} disabled={reportLoading}
-            className="px-4 py-2 text-sm font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors">
-            {reportLoading ? 'Loading...' : 'Generate'}
-          </button>
-        </div>
-        {reportData && (
-          <div className="space-y-4">
-            <div className="flex gap-3">
-              <div className="flex-1 bg-indigo-50 border border-indigo-200 rounded-xl p-4 text-center">
-                <p className="text-[10px] font-bold text-indigo-400 uppercase">Total Recorded</p>
-                <p className="text-xl font-bold text-indigo-700">{formatPoints(reportData.totalPaise)}</p>
-              </div>
-              <div className="flex-1 bg-gray-50 border border-gray-200 rounded-xl p-4 text-center">
-                <p className="text-[10px] font-bold text-gray-400 uppercase">Expenses</p>
-                <p className="text-xl font-bold text-gray-700">{reportData.count}</p>
-              </div>
-            </div>
-            <div className="bg-white border border-gray-200 rounded-xl p-4">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-bold text-gray-900">By User</h3>
-              </div>
-              <div className="space-y-2">
-                {reportData.byUser.slice(0, 15).map(function (r) {
-                  var pct = reportData.totalPaise > 0 ? Math.round(r[1] / reportData.totalPaise * 100) : 0
-                  return (
-                    <div key={r[0]} className="flex items-center justify-between">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm text-gray-800 truncate">{r[0]}</p>
-                        <div className="w-full bg-gray-100 rounded-full h-1.5 mt-1">
-                          <div className="bg-indigo-500 h-1.5 rounded-full" style={{ width: pct + '%' }}></div>
-                        </div>
-                      </div>
-                      <span className="text-sm font-bold text-gray-700 ml-3 flex-shrink-0">{formatPoints(r[1])}</span>
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-            <div className="bg-white border border-gray-200 rounded-xl p-4">
-              <h3 className="text-sm font-bold text-gray-900 mb-3">By Category</h3>
-              <div className="space-y-2">
-                {reportData.byCat.slice(0, 15).map(function (r) {
-                  var pct = reportData.totalPaise > 0 ? Math.round(r[1] / reportData.totalPaise * 100) : 0
-                  return (
-                    <div key={r[0]} className="flex items-center justify-between">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm text-gray-800 truncate">{r[0]}</p>
-                        <div className="w-full bg-gray-100 rounded-full h-1.5 mt-1">
-                          <div className="bg-green-500 h-1.5 rounded-full" style={{ width: pct + '%' }}></div>
-                        </div>
-                      </div>
-                      <span className="text-sm font-bold text-gray-700 ml-3 flex-shrink-0">{formatPoints(r[1])}</span>
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-            <div className="bg-white border border-gray-200 rounded-xl p-4">
-              <h3 className="text-sm font-bold text-gray-900 mb-3">By Month</h3>
-              <div className="space-y-2">
-                {reportData.byMonth.map(function (r) {
-                  return (
-                    <div key={r[0]} className="flex items-center justify-between">
-                      <span className="text-sm text-gray-800">{r[0]}</span>
-                      <span className="text-sm font-bold text-gray-700">{formatPoints(r[1])}</span>
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-            <button onClick={exportReportCSV}
-              className="w-full py-3 text-sm font-bold text-green-600 bg-green-50 border border-green-200 rounded-lg hover:bg-green-100 transition-colors">
-              📥 Export Report CSV
-            </button>
-          </div>
-        )}
-      </div>
-    )
+    return <ExpenseReport onBack={function () { setReportView(false) }} />
   }
 
   if (loading) {
@@ -584,7 +248,7 @@ if (allExpView && (isAdmin || isAuditor)) {
         isAdmin={isAdmin}
         isDeptApprover={isDeptApprover}
         onBack={function () { if (allExpView) { setView('list'); setDetailExp(null); return } setView(detailExp._fromApprove ? 'approve' : 'list'); setDetailExp(null) }}
-        onUpdated={function () { loadMyExpenses(false); loadApprovalExpenses(false); if (allExpView) loadAllExps(false); if (allExpView) { setView('list'); setDetailExp(null); return } setView(detailExp._fromApprove ? 'approve' : 'list'); setDetailExp(null) }}
+        onUpdated={function () { loadMyExpenses(false); loadApprovalExpenses(false); if (allExpView) { setView('list'); setDetailExp(null); return } setView(detailExp._fromApprove ? 'approve' : 'list'); setDetailExp(null) }}
         onEdit={function () { setEditExp(detailExp); setView('form') }}
       />
     )
@@ -662,11 +326,11 @@ if (allExpView && (isAdmin || isAuditor)) {
       {/* Admin shortcuts */}
       {(isAdmin || isAuditor) && (
         <div className="flex gap-2 md:hidden">
-          <button onClick={function () { setReportView(true); loadReport() }}
+          <button onClick={function () { setReportView(true) }}
             className="flex-1 py-2.5 text-xs font-bold text-amber-600 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 transition-colors">
             📊 Reports
           </button>
-          <button onClick={function () { setAllExpView(true); loadAllExps(false) }}
+          <button onClick={function () { setAllExpView(true) }}
             className="flex-1 py-2.5 text-xs font-bold text-gray-600 bg-gray-50 border border-gray-200 rounded-lg hover:bg-gray-100 transition-colors">
             📋 All Expenses
           </button>
@@ -692,11 +356,11 @@ if (allExpView && (isAdmin || isAuditor)) {
         <div className="flex gap-2">
           {(isAdmin || isAuditor) && (
             <div className="hidden md:flex gap-2">
-              <button onClick={function () { setReportView(true); loadReport() }}
+              <button onClick={function () { setReportView(true) }}
                 className="px-3 py-2 text-xs font-bold text-amber-600 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 transition-colors">
                 📊 Reports
               </button>
-              <button onClick={function () { setAllExpView(true); loadAllExps(false) }}
+              <button onClick={function () { setAllExpView(true) }}
                 className="px-3 py-2 text-xs font-bold text-gray-600 bg-gray-50 border border-gray-200 rounded-lg hover:bg-gray-100 transition-colors">
                 📋 All
               </button>
