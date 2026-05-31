@@ -612,7 +612,7 @@ function Expenses({ profile, masterMode }) {
     setReportLoading(true)
     var { data, error } = await supabase.from('expenses')
       .select('id, user_id, category_id, amount_paise, status, expense_date, categories(name), profiles:user_id(name)')
-      .eq('status', 'approved')
+      .in('status', ['recorded', 'acknowledged', 'approved'])
       .gte('expense_date', reportFrom)
       .lte('expense_date', reportTo)
       .order('expense_date', { ascending: false })
@@ -650,7 +650,7 @@ function Expenses({ profile, masterMode }) {
     if (!reportData) return
     var sections = []
     sections.push('Summary')
-    sections.push('Total Approved,' + (reportData.totalPaise / 100))
+    sections.push('Total Recorded,' + (reportData.totalPaise / 100))
     sections.push('Count,' + reportData.count)
     sections.push('')
     sections.push('By User')
@@ -1028,7 +1028,7 @@ if (allExpView && (isAdmin || isAuditor)) {
           <button onClick={function () { setReportView(false); setReportData(null) }}
             className="text-sm text-indigo-600 font-medium hover:text-indigo-800 transition-colors mb-1">← Back to Expenses</button>
           <h2 className="text-lg font-bold text-gray-900">Expense Report</h2>
-          <p className="text-xs text-gray-400">Approved expenses summary</p>
+          <p className="text-xs text-gray-400">Recorded expenses summary</p>
         </div>
         <div className="flex gap-2 items-end">
           <div className="flex-1">
@@ -1052,7 +1052,7 @@ if (allExpView && (isAdmin || isAuditor)) {
           <div className="space-y-4">
             <div className="flex gap-3">
               <div className="flex-1 bg-indigo-50 border border-indigo-200 rounded-xl p-4 text-center">
-                <p className="text-[10px] font-bold text-indigo-400 uppercase">Total Approved</p>
+                <p className="text-[10px] font-bold text-indigo-400 uppercase">Total Recorded</p>
                 <p className="text-xl font-bold text-indigo-700">{formatPoints(reportData.totalPaise)}</p>
               </div>
               <div className="flex-1 bg-gray-50 border border-gray-200 rounded-xl p-4 text-center">
@@ -1904,7 +1904,7 @@ if (allExpView && (isAdmin || isAuditor)) {
           <h2 className="text-lg font-bold text-gray-900">My Expenses</h2>
           <p className="text-xs text-gray-400">
             {view === 'approve'
-              ? approvalExpenses.length + ' pending approval'
+              ? approvalExpenses.length + ' pending review'
               : myExpenses.length + ' expenses' + (myTotal > 0 ? ' · ' + formatPoints(myTotal) + ' total' : '')}
           </p>
         </div>
@@ -2009,7 +2009,7 @@ if (allExpView && (isAdmin || isAuditor)) {
       {/* List */}
       {displayList.length === 0 && (
         <div className="bg-white border border-gray-200 rounded-xl p-8 text-center">
-          <p className="text-gray-400 text-sm">{view === 'approve' ? 'No pending approvals' : 'No expenses yet'}</p>
+          <p className="text-gray-400 text-sm">{view === 'approve' ? 'No pending reviews' : 'No expenses yet'}</p>
         </div>
       )}
 
@@ -2400,6 +2400,7 @@ function ExpenseDetail({ exp, profile, subCatMap, isAdmin, isDeptApprover, onBac
   var [saving, setSaving] = useState(false)
   var [rejectMode, setRejectMode] = useState(false)
   var [rejectReason, setRejectReason] = useState('')
+  var [penaltyAmount, setPenaltyAmount] = useState('')
   var [allocations, setAllocations] = useState([])
   var [allocVenues, setAllocVenues] = useState({})
 
@@ -2426,58 +2427,61 @@ function ExpenseDetail({ exp, profile, subCatMap, isAdmin, isDeptApprover, onBac
       })
   }, [exp.id])
 
-  var canDeptApprove = isDeptApprover && exp.status === 'pending_dept' && exp.user_id !== profile?.id
-  var canAdminApprove = isAdmin && exp.status === 'pending'
-  var canApprove = canDeptApprove || canAdminApprove
-  var canDelete = (exp.user_id === profile?.id && (exp.status === 'pending_dept' || exp.status === 'pending')) || isAdmin
-  var canEdit = exp.user_id === profile?.id && (exp.status === 'pending_dept' || exp.status === 'pending')
+  var canReview = (isAdmin || isDeptApprover) && exp.status === 'recorded' && exp.user_id !== profile?.id
+  var canDelete = (exp.user_id === profile?.id && exp.status === 'recorded') || isAdmin
+  var canEdit = exp.user_id === profile?.id && exp.status === 'recorded'
 
-  async function approve() {
+  async function acknowledge() {
     if (saving) return
     setSaving(true)
-    var update = {}
-    if (canDeptApprove) {
-      update = { status: 'pending', dept_approved_by: profile.id, dept_approved_at: new Date().toISOString() }
-    } else if (canAdminApprove) {
-      update = { status: 'approved', reviewed_by: profile.id, reviewed_at: new Date().toISOString() }
-    }
-    var { error } = await supabase.from('expenses').update(update).eq('id', exp.id)
-    if (error) { alert('Approve failed: ' + error.message); setSaving(false); return }
-    try { await logActivity('EXPENSE_APPROVE', (exp.description || 'Expense') + ' | ' + formatPoints(exp.amount_paise) + ' | ' + (canDeptApprove ? 'dept' : 'admin')) } catch (_) {}
+    var { error } = await supabase.from('expenses').update({
+      status: 'acknowledged',
+      acknowledged_by: profile.id,
+      acknowledged_at: new Date().toISOString(),
+    }).eq('id', exp.id)
+    if (error) { alert('Acknowledge failed: ' + error.message); setSaving(false); return }
+    try { await logActivity('EXPENSE_ACKNOWLEDGE', (exp.description || 'Expense') + ' | ' + formatPoints(exp.amount_paise)) } catch (_) {}
     setSaving(false)
     onUpdated()
   }
 
-  async function reject() {
+  async function flag() {
     if (!rejectReason.trim()) return
     if (saving) return
     setSaving(true)
     var { error } = await supabase.from('expenses').update({
-      status: 'rejected',
-      rejection_reason: rejectReason.trim(),
+      status: 'flagged',
+      flag_reason: rejectReason.trim(),
       reviewed_by: profile.id,
       reviewed_at: new Date().toISOString(),
     }).eq('id', exp.id)
-    if (error) { alert('Reject failed: ' + error.message); setSaving(false); return }
+    if (error) { alert('Flag failed: ' + error.message); setSaving(false); return }
+    try { await logActivity('EXPENSE_FLAG', (exp.description || 'Expense') + ' | ' + rejectReason.trim()) } catch (_) {}
+    setSaving(false)
+    onUpdated()
+  }
+
+  async function penalize() {
+    if (!rejectReason.trim() || !penaltyAmount || Number(penaltyAmount) <= 0) return
+    if (saving) return
+    setSaving(true)
+    var penaltyPaise = Math.round(Number(penaltyAmount) * 100)
+    var { error } = await supabase.from('expenses').update({
+      status: 'penalized',
+      flag_reason: rejectReason.trim(),
+      penalty_paise: penaltyPaise,
+      penalized_by: profile.id,
+      penalized_at: new Date().toISOString(),
+    }).eq('id', exp.id)
+    if (error) { alert('Penalize failed: ' + error.message); setSaving(false); return }
     try {
-      await supabase.rpc('wallet_admin_credit', {
+      await supabase.rpc('deduct_money', {
         p_user_id: exp.user_id,
-        p_amount_paise: exp.amount_paise,
-        p_description: 'Refund: rejected expense',
-        p_ref_type: 'expense_refund',
-        p_ref_id: String(exp.id),
+        p_amount_paise: penaltyPaise,
+        p_description: 'Penalty: ' + rejectReason.trim().slice(0, 80),
       })
     } catch (_) {}
-    try {
-      await supabase.rpc('wallet_admin_credit', {
-        p_user_id: exp.user_id,
-        p_amount_paise: exp.amount_paise,
-        p_description: 'Refund: rejected expense',
-        p_ref_type: 'expense_refund',
-        p_ref_id: String(exp.id),
-      })
-    } catch (_) {}
-    try { await logActivity('EXPENSE_REJECT', (exp.description || 'Expense') + ' | ' + rejectReason.trim()) } catch (_) {}
+    try { await logActivity('EXPENSE_PENALIZE', (exp.description || 'Expense') + ' | ' + formatPoints(penaltyPaise) + ' | ' + rejectReason.trim()) } catch (_) {}
     setSaving(false)
     onUpdated()
   }
@@ -2535,11 +2539,22 @@ function ExpenseDetail({ exp, profile, subCatMap, isAdmin, isDeptApprover, onBac
         </div>
       </div>
 
-      {/* Rejection reason */}
+      {/* Rejection reason (legacy) */}
       {exp.status === 'rejected' && exp.rejection_reason && (
         <div className="bg-red-50 border border-red-200 rounded-lg p-3">
           <p className="text-xs font-bold text-red-700 mb-0.5">Rejection Reason</p>
           <p className="text-sm text-red-600">{exp.rejection_reason}</p>
+        </div>
+      )}
+
+      {/* Flag reason */}
+      {(exp.status === 'flagged' || exp.status === 'penalized') && exp.flag_reason && (
+        <div className={"border rounded-lg p-3 " + (exp.status === 'penalized' ? "bg-red-50 border-red-200" : "bg-amber-50 border-amber-200")}>
+          <p className={"text-xs font-bold mb-0.5 " + (exp.status === 'penalized' ? "text-red-700" : "text-amber-700")}>{exp.status === 'penalized' ? '💰 Penalized' : '⚠ Flagged'}</p>
+          <p className={"text-sm " + (exp.status === 'penalized' ? "text-red-600" : "text-amber-600")}>{exp.flag_reason}</p>
+          {exp.penalty_paise > 0 && (
+            <p className="text-sm font-bold text-red-700 mt-1">Penalty: {formatPoints(exp.penalty_paise)}</p>
+          )}
         </div>
       )}
 
@@ -2632,43 +2647,68 @@ function ExpenseDetail({ exp, profile, subCatMap, isAdmin, isDeptApprover, onBac
         </button>
       )}
 
-      {/* Approval actions */}
-      {canApprove && !rejectMode && (
-        <div className="flex gap-3">
-          <button onClick={function () { setRejectMode(true) }} disabled={saving}
-            className="flex-1 py-3 text-sm font-bold text-red-600 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 disabled:opacity-50 transition-colors">
-            ✗ Reject
+      {/* Review actions */}
+      {canReview && !rejectMode && (
+        <div className="space-y-2">
+          <button onClick={acknowledge} disabled={saving}
+            className="w-full py-3 text-sm font-bold text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors">
+            {saving ? 'Saving...' : '✓ Acknowledge'}
           </button>
-          <button onClick={approve} disabled={saving}
-            className="flex-1 py-3 text-sm font-bold text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors">
-            {saving ? 'Approving...' : '✓ Approve'}
-          </button>
-        </div>
-      )}
-
-      {rejectMode && (
-        <div className="space-y-3">
-          <div className="bg-red-50 border border-red-200 rounded-lg p-3">
-            <label className="block text-sm font-medium text-red-700 mb-1">Rejection Reason <span className="text-red-500">*</span></label>
-            <textarea value={rejectReason}
-              onChange={function (e) { setRejectReason(e.target.value) }}
-              rows="3" maxLength="500" placeholder="Reason for rejection..."
-              className="w-full px-3 py-2 border border-red-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-red-500 resize-none"
-              style={{ fontSize: '16px' }} />
-          </div>
-          <div className="flex gap-3">
-            <button onClick={function () { setRejectMode(false); setRejectReason('') }}
-              className="flex-1 py-3 text-sm text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors font-medium">Cancel</button>
-            <button onClick={reject} disabled={saving || !rejectReason.trim()}
-              className="flex-1 py-3 text-sm text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors font-medium">
-              {saving ? 'Rejecting...' : 'Confirm Reject'}
+          <div className="flex gap-2">
+            <button onClick={function () { setRejectMode('flag') }} disabled={saving}
+              className="flex-1 py-3 text-sm font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 disabled:opacity-50 transition-colors">
+              ⚠ Flag
+            </button>
+            <button onClick={function () { setRejectMode('penalize') }} disabled={saving}
+              className="flex-1 py-3 text-sm font-bold text-red-600 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 disabled:opacity-50 transition-colors">
+              💰 Penalize
             </button>
           </div>
         </div>
       )}
 
+      {rejectMode && (
+        <div className="space-y-3">
+          <div className={"border rounded-lg p-3 " + (rejectMode === 'penalize' ? "bg-red-50 border-red-200" : "bg-amber-50 border-amber-200")}>
+            <label className={"block text-sm font-medium mb-1 " + (rejectMode === 'penalize' ? "text-red-700" : "text-amber-700")}>
+              {rejectMode === 'penalize' ? 'Penalty Reason' : 'Flag Reason'} <span className="text-red-500">*</span>
+            </label>
+            <textarea value={rejectReason}
+              onChange={function (e) { setRejectReason(e.target.value) }}
+              rows="3" maxLength="500" placeholder={rejectMode === 'penalize' ? 'Reason for penalty...' : 'What is the issue?'}
+              className={"w-full px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 resize-none " + (rejectMode === 'penalize' ? "border-red-300 focus:ring-red-500" : "border-amber-300 focus:ring-amber-500")}
+              style={{ fontSize: '16px' }} />
+            {rejectMode === 'penalize' && (
+              <div className="mt-2">
+                <label className="block text-sm font-medium text-red-700 mb-1">Penalty Amount (Points) <span className="text-red-500">*</span></label>
+                <input type="number" min="1" step="any" inputMode="decimal" value={penaltyAmount}
+                  onChange={function (e) { setPenaltyAmount(e.target.value) }}
+                  placeholder="0"
+                  className="w-full px-3 py-2 border border-red-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+                  style={{ fontSize: '16px' }} />
+              </div>
+            )}
+          </div>
+          <div className="flex gap-3">
+            <button onClick={function () { setRejectMode(false); setRejectReason(''); setPenaltyAmount('') }}
+              className="flex-1 py-3 text-sm text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors font-medium">Cancel</button>
+            {rejectMode === 'penalize' ? (
+              <button onClick={penalize} disabled={saving || !rejectReason.trim() || !penaltyAmount || Number(penaltyAmount) <= 0}
+                className="flex-1 py-3 text-sm text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors font-medium">
+                {saving ? 'Penalizing...' : '💰 Confirm Penalty'}
+              </button>
+            ) : (
+              <button onClick={flag} disabled={saving || !rejectReason.trim()}
+                className="flex-1 py-3 text-sm text-white bg-amber-600 rounded-lg hover:bg-amber-700 disabled:opacity-50 transition-colors font-medium">
+                {saving ? 'Flagging...' : '⚠ Confirm Flag'}
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Delete */}
-      {canDelete && !canApprove && (
+      {canDelete && !canReview && (
         <button onClick={deleteExp} disabled={saving}
           className="w-full py-3 text-sm font-bold text-red-500 bg-white border border-red-200 rounded-lg hover:bg-red-50 disabled:opacity-50 transition-colors">
           Delete Expense
