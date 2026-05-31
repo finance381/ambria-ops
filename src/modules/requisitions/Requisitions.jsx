@@ -6,6 +6,7 @@ import Modal from '../../components/ui/Modal'
 import { Badge } from '../../components/ui/Badge'
 import { APPROVAL_STATUS_COLORS, APPROVAL_STATUS_LABELS } from '../../lib/constants'
 import EventDatePicker from '../../components/ui/EventDatePicker'
+import { filterUserCategories } from '../../lib/categories'
 
 var PAGE_SIZE = 20
 var URGENCY_COLORS = {
@@ -611,8 +612,8 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
   var deptSubDepts = selectedDept ? subDepartments.filter(function (sd) { return sd.department_id === selectedDept.id }) : []
   var userCatIds = profile?.category_ids || []
   var isUnrestricted = !userCatIds.length || profile?.role === 'admin' || profile?.role === 'auditor'
-  var subDeptCats = subDeptId ? categories.filter(function (c) {
-    return c.sub_department_id === Number(subDeptId) && (isUnrestricted || userCatIds.indexOf(c.id) !== -1)
+  var subDeptCats = subDeptId ? filterUserCategories(categories, profile).filter(function (c) {
+    return c.sub_department_id === Number(subDeptId)
   }) : []
   var catSubCats = categoryId ? subCategories.filter(function (sc) { return sc.category_id === Number(categoryId) }) : []
   var selectedCatObj = categoryId ? categories.find(function (c) { return c.id === Number(categoryId) }) : null

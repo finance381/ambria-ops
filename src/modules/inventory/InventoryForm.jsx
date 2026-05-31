@@ -6,6 +6,7 @@ import { translateToHindi } from '../../lib/translate'
 import { titleCase } from '../../lib/format'
 import { useLang } from '../../lib/i18n'
 import { logActivity } from '../../lib/logger'
+import { filterUserCategories } from '../../lib/categories'
 
 var UNITS = [
   'Inches','Pieces', 'Nos', 'Sets', 'Pairs', 'Dozens',
@@ -166,15 +167,7 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved }) {
     ])
     var cateringStoreId = (subDeptRes.data || [])[0]?.id || null
 
-    var allCats = catRes.data || []
-    var isAdmin = profile?.role === 'admin' || profile?.role === 'auditor'
-    var userCatIds = profile?.category_ids || []
-    
-    // Admin sees all, others see only assigned categories
-    if (!isAdmin && userCatIds.length > 0) {
-      allCats = allCats.filter(function (c) { return userCatIds.includes(c.id) })
-    }
-    
+   var allCats = filterUserCategories(catRes.data || [], profile)
     setCategories(allCats)
     setDepartments(deptRes.data || [])
     setVenues(venueRes.data || [])

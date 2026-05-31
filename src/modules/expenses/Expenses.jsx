@@ -3,6 +3,7 @@ import { supabase, getImageUrl } from '../../lib/supabase'
 import { titleCase, formatDate, formatPoints } from '../../lib/format'
 import { logActivity } from '../../lib/logger'
 import SearchDropdown from '../../components/ui/SearchDropdown'
+import { filterUserCategories } from '../../lib/categories'
 import ExpenseFormMulti from './ExpenseForm'
 import { APPROVAL_STATUS_COLORS, APPROVAL_STATUS_LABELS } from '../../lib/constants'
 import BottomSheet from '../../components/ui/BottomSheet'
@@ -2129,7 +2130,7 @@ function ExpenseEditForm({ profile, editExp, walletBalance, onCancel, onSaved })
       })
   }, [amount, expenseDate])
 
-  var catItems = categories.map(function (c) { return { label: c.name, value: String(c.id) } })
+  var catItems = filterUserCategories(categories, profile).map(function (c) { return { label: c.name, value: String(c.id) } })
   var subCatItems = subCategories.map(function (s) { return { label: s.name, value: String(s.id) } })
 
   function validate() {
