@@ -6,7 +6,6 @@ import { APPROVAL_STATUS_COLORS, APPROVAL_STATUS_LABELS } from '../../lib/consta
 import WalletManager from './WalletManager'
 import ExpenseTypeMaster from './ExpenseTypeMaster'
 import AllExpenses from './AllExpenses'
-import ExpenseReport from './ExpenseReport'
 import ExpenseEditForm from './ExpenseEditForm'
 import ExpenseDetail from './ExpenseDetail'
 import AllExpenses from './AllExpenses'
