@@ -8,7 +8,6 @@ import ExpenseTypeMaster from './ExpenseTypeMaster'
 import AllExpenses from './AllExpenses'
 import ExpenseEditForm from './ExpenseEditForm'
 import ExpenseDetail from './ExpenseDetail'
-import AllExpenses from './AllExpenses'
 import ExpenseReport from './ExpenseReport'
 
 var PAGE_SIZE = 20
