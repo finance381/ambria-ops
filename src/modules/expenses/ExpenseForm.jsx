@@ -4,6 +4,7 @@ import { logActivity } from '../../lib/logger'
 import SearchDropdown from '../../components/ui/SearchDropdown'
 import { useVoice } from '../../hooks/useVoice'
 import { filterUserCategories } from '../../lib/categories'
+import EventDatePicker from '../../components/ui/EventDatePicker'
 
 function makeEntry() {
   return {
@@ -44,6 +45,11 @@ function ExpenseForm({ profile, onDone }) {
   // ── Form state ──
   var [entries, setEntries] = useState([makeEntry()])
   var [saving, setSaving] = useState(false)
+  var [isFunction, setIsFunction] = useState(false)
+  var [eventDate, setEventDate] = useState('')
+  var [eventId, setEventId] = useState('')
+  var [events, setEvents] = useState([])
+  var [eventsLoading, setEventsLoading] = useState(false)
   var voice = useVoice()
   var [error, setError] = useState('')
   var [success, setSuccess] = useState('')
@@ -68,6 +74,25 @@ function ExpenseForm({ profile, onDone }) {
     setVenues(vR.data || [])
     setSubDepartments(sdR.data || [])
     setLoading(false)
+  }
+
+  async function loadEventsByDate(dateStr) {
+    if (!dateStr) { setEvents([]); setEventId(''); return }
+    setEventsLoading(true)
+    var { data } = await supabase.from('events')
+      .select('id, event_name, function_date, contract_type, venue_name, session, client_name')
+      .eq('function_date', dateStr)
+      .order('event_name')
+    var rows = data || []
+    setEvents(rows)
+    setEventsLoading(false)
+    if (rows.length === 1) setEventId(String(rows[0].id))
+    else if (!rows.some(function (r) { return String(r.id) === eventId })) setEventId('')
+  }
+
+  function toggleFunction(val) {
+    setIsFunction(val)
+    if (!val) { setEventId(''); setEventDate(''); setEvents([]) }
   }
 
   // ── Entry helpers ──
@@ -346,6 +371,7 @@ function ExpenseForm({ profile, onDone }) {
         description: e.description.trim(),
         expense_date: e.expenseDate,
         status: 'recorded',
+        event_id: eventId ? Number(eventId) : null,
         metadata: e.fieldValues,
         vendor_name: e.fieldValues.vendor_name || null,
         travel_from: e.fieldValues.travel_from || null,
@@ -443,6 +469,51 @@ function ExpenseForm({ profile, onDone }) {
       {success && (
         <div className="p-3 rounded-lg bg-green-50 border border-green-200 text-green-700 text-sm">{success}</div>
       )}
+
+      {/* For a Function? */}
+      <div className="border border-gray-200 rounded-xl bg-white p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <label className="text-sm font-medium text-gray-700">For a Function?</label>
+          <button type="button" onClick={function () { toggleFunction(!isFunction) }}
+            className="flex items-center gap-2">
+            <div className={"relative w-9 h-5 rounded-full transition-colors " + (isFunction ? "bg-indigo-500" : "bg-gray-300")}>
+              <div className={"absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform " + (isFunction ? "translate-x-4" : "translate-x-0.5")} />
+            </div>
+          </button>
+        </div>
+        {isFunction && (
+          <div className="space-y-2">
+            <EventDatePicker label="Function Date" value={eventDate}
+              onChange={function (dateStr) { setEventDate(dateStr); loadEventsByDate(dateStr) }} />
+            {eventsLoading && <p className="text-xs text-gray-400">Loading events...</p>}
+            {eventDate && !eventsLoading && events.length === 0 && <p className="text-xs text-gray-400">No events on this date</p>}
+            {events.length > 0 && (
+              <select value={eventId} onChange={function (e) { setEventId(e.target.value) }}
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-amber-300"
+                style={{ fontSize: '16px' }}>
+                <option value="">Select event...</option>
+                {events.map(function (ev) { return <option key={ev.id} value={String(ev.id)}>{ev.event_name + ' · ' + (ev.venue_name || '')}</option> })}
+              </select>
+            )}
+            {(function () {
+              var sel = eventId ? events.find(function (ev) { return String(ev.id) === eventId }) : null
+              if (!sel) return null
+              return (
+                <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-3 space-y-1">
+                  <p className="text-xs font-bold text-indigo-700">{sel.event_name}</p>
+                  <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-[11px] text-indigo-600">
+                    {sel.function_date && <span>📅 {sel.function_date}</span>}
+                    {sel.contract_type && <span>🎉 {sel.contract_type}</span>}
+                    {sel.venue_name && <span>📍 {sel.venue_name}</span>}
+                    {sel.session && <span>🕐 {sel.session}</span>}
+                    {sel.client_name && <span>👤 {sel.client_name}</span>}
+                  </div>
+                </div>
+              )
+            })()}
+          </div>
+        )}
+      </div>
 
       {entries.map(function (entry, idx) {
 
