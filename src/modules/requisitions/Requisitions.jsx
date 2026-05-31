@@ -1495,6 +1495,45 @@ function RequisitionDetail({ req, items, profile, isAdmin, isDeptApprover, onBac
     setSaving(false)
     onUpdated()
   }
+  async function convertToExpense() {
+    if (saving || req.req_type !== 'expense' || req.status !== 'approved') return
+    if (!confirm('Record this as an actual expense? ' + formatPoints(req.expense_amount_paise) + ' will be deducted from your wallet.')) return
+    setSaving(true)
+    try {
+      var { data: newExp, error: insErr } = await supabase.from('expenses').insert({
+        user_id: profile.id,
+        category_id: req.category_id || null,
+        sub_category_id: req.sub_category_id || null,
+        expense_type_id: req.expense_type_id || null,
+        amount_paise: req.expense_amount_paise,
+        description: req.purpose || 'From requisition #' + req.id,
+        expense_date: req.expense_date || new Date().toISOString().split('T')[0],
+        status: 'recorded',
+        receipt_path: req.receipt_path || null,
+      }).select('id').single()
+      if (insErr) throw new Error(insErr.message)
+
+      try {
+        await supabase.rpc('wallet_self_debit', {
+          p_amount_paise: req.expense_amount_paise,
+          p_description: 'Expense: ' + (req.purpose || '').slice(0, 50),
+          p_ref_type: 'expense',
+          p_ref_id: String(newExp.id),
+        })
+      } catch (_) {}
+
+      var { error: updErr } = await supabase.from('requisitions').update({ status: 'fulfilled' }).eq('id', req.id)
+      if (updErr) console.warn('Requisition status update failed:', updErr.message)
+
+      try { await logActivity('EXPENSE_FROM_REQ', (req.purpose || 'Req #' + req.id) + ' | ' + formatPoints(req.expense_amount_paise)) } catch (_) {}
+      setSaving(false)
+      onUpdated()
+    } catch (err) {
+      alert('Failed: ' + err.message)
+      setSaving(false)
+    }
+  }
+
   async function deleteReq() {
     if (!confirm('Delete this requisition? This cannot be undone.')) return
     setSaving(true)
@@ -1729,6 +1768,14 @@ function RequisitionDetail({ req, items, profile, isAdmin, isDeptApprover, onBac
           )
         })}
       </div>)}
+
+      {/* Convert expense req to actual expense */}
+      {req.req_type === 'expense' && req.status === 'approved' && req.requested_by === profile?.id && (
+        <button onClick={convertToExpense} disabled={saving}
+          className="w-full py-3 text-sm font-bold text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors">
+          {saving ? 'Recording...' : '💰 Record Expense · ' + formatPoints(req.expense_amount_paise)}
+        </button>
+      )}
 
       {/* Edit button for owner on pending */}
       {canEdit && (
