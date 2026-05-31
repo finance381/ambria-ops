@@ -324,7 +324,7 @@ function Expenses({ profile, masterMode }) {
     loadAllWallets()
   }
   async function confirmReceive() {
-    if (receiveSaving || !receiveModal || !receiveImage) return
+    if (receiveSaving || !receiveModal) return
     setReceiveSaving(true)
     var imagePath = null
     var ext = receiveImage.name.split('.').pop()
@@ -1601,7 +1601,7 @@ if (allExpView && (isAdmin || isAuditor)) {
               <div className="flex gap-3 pt-2">
                 <button onClick={function () { setReceiveModal(null); setReceiveImage(null) }}
                   className="flex-1 py-3 text-sm text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors font-semibold">Cancel</button>
-                <button onClick={confirmReceive} disabled={receiveSaving || !receiveImage}
+                <button onClick={confirmReceive} disabled={receiveSaving}
                   className="flex-1 py-3 text-sm text-white bg-green-600 rounded-xl hover:bg-green-700 disabled:opacity-50 transition-colors font-semibold">
                   {receiveSaving ? 'Confirming...' : '✓ Confirm Received'}
                 </button>
@@ -1739,7 +1739,7 @@ if (allExpView && (isAdmin || isAuditor)) {
               <div className="flex gap-3 pt-2">
                 <button onClick={function () { setTransferConfirmModal(null); setTransferConfirmImage(null) }}
                   className="flex-1 py-3 text-sm text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors font-semibold">Cancel</button>
-                <button onClick={confirmTransferReceive} disabled={transferConfirmSaving || !transferConfirmImage}
+                <button onClick={confirmTransferReceive} disabled={transferConfirmSaving}
                   className="flex-1 py-3 text-sm text-white bg-green-600 rounded-xl hover:bg-green-700 disabled:opacity-50 transition-colors font-semibold">
                   {transferConfirmSaving ? 'Confirming...' : '✓ Confirm Received'}
                 </button>
