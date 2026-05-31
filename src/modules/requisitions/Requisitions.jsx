@@ -344,6 +344,13 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
   var [events, setEvents] = useState([])
   var [eventsLoading, setEventsLoading] = useState(false)
   var [isFunction, setIsFunction] = useState(!!editReq?.event_id)
+  var [reqType, setReqType] = useState(editReq?.req_type || 'inventory')
+  var [expenseTypes, setExpenseTypes] = useState([])
+  var [expTypeId, setExpTypeId] = useState(editReq?.expense_type_id ? String(editReq.expense_type_id) : '')
+  var [expAmount, setExpAmount] = useState(editReq?.expense_amount_paise ? String(editReq.expense_amount_paise / 100) : '')
+  var [expDate, setExpDate] = useState(editReq?.expense_date || new Date().toISOString().slice(0, 10))
+  var [expReceipt, setExpReceipt] = useState(null)
+  var [expAllocations, setExpAllocations] = useState([{ department: '', venue_id: '', amount: '' }])
   var [listening, setListening] = useState(false)
   var searchContainerRef = useRef(null)
   var recognitionRef = useRef(null)
@@ -433,12 +440,13 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
   }
 
   async function loadLookups() {
-    var [deptRes, subDeptRes, catRes, subCatRes, venueRes, invRes, csRes] = await Promise.all([
+    var [deptRes, subDeptRes, catRes, subCatRes, venueRes, expTypeRes, invRes, csRes] = await Promise.all([
       supabase.from('departments').select('id, name').eq('active', true).order('name'),
       supabase.from('sub_departments').select('id, name, department_id').eq('active', true).order('name'),
       supabase.from('categories').select('id, name, sub_department_id').order('name'),
       supabase.from('sub_categories').select('id, name, category_id').order('name'),
       supabase.from('venues').select('id, code, name').order('name'),
+      supabase.from('expense_types').select('id, name').eq('active', true).order('name'),
       supabase.from('inventory_items')
         .select('id, name, unit, qty, category_id, status, categories(name)')
         .in('status', ['approved', 'pending', 'pending_dept'])
@@ -455,6 +463,7 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
     setCategories(catRes.data || [])
     setSubCategories(subCatRes.data || [])
     setVenues(venueRes.data || [])
+    setExpenseTypes(expTypeRes.data || [])
 
     // If editing, pre-load the linked event's date
     if (editReq?.event_id) {
@@ -605,6 +614,11 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
     var errs = {}
     if (!department) errs.dept = 'Department required'
     if (!purpose.trim()) errs.purpose = 'Purpose required'
+    if (reqType === 'expense') {
+      if (!expAmount || Number(expAmount) <= 0) errs.cart = 'Amount required'
+      setErrors(errs)
+      return Object.keys(errs).length === 0
+    }
     var validItems = cart.filter(function (c) { return c.item_name.trim() && Number(c.qty) > 0 })
     if (validItems.length === 0) errs.cart = 'Add at least one item'
     var allocErrs = []
@@ -630,6 +644,54 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
     setSaving(true)
 
     try {
+      // ─── EXPENSE MODE ───
+      if (reqType === 'expense') {
+        var amtPaise = Math.round(Number(expAmount) * 100)
+        var receiptPath = null
+        if (expReceipt) {
+          var ext = expReceipt.name.split('.').pop()
+          var path = 'requisitions/expense/' + profile.id + '_' + Date.now() + '.' + ext
+          var { error: upErr } = await supabase.storage.from('receipts').upload(path, expReceipt, { upsert: true })
+          if (upErr) { alert('Image upload failed: ' + upErr.message); setSaving(false); return }
+          receiptPath = path
+        }
+        var expPayload = {
+          requested_by: profile.id,
+          department: department,
+          urgency: urgency,
+          purpose: purpose.trim(),
+          needed_by: neededBy || null,
+          event_id: eventId ? Number(eventId) : null,
+          sub_department_id: subDeptId ? Number(subDeptId) : null,
+          category_id: categoryId ? Number(categoryId) : null,
+          sub_category_id: subCategoryId ? Number(subCategoryId) : null,
+          req_type: 'expense',
+          expense_type_id: expTypeId ? Number(expTypeId) : null,
+          expense_amount_paise: amtPaise,
+          expense_date: expDate || null,
+          receipt_path: receiptPath,
+        }
+        if (isEditing) {
+          var { error: expUpdErr } = await supabase.from('requisitions').update(expPayload).eq('id', editReq.id)
+          if (expUpdErr) throw new Error(expUpdErr.message)
+          try { await logActivity('REQUISITION_EDIT', purpose.trim() + ' | expense | ' + (amtPaise / 100)) } catch (_) {}
+        } else {
+          var selfIsDeptApprover = (profile?.permissions || []).indexOf('dept_approve') !== -1
+          var isAdminRole = profile?.role === 'admin' || profile?.role === 'auditor'
+          var status = 'pending_dept'
+          if (isAdminRole) { status = 'approved' }
+          else if (selfIsDeptApprover) { status = 'pending'; expPayload.dept_approved_by = profile.id; expPayload.dept_approved_at = new Date().toISOString() }
+          else { var { data: hasAppr } = await supabase.rpc('has_dept_approvers', { p_exclude_id: profile.id }); if (!hasAppr) status = 'pending' }
+          expPayload.status = status
+          var { error: expInsErr } = await supabase.from('requisitions').insert(expPayload)
+          if (expInsErr) throw new Error(expInsErr.message)
+          try { await logActivity('REQUISITION_CREATE', purpose.trim() + ' | expense | ' + urgency) } catch (_) {}
+        }
+        onSaved()
+        setSaving(false)
+        return
+      }
+
       var lineItems = cart
         .filter(function (c) { return c.item_name.trim() && Number(c.qty) > 0 })
         .map(function (c) {
@@ -718,6 +780,7 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
           sub_department_id: subDeptId ? Number(subDeptId) : null,
           category_id: categoryId ? Number(categoryId) : null,
           sub_category_id: subCategoryId ? Number(subCategoryId) : null,
+          req_type: 'inventory',
           status: status,
           dept_approved_by: deptApprovedBy,
           dept_approved_at: deptApprovedAt,
@@ -782,6 +845,21 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
               <option value="">Select sub-department...</option>
               {deptSubDepts.map(function (sd) { return <option key={sd.id} value={String(sd.id)}>{sd.name}</option> })}
             </select>
+          </div>
+        )}
+        {deptSubDepts.length > 0 && subDeptId && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Request Type</label>
+            <div className="flex gap-0 bg-white border border-gray-300 rounded-md overflow-hidden">
+              <button type="button" onClick={function () { setReqType('inventory') }}
+                className={"flex-1 py-2 text-sm font-medium transition-colors " + (reqType === 'inventory' ? "bg-indigo-600 text-white" : "text-gray-500 hover:bg-gray-50")}>
+                📦 Inventory
+              </button>
+              <button type="button" onClick={function () { setReqType('expense') }}
+                className={"flex-1 py-2 text-sm font-medium transition-colors " + (reqType === 'expense' ? "bg-amber-500 text-white" : "text-gray-500 hover:bg-gray-50")}>
+                💰 Expense
+              </button>
+            </div>
           </div>
         )}
         {subDeptCats.length > 0 && (
@@ -893,8 +971,8 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
         )}
       </div>
 
-      {/* Cart items */}
-      <div className="space-y-3" ref={searchContainerRef}>
+      {/* Cart items — inventory mode */}
+      {reqType === 'inventory' && <div className="space-y-3" ref={searchContainerRef}>
         <div className="flex items-center justify-between">
           <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Items</h3>
           <button type="button" onClick={addCartItem}
@@ -1067,7 +1145,112 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
             </div>
           )
         })}
-      </div>
+      </div>}
+
+      {/* Expense form — expense mode */}
+      {reqType === 'expense' && (
+        <div className="bg-amber-50 rounded-lg border border-amber-200 p-4 space-y-3">
+          <h3 className="text-xs font-bold text-amber-700 uppercase tracking-wider">Planned Expense</h3>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Expense Type</label>
+            <select value={expTypeId} onChange={function (e) { setExpTypeId(e.target.value) }}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
+              style={{ fontSize: '16px' }}>
+              <option value="">Select type...</option>
+              {expenseTypes.map(function (et) { return <option key={et.id} value={String(et.id)}>{et.name}</option> })}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+            <textarea value={purpose} onChange={function (e) { setPurpose(e.target.value) }}
+              rows="2" maxLength="500" placeholder="What is this expense for..."
+              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 resize-none"
+              style={{ fontSize: '16px' }} />
+          </div>
+          <div className="flex gap-3">
+            <div className="flex-1">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Amount (pts)</label>
+              <input type="number" min="0" step="any" inputMode="decimal" value={expAmount}
+                onChange={function (e) { setExpAmount(e.target.value) }}
+                placeholder="0"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                style={{ fontSize: '16px' }} />
+            </div>
+            <div className="flex-1">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Expected Date</label>
+              <input type="date" value={expDate}
+                onChange={function (e) { setExpDate(e.target.value) }}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                style={{ fontSize: '16px' }} />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-bold text-gray-500">Allocations</span>
+              <button type="button" onClick={function () { setExpAllocations(function (p) { return p.concat([{ department: '', venue_id: '', amount: '' }]) }) }}
+                className="text-[11px] font-semibold text-amber-700 hover:text-amber-900">+ Row</button>
+            </div>
+            {expAllocations.map(function (alloc, aIdx) {
+              return (
+                <div key={aIdx} className="flex gap-2 items-end">
+                  <div className="flex-1">
+                    <select value={alloc.department}
+                      onChange={function (e) { setExpAllocations(function (p) { return p.map(function (a, j) { return j === aIdx ? Object.assign({}, a, { department: e.target.value }) : a }) }) }}
+                      className="w-full px-2 py-1.5 border border-gray-200 rounded-md text-[12px] focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
+                      style={{ fontSize: '16px' }}>
+                      <option value="">Dept</option>
+                      {departments.map(function (d) { return <option key={d.id} value={d.name}>{d.name}</option> })}
+                    </select>
+                  </div>
+                  <div className="flex-1">
+                    <select value={alloc.venue_id}
+                      onChange={function (e) { setExpAllocations(function (p) { return p.map(function (a, j) { return j === aIdx ? Object.assign({}, a, { venue_id: e.target.value }) : a }) }) }}
+                      className="w-full px-2 py-1.5 border border-gray-200 rounded-md text-[12px] focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
+                      style={{ fontSize: '16px' }}>
+                      <option value="">Venue</option>
+                      {venues.map(function (v) { return <option key={v.id} value={String(v.id)}>{v.code || v.name}</option> })}
+                    </select>
+                  </div>
+                  <div className="w-20">
+                    <input type="number" min="0" step="any" inputMode="decimal" value={alloc.amount}
+                      onChange={function (e) { setExpAllocations(function (p) { return p.map(function (a, j) { return j === aIdx ? Object.assign({}, a, { amount: e.target.value }) : a }) }) }}
+                      placeholder="Amt"
+                      className="w-full px-2 py-1.5 border border-gray-200 rounded-md text-[12px] focus:outline-none focus:ring-2 focus:ring-amber-500"
+                      style={{ fontSize: '16px' }} />
+                  </div>
+                  {expAllocations.length > 1 && (
+                    <button type="button" onClick={function () { setExpAllocations(function (p) { return p.filter(function (_, j) { return j !== aIdx }) }) }}
+                      className="text-xs text-red-400 hover:text-red-600 p-1">✕</button>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">📷 Receipt / Quote</label>
+            {expReceipt ? (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-green-600 font-medium truncate flex-1">✓ {expReceipt.name}</span>
+                <button type="button" onClick={function () { setExpReceipt(null) }}
+                  className="text-xs text-red-500 font-bold hover:text-red-700">✕</button>
+              </div>
+            ) : (
+              <div className="flex gap-2">
+                <label className="flex-1 py-2.5 text-center text-sm text-amber-700 border border-dashed border-amber-300 rounded-lg cursor-pointer hover:bg-amber-100 transition-colors">
+                  📁 Gallery
+                  <input type="file" accept="image/*" className="hidden"
+                    onChange={function (e) { if (e.target.files?.[0]) setExpReceipt(e.target.files[0]); e.target.value = '' }} />
+                </label>
+                <label className="flex-1 py-2.5 text-center text-sm text-amber-700 border border-dashed border-amber-300 rounded-lg cursor-pointer hover:bg-amber-100 transition-colors">
+                  📷 Camera
+                  <input type="file" accept="image/*" capture="environment" className="hidden"
+                    onChange={function (e) { if (e.target.files?.[0]) setExpReceipt(e.target.files[0]); e.target.value = '' }} />
+                </label>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Total cost summary */}
       {totalCostPaise > 0 && (
