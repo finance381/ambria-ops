@@ -186,13 +186,7 @@ function Expenses({ profile, masterMode }) {
     var offset = append ? approvalExpenses.length : 0
     if (append) setLoadingMore(true)
 
-    var statuses = []
-    if (isAdmin || isAuditor) {
-      statuses = isDeptApprover ? ['pending_dept', 'pending'] : ['pending']
-    } else if (isDeptApprover) {
-      statuses = ['pending_dept']
-    }
-    if (statuses.length === 0) { setApprovalExpenses([]); return }
+    var statuses = ['recorded']
 
     var query = supabase.from('expenses')
       .select('id, user_id, category_id, sub_category_id, expense_type_id, amount_paise, description, status, expense_date, receipt_path, created_at, rejection_reason, vendor_name, travel_from, travel_to, travel_mode, metadata, categories(name), expense_types(name, extra_fields)')
@@ -944,7 +938,7 @@ if (allExpView && (isAdmin || isAuditor)) {
           style={{ fontSize: '16px' }} />
 
         <div className="flex gap-2 flex-wrap">
-          {['', 'pending_dept', 'pending', 'approved', 'rejected'].map(function (s) {
+          {['', 'recorded', 'acknowledged', 'flagged', 'penalized'].map(function (s) {
             var label = s ? APPROVAL_STATUS_LABELS[s] : 'All'
             return (
               <button key={s} onClick={function () { setAllExpStatus(s === allExpStatus ? '' : s) }}
@@ -1955,7 +1949,7 @@ if (allExpView && (isAdmin || isAuditor)) {
           </button>
           <button onClick={function () { setView('approve'); setStatusFilter('') }}
             className={"flex-1 py-2 text-sm font-semibold rounded-md transition-colors relative " + (view === 'approve' ? "bg-white text-gray-900 shadow-sm" : "text-gray-500")}>
-            Approvals
+            Review
             {approvalExpenses.length > 0 && (
               <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
                 {approvalExpenses.length}
@@ -1968,7 +1962,7 @@ if (allExpView && (isAdmin || isAuditor)) {
       {/* Status filter — My Expenses only */}
       {view === 'list' && (
         <div className="flex gap-2 flex-wrap">
-          {['', 'pending_dept', 'pending', 'approved', 'rejected'].map(function (s) {
+          {['', 'recorded', 'acknowledged', 'flagged', 'penalized'].map(function (s) {
             var label = s ? APPROVAL_STATUS_LABELS[s] : 'All'
             return (
               <button key={s} onClick={function () { setStatusFilter(s === statusFilter ? '' : s) }}
@@ -2258,27 +2252,6 @@ function ExpenseEditForm({ profile, editExp, walletBalance, onCancel, onSaved })
           if (wErr) console.warn('Wallet adjust failed:', wErr.message)
         }
       } else {
-        // Determine status — same two-tier logic
-        var selfIsDeptApprover = (profile?.permissions || []).indexOf('dept_approve') !== -1
-        var isAdminRole = profile?.role === 'admin' || profile?.role === 'auditor'
-
-        var status = 'pending_dept'
-        var deptApprovedBy = null
-        var deptApprovedAt = null
-
-        if (isAdminRole) {
-          status = 'approved'
-        } else if (selfIsDeptApprover) {
-          status = 'pending'
-          deptApprovedBy = profile.id
-          deptApprovedAt = new Date().toISOString()
-        } else {
-          var { data: hasAppr } = await supabase.rpc('has_dept_approvers', { p_exclude_id: profile.id })
-          if (!hasAppr) {
-            status = 'pending'
-          }
-        }
-
         var { data: newExp, error: insErr } = await supabase.from('expenses').insert({
           user_id: profile.id,
           category_id: Number(categoryId),
@@ -2286,9 +2259,7 @@ function ExpenseEditForm({ profile, editExp, walletBalance, onCancel, onSaved })
           amount_paise: amountPaise,
           description: description.trim(),
           expense_date: expenseDate,
-          status: status,
-          dept_approved_by: deptApprovedBy,
-          dept_approved_at: deptApprovedAt,
+          status: 'recorded',
         }).select('id').single()
         if (insErr) throw new Error(insErr.message)
 

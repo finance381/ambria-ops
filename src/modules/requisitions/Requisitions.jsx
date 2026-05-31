@@ -345,7 +345,7 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
   var [events, setEvents] = useState([])
   var [eventsLoading, setEventsLoading] = useState(false)
   var [isFunction, setIsFunction] = useState(!!editReq?.event_id)
-  var [reqType, setReqType] = useState(editReq?.req_type || 'inventory')
+  var [reqType, setReqType] = useState(editReq?.req_type || '')
   var [expenseTypes, setExpenseTypes] = useState([])
   var [expTypeId, setExpTypeId] = useState(editReq?.expense_type_id ? String(editReq.expense_type_id) : '')
   var [expAmount, setExpAmount] = useState(editReq?.expense_amount_paise ? String(editReq.expense_amount_paise / 100) : '')
