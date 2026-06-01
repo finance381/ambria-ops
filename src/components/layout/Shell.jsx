@@ -457,12 +457,7 @@ function Shell({ profile, onSignOut }) {
           <RateCardEditor profile={profile} />
         )}
         {tab === 'admin' && isAdmin && (
-          <div className="space-y-4">
-            <button onClick={function () { window.location.search = '?view=admin' }}
-              className="w-full py-4 text-sm font-bold text-white bg-gray-900 rounded-xl hover:bg-gray-800 active:scale-[0.98] transition-all flex items-center justify-center gap-2">
-              🖥 Open Admin Dashboard
-            </button>
-          </div>
+          <AdminMobile profile={profile} />
         )}
       </main>
 
