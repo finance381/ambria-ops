@@ -88,13 +88,22 @@ function ExpenseDetail({ exp, profile, subCatMap, isAdmin, isDeptApprover, onBac
     }).eq('id', exp.id)
     if (error) { alert('Penalize failed: ' + error.message); setSaving(false); return }
     try {
+      await supabase.rpc('wallet_admin_credit', {
+        p_user_id: exp.user_id,
+        p_amount_paise: exp.amount_paise,
+        p_description: 'Refund: rejected expense #' + exp.id,
+        p_ref_type: 'expense_refund',
+        p_ref_id: String(exp.id),
+      })
+    } catch (_) {}
+    try {
       await supabase.rpc('deduct_money', {
         p_user_id: exp.user_id,
         p_amount_paise: penaltyPaise,
         p_description: 'Penalty: ' + rejectReason.trim().slice(0, 80),
       })
     } catch (_) {}
-    try { await logActivity('EXPENSE_PENALIZE', (exp.description || 'Expense') + ' | ' + formatPoints(penaltyPaise) + ' | ' + rejectReason.trim()) } catch (_) {}
+    try { await logActivity('EXPENSE_PENALIZE', (exp.description || 'Expense') + ' | Refund ' + formatPoints(exp.amount_paise) + ' | Penalty ' + formatPoints(penaltyPaise) + ' | ' + rejectReason.trim()) } catch (_) {}
     setSaving(false)
     onUpdated()
   }
