@@ -11,6 +11,7 @@ function ExpenseDetail({ exp, profile, subCatMap, isAdmin, isDeptApprover, onBac
   var [penaltyAmount, setPenaltyAmount] = useState('')
   var [allocations, setAllocations] = useState([])
   var [allocVenues, setAllocVenues] = useState({})
+  var [imgFullscreen, setImgFullscreen] = useState(false)
 
   useEffect(function () {
     supabase.from('expense_allocations')
@@ -38,6 +39,10 @@ function ExpenseDetail({ exp, profile, subCatMap, isAdmin, isDeptApprover, onBac
   var canReview = (isAdmin || isDeptApprover) && exp.status === 'recorded' && exp.user_id !== profile?.id
   var canDelete = (exp.user_id === profile?.id && exp.status === 'recorded') || isAdmin
   var canEdit = exp.user_id === profile?.id && exp.status === 'recorded'
+
+  var receiptUrl = exp.receipt_path ? supabase.storage.from('receipts').getPublicUrl(exp.receipt_path).data?.publicUrl : null
+  var isVoiceReceipt = /\.(webm|ogg|mp3|wav)$/i.test(exp.receipt_path || '')
+  var isImageReceipt = /\.(jpg|jpeg|png|gif|webp)$/i.test(exp.receipt_path || '')
 
   async function acknowledge() {
     if (saving) return
@@ -126,10 +131,9 @@ function ExpenseDetail({ exp, profile, subCatMap, isAdmin, isDeptApprover, onBac
     onUpdated()
   }
 
-  var receiptUrl = exp.receipt_path ? supabase.storage.from('receipts').getPublicUrl(exp.receipt_path).data?.publicUrl : null
-
   return (
     <div className="space-y-4">
+      {/* Header */}
       <div>
         <button onClick={onBack} className="text-sm text-indigo-600 font-medium hover:text-indigo-800 transition-colors mb-2">← Back</button>
         <div className="flex items-start justify-between">
@@ -145,6 +149,7 @@ function ExpenseDetail({ exp, profile, subCatMap, isAdmin, isDeptApprover, onBac
         </div>
       </div>
 
+      {/* Flag/Penalize/Rejection banners */}
       {exp.status === 'rejected' && exp.rejection_reason && (
         <div className="bg-red-50 border border-red-200 rounded-lg p-3">
           <p className="text-xs font-bold text-red-700 mb-0.5">Rejection Reason</p>
@@ -162,6 +167,57 @@ function ExpenseDetail({ exp, profile, subCatMap, isAdmin, isDeptApprover, onBac
         </div>
       )}
 
+      {/* ── Receipt / Proof — shown prominently before details ── */}
+      {receiptUrl ? (
+        <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+          <div className="px-4 py-2 bg-gray-50 border-b border-gray-200">
+            <p className="text-xs font-bold text-gray-500 uppercase tracking-wider">
+              {isVoiceReceipt ? '🎙 Voice Receipt' : '📎 Receipt'}
+            </p>
+          </div>
+          <div className="p-3">
+            {isVoiceReceipt ? (
+              <audio src={receiptUrl} controls className="w-full" />
+            ) : isImageReceipt ? (
+              <div>
+                <img
+                  src={receiptUrl} alt="Receipt"
+                  onClick={function () { setImgFullscreen(true) }}
+                  className="w-full max-h-64 object-contain rounded-lg border border-gray-100 bg-gray-50 cursor-pointer active:opacity-80"
+                />
+                <p className="text-[10px] text-gray-400 text-center mt-1">Tap to enlarge</p>
+              </div>
+            ) : (
+              <a href={receiptUrl} target="_blank" rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors">
+                📎 View Attachment
+              </a>
+            )}
+          </div>
+        </div>
+      ) : (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-center gap-2">
+          <span className="text-amber-500 text-lg">⚠</span>
+          <p className="text-sm text-amber-700 font-medium">No receipt attached</p>
+        </div>
+      )}
+
+      {/* Fullscreen image overlay */}
+      {imgFullscreen && receiptUrl && (
+        <div
+          onClick={function () { setImgFullscreen(false) }}
+          className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4"
+          style={{ margin: 0 }}
+        >
+          <button
+            onClick={function () { setImgFullscreen(false) }}
+            className="absolute top-4 right-4 w-10 h-10 bg-white/20 text-white rounded-full text-xl flex items-center justify-center hover:bg-white/30"
+          >✕</button>
+          <img src={receiptUrl} alt="Receipt" className="max-w-full max-h-full object-contain rounded-lg" />
+        </div>
+      )}
+
+      {/* ── Expense details card ── */}
       <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-3">
         <div className="flex justify-between">
           <span className="text-sm text-gray-500">Amount</span>
@@ -181,6 +237,26 @@ function ExpenseDetail({ exp, profile, subCatMap, isAdmin, isDeptApprover, onBac
             <span className="text-sm text-gray-800">{exp.expense_types.name}</span>
           </div>
         )}
+        {exp.vendor_name && (
+          <div className="flex justify-between">
+            <span className="text-sm text-gray-500">Vendor</span>
+            <span className="text-sm text-gray-800">{exp.vendor_name}</span>
+          </div>
+        )}
+        {exp.travel_from && (
+          <div className="flex justify-between">
+            <span className="text-sm text-gray-500">Travel</span>
+            <span className="text-sm text-gray-800">{exp.travel_from}{exp.travel_to ? ' → ' + exp.travel_to : ''}{exp.travel_mode ? ' (' + exp.travel_mode + ')' : ''}</span>
+          </div>
+        )}
+        {exp.events?.event_name && (
+          <div className="flex justify-between">
+            <span className="text-sm text-gray-500">Event</span>
+            <span className="text-sm text-gray-800">{exp.events.event_name}</span>
+          </div>
+        )}
+
+        {/* Dynamic extra fields from expense type */}
         {exp.expense_types?.extra_fields && exp.expense_types.extra_fields.map(function (field) {
           var val = (exp.metadata && exp.metadata[field.key]) || exp[field.key] || null
           if (!val) return null
@@ -191,14 +267,21 @@ function ExpenseDetail({ exp, profile, subCatMap, isAdmin, isDeptApprover, onBac
             </div>
           )
         })}
+
         {exp.description && (
-          <div>
-            <span className="text-sm text-gray-500">Description</span>
-            <p className="text-sm text-gray-800 mt-0.5">{exp.description}</p>
+          <div className="border-t border-gray-100 pt-3">
+            <span className="text-xs font-medium text-gray-500 uppercase tracking-wider">Description</span>
+            <p className="text-sm text-gray-800 mt-1">{exp.description}</p>
           </div>
         )}
+
+        {/* Timestamp */}
+        <div className="border-t border-gray-100 pt-2">
+          <p className="text-[10px] text-gray-400">Submitted {exp.created_at ? formatDate(exp.created_at) : '—'}</p>
+        </div>
       </div>
 
+      {/* ── Allocations ── */}
       {allocations.length > 0 && (
         <div className="bg-white border border-gray-200 rounded-lg p-4">
           <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Allocations</p>
@@ -219,27 +302,7 @@ function ExpenseDetail({ exp, profile, subCatMap, isAdmin, isDeptApprover, onBac
         </div>
       )}
 
-      {receiptUrl && (
-        <div>
-          <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Receipt</p>
-          {/\.(webm|ogg|mp3|wav)$/i.test(exp.receipt_path || '') ? (
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-              <p className="text-xs text-blue-600 font-medium mb-2">🎙 Voice Receipt</p>
-              <audio src={receiptUrl} controls className="w-full" />
-            </div>
-          ) : /\.(jpg|jpeg|png|gif|webp)$/i.test(exp.receipt_path || '') ? (
-            <a href={receiptUrl} target="_blank" rel="noopener noreferrer">
-              <img src={receiptUrl} alt="Receipt" className="w-full max-h-80 object-contain rounded-lg border border-gray-200 bg-gray-50" />
-            </a>
-          ) : (
-            <a href={receiptUrl} target="_blank" rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors">
-              📎 View Receipt
-            </a>
-          )}
-        </div>
-      )}
-
+      {/* ── Actions ── */}
       {canEdit && (
         <button onClick={onEdit} disabled={saving}
           className="w-full py-3 text-sm font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 disabled:opacity-50 transition-colors">
