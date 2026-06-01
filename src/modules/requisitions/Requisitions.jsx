@@ -1476,7 +1476,7 @@ function RequisitionDetail({ req, items, profile, isAdmin, isDeptApprover, onBac
     onUpdated()
   }
   async function convertToExpense() {
-    if (saving || req.req_type !== 'expense' || req.status !== 'approved') return
+    if (saving || req.req_type !== 'expense' || req.status !== 'approved' || req.requested_by !== profile?.id) return
     if (!confirm('Record this as an actual expense? ' + formatPoints(req.expense_amount_paise) + ' will be deducted from your wallet.')) return
     setSaving(true)
     try {
