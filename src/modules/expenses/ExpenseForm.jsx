@@ -410,7 +410,7 @@ function ExpenseForm({ profile, onDone }) {
       }
 
       // Insert allocations
-      var deptName = entry.department ? (departments.find(function (d) { return String(d.id) === entry.department }) || {}).name || '' : ''
+      var deptName = e.department ? (departments.find(function (d) { return String(d.id) === e.department }) || {}).name || '' : ''
       var allocRows = e.allocations
         .filter(function (a) { return a.venueId })
         .map(function (a) {
