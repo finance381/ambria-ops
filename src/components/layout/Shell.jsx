@@ -15,6 +15,7 @@ import ProductionOrders from '../../modules/production/ProductionOrders'
 import Boxes from '../../modules/boxes/Boxes'
 import Challans from '../../modules/challans/Challans'
 import RateCardEditor from '../../modules/quote/RateCardEditor'
+import AdminMobile from '../../modules/categories/AdminMobile.jsx'
 
 var GROUPS = [
   {
