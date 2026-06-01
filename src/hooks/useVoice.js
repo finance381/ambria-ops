@@ -1,15 +1,18 @@
 import { useState, useRef } from 'react'
 
-export function useVoice(onResult) {
+export function useVoice() {
   var [listening, setListening] = useState(false)
   var recognitionRef = useRef(null)
+  var callbackRef = useRef(null)
 
-  function startListening() {
+  function start(onResult) {
     var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
     if (!SpeechRecognition) {
       alert('Speech recognition not supported in this browser')
       return
     }
+
+    callbackRef.current = onResult
 
     var recognition = new SpeechRecognition()
     recognition.lang = 'en-IN'
@@ -18,7 +21,7 @@ export function useVoice(onResult) {
 
     recognition.onresult = function (event) {
       var transcript = event.results[0][0].transcript
-      onResult(transcript)
+      if (callbackRef.current) callbackRef.current(transcript)
       setListening(false)
     }
 
@@ -35,12 +38,12 @@ export function useVoice(onResult) {
     setListening(true)
   }
 
-  function stopListening() {
+  function stop() {
     if (recognitionRef.current) {
       recognitionRef.current.stop()
     }
     setListening(false)
   }
 
-  return { listening, startListening, stopListening }
+  return { listening: listening, start: start, stop: stop }
 }

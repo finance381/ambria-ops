@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import { logActivity } from '../../lib/logger'
 import SearchDropdown from '../../components/ui/SearchDropdown'
@@ -141,13 +141,13 @@ function ExpenseForm({ profile, onDone }) {
     setEntries(updated)
   }
 
-  var mediaRecorders = {}
+  var mediaRecorders = useRef({})
 
   function startRecording(idx) {
     navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
       var chunks = []
       var recorder = new MediaRecorder(stream, { mimeType: 'audio/webm' })
-      mediaRecorders[idx] = { recorder: recorder, stream: stream }
+      mediaRecorders.current[idx] = { recorder: recorder, stream: stream }
 
       recorder.ondataavailable = function (e) { if (e.data.size > 0) chunks.push(e.data) }
       recorder.onstop = function () {
@@ -160,7 +160,7 @@ function ExpenseForm({ profile, onDone }) {
           return Object.assign({}, e, { audioBlob: blob, audioUrl: url, recording: false, receiptFile: null, receiptPreview: '' })
         })
         setEntries(updated)
-        delete mediaRecorders[idx]
+        delete mediaRecorders.current[idx]
       }
 
       var updated = entries.map(function (e, i) {
@@ -178,7 +178,7 @@ function ExpenseForm({ profile, onDone }) {
   }
 
   function stopRecording(idx) {
-    var mr = mediaRecorders[idx]
+    var mr = mediaRecorders.current[idx]
     if (mr && mr.recorder.state === 'recording') {
       mr.recorder.stop()
     }
@@ -358,91 +358,89 @@ function ExpenseForm({ profile, onDone }) {
     var submitted = 0
     var failed = 0
 
-    for (var i = 0; i < entries.length; i++) {
-      var e = entries[i]
-      var paise = Math.round(Number(e.amount) * 100)
+    try {
+      for (var i = 0; i < entries.length; i++) {
+        var e = entries[i]
+        var paise = Math.round(Number(e.amount) * 100)
 
-      var payload = {
-        user_id: profile.id,
-        category_id: Number(e.categoryId),
-        sub_category_id: null,
-        expense_type_id: Number(e.expenseTypeId),
-        amount_paise: paise,
-        description: e.description.trim(),
-        expense_date: e.expenseDate,
-        status: 'recorded',
-        event_id: eventId ? Number(eventId) : null,
-        metadata: e.fieldValues,
-        vendor_name: e.fieldValues.vendor_name || null,
-        travel_from: e.fieldValues.travel_from || null,
-        travel_to: e.fieldValues.travel_to || null,
-        travel_mode: e.fieldValues.travel_mode || null,
-      }
-
-      var { data: exp, error: insErr } = await supabase
-        .from('expenses')
-        .insert(payload)
-        .select('id')
-        .single()
-
-      if (insErr || !exp) {
-        failed++
-        continue
-      }
-
-      // Upload receipt
-      if (e.receiptFile) {
-        var ext = e.receiptFile.name.split('.').pop()
-        var rPath = profile.id + '/' + exp.id + '_' + Date.now() + '.' + ext
-        var { error: upErr } = await supabase.storage.from('receipts').upload(rPath, e.receiptFile, { upsert: true })
-        if (!upErr) {
-          await supabase.from('expenses').update({ receipt_path: rPath }).eq('id', exp.id)
-        }
-      }
-
-      // Upload voice receipt if no image
-      if (!e.receiptFile && e.audioBlob) {
-        var aPath = profile.id + '/' + exp.id + '_voice_' + Date.now() + '.webm'
-        var { error: aErr } = await supabase.storage.from('receipts').upload(aPath, e.audioBlob, { contentType: 'audio/webm', upsert: true })
-        if (!aErr) {
-          await supabase.from('expenses').update({ receipt_path: aPath }).eq('id', exp.id)
-        }
-      }
-
-      // Insert allocations
-      var deptName = e.department ? (departments.find(function (d) { return String(d.id) === e.department }) || {}).name || '' : ''
-      var allocRows = e.allocations
-        .filter(function (a) { return a.venueId })
-        .map(function (a) {
-          return {
-            expense_id: exp.id,
-            department: deptName,
-            venue_id: a.venueId ? Number(a.venueId) : null,
-            amount_paise: a.amountPaise ? Math.round(Number(a.amountPaise) * 100) : 0
+        try {
+          var payload = {
+            user_id: profile.id,
+            category_id: Number(e.categoryId),
+            sub_category_id: null,
+            expense_type_id: Number(e.expenseTypeId),
+            amount_paise: paise,
+            description: e.description.trim(),
+            expense_date: e.expenseDate,
+            status: 'recorded',
+            event_id: eventId ? Number(eventId) : null,
+            metadata: e.fieldValues,
+            vendor_name: e.fieldValues.vendor_name || null,
+            travel_from: e.fieldValues.travel_from || null,
+            travel_to: e.fieldValues.travel_to || null,
+            travel_mode: e.fieldValues.travel_mode || null,
           }
-        })
 
-      if (allocRows.length > 0) {
-        await supabase.from('expense_allocations').insert(allocRows)
+          var { data: exp, error: insErr } = await supabase
+            .from('expenses')
+            .insert(payload)
+            .select('id')
+            .single()
+
+          if (insErr || !exp) { failed++; continue }
+
+          if (e.receiptFile) {
+            var ext = e.receiptFile.name.split('.').pop()
+            var rPath = profile.id + '/' + exp.id + '_' + Date.now() + '.' + ext
+            var { error: upErr } = await supabase.storage.from('receipts').upload(rPath, e.receiptFile, { upsert: true })
+            if (!upErr) {
+              await supabase.from('expenses').update({ receipt_path: rPath }).eq('id', exp.id)
+            }
+          }
+
+          if (!e.receiptFile && e.audioBlob) {
+            var aPath = profile.id + '/' + exp.id + '_voice_' + Date.now() + '.webm'
+            var { error: aErr } = await supabase.storage.from('receipts').upload(aPath, e.audioBlob, { contentType: 'audio/webm', upsert: true })
+            if (!aErr) {
+              await supabase.from('expenses').update({ receipt_path: aPath }).eq('id', exp.id)
+            }
+          }
+
+          var deptName = e.department ? (departments.find(function (d) { return String(d.id) === e.department }) || {}).name || '' : ''
+          var allocRows = e.allocations
+            .filter(function (a) { return a.venueId })
+            .map(function (a) {
+              return {
+                expense_id: exp.id,
+                department: deptName,
+                venue_id: a.venueId ? Number(a.venueId) : null,
+                amount_paise: a.amountPaise ? Math.round(Number(a.amountPaise) * 100) : 0
+              }
+            })
+
+          if (allocRows.length > 0) {
+            await supabase.from('expense_allocations').insert(allocRows)
+          }
+
+          try {
+            await supabase.rpc('wallet_self_debit', {
+              p_amount_paise: paise,
+              p_description: 'Expense: ' + e.description.trim().slice(0, 50),
+              p_ref_type: 'expense',
+              p_ref_id: String(exp.id),
+            })
+          } catch (_) {}
+
+          try { await logActivity('EXPENSE_SUBMIT', (paise / 100) + ' pts | ' + e.description.trim().slice(0, 50)) } catch (_) {}
+
+          submitted++
+        } catch (_) {
+          failed++
+        }
       }
-
-      try {
-        await supabase.rpc('wallet_self_debit', {
-          p_amount_paise: paise,
-          p_description: 'Expense: ' + e.description.trim().slice(0, 50),
-          p_ref_type: 'expense',
-          p_ref_id: String(exp.id),
-        })
-      } catch (_) {}
-
-      try {
-        await logActivity('EXPENSE_SUBMIT', (paise / 100) + ' pts | ' + e.description.trim().slice(0, 50))
-      } catch (_) {}
-
-      submitted++
+    } finally {
+      setSaving(false)
     }
-
-    setSaving(false)
 
     if (failed > 0 && submitted > 0) {
       setError(failed + ' failed, ' + submitted + ' submitted')
@@ -450,9 +448,7 @@ function ExpenseForm({ profile, onDone }) {
       setError('All ' + failed + ' entries failed to submit')
     } else {
       setSuccess(submitted + ' expense' + (submitted > 1 ? 's' : '') + ' submitted')
-      setEntries([makeEntry()])
-      if (onDone) onDone()
-      setTimeout(function () { setSuccess('') }, 3000)
+      setTimeout(function () { setEntries([makeEntry()]); if (onDone) onDone() }, 1500)
     }
   }
 
