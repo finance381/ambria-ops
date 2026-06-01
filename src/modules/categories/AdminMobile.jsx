@@ -105,14 +105,13 @@ function AdminMobile({ profile }) {
   return (
     <div className="space-y-3">
       {/* Open Desktop Dashboard link */}
-      <button
-        onClick={function () {
-          window.open(window.location.origin + window.location.pathname + '?view=admin', '_blank')
-        }}
+      <a href={window.location.origin + window.location.pathname + '?view=admin'}
+        target="_blank"
+        rel="noopener noreferrer"
         className="w-full flex items-center justify-center gap-2 py-3 bg-gray-900 text-white rounded-xl text-sm font-bold tracking-wide"
       >
         {"🖥️ " + t('openAdminDashboard')}
-      </button>
+      </a>
 
       {/* Pending Review */}
       <Section title={t('pendingReview')} defaultOpen={pending.length > 0}>
