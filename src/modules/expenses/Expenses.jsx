@@ -9,6 +9,7 @@ import AllExpenses from './AllExpenses'
 import ExpenseEditForm from './ExpenseEditForm'
 import ExpenseDetail from './ExpenseDetail'
 import ExpenseReport from './ExpenseReport'
+import ReviewHistory from './ReviewHistory'
 import { pushBack, goBack as navBack } from '../../lib/backNav'
 
 var PAGE_SIZE = 20
@@ -36,6 +37,7 @@ function Expenses({ profile, masterMode }) {
   var [showWallet, setShowWallet] = useState(false)
   var [subCatMap, setSubCatMap] = useState({})
   var [typesModal, setTypesModal] = useState(false)
+  var [reviewHistory, setReviewHistory] = useState(false)
 
 
   var isAdmin = profile?.role === 'admin' || (profile?.permissions && profile.permissions.indexOf('expense_approve') >= 0)
@@ -202,6 +204,16 @@ function Expenses({ profile, masterMode }) {
     )
   }
 
+  if (reviewHistory && (isAdmin || isAuditor)) {
+    return (
+      <ReviewHistory
+        profile={profile}
+        onBack={function () { setReviewHistory(false) }}
+        onOpenDetail={function (exp) { setDetailExp(Object.assign({}, exp, { _fromApprove: true })); setView('detail') }}
+      />
+    )
+  }
+
   if (reportView && (isAdmin || isAuditor)) {
     return <ExpenseReport onBack={function () { setReportView(false) }} />
   }
@@ -333,6 +345,10 @@ function Expenses({ profile, masterMode }) {
           <button onClick={function () { setAllExpView(true) }}
             className="flex-1 py-2.5 text-xs font-bold text-gray-600 bg-gray-50 border border-gray-200 rounded-lg hover:bg-gray-100 transition-colors">
             📋 All Expenses
+          </button>
+          <button onClick={function () { setReviewHistory(true) }}
+            className="flex-1 py-2.5 text-xs font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors">
+            🔍 My Reviews
           </button>
           {(profile?.permissions || []).indexOf('admin_masters') !== -1 && (
             <button onClick={function () { setTypesModal(true) }}
