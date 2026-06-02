@@ -84,7 +84,7 @@ function Expenses({ profile, masterMode }) {
     else setLoadingMore(true)
 
     var query = supabase.from('expenses')
-      .select('id, category_id, sub_category_id, expense_type_id, amount_paise, description, status, expense_date, receipt_path, created_at, rejection_reason, vendor_name, travel_from, travel_to, travel_mode, metadata, event_id, categories(name), expense_types(name, extra_fields), events(event_name)')
+      .select('id, category_id, sub_category_id, expense_type_id, amount_paise, description, status, expense_date, receipt_path, created_at, rejection_reason, flag_reason, penalty_paise, penalized_at, vendor_name, travel_from, travel_to, travel_mode, metadata, event_id, categories(name), expense_types(name, extra_fields), events(event_name)')
       .eq('user_id', profile.id)
       .order('created_at', { ascending: false })
       .range(offset, offset + PAGE_SIZE)
@@ -504,8 +504,23 @@ function Expenses({ profile, masterMode }) {
               {exp.status === 'rejected' && exp.rejection_reason && (
                 <p className="text-[11px] text-red-500 mt-1 line-clamp-1">Reason: {exp.rejection_reason}</p>
               )}
+              {exp.status === 'penalized' && (
+                <div className="mt-1.5 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
+                  <div className="flex justify-between items-center">
+                    <span className="text-[11px] text-red-600 font-medium">💰 Penalty</span>
+                    <span className="text-sm font-bold text-red-700">{formatPoints(exp.penalty_paise || 0)}</span>
+                  </div>
+                  {exp.flag_reason && <p className="text-[11px] text-red-500 mt-0.5 line-clamp-2">{exp.flag_reason}</p>}
+                </div>
+              )}
+              {exp.status === 'flagged' && exp.flag_reason && (
+                <div className="mt-1.5 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+                  <p className="text-[11px] text-amber-600 font-medium">⚠ Flagged</p>
+                  <p className="text-[11px] text-amber-500 mt-0.5 line-clamp-2">{exp.flag_reason}</p>
+                </div>
+              )}
               {exp.receipt_path && (
-                <span className="text-[10px] text-green-600 font-medium">📎 Receipt attached</span>
+                <span className="text-[10px] text-green-600 font-medium mt-1">📎 Receipt attached</span>
               )}
             </div>
           )
