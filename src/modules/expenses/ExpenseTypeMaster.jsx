@@ -20,7 +20,7 @@ var LOOKUP_SOURCES = [
 // ═══════════════════════════════════════════════
 // FIELD EDITOR — edit extra_fields for a sub-type
 // ═══════════════════════════════════════════════
-function FieldEditor({ subType, onBack, onSaved }) {
+function FieldEditor({ subType, typeName, onBack, onSaved }) {
   var [fields, setFields] = useState(subType.extra_fields || [])
   var [saving, setSaving] = useState(false)
   var [editIdx, setEditIdx] = useState(null)
@@ -106,7 +106,8 @@ function FieldEditor({ subType, onBack, onSaved }) {
       <div className="flex items-center justify-between">
         <div>
           <button onClick={onBack} className="text-sm text-indigo-600 font-medium hover:text-indigo-800 mb-1">← Back</button>
-          <h2 className="text-lg font-bold text-gray-900">Fields: {subType.name}</h2>
+          <p className="text-xs text-gray-400 mb-0.5">{typeName} → {subType.name}</p>
+          <h2 className="text-lg font-bold text-gray-900">Custom Fields</h2>
           <p className="text-xs text-gray-400">{fields.length} field{fields.length !== 1 ? 's' : ''}</p>
         </div>
         <div className="flex gap-2">
@@ -310,6 +311,7 @@ function SubTypeList({ expenseType, onBack }) {
     return (
       <FieldEditor
         subType={fieldView}
+        typeName={expenseType.name}
         onBack={function () { setFieldView(null); load() }}
         onSaved={function () { setFieldView(null); load() }}
       />
