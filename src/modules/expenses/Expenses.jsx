@@ -9,6 +9,7 @@ import AllExpenses from './AllExpenses'
 import ExpenseEditForm from './ExpenseEditForm'
 import ExpenseDetail from './ExpenseDetail'
 import ExpenseReport from './ExpenseReport'
+import { pushBack, goBack as navBack } from '../../lib/Backnav.js'
 
 var PAGE_SIZE = 20
 
@@ -150,6 +151,7 @@ function Expenses({ profile, masterMode }) {
   }
 
   function openDetail(exp) {
+    pushBack(function () { setView('list'); setDetailExp(null); setEditExp(null) })
     setDetailExp(exp)
     setView('detail')
   }
@@ -246,7 +248,7 @@ function Expenses({ profile, masterMode }) {
         subCatMap={subCatMap}
         isAdmin={isAdmin}
         isDeptApprover={isDeptApprover}
-        onBack={function () { if (allExpView) { setView('list'); setDetailExp(null); return } setView(detailExp._fromApprove ? 'approve' : 'list'); setDetailExp(null) }}
+        onBack={function () { navBack() }}
         onUpdated={function () { loadMyExpenses(false); loadApprovalExpenses(false); if (allExpView) { setView('list'); setDetailExp(null); return } setView(detailExp._fromApprove ? 'approve' : 'list'); setDetailExp(null) }}
         onEdit={function () { setEditExp(detailExp); setView('form') }}
       />

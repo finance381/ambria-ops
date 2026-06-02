@@ -63,6 +63,8 @@ var GROUPS = [
   },
 ]
 
+import { pushBack, goBack as navBack } from '../lib/backNav'
+
 function Shell({ profile, onSignOut }) {
   var [activeGroup, setActiveGroup] = useState(null)
   var [tab, setTab] = useState(null)
@@ -90,31 +92,23 @@ function Shell({ profile, onSignOut }) {
   }
 
   function goBack() {
-    if (tab) {
-      // Single-item group: skip sub-cards, go home
-      if (currentGroup && currentGroup.items.length === 1) {
-        setTab(null)
-        setActiveGroup(null)
-      } else {
-        setTab(null)
-      }
-    } else if (activeGroup) {
-      setActiveGroup(null)
-    }
+    navBack()
   }
 
   function openGroup(group) {
-    // Single-item groups skip sub-cards, go directly to module
     if (group.items.length === 1) {
+      pushBack(function () { setTab(null); setActiveGroup(null) })
       setActiveGroup(group.key)
       setTab(group.items[0].tab)
     } else {
+      pushBack(function () { setActiveGroup(null) })
       setActiveGroup(group.key)
       setTab(null)
     }
   }
 
   function openModule(item) {
+    pushBack(function () { setTab(null) })
     setTab(item.tab)
   }
 
