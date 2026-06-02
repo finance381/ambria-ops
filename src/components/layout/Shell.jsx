@@ -63,7 +63,7 @@ var GROUPS = [
   },
 ]
 
-import { pushBack, goBack as navBack } from '../lib/backNav'
+import { pushBack, goBack as navBack } from '../../lib/backNav'
 
 function Shell({ profile, onSignOut }) {
   var [activeGroup, setActiveGroup] = useState(null)
