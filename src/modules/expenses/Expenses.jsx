@@ -9,7 +9,7 @@ import AllExpenses from './AllExpenses'
 import ExpenseEditForm from './ExpenseEditForm'
 import ExpenseDetail from './ExpenseDetail'
 import ExpenseReport from './ExpenseReport'
-import { pushBack, goBack as navBack } from '../../lib/backnav'
+import { pushBack, goBack as navBack } from '../../lib/backNav'
 
 var PAGE_SIZE = 20
 
