@@ -84,7 +84,7 @@ function Expenses({ profile, masterMode }) {
     else setLoadingMore(true)
 
     var query = supabase.from('expenses')
-      .select('id, category_id, sub_category_id, expense_type_id, amount_paise, description, status, expense_date, receipt_path, created_at, rejection_reason, flag_reason, penalty_paise, penalized_at, vendor_name, travel_from, travel_to, travel_mode, metadata, event_id, categories(name), expense_types(name, extra_fields), events(event_name)')
+      .select('id, category_id, sub_category_id, expense_type_id, expense_sub_type_id, amount_paise, description, status, expense_date, receipt_path, created_at, rejection_reason, flag_reason, penalty_paise, penalized_at, vendor_name, travel_from, travel_to, travel_mode, metadata, event_id, categories(name), expense_types(name), expense_sub_types(name, extra_fields), events(event_name)')
       .eq('user_id', profile.id)
       .order('created_at', { ascending: false })
       .range(offset, offset + PAGE_SIZE)
@@ -120,7 +120,7 @@ function Expenses({ profile, masterMode }) {
     var statuses = ['recorded', 'flagged']
 
     var query = supabase.from('expenses')
-      .select('id, user_id, category_id, sub_category_id, expense_type_id, amount_paise, description, status, expense_date, receipt_path, created_at, rejection_reason, vendor_name, travel_from, travel_to, travel_mode, metadata, event_id, categories(name), expense_types(name, extra_fields), events(event_name)')
+      .select('id, user_id, category_id, sub_category_id, expense_type_id, expense_sub_type_id, amount_paise, description, status, expense_date, receipt_path, created_at, rejection_reason, flag_reason, penalty_paise, vendor_name, travel_from, travel_to, travel_mode, metadata, event_id, categories(name), expense_types(name), expense_sub_types(name, extra_fields), events(event_name)')
       .neq('user_id', profile.id)
       .in('status', statuses)
       .order('created_at', { ascending: false })
@@ -380,6 +380,10 @@ function Expenses({ profile, masterMode }) {
                 className="px-3 py-2 text-xs font-bold text-gray-600 bg-gray-50 border border-gray-200 rounded-lg hover:bg-gray-100 transition-colors">
                 📋 All
               </button>
+              <button onClick={function () { setReviewHistory(true) }}
+                className="px-3 py-2 text-xs font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors">
+                🔍 My Reviews
+              </button>
               {(profile?.permissions || []).indexOf('admin_masters') !== -1 && (
                 <button onClick={function () { setTypesModal(true) }}
                   className="px-3 py-2 text-xs font-bold text-purple-600 bg-purple-50 border border-purple-200 rounded-lg hover:bg-purple-100 transition-colors">
@@ -488,7 +492,7 @@ function Expenses({ profile, masterMode }) {
                   <p className="text-sm font-semibold text-gray-900 truncate">{exp.description || 'Expense'}</p>
                   <p className="text-xs text-gray-400 mt-0.5">
                     {view === 'approve' ? (exp.profiles?.name || '—') + ' · ' : ''}
-                    {exp.expense_types?.name ? exp.expense_types.name + ' · ' : ''}
+                    {exp.expense_types?.name ? exp.expense_types.name + (exp.expense_sub_types?.name ? ' > ' + exp.expense_sub_types.name : '') + ' · ' : ''}
                     {exp.categories?.name || '—'}
                     {exp.sub_category_id && subCatMap[exp.sub_category_id] ? ' > ' + subCatMap[exp.sub_category_id] : ''}
                     {' · ' + formatDate(exp.expense_date)}

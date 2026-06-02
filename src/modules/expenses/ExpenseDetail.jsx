@@ -296,7 +296,7 @@ function ExpenseDetail({ exp, profile, subCatMap, isAdmin, isDeptApprover, onBac
         {exp.expense_types?.name && (
           <div className="flex justify-between">
             <span className="text-sm text-gray-500">Type</span>
-            <span className="text-sm text-gray-800">{exp.expense_types.name}</span>
+            <span className="text-sm text-gray-800">{exp.expense_types.name}{exp.expense_sub_types?.name ? ' > ' + exp.expense_sub_types.name : ''}</span>
           </div>
         )}
         {exp.vendor_name && (
@@ -317,7 +317,7 @@ function ExpenseDetail({ exp, profile, subCatMap, isAdmin, isDeptApprover, onBac
             <span className="text-sm text-gray-800">{exp.events.event_name}</span>
           </div>
         )}
-        {exp.expense_types?.extra_fields && exp.expense_types.extra_fields.map(function (field) {
+        {exp.expense_sub_types?.extra_fields && exp.expense_sub_types.extra_fields.map(function (field) {
           var val = (exp.metadata && exp.metadata[field.key]) || exp[field.key] || null
           if (!val) return null
           return (

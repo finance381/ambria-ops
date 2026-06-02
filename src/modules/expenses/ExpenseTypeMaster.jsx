@@ -1,233 +1,584 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 
-function ExpenseTypeMaster({ onBack }) {
-  var [expTypes, setExpTypes] = useState([])
-  var [typeName, setTypeName] = useState('')
-  var [typeEditId, setTypeEditId] = useState(null)
-  var [typeSaving, setTypeSaving] = useState(false)
-  var [typeEditName, setTypeEditName] = useState('')
-  var [typeFields, setTypeFields] = useState([])
-  var [addFieldMode, setAddFieldMode] = useState(false)
-  var [newFieldLabel, setNewFieldLabel] = useState('')
-  var [newFieldType, setNewFieldType] = useState('text')
-  var [newFieldRequired, setNewFieldRequired] = useState(false)
-  var [newFieldOptions, setNewFieldOptions] = useState('')
+var FIELD_TYPES = [
+  { value: 'text', label: 'Text' },
+  { value: 'number', label: 'Number' },
+  { value: 'select', label: 'Dropdown' },
+  { value: 'date', label: 'Date' },
+  { value: 'textarea', label: 'Text Area' },
+  { value: 'lookup', label: 'System Lookup' },
+]
 
-  useEffect(function () { loadExpTypes() }, [])
+var LOOKUP_SOURCES = [
+  { value: 'vendors', label: 'Vendors (from POs)' },
+  { value: 'staff', label: 'Staff / Users' },
+  { value: 'categories', label: 'Inventory Categories' },
+  { value: 'venues', label: 'Venues' },
+]
 
-  async function loadExpTypes() {
-    var { data } = await supabase.from('expense_types').select('id, name, extra_fields, active, sort_order').order('sort_order')
-    setExpTypes(data || [])
+// ═══════════════════════════════════════════════
+// FIELD EDITOR — edit extra_fields for a sub-type
+// ═══════════════════════════════════════════════
+function FieldEditor({ subType, onBack, onSaved }) {
+  var [fields, setFields] = useState(subType.extra_fields || [])
+  var [saving, setSaving] = useState(false)
+  var [editIdx, setEditIdx] = useState(null)
+  var [form, setForm] = useState(null)
+
+  function makeField() {
+    return { key: '', label: '', type: 'text', required: false, options: [], source: '' }
   }
 
-  function startEditType(et) {
-    setTypeEditId(et.id)
-    setTypeEditName(et.name)
-    setTypeFields(et.extra_fields && Array.isArray(et.extra_fields) ? et.extra_fields.map(function (f) { return Object.assign({}, f) }) : [])
-    setAddFieldMode(false)
-    resetNewField()
+  function openAdd() {
+    setForm(makeField())
+    setEditIdx(-1)
   }
-  function cancelEditType() {
-    setTypeEditId(null)
-    setTypeEditName('')
-    setTypeFields([])
-    setAddFieldMode(false)
-    resetNewField()
+
+  function openEdit(idx) {
+    var f = fields[idx]
+    setForm(Object.assign({}, f, { options: f.options || [], source: f.source || '' }))
+    setEditIdx(idx)
   }
-  function resetNewField() {
-    setNewFieldLabel('')
-    setNewFieldType('text')
-    setNewFieldRequired(false)
-    setNewFieldOptions('')
+
+  function cancelEdit() {
+    setForm(null)
+    setEditIdx(null)
   }
-  function generateFieldKey(label) {
-    var base = label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '')
-    if (!base) return 'field'
-    var key = base
-    var n = 2
-    while (typeFields.some(function (f) { return f.key === key })) { key = base + '_' + n; n++ }
-    return key
+
+  function updateForm(key, val) {
+    setForm(Object.assign({}, form, (function () { var o = {}; o[key] = val; return o })()))
   }
-  function addFieldToType() {
-    if (!newFieldLabel.trim()) return
-    var field = { key: generateFieldKey(newFieldLabel.trim()), label: newFieldLabel.trim(), type: newFieldType, required: newFieldRequired }
-    if (newFieldType === 'select' && newFieldOptions.trim()) {
-      field.options = newFieldOptions.split(',').map(function (o) { return o.trim() }).filter(Boolean)
+
+  function saveField() {
+    if (!form.label.trim()) return
+    var key = form.key || form.label.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_')
+    var field = {
+      key: key,
+      label: form.label.trim(),
+      type: form.type,
+      required: form.required,
     }
-    setTypeFields(typeFields.concat([field]))
-    setAddFieldMode(false)
-    resetNewField()
-  }
-  function removeFieldFromType(idx) {
-    setTypeFields(typeFields.filter(function (_, i) { return i !== idx }))
-  }
-  async function saveExpType() {
-    if (typeSaving) return
-    setTypeSaving(true)
-    var checkName = typeEditId ? typeEditName.trim() : typeName.trim()
-    if (!checkName) { setTypeSaving(false); return }
-    var dupe = expTypes.find(function (t) { return t.name.toLowerCase() === checkName.toLowerCase() && t.id !== typeEditId })
-    if (dupe) { alert('Expense type "' + dupe.name + '" already exists.'); setTypeSaving(false); return }
-    if (typeEditId) {
-      await supabase.from('expense_types').update({ name: typeEditName.trim(), extra_fields: typeFields }).eq('id', typeEditId)
+    if (form.type === 'select') {
+      field.options = (form.options || []).filter(function (o) { return o.trim() })
+    }
+    if (form.type === 'lookup') {
+      field.source = form.source
+    }
+
+    var updated
+    if (editIdx === -1) {
+      updated = fields.concat([field])
     } else {
-      var maxSort = expTypes.reduce(function (m, t) { return t.sort_order > m ? t.sort_order : m }, 0)
-      await supabase.from('expense_types').insert({ name: typeName.trim(), sort_order: maxSort + 1 })
+      updated = fields.map(function (f, i) { return i === editIdx ? field : f })
     }
-    setTypeName('')
-    cancelEditType()
-    setTypeSaving(false)
-    loadExpTypes()
+    setFields(updated)
+    cancelEdit()
   }
-  async function toggleExpType(id, active) {
-    await supabase.from('expense_types').update({ active: !active }).eq('id', id)
-    loadExpTypes()
+
+  function removeField(idx) {
+    if (!confirm('Remove this field?')) return
+    setFields(fields.filter(function (_, i) { return i !== idx }))
   }
-  async function deleteExpType(id, name) {
-    if (!confirm('Delete expense type "' + name + '"? This cannot be undone.')) return
-    var { error } = await supabase.from('expense_types').delete().eq('id', id)
-    if (error) { alert('Delete failed: ' + error.message + (error.message.indexOf('violates foreign key') !== -1 ? '\n\nThis type is used by existing expenses and cannot be deleted. Deactivate it instead.' : '')); return }
-    loadExpTypes()
+
+  function moveField(idx, dir) {
+    if (idx + dir < 0 || idx + dir >= fields.length) return
+    var arr = fields.slice()
+    var tmp = arr[idx]
+    arr[idx] = arr[idx + dir]
+    arr[idx + dir] = tmp
+    setFields(arr)
+  }
+
+  async function saveAll() {
+    if (saving) return
+    setSaving(true)
+    var { error } = await supabase.from('expense_sub_types')
+      .update({ extra_fields: fields })
+      .eq('id', subType.id)
+    if (error) { alert('Save failed: ' + error.message); setSaving(false); return }
+    setSaving(false)
+    if (onSaved) onSaved()
   }
 
   return (
     <div className="space-y-4">
-      {onBack && (
-        <button onClick={onBack} className="text-sm text-indigo-600 font-medium hover:text-indigo-800 transition-colors mb-1">← Back to Expenses</button>
-      )}
-      <h2 className="text-lg font-bold text-gray-900">Expense Types</h2>
-      <div className="space-y-2">
-        {expTypes.map(function (et) {
-          var isEditing = typeEditId === et.id
-          return (
-            <div key={et.id} className={"bg-white border rounded-lg overflow-hidden " + (isEditing ? "border-purple-300 ring-1 ring-purple-200" : "border-gray-200")}>
-              <div className="flex items-center justify-between p-3">
-                <div className="flex items-center gap-2 flex-1 min-w-0">
-                  <span className={"text-sm font-medium truncate " + (et.active ? "text-gray-800" : "text-gray-400 line-through")}>{et.name}</span>
-                  {et.extra_fields && et.extra_fields.length > 0 && (
-                    <span className="text-[10px] text-purple-500 bg-purple-50 px-1.5 py-0.5 rounded">{et.extra_fields.length} fields</span>
-                  )}
-                </div>
-                <div className="flex gap-1 flex-shrink-0">
-                  {!isEditing && (
-                    <button onClick={function () { startEditType(et) }}
-                      className="text-xs px-2 py-1 rounded bg-gray-200 text-gray-600 hover:bg-gray-300 min-h-[32px] min-w-[32px]">✎</button>
-                  )}
-                  <button onClick={function () { toggleExpType(et.id, et.active) }}
-                    className={"text-xs px-2 py-1 rounded min-h-[32px] " + (et.active ? "bg-green-100 text-green-700 hover:bg-green-200" : "bg-red-100 text-red-600 hover:bg-red-200")}>
-                    {et.active ? 'On' : 'Off'}
-                  </button>
-                  <button onClick={function () { deleteExpType(et.id, et.name) }}
-                    className="text-xs px-2 py-1 rounded min-h-[32px] bg-red-50 text-red-400 hover:bg-red-100 hover:text-red-600">✕</button>
-                </div>
-              </div>
-              {isEditing && (
-                <div className="border-t border-purple-200 p-3 space-y-3 bg-purple-50/30">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Type Name</label>
-                    <input type="text" value={typeEditName} onChange={function (e) { setTypeEditName(e.target.value) }}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-400"
-                      style={{ fontSize: '16px' }} />
-                  </div>
-                  <div>
-                    <p className="text-xs font-medium text-gray-600 mb-1.5">Fields</p>
-                    {typeFields.length === 0 && !addFieldMode && (
-                      <p className="text-xs text-gray-400 italic">No custom fields</p>
-                    )}
-                    <div className="space-y-1.5">
-                      {typeFields.map(function (f, idx) {
-                        return (
-                          <div key={f.key} className="flex items-start justify-between p-2 bg-white rounded border border-gray-200">
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-1.5 flex-wrap">
-                                <span className="text-sm font-medium text-gray-800">{f.label}</span>
-                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-600">{f.type}</span>
-                                {f.required && <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-50 text-red-500">required</span>}
-                              </div>
-                              {f.type === 'select' && f.options && (
-                                <p className="text-[10px] text-gray-400 mt-0.5">{f.options.join(', ')}</p>
-                              )}
-                            </div>
-                            <button onClick={function () { removeFieldFromType(idx) }}
-                              className="text-xs text-red-400 hover:text-red-600 px-1 min-h-[28px] min-w-[28px]">✕</button>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </div>
-                  {!addFieldMode ? (
-                    <button onClick={function () { setAddFieldMode(true) }}
-                      className="text-xs text-purple-600 font-medium hover:text-purple-800">+ Add Field</button>
-                  ) : (
-                    <div className="p-3 bg-white rounded-lg border border-purple-200 space-y-2">
-                      <div>
-                        <label className="block text-[10px] font-medium text-gray-500 mb-0.5">Label</label>
-                        <input type="text" value={newFieldLabel} onChange={function (e) { setNewFieldLabel(e.target.value) }}
-                          placeholder="e.g. Invoice Number"
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-400"
-                          style={{ fontSize: '16px' }} />
-                      </div>
-                      <div className="flex gap-2 items-center">
-                        <div className="flex-1">
-                          <label className="block text-[10px] font-medium text-gray-500 mb-0.5">Type</label>
-                          <select value={newFieldType} onChange={function (e) { setNewFieldType(e.target.value) }}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-400 bg-white"
-                            style={{ fontSize: '16px' }}>
-                            <option value="text">Text</option>
-                            <option value="number">Number</option>
-                            <option value="select">Dropdown</option>
-                            <option value="date">Date</option>
-                            <option value="textarea">Long Text</option>
-                          </select>
-                        </div>
-                        <label className="flex items-center gap-1 mt-3">
-                          <input type="checkbox" checked={newFieldRequired} onChange={function (e) { setNewFieldRequired(e.target.checked) }} />
-                          <span className="text-xs text-gray-600">Required</span>
-                        </label>
-                      </div>
-                      {newFieldType === 'select' && (
-                        <div>
-                          <label className="block text-[10px] font-medium text-gray-500 mb-0.5">Options (comma separated)</label>
-                          <input type="text" value={newFieldOptions} onChange={function (e) { setNewFieldOptions(e.target.value) }}
-                            placeholder="e.g. Car, Bus, Train"
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-400"
-                            style={{ fontSize: '16px' }} />
-                        </div>
-                      )}
-                      <div className="flex gap-2 justify-end">
-                        <button onClick={function () { setAddFieldMode(false); resetNewField() }}
-                          className="px-3 py-1.5 text-xs text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 min-h-[36px]">Cancel</button>
-                        <button onClick={addFieldToType} disabled={!newFieldLabel.trim()}
-                          className="px-3 py-1.5 text-xs font-bold text-white bg-purple-600 rounded-lg hover:bg-purple-700 disabled:opacity-50 min-h-[36px]">Add Field</button>
-                      </div>
-                    </div>
-                  )}
-                  <div className="flex gap-2 justify-end pt-1 border-t border-gray-200">
-                    <button onClick={cancelEditType}
-                      className="px-4 py-2 text-xs text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 min-h-[36px]">Cancel</button>
-                    <button onClick={saveExpType} disabled={typeSaving || !typeEditName.trim()}
-                      className="px-4 py-2 text-xs font-bold text-white bg-purple-600 rounded-lg hover:bg-purple-700 disabled:opacity-50 min-h-[36px]">
-                      {typeSaving ? 'Saving...' : 'Update Type'}
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          )
-        })}
-      </div>
-      {!typeEditId && (
+      <div className="flex items-center justify-between">
+        <div>
+          <button onClick={onBack} className="text-sm text-indigo-600 font-medium hover:text-indigo-800 mb-1">← Back</button>
+          <h2 className="text-lg font-bold text-gray-900">Fields: {subType.name}</h2>
+          <p className="text-xs text-gray-400">{fields.length} field{fields.length !== 1 ? 's' : ''}</p>
+        </div>
         <div className="flex gap-2">
-          <input type="text" value={typeName} onChange={function (e) { setTypeName(e.target.value) }}
-            placeholder="New type name..."
-            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-400"
-            style={{ fontSize: '16px' }}
-            onKeyDown={function (e) { if (e.key === 'Enter') saveExpType() }} />
-          <button onClick={saveExpType} disabled={typeSaving || !typeName.trim()}
-            className="px-4 py-2 text-sm font-bold text-white bg-purple-600 rounded-lg hover:bg-purple-700 disabled:opacity-50 min-h-[44px]">
-            Add
+          <button onClick={openAdd}
+            className="px-3 py-2 text-xs font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700">
+            + Add Field
           </button>
+          <button onClick={saveAll} disabled={saving}
+            className="px-3 py-2 text-xs font-bold text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:opacity-50">
+            {saving ? 'Saving...' : '✓ Save All'}
+          </button>
+        </div>
+      </div>
+
+      {/* Field list */}
+      {fields.length === 0 && (
+        <div className="bg-white border border-gray-200 rounded-xl p-8 text-center">
+          <p className="text-gray-400 text-sm">No custom fields yet</p>
+        </div>
+      )}
+
+      {fields.map(function (f, idx) {
+        return (
+          <div key={f.key + '_' + idx} className="bg-white border border-gray-200 rounded-xl p-4">
+            <div className="flex items-center justify-between">
+              <div className="flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-semibold text-gray-900">{f.label}</span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 font-bold uppercase">{f.type}</span>
+                  {f.required && <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-50 text-red-500 font-bold">Required</span>}
+                  {f.type === 'lookup' && f.source && (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 font-bold">
+                      → {LOOKUP_SOURCES.find(function (s) { return s.value === f.source })?.label || f.source}
+                    </span>
+                  )}
+                </div>
+                {f.type === 'select' && f.options && (
+                  <p className="text-[11px] text-gray-400 mt-1">Options: {f.options.join(', ')}</p>
+                )}
+              </div>
+              <div className="flex gap-1">
+                <button onClick={function () { moveField(idx, -1) }} disabled={idx === 0}
+                  className="w-7 h-7 text-xs text-gray-400 hover:text-gray-700 disabled:opacity-30">↑</button>
+                <button onClick={function () { moveField(idx, 1) }} disabled={idx === fields.length - 1}
+                  className="w-7 h-7 text-xs text-gray-400 hover:text-gray-700 disabled:opacity-30">↓</button>
+                <button onClick={function () { openEdit(idx) }}
+                  className="w-7 h-7 text-xs text-gray-500 hover:text-indigo-600">✎</button>
+                <button onClick={function () { removeField(idx) }}
+                  className="w-7 h-7 text-xs text-gray-400 hover:text-red-600">✕</button>
+              </div>
+            </div>
+          </div>
+        )
+      })}
+
+      {/* Add/Edit field form */}
+      {form && (
+        <div className="bg-white border-2 border-indigo-300 rounded-xl p-4 space-y-3">
+          <p className="text-sm font-bold text-indigo-700">{editIdx === -1 ? 'New Field' : 'Edit Field'}</p>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Label *</label>
+            <input type="text" value={form.label}
+              onChange={function (e) { updateForm('label', e.target.value) }}
+              placeholder="e.g. Vendor Name, Distance (km)"
+              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+              style={{ fontSize: '16px' }} />
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Type</label>
+            <select value={form.type}
+              onChange={function (e) { updateForm('type', e.target.value) }}
+              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white"
+              style={{ fontSize: '16px' }}>
+              {FIELD_TYPES.map(function (t) { return <option key={t.value} value={t.value}>{t.label}</option> })}
+            </select>
+          </div>
+
+          {form.type === 'lookup' && (
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Data Source</label>
+              <select value={form.source}
+                onChange={function (e) { updateForm('source', e.target.value) }}
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white"
+                style={{ fontSize: '16px' }}>
+                <option value="">Select source...</option>
+                {LOOKUP_SOURCES.map(function (s) { return <option key={s.value} value={s.value}>{s.label}</option> })}
+              </select>
+            </div>
+          )}
+
+          {form.type === 'select' && (
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Options (one per line)</label>
+              <textarea
+                value={(form.options || []).join('\n')}
+                onChange={function (e) { updateForm('options', e.target.value.split('\n')) }}
+                rows={4}
+                placeholder={"Option 1\nOption 2\nOption 3"}
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm resize-none"
+                style={{ fontSize: '16px' }} />
+            </div>
+          )}
+
+          <div className="flex items-center gap-2">
+            <input type="checkbox" checked={form.required}
+              onChange={function (e) { updateForm('required', e.target.checked) }}
+              id="field_required" />
+            <label htmlFor="field_required" className="text-sm text-gray-700">Required</label>
+          </div>
+
+          <div className="flex gap-2">
+            <button onClick={cancelEdit}
+              className="flex-1 py-2 text-sm text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 font-medium">Cancel</button>
+            <button onClick={saveField} disabled={!form.label.trim() || (form.type === 'lookup' && !form.source)}
+              className="flex-1 py-2 text-sm text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 font-medium">
+              {editIdx === -1 ? 'Add' : 'Update'}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ═══════════════════════════════════════════════
+// SUB-TYPE LIST — for a given expense type
+// ═══════════════════════════════════════════════
+function SubTypeList({ expenseType, onBack }) {
+  var [subTypes, setSubTypes] = useState([])
+  var [loading, setLoading] = useState(true)
+  var [editId, setEditId] = useState(null)
+  var [form, setForm] = useState({ name: '', description: '' })
+  var [saving, setSaving] = useState(false)
+  var [fieldView, setFieldView] = useState(null)
+
+  useEffect(function () { load() }, [])
+
+  async function load() {
+    var { data } = await supabase.from('expense_sub_types')
+      .select('*')
+      .eq('expense_type_id', expenseType.id)
+      .order('sort_order')
+      .order('name')
+    setSubTypes(data || [])
+    setLoading(false)
+  }
+
+  function openAdd() {
+    setForm({ name: '', description: '' })
+    setEditId('new')
+  }
+
+  function openEdit(st) {
+    setForm({ name: st.name, description: st.description || '' })
+    setEditId(st.id)
+  }
+
+  function cancelEdit() {
+    setForm({ name: '', description: '' })
+    setEditId(null)
+  }
+
+  async function saveSubType() {
+    if (!form.name.trim() || saving) return
+    setSaving(true)
+    if (editId === 'new') {
+      var { error } = await supabase.from('expense_sub_types').insert({
+        expense_type_id: expenseType.id,
+        name: form.name.trim(),
+        description: form.description.trim() || null,
+        sort_order: subTypes.length,
+      })
+      if (error) { alert('Add failed: ' + error.message); setSaving(false); return }
+    } else {
+      var { error: uErr } = await supabase.from('expense_sub_types').update({
+        name: form.name.trim(),
+        description: form.description.trim() || null,
+      }).eq('id', editId)
+      if (uErr) { alert('Update failed: ' + uErr.message); setSaving(false); return }
+    }
+    setSaving(false)
+    cancelEdit()
+    load()
+  }
+
+  async function deleteSubType(st) {
+    if (!confirm('Delete "' + st.name + '"? This cannot be undone.')) return
+    var { error } = await supabase.from('expense_sub_types').delete().eq('id', st.id)
+    if (error) { alert('Delete failed: ' + error.message); return }
+    load()
+  }
+
+  async function toggleActive(st) {
+    await supabase.from('expense_sub_types').update({ active: !st.active }).eq('id', st.id)
+    load()
+  }
+
+  if (fieldView) {
+    return (
+      <FieldEditor
+        subType={fieldView}
+        onBack={function () { setFieldView(null); load() }}
+        onSaved={function () { setFieldView(null); load() }}
+      />
+    )
+  }
+
+  if (loading) return <p className="text-center py-8 text-gray-400 text-sm">Loading...</p>
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <button onClick={onBack} className="text-sm text-indigo-600 font-medium hover:text-indigo-800 mb-1">← Back</button>
+          <h2 className="text-lg font-bold text-gray-900">{expenseType.name}</h2>
+          <p className="text-xs text-gray-400">{subTypes.length} sub-type{subTypes.length !== 1 ? 's' : ''}</p>
+        </div>
+        <button onClick={openAdd}
+          className="px-4 py-2 text-sm font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700">
+          + Add Sub-Type
+        </button>
+      </div>
+
+      {subTypes.length === 0 && !editId && (
+        <div className="bg-white border border-gray-200 rounded-xl p-8 text-center">
+          <p className="text-gray-400 text-sm">No sub-types yet. Add one to get started.</p>
+        </div>
+      )}
+
+      {subTypes.map(function (st) {
+        var fieldCount = (st.extra_fields || []).length
+        return (
+          <div key={st.id} className={"bg-white border rounded-xl p-4 " + (st.active ? "border-gray-200" : "border-gray-100 opacity-60")}>
+            <div className="flex items-center justify-between">
+              <div className="flex-1 cursor-pointer" onClick={function () { setFieldView(st) }}>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-semibold text-gray-900">{st.name}</span>
+                  {fieldCount > 0 && (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600 font-bold">
+                      {fieldCount} field{fieldCount !== 1 ? 's' : ''}
+                    </span>
+                  )}
+                  {!st.active && (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 font-bold">OFF</span>
+                  )}
+                </div>
+                {st.description && <p className="text-xs text-gray-400 mt-0.5">{st.description}</p>}
+              </div>
+              <div className="flex gap-1">
+                <button onClick={function () { setFieldView(st) }}
+                  className="px-2 py-1 text-xs text-indigo-600 hover:bg-indigo-50 rounded font-medium">⚙ Fields</button>
+                <button onClick={function () { openEdit(st) }}
+                  className="px-2 py-1 text-xs text-gray-500 hover:bg-gray-100 rounded">✎</button>
+                <button onClick={function () { toggleActive(st) }}
+                  className={"px-2 py-1 text-xs rounded font-medium " + (st.active ? "text-green-600 hover:bg-green-50" : "text-gray-400 hover:bg-gray-100")}>
+                  {st.active ? 'On' : 'Off'}
+                </button>
+                <button onClick={function () { deleteSubType(st) }}
+                  className="px-2 py-1 text-xs text-red-400 hover:text-red-600 hover:bg-red-50 rounded">✕</button>
+              </div>
+            </div>
+          </div>
+        )
+      })}
+
+      {/* Add/Edit form */}
+      {editId && (
+        <div className="bg-white border-2 border-indigo-300 rounded-xl p-4 space-y-3">
+          <p className="text-sm font-bold text-indigo-700">{editId === 'new' ? 'New Sub-Type' : 'Edit Sub-Type'}</p>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Name *</label>
+            <input type="text" value={form.name}
+              onChange={function (e) { setForm(Object.assign({}, form, { name: e.target.value })) }}
+              placeholder="e.g. Fuel, Electricity, Cab"
+              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+              style={{ fontSize: '16px' }} />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Description</label>
+            <input type="text" value={form.description}
+              onChange={function (e) { setForm(Object.assign({}, form, { description: e.target.value })) }}
+              placeholder="Optional description"
+              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+              style={{ fontSize: '16px' }} />
+          </div>
+          <div className="flex gap-2">
+            <button onClick={cancelEdit}
+              className="flex-1 py-2 text-sm text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 font-medium">Cancel</button>
+            <button onClick={saveSubType} disabled={!form.name.trim() || saving}
+              className="flex-1 py-2 text-sm text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 font-medium">
+              {saving ? 'Saving...' : (editId === 'new' ? 'Add' : 'Update')}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ═══════════════════════════════════════════════
+// MAIN — expense types list
+// ═══════════════════════════════════════════════
+function ExpenseTypeMaster({ onBack }) {
+  var [types, setTypes] = useState([])
+  var [loading, setLoading] = useState(true)
+  var [editId, setEditId] = useState(null)
+  var [form, setForm] = useState({ name: '', description: '', icon: '' })
+  var [saving, setSaving] = useState(false)
+  var [subView, setSubView] = useState(null)
+
+  useEffect(function () { load() }, [])
+
+  async function load() {
+    var { data } = await supabase.from('expense_types')
+      .select('*, expense_sub_types(id)')
+      .eq('active', true)
+      .order('sort_order')
+      .order('name')
+    setTypes(data || [])
+    setLoading(false)
+  }
+
+  function openAdd() {
+    setForm({ name: '', description: '', icon: '' })
+    setEditId('new')
+  }
+
+  function openEdit(t) {
+    setForm({ name: t.name, description: t.description || '', icon: t.icon || '' })
+    setEditId(t.id)
+  }
+
+  function cancelEdit() {
+    setForm({ name: '', description: '', icon: '' })
+    setEditId(null)
+  }
+
+  async function saveType() {
+    if (!form.name.trim() || saving) return
+    setSaving(true)
+    if (editId === 'new') {
+      var { error } = await supabase.from('expense_types').insert({
+        name: form.name.trim(),
+        description: form.description.trim() || null,
+        icon: form.icon.trim() || null,
+        sort_order: types.length,
+        active: true,
+      })
+      if (error) { alert('Add failed: ' + error.message); setSaving(false); return }
+    } else {
+      var { error: uErr } = await supabase.from('expense_types').update({
+        name: form.name.trim(),
+        description: form.description.trim() || null,
+        icon: form.icon.trim() || null,
+      }).eq('id', editId)
+      if (uErr) { alert('Update failed: ' + uErr.message); setSaving(false); return }
+    }
+    setSaving(false)
+    cancelEdit()
+    load()
+  }
+
+  async function deleteType(t) {
+    var subCount = (t.expense_sub_types || []).length
+    var msg = 'Delete "' + t.name + '"?'
+    if (subCount > 0) msg += ' This will also delete ' + subCount + ' sub-type' + (subCount > 1 ? 's' : '') + '.'
+    if (!confirm(msg)) return
+    var { error } = await supabase.from('expense_types').delete().eq('id', t.id)
+    if (error) { alert('Delete failed: ' + error.message); return }
+    load()
+  }
+
+  async function toggleActive(t) {
+    await supabase.from('expense_types').update({ active: !t.active }).eq('id', t.id)
+    load()
+  }
+
+  if (subView) {
+    return <SubTypeList expenseType={subView} onBack={function () { setSubView(null); load() }} />
+  }
+
+  if (loading) return <p className="text-center py-8 text-gray-400 text-sm">Loading...</p>
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          {onBack && <button onClick={onBack} className="text-sm text-indigo-600 font-medium hover:text-indigo-800 mb-1">← Back</button>}
+          <h2 className="text-lg font-bold text-gray-900">Expense Types</h2>
+          <p className="text-xs text-gray-400">Manage types, sub-types, and custom fields</p>
+        </div>
+        <button onClick={openAdd}
+          className="px-4 py-2 text-sm font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700">
+          + Add Type
+        </button>
+      </div>
+
+      {types.length === 0 && !editId && (
+        <div className="bg-white border border-gray-200 rounded-xl p-8 text-center">
+          <p className="text-gray-400 text-sm">No expense types yet. Add one to get started.</p>
+        </div>
+      )}
+
+      {types.map(function (t) {
+        var subCount = (t.expense_sub_types || []).length
+        return (
+          <div key={t.id} className="bg-white border border-gray-200 rounded-xl p-4">
+            <div className="flex items-center justify-between">
+              <div className="flex-1 cursor-pointer" onClick={function () { setSubView(t) }}>
+                <div className="flex items-center gap-2">
+                  {t.icon && <span className="text-lg">{t.icon}</span>}
+                  <span className="text-sm font-semibold text-gray-900">{t.name}</span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 font-bold">
+                    {subCount} sub-type{subCount !== 1 ? 's' : ''}
+                  </span>
+                </div>
+                {t.description && <p className="text-xs text-gray-400 mt-0.5">{t.description}</p>}
+              </div>
+              <div className="flex gap-1">
+                <button onClick={function () { setSubView(t) }}
+                  className="px-2 py-1 text-xs text-indigo-600 hover:bg-indigo-50 rounded font-medium">Sub-Types →</button>
+                <button onClick={function () { openEdit(t) }}
+                  className="px-2 py-1 text-xs text-gray-500 hover:bg-gray-100 rounded">✎</button>
+                <button onClick={function () { deleteType(t) }}
+                  className="px-2 py-1 text-xs text-red-400 hover:text-red-600 hover:bg-red-50 rounded">✕</button>
+              </div>
+            </div>
+          </div>
+        )
+      })}
+
+      {/* Add/Edit form */}
+      {editId && (
+        <div className="bg-white border-2 border-indigo-300 rounded-xl p-4 space-y-3">
+          <p className="text-sm font-bold text-indigo-700">{editId === 'new' ? 'New Expense Type' : 'Edit Expense Type'}</p>
+          <div className="grid grid-cols-6 gap-3">
+            <div className="col-span-1">
+              <label className="block text-xs font-medium text-gray-600 mb-1">Icon</label>
+              <input type="text" value={form.icon}
+                onChange={function (e) { setForm(Object.assign({}, form, { icon: e.target.value })) }}
+                placeholder="💰"
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm text-center"
+                style={{ fontSize: '16px' }}
+                maxLength={4} />
+            </div>
+            <div className="col-span-5">
+              <label className="block text-xs font-medium text-gray-600 mb-1">Name *</label>
+              <input type="text" value={form.name}
+                onChange={function (e) { setForm(Object.assign({}, form, { name: e.target.value })) }}
+                placeholder="e.g. Transport, Vendor Payment, Utility"
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+                style={{ fontSize: '16px' }} />
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Description</label>
+            <input type="text" value={form.description}
+              onChange={function (e) { setForm(Object.assign({}, form, { description: e.target.value })) }}
+              placeholder="Optional description"
+              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+              style={{ fontSize: '16px' }} />
+          </div>
+          <div className="flex gap-2">
+            <button onClick={cancelEdit}
+              className="flex-1 py-2 text-sm text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 font-medium">Cancel</button>
+            <button onClick={saveType} disabled={!form.name.trim() || saving}
+              className="flex-1 py-2 text-sm text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 font-medium">
+              {saving ? 'Saving...' : (editId === 'new' ? 'Add' : 'Update')}
+            </button>
+          </div>
         </div>
       )}
     </div>
