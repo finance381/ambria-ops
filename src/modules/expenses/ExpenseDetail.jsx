@@ -122,15 +122,14 @@ function ExpenseDetail({ exp, profile, subCatMap, isAdmin, isDeptApprover, onBac
         })
       } catch (_) {}
     }
-    try {
-      await supabase.rpc('wallet_admin_debit', {
-        p_user_id: exp.user_id,
-        p_amount_paise: penaltyPaise,
-        p_description: 'Penalty: ' + rejectReason.trim().slice(0, 80),
-        p_ref_type: 'expense_penalty',
-        p_ref_id: String(exp.id),
-      })
-    } catch (_) {}
+    var { error: debitErr } = await supabase.rpc('wallet_admin_debit', {
+      p_user_id: exp.user_id,
+      p_amount_paise: penaltyPaise,
+      p_description: 'Penalty: ' + rejectReason.trim().slice(0, 80),
+      p_ref_type: 'expense_penalty',
+      p_ref_id: String(exp.id),
+    })
+    if (debitErr) alert('Penalty debit failed: ' + debitErr.message)
     try { await logActivity('EXPENSE_PENALIZE', (exp.description || 'Expense') + ' | Refund ' + formatPoints(exp.amount_paise) + ' | Penalty ' + formatPoints(penaltyPaise) + ' | ' + rejectReason.trim()) } catch (_) {}
     setSaving(false)
     onUpdated()
