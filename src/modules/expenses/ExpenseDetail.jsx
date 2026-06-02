@@ -36,9 +36,10 @@ function ExpenseDetail({ exp, profile, subCatMap, isAdmin, isDeptApprover, onBac
       })
   }, [exp.id])
 
-  var canReview = (isAdmin || isDeptApprover) && exp.status === 'recorded' && exp.user_id !== profile?.id
-  var canDelete = (exp.user_id === profile?.id && exp.status === 'recorded') || isAdmin
-  var canEdit = exp.user_id === profile?.id && exp.status === 'recorded'
+  var canReview = (isAdmin || isDeptApprover) && (exp.status === 'recorded' || exp.status === 'flagged') && exp.user_id !== profile?.id
+  var canDelete = (exp.user_id === profile?.id && (exp.status === 'recorded' || exp.status === 'flagged')) || isAdmin
+  var canEdit = exp.user_id === profile?.id && (exp.status === 'recorded' || exp.status === 'flagged')
+  var canResubmit = exp.user_id === profile?.id && exp.status === 'flagged'
 
   var receiptUrl = exp.receipt_path ? supabase.storage.from('receipts').getPublicUrl(exp.receipt_path).data?.publicUrl : null
   var isVoiceReceipt = /\.(webm|ogg|mp3|wav)$/i.test(exp.receipt_path || '')
@@ -53,6 +54,18 @@ function ExpenseDetail({ exp, profile, subCatMap, isAdmin, isDeptApprover, onBac
       acknowledged_at: new Date().toISOString(),
     }).eq('id', exp.id)
     if (error) { alert('Acknowledge failed: ' + error.message); setSaving(false); return }
+    // If acknowledging a flagged expense, re-debit wallet (was refunded on flag)
+    if (exp.status === 'flagged') {
+      try {
+        await supabase.rpc('wallet_admin_debit', {
+          p_user_id: exp.user_id,
+          p_amount_paise: exp.amount_paise,
+          p_description: 'Accepted: expense #' + exp.id + ' after flag',
+          p_ref_type: 'expense',
+          p_ref_id: String(exp.id),
+        })
+      } catch (_) {}
+    }
     try { await logActivity('EXPENSE_ACKNOWLEDGE', (exp.description || 'Expense') + ' | ' + formatPoints(exp.amount_paise)) } catch (_) {}
     setSaving(false)
     onUpdated()
@@ -69,7 +82,18 @@ function ExpenseDetail({ exp, profile, subCatMap, isAdmin, isDeptApprover, onBac
       reviewed_at: new Date().toISOString(),
     }).eq('id', exp.id)
     if (error) { alert('Flag failed: ' + error.message); setSaving(false); return }
-    try { await logActivity('EXPENSE_FLAG', (exp.description || 'Expense') + ' | ' + rejectReason.trim()) } catch (_) {}
+    if (exp.status === 'recorded') {
+      try {
+        await supabase.rpc('wallet_admin_credit', {
+          p_user_id: exp.user_id,
+          p_amount_paise: exp.amount_paise,
+          p_description: 'Refund: flagged expense #' + exp.id,
+          p_ref_type: 'expense_refund',
+          p_ref_id: String(exp.id),
+        })
+      } catch (_) {}
+    }
+    try { await logActivity('EXPENSE_FLAG', (exp.description || 'Expense') + ' | Refund ' + formatPoints(exp.amount_paise) + ' | ' + rejectReason.trim()) } catch (_) {}
     setSaving(false)
     onUpdated()
   }
@@ -87,23 +111,51 @@ function ExpenseDetail({ exp, profile, subCatMap, isAdmin, isDeptApprover, onBac
       penalized_at: new Date().toISOString(),
     }).eq('id', exp.id)
     if (error) { alert('Penalize failed: ' + error.message); setSaving(false); return }
+    if (exp.status === 'recorded') {
+      try {
+        await supabase.rpc('wallet_admin_credit', {
+          p_user_id: exp.user_id,
+          p_amount_paise: exp.amount_paise,
+          p_description: 'Refund: penalized expense #' + exp.id,
+          p_ref_type: 'expense_refund',
+          p_ref_id: String(exp.id),
+        })
+      } catch (_) {}
+    }
     try {
-      await supabase.rpc('wallet_admin_credit', {
-        p_user_id: exp.user_id,
-        p_amount_paise: exp.amount_paise,
-        p_description: 'Refund: rejected expense #' + exp.id,
-        p_ref_type: 'expense_refund',
-        p_ref_id: String(exp.id),
-      })
-    } catch (_) {}
-    try {
-      await supabase.rpc('deduct_money', {
+      await supabase.rpc('wallet_admin_debit', {
         p_user_id: exp.user_id,
         p_amount_paise: penaltyPaise,
         p_description: 'Penalty: ' + rejectReason.trim().slice(0, 80),
+        p_ref_type: 'expense_penalty',
+        p_ref_id: String(exp.id),
       })
     } catch (_) {}
     try { await logActivity('EXPENSE_PENALIZE', (exp.description || 'Expense') + ' | Refund ' + formatPoints(exp.amount_paise) + ' | Penalty ' + formatPoints(penaltyPaise) + ' | ' + rejectReason.trim()) } catch (_) {}
+    setSaving(false)
+    onUpdated()
+  }
+
+  async function resubmit() {
+    if (saving) return
+    if (!confirm('Resubmit this expense for review? ' + formatPoints(exp.amount_paise) + ' will be deducted from your wallet again.')) return
+    setSaving(true)
+    var { error } = await supabase.from('expenses').update({
+      status: 'recorded',
+      flag_reason: null,
+      reviewed_by: null,
+      reviewed_at: null,
+    }).eq('id', exp.id)
+    if (error) { alert('Resubmit failed: ' + error.message); setSaving(false); return }
+    try {
+      await supabase.rpc('wallet_self_debit', {
+        p_amount_paise: exp.amount_paise,
+        p_description: 'Resubmit: expense #' + exp.id,
+        p_ref_type: 'expense',
+        p_ref_id: String(exp.id),
+      })
+    } catch (_) {}
+    try { await logActivity('EXPENSE_RESUBMIT', (exp.description || 'Expense') + ' | ' + formatPoints(exp.amount_paise)) } catch (_) {}
     setSaving(false)
     onUpdated()
   }
@@ -117,24 +169,26 @@ function ExpenseDetail({ exp, profile, subCatMap, isAdmin, isDeptApprover, onBac
     }
     var { error } = await supabase.from('expenses').delete().eq('id', exp.id)
     if (error) { alert('Delete failed: ' + error.message); setSaving(false); return }
-    try {
-      if (exp.user_id === profile?.id) {
-        await supabase.rpc('wallet_self_credit', {
-          p_amount_paise: exp.amount_paise,
-          p_description: 'Refund: deleted expense',
-          p_ref_type: 'expense_refund',
-          p_ref_id: String(exp.id),
-        })
-      } else {
-        await supabase.rpc('wallet_admin_credit', {
-          p_user_id: exp.user_id,
-          p_amount_paise: exp.amount_paise,
-          p_description: 'Refund: deleted expense',
-          p_ref_type: 'expense_refund',
-          p_ref_id: String(exp.id),
-        })
-      }
-    } catch (_) {}
+    if (exp.status === 'recorded') {
+      try {
+        if (exp.user_id === profile?.id) {
+          await supabase.rpc('wallet_self_credit', {
+            p_amount_paise: exp.amount_paise,
+            p_description: 'Refund: deleted expense',
+            p_ref_type: 'expense_refund',
+            p_ref_id: String(exp.id),
+          })
+        } else {
+          await supabase.rpc('wallet_admin_credit', {
+            p_user_id: exp.user_id,
+            p_amount_paise: exp.amount_paise,
+            p_description: 'Refund: deleted expense',
+            p_ref_type: 'expense_refund',
+            p_ref_id: String(exp.id),
+          })
+        }
+      } catch (_) {}
+    }
     try { await logActivity('EXPENSE_DELETE', exp.description || 'Expense') } catch (_) {}
     setSaving(false)
     onUpdated()
@@ -142,7 +196,6 @@ function ExpenseDetail({ exp, profile, subCatMap, isAdmin, isDeptApprover, onBac
 
   return (
     <div className="space-y-4">
-      {/* Header */}
       <div>
         <button onClick={onBack} className="text-sm text-indigo-600 font-medium hover:text-indigo-800 transition-colors mb-2">← Back</button>
         <div className="flex items-start justify-between">
@@ -158,7 +211,6 @@ function ExpenseDetail({ exp, profile, subCatMap, isAdmin, isDeptApprover, onBac
         </div>
       </div>
 
-      {/* Flag/Penalize/Rejection banners */}
       {exp.status === 'rejected' && exp.rejection_reason && (
         <div className="bg-red-50 border border-red-200 rounded-lg p-3">
           <p className="text-xs font-bold text-red-700 mb-0.5">Rejection Reason</p>
@@ -168,15 +220,19 @@ function ExpenseDetail({ exp, profile, subCatMap, isAdmin, isDeptApprover, onBac
 
       {(exp.status === 'flagged' || exp.status === 'penalized') && exp.flag_reason && (
         <div className={"border rounded-lg p-3 " + (exp.status === 'penalized' ? "bg-red-50 border-red-200" : "bg-amber-50 border-amber-200")}>
-          <p className={"text-xs font-bold mb-0.5 " + (exp.status === 'penalized' ? "text-red-700" : "text-amber-700")}>{exp.status === 'penalized' ? '💰 Penalized' : '⚠ Flagged'}</p>
+          <p className={"text-xs font-bold mb-0.5 " + (exp.status === 'penalized' ? "text-red-700" : "text-amber-700")}>
+            {exp.status === 'penalized' ? '💰 Penalized' : '⚠ Flagged — Fix & Resubmit'}
+          </p>
           <p className={"text-sm " + (exp.status === 'penalized' ? "text-red-600" : "text-amber-600")}>{exp.flag_reason}</p>
           {exp.penalty_paise > 0 && (
             <p className="text-sm font-bold text-red-700 mt-1">Penalty: {formatPoints(exp.penalty_paise)}</p>
           )}
+          {exp.status === 'flagged' && (
+            <p className="text-[11px] text-amber-500 mt-1">Wallet refunded. Edit and resubmit, or delete this expense.</p>
+          )}
         </div>
       )}
 
-      {/* ── Receipt / Proof — shown prominently before details ── */}
       {receiptUrl ? (
         <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
           <div className="px-4 py-2 bg-gray-50 border-b border-gray-200">
@@ -211,7 +267,6 @@ function ExpenseDetail({ exp, profile, subCatMap, isAdmin, isDeptApprover, onBac
         </div>
       )}
 
-      {/* Fullscreen image overlay */}
       {imgFullscreen && receiptUrl && (
         <div
           onClick={function () { setImgFullscreen(false) }}
@@ -226,7 +281,6 @@ function ExpenseDetail({ exp, profile, subCatMap, isAdmin, isDeptApprover, onBac
         </div>
       )}
 
-      {/* ── Expense details card ── */}
       <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-3">
         <div className="flex justify-between">
           <span className="text-sm text-gray-500">Amount</span>
@@ -264,8 +318,6 @@ function ExpenseDetail({ exp, profile, subCatMap, isAdmin, isDeptApprover, onBac
             <span className="text-sm text-gray-800">{exp.events.event_name}</span>
           </div>
         )}
-
-        {/* Dynamic extra fields from expense type */}
         {exp.expense_types?.extra_fields && exp.expense_types.extra_fields.map(function (field) {
           var val = (exp.metadata && exp.metadata[field.key]) || exp[field.key] || null
           if (!val) return null
@@ -276,21 +328,17 @@ function ExpenseDetail({ exp, profile, subCatMap, isAdmin, isDeptApprover, onBac
             </div>
           )
         })}
-
         {exp.description && (
           <div className="border-t border-gray-100 pt-3">
             <span className="text-xs font-medium text-gray-500 uppercase tracking-wider">Description</span>
             <p className="text-sm text-gray-800 mt-1">{exp.description}</p>
           </div>
         )}
-
-        {/* Timestamp */}
         <div className="border-t border-gray-100 pt-2">
           <p className="text-[10px] text-gray-400">Submitted {exp.created_at ? formatDate(exp.created_at) : '—'}</p>
         </div>
       </div>
 
-      {/* ── Allocations ── */}
       {allocations.length > 0 && (
         <div className="bg-white border border-gray-200 rounded-lg p-4">
           <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Allocations</p>
@@ -311,29 +359,46 @@ function ExpenseDetail({ exp, profile, subCatMap, isAdmin, isDeptApprover, onBac
         </div>
       )}
 
-      {/* ── Actions ── */}
       {canEdit && (
-        <button onClick={onEdit} disabled={saving}
-          className="w-full py-3 text-sm font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 disabled:opacity-50 transition-colors">
-          ✎ Edit Expense
-        </button>
+        <div className="flex gap-2">
+          <button onClick={onEdit} disabled={saving}
+            className="flex-1 py-3 text-sm font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 disabled:opacity-50 transition-colors">
+            ✎ Edit Expense
+          </button>
+          {canResubmit && (
+            <button onClick={resubmit} disabled={saving}
+              className="flex-1 py-3 text-sm font-bold text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors">
+              {saving ? 'Submitting...' : '↻ Resubmit'}
+            </button>
+          )}
+        </div>
       )}
 
       {canReview && !rejectMode && (
         <div className="space-y-2">
-          <button onClick={acknowledge} disabled={saving}
-            className="w-full py-3 text-sm font-bold text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors">
-            {saving ? 'Saving...' : '✓ Acknowledge'}
-          </button>
-          <div className="flex gap-2">
-            <button onClick={function () { setRejectMode('flag') }} disabled={saving}
-              className="flex-1 py-3 text-sm font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 disabled:opacity-50 transition-colors">
-              ⚠ Flag
+          {exp.status === 'recorded' && (
+            <button onClick={acknowledge} disabled={saving}
+              className="w-full py-3 text-sm font-bold text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors">
+              {saving ? 'Saving...' : '✓ Acknowledge'}
             </button>
+          )}
+          <div className="flex gap-2">
+            {exp.status !== 'flagged' && (
+              <button onClick={function () { setRejectMode('flag') }} disabled={saving}
+                className="flex-1 py-3 text-sm font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 disabled:opacity-50 transition-colors">
+                ⚠ Flag
+              </button>
+            )}
             <button onClick={function () { setRejectMode('penalize') }} disabled={saving}
               className="flex-1 py-3 text-sm font-bold text-red-600 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 disabled:opacity-50 transition-colors">
               💰 Penalize
             </button>
+            {exp.status === 'flagged' && (
+              <button onClick={acknowledge} disabled={saving}
+                className="flex-1 py-3 text-sm font-bold text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors">
+                {saving ? '...' : '✓ Accept'}
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -346,7 +411,7 @@ function ExpenseDetail({ exp, profile, subCatMap, isAdmin, isDeptApprover, onBac
             </label>
             <textarea value={rejectReason}
               onChange={function (e) { setRejectReason(e.target.value) }}
-              rows="3" maxLength="500" placeholder={rejectMode === 'penalize' ? 'Reason for penalty...' : 'What is the issue?'}
+              rows="3" maxLength="500" placeholder={rejectMode === 'penalize' ? 'Reason for penalty...' : 'What is the issue? User will see this.'}
               className={"w-full px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 resize-none " + (rejectMode === 'penalize' ? "border-red-300 focus:ring-red-500" : "border-amber-300 focus:ring-amber-500")}
               style={{ fontSize: '16px' }} />
             {rejectMode === 'penalize' && (
@@ -378,7 +443,7 @@ function ExpenseDetail({ exp, profile, subCatMap, isAdmin, isDeptApprover, onBac
         </div>
       )}
 
-      {canDelete && !canReview && (
+      {canDelete && (
         <button onClick={deleteExp} disabled={saving}
           className="w-full py-3 text-sm font-bold text-red-500 bg-white border border-red-200 rounded-lg hover:bg-red-50 disabled:opacity-50 transition-colors">
           Delete Expense
