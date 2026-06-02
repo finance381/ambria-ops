@@ -84,7 +84,6 @@ function Expenses({ profile, masterMode }) {
     var query = supabase.from('expenses')
       .select('id, category_id, sub_category_id, expense_type_id, amount_paise, description, status, expense_date, receipt_path, created_at, rejection_reason, vendor_name, travel_from, travel_to, travel_mode, metadata, event_id, categories(name), expense_types(name, extra_fields), events(event_name)')
       .eq('user_id', profile.id)
-      .eq('user_id', profile.id)
       .order('created_at', { ascending: false })
       .range(offset, offset + PAGE_SIZE)
 

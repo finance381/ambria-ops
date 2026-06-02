@@ -23,9 +23,10 @@ export function pushBack(fn) {
 // Removes handler + goes back in history without triggering the handler
 export function goBack() {
   if (stack.length > 0) {
-    stack.pop()
+    var fn = stack.pop()
     ignoreNext = true
     window.history.back()
+    fn()
   }
 }
 
