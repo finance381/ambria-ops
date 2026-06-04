@@ -9,9 +9,26 @@ function ExpenseDetail({ exp, profile, subCatMap, isAdmin, isDeptApprover, onBac
   var [rejectMode, setRejectMode] = useState(false)
   var [rejectReason, setRejectReason] = useState('')
   var [deductionAmount, setDeductionAmount] = useState('')
+  var [deductionType, setDeductionType] = useState('')
+  var [deductionTypes, setDeductionTypes] = useState([])
+  var [showTypeSuggestions, setShowTypeSuggestions] = useState(false)
   var [allocations, setAllocations] = useState([])
   var [allocVenues, setAllocVenues] = useState({})
   var [imgFullscreen, setImgFullscreen] = useState(false)
+
+  useEffect(function () {
+    supabase.from('expenses').select('deduction_type').not('deduction_type', 'is', null).neq('deduction_type', '')
+      .then(function (res) {
+        var unique = []
+        var seen = {}
+        ;(res.data || []).forEach(function (r) {
+          var v = r.deduction_type
+          if (v && !seen[v.toLowerCase()]) { seen[v.toLowerCase()] = true; unique.push(v) }
+        })
+        unique.sort()
+        setDeductionTypes(unique)
+      })
+  }, [])
 
   useEffect(function () {
     supabase.from('expense_allocations')
@@ -106,6 +123,7 @@ function ExpenseDetail({ exp, profile, subCatMap, isAdmin, isDeptApprover, onBac
     var { error } = await supabase.from('expenses').update({
       status: 'deducted',
       flag_reason: rejectReason.trim(),
+      deduction_type: deductionType.trim() || null,
       penalty_paise: deductionPaise,
       penalized_by: profile.id,
       penalized_at: new Date().toISOString(),
@@ -223,6 +241,9 @@ function ExpenseDetail({ exp, profile, subCatMap, isAdmin, isDeptApprover, onBac
             {exp.status === 'deducted' ? '💰 Deducted' : '⚠ Flagged — Fix & Resubmit'}
           </p>
           <p className={"text-sm " + (exp.status === 'deducted' ? "text-red-600" : "text-amber-600")}>{exp.flag_reason}</p>
+          {exp.deduction_type && (
+            <p className="text-xs text-red-500 mt-1">Type: {exp.deduction_type}</p>
+          )}
           {exp.penalty_paise > 0 && (
             <p className="text-sm font-bold text-red-700 mt-1">Deduction: {formatPoints(exp.penalty_paise)}</p>
           )}
@@ -414,6 +435,31 @@ function ExpenseDetail({ exp, profile, subCatMap, isAdmin, isDeptApprover, onBac
               className={"w-full px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 resize-none " + (rejectMode === 'deduct' ? "border-red-300 focus:ring-red-500" : "border-amber-300 focus:ring-amber-500")}
               style={{ fontSize: '16px' }} />
             {rejectMode === 'deduct' && (
+              <div className="mt-2 relative">
+                <label className="block text-sm font-medium text-red-700 mb-1">Deduction Type</label>
+                <input type="text" value={deductionType}
+                  onChange={function (e) { setDeductionType(e.target.value); setShowTypeSuggestions(true) }}
+                  onFocus={function () { setShowTypeSuggestions(true) }}
+                  onBlur={function () { setTimeout(function () { setShowTypeSuggestions(false) }, 200) }}
+                  placeholder="e.g. Late submission, Policy violation..."
+                  className="w-full px-3 py-2 border border-red-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+                  style={{ fontSize: '16px' }} />
+                {showTypeSuggestions && deductionTypes.length > 0 && (
+                  <div className="absolute z-10 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-40 overflow-y-auto">
+                    {deductionTypes.filter(function (t) { return !deductionType || t.toLowerCase().indexOf(deductionType.toLowerCase()) !== -1 }).map(function (t) {
+                      return (
+                        <button key={t} type="button"
+                          onMouseDown={function (e) { e.preventDefault(); setDeductionType(t); setShowTypeSuggestions(false) }}
+                          className="w-full text-left px-3 py-2 text-sm hover:bg-red-50 text-gray-700">
+                          {t}
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+            {rejectMode === 'deduct' && (
               <div className="mt-2">
                 <label className="block text-sm font-medium text-red-700 mb-1">Deduction Amount (Points) <span className="text-red-500">*</span></label>
                 <input type="number" min="1" step="any" inputMode="decimal" value={deductionAmount}
@@ -425,7 +471,7 @@ function ExpenseDetail({ exp, profile, subCatMap, isAdmin, isDeptApprover, onBac
             )}
           </div>
           <div className="flex gap-3">
-            <button onClick={function () { setRejectMode(false); setRejectReason(''); setDeductionAmount('') }}
+            <button onClick={function () { setRejectMode(false); setRejectReason(''); setDeductionAmount(''); setDeductionType('') }}
               className="flex-1 py-3 text-sm text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors font-medium">Cancel</button>
             {rejectMode === 'deduct' ? (
               <button onClick={deduct} disabled={saving || !rejectReason.trim() || !deductionAmount || Number(deductionAmount) <= 0}

@@ -55,7 +55,7 @@ function ReviewHistory({ profile, onBack, onOpenDetail }) {
     else setLoadingMore(true)
 
     var query = supabase.from('expenses')
-      .select('id, user_id, category_id, expense_type_id, expense_sub_type_id, amount_paise, description, status, expense_date, receipt_path, created_at, flag_reason, penalty_paise, acknowledged_by, acknowledged_at, reviewed_by, reviewed_at, penalized_by, penalized_at, vendor_name, travel_from, travel_to, travel_mode, metadata, event_id, categories(name), expense_types(name), expense_sub_types(name, extra_fields), events(event_name)')
+      .select('id, user_id, category_id, expense_type_id, expense_sub_type_id, amount_paise, description, status, expense_date, receipt_path, created_at, flag_reason, penalty_paise, deduction_type, acknowledged_by, acknowledged_at, reviewed_by, reviewed_at, penalized_by, penalized_at, vendor_name, travel_from, travel_to, travel_mode, metadata, event_id, categories(name), expense_types(name), expense_sub_types(name, extra_fields), events(event_name)')
       .order('created_at', { ascending: false })
       .range(offset, offset + PAGE_SIZE)
 
