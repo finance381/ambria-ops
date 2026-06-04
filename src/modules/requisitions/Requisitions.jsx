@@ -1318,6 +1318,7 @@ function RequisitionDetail({ req, items, profile, isAdmin, isDeptApprover, onBac
   var [stockLoading, setStockLoading] = useState(false)
   var [fulfillChoices, setFulfillChoices] = useState({})
   var [dispatchNote, setDispatchNote] = useState('')
+  var [confirmAction, setConfirmAction] = useState(null)
 
   useEffect(function () {
     // Fetch PO status for items that have po_item_id
@@ -1480,7 +1481,6 @@ function RequisitionDetail({ req, items, profile, isAdmin, isDeptApprover, onBac
   }
   async function convertToExpense() {
     if (saving || req.req_type !== 'expense' || req.status !== 'approved' || req.requested_by !== profile?.id) return
-    if (!confirm('Record this as an actual expense? ' + formatPoints(req.expense_amount_paise) + ' will be deducted from your wallet.')) return
     setSaving(true)
     try {
       var { data: newExp, error: insErr } = await supabase.from('expenses').insert({
@@ -1754,10 +1754,36 @@ function RequisitionDetail({ req, items, profile, isAdmin, isDeptApprover, onBac
 
       {/* Convert expense req to actual expense */}
       {req.req_type === 'expense' && req.status === 'approved' && req.requested_by === profile?.id && (
-        <button onClick={convertToExpense} disabled={saving}
+        <button onClick={function () { setConfirmAction('expense') }} disabled={saving}
           className="w-full py-3 text-sm font-bold text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors">
           {saving ? 'Recording...' : '💰 Record Expense · ' + formatPoints(req.expense_amount_paise)}
         </button>
+      )}
+
+      {confirmAction === 'expense' && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" style={{ margin: 0 }}>
+          <div className="bg-white rounded-2xl w-full max-w-sm shadow-xl overflow-hidden">
+            <div className="p-5 text-center">
+              <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                <span className="text-2xl">💰</span>
+              </div>
+              <h3 className="text-lg font-bold text-gray-900">Record Expense?</h3>
+              <p className="text-sm text-gray-500 mt-2">
+                <span className="font-bold text-gray-800">{formatPoints(req.expense_amount_paise)}</span> will be deducted from your wallet.
+              </p>
+            </div>
+            <div className="flex border-t border-gray-200">
+              <button onClick={function () { setConfirmAction(null) }}
+                className="flex-1 py-3.5 text-sm font-semibold text-gray-500 hover:bg-gray-50 transition-colors border-r border-gray-200">
+                Cancel
+              </button>
+              <button onClick={function () { setConfirmAction(null); convertToExpense() }}
+                className="flex-1 py-3.5 text-sm font-bold text-green-600 hover:bg-green-50 transition-colors">
+                Confirm
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Edit button for owner on pending */}
