@@ -427,7 +427,7 @@ function Expenses({ profile, masterMode }) {
       {/* Status filter — My Expenses only */}
       {view === 'list' && (
         <div className="flex gap-2 flex-wrap">
-          {['', 'recorded', 'acknowledged', 'flagged', 'penalized'].map(function (s) {
+          {['', 'recorded', 'acknowledged', 'flagged', 'deducted'].map(function (s) {
             var label = s ? APPROVAL_STATUS_LABELS[s] : 'All'
             return (
               <button key={s} onClick={function () { setStatusFilter(s === statusFilter ? '' : s) }}
@@ -508,10 +508,10 @@ function Expenses({ profile, masterMode }) {
               {exp.status === 'rejected' && exp.rejection_reason && (
                 <p className="text-[11px] text-red-500 mt-1 line-clamp-1">Reason: {exp.rejection_reason}</p>
               )}
-              {exp.status === 'penalized' && (
+              {exp.status === 'deducted' && (
                 <div className="mt-1.5 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
                   <div className="flex justify-between items-center">
-                    <span className="text-[11px] text-red-600 font-medium">💰 Penalty</span>
+                    <span className="text-[11px] text-red-600 font-medium">💰 Deduction</span>
                     <span className="text-sm font-bold text-red-700">{formatPoints(exp.penalty_paise || 0)}</span>
                   </div>
                   {exp.flag_reason && <p className="text-[11px] text-red-500 mt-0.5 line-clamp-2">{exp.flag_reason}</p>}

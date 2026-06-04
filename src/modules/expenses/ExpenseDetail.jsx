@@ -8,7 +8,7 @@ function ExpenseDetail({ exp, profile, subCatMap, isAdmin, isDeptApprover, onBac
   var [saving, setSaving] = useState(false)
   var [rejectMode, setRejectMode] = useState(false)
   var [rejectReason, setRejectReason] = useState('')
-  var [penaltyAmount, setPenaltyAmount] = useState('')
+  var [deductionAmount, setDeductionAmount] = useState('')
   var [allocations, setAllocations] = useState([])
   var [allocVenues, setAllocVenues] = useState({})
   var [imgFullscreen, setImgFullscreen] = useState(false)
@@ -98,25 +98,25 @@ function ExpenseDetail({ exp, profile, subCatMap, isAdmin, isDeptApprover, onBac
     onUpdated()
   }
 
-  async function penalize() {
-    if (!rejectReason.trim() || !penaltyAmount || Number(penaltyAmount) <= 0) return
+  async function deduct() {
+    if (!rejectReason.trim() || !deductionAmount || Number(deductionAmount) <= 0) return
     if (saving) return
     setSaving(true)
-    var penaltyPaise = Math.round(Number(penaltyAmount) * 100)
+    var deductionPaise = Math.round(Number(deductionAmount) * 100)
     var { error } = await supabase.from('expenses').update({
-      status: 'penalized',
+      status: 'deducted',
       flag_reason: rejectReason.trim(),
-      penalty_paise: penaltyPaise,
+      penalty_paise: deductionPaise,
       penalized_by: profile.id,
       penalized_at: new Date().toISOString(),
     }).eq('id', exp.id)
-    if (error) { alert('Penalize failed: ' + error.message); setSaving(false); return }
+    if (error) { alert('Deduction failed: ' + error.message); setSaving(false); return }
     if (exp.status === 'recorded') {
       try {
         await supabase.rpc('wallet_admin_credit', {
           p_user_id: exp.user_id,
           p_amount_paise: exp.amount_paise,
-          p_description: 'Refund: penalized expense #' + exp.id,
+          p_description: 'Refund: deducted expense #' + exp.id,
           p_ref_type: 'expense_refund',
           p_ref_id: String(exp.id),
         })
@@ -124,13 +124,13 @@ function ExpenseDetail({ exp, profile, subCatMap, isAdmin, isDeptApprover, onBac
     }
     var { error: debitErr } = await supabase.rpc('wallet_admin_debit', {
       p_user_id: exp.user_id,
-      p_amount_paise: penaltyPaise,
-      p_description: 'Penalty: ' + rejectReason.trim().slice(0, 80),
-      p_ref_type: 'expense_penalty',
+      p_amount_paise: deductionPaise,
+      p_description: 'Deduction: ' + rejectReason.trim().slice(0, 80),
+      p_ref_type: 'expense_deduction',
       p_ref_id: String(exp.id),
     })
-    if (debitErr) alert('Penalty debit failed: ' + debitErr.message)
-    try { await logActivity('EXPENSE_PENALIZE', (exp.description || 'Expense') + ' | Refund ' + formatPoints(exp.amount_paise) + ' | Penalty ' + formatPoints(penaltyPaise) + ' | ' + rejectReason.trim()) } catch (_) {}
+    if (debitErr) alert('Deduction failed: ' + debitErr.message)
+    try { await logActivity('EXPENSE_DEDUCT', (exp.description || 'Expense') + ' | Refund ' + formatPoints(exp.amount_paise) + ' | Deduction ' + formatPoints(deductionPaise) + ' | ' + rejectReason.trim()) } catch (_) {}
     setSaving(false)
     onUpdated()
   }
@@ -217,14 +217,14 @@ function ExpenseDetail({ exp, profile, subCatMap, isAdmin, isDeptApprover, onBac
         </div>
       )}
 
-      {(exp.status === 'flagged' || exp.status === 'penalized') && exp.flag_reason && (
-        <div className={"border rounded-lg p-3 " + (exp.status === 'penalized' ? "bg-red-50 border-red-200" : "bg-amber-50 border-amber-200")}>
-          <p className={"text-xs font-bold mb-0.5 " + (exp.status === 'penalized' ? "text-red-700" : "text-amber-700")}>
-            {exp.status === 'penalized' ? '💰 Penalized' : '⚠ Flagged — Fix & Resubmit'}
+      {(exp.status === 'flagged' || exp.status === 'deducted') && exp.flag_reason && (
+        <div className={"border rounded-lg p-3 " + (exp.status === 'deducted' ? "bg-red-50 border-red-200" : "bg-amber-50 border-amber-200")}>
+          <p className={"text-xs font-bold mb-0.5 " + (exp.status === 'deducted' ? "text-red-700" : "text-amber-700")}>
+            {exp.status === 'deducted' ? '💰 Deducted' : '⚠ Flagged — Fix & Resubmit'}
           </p>
-          <p className={"text-sm " + (exp.status === 'penalized' ? "text-red-600" : "text-amber-600")}>{exp.flag_reason}</p>
+          <p className={"text-sm " + (exp.status === 'deducted' ? "text-red-600" : "text-amber-600")}>{exp.flag_reason}</p>
           {exp.penalty_paise > 0 && (
-            <p className="text-sm font-bold text-red-700 mt-1">Penalty: {formatPoints(exp.penalty_paise)}</p>
+            <p className="text-sm font-bold text-red-700 mt-1">Deduction: {formatPoints(exp.penalty_paise)}</p>
           )}
           {exp.status === 'flagged' && (
             <p className="text-[11px] text-amber-500 mt-1">Wallet refunded. Edit and resubmit, or delete this expense.</p>
@@ -388,9 +388,9 @@ function ExpenseDetail({ exp, profile, subCatMap, isAdmin, isDeptApprover, onBac
                 ⚠ Flag
               </button>
             )}
-            <button onClick={function () { setRejectMode('penalize') }} disabled={saving}
+            <button onClick={function () { setRejectMode('deduct') }} disabled={saving}
               className="flex-1 py-3 text-sm font-bold text-red-600 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 disabled:opacity-50 transition-colors">
-              💰 Penalize
+              💰 Deduct
             </button>
             {exp.status === 'flagged' && (
               <button onClick={acknowledge} disabled={saving}
@@ -404,20 +404,20 @@ function ExpenseDetail({ exp, profile, subCatMap, isAdmin, isDeptApprover, onBac
 
       {rejectMode && (
         <div className="space-y-3">
-          <div className={"border rounded-lg p-3 " + (rejectMode === 'penalize' ? "bg-red-50 border-red-200" : "bg-amber-50 border-amber-200")}>
-            <label className={"block text-sm font-medium mb-1 " + (rejectMode === 'penalize' ? "text-red-700" : "text-amber-700")}>
-              {rejectMode === 'penalize' ? 'Penalty Reason' : 'Flag Reason'} <span className="text-red-500">*</span>
+          <div className={"border rounded-lg p-3 " + (rejectMode === 'deduct' ? "bg-red-50 border-red-200" : "bg-amber-50 border-amber-200")}>
+            <label className={"block text-sm font-medium mb-1 " + (rejectMode === 'deduct' ? "text-red-700" : "text-amber-700")}>
+              {rejectMode === 'deduct' ? 'Deduction Reason' : 'Flag Reason'} <span className="text-red-500">*</span>
             </label>
             <textarea value={rejectReason}
               onChange={function (e) { setRejectReason(e.target.value) }}
-              rows="3" maxLength="500" placeholder={rejectMode === 'penalize' ? 'Reason for penalty...' : 'What is the issue? User will see this.'}
-              className={"w-full px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 resize-none " + (rejectMode === 'penalize' ? "border-red-300 focus:ring-red-500" : "border-amber-300 focus:ring-amber-500")}
+              rows="3" maxLength="500" placeholder={rejectMode === 'deduct' ? 'Reason for deduction...' : 'What is the issue? User will see this.'}
+              className={"w-full px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 resize-none " + (rejectMode === 'deduct' ? "border-red-300 focus:ring-red-500" : "border-amber-300 focus:ring-amber-500")}
               style={{ fontSize: '16px' }} />
-            {rejectMode === 'penalize' && (
+            {rejectMode === 'deduct' && (
               <div className="mt-2">
-                <label className="block text-sm font-medium text-red-700 mb-1">Penalty Amount (Points) <span className="text-red-500">*</span></label>
-                <input type="number" min="1" step="any" inputMode="decimal" value={penaltyAmount}
-                  onChange={function (e) { setPenaltyAmount(e.target.value) }}
+                <label className="block text-sm font-medium text-red-700 mb-1">Deduction Amount (Points) <span className="text-red-500">*</span></label>
+                <input type="number" min="1" step="any" inputMode="decimal" value={deductionAmount}
+                  onChange={function (e) { setDeductionAmount(e.target.value) }}
                   placeholder="0"
                   className="w-full px-3 py-2 border border-red-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
                   style={{ fontSize: '16px' }} />
@@ -425,12 +425,12 @@ function ExpenseDetail({ exp, profile, subCatMap, isAdmin, isDeptApprover, onBac
             )}
           </div>
           <div className="flex gap-3">
-            <button onClick={function () { setRejectMode(false); setRejectReason(''); setPenaltyAmount('') }}
+            <button onClick={function () { setRejectMode(false); setRejectReason(''); setDeductionAmount('') }}
               className="flex-1 py-3 text-sm text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors font-medium">Cancel</button>
-            {rejectMode === 'penalize' ? (
-              <button onClick={penalize} disabled={saving || !rejectReason.trim() || !penaltyAmount || Number(penaltyAmount) <= 0}
+            {rejectMode === 'deduct' ? (
+              <button onClick={deduct} disabled={saving || !rejectReason.trim() || !deductionAmount || Number(deductionAmount) <= 0}
                 className="flex-1 py-3 text-sm text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors font-medium">
-                {saving ? 'Penalizing...' : '💰 Confirm Penalty'}
+                {saving ? 'Deducting...' : '💰 Confirm Deduction'}
               </button>
             ) : (
               <button onClick={flag} disabled={saving || !rejectReason.trim()}

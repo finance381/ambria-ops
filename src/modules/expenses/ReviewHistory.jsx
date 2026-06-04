@@ -15,7 +15,7 @@ function ReviewHistory({ profile, onBack, onOpenDetail }) {
   var [searchDebounced, setSearchDebounced] = useState('')
   var [hasMore, setHasMore] = useState(false)
   var [loadingMore, setLoadingMore] = useState(false)
-  var [stats, setStats] = useState({ acknowledged: 0, flagged: 0, penalized: 0, totalPenalty: 0 })
+  var [stats, setStats] = useState({ acknowledged: 0, flagged: 0, deducted: 0, totalDeduction: 0 })
 
   useEffect(function () {
     var t = setTimeout(function () { setSearchDebounced(search) }, 400)
@@ -37,15 +37,15 @@ function ReviewHistory({ profile, onBack, onOpenDetail }) {
       supabase.from('expenses').select('id', { count: 'exact', head: true })
         .eq('reviewed_by', profile.id).eq('status', 'flagged'),
       supabase.from('expenses').select('id, penalty_paise')
-        .eq('penalized_by', profile.id).eq('status', 'penalized'),
+        .eq('penalized_by', profile.id).eq('status', 'deducted'),
     ])
-    var penalizedRows = results[2].data || []
-    var totalPenalty = penalizedRows.reduce(function (s, r) { return s + (r.penalty_paise || 0) }, 0)
+    var deductedRows = results[2].data || []
+    var totalDeduction = deductedRows.reduce(function (s, r) { return s + (r.penalty_paise || 0) }, 0)
     setStats({
       acknowledged: results[0].count || 0,
       flagged: results[1].count || 0,
-      penalized: penalizedRows.length,
-      totalPenalty: totalPenalty,
+      deducted: deductedRows.length,
+      totalDeduction: totalDeduction,
     })
   }
 
@@ -63,13 +63,13 @@ function ReviewHistory({ profile, onBack, onOpenDetail }) {
       query = query.eq('acknowledged_by', profile.id).eq('status', 'acknowledged')
     } else if (filter === 'flagged') {
       query = query.eq('reviewed_by', profile.id).eq('status', 'flagged')
-    } else if (filter === 'penalized') {
-      query = query.eq('penalized_by', profile.id).eq('status', 'penalized')
+    } else if (filter === 'deducted') {
+      query = query.eq('penalized_by', profile.id).eq('status', 'deducted')
     } else {
       query = query.or(
         'acknowledged_by.eq.' + profile.id + ',reviewed_by.eq.' + profile.id + ',penalized_by.eq.' + profile.id
       )
-      query = query.in('status', ['acknowledged', 'flagged', 'penalized'])
+      query = query.in('status', ['acknowledged', 'flagged', 'deducted'])
     }
 
     if (dateFrom) query = query.gte('expense_date', dateFrom)
@@ -103,7 +103,7 @@ function ReviewHistory({ profile, onBack, onOpenDetail }) {
   }
 
   function actionDate(exp) {
-    if (exp.status === 'penalized') return exp.penalized_at
+    if (exp.status === 'deducted') return exp.penalized_at
     if (exp.status === 'flagged') return exp.reviewed_at
     if (exp.status === 'acknowledged') return exp.acknowledged_at
     return exp.created_at
@@ -129,17 +129,17 @@ function ReviewHistory({ profile, onBack, onOpenDetail }) {
           <p className="text-[10px] font-bold text-amber-600 uppercase">Flagged</p>
         </div>
         <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-center">
-          <p className="text-xl font-bold text-red-700">{stats.penalized}</p>
-          <p className="text-[10px] font-bold text-red-600 uppercase">Penalized</p>
-          {stats.totalPenalty > 0 && (
-            <p className="text-[10px] text-red-500 mt-0.5">{formatPoints(stats.totalPenalty)} total</p>
+          <p className="text-xl font-bold text-red-700">{stats.deducted}</p>
+          <p className="text-[10px] font-bold text-red-600 uppercase">Deducted</p>
+          {stats.totalDeduction > 0 && (
+            <p className="text-[10px] text-red-500 mt-0.5">{formatPoints(stats.totalDeduction)} total</p>
           )}
         </div>
       </div>
 
       {/* Filters */}
       <div className="flex gap-2 flex-wrap">
-        {['', 'acknowledged', 'flagged', 'penalized'].map(function (s) {
+        {['', 'acknowledged', 'flagged', 'deducted'].map(function (s) {
           var label = s ? (APPROVAL_STATUS_LABELS[s] || s) : 'All'
           return (
             <button key={s} onClick={function () { setFilter(s === filter ? '' : s) }}
@@ -222,10 +222,10 @@ function ReviewHistory({ profile, onBack, onOpenDetail }) {
                 </div>
 
                 {/* Penalty / Flag info */}
-                {exp.status === 'penalized' && (
+                {exp.status === 'deducted' && (
                   <div className="mt-2 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
                     <div className="flex justify-between items-center">
-                      <span className="text-xs text-red-600 font-medium">Penalty</span>
+                      <span className="text-xs text-red-600 font-medium">Deduction</span>
                       <span className="text-sm font-bold text-red-700">{formatPoints(exp.penalty_paise || 0)}</span>
                     </div>
                     {exp.flag_reason && <p className="text-[11px] text-red-500 mt-1">{exp.flag_reason}</p>}
