@@ -28,18 +28,18 @@ serve(async (req) => {
     const geminiKey = Deno.env.get("GEMINI_API_KEY")
     if (!geminiKey) throw new Error("GEMINI_API_KEY not set")
 
-    // Fetch knowledge from storage
-    const supabase = createClient(
+    // Fetch knowledge from storage (service role for bucket access)
+    const storageClient = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     )
     let base = "", dynamic = ""
     try {
-      const { data: b } = await supabase.storage.from("knowledge").download("knowledge-base.md")
+      const { data: b } = await storageClient.storage.from("knowledge").download("knowledge-base.md")
       if (b) base = await b.text()
     } catch { console.log("No knowledge-base.md") }
     try {
-      const { data: d } = await supabase.storage.from("knowledge").download("knowledge-dynamic.md")
+      const { data: d } = await storageClient.storage.from("knowledge").download("knowledge-dynamic.md")
       if (d) dynamic = await d.text()
     } catch { console.log("No knowledge-dynamic.md") }
 
