@@ -6,6 +6,7 @@ import { generatePoPdf, generateComparisonPdf, generateReceivingPdf, generateRec
 import SearchDropdown from '../../components/ui/SearchDropdown'
 import InventoryForm from '../inventory/InventoryForm'
 import BottomSheet from '../../components/ui/BottomSheet'
+import { pushBack, goBack as navBack } from '../../lib/backNav'
 
 var PO_STATUS_LABELS = {
   draft: 'Draft',
@@ -268,6 +269,7 @@ function Purchase({ profile, mode }) {
       .eq('po_id', po.id)
       .order('created_at')
 
+    pushBack(function () { setView('list'); setActivePo(null); setActivePoItems([]); if (isAdmin) loadQueue(); loadPos() })
     setActivePo(po)
     setActivePoItems(data || [])
     setView('detail')
@@ -583,7 +585,7 @@ function Purchase({ profile, mode }) {
         staffList={staffList}
         saving={saving}
         vendorList={vendorList}
-        onBack={function () { setView('list'); setActivePo(null); setActivePoItems([]); if (isAdmin) loadQueue(); loadPos() }}
+        onBack={function () { navBack() }}
         onStatusChange={updatePoStatus}
         onAssign={assignPurchaser}
         onSaveVendor={savePoItemVendor}

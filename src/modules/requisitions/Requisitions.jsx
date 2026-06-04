@@ -7,6 +7,7 @@ import { Badge } from '../../components/ui/Badge'
 import { APPROVAL_STATUS_COLORS, APPROVAL_STATUS_LABELS } from '../../lib/constants'
 import EventDatePicker from '../../components/ui/EventDatePicker'
 import { filterUserCategories } from '../../lib/categories'
+import { pushBack, goBack as navBack } from '../../lib/backNav'
 
 var PAGE_SIZE = 20
 var URGENCY_COLORS = {
@@ -146,6 +147,7 @@ function Requisitions({ profile, onBack }) {
   }
 
   async function openDetail(req) {
+    pushBack(function () { setView(req._fromApprove ? 'approve' : 'list'); setDetailReq(null); setDetailItems([]) })
     setDetailReq(req)
     if (req.req_type === 'expense') {
       setDetailItems([])
@@ -161,6 +163,7 @@ function Requisitions({ profile, onBack }) {
   }
 
   function startEdit(req, items) {
+    pushBack(function () { setView('list'); setEditReq(null); setEditItems([]) })
     setEditReq(req)
     setEditItems(items)
     setView('form')
@@ -190,7 +193,7 @@ function Requisitions({ profile, onBack }) {
         profile={profile}
         editReq={editReq}
         editItems={editItems}
-        onCancel={function () { setView('list'); setEditReq(null); setEditItems([]) }}
+        onCancel={function () { navBack() }}
         onSaved={handleFormDone}
       />
     )
@@ -207,7 +210,7 @@ function Requisitions({ profile, onBack }) {
         profile={profile}
         isAdmin={isAdmin}
         isDeptApprover={isDeptApprover}
-        onBack={function () { setView(detailReq._fromApprove ? 'approve' : 'list'); setDetailReq(null); setDetailItems([]) }}
+        onBack={function () { navBack() }}
         onUpdated={function () { loadMyReqs(false); loadApprovalReqs(false); setView(detailReq._fromApprove ? 'approve' : 'list'); setDetailReq(null); setDetailItems([]) }}
         onEdit={function () { startEdit(detailReq, detailItems) }}
       />
@@ -225,7 +228,7 @@ function Requisitions({ profile, onBack }) {
           <h2 className="text-lg font-bold text-gray-900">Requisitions</h2>
           <p className="text-xs text-gray-400">{view === 'approve' ? approvalReqs.length + ' pending approval' : myReqs.length + ' requests'}</p>
         </div>
-        <button onClick={function () { setEditReq(null); setEditItems([]); setView('form') }}
+        <button onClick={function () { pushBack(function () { setView('list'); setEditReq(null); setEditItems([]) }); setEditReq(null); setEditItems([]); setView('form') }}
           className="px-4 py-2 text-sm font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 active:bg-indigo-800 transition-colors">
           + New Request
         </button>

@@ -194,7 +194,7 @@ function Shell({ profile, onSignOut }) {
 
     // Expenses badge
     if (perms.indexOf('feature_expenses') !== -1) {
-      var expStatuses = ['recorded']
+      var expStatuses = ['recorded', 'flagged']
       if (expStatuses.length > 0) {
         promises.push(
           supabase.from('expenses')
