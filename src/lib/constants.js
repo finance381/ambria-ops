@@ -59,6 +59,7 @@ export var APPROVAL_STATUS_COLORS = {
   flagged: 'bg-amber-100 text-amber-700',
   penalized: 'bg-red-100 text-red-700',
   fulfilled: 'bg-indigo-100 text-indigo-700',
+  deleted: 'bg-red-100 text-red-600',
 }
 
 export var APPROVAL_STATUS_LABELS = {
@@ -71,4 +72,5 @@ export var APPROVAL_STATUS_LABELS = {
   flagged: 'Flagged',
   penalized: 'Penalized',
   fulfilled: 'Fulfilled',
+  deleted: 'Deleted',
 }

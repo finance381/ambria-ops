@@ -256,7 +256,7 @@ function Requisitions({ profile, onBack }) {
       {/* Status filter — only on My Requests tab */}
       {view === 'list' && (
         <div className="flex gap-2 flex-wrap">
-          {['', 'pending_dept', 'pending', 'approved', 'rejected', 'fulfilled'].map(function (s) {
+          {['', 'pending_dept', 'pending', 'approved', 'rejected', 'fulfilled', 'deleted'].map(function (s) {
             var label = s ? APPROVAL_STATUS_LABELS[s] : 'All'
             return (
               <button key={s} onClick={function () { setStatusFilter(s === statusFilter ? '' : s) }}
@@ -1319,6 +1319,8 @@ function RequisitionDetail({ req, items, profile, isAdmin, isDeptApprover, onBac
   var [fulfillChoices, setFulfillChoices] = useState({})
   var [dispatchNote, setDispatchNote] = useState('')
   var [confirmAction, setConfirmAction] = useState(null)
+  var [deleteMode, setDeleteMode] = useState(false)
+  var [deleteReason, setDeleteReason] = useState('')
 
   useEffect(function () {
     // Fetch PO status for items that have po_item_id
@@ -1518,11 +1520,16 @@ function RequisitionDetail({ req, items, profile, isAdmin, isDeptApprover, onBac
   }
 
   async function deleteReq() {
-    if (!confirm('Delete this requisition? This cannot be undone.')) return
+    if (saving) return
     setSaving(true)
-    var { error } = await supabase.from('requisitions').delete().eq('id', req.id)
+    var { error } = await supabase.from('requisitions').update({
+      status: 'deleted',
+      rejection_reason: deleteReason.trim() || null,
+      reviewed_by: profile.id,
+      reviewed_at: new Date().toISOString(),
+    }).eq('id', req.id)
     if (error) { alert('Delete failed: ' + error.message); setSaving(false); return }
-    try { await logActivity('REQUISITION_DELETE', req.purpose || 'Req #' + req.id) } catch (_) {}
+    try { await logActivity('REQUISITION_DELETE', (req.purpose || 'Req #' + req.id) + (deleteReason.trim() ? ' | ' + deleteReason.trim() : '')) } catch (_) {}
     setSaving(false)
     onUpdated()
   }
@@ -1556,6 +1563,13 @@ function RequisitionDetail({ req, items, profile, isAdmin, isDeptApprover, onBac
         <div className="bg-red-50 border border-red-200 rounded-lg p-3">
           <p className="text-xs font-bold text-red-700 mb-0.5">Rejection Reason</p>
           <p className="text-sm text-red-600">{req.rejection_reason}</p>
+        </div>
+      )}
+
+      {req.status === 'deleted' && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+          <p className="text-xs font-bold text-red-700 mb-0.5">🗑 Deleted</p>
+          {req.rejection_reason && <p className="text-sm text-red-600">{req.rejection_reason}</p>}
         </div>
       )}
 
@@ -1853,11 +1867,32 @@ function RequisitionDetail({ req, items, profile, isAdmin, isDeptApprover, onBac
           Cancel Requisition
         </button>
       )}
-      {canDelete && !canApprove && (
-        <button onClick={deleteReq} disabled={saving}
+      {canDelete && !canApprove && !deleteMode && (
+        <button onClick={function () { setDeleteMode(true) }} disabled={saving}
           className="w-full py-3 text-sm font-bold text-red-500 bg-white border border-red-200 rounded-lg hover:bg-red-50 disabled:opacity-50 transition-colors">
           Delete Requisition
         </button>
+      )}
+
+      {deleteMode && (
+        <div className="space-y-3">
+          <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+            <label className="block text-sm font-medium text-red-700 mb-1">Reason for Deletion <span className="text-red-500">*</span></label>
+            <textarea value={deleteReason}
+              onChange={function (e) { setDeleteReason(e.target.value) }}
+              rows="2" maxLength="300" placeholder="Why is this requisition being deleted..."
+              className="w-full px-3 py-2 border border-red-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-red-500 resize-none"
+              style={{ fontSize: '16px' }} />
+          </div>
+          <div className="flex gap-3">
+            <button onClick={function () { setDeleteMode(false); setDeleteReason('') }}
+              className="flex-1 py-3 text-sm text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors font-medium">Cancel</button>
+            <button onClick={deleteReq} disabled={saving || !deleteReason.trim()}
+              className="flex-1 py-3 text-sm text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors font-medium">
+              {saving ? 'Deleting...' : 'Confirm Delete'}
+            </button>
+          </div>
+        </div>
       )}
     </div>
   )
