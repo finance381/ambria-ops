@@ -12,6 +12,8 @@ function ExpenseDetail({ exp, profile, subCatMap, isAdmin, isDeptApprover, onBac
   var [deductionType, setDeductionType] = useState('')
   var [deductionTypes, setDeductionTypes] = useState([])
   var [showTypeSuggestions, setShowTypeSuggestions] = useState(false)
+  var [deleteMode, setDeleteMode] = useState(false)
+  var [deleteReason, setDeleteReason] = useState('')
   var [allocations, setAllocations] = useState([])
   var [allocVenues, setAllocVenues] = useState({})
   var [imgFullscreen, setImgFullscreen] = useState(false)
@@ -178,7 +180,6 @@ function ExpenseDetail({ exp, profile, subCatMap, isAdmin, isDeptApprover, onBac
   }
 
   async function deleteExp() {
-    if (!confirm('Delete this expense? This cannot be undone.')) return
     if (saving) return
     setSaving(true)
     if (exp.receipt_path) {
@@ -206,7 +207,7 @@ function ExpenseDetail({ exp, profile, subCatMap, isAdmin, isDeptApprover, onBac
         }
       } catch (_) {}
     }
-    try { await logActivity('EXPENSE_DELETE', exp.description || 'Expense') } catch (_) {}
+    try { await logActivity('EXPENSE_DELETE', (exp.description || 'Expense') + (deleteReason.trim() ? ' | ' + deleteReason.trim() : '')) } catch (_) {}
     setSaving(false)
     onUpdated()
   }
@@ -488,11 +489,32 @@ function ExpenseDetail({ exp, profile, subCatMap, isAdmin, isDeptApprover, onBac
         </div>
       )}
 
-      {canDelete && (
-        <button onClick={deleteExp} disabled={saving}
+      {canDelete && !deleteMode && (
+        <button onClick={function () { setDeleteMode(true) }} disabled={saving}
           className="w-full py-3 text-sm font-bold text-red-500 bg-white border border-red-200 rounded-lg hover:bg-red-50 disabled:opacity-50 transition-colors">
           Delete Expense
         </button>
+      )}
+
+      {deleteMode && (
+        <div className="space-y-3">
+          <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+            <label className="block text-sm font-medium text-red-700 mb-1">Reason for Deletion <span className="text-red-500">*</span></label>
+            <textarea value={deleteReason}
+              onChange={function (e) { setDeleteReason(e.target.value) }}
+              rows="2" maxLength="300" placeholder="Why is this expense being deleted..."
+              className="w-full px-3 py-2 border border-red-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-red-500 resize-none"
+              style={{ fontSize: '16px' }} />
+          </div>
+          <div className="flex gap-3">
+            <button onClick={function () { setDeleteMode(false); setDeleteReason('') }}
+              className="flex-1 py-3 text-sm text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors font-medium">Cancel</button>
+            <button onClick={deleteExp} disabled={saving || !deleteReason.trim()}
+              className="flex-1 py-3 text-sm text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors font-medium">
+              {saving ? 'Deleting...' : 'Confirm Delete'}
+            </button>
+          </div>
+        </div>
       )}
     </div>
   )
