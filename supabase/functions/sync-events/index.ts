@@ -63,7 +63,7 @@ const DEPARTMENTS = [
 ]
 
 const BASE_URL = "https://gyv.inqcrm.in/api/v1/processerp_api/"
-const PAGE_SIZE = 50
+const PAGE_SIZE = 10
 
 const FUNC_NAMES: Record<string, string> = {
   "1": "RING CEREMONY", "2": "BIRTHDAY", "3": "WEDDING", "4": "RECEPTION",

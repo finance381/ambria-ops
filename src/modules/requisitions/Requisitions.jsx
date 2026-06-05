@@ -71,7 +71,7 @@ function Requisitions({ profile, onBack }) {
     else setLoadingMore(true)
 
     var query = supabase.from('requisitions')
-      .select('id, department, urgency, purpose, status, created_at, needed_by, requested_by, rejection_reason, event_id, sub_department_id, category_id, sub_category_id, req_type, expense_type_id, expense_amount_paise, expense_date, receipt_path, events(event_name), expense_types(name), profiles:requested_by(name)')
+      .select('id, department, urgency, purpose, status, created_at, needed_by, requested_by, rejection_reason, event_id, sub_department_id, category_id, sub_category_id, req_type, expense_type_id, expense_sub_type_id, expense_amount_paise, expense_date, receipt_path, events(event_name), expense_types(name), expense_sub_types(name), profiles:requested_by(name)')
       .eq('requested_by', profile.id)
       .order('created_at', { ascending: false })
       .range(offset, offset + PAGE_SIZE)
@@ -110,7 +110,7 @@ function Requisitions({ profile, onBack }) {
     if (statuses.length === 0) { setApprovalReqs([]); return }
 
     var query = supabase.from('requisitions')
-      .select('id, department, urgency, purpose, status, created_at, needed_by, requested_by, rejection_reason, req_type, expense_type_id, expense_amount_paise, expense_date, receipt_path, expense_types(name)')
+      .select('id, department, urgency, purpose, status, created_at, needed_by, requested_by, rejection_reason, req_type, expense_type_id, expense_sub_type_id, expense_amount_paise, expense_date, receipt_path, expense_types(name), expense_sub_types(name)')
       .neq('requested_by', profile.id)
       .in('status', statuses)
       .order('created_at', { ascending: false })
@@ -359,6 +359,10 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
   var [expAmount, setExpAmount] = useState(editReq?.expense_amount_paise ? String(editReq.expense_amount_paise / 100) : '')
   var [expDate, setExpDate] = useState(editReq?.expense_date || new Date().toISOString().slice(0, 10))
   var [expReceipt, setExpReceipt] = useState(null)
+  var [expSubTypeId, setExpSubTypeId] = useState(editReq?.expense_sub_type_id ? String(editReq.expense_sub_type_id) : '')
+  var [expSubTypes, setExpSubTypes] = useState([])
+  var [expSubTypeFields, setExpSubTypeFields] = useState([])
+  var [expFieldValues, setExpFieldValues] = useState({})
   var [expTypeSearch, setExpTypeSearch] = useState('')
   var [expTypeOpen, setExpTypeOpen] = useState(false)
   var [expAllocations, setExpAllocations] = useState([{ department: '', venue_id: '', amount: '' }])
@@ -451,13 +455,14 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
   }
 
   async function loadLookups() {
-    var [deptRes, subDeptRes, catRes, subCatRes, venueRes, expTypeRes, invRes, csRes] = await Promise.all([
+    var [deptRes, subDeptRes, catRes, subCatRes, venueRes, expTypeRes, expSubTypeRes, invRes, csRes] = await Promise.all([
       supabase.from('departments').select('id, name').eq('active', true).order('name'),
       supabase.from('sub_departments').select('id, name, department_id').eq('active', true).order('name'),
       supabase.from('categories').select('id, name, sub_department_id, expense_type_ids').order('name'),
       supabase.from('sub_categories').select('id, name, category_id').order('name'),
       supabase.from('venues').select('id, code, name').order('name'),
       supabase.from('expense_types').select('id, name').eq('active', true).order('name'),
+      supabase.from('expense_sub_types').select('id, expense_type_id, name, extra_fields, active, sort_order').eq('active', true).order('sort_order').order('name'),
       supabase.from('inventory_items')
         .select('id, name, unit, qty, category_id, status, categories(name)')
         .in('status', ['approved', 'pending', 'pending_dept'])
@@ -475,6 +480,7 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
     setSubCategories(subCatRes.data || [])
     setVenues(venueRes.data || [])
     setExpenseTypes(expTypeRes.data || [])
+    setExpSubTypes(expSubTypeRes.data || [])
 
     // If editing, pre-load the linked event's date
     if (editReq?.event_id) {
@@ -685,6 +691,7 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
           sub_category_id: subCategoryId ? Number(subCategoryId) : null,
           req_type: 'expense',
           expense_type_id: expTypeId ? Number(expTypeId) : null,
+          expense_sub_type_id: expSubTypeId ? Number(expSubTypeId) : null,
           expense_amount_paise: amtPaise,
           expense_date: expDate || null,
           receipt_path: receiptPath,
@@ -1173,7 +1180,7 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
                 className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
                 style={{ fontSize: '16px' }} />
               {expTypeId && (
-                <button type="button" onClick={function () { setExpTypeId(''); setExpTypeSearch('') }}
+                <button type="button" onClick={function () { setExpTypeId(''); setExpSubTypeId(''); setExpSubTypeFields([]); setExpFieldValues({}); setExpTypeSearch('') }}
                   className="absolute right-2 top-2.5 text-xs text-gray-400 hover:text-red-500">✕</button>
               )}
             </div>
@@ -1186,7 +1193,7 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
                   {matches.map(function (et) {
                     return (
                       <button key={et.id} type="button"
-                        onMouseDown={function (e) { e.preventDefault(); setExpTypeId(String(et.id)); setExpTypeOpen(false); setExpTypeSearch('') }}
+                        onMouseDown={function (e) { e.preventDefault(); setExpTypeId(String(et.id)); setExpSubTypeId(''); setExpSubTypeFields([]); setExpFieldValues({}); setExpTypeOpen(false); setExpTypeSearch('') }}
                         className="w-full text-left px-3 py-2 hover:bg-amber-50 active:bg-amber-100 text-sm transition-colors border-b border-gray-100 last:border-0">
                         {et.name}
                       </button>
@@ -1196,6 +1203,54 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
               )
             })()}
           </div>
+          {expTypeId && (function () {
+            var subTypesForType = expSubTypes.filter(function (st) { return st.expense_type_id === Number(expTypeId) })
+            if (subTypesForType.length === 0) return null
+            if (subTypesForType.length === 1 && !expSubTypeId) {
+              setTimeout(function () {
+                setExpSubTypeId(String(subTypesForType[0].id))
+                var fields = subTypesForType[0].extra_fields || []
+                setExpSubTypeFields(fields)
+              }, 0)
+            }
+            return (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Sub-Type</label>
+                <select value={expSubTypeId}
+                  onChange={function (e) {
+                    setExpSubTypeId(e.target.value)
+                    setExpFieldValues({})
+                    var st = expSubTypes.find(function (s) { return String(s.id) === e.target.value })
+                    setExpSubTypeFields(st && st.extra_fields ? st.extra_fields : [])
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
+                  style={{ fontSize: '16px' }}>
+                  <option value="">Select sub-type...</option>
+                  {subTypesForType.map(function (st) { return <option key={st.id} value={String(st.id)}>{st.name}</option> })}
+                </select>
+              </div>
+            )
+          })()}
+          {expSubTypeFields.length > 0 && expSubTypeFields.map(function (field) {
+            return (
+              <div key={field.key}>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{field.label}{field.required ? ' *' : ''}</label>
+                {field.type === 'lookup' ? (
+                  <input type="text" value={expFieldValues[field.key] || ''}
+                    onChange={function (e) { setExpFieldValues(function (p) { var n = Object.assign({}, p); n[field.key] = e.target.value; return n }) }}
+                    placeholder={field.label + '...'}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    style={{ fontSize: '16px' }} />
+                ) : (
+                  <input type={field.type === 'number' ? 'number' : 'text'} value={expFieldValues[field.key] || ''}
+                    onChange={function (e) { setExpFieldValues(function (p) { var n = Object.assign({}, p); n[field.key] = e.target.value; return n }) }}
+                    placeholder={field.label + '...'}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    style={{ fontSize: '16px' }} />
+                )}
+              </div>
+            )
+          })}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
             <textarea value={purpose} onChange={function (e) { setPurpose(e.target.value) }}
@@ -1490,6 +1545,7 @@ function RequisitionDetail({ req, items, profile, isAdmin, isDeptApprover, onBac
         category_id: req.category_id || null,
         sub_category_id: req.sub_category_id || null,
         expense_type_id: req.expense_type_id || null,
+        expense_sub_type_id: req.expense_sub_type_id || null,
         amount_paise: req.expense_amount_paise,
         description: req.purpose || 'From requisition #' + req.id,
         expense_date: req.expense_date || new Date().toISOString().split('T')[0],
@@ -1582,7 +1638,7 @@ function RequisitionDetail({ req, items, profile, isAdmin, isDeptApprover, onBac
           {req.expense_types?.name && (
             <div className="flex justify-between">
               <span className="text-sm text-gray-500">Expense Type</span>
-              <span className="text-sm text-gray-800">{req.expense_types.name}</span>
+              <span className="text-sm text-gray-800">{req.expense_types.name}{req.expense_sub_types?.name ? ' > ' + req.expense_sub_types.name : ''}</span>
             </div>
           )}
           <div className="flex justify-between">
