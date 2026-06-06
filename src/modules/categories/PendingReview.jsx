@@ -22,6 +22,7 @@ function PendingReview({ profile }) {
   var [subDepartments, setSubDepartments] = useState([])
   var [categories, setCategories] = useState([])
   var [subDeptFilter, setSubDeptFilter] = useState('')
+  var [venueFilter, setVenueFilter] = useState('')
   var [page, setPage] = useState(0)
   var PAGE_SIZE = 50
 
@@ -161,7 +162,7 @@ function PendingReview({ profile }) {
   }
 
   function resetFilters() {
-    setSearch(''); setDeptFilter(''); setSubDeptFilter(''); setCatFilter(''); setSubCatFilter(''); setPage(0)
+    setSearch(''); setDeptFilter(''); setSubDeptFilter(''); setCatFilter(''); setSubCatFilter(''); setVenueFilter(''); setPage(0)
   }
 
   var searchLower = search.toLowerCase()
@@ -184,7 +185,8 @@ function PendingReview({ profile }) {
     var matchCat = !catFilter || item.category_id === Number(catFilter)
     var matchSubCat = !subCatFilter || item.sub_category_id === Number(subCatFilter)
     var matchDeptCats = !deptCatIds || deptCatIds.indexOf(item.category_id) !== -1
-    return matchSearch && matchDept && matchSubDept && matchDeptCats && matchCat && matchSubCat
+    var matchVenue = !venueFilter || (item.venue_allocations || []).some(function (va) { return va.venues?.code === venueFilter })
+    return matchSearch && matchDept && matchSubDept && matchDeptCats && matchCat && matchSubCat && matchVenue
   })
 
   // Category options: if dept selected, only show tagged categories
@@ -206,6 +208,19 @@ function PendingReview({ profile }) {
   }).filter(function (sc) {
     return !catFilter || String(sc.category_id) === catFilter
   }).sort(function (a, b) { return a.name.localeCompare(b.name) })
+
+  var venueOptions = []
+  var _seenV = {}
+  pendingItems.forEach(function (item) {
+    ;(item.venue_allocations || []).forEach(function (va) {
+      var code = va.venues?.code
+      if (code && !_seenV[code]) {
+        _seenV[code] = true
+        venueOptions.push({ code: code, name: va.venues?.name || code })
+      }
+    })
+  })
+  venueOptions.sort(function (a, b) { return a.code < b.code ? -1 : 1 })
 
   if (loading) {
     return <p className="text-gray-400 text-sm">Loading pending items...</p>
@@ -256,8 +271,14 @@ function PendingReview({ profile }) {
           <option value="">All Sub-categories</option>
           {subCatOptions.map(function (sc) { return <option key={sc.id} value={String(sc.id)}>{sc.name}</option> })}
         </select>
+        <select value={venueFilter}
+          onChange={function (e) { setVenueFilter(e.target.value) }}
+          className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+          <option value="">All Venues</option>
+          {venueOptions.map(function (v) { return <option key={v.code} value={v.code}>{v.code + ' \u2014 ' + v.name}</option> })}
+        </select>
       </div>
-      {(search || deptFilter || subDeptFilter || catFilter || subCatFilter) && (
+      {(search || deptFilter || subDeptFilter || catFilter || subCatFilter || venueFilter) && (
         <button onClick={resetFilters}
           className="px-3 py-2.5 text-sm text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-colors font-medium">✕ Reset</button>
       )}
