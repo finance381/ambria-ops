@@ -15,6 +15,7 @@ function AdminReview({ profile }) {
   var [enlargedImg, setEnlargedImg] = useState(null)
   var [editingItem, setEditingItem] = useState(null)
   var [search, setSearch] = useState('')
+  var [venueFilter, setVenueFilter] = useState('')
 
   useEffect(function () { loadPending() }, [])
 
@@ -132,8 +133,22 @@ function AdminReview({ profile }) {
 
   var totalCount = pendingMasters.length + pendingItems.length
 
+  var venueOptions = []
+  var _seenV = {}
+  pendingItems.forEach(function (item) {
+    ;(item.venue_allocations || []).forEach(function (va) {
+      var code = va.venues?.code
+      if (code && !_seenV[code]) {
+        _seenV[code] = true
+        venueOptions.push({ code: code, name: va.venues?.name || code })
+      }
+    })
+  })
+  venueOptions.sort(function (a, b) { return a.code < b.code ? -1 : 1 })
+
   var searchLower = search.toLowerCase()
   var filteredPendingItems = pendingItems.filter(function (item) {
+    if (venueFilter && !(item.venue_allocations || []).some(function (va) { return va.venues?.code === venueFilter })) return false
     if (!search) return true
     return item.name.toLowerCase().includes(searchLower) ||
       (item.name_hindi || '').toLowerCase().includes(searchLower) ||
@@ -152,7 +167,7 @@ function AdminReview({ profile }) {
   return (
     <div className="space-y-4">
       <div className="text-sm text-gray-400">
-        {totalCount} pending item{totalCount !== 1 ? 's' : ''}
+        {venueFilter ? filteredPendingItems.length + ' of ' + pendingItems.length + ' items (' + venueFilter + ')' : totalCount + ' pending item' + (totalCount !== 1 ? 's' : '')}
       </div>
 
       <input type="text" value={search}
@@ -161,7 +176,27 @@ function AdminReview({ profile }) {
         className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
         style={{ fontSize: '16px' }} />
 
-      {totalCount === 0 && (
+      {venueOptions.length > 1 && (
+        <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
+          <button onClick={function () { setVenueFilter('') }}
+            className={"px-3 py-1.5 text-[11px] font-bold rounded-full border whitespace-nowrap transition-colors " +
+              (!venueFilter ? "bg-gray-900 text-white border-gray-900" : "bg-white text-gray-500 border-gray-200 hover:bg-gray-50")}>
+            All ({pendingItems.length})
+          </button>
+          {venueOptions.map(function (v) {
+            var cnt = pendingItems.filter(function (it) { return (it.venue_allocations || []).some(function (va) { return va.venues?.code === v.code }) }).length
+            return (
+              <button key={v.code} onClick={function () { setVenueFilter(venueFilter === v.code ? '' : v.code) }}
+                className={"px-3 py-1.5 text-[11px] font-bold rounded-full border whitespace-nowrap transition-colors " +
+                  (venueFilter === v.code ? "bg-gray-900 text-white border-gray-900" : "bg-white text-gray-500 border-gray-200 hover:bg-gray-50")}>
+                {v.code} ({cnt})
+              </button>
+            )
+          })}
+        </div>
+      )}
+
+      {totalCount === 0 && !venueFilter && (
         <div className="bg-white border border-gray-200 rounded-xl p-8 text-center">
           <p className="text-gray-400 text-sm">No items pending review</p>
         </div>
