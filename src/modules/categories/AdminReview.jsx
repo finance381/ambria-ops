@@ -15,29 +15,39 @@ function AdminReview({ profile }) {
   var [enlargedImg, setEnlargedImg] = useState(null)
   var [editingItem, setEditingItem] = useState(null)
   var [search, setSearch] = useState('')
+  var [searchDebounced, setSearchDebounced] = useState('')
   var [venueFilter, setVenueFilter] = useState('')
   var [catFilter, setCatFilter] = useState('')
   var [subCatFilter, setSubCatFilter] = useState('')
   var [subVenueFilter, setSubVenueFilter] = useState('')
   var [subVenues, setSubVenues] = useState([])
+  var [venueCounts, setVenueCounts] = useState([])
+  var [allCategories, setAllCategories] = useState([])
+  var [allSubCategories, setAllSubCategories] = useState([])
+  var [totalPendingCount, setTotalPendingCount] = useState(0)
+  var [hasMore, setHasMore] = useState(false)
+  var [loadingMore, setLoadingMore] = useState(false)
+  var PAGE_SIZE = 50
 
-  useEffect(function () { loadPending() }, [])
+  useEffect(function () { loadMeta() }, [])
+  useEffect(function () {
+    var t = setTimeout(function () { setSearchDebounced(search) }, 400)
+    return function () { clearTimeout(t) }
+  }, [search])
+  useEffect(function () { loadItems(false) }, [venueFilter, catFilter, subCatFilter, subVenueFilter, searchDebounced])
 
-  async function loadPending() {
-    var [pendCat, pendSub, pendItem, pendCsItem, subVenueRes] = await Promise.all([
+  async function loadMeta() {
+    setLoading(true)
+    var [pendCat, pendSub, vcRes, svRes, catRes, scRes, totalInv, totalCs] = await Promise.all([
       supabase.from('categories').select('*, profiles:added_by(name, email)').eq('status', 'pending'),
       supabase.from('sub_categories').select('*, categories(name), profiles:added_by(name, email)').eq('status', 'pending'),
-      supabase.from('inventory_items')
-        .select('*, categories(name, code), sub_categories(name), profiles:submitted_by(name, email), dept_approver:dept_approved_by(name), venue_allocations(qty, venue_id, sub_venue_id, venues(code, name))')
-        .eq('status', 'pending')
-        .order('created_at', { ascending: false }),
-      supabase.from('catering_store_items')
-        .select('*, categories(name, code), sub_categories(name), profiles:submitted_by(name, email), dept_approver:dept_approved_by(name), cs_venue_allocations(qty, venue_id, sub_venue_id, venues(code, name))')
-        .eq('status', 'pending')
-        .order('created_at', { ascending: false }),
+      supabase.rpc('get_pending_venue_counts'),
       supabase.from('sub_venues').select('id, name, venue_id').eq('active', true),
+      supabase.from('categories').select('id, name').order('name'),
+      supabase.from('sub_categories').select('id, name, category_id').order('name'),
+      supabase.from('inventory_items').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
+      supabase.from('catering_store_items').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
     ])
-    setSubVenues(subVenueRes.data || [])
     var masters = []
     ;(pendCat.data || []).forEach(function (c) {
       masters.push({ id: c.id, table: 'categories', type: 'Category', name: c.name, by: c.profiles?.name || '—' })
@@ -45,23 +55,85 @@ function AdminReview({ profile }) {
     ;(pendSub.data || []).forEach(function (s) {
       masters.push({ id: s.id, table: 'sub_categories', type: 'Sub-cat', name: s.name, parent: s.categories?.name || '—', by: s.profiles?.name || '—' })
     })
-
     setPendingMasters(masters)
-    var invItems = (pendItem.data || []).map(function (i) { return Object.assign({}, i, { _source: 'inventory' }) })
-    var csItems = (pendCsItem.data || []).map(function (i) {
+    setVenueCounts((vcRes.data || []).map(function (v) {
+      return { code: v.venue_code, name: v.venue_name, id: v.venue_id, count: Number(v.item_count) }
+    }))
+    setSubVenues(svRes.data || [])
+    setAllCategories(catRes.data || [])
+    setAllSubCategories(scRes.data || [])
+    setTotalPendingCount((totalInv.count || 0) + (totalCs.count || 0))
+  }
+
+  async function loadItems(append) {
+    if (append) { setLoadingMore(true) } else { setLoading(true) }
+    var cursor = append && pendingItems.length > 0 ? pendingItems[pendingItems.length - 1].created_at : null
+
+    var venueInvIds = null
+    var venueCsIds = null
+    if (venueFilter || subVenueFilter) {
+      var vaQ = supabase.from('venue_allocations').select('item_id')
+      var csVaQ = supabase.from('cs_venue_allocations').select('item_id')
+      if (venueFilter) {
+        var vc = venueCounts.find(function (v) { return v.code === venueFilter })
+        if (vc) { vaQ = vaQ.eq('venue_id', vc.id); csVaQ = csVaQ.eq('venue_id', vc.id) }
+      }
+      if (subVenueFilter) {
+        vaQ = vaQ.eq('sub_venue_id', Number(subVenueFilter))
+        csVaQ = csVaQ.eq('sub_venue_id', Number(subVenueFilter))
+      }
+      var [vaRes, csVaRes] = await Promise.all([vaQ, csVaQ])
+      venueInvIds = []; venueCsIds = []
+      ;(vaRes.data || []).forEach(function (r) { if (venueInvIds.indexOf(r.item_id) === -1) venueInvIds.push(r.item_id) })
+      ;(csVaRes.data || []).forEach(function (r) { if (venueCsIds.indexOf(r.item_id) === -1) venueCsIds.push(r.item_id) })
+    }
+
+    var invQ = supabase.from('inventory_items')
+      .select('*, categories(name, code), sub_categories(name), profiles:submitted_by(name, email), dept_approver:dept_approved_by(name), venue_allocations(qty, venue_id, sub_venue_id, venues(code, name))')
+      .eq('status', 'pending')
+    var csQ = supabase.from('catering_store_items')
+      .select('*, categories(name, code), sub_categories(name), profiles:submitted_by(name, email), dept_approver:dept_approved_by(name), cs_venue_allocations(qty, venue_id, sub_venue_id, venues(code, name))')
+      .eq('status', 'pending')
+
+    if (catFilter) { invQ = invQ.eq('category_id', Number(catFilter)); csQ = csQ.eq('category_id', Number(catFilter)) }
+    if (subCatFilter) { invQ = invQ.eq('sub_category_id', Number(subCatFilter)); csQ = csQ.eq('sub_category_id', Number(subCatFilter)) }
+    if (searchDebounced) {
+      var s = '%' + searchDebounced + '%'
+      invQ = invQ.or('name.ilike.' + s + ',name_hindi.ilike.' + s + ',inventory_id.ilike.' + s)
+      csQ = csQ.or('name.ilike.' + s + ',name_hindi.ilike.' + s + ',inventory_id.ilike.' + s)
+    }
+    if (venueInvIds !== null) {
+      invQ = venueInvIds.length > 0 ? invQ.in('id', venueInvIds) : invQ.eq('id', '00000000-0000-0000-0000-000000000000')
+    }
+    if (venueCsIds !== null) {
+      csQ = venueCsIds.length > 0 ? csQ.in('id', venueCsIds) : csQ.eq('id', '00000000-0000-0000-0000-000000000000')
+    }
+
+    invQ = invQ.order('created_at', { ascending: false }).limit(PAGE_SIZE)
+    csQ = csQ.order('created_at', { ascending: false }).limit(PAGE_SIZE)
+    if (cursor) { invQ = invQ.lt('created_at', cursor); csQ = csQ.lt('created_at', cursor) }
+
+    var [invRes, csRes] = await Promise.all([invQ, csQ])
+    var invItems = (invRes.data || []).map(function (i) { return Object.assign({}, i, { _source: 'inventory' }) })
+    var csItems = (csRes.data || []).map(function (i) {
       return Object.assign({}, i, { _source: 'catering_store', venue_allocations: i.cs_venue_allocations || [] })
     })
-    setPendingItems(invItems.concat(csItems).sort(function (a, b) {
+    var merged = invItems.concat(csItems).sort(function (a, b) {
       return new Date(b.created_at || 0) - new Date(a.created_at || 0)
-    }))
+    })
+    var page = merged.slice(0, PAGE_SIZE)
+    setHasMore(invItems.length === PAGE_SIZE || csItems.length === PAGE_SIZE)
+    if (append) { setPendingItems(function (prev) { return prev.concat(page) }) }
+    else { setPendingItems(page) }
     setLoading(false)
+    setLoadingMore(false)
   }
 
   async function approveMaster(item) {
     setSaving(true)
     await supabase.from(item.table).update({ status: 'approved' }).eq('id', item.id)
     logActivity('APPROVE_' + item.type.toUpperCase().replace('-', '_'), item.name)
-    loadPending()
+    loadMeta(); loadItems(false)
     setSaving(false)
   }
 
@@ -108,7 +180,7 @@ function AdminReview({ profile }) {
     } catch (err) {
       alert('Approve failed: ' + (err.message || 'Unknown error'))
     }
-    loadPending()
+    loadMeta(); loadItems(false)
     setSaving(false)
   }
 
@@ -132,69 +204,22 @@ function AdminReview({ profile }) {
     logActivity('REJECT_' + rejectTarget.type.toUpperCase().replace('-', '_'), rejectTarget.name + ' | Reason: ' + rejectReason.trim())
     setRejectTarget(null)
     setRejectReason('')
-    loadPending()
+    loadMeta(); loadItems(false)
     setSaving(false)
   }
 
   var totalCount = pendingMasters.length + pendingItems.length
 
-  var venueOptions = []
-  var _seenV = {}
-  pendingItems.forEach(function (item) {
-    ;(item.venue_allocations || []).forEach(function (va) {
-      var code = va.venues?.code
-      if (code && !_seenV[code]) {
-        _seenV[code] = true
-        venueOptions.push({ code: code, name: va.venues?.name || code, id: va.venue_id })
-      }
-    })
+  var venueOptions = venueCounts
+  var catOptions = allCategories
+  var subCatOptions = allSubCategories.filter(function (sc) {
+    return !catFilter || String(sc.category_id) === catFilter
   })
-  venueOptions.sort(function (a, b) { return a.code < b.code ? -1 : 1 })
-
-  var catOptions = []
-  var _seenC = {}
-  pendingItems.forEach(function (item) {
-    var cid = item.category_id
-    if (cid && !_seenC[cid]) {
-      _seenC[cid] = true
-      catOptions.push({ id: cid, name: item.categories?.name || '—' })
-    }
-  })
-  catOptions.sort(function (a, b) { return a.name.localeCompare(b.name) })
-
-  var subCatOptions = []
-  var _seenSC = {}
-  pendingItems.forEach(function (item) {
-    var sid = item.sub_category_id
-    if (sid && !_seenSC[sid] && (!catFilter || String(item.category_id) === catFilter)) {
-      _seenSC[sid] = true
-      subCatOptions.push({ id: sid, name: item.sub_categories?.name || '—' })
-    }
-  })
-  subCatOptions.sort(function (a, b) { return a.name.localeCompare(b.name) })
-
   var subVenueOptions = subVenues.filter(function (sv) {
     if (!venueFilter) return true
-    var selVenue = venueOptions.find(function (v) { return v.code === venueFilter })
+    var selVenue = venueCounts.find(function (v) { return v.code === venueFilter })
     return selVenue ? sv.venue_id === selVenue.id : true
   }).sort(function (a, b) { return a.name.localeCompare(b.name) })
-
-  var searchLower = search.toLowerCase()
-  var filteredPendingItems = pendingItems.filter(function (item) {
-    if (venueFilter && !(item.venue_allocations || []).some(function (va) { return va.venues?.code === venueFilter })) return false
-    if (subVenueFilter && !(item.venue_allocations || []).some(function (va) { return String(va.sub_venue_id) === subVenueFilter })) return false
-    if (catFilter && String(item.category_id) !== catFilter) return false
-    if (subCatFilter && String(item.sub_category_id) !== subCatFilter) return false
-    if (!search) return true
-    return item.name.toLowerCase().includes(searchLower) ||
-      (item.name_hindi || '').toLowerCase().includes(searchLower) ||
-      (item.inventory_id || '').toLowerCase().includes(searchLower) ||
-      (item.profiles?.name || '').toLowerCase().includes(searchLower) ||
-      (item.profiles?.email || '').toLowerCase().includes(searchLower) ||
-      (item.dept_approver?.name || '').toLowerCase().includes(searchLower) ||
-      (item.categories?.name || '').toLowerCase().includes(searchLower) ||
-      (item.department || '').toLowerCase().includes(searchLower)
-  })
 
   if (loading) {
     return <p className="text-sm text-gray-400 text-center py-8">Loading...</p>
@@ -203,7 +228,7 @@ function AdminReview({ profile }) {
   return (
     <div className="space-y-4">
       <div className="text-sm text-gray-400">
-        {(venueFilter || catFilter || subCatFilter || subVenueFilter || search) ? filteredPendingItems.length + ' of ' + pendingItems.length + ' items' : totalCount + ' pending item' + (totalCount !== 1 ? 's' : '')}
+        {pendingItems.length + ' loaded' + (hasMore ? '+' : '') + ' of ' + totalPendingCount + ' pending'}
       </div>
 
       <input type="text" value={search}
@@ -217,10 +242,10 @@ function AdminReview({ profile }) {
           <button onClick={function () { setVenueFilter('') }}
             className={"px-3 py-1.5 text-[11px] font-bold rounded-full border whitespace-nowrap transition-colors " +
               (!venueFilter ? "bg-gray-900 text-white border-gray-900" : "bg-white text-gray-500 border-gray-200 hover:bg-gray-50")}>
-            All ({pendingItems.length})
+            All ({totalPendingCount})
           </button>
           {venueOptions.map(function (v) {
-            var cnt = pendingItems.filter(function (it) { return (it.venue_allocations || []).some(function (va) { return va.venues?.code === v.code }) }).length
+            var cnt = v.count
             return (
               <button key={v.code} onClick={function () { setVenueFilter(venueFilter === v.code ? '' : v.code) }}
                 className={"px-3 py-1.5 text-[11px] font-bold rounded-full border whitespace-nowrap transition-colors " +
@@ -258,11 +283,11 @@ function AdminReview({ profile }) {
         </select>
       )}
       {(catFilter || subCatFilter || subVenueFilter || venueFilter || search) && (
-        <button onClick={function () { setSearch(''); setVenueFilter(''); setCatFilter(''); setSubCatFilter(''); setSubVenueFilter('') }}
+        <button onClick={function () { setSearch(''); setSearchDebounced(''); setVenueFilter(''); setCatFilter(''); setSubCatFilter(''); setSubVenueFilter('') }}
           className="px-3 py-1.5 text-[11px] text-red-600 border border-red-200 rounded-lg hover:bg-red-50 font-medium">✕ Reset All</button>
       )}
 
-      {filteredPendingItems.length === 0 && pendingMasters.length === 0 && (
+      {pendingItems.length === 0 && pendingMasters.length === 0 && (
         <div className="bg-white border border-gray-200 rounded-xl p-8 text-center">
           <p className="text-gray-400 text-sm">No items pending review</p>
         </div>
@@ -295,7 +320,7 @@ function AdminReview({ profile }) {
       })}
 
       {/* ═══ INVENTORY ITEMS ═══ */}
-      {filteredPendingItems.map(function (item) {
+      {pendingItems.map(function (item) {
         var imgUrl = getImageUrl(item.image_path)
         var venueAllocs = item.venue_allocations || []
         var typeColors = { Premium: 'bg-purple-100 text-purple-700', Outdoor: 'bg-green-100 text-green-700', Indoor: 'bg-blue-100 text-blue-700' }
@@ -369,6 +394,13 @@ function AdminReview({ profile }) {
         )
       })}
 
+      {hasMore && (
+        <button onClick={function () { loadItems(true) }} disabled={loadingMore}
+          className="w-full py-3 text-sm font-medium text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-xl hover:bg-indigo-100 disabled:opacity-50 transition-colors">
+          {loadingMore ? 'Loading...' : 'Load More'}
+        </button>
+      )}
+
       {/* Edit item modal */}
       <Modal open={!!editingItem} onClose={function () { setEditingItem(null) }} title={'Edit: ' + titleCase(editingItem?.name || '')} wide>
         {editingItem && (
@@ -376,7 +408,7 @@ function AdminReview({ profile }) {
             item={editingItem}
             profile={profile}
             onClose={function () { setEditingItem(null) }}
-            onSaved={function () { setEditingItem(null); loadPending() }}
+            onSaved={function () { setEditingItem(null); loadMeta(); loadItems(false) }}
           />
         )}
       </Modal>
