@@ -16,23 +16,28 @@ function AdminReview({ profile }) {
   var [editingItem, setEditingItem] = useState(null)
   var [search, setSearch] = useState('')
   var [venueFilter, setVenueFilter] = useState('')
+  var [catFilter, setCatFilter] = useState('')
+  var [subCatFilter, setSubCatFilter] = useState('')
+  var [subVenueFilter, setSubVenueFilter] = useState('')
+  var [subVenues, setSubVenues] = useState([])
 
   useEffect(function () { loadPending() }, [])
 
   async function loadPending() {
-    var [pendCat, pendSub, pendItem, pendCsItem] = await Promise.all([
+    var [pendCat, pendSub, pendItem, pendCsItem, subVenueRes] = await Promise.all([
       supabase.from('categories').select('*, profiles:added_by(name, email)').eq('status', 'pending'),
       supabase.from('sub_categories').select('*, categories(name), profiles:added_by(name, email)').eq('status', 'pending'),
       supabase.from('inventory_items')
-        .select('*, categories(name, code), sub_categories(name), profiles:submitted_by(name, email), dept_approver:dept_approved_by(name), venue_allocations(qty, venues(code, name))')
+        .select('*, categories(name, code), sub_categories(name), profiles:submitted_by(name, email), dept_approver:dept_approved_by(name), venue_allocations(qty, venue_id, sub_venue_id, venues(code, name))')
         .eq('status', 'pending')
         .order('created_at', { ascending: false }),
       supabase.from('catering_store_items')
-        .select('*, categories(name, code), sub_categories(name), profiles:submitted_by(name, email), dept_approver:dept_approved_by(name), cs_venue_allocations(qty, venues(code, name))')
+        .select('*, categories(name, code), sub_categories(name), profiles:submitted_by(name, email), dept_approver:dept_approved_by(name), cs_venue_allocations(qty, venue_id, sub_venue_id, venues(code, name))')
         .eq('status', 'pending')
         .order('created_at', { ascending: false }),
+      supabase.from('sub_venues').select('id, name, venue_id').eq('active', true),
     ])
-
+    setSubVenues(subVenueRes.data || [])
     var masters = []
     ;(pendCat.data || []).forEach(function (c) {
       masters.push({ id: c.id, table: 'categories', type: 'Category', name: c.name, by: c.profiles?.name || '—' })
@@ -140,15 +145,46 @@ function AdminReview({ profile }) {
       var code = va.venues?.code
       if (code && !_seenV[code]) {
         _seenV[code] = true
-        venueOptions.push({ code: code, name: va.venues?.name || code })
+        venueOptions.push({ code: code, name: va.venues?.name || code, id: va.venue_id })
       }
     })
   })
   venueOptions.sort(function (a, b) { return a.code < b.code ? -1 : 1 })
 
+  var catOptions = []
+  var _seenC = {}
+  pendingItems.forEach(function (item) {
+    var cid = item.category_id
+    if (cid && !_seenC[cid]) {
+      _seenC[cid] = true
+      catOptions.push({ id: cid, name: item.categories?.name || '—' })
+    }
+  })
+  catOptions.sort(function (a, b) { return a.name.localeCompare(b.name) })
+
+  var subCatOptions = []
+  var _seenSC = {}
+  pendingItems.forEach(function (item) {
+    var sid = item.sub_category_id
+    if (sid && !_seenSC[sid] && (!catFilter || String(item.category_id) === catFilter)) {
+      _seenSC[sid] = true
+      subCatOptions.push({ id: sid, name: item.sub_categories?.name || '—' })
+    }
+  })
+  subCatOptions.sort(function (a, b) { return a.name.localeCompare(b.name) })
+
+  var subVenueOptions = subVenues.filter(function (sv) {
+    if (!venueFilter) return true
+    var selVenue = venueOptions.find(function (v) { return v.code === venueFilter })
+    return selVenue ? sv.venue_id === selVenue.id : true
+  }).sort(function (a, b) { return a.name.localeCompare(b.name) })
+
   var searchLower = search.toLowerCase()
   var filteredPendingItems = pendingItems.filter(function (item) {
     if (venueFilter && !(item.venue_allocations || []).some(function (va) { return va.venues?.code === venueFilter })) return false
+    if (subVenueFilter && !(item.venue_allocations || []).some(function (va) { return String(va.sub_venue_id) === subVenueFilter })) return false
+    if (catFilter && String(item.category_id) !== catFilter) return false
+    if (subCatFilter && String(item.sub_category_id) !== subCatFilter) return false
     if (!search) return true
     return item.name.toLowerCase().includes(searchLower) ||
       (item.name_hindi || '').toLowerCase().includes(searchLower) ||
@@ -167,7 +203,7 @@ function AdminReview({ profile }) {
   return (
     <div className="space-y-4">
       <div className="text-sm text-gray-400">
-        {venueFilter ? filteredPendingItems.length + ' of ' + pendingItems.length + ' items (' + venueFilter + ')' : totalCount + ' pending item' + (totalCount !== 1 ? 's' : '')}
+        {(venueFilter || catFilter || subCatFilter || subVenueFilter || search) ? filteredPendingItems.length + ' of ' + pendingItems.length + ' items' : totalCount + ' pending item' + (totalCount !== 1 ? 's' : '')}
       </div>
 
       <input type="text" value={search}
@@ -196,7 +232,37 @@ function AdminReview({ profile }) {
         </div>
       )}
 
-      {totalCount === 0 && !venueFilter && (
+      <div className="flex gap-2">
+        <select value={catFilter}
+          onChange={function (e) { setCatFilter(e.target.value); setSubCatFilter('') }}
+          className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          style={{ fontSize: '16px' }}>
+          <option value="">All Categories</option>
+          {catOptions.map(function (c) { return <option key={c.id} value={String(c.id)}>{c.name}</option> })}
+        </select>
+        <select value={subCatFilter}
+          onChange={function (e) { setSubCatFilter(e.target.value) }}
+          className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          style={{ fontSize: '16px' }}>
+          <option value="">All Sub-categories</option>
+          {subCatOptions.map(function (sc) { return <option key={sc.id} value={String(sc.id)}>{sc.name}</option> })}
+        </select>
+      </div>
+      {venueFilter && subVenueOptions.length > 0 && (
+        <select value={subVenueFilter}
+          onChange={function (e) { setSubVenueFilter(e.target.value) }}
+          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          style={{ fontSize: '16px' }}>
+          <option value="">All Sub-venues</option>
+          {subVenueOptions.map(function (sv) { return <option key={sv.id} value={String(sv.id)}>{sv.name}</option> })}
+        </select>
+      )}
+      {(catFilter || subCatFilter || subVenueFilter || venueFilter || search) && (
+        <button onClick={function () { setSearch(''); setVenueFilter(''); setCatFilter(''); setSubCatFilter(''); setSubVenueFilter('') }}
+          className="px-3 py-1.5 text-[11px] text-red-600 border border-red-200 rounded-lg hover:bg-red-50 font-medium">✕ Reset All</button>
+      )}
+
+      {filteredPendingItems.length === 0 && pendingMasters.length === 0 && (
         <div className="bg-white border border-gray-200 rounded-xl p-8 text-center">
           <p className="text-gray-400 text-sm">No items pending review</p>
         </div>
