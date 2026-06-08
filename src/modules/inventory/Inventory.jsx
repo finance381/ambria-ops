@@ -17,60 +17,111 @@ function Inventory({ profile }) {
   var [venueFilter, setVenueFilter] = useState('')
   var [subVenueFilter, setSubVenueFilter] = useState('')
   var [subVenues, setSubVenues] = useState([])
-  var RENDER_SIZE = 50
-  var [renderCount, setRenderCount] = useState(50)
+  var [searchDebounced, setSearchDebounced] = useState('')
+  var [allCategories, setAllCategories] = useState([])
+  var [allSubCategories, setAllSubCategories] = useState([])
+  var [allVenues, setAllVenues] = useState([])
+  var [hasMore, setHasMore] = useState(false)
+  var [loadingMore, setLoadingMore] = useState(false)
+  var PAGE_SIZE = 50
 
+  useEffect(function () { loadMeta() }, [])
   useEffect(function () {
-    loadMyItems()
-  }, [])
+    var t = setTimeout(function () { setSearchDebounced(search) }, 400)
+    return function () { clearTimeout(t) }
+  }, [search])
+  useEffect(function () { loadItems(false) }, [venueFilter, subVenueFilter, catFilter, subCatFilter, searchDebounced])
 
-  async function loadMyItems() {
+  async function loadMeta() {
     setLoading(true)
+    var [catRes, scRes, vRes, svRes] = await Promise.all([
+      supabase.from('categories').select('id, name').order('name'),
+      supabase.from('sub_categories').select('id, name, category_id').order('name'),
+      supabase.from('venues').select('id, code, name').order('code'),
+      supabase.from('sub_venues').select('id, name, venue_id').eq('active', true),
+    ])
+    setAllCategories(catRes.data || [])
+    setAllSubCategories(scRes.data || [])
+    setAllVenues(vRes.data || [])
+    setSubVenues(svRes.data || [])
+  }
+
+  async function loadItems(append) {
+    if (append) { setLoadingMore(true) } else { setLoading(true) }
+    var cursor = append && items.length > 0 ? items[items.length - 1].created_at : null
     var isAdmin = profile.role === 'admin' || profile.role === 'auditor'
     var myCatIds = profile.category_ids || []
 
-    var query = supabase
-      .from('inventory_items')
-      .select('*, categories(name), sub_categories(name), venue_allocations(qty, venue_id, sub_venue_id, venues(code, name))')
-      .in('status', ['approved', 'pending', 'pending_dept'])
-      .order('created_at', { ascending: false })
-
-    var csQuery = supabase
-      .from('catering_store_items')
-      .select('*, categories(name), sub_categories(name), cs_venue_allocations(qty, venue_id, sub_venue_id, venues(code, name))')
-      .in('status', ['approved', 'pending', 'pending_dept'])
-      .order('created_at', { ascending: false })
-
-    if (isAdmin) {
-      // Admin sees all
-    } else if (myCatIds.length > 0) {
-      query = query.in('category_id', myCatIds)
-      csQuery = csQuery.in('category_id', myCatIds)
-    } else {
-      query = query.eq('submitted_by', profile.id)
-      csQuery = csQuery.eq('submitted_by', profile.id)
+    var venueInvIds = null
+    var venueCsIds = null
+    if (venueFilter || subVenueFilter) {
+      var vaQ = supabase.from('venue_allocations').select('item_id')
+      var csVaQ = supabase.from('cs_venue_allocations').select('item_id')
+      if (venueFilter) {
+        var vObj = allVenues.find(function (v) { return v.code === venueFilter })
+        if (vObj) { vaQ = vaQ.eq('venue_id', vObj.id); csVaQ = csVaQ.eq('venue_id', vObj.id) }
+      }
+      if (subVenueFilter) {
+        vaQ = vaQ.eq('sub_venue_id', Number(subVenueFilter))
+        csVaQ = csVaQ.eq('sub_venue_id', Number(subVenueFilter))
+      }
+      var [vaRes, csVaRes] = await Promise.all([vaQ, csVaQ])
+      venueInvIds = []; venueCsIds = []
+      ;(vaRes.data || []).forEach(function (r) { if (venueInvIds.indexOf(r.item_id) === -1) venueInvIds.push(r.item_id) })
+      ;(csVaRes.data || []).forEach(function (r) { if (venueCsIds.indexOf(r.item_id) === -1) venueCsIds.push(r.item_id) })
     }
 
-    var [invRes, csRes, svRes] = await Promise.all([fetchAll(query), fetchAll(csQuery), supabase.from('sub_venues').select('id, name, venue_id').eq('active', true)])
-    setSubVenues(svRes.data || [])
-    var invItems = (invRes || []).map(function (i) { return Object.assign({}, i, { _source: 'inventory' }) })
-    var csItems = (csRes || []).map(function (i) {
-      return Object.assign({}, i, {
-        _source: 'catering_store',
-        venue_allocations: i.cs_venue_allocations || [],
-      })
+    var invQ = supabase.from('inventory_items')
+      .select('*, categories(name), sub_categories(name), venue_allocations(qty, venue_id, sub_venue_id, venues(code, name))')
+      .in('status', ['approved', 'pending', 'pending_dept'])
+    var csQ = supabase.from('catering_store_items')
+      .select('*, categories(name), sub_categories(name), cs_venue_allocations(qty, venue_id, sub_venue_id, venues(code, name))')
+      .in('status', ['approved', 'pending', 'pending_dept'])
+
+    if (!isAdmin) {
+      if (myCatIds.length > 0) {
+        invQ = invQ.in('category_id', myCatIds); csQ = csQ.in('category_id', myCatIds)
+      } else {
+        invQ = invQ.eq('submitted_by', profile.id); csQ = csQ.eq('submitted_by', profile.id)
+      }
+    }
+    if (catFilter) { invQ = invQ.eq('category_id', Number(catFilter)); csQ = csQ.eq('category_id', Number(catFilter)) }
+    if (subCatFilter) { invQ = invQ.eq('sub_category_id', Number(subCatFilter)); csQ = csQ.eq('sub_category_id', Number(subCatFilter)) }
+    if (searchDebounced) {
+      var s = '%' + searchDebounced + '%'
+      invQ = invQ.or('name.ilike.' + s + ',name_hindi.ilike.' + s + ',inventory_id.ilike.' + s + ',brand.ilike.' + s)
+      csQ = csQ.or('name.ilike.' + s + ',name_hindi.ilike.' + s + ',inventory_id.ilike.' + s + ',brand.ilike.' + s)
+    }
+    if (venueInvIds !== null) {
+      invQ = venueInvIds.length > 0 ? invQ.in('id', venueInvIds) : invQ.eq('id', '00000000-0000-0000-0000-000000000000')
+    }
+    if (venueCsIds !== null) {
+      csQ = venueCsIds.length > 0 ? csQ.in('id', venueCsIds) : csQ.eq('id', '00000000-0000-0000-0000-000000000000')
+    }
+
+    invQ = invQ.order('created_at', { ascending: false }).limit(PAGE_SIZE)
+    csQ = csQ.order('created_at', { ascending: false }).limit(PAGE_SIZE)
+    if (cursor) { invQ = invQ.lt('created_at', cursor); csQ = csQ.lt('created_at', cursor) }
+
+    var [invRes, csRes] = await Promise.all([invQ, csQ])
+    var invItems = (invRes.data || []).map(function (i) { return Object.assign({}, i, { _source: 'inventory' }) })
+    var csItems = (csRes.data || []).map(function (i) {
+      return Object.assign({}, i, { _source: 'catering_store', venue_allocations: i.cs_venue_allocations || [] })
     })
-    // Merge and sort by created_at descending
     var merged = invItems.concat(csItems).sort(function (a, b) {
-      return new Date(b.created_at || b.entry_date || 0) - new Date(a.created_at || a.entry_date || 0)
+      return new Date(b.created_at || 0) - new Date(a.created_at || 0)
     })
-    setItems(merged)
+    var page = merged.slice(0, PAGE_SIZE)
+    setHasMore(invItems.length === PAGE_SIZE || csItems.length === PAGE_SIZE)
+    if (append) { setItems(function (prev) { return prev.concat(page) }) }
+    else { setItems(page) }
     setLoading(false)
+    setLoadingMore(false)
   }
 
   function handleSaved() {
     setEditItem(null)
-    loadMyItems()
+    loadItems(false)
   }
 
   if (loading) {
@@ -80,82 +131,39 @@ function Inventory({ profile }) {
       </div>
     )
   }
-
-  if (items.length === 0) {
-    return (
-      <div className="bg-white border border-gray-200 rounded-xl p-8 text-center">
-        <p className="text-sm text-gray-400">No items yet</p>
-      </div>
-    )
-  }
-    var catOptions = [...new Set(items.map(function (i) { return i.category_id }).filter(Boolean))].map(function (cid) {
-    var item = items.find(function (i) { return i.category_id === cid })
-    return { id: cid, name: item?.categories?.name || '—' }
-  }).sort(function (a, b) { return a.name.localeCompare(b.name) })
-
-   var subCatOptions = [...new Set(items.filter(function (i) {
-    return i.sub_categories?.name && (!catFilter || String(i.category_id) === catFilter)
-  }).map(function (i) { return i.sub_category_id }).filter(Boolean))].map(function (sid) {
-    var item = items.find(function (i) { return i.sub_category_id === sid })
-    return { id: sid, name: item?.sub_categories?.name || '—' }
-  }).sort(function (a, b) { return a.name.localeCompare(b.name) })
-
-   var venueOptions = []
-   var _seenV = {}
-   items.forEach(function (item) {
-    ;(item.venue_allocations || []).forEach(function (va) {
-      var code = va.venues?.code
-      if (code && !_seenV[code]) {
-        _seenV[code] = true
-        venueOptions.push({ code: code, name: va.venues?.name || code, id: va.venue_id })
-      }
-    })
-   })
-   venueOptions.sort(function (a, b) { return a.code < b.code ? -1 : 1 })
-
-   var subVenueOptions = subVenues.filter(function (sv) {
-    if (!venueFilter) return true
-    var selVenue = venueOptions.find(function (v) { return v.code === venueFilter })
-    return selVenue ? sv.venue_id === selVenue.id : true
-   }).sort(function (a, b) { return a.name.localeCompare(b.name) })
-
-   function resetFilters() {
-    setSearch(''); setCatFilter(''); setSubCatFilter(''); setVenueFilter(''); setSubVenueFilter('')
-  }
-
-  var searchLower = search.toLowerCase()
-   var filtered = items.filter(function (item) {
-   var matchSearch = !search ||
-     item.name.toLowerCase().includes(searchLower) ||
-     (item.name_hindi || '').toLowerCase().includes(searchLower) ||
-     (item.inventory_id || '').toLowerCase().includes(searchLower) ||
-     (item.categories?.name || '').toLowerCase().includes(searchLower) ||
-     (item.brand || '').toLowerCase().includes(searchLower)
-   var matchCat = !catFilter || String(item.category_id) === catFilter
-   var matchSubCat = !subCatFilter || String(item.sub_category_id) === subCatFilter
-   var matchVenue = !venueFilter || (item.venue_allocations || []).some(function (va) { return va.venues?.code === venueFilter })
-   var matchSubVenue = !subVenueFilter || (item.venue_allocations || []).some(function (va) { return String(va.sub_venue_id) === subVenueFilter })
-    return matchSearch && matchCat && matchSubCat && matchVenue && matchSubVenue
+    var catOptions = allCategories
+  var subCatOptions = allSubCategories.filter(function (sc) {
+    return !catFilter || String(sc.category_id) === catFilter
   })
+  var venueOptions = allVenues
+  var subVenueOptions = subVenues.filter(function (sv) {
+    if (!venueFilter) return true
+    var selVenue = allVenues.find(function (v) { return v.code === venueFilter })
+    return selVenue ? sv.venue_id === selVenue.id : true
+  }).sort(function (a, b) { return a.name.localeCompare(b.name) })
+
+  function resetFilters() {
+    setSearch(''); setSearchDebounced(''); setCatFilter(''); setSubCatFilter(''); setVenueFilter(''); setSubVenueFilter('')
+  }
 
   return (
     <div className="space-y-3">
      {/* Filters */}
      <div className="space-y-2">
        <input type="text" value={search}
-         onChange={function (e) { setSearch(e.target.value); setRenderCount(RENDER_SIZE) }}
+         onChange={function (e) { setSearch(e.target.value) }}
          placeholder="Search item name, ID..."
          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
          style={{ fontSize: '16px' }} />
        <div className="flex gap-2">
          <select value={catFilter}
-           onChange={function (e) { setCatFilter(e.target.value); setSubCatFilter(''); setRenderCount(RENDER_SIZE) }}
+           onChange={function (e) { setCatFilter(e.target.value); setSubCatFilter('') }}
            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
            <option value="">All Categories</option>
            {catOptions.map(function (c) { return <option key={c.id} value={String(c.id)}>{c.name}</option> })}
          </select>
          <select value={subCatFilter}
-           onChange={function (e) { setSubCatFilter(e.target.value); setRenderCount(RENDER_SIZE) }}
+           onChange={function (e) { setSubCatFilter(e.target.value) }}
            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
            <option value="">All Sub-categories</option>
            {subCatOptions.map(function (sc) { return <option key={sc.id} value={String(sc.id)}>{sc.name}</option> })}
@@ -163,14 +171,14 @@ function Inventory({ profile }) {
        </div>
        <div className="flex gap-2">
          <select value={venueFilter}
-           onChange={function (e) { setVenueFilter(e.target.value); setSubVenueFilter(''); setRenderCount(RENDER_SIZE) }}
+           onChange={function (e) { setVenueFilter(e.target.value); setSubVenueFilter('') }}
            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
            style={{ fontSize: '16px' }}>
            <option value="">All Venues</option>
            {venueOptions.map(function (v) { return <option key={v.code} value={v.code}>{v.code + ' \u2014 ' + v.name}</option> })}
          </select>
          <select value={subVenueFilter}
-           onChange={function (e) { setSubVenueFilter(e.target.value); setRenderCount(RENDER_SIZE) }}
+           onChange={function (e) { setSubVenueFilter(e.target.value) }}
            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
            style={{ fontSize: '16px' }}>
            <option value="">All Sub-venues</option>
@@ -178,7 +186,7 @@ function Inventory({ profile }) {
          </select>
        </div>
        <div className="flex items-center gap-2">
-         <div className="text-[11px] text-gray-400">{Math.min(renderCount, filtered.length)} / {filtered.length} items{filtered.length < items.length ? ' (filtered from ' + items.length + ')' : ''}</div>
+         <div className="text-[11px] text-gray-400">{items.length + ' loaded' + (hasMore ? '+' : '')}</div>
          {(search || catFilter || subCatFilter || venueFilter || subVenueFilter) && (
            <button onClick={resetFilters}
              className="px-2 py-1 text-[11px] text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-colors font-medium">✕ Reset</button>
@@ -186,13 +194,13 @@ function Inventory({ profile }) {
        </div>
      </div>
 
-     {filtered.length === 0 && (
+     {items.length === 0 && (
        <div className="bg-white border border-gray-200 rounded-xl p-8 text-center">
          <p className="text-sm text-gray-400">No items match filters</p>
        </div>
      )}
 
-     {filtered.slice(0, renderCount).map(function (item) {
+     {items.map(function (item) {
         var venueAllocs = item.venue_allocations || []
 
         return (
@@ -279,10 +287,10 @@ function Inventory({ profile }) {
           </div>
         )
       })}
-      {renderCount < filtered.length && (
-        <button onClick={function () { setRenderCount(renderCount + RENDER_SIZE) }}
-          className="w-full py-3 text-sm font-medium text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors">
-          Load More ({renderCount} of {filtered.length})
+      {hasMore && (
+        <button onClick={function () { loadItems(true) }} disabled={loadingMore}
+          className="w-full py-3 text-sm font-medium text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 disabled:opacity-50 transition-colors">
+          {loadingMore ? 'Loading...' : 'Load More'}
         </button>
       )}
       <Modal open={!!editItem} onClose={function () { setEditItem(null) }} title="Edit Entry">
