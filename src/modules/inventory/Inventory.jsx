@@ -305,7 +305,7 @@ function Inventory({ profile }) {
               var catIds = profile.category_ids || []
               var itemCatNum = Number(item.category_id)
               var isDeptHead = (profile.permissions || []).includes('dept_approve') && catIds.some(function (c) { return Number(c) === itemCatNum })
-              var canEdit = isAdmin || isOwner || isDeptHead              
+              var canEdit = isAdmin
               if (!canEdit) return null
               return (
                 <div className="mt-3">
