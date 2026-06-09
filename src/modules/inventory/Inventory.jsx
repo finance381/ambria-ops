@@ -99,7 +99,7 @@ function Inventory({ profile }) {
     if (subCatFilter) { invQ = invQ.eq('sub_category_id', Number(subCatFilter)); csQ = csQ.eq('sub_category_id', Number(subCatFilter)) }
     if (searchDebounced) {
       var s = '*' + searchDebounced + '*'
-      invQ = invQ.or('name.ilike.' + s + ',name_hindi.ilike.' + s + ',inventory_id.ilike.' + s + ',brand.ilike.' + s)
+      invQ = invQ.or('name.ilike.' + s + ',name_hindi.ilike.' + s + ',inventory_id.ilike.' + s)
       csQ = csQ.or('name.ilike.' + s + ',name_hindi.ilike.' + s + ',inventory_id.ilike.' + s + ',brand.ilike.' + s)
     }
     if (venueInvIds !== null) {
