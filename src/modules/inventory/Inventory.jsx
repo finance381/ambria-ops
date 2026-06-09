@@ -98,7 +98,7 @@ function Inventory({ profile }) {
     if (catFilter) { invQ = invQ.eq('category_id', Number(catFilter)); csQ = csQ.eq('category_id', Number(catFilter)) }
     if (subCatFilter) { invQ = invQ.eq('sub_category_id', Number(subCatFilter)); csQ = csQ.eq('sub_category_id', Number(subCatFilter)) }
     if (searchDebounced) {
-      var s = '%' + searchDebounced + '%'
+      var s = '*' + searchDebounced + '*'
       invQ = invQ.or('name.ilike.' + s + ',name_hindi.ilike.' + s + ',inventory_id.ilike.' + s + ',brand.ilike.' + s)
       csQ = csQ.or('name.ilike.' + s + ',name_hindi.ilike.' + s + ',inventory_id.ilike.' + s + ',brand.ilike.' + s)
     }
@@ -114,6 +114,8 @@ function Inventory({ profile }) {
     if (cursor) { invQ = invQ.lt('created_at', cursor); csQ = csQ.lt('created_at', cursor) }
 
     var [invRes, csRes] = await Promise.all([invQ, csQ])
+    if (invRes.error) console.error('inv error:', invRes.error)
+    if (csRes.error) console.error('cs error:', csRes.error)
     var invItems = (invRes.data || []).map(function (i) { return Object.assign({}, i, { _source: 'inventory' }) })
     var csItems = (csRes.data || []).map(function (i) {
       return Object.assign({}, i, { _source: 'catering_store', venue_allocations: i.cs_venue_allocations || [] })
