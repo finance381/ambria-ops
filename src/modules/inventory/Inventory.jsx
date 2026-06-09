@@ -23,6 +23,8 @@ function Inventory({ profile }) {
   var [allVenues, setAllVenues] = useState([])
   var [hasMore, setHasMore] = useState(false)
   var [loadingMore, setLoadingMore] = useState(false)
+  var [tab, setTab] = useState('mine')
+  var [metaReady, setMetaReady] = useState(false)
   var PAGE_SIZE = 50
 
   useEffect(function () { loadMeta() }, [])
@@ -30,7 +32,9 @@ function Inventory({ profile }) {
     var t = setTimeout(function () { setSearchDebounced(search) }, 400)
     return function () { clearTimeout(t) }
   }, [search])
-  useEffect(function () { loadItems(false) }, [venueFilter, subVenueFilter, catFilter, subCatFilter, searchDebounced])
+  useEffect(function () {
+    if (metaReady) loadItems(false)
+  }, [tab, venueFilter, subVenueFilter, catFilter, subCatFilter, searchDebounced, metaReady])
 
   async function loadMeta() {
     setLoading(true)
@@ -44,6 +48,7 @@ function Inventory({ profile }) {
     setAllSubCategories(scRes.data || [])
     setAllVenues(vRes.data || [])
     setSubVenues(svRes.data || [])
+    setMetaReady(true)
   }
 
   async function loadItems(append) {
@@ -78,11 +83,16 @@ function Inventory({ profile }) {
       .select('*, categories(name), sub_categories(name), cs_venue_allocations(qty, venue_id, sub_venue_id, venues(code, name))')
       .in('status', ['approved', 'pending', 'pending_dept'])
 
-    if (!isAdmin) {
-      if (myCatIds.length > 0) {
-        invQ = invQ.in('category_id', myCatIds); csQ = csQ.in('category_id', myCatIds)
-      } else {
-        invQ = invQ.eq('submitted_by', profile.id); csQ = csQ.eq('submitted_by', profile.id)
+    if (tab === 'mine') {
+      invQ = invQ.eq('submitted_by', profile.id)
+      csQ = csQ.eq('submitted_by', profile.id)
+    } else {
+      if (!isAdmin) {
+        if (myCatIds.length > 0) {
+          invQ = invQ.in('category_id', myCatIds); csQ = csQ.in('category_id', myCatIds)
+        } else {
+          invQ = invQ.eq('submitted_by', profile.id); csQ = csQ.eq('submitted_by', profile.id)
+        }
       }
     }
     if (catFilter) { invQ = invQ.eq('category_id', Number(catFilter)); csQ = csQ.eq('category_id', Number(catFilter)) }
@@ -124,14 +134,17 @@ function Inventory({ profile }) {
     loadItems(false)
   }
 
-  if (loading) {
+  var showTabs = profile.role === 'admin' || profile.role === 'auditor' || (profile.category_ids || []).length > 0
+
+  if (loading && !metaReady) {
     return (
       <div className="text-center py-8">
-        <p className="text-sm text-gray-400">Loading your items...</p>
+        <p className="text-sm text-gray-400">Loading...</p>
       </div>
     )
   }
-    var catOptions = allCategories
+
+  var catOptions = allCategories
   var subCatOptions = allSubCategories.filter(function (sc) {
     return !catFilter || String(sc.category_id) === catFilter
   })
@@ -148,6 +161,20 @@ function Inventory({ profile }) {
 
   return (
     <div className="space-y-3">
+     {/* Tabs */}
+     {showTabs && (
+       <div className="flex bg-gray-100 rounded-lg p-1">
+         <button onClick={function () { setTab('mine') }}
+           className={"flex-1 py-2 text-sm font-semibold rounded-md transition-colors " + (tab === 'mine' ? "bg-white text-gray-900 shadow-sm" : "text-gray-500")}>
+           My Items
+         </button>
+         <button onClick={function () { setTab('all') }}
+           className={"flex-1 py-2 text-sm font-semibold rounded-md transition-colors " + (tab === 'all' ? "bg-white text-gray-900 shadow-sm" : "text-gray-500")}>
+           Full Inventory
+         </button>
+       </div>
+     )}
+
      {/* Filters */}
      <div className="space-y-2">
        <input type="text" value={search}
@@ -194,9 +221,14 @@ function Inventory({ profile }) {
        </div>
      </div>
 
-     {items.length === 0 && (
+     {items.length === 0 && !loading && (
        <div className="bg-white border border-gray-200 rounded-xl p-8 text-center">
-         <p className="text-sm text-gray-400">No items match filters</p>
+         <p className="text-sm text-gray-400">{tab === 'mine' ? 'No items submitted by you' : 'No items match filters'}</p>
+       </div>
+     )}
+     {loading && metaReady && (
+       <div className="text-center py-4">
+         <p className="text-sm text-gray-400">Loading items...</p>
        </div>
      )}
 

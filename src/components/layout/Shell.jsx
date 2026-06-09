@@ -21,7 +21,7 @@ var GROUPS = [
   {
     key: 'inventory', label: 'Inventory', icon: '📦', items: [
       { key: 'feature_add', label: 'Add Item', icon: '📝', tab: 'add' },
-      { key: 'feature_items', label: 'My Items', icon: '📋', tab: 'my' },
+      { key: 'feature_items', label: 'Item List', icon: '📋', tab: 'my' },
       { key: 'feature_production', label: 'Production', icon: '🔧', tab: 'production' },
       { key: 'feature_boxes', label: 'Boxes', icon: '🗃️', tab: 'boxes' },
     ]
