@@ -151,7 +151,7 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved }) {
       var cat = categories.find(function (c) { return String(c.id) === categoryId })
       var fields = cat?.dimension_fields || []
       setCategoryDimFields(fields)
-      if (fields.length > 0 && dimensionValues.length === 0 && !isEdit) {
+      if (fields.length > 0 && dimensionValues.length === 0) {
         setDimensionValues(fields.map(function (f) { return { name: f.name, qty: '', unit: 'Pieces' } }))
       }
     } else { setCategoryDimFields([]); setDimensionValues([]) }

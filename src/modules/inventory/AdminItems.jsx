@@ -44,7 +44,7 @@ function AdminItems({ profile }) {
     try {
       var [invAll, csAll, deptRes, venueRes, profilesRes, catRes, subCatRes, subDeptRes, subVenueRes] = await Promise.all([
         fetchAll(supabase.from('inventory_items')
-          .select('id, name, name_hindi, inventory_id, qty, blocked, unit, type, status, department, category_id, sub_category_id, rate_paise, min_order_qty, reorder_qty, is_asset, image_path, submitted_by, entry_date, description, categories(name), sub_categories(name), venue_allocations(qty, venues(code, name), sub_venue_id)')
+          .select('id, name, name_hindi, inventory_id, qty, blocked, unit, type, status, department, category_id, sub_category_id, rate_paise, min_order_qty, reorder_qty, is_asset, image_path, submitted_by, entry_date, description, dimensions, categories(name), sub_categories(name), venue_allocations(qty, venues(code, name), sub_venue_id)')
           .order('created_at', { ascending: false })),
         fetchAll(supabase.from('catering_store_items')
           .select('id, name, name_hindi, inventory_id, qty, unit, type, status, department, category_id, sub_category_id, rate_paise, is_asset, image_path, submitted_by, entry_date, description, brand, pack_size_qty, pack_size_unit, season_reorder_qty, off_season_reorder_qty, categories(name), sub_categories(name), cs_venue_allocations(qty, venues(code, name), sub_venue_id)')
@@ -208,16 +208,15 @@ function AdminItems({ profile }) {
     if (importMode === 'update' && !importModal.hasId) { alert('Update mode requires an "id" column in your CSV. Use Export to get a CSV with IDs.'); return }
     setImporting(true)
     var rows = importModal.rows
-    var done = 0; var skipped = 0
+    var done = 0; var skipped = 0; var skippedRows = []
     var CHUNK = 50
-
     for (var c = 0; c < rows.length; c++) {
       try {
         var result = await processImportRow(rows[c])
-        if (result) done++; else skipped++
+        if (result) done++; else { skipped++; skippedRows.push({ row: c + 1, cat: findCol(rows[c], ['category']) || '—', id: findCol(rows[c], ['id', 'inventory id', 'inventory_id']) || '—', name: findCol(rows[c], ['name']) || '—' }) }
       } catch (_) { skipped++ }
       if ((c + 1) % 20 === 0 || c === rows.length - 1) {
-        setImportProgress({ done: done, total: rows.length, skipped: skipped })
+        setImportProgress({ done: done, total: rows.length, skipped: skipped, skippedRows: skippedRows })
       }
     }
 
@@ -910,6 +909,19 @@ function AdminItems({ profile }) {
                   <span className="text-green-600 font-medium">{importProgress.done} processed</span>
                   <span className="text-amber-600 font-medium">{importProgress.skipped} skipped</span>
                 </div>
+                {importProgress.skippedRows && importProgress.skippedRows.length > 0 && !importing && (
+                  <div className="mt-3 max-h-40 overflow-y-auto">
+                    <p className="text-[11px] font-bold text-amber-700 uppercase tracking-wider mb-1">Skipped Items</p>
+                    <table className="w-full text-[11px]">
+                      <thead><tr className="text-left text-gray-500"><th className="pr-2 py-0.5">Row</th><th className="pr-2 py-0.5">Category</th><th className="pr-2 py-0.5">ID</th><th className="py-0.5">Name</th></tr></thead>
+                      <tbody>
+                        {importProgress.skippedRows.map(function (s, i) {
+                          return <tr key={i} className="text-gray-600 border-t border-gray-100"><td className="pr-2 py-0.5">{s.row}</td><td className="pr-2 py-0.5">{s.cat}</td><td className="pr-2 py-0.5 font-mono">{s.id}</td><td className="py-0.5">{s.name}</td></tr>
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
             )}
 
