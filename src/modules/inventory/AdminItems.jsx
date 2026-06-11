@@ -186,32 +186,47 @@ function AdminItems({ profile }) {
   }
 
   function exportPdf() {
-    Promise.all([import('jspdf'), import('jspdf-autotable')]).then(function (mods) {
-        var jsPDF = mods[0].default || mods[0].jsPDF
-        var autoTable = mods[1].default || mods[1].autoTable || mods[1]
-        var doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
-        var title = 'Ambria Inventory'
-        var filterParts = []
-        if (deptFilter.length) filterParts.push('Dept: ' + deptFilter.join(', '))
-        if (catFilter.length) filterParts.push('Cat: ' + catFilter.map(function (cid) { var c = categories.find(function (x) { return String(x.id) === cid }); return c ? c.name : cid }).join(', '))
-        if (venueFilter.length) filterParts.push('Venue: ' + venueFilter.join(', '))
-        if (statusFilter.length) filterParts.push('Status: ' + statusFilter.join(', '))
-        doc.setFontSize(14); doc.text(title, 14, 12)
-        if (filterParts.length) { doc.setFontSize(8); doc.setTextColor(100); doc.text(filterParts.join('  |  '), 14, 17); doc.setTextColor(0) }
-        var startY = filterParts.length ? 20 : 16
-        var head = [['#', 'Inv ID', 'Item Name', 'Hindi', 'Category', 'Sub-cat', 'Dept', 'Qty', 'Unit', 'Venues']]
-        var body = filtered.map(function (item, idx) {
-          var allocs = item.venue_allocations || []
-          if (venueFilter.length > 0) allocs = allocs.filter(function (va) { return va.venues && venueFilter.indexOf(va.venues.code) !== -1 })
-          if (subVenueFilter.length > 0) allocs = allocs.filter(function (va) { return subVenueFilter.indexOf(String(va.sub_venue_id || '')) !== -1 })
-          var venueStr = allocs.map(function (va) { var svName = va.sub_venue_id ? (subVenues.find(function (sv) { return sv.id === va.sub_venue_id }) || {}).name : null; return (va.venues?.code || '') + (svName ? ':' + svName : '') + ':' + va.qty }).join(', ')
-          return [idx + 1, item.inventory_id || '', item.name, item.name_hindi || '', item.categories?.name || '', item.sub_categories?.name || '', item.department || '', venueFilter.length > 0 ? allocs.reduce(function (s, va) { return s + (va.qty || 0) }, 0) : item.qty, item.unit || '', venueStr || '—']
-        })
-        autoTable(doc, { head: head, body: body, startY: startY, styles: { fontSize: 7, cellPadding: 1.5 }, headStyles: { fillColor: [46, 64, 87], fontSize: 7, fontStyle: 'bold' }, columnStyles: { 0: { cellWidth: 8 }, 1: { cellWidth: 22 }, 2: { cellWidth: 45 }, 3: { cellWidth: 35 }, 4: { cellWidth: 28 }, 5: { cellWidth: 25 }, 6: { cellWidth: 20 }, 7: { cellWidth: 12, halign: 'right' }, 8: { cellWidth: 15 }, 9: { cellWidth: 55 } }, margin: { left: 10, right: 10 } })
-        var pageCount = doc.internal.getNumberOfPages()
-        for (var p = 1; p <= pageCount; p++) { doc.setPage(p); doc.setFontSize(7); doc.setTextColor(150); doc.text('Page ' + p + '/' + pageCount + '  |  ' + new Date().toLocaleDateString('en-IN'), doc.internal.pageSize.width - 10, doc.internal.pageSize.height - 5, { align: 'right' }) }
-        doc.save('ambria_inventory_' + new Date().toISOString().split('T')[0] + '.pdf')
+    var filterParts = []
+    if (deptFilter.length) filterParts.push('Dept: ' + deptFilter.join(', '))
+    if (catFilter.length) filterParts.push('Cat: ' + catFilter.map(function (cid) { var c = categories.find(function (x) { return String(x.id) === cid }); return c ? c.name : cid }).join(', '))
+    if (venueFilter.length) filterParts.push('Venue: ' + venueFilter.join(', '))
+    if (statusFilter.length) filterParts.push('Status: ' + statusFilter.join(', '))
+    var rows = filtered.map(function (item, idx) {
+      var allocs = item.venue_allocations || []
+      if (venueFilter.length > 0) allocs = allocs.filter(function (va) { return va.venues && venueFilter.indexOf(va.venues.code) !== -1 })
+      if (subVenueFilter.length > 0) allocs = allocs.filter(function (va) { return subVenueFilter.indexOf(String(va.sub_venue_id || '')) !== -1 })
+      var venueStr = allocs.map(function (va) { var svName = va.sub_venue_id ? (subVenues.find(function (sv) { return sv.id === va.sub_venue_id }) || {}).name : null; return (va.venues?.code || '') + (svName ? ':' + svName : '') + ':' + va.qty }).join(', ')
+      var imgUrl = getImageUrl(item.image_path)
+      return { idx: idx + 1, invId: item.inventory_id || '', name: item.name, hindi: item.name_hindi || '', cat: item.categories?.name || '', subCat: item.sub_categories?.name || '', dept: item.department || '', qty: venueFilter.length > 0 ? allocs.reduce(function (s, va) { return s + (va.qty || 0) }, 0) : item.qty, unit: item.unit || '', venues: venueStr || '—', img: imgUrl || '' }
     })
+    var w = window.open('', '_blank')
+    if (!w) { alert('Pop-up blocked. Allow pop-ups for this site.'); return }
+    w.document.write('<!DOCTYPE html><html><head><title>Ambria Inventory</title><style>')
+    w.document.write('body{font-family:sans-serif;margin:20px;color:#333}')
+    w.document.write('h1{font-size:18px;margin:0 0 4px}')
+    w.document.write('.filters{font-size:10px;color:#888;margin-bottom:12px}')
+    w.document.write('table{border-collapse:collapse;width:100%;font-size:11px}')
+    w.document.write('th{background:#2E4057;color:#fff;padding:5px 6px;text-align:left;font-size:10px;font-weight:700}')
+    w.document.write('td{padding:4px 6px;border-bottom:1px solid #eee;vertical-align:middle}')
+    w.document.write('tr:nth-child(even){background:#f9f9f9}')
+    w.document.write('.hindi{font-size:10px;color:#888}')
+    w.document.write('.qty{text-align:right;font-weight:600}')
+    w.document.write('.venue{font-size:10px;color:#4338ca}')
+    w.document.write('.img{width:36px;height:36px;object-fit:cover;border-radius:4px;border:1px solid #ddd}')
+    w.document.write('.no-img{width:36px;height:36px;background:#f3f4f6;border-radius:4px;display:inline-block}')
+    w.document.write('@media print{body{margin:10px}@page{size:landscape;margin:10mm}}')
+    w.document.write('</style></head><body>')
+    w.document.write('<h1>Ambria Inventory</h1>')
+    if (filterParts.length) w.document.write('<div class="filters">' + filterParts.join('  |  ') + '</div>')
+    w.document.write('<div class="filters">' + filtered.length + ' items | Exported ' + new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) + '</div>')
+    w.document.write('<table><thead><tr><th>#</th><th></th><th>Inv ID</th><th>Item Name</th><th>Category</th><th>Sub-cat</th><th>Dept</th><th>Qty</th><th>Unit</th><th>Venues</th></tr></thead><tbody>')
+    rows.forEach(function (r) {
+      var imgHtml = r.img ? '<img class="img" src="' + r.img + '" loading="lazy" />' : '<span class="no-img"></span>'
+      w.document.write('<tr><td>' + r.idx + '</td><td>' + imgHtml + '</td><td>' + r.invId + '</td><td>' + r.name + (r.hindi ? '<br><span class="hindi">' + r.hindi + '</span>' : '') + '</td><td>' + r.cat + '</td><td>' + r.subCat + '</td><td>' + r.dept + '</td><td class="qty">' + r.qty + '</td><td>' + r.unit + '</td><td class="venue">' + r.venues + '</td></tr>')
+    })
+    w.document.write('</tbody></table></body></html>')
+    w.document.close()
+    setTimeout(function () { w.print() }, 1500)
   }
 
   function downloadTemplate() {
