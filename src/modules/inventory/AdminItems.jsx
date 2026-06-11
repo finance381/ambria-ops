@@ -5,6 +5,46 @@ import { logActivity } from '../../lib/logger'
 import Modal from '../../components/ui/Modal'
 import InventoryForm from './InventoryForm'
 
+function FilterDropdown({ value, onChange, options, placeholder }) {
+  var [open, setOpen] = useState(false)
+  var [q, setQ] = useState('')
+  var qLower = q.toLowerCase()
+  var filtered = q ? options.filter(function (o) { return o.label.toLowerCase().indexOf(qLower) !== -1 }) : options
+  var selected = options.find(function (o) { return o.value === value })
+  return (
+    <div className="relative" style={{ minWidth: 140 }}>
+      <button type="button" onClick={function () { setOpen(!open); setQ('') }}
+        className={"px-3 py-2.5 border rounded-lg text-sm text-left w-full truncate focus:outline-none focus:ring-2 focus:ring-indigo-500 " + (value ? "border-indigo-400 bg-indigo-50 text-indigo-700 font-medium" : "border-gray-300 text-gray-500")}>
+        {selected ? selected.label : placeholder}
+      </button>
+      {open && (
+        <div className="absolute z-50 mt-1 w-full min-w-[220px] bg-white border border-gray-200 rounded-lg shadow-lg" style={{ maxHeight: 280, display: 'flex', flexDirection: 'column' }}>
+          <div className="p-1.5 border-b border-gray-100">
+            <input type="text" value={q} onChange={function (e) { setQ(e.target.value) }} placeholder="Type to filter..."
+              autoFocus className="w-full px-2.5 py-1.5 text-sm border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-indigo-400" />
+          </div>
+          <div className="overflow-y-auto" style={{ maxHeight: 220 }}>
+            <button type="button" onClick={function () { onChange(''); setOpen(false) }}
+              className={"w-full text-left px-3 py-2 text-sm hover:bg-gray-50 " + (!value ? "font-bold text-indigo-600" : "text-gray-400")}>
+              {placeholder}
+            </button>
+            {filtered.map(function (o) {
+              return (
+                <button key={o.value} type="button" onClick={function () { onChange(o.value); setOpen(false) }}
+                  className={"w-full text-left px-3 py-2 text-sm hover:bg-indigo-50 truncate " + (o.value === value ? "bg-indigo-50 text-indigo-700 font-semibold" : "text-gray-700")}>
+                  {o.label}
+                </button>
+              )
+            })}
+            {filtered.length === 0 && <p className="px-3 py-2 text-xs text-gray-400">No matches</p>}
+          </div>
+        </div>
+      )}
+      {open && <div className="fixed inset-0 z-40" onClick={function () { setOpen(false) }} />}
+    </div>
+  )
+}
+
 function AdminItems({ profile }) {
   var [items, setItems] = useState([])
   var [loading, setLoading] = useState(true)
@@ -484,99 +524,47 @@ function AdminItems({ profile }) {
           placeholder="Search name, ID, description, submitter..."
           className="flex-1 min-w-[200px] px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
         />
-        <select
-          value={deptFilter}
-          onChange={function (e) { setDeptFilter(e.target.value); setSubDeptFilter(''); setCatFilter(''); setSubCatFilter(''); setPage(1) }}
-          className="px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-        >
-          <option value="">All Departments</option>
-          {departments.map(function (d) {
-            return <option key={d.name} value={d.name}>{d.name}</option>
-          })}
-        </select>
-        {(function () {
-          var deptSubDepts = subDepartments.filter(function (sd) {
+        <FilterDropdown value={deptFilter} placeholder="All Departments"
+          onChange={function (v) { setDeptFilter(v); setSubDeptFilter(''); setCatFilter(''); setSubCatFilter(''); setPage(1) }}
+          options={departments.map(function (d) { return { label: d.name, value: d.name } })} />
+        <FilterDropdown value={subDeptFilter} placeholder="All Sub-depts"
+          onChange={function (v) { setSubDeptFilter(v); setCatFilter(''); setSubCatFilter(''); setPage(1) }}
+          options={subDepartments.filter(function (sd) {
             if (!deptFilter) return true
             var dept = departments.find(function (d) { return d.name === deptFilter })
             return dept ? sd.department_id === dept.id : true
-          })
-          return (
-            <select value={subDeptFilter}
-              onChange={function (e) { setSubDeptFilter(e.target.value); setCatFilter(''); setSubCatFilter(''); setPage(1) }}
-              className="px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
-              <option value="">All Sub-depts</option>
-              {deptSubDepts.map(function (sd) { return <option key={sd.id} value={String(sd.id)}>{sd.name}</option> })}
-            </select>
-          )
-        })()}
-        <select
-          value={statusFilter}
-          onChange={function (e) { setStatusFilter(e.target.value); setPage(1) }}
-          className="px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-        >
-          <option value="">All Statuses</option>
-          <option value="approved">Approved</option>
-          <option value="pending">Pending (Admin)</option>
-          <option value="pending_dept">Pending (Dept)</option>
-        </select>
-        <select
-          value={catFilter}
-          onChange={function (e) { setCatFilter(e.target.value); setSubCatFilter(''); setPage(1) }}
-          className="px-3 py-2.5 border border-gray-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
-        >
-          <option value="">All Categories</option>
-          {categories.filter(function (c) {
+          }).map(function (sd) { return { label: sd.name, value: String(sd.id) } })} />
+        <FilterDropdown value={statusFilter} placeholder="All Statuses"
+          onChange={function (v) { setStatusFilter(v); setPage(1) }}
+          options={[{ label: 'Approved', value: 'approved' }, { label: 'Pending (Admin)', value: 'pending' }, { label: 'Pending (Dept)', value: 'pending_dept' }]} />
+        <FilterDropdown value={catFilter} placeholder="All Categories"
+          onChange={function (v) { setCatFilter(v); setSubCatFilter(''); setPage(1) }}
+          options={categories.filter(function (c) {
             if (subDeptFilter) return c.sub_department_id === Number(subDeptFilter)
             if (!deptFilter) return true
             var dept = departments.find(function (d) { return d.name === deptFilter })
             return dept?.category_ids?.includes(c.id)
-          }).map(function (c) {
-            return <option key={c.id} value={String(c.id)}>{c.name}</option>
-          })}
-        </select>
-        <select
-          value={subCatFilter}
-          onChange={function (e) { setSubCatFilter(e.target.value); setPage(1) }}
-          className="px-3 py-2.5 border border-gray-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
-        >
-          <option value="">All Sub-categories</option>
-          {subCategoriesAll.filter(function (sc) {
+          }).map(function (c) { return { label: c.name, value: String(c.id) } })} />
+        <FilterDropdown value={subCatFilter} placeholder="All Sub-categories"
+          onChange={function (v) { setSubCatFilter(v); setPage(1) }}
+          options={subCategoriesAll.filter(function (sc) {
             if (catFilter) return String(sc.category_id) === catFilter
             if (deptFilter) {
               var dept = departments.find(function (d) { return d.name === deptFilter })
               return dept?.category_ids?.includes(sc.category_id)
             }
             return true
-          }).map(function (sc) {
-            return <option key={sc.id} value={String(sc.id)}>{sc.name}</option>
-          })}
-        </select>
-        <select
-          value={venueFilter}
-          onChange={function (e) { setVenueFilter(e.target.value); setSubVenueFilter(''); setPage(1) }}
-          className="px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-        >
-          <option value="">All Venues</option>
-          {venues.map(function (v) {
-            return <option key={v.code} value={v.code}>{v.code} — {v.name}</option>
-          })}
-        </select>
-        {(function () {
-          var filteredSv = subVenues.filter(function (sv) {
+          }).map(function (sc) { return { label: sc.name, value: String(sc.id) } })} />
+        <FilterDropdown value={venueFilter} placeholder="All Venues"
+          onChange={function (v) { setVenueFilter(v); setSubVenueFilter(''); setPage(1) }}
+          options={venues.map(function (v) { return { label: v.code + ' \u2014 ' + v.name, value: v.code } })} />
+        <FilterDropdown value={subVenueFilter} placeholder="All Sub-venues"
+          onChange={function (v) { setSubVenueFilter(v); setPage(1) }}
+          options={subVenues.filter(function (sv) {
             if (!venueFilter) return true
-            var venue = venues.find(function (v) { return v.code === venueFilter })
+            var venue = venues.find(function (v2) { return v2.code === venueFilter })
             return venue ? sv.venue_id === venue.id : true
-          })
-          if (filteredSv.length === 0) return null
-          return (
-            <select value={subVenueFilter}
-              onChange={function (e) { setSubVenueFilter(e.target.value); setPage(1) }}
-              className="px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
-              <option value="">All Sub-venues</option>
-              {filteredSv.map(function (sv) { return <option key={sv.id} value={String(sv.id)}>{sv.name}</option> })}
-            </select>
-          )
-        })()}
+          }).map(function (sv) { return { label: sv.name, value: String(sv.id) } })} />
         <select
           value={perPage}
           onChange={function (e) { setPerPage(Number(e.target.value)); setPage(1) }}
