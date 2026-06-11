@@ -5,33 +5,47 @@ import { logActivity } from '../../lib/logger'
 import Modal from '../../components/ui/Modal'
 import InventoryForm from './InventoryForm'
 
-function FilterDropdown({ value, onChange, options, placeholder }) {
+function FilterDropdown({ value, onChange, options, placeholder, multi }) {
   var [open, setOpen] = useState(false)
   var [q, setQ] = useState('')
   var qLower = q.toLowerCase()
   var filtered = q ? options.filter(function (o) { return o.label.toLowerCase().indexOf(qLower) !== -1 }) : options
-  var selected = options.find(function (o) { return o.value === value })
+  var vals = multi ? (value || []) : []
+  var selected = multi ? null : options.find(function (o) { return o.value === value })
+  var displayLabel = multi
+    ? (vals.length === 0 ? placeholder : vals.length === 1 ? (options.find(function (o) { return o.value === vals[0] }) || {}).label || vals[0] : vals.length + ' selected')
+    : (selected ? selected.label : placeholder)
+  var hasValue = multi ? vals.length > 0 : !!value
+  function toggle(v) {
+    if (!multi) { onChange(v); setOpen(false); return }
+    var idx = vals.indexOf(v)
+    if (idx === -1) { onChange(vals.concat([v])) }
+    else { onChange(vals.filter(function (x) { return x !== v })) }
+  }
+  function clearAll() { onChange(multi ? [] : ''); setOpen(false) }
   return (
     <div className="relative" style={{ minWidth: 140 }}>
       <button type="button" onClick={function () { setOpen(!open); setQ('') }}
-        className={"px-3 py-2.5 border rounded-lg text-sm text-left w-full truncate focus:outline-none focus:ring-2 focus:ring-indigo-500 " + (value ? "border-indigo-400 bg-indigo-50 text-indigo-700 font-medium" : "border-gray-300 text-gray-500")}>
-        {selected ? selected.label : placeholder}
+        className={"px-3 py-2.5 border rounded-lg text-sm text-left w-full truncate focus:outline-none focus:ring-2 focus:ring-indigo-500 " + (hasValue ? "border-indigo-400 bg-indigo-50 text-indigo-700 font-medium" : "border-gray-300 text-gray-500")}>
+        {displayLabel}
       </button>
       {open && (
-        <div className="absolute z-50 mt-1 w-full min-w-[220px] bg-white border border-gray-200 rounded-lg shadow-lg" style={{ maxHeight: 280, display: 'flex', flexDirection: 'column' }}>
+        <div className="absolute z-50 mt-1 w-full min-w-[220px] bg-white border border-gray-200 rounded-lg shadow-lg" style={{ maxHeight: 300, display: 'flex', flexDirection: 'column' }}>
           <div className="p-1.5 border-b border-gray-100">
             <input type="text" value={q} onChange={function (e) { setQ(e.target.value) }} placeholder="Type to filter..."
               autoFocus className="w-full px-2.5 py-1.5 text-sm border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-indigo-400" />
           </div>
-          <div className="overflow-y-auto" style={{ maxHeight: 220 }}>
-            <button type="button" onClick={function () { onChange(''); setOpen(false) }}
-              className={"w-full text-left px-3 py-2 text-sm hover:bg-gray-50 " + (!value ? "font-bold text-indigo-600" : "text-gray-400")}>
+          <div className="overflow-y-auto" style={{ maxHeight: 240 }}>
+            <button type="button" onClick={clearAll}
+              className={"w-full text-left px-3 py-2 text-sm hover:bg-gray-50 " + (!hasValue ? "font-bold text-indigo-600" : "text-gray-400")}>
               {placeholder}
             </button>
             {filtered.map(function (o) {
+              var isOn = multi ? vals.indexOf(o.value) !== -1 : o.value === value
               return (
-                <button key={o.value} type="button" onClick={function () { onChange(o.value); setOpen(false) }}
-                  className={"w-full text-left px-3 py-2 text-sm hover:bg-indigo-50 truncate " + (o.value === value ? "bg-indigo-50 text-indigo-700 font-semibold" : "text-gray-700")}>
+                <button key={o.value} type="button" onClick={function () { toggle(o.value) }}
+                  className={"w-full text-left px-3 py-2 text-sm hover:bg-indigo-50 truncate flex items-center gap-2 " + (isOn ? "bg-indigo-50 text-indigo-700 font-semibold" : "text-gray-700")}>
+                  {multi && <span className={"inline-block w-4 h-4 rounded border text-center text-[10px] leading-4 flex-shrink-0 " + (isOn ? "bg-indigo-600 border-indigo-600 text-white" : "border-gray-300")}>{isOn ? '✓' : ''}</span>}
                   {o.label}
                 </button>
               )
@@ -49,19 +63,19 @@ function AdminItems({ profile }) {
   var [items, setItems] = useState([])
   var [loading, setLoading] = useState(true)
   var [search, setSearch] = useState('')
-  var [deptFilter, setDeptFilter] = useState('')
-  var [statusFilter, setStatusFilter] = useState('')
+  var [deptFilter, setDeptFilter] = useState([])
+  var [statusFilter, setStatusFilter] = useState([])
   var [departments, setDepartments] = useState([])
   var [venues, setVenues] = useState([])
-  var [venueFilter, setVenueFilter] = useState('')
-  var [catFilter, setCatFilter] = useState('')
-  var [subCatFilter, setSubCatFilter] = useState('')
+  var [venueFilter, setVenueFilter] = useState([])
+  var [catFilter, setCatFilter] = useState([])
+  var [subCatFilter, setSubCatFilter] = useState([])
   var [categories, setCategories] = useState([])
   var [subCategoriesAll, setSubCategoriesAll] = useState([])
   var [subDepartments, setSubDepartments] = useState([])
-  var [subDeptFilter, setSubDeptFilter] = useState('')
+  var [subDeptFilter, setSubDeptFilter] = useState([])
   var [subVenues, setSubVenues] = useState([])
-  var [subVenueFilter, setSubVenueFilter] = useState('')
+  var [subVenueFilter, setSubVenueFilter] = useState([])
   var [enlargedImg, setEnlargedImg] = useState(null)
   var [editItem, setEditItem] = useState(null)
   var [deleteConfirm, setDeleteConfirm] = useState(null)
@@ -75,6 +89,7 @@ function AdminItems({ profile }) {
   var [importMode, setImportMode] = useState('add') // 'add' or 'update'
   var [importProgress, setImportProgress] = useState(null) // { done, total, skipped }
   var [importing, setImporting] = useState(false)
+  var [exportModal, setExportModal] = useState(false)
 
   useEffect(function () {
     loadData()
@@ -127,8 +142,8 @@ function AdminItems({ profile }) {
   }
 
   function resetFilters() {
-    setSearch(''); setDeptFilter(''); setStatusFilter(''); setSubDeptFilter('')
-    setCatFilter(''); setSubCatFilter(''); setVenueFilter(''); setSubVenueFilter('')
+    setSearch(''); setDeptFilter([]); setStatusFilter([]); setSubDeptFilter([])
+    setCatFilter([]); setSubCatFilter([]); setVenueFilter([]); setSubVenueFilter([])
     setPage(1)
   }
 
@@ -142,11 +157,11 @@ function AdminItems({ profile }) {
     var headers = ['ID', 'Inventory ID', 'Name', 'Name Hindi', 'Category', 'Sub-category', 'Type', 'Qty', 'Unit', 'Department', 'Description', 'Status', 'Source', 'Brand', 'Pack Size Qty', 'Pack Size Unit', 'Min Order / Season Reorder', 'Reorder / Off Season Reorder', 'Rate (₹)', 'Is Asset', 'Venue Code', 'Sub-Venue', 'Venue Qty', 'Image URL', 'Date Added']
     var rows = filtered.map(function (i) {
       var allocs = i.venue_allocations || []
-      if (venueFilter) {
-        allocs = allocs.filter(function (va) { return va.venues && va.venues.code === venueFilter })
+      if (venueFilter.length > 0) {
+        allocs = allocs.filter(function (va) { return va.venues && venueFilter.indexOf(va.venues.code) !== -1 })
       }
-      if (subVenueFilter) {
-        allocs = allocs.filter(function (va) { return String(va.sub_venue_id || '') === subVenueFilter })
+      if (subVenueFilter.length > 0) {
+        allocs = allocs.filter(function (va) { return subVenueFilter.indexOf(String(va.sub_venue_id || '')) !== -1 })
       }
       var venueCodes = allocs.map(function (va) { return va.venues?.code || '' }).join('; ')
       var venueSubVenues = allocs.map(function (va) { var sv = subVenues.find(function (s) { return s.id === va.sub_venue_id }); return sv?.name || '' }).join('; ')
@@ -155,7 +170,7 @@ function AdminItems({ profile }) {
       return [
         i.id, i.inventory_id || '', i.name, i.name_hindi || '',
         i.categories?.name || '', i.sub_categories?.name || '',
-        i.type || '', venueFilter ? allocs.reduce(function (sum, va) { return sum + (va.qty || 0) }, 0) : i.qty, i.unit || '', i.department || '',
+        i.type || '', venueFilter.length > 0 ? allocs.reduce(function (sum, va) { return sum + (va.qty || 0) }, 0) : i.qty, i.unit || '', i.department || '',
         i.description || '', i.status, i._source || 'inventory',
         i.brand || '', i.pack_size_qty || '', i.pack_size_unit || '',
         i.season_reorder_qty || i.min_order_qty || '',
@@ -168,6 +183,36 @@ function AdminItems({ profile }) {
     var csv = '\uFEFF' + headers.join(',') + '\n' + rows.join('\n')
     var blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
     var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'ambria_inventory_' + new Date().toISOString().split('T')[0] + '.csv'; a.click()
+  }
+
+  function exportPdf() {
+    import('jspdf').then(function (jsMod) {
+      import('jspdf-autotable').then(function () {
+        var jsPDF = jsMod.default || jsMod.jsPDF
+        var doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
+        var title = 'Ambria Inventory'
+        var filterParts = []
+        if (deptFilter.length) filterParts.push('Dept: ' + deptFilter.join(', '))
+        if (catFilter.length) filterParts.push('Cat: ' + catFilter.map(function (cid) { var c = categories.find(function (x) { return String(x.id) === cid }); return c ? c.name : cid }).join(', '))
+        if (venueFilter.length) filterParts.push('Venue: ' + venueFilter.join(', '))
+        if (statusFilter.length) filterParts.push('Status: ' + statusFilter.join(', '))
+        doc.setFontSize(14); doc.text(title, 14, 12)
+        if (filterParts.length) { doc.setFontSize(8); doc.setTextColor(100); doc.text(filterParts.join('  |  '), 14, 17); doc.setTextColor(0) }
+        var startY = filterParts.length ? 20 : 16
+        var head = [['#', 'Inv ID', 'Item Name', 'Hindi', 'Category', 'Sub-cat', 'Dept', 'Qty', 'Unit', 'Venues']]
+        var body = filtered.map(function (item, idx) {
+          var allocs = item.venue_allocations || []
+          if (venueFilter.length > 0) allocs = allocs.filter(function (va) { return va.venues && venueFilter.indexOf(va.venues.code) !== -1 })
+          if (subVenueFilter.length > 0) allocs = allocs.filter(function (va) { return subVenueFilter.indexOf(String(va.sub_venue_id || '')) !== -1 })
+          var venueStr = allocs.map(function (va) { var svName = va.sub_venue_id ? (subVenues.find(function (sv) { return sv.id === va.sub_venue_id }) || {}).name : null; return (va.venues?.code || '') + (svName ? ':' + svName : '') + ':' + va.qty }).join(', ')
+          return [idx + 1, item.inventory_id || '', item.name, item.name_hindi || '', item.categories?.name || '', item.sub_categories?.name || '', item.department || '', venueFilter.length > 0 ? allocs.reduce(function (s, va) { return s + (va.qty || 0) }, 0) : item.qty, item.unit || '', venueStr || '—']
+        })
+        doc.autoTable({ head: head, body: body, startY: startY, styles: { fontSize: 7, cellPadding: 1.5 }, headStyles: { fillColor: [46, 64, 87], fontSize: 7, fontStyle: 'bold' }, columnStyles: { 0: { cellWidth: 8 }, 1: { cellWidth: 22 }, 2: { cellWidth: 45 }, 3: { cellWidth: 35 }, 4: { cellWidth: 28 }, 5: { cellWidth: 25 }, 6: { cellWidth: 20 }, 7: { cellWidth: 12, halign: 'right' }, 8: { cellWidth: 15 }, 9: { cellWidth: 55 } }, margin: { left: 10, right: 10 } })
+        var pageCount = doc.internal.getNumberOfPages()
+        for (var p = 1; p <= pageCount; p++) { doc.setPage(p); doc.setFontSize(7); doc.setTextColor(150); doc.text('Page ' + p + '/' + pageCount + '  |  ' + new Date().toLocaleDateString('en-IN'), doc.internal.pageSize.width - 10, doc.internal.pageSize.height - 5, { align: 'right' }) }
+        doc.save('ambria_inventory_' + new Date().toISOString().split('T')[0] + '.pdf')
+      })
+    })
   }
 
   function downloadTemplate() {
@@ -496,16 +541,16 @@ function AdminItems({ profile }) {
       (item.sub_categories?.name || '').toLowerCase().includes(searchLower) ||
       (item.department || '').toLowerCase().includes(searchLower) ||
       (item.brand || '').toLowerCase().includes(searchLower)
-    var matchDept = !deptFilter || item.department === deptFilter
-    var matchStatus = !statusFilter || item.status === statusFilter
-    var matchSubDept = !subDeptFilter || (function () {
-    var sdCatIds = categories.filter(function (c) { return String(c.sub_department_id) === subDeptFilter }).map(function (c) { return c.id })
-    return sdCatIds.includes(item.category_id)
-     })()
-    var matchVenue = !venueFilter || (item.venue_allocations || []).some(function (va) { return va.venues?.code === venueFilter })
-    var matchSubVenue = !subVenueFilter || (item.venue_allocations || []).some(function (va) { return String(va.sub_venue_id) === subVenueFilter })
-    var matchCat = !catFilter || String(item.category_id) === catFilter
-    var matchSubCat = !subCatFilter || String(item.sub_category_id) === subCatFilter
+    var matchDept = deptFilter.length === 0 || deptFilter.indexOf(item.department) !== -1
+    var matchStatus = statusFilter.length === 0 || statusFilter.indexOf(item.status) !== -1
+    var matchSubDept = subDeptFilter.length === 0 || (function () {
+      var sdCatIds = categories.filter(function (c) { return subDeptFilter.indexOf(String(c.sub_department_id)) !== -1 }).map(function (c) { return c.id })
+      return sdCatIds.indexOf(item.category_id) !== -1
+    })()
+    var matchVenue = venueFilter.length === 0 || (item.venue_allocations || []).some(function (va) { return venueFilter.indexOf(va.venues?.code) !== -1 })
+    var matchSubVenue = subVenueFilter.length === 0 || (item.venue_allocations || []).some(function (va) { return subVenueFilter.indexOf(String(va.sub_venue_id)) !== -1 })
+    var matchCat = catFilter.length === 0 || catFilter.indexOf(String(item.category_id)) !== -1
+    var matchSubCat = subCatFilter.length === 0 || subCatFilter.indexOf(String(item.sub_category_id)) !== -1
     return matchSearch && matchDept && matchSubDept && matchStatus && matchVenue && matchCat && matchSubCat && matchSubVenue
   })
 
@@ -524,46 +569,46 @@ function AdminItems({ profile }) {
           placeholder="Search name, ID, description, submitter..."
           className="flex-1 min-w-[200px] px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
         />
-        <FilterDropdown value={deptFilter} placeholder="All Departments"
-          onChange={function (v) { setDeptFilter(v); setSubDeptFilter(''); setCatFilter(''); setSubCatFilter(''); setPage(1) }}
+        <FilterDropdown value={deptFilter} placeholder="All Departments" multi
+          onChange={function (v) { setDeptFilter(v); setSubDeptFilter([]); setCatFilter([]); setSubCatFilter([]); setPage(1) }}
           options={departments.map(function (d) { return { label: d.name, value: d.name } })} />
-        <FilterDropdown value={subDeptFilter} placeholder="All Sub-depts"
-          onChange={function (v) { setSubDeptFilter(v); setCatFilter(''); setSubCatFilter(''); setPage(1) }}
+        <FilterDropdown value={subDeptFilter} placeholder="All Sub-depts" multi
+          onChange={function (v) { setSubDeptFilter(v); setCatFilter([]); setSubCatFilter([]); setPage(1) }}
           options={subDepartments.filter(function (sd) {
-            if (!deptFilter) return true
-            var dept = departments.find(function (d) { return d.name === deptFilter })
-            return dept ? sd.department_id === dept.id : true
+            if (deptFilter.length === 0) return true
+            var deptIds = departments.filter(function (d) { return deptFilter.indexOf(d.name) !== -1 }).map(function (d) { return d.id })
+            return deptIds.indexOf(sd.department_id) !== -1
           }).map(function (sd) { return { label: sd.name, value: String(sd.id) } })} />
-        <FilterDropdown value={statusFilter} placeholder="All Statuses"
+        <FilterDropdown value={statusFilter} placeholder="All Statuses" multi
           onChange={function (v) { setStatusFilter(v); setPage(1) }}
           options={[{ label: 'Approved', value: 'approved' }, { label: 'Pending (Admin)', value: 'pending' }, { label: 'Pending (Dept)', value: 'pending_dept' }]} />
-        <FilterDropdown value={catFilter} placeholder="All Categories"
-          onChange={function (v) { setCatFilter(v); setSubCatFilter(''); setPage(1) }}
+        <FilterDropdown value={catFilter} placeholder="All Categories" multi
+          onChange={function (v) { setCatFilter(v); setSubCatFilter([]); setPage(1) }}
           options={categories.filter(function (c) {
-            if (subDeptFilter) return c.sub_department_id === Number(subDeptFilter)
-            if (!deptFilter) return true
-            var dept = departments.find(function (d) { return d.name === deptFilter })
-            return dept?.category_ids?.includes(c.id)
+            if (subDeptFilter.length > 0) return subDeptFilter.indexOf(String(c.sub_department_id)) !== -1
+            if (deptFilter.length === 0) return true
+            var deptCatIds = []; departments.filter(function (d) { return deptFilter.indexOf(d.name) !== -1 }).forEach(function (d) { (d.category_ids || []).forEach(function (cid) { if (deptCatIds.indexOf(cid) === -1) deptCatIds.push(cid) }) })
+            return deptCatIds.indexOf(c.id) !== -1
           }).map(function (c) { return { label: c.name, value: String(c.id) } })} />
-        <FilterDropdown value={subCatFilter} placeholder="All Sub-categories"
+        <FilterDropdown value={subCatFilter} placeholder="All Sub-categories" multi
           onChange={function (v) { setSubCatFilter(v); setPage(1) }}
           options={subCategoriesAll.filter(function (sc) {
-            if (catFilter) return String(sc.category_id) === catFilter
-            if (deptFilter) {
-              var dept = departments.find(function (d) { return d.name === deptFilter })
-              return dept?.category_ids?.includes(sc.category_id)
+            if (catFilter.length > 0) return catFilter.indexOf(String(sc.category_id)) !== -1
+            if (deptFilter.length > 0) {
+              var deptCatIds = []; departments.filter(function (d) { return deptFilter.indexOf(d.name) !== -1 }).forEach(function (d) { (d.category_ids || []).forEach(function (cid) { if (deptCatIds.indexOf(cid) === -1) deptCatIds.push(cid) }) })
+              return deptCatIds.indexOf(sc.category_id) !== -1
             }
             return true
           }).map(function (sc) { return { label: sc.name, value: String(sc.id) } })} />
-        <FilterDropdown value={venueFilter} placeholder="All Venues"
-          onChange={function (v) { setVenueFilter(v); setSubVenueFilter(''); setPage(1) }}
+        <FilterDropdown value={venueFilter} placeholder="All Venues" multi
+          onChange={function (v) { setVenueFilter(v); setSubVenueFilter([]); setPage(1) }}
           options={venues.map(function (v) { return { label: v.code + ' \u2014 ' + v.name, value: v.code } })} />
-        <FilterDropdown value={subVenueFilter} placeholder="All Sub-venues"
+        <FilterDropdown value={subVenueFilter} placeholder="All Sub-venues" multi
           onChange={function (v) { setSubVenueFilter(v); setPage(1) }}
           options={subVenues.filter(function (sv) {
-            if (!venueFilter) return true
-            var venue = venues.find(function (v2) { return v2.code === venueFilter })
-            return venue ? sv.venue_id === venue.id : true
+            if (venueFilter.length === 0) return true
+            var vIds = venues.filter(function (v2) { return venueFilter.indexOf(v2.code) !== -1 }).map(function (v2) { return v2.id })
+            return vIds.indexOf(sv.venue_id) !== -1
           }).map(function (sv) { return { label: sv.name, value: String(sv.id) } })} />
         <select
           value={perPage}
@@ -578,11 +623,11 @@ function AdminItems({ profile }) {
         <div className="text-sm text-gray-400 self-center">
           {filtered.length} item{filtered.length !== 1 ? 's' : ''}
         </div>
-        {(search || deptFilter || statusFilter || subDeptFilter || catFilter || subCatFilter || venueFilter || subVenueFilter) && (
+        {(search || deptFilter.length || statusFilter.length || subDeptFilter.length || catFilter.length || subCatFilter.length || venueFilter.length || subVenueFilter.length) && (
           <button onClick={resetFilters}
             className="px-3 py-2.5 text-sm text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-colors font-medium">✕ Reset</button>
         )}
-        <button onClick={exportItems}
+        <button onClick={function () { setExportModal(true) }}
           className="px-3 py-2.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-medium">📥 Export</button>
         <label className="px-3 py-2.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-medium cursor-pointer">
           📤 Import
@@ -823,6 +868,23 @@ function AdminItems({ profile }) {
          </div>
        )}
      </Modal>
+     {/* Export modal */}
+      <Modal open={exportModal} onClose={function () { setExportModal(false) }} title="Export Inventory">
+        <div className="space-y-4">
+          <p className="text-sm text-gray-500">{filtered.length} items will be exported (based on current filters).</p>
+          <div className="flex gap-3">
+            <button onClick={function () { exportItems(); setExportModal(false) }}
+              className="flex-1 py-3 text-sm font-semibold border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
+              📊 Export CSV
+            </button>
+            <button onClick={function () { exportPdf(); setExportModal(false) }}
+              className="flex-1 py-3 text-sm font-semibold border border-indigo-300 bg-indigo-50 text-indigo-700 rounded-lg hover:bg-indigo-100 transition-colors">
+              📄 Export PDF
+            </button>
+          </div>
+          <p className="text-[11px] text-gray-400">CSV includes all columns. PDF excludes By, Date, Status for compact layout.</p>
+        </div>
+      </Modal>
      {/* Import modal */}
       <Modal open={!!importModal} onClose={function () { if (!importing) { setImportModal(null); setImportProgress(null) } }} title="Import Items">
         {importModal && (
