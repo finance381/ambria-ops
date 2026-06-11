@@ -123,10 +123,10 @@ serve(async (req) => {
     const venueName = VENUE_NAME_MAP[venueIdx] || "Ambria Pushpanjali"
 
     // Use deal breakdowns when negotiated, else quote tier
-    const hasDeal = !!q.deal_value_paise
-    const vmPaise = (hasDeal && q.deal_vm_paise) ? q.deal_vm_paise : (q.vm_q_paise || 0)
-    const decorPaise = (hasDeal && q.deal_decor_paise) ? q.deal_decor_paise : (q.decor_q_paise || 0)
-    const djPaise = (hasDeal && q.deal_ent_paise) ? q.deal_ent_paise : (q.dj_q_paise || 0)
+    const hasDeal = q.deal_value_paise != null && q.deal_value_paise > 0
+    const vmPaise = hasDeal && q.deal_vm_paise != null ? q.deal_vm_paise : (q.vm_q_paise || 0)
+    const decorPaise = hasDeal && q.deal_decor_paise != null ? q.deal_decor_paise : (q.decor_q_paise || 0)
+    const djPaise = hasDeal && q.deal_ent_paise != null ? q.deal_ent_paise : (q.dj_q_paise || 0)
     const menuValueRupees = paiseToRupees(vmPaise)
     const extraPlateRupees = (vmPaise && q.pax) ? String(Math.round(vmPaise / q.pax / 200)) : "0"
     const decorRupees = paiseToRupees(decorPaise)
@@ -153,11 +153,11 @@ serve(async (req) => {
       fisd_session: ["Dinner", "Sundowner", "Lunch"][q.slot ?? 0] || "Dinner",
       fisd_venue_value: "0",
       fisd_decoration_lumpsum: decorRupees,
-      fisd_decoration_remarks: "Empanelled",
-      fisd_decor_type: "Empanelled",
+      fisd_decor_type: "Enpaneled",
+      fisd_decoration_remarks: DECOR_LABELS[q.decor_idx ?? 0] || "Premium",
       fisd_entertainment_lumpsum: djRupees,
-      fisd_entertainment_remarks: "Empanelled",
-      fisd_entertain_type: "Empanelled",
+      fisd_entertain_type: "Enpaneled",
+      fisd_entertainment_remarks: DJ_LABELS[q.dj_idx ?? 0] || "DJ + LED",
       fis_guest_name: q.guest_name,
       fis_client_mobile: phone,
       fis_address: q.guest_address || "-",
