@@ -1048,6 +1048,7 @@ function SeasonCalendar({ config, onSave, saving }) {
   var draftRef = useRef(draft)
   var rafRef = useRef(null)
   var paintMode = useRef('paint')
+  var csvRef = useRef(null)
 
   useEffect(function () { draftRef.current = draft }, [draft])
   useEffect(function () { var d = clone(config.season_dates || {}); setDraft(d); draftRef.current = d }, [config.season_dates])
@@ -1078,6 +1079,72 @@ function SeasonCalendar({ config, onSave, saving }) {
       cur.setDate(cur.getDate() + 1)
     }
     flushDraft()
+  }
+
+  function handleImport(e) {
+    var file = e.target.files && e.target.files[0]
+    if (!file) return
+    e.target.value = ''
+    var reader = new FileReader()
+    reader.onload = function (evt) {
+      var text = evt.target.result
+      var lines = text.split(/\r?\n/).filter(function (l) { return l.trim() })
+      var catMap = {}
+      cats.forEach(function (c, i) { catMap[c.label.toLowerCase()] = i })
+      var imported = Object.assign({}, draftRef.current)
+      var count = 0
+      var skipped = 0
+      for (var i = 0; i < lines.length; i++) {
+        var parts = lines[i].split(',').map(function (s) { return s.trim().replace(/^"|"$/g, '') })
+        if (parts.length < 2) continue
+        var dateStr = parts[0]
+        var catName = parts[1]
+        if (!dateStr || !catName) continue
+        if (dateStr.toLowerCase() === 'date') continue
+        var mmdd = ''
+        if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+          if (parseInt(dateStr.substring(0, 4)) !== viewYear) continue
+          mmdd = dateStr.substring(5)
+        } else if (/^\d{2}-\d{2}$/.test(dateStr)) {
+          mmdd = dateStr
+        } else if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(dateStr)) {
+          var slashParts = dateStr.split('/')
+          if (parseInt(slashParts[2]) !== viewYear) continue
+          mmdd = pad2(parseInt(slashParts[1])) + '-' + pad2(parseInt(slashParts[0]))
+        } else if (/^\d{1,2}\/\d{1,2}$/.test(dateStr)) {
+          var shortParts = dateStr.split('/')
+          mmdd = pad2(parseInt(shortParts[1])) + '-' + pad2(parseInt(shortParts[0]))
+        } else { skipped++; continue }
+        var mm = parseInt(mmdd.substring(0, 2))
+        var dd = parseInt(mmdd.substring(3))
+        if (mm < 1 || mm > 12 || dd < 1 || dd > 31) { skipped++; continue }
+        var catIdx = catMap[catName.toLowerCase()]
+        if (catIdx == null) { skipped++; continue }
+        imported[mmdd] = catIdx
+        count++
+      }
+      draftRef.current = imported
+      setDraft(Object.assign({}, imported))
+      var msg = 'Imported ' + count + ' dates'
+      if (skipped > 0) msg += ' (' + skipped + ' skipped)'
+      alert(msg)
+    }
+    reader.readAsText(file)
+  }
+
+  function handleExport() {
+    var lines = ['date,category']
+    var keys = Object.keys(draftRef.current).sort()
+    for (var i = 0; i < keys.length; i++) {
+      var cat = cats[draftRef.current[keys[i]]]
+      if (cat) lines.push(keys[i] + ',' + cat.label)
+    }
+    var blob = new Blob([lines.join('\n')], { type: 'text/csv' })
+    var url = URL.createObjectURL(blob)
+    var a = document.createElement('a')
+    a.href = url; a.download = 'season_dates_' + viewYear + '.csv'
+    document.body.appendChild(a); a.click(); document.body.removeChild(a)
+    URL.revokeObjectURL(url)
   }
 
   function getCat(mm, dd) {
@@ -1153,6 +1220,11 @@ function SeasonCalendar({ config, onSave, saving }) {
         <button onClick={function () { setViewYear(viewYear + 1) }} style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid ' + C.border, background: '#fff', cursor: 'pointer', fontSize: 14, fontWeight: 700, color: C.maroon }}>›</button>
       </div>
 
+      <div style={{ display: 'flex', justifyContent: 'center', gap: 10, marginBottom: 14 }}>
+        <input ref={csvRef} type="file" accept=".csv" style={{ display: 'none' }} onChange={handleImport} />
+        <button onClick={function () { csvRef.current && csvRef.current.click() }} style={{ padding: '5px 14px', borderRadius: 7, border: '1px solid ' + C.border, background: '#fff', fontSize: 11, fontWeight: 600, color: C.maroon, cursor: 'pointer' }}>Import CSV</button>
+        <button onClick={handleExport} style={{ padding: '5px 14px', borderRadius: 7, border: '1px solid ' + C.border, background: '#fff', fontSize: 11, fontWeight: 600, color: C.maroon, cursor: 'pointer' }}>Export CSV</button>
+      </div>
       {/* Month grids — responsive */}
       <div onPointerDown={onGridDown} onPointerOver={onGridOver}
         onPointerUp={function () { pointerRef.current = false; setDraft(Object.assign({}, draftRef.current)) }} onPointerLeave={function () { pointerRef.current = false; setDraft(Object.assign({}, draftRef.current)) }}
