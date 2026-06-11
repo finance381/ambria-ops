@@ -186,10 +186,8 @@ function AdminItems({ profile }) {
   }
 
   function exportPdf() {
-    import('jspdf').then(function (jsMod) {
-      import('jspdf-autotable').then(function (atMod) {
-        var jsPDF = jsMod.default || jsMod.jsPDF
-        if (atMod.default) atMod.default(jsPDF)
+    Promise.all([import('jspdf'), import('jspdf-autotable')]).then(function (mods) {
+        var jsPDF = mods[0].default || mods[0].jsPDF
         var doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
         var title = 'Ambria Inventory'
         var filterParts = []
@@ -212,7 +210,6 @@ function AdminItems({ profile }) {
         var pageCount = doc.internal.getNumberOfPages()
         for (var p = 1; p <= pageCount; p++) { doc.setPage(p); doc.setFontSize(7); doc.setTextColor(150); doc.text('Page ' + p + '/' + pageCount + '  |  ' + new Date().toLocaleDateString('en-IN'), doc.internal.pageSize.width - 10, doc.internal.pageSize.height - 5, { align: 'right' }) }
         doc.save('ambria_inventory_' + new Date().toISOString().split('T')[0] + '.pdf')
-      })
     })
   }
 
