@@ -84,8 +84,13 @@ function Inventory({ profile }) {
       .in('status', ['approved', 'pending', 'pending_dept'])
 
     if (tab === 'mine') {
-      invQ = invQ.eq('submitted_by', profile.id)
-      csQ = csQ.eq('submitted_by', profile.id)
+      if (!isAdmin) {
+        if (myCatIds.length > 0) {
+          invQ = invQ.in('category_id', myCatIds); csQ = csQ.in('category_id', myCatIds)
+        } else {
+          invQ = invQ.eq('submitted_by', profile.id); csQ = csQ.eq('submitted_by', profile.id)
+        }
+      }
     } else {
       if (!isAdmin) {
         if (myCatIds.length > 0) {
@@ -305,7 +310,7 @@ function Inventory({ profile }) {
               var catIds = profile.category_ids || []
               var itemCatNum = Number(item.category_id)
               var isDeptHead = (profile.permissions || []).includes('dept_approve') && catIds.some(function (c) { return Number(c) === itemCatNum })
-              var canEdit = isAdmin
+              var canEdit = isAdmin || (isDeptHead && (item.status === 'pending_dept' || item.status === 'pending'))
               if (!canEdit) return null
               return (
                 <div className="mt-3">
