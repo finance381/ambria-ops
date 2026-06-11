@@ -666,10 +666,11 @@ function AdminItems({ profile }) {
                   <td className="px-3 py-2">
                     {venueAllocs.length > 0 ? (
                       <div className="flex flex-wrap gap-1">
-                        {venueAllocs.map(function (va) {
+                        {venueAllocs.map(function (va, vi) {
+                          var svName = va.sub_venue_id ? (subVenues.find(function (sv) { return sv.id === va.sub_venue_id }) || {}).name : null
                           return (
-                            <span key={va.venues?.code} className="text-[11px] bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded font-medium">
-                              {va.venues?.code}: {va.qty}
+                            <span key={(va.venues?.code || '') + '-' + vi} className="text-[11px] bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded font-medium">
+                              {va.venues?.code}{svName ? ':' + svName : ''}: {va.qty}
                             </span>
                           )
                         })}
