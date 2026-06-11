@@ -424,12 +424,12 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved }) {
           await supabase.from(tableName).delete().eq('id', item.id)
           try { await logActivity('ITEM_EDIT_MERGE', payload.name + ' → merged into existing (qty +' + (Number(qty) || 0) + ')') } catch (_) {}
         } else {
-          // No merge needed — standard update
+          // No merge needed — standard update (qty first so allocation trigger passes)
+          var { error: updateError } = await supabase.from(tableName).update(payload).eq('id', item.id)
+          if (updateError) throw updateError
           await supabase.from(allocTable).delete().eq('item_id', item.id)
           var venueRows = allocations.filter(function (a) { return a.venue_id && Number(a.qty) > 0 }).map(function (a) { return { item_id: item.id, venue_id: Number(a.venue_id), sub_venue_id: a.sub_venue_id ? Number(a.sub_venue_id) : null, qty: Number(a.qty) } })
           if (venueRows.length > 0) { var { error: vaErr } = await supabase.from(allocTable).insert(venueRows); if (vaErr) throw new Error('Allocation save failed: ' + vaErr.message) }
-          var { error: updateError } = await supabase.from(tableName).update(payload).eq('id', item.id)
-          if (updateError) throw updateError
           if (imageFile) { var path = await uploadImage(item.id, imgPrefix); if (path) await supabase.from(tableName).update({ image_path: path }).eq('id', item.id) }
         }
       }
