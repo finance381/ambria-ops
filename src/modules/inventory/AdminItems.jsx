@@ -187,8 +187,9 @@ function AdminItems({ profile }) {
 
   function exportPdf() {
     import('jspdf').then(function (jsMod) {
-      import('jspdf-autotable').then(function () {
+      import('jspdf-autotable').then(function (atMod) {
         var jsPDF = jsMod.default || jsMod.jsPDF
+        if (atMod.default) atMod.default(jsPDF)
         var doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
         var title = 'Ambria Inventory'
         var filterParts = []
