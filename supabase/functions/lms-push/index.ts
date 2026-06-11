@@ -41,6 +41,14 @@ const SLOT_TIMING: Record<number, string> = {
   0: "18:00", 1: "16:00", 2: "12:00",  // Dinner, Sundowner, Lunch
 }
 
+const DECOR_LABELS: Record<number, string> = {
+  0: "Premium", 1: "Standard", 2: "Banquet",
+}
+
+const DJ_LABELS: Record<number, string> = {
+  0: "DJ + LED", 1: "Std DJ - No LED",
+}
+
 // Converts paise to half-rupees for LMS (stores half the real figure).
 // Amounts ≥1L: ceil to nearest 0.5L first (matches UI fmtRound), then halve.
 // Amounts <1L: exact halve (matches UI fmtK display in K).
@@ -114,12 +122,16 @@ serve(async (req) => {
     const venueId = VENUE_ID_MAP[venueIdx] || "3"
     const venueName = VENUE_NAME_MAP[venueIdx] || "Ambria Pushpanjali"
 
-    const menuValueRupees = paiseToRupees(q.vm_q_paise)
-    const extraPlateRupees = (q.vm_q_paise && q.pax) ? String(Math.round(q.vm_q_paise / q.pax / 200)) : "0"
-    const decorRupees = paiseToRupees(q.decor_q_paise)
-    const djRupees = paiseToRupees(q.dj_q_paise)
-    const inclTotal = (q.vm_q_paise || 0) + (q.include_decor !== false ? (q.decor_q_paise || 0) : 0) + (q.include_dj !== false ? (q.dj_q_paise || 0) : 0)
-    const totalRupees = paiseToRupees(q.deal_value_paise || inclTotal || q.total_q_paise)
+    // Use deal breakdowns when negotiated, else quote tier
+    const hasDeal = !!q.deal_value_paise
+    const vmPaise = (hasDeal && q.deal_vm_paise) ? q.deal_vm_paise : (q.vm_q_paise || 0)
+    const decorPaise = (hasDeal && q.deal_decor_paise) ? q.deal_decor_paise : (q.decor_q_paise || 0)
+    const djPaise = (hasDeal && q.deal_ent_paise) ? q.deal_ent_paise : (q.dj_q_paise || 0)
+    const menuValueRupees = paiseToRupees(vmPaise)
+    const extraPlateRupees = (vmPaise && q.pax) ? String(Math.round(vmPaise / q.pax / 200)) : "0"
+    const decorRupees = paiseToRupees(decorPaise)
+    const djRupees = paiseToRupees(djPaise)
+    const totalRupees = paiseToRupees(q.deal_value_paise || (vmPaise + (q.include_decor !== false ? decorPaise : 0) + (q.include_dj !== false ? djPaise : 0)) || q.total_q_paise)
 
     const body: Record<string, string | number> = {
       loggeduserid: String(profile.lms_user_id),
