@@ -188,6 +188,7 @@ function AdminItems({ profile }) {
   function exportPdf() {
     Promise.all([import('jspdf'), import('jspdf-autotable')]).then(function (mods) {
         var jsPDF = mods[0].default || mods[0].jsPDF
+        var autoTable = mods[1].default || mods[1].autoTable || mods[1]
         var doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
         var title = 'Ambria Inventory'
         var filterParts = []
@@ -206,7 +207,7 @@ function AdminItems({ profile }) {
           var venueStr = allocs.map(function (va) { var svName = va.sub_venue_id ? (subVenues.find(function (sv) { return sv.id === va.sub_venue_id }) || {}).name : null; return (va.venues?.code || '') + (svName ? ':' + svName : '') + ':' + va.qty }).join(', ')
           return [idx + 1, item.inventory_id || '', item.name, item.name_hindi || '', item.categories?.name || '', item.sub_categories?.name || '', item.department || '', venueFilter.length > 0 ? allocs.reduce(function (s, va) { return s + (va.qty || 0) }, 0) : item.qty, item.unit || '', venueStr || '—']
         })
-        doc.autoTable({ head: head, body: body, startY: startY, styles: { fontSize: 7, cellPadding: 1.5 }, headStyles: { fillColor: [46, 64, 87], fontSize: 7, fontStyle: 'bold' }, columnStyles: { 0: { cellWidth: 8 }, 1: { cellWidth: 22 }, 2: { cellWidth: 45 }, 3: { cellWidth: 35 }, 4: { cellWidth: 28 }, 5: { cellWidth: 25 }, 6: { cellWidth: 20 }, 7: { cellWidth: 12, halign: 'right' }, 8: { cellWidth: 15 }, 9: { cellWidth: 55 } }, margin: { left: 10, right: 10 } })
+        autoTable(doc, { head: head, body: body, startY: startY, styles: { fontSize: 7, cellPadding: 1.5 }, headStyles: { fillColor: [46, 64, 87], fontSize: 7, fontStyle: 'bold' }, columnStyles: { 0: { cellWidth: 8 }, 1: { cellWidth: 22 }, 2: { cellWidth: 45 }, 3: { cellWidth: 35 }, 4: { cellWidth: 28 }, 5: { cellWidth: 25 }, 6: { cellWidth: 20 }, 7: { cellWidth: 12, halign: 'right' }, 8: { cellWidth: 15 }, 9: { cellWidth: 55 } }, margin: { left: 10, right: 10 } })
         var pageCount = doc.internal.getNumberOfPages()
         for (var p = 1; p <= pageCount; p++) { doc.setPage(p); doc.setFontSize(7); doc.setTextColor(150); doc.text('Page ' + p + '/' + pageCount + '  |  ' + new Date().toLocaleDateString('en-IN'), doc.internal.pageSize.width - 10, doc.internal.pageSize.height - 5, { align: 'right' }) }
         doc.save('ambria_inventory_' + new Date().toISOString().split('T')[0] + '.pdf')
