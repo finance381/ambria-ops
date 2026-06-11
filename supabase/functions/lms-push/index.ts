@@ -41,10 +41,16 @@ const SLOT_TIMING: Record<number, string> = {
   0: "18:00", 1: "16:00", 2: "12:00",  // Dinner, Sundowner, Lunch
 }
 
-// NOTE: divides by 200, not 100 — converts paise→rupees AND halves the value
-// (LMS leads intentionally store half the real figure). Do not reuse as a plain paise→rupee.
+// Converts paise to half-rupees for LMS (stores half the real figure).
+// Amounts ≥1L: ceil to nearest 0.5L first (matches UI fmtRound), then halve.
+// Amounts <1L: exact halve (matches UI fmtK display in K).
 function paiseToRupees(p: number | null): string {
   if (!p) return "0"
+  const lakhs = p / 10000000
+  if (lakhs >= 1) {
+    const rounded = Math.ceil(lakhs * 2) / 2
+    return String(Math.round(rounded * 50000))
+  }
   return String(Math.round(p / 200))
 }
 
@@ -108,11 +114,10 @@ serve(async (req) => {
     const venueId = VENUE_ID_MAP[venueIdx] || "3"
     const venueName = VENUE_NAME_MAP[venueIdx] || "Ambria Pushpanjali"
 
-    const perHeadRupees = (q.vm_q_paise && q.pax) ? String(Math.round(q.vm_q_paise / q.pax / 200)) : "0"
     const menuValueRupees = paiseToRupees(q.vm_q_paise)
+    const extraPlateRupees = (q.vm_q_paise && q.pax) ? String(Math.round(q.vm_q_paise / q.pax / 200)) : "0"
     const decorRupees = paiseToRupees(q.decor_q_paise)
     const djRupees = paiseToRupees(q.dj_q_paise)
-    const rentalRupees = paiseToRupees(q.rental_q_paise)
     const inclTotal = (q.vm_q_paise || 0) + (q.include_decor !== false ? (q.decor_q_paise || 0) : 0) + (q.include_dj !== false ? (q.dj_q_paise || 0) : 0)
     const totalRupees = paiseToRupees(q.deal_value_paise || inclTotal || q.total_q_paise)
 
@@ -129,11 +134,12 @@ serve(async (req) => {
       fisd_menu: MENU_ID_MAP[menuKey] || "8",
       fisd_pax_no: String(q.pax || 0),
       fisd_free_pax_no: "1",
-      fisd_menu_rate: perHeadRupees,
-      fisd_extra_plate_charge: perHeadRupees,
+      fisd_menu_type: "Lumpsum",
+      fisd_menu_rate: "0",
+      fisd_extra_plate_charge: extraPlateRupees,
       fisd_menu_value: menuValueRupees,
       fisd_session: ["Dinner", "Sundowner", "Lunch"][q.slot ?? 0] || "Dinner",
-      fisd_venue_value: menuValueRupees,
+      fisd_venue_value: "0",
       fisd_decoration_lumpsum: decorRupees,
       fisd_decoration_remarks: "Empanelled",
       fisd_decor_type: "Empanelled",
