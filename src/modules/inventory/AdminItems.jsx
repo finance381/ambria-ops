@@ -154,7 +154,7 @@ function AdminItems({ profile }) {
   }
 
   function exportItems() {
-    var headers = ['ID', 'Inventory ID', 'Name', 'Name Hindi', 'Category', 'Sub-category', 'Type', 'Qty', 'Unit', 'Department', 'Description', 'Status', 'Source', 'Brand', 'Pack Size Qty', 'Pack Size Unit', 'Min Order / Season Reorder', 'Reorder / Off Season Reorder', 'Rate (₹)', 'Is Asset', 'Venue Code', 'Sub-Venue', 'Venue Qty', 'Image URL', 'Date Added']
+    var headers = ['ID', 'Inventory ID', 'Name', 'Name Hindi', 'Category', 'Sub-category', 'Type', 'Qty', 'Unit', 'Department', 'Description', 'Status', 'Source', 'Brand', 'Pack Size Qty', 'Pack Size Unit', 'Min Order / Season Reorder', 'Reorder / Off Season Reorder', 'Rate (₹)', 'Is Asset', 'Dimensions', 'Venue Code', 'Sub-Venue', 'Venue Qty', 'Image URL', 'Date Added']
     var rows = filtered.map(function (i) {
       var allocs = i.venue_allocations || []
       if (venueFilter.length > 0) {
@@ -176,7 +176,7 @@ function AdminItems({ profile }) {
         i.season_reorder_qty || i.min_order_qty || '',
         i.off_season_reorder_qty || i.reorder_qty || '',
         i.rate_paise ? (i.rate_paise / 100) : '',
-        i.is_asset || '', venueCodes, venueSubVenues, venueQtys, imgUrl,
+        i.is_asset || '', i.dimensions && Array.isArray(i.dimensions) ? i.dimensions.map(function (d) { return d.name + ':' + (d.qty || '') + ' ' + (d.unit || '') }).join('; ') : '', venueCodes, venueSubVenues, venueQtys, imgUrl,
         i.entry_date || (i.created_at ? i.created_at.split('T')[0] : '')
       ].map(csvEscape).join(',')
     })
@@ -230,8 +230,8 @@ function AdminItems({ profile }) {
   }
 
   function downloadTemplate() {
-    var headers = ['Name', 'Name Hindi', 'Category', 'Sub-category', 'Type', 'Qty', 'Unit', 'Department', 'Description', 'Brand', 'Pack Size Qty', 'Pack Size Unit', 'Min Order Qty', 'Reorder Qty', 'Rate (₹)', 'Is Asset', 'Venue Code', 'Sub-Venue', 'Venue Qty']
-    var example = ['Table Top White', 'टेबल टॉप सफेद', 'Cloths', 'Table Top', 'Indoor', '50', 'Pieces', 'Decor', 'White crushed cloth', '', '', '', '10', '15', '500', 'yes', 'PHD', 'Main Hall', '50']
+    var headers = ['Name', 'Name Hindi', 'Category', 'Sub-category', 'Type', 'Qty', 'Unit', 'Department', 'Description', 'Brand', 'Pack Size Qty', 'Pack Size Unit', 'Min Order Qty', 'Reorder Qty', 'Rate (₹)', 'Is Asset', 'Dimensions', 'Venue Code', 'Sub-Venue', 'Venue Qty']
+    var example = ['Table Top White', 'टेबल टॉप सफेद', 'Cloths', 'Table Top', 'Indoor', '50', 'Pieces', 'Decor', 'White crushed cloth', '', '', '', '10', '15', '500', 'yes', 'Length:10 Feet; Width:6 Feet', 'PHD', 'Main Hall', '50']
     var csv = '\uFEFF' + headers.join(',') + '\n' + example.map(csvEscape).join(',')
     var blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
     var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'ambria_import_template.csv'; a.click()
@@ -379,6 +379,9 @@ function AdminItems({ profile }) {
     var desc = findCol(r, ['description'])
     var rate = findCol(r, ['rate', 'rate (₹)', 'rate_paise'])
     var isAsset = findCol(r, ['is asset', 'is_asset'])
+    var dimStr = findCol(r, ['dimensions'])
+    var parsedDims = null
+    if (dimStr) { parsedDims = dimStr.split(';').map(function (s) { var parts = s.trim().split(':'); if (parts.length < 2) return null; var nv = parts[1].trim().split(' '); return { name: parts[0].trim(), qty: nv[0] || '', unit: nv.slice(1).join(' ') || 'Pieces' } }).filter(Boolean); if (parsedDims.length === 0) parsedDims = null }
     var minOrd = findCol(r, ['min order qty', 'min_order_qty', 'season reorder qty'])
     var reord = findCol(r, ['reorder qty', 'reorder_qty', 'off season reorder qty'])
 
@@ -395,6 +398,7 @@ function AdminItems({ profile }) {
       if (desc) updatePayload.description = desc
       if (rate) updatePayload.rate_paise = Math.round(Number(rate) * 100)
       if (isAsset) updatePayload.is_asset = isAsset.toLowerCase()
+      if (parsedDims) updatePayload.dimensions = parsedDims
       if (newQty > 0 && !venueCode) updatePayload.qty = newQty
       if (isCatStore) {
         if (brand) updatePayload.brand = brand
@@ -483,6 +487,7 @@ function AdminItems({ profile }) {
     if (desc) payload.description = desc
     if (rate) payload.rate_paise = Math.round(Number(rate) * 100)
     if (isAsset) payload.is_asset = isAsset
+    if (parsedDims) payload.dimensions = parsedDims
     if (isCatStore) {
       if (brand) payload.brand = brand
       if (packQty) payload.pack_size_qty = Number(packQty)

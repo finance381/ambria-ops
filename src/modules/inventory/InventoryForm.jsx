@@ -155,7 +155,7 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved }) {
         setDimensionValues(fields.map(function (f) { return { name: f.name, qty: '', unit: 'Pieces' } }))
       }
     } else { setCategoryDimFields([]); setDimensionValues([]) }
-  }, [categoryId])
+  }, [categoryId, categories])
 
   async function loadLookups() {
     var [catRes, deptRes, venueRes, subVenueRes, subDeptRes] = await Promise.all([
