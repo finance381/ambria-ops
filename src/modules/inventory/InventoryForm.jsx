@@ -151,8 +151,13 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved }) {
       var cat = categories.find(function (c) { return String(c.id) === categoryId })
       var fields = cat?.dimension_fields || []
       setCategoryDimFields(fields)
-      if (fields.length > 0 && dimensionValues.length === 0) {
-        setDimensionValues(fields.map(function (f) { return { name: f.name, qty: '', unit: 'Pieces' } }))
+      if (fields.length > 0) {
+        setDimensionValues(function (prev) {
+          return fields.map(function (f) {
+            var existing = prev.find(function (d) { return d.name === f.name })
+            return existing || { name: f.name, qty: '', unit: 'Pieces' }
+          })
+        })
       }
     } else { setCategoryDimFields([]); setDimensionValues([]) }
   }, [categoryId, categories])
