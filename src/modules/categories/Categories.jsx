@@ -1036,10 +1036,28 @@ function Categories() {
                           </div>
                           {editDimOptions.length === 0 && <p className="text-xs text-purple-400">No options yet — add some below</p>}
                           {editDimOptions.map(function (opt, oi) {
+                            var isEditingOpt = editing === 'dimopt-' + oi
                             return (
                               <div key={oi} className="flex items-center gap-2 bg-white rounded px-3 py-1.5 border border-purple-100">
-                                <span className="flex-1 text-sm text-gray-800">{opt}</span>
-                                <button type="button" onClick={function () { setEditDimOptions(function (prev) { return prev.filter(function (_, j) { return j !== oi }) }) }} className="text-xs text-red-400 hover:text-red-600">✕</button>
+                                {isEditingOpt ? (
+                                  <>
+                                    <input type="text" value={editVal} onChange={function (e) { setEditVal(e.target.value) }}
+                                      className="flex-1 px-2 py-1 border border-purple-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-purple-400"
+                                      onKeyDown={function (e) { if (e.key === 'Enter') { e.preventDefault(); if (editVal.trim()) { setEditDimOptions(function (prev) { return prev.map(function (o, j) { return j === oi ? editVal.trim() : o }) }); setEditing(null) } } }}
+                                      style={{ fontSize: '16px' }} autoFocus />
+                                    <button type="button" onClick={function () { if (editVal.trim()) { setEditDimOptions(function (prev) { return prev.map(function (o, j) { return j === oi ? editVal.trim() : o }) }); setEditing(null) } }}
+                                      className="text-xs px-2 py-1 rounded bg-purple-600 text-white hover:bg-purple-700">Save</button>
+                                    <button type="button" onClick={function () { setEditing(null) }}
+                                      className="text-xs px-2 py-1 rounded bg-gray-100 text-gray-600 hover:bg-gray-200">Cancel</button>
+                                  </>
+                                ) : (
+                                  <>
+                                    <span className="flex-1 text-sm text-gray-800">{opt}</span>
+                                    <button type="button" onClick={function () { setEditing('dimopt-' + oi); setEditVal(opt) }}
+                                      className="text-xs text-gray-400 hover:text-indigo-600">✎</button>
+                                    <button type="button" onClick={function () { setEditDimOptions(function (prev) { return prev.filter(function (_, j) { return j !== oi }) }) }} className="text-xs text-red-400 hover:text-red-600">✕</button>
+                                  </>
+                                )}
                               </div>
                             )
                           })}
