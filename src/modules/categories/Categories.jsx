@@ -1010,48 +1010,51 @@ function Categories() {
                   var dimType = dim.type || 'number'
                   var typeLabels = { number: '123 Number', text: 'Abc Text', select: '▾ Dropdown' }
                   return (
-                    <div key={i} className="bg-white rounded-lg px-3 py-2.5 border border-gray-200 space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm font-medium text-gray-800">{dim.name}</span>
-                        <div className="flex items-center gap-2">
-                          <span className={"text-[10px] font-bold px-2 py-0.5 rounded-full " + (dimType === 'number' ? "bg-blue-50 text-blue-600" : dimType === 'text' ? "bg-green-50 text-green-600" : "bg-purple-50 text-purple-600")}>{typeLabels[dimType]}</span>
-                          {dimType === 'select' && <button type="button" onClick={function () { openDimOptions(i) }} className="text-[11px] text-indigo-600 font-semibold hover:text-indigo-800">{(dim.options || []).length} options ⚙</button>}
-                          <button type="button" onClick={function () { removeDimField(i) }} className="text-xs text-red-400 hover:text-red-600">✕</button>
+                    <div key={i} className="space-y-0">
+                      <div className={"bg-white px-3 py-2.5 border border-gray-200 space-y-2 " + (editDimIdx === i ? "rounded-t-lg" : "rounded-lg")}>
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium text-gray-800">{dim.name}</span>
+                          <div className="flex items-center gap-2">
+                            <span className={"text-[10px] font-bold px-2 py-0.5 rounded-full " + (dimType === 'number' ? "bg-blue-50 text-blue-600" : dimType === 'text' ? "bg-green-50 text-green-600" : "bg-purple-50 text-purple-600")}>{typeLabels[dimType]}</span>
+                            {dimType === 'select' && <button type="button" onClick={function () { editDimIdx === i ? closeDimOptions() : openDimOptions(i) }} className="text-[11px] text-indigo-600 font-semibold hover:text-indigo-800">{(dim.options || []).length} options ⚙</button>}
+                            <button type="button" onClick={function () { removeDimField(i) }} className="text-xs text-red-400 hover:text-red-600">✕</button>
+                          </div>
+                        </div>
+                        <div className="flex gap-1">
+                          {['number', 'text', 'select'].map(function (t) {
+                            var active = dimType === t
+                            var labels = { number: '123', text: 'Abc', select: '▾' }
+                            return <button key={t} type="button" onClick={function () { updateDimType(i, t) }} className={"px-2.5 py-1 text-[11px] font-semibold rounded border transition-colors " + (active ? "border-indigo-500 bg-indigo-50 text-indigo-700" : "border-gray-200 text-gray-400 hover:bg-gray-50")}>{labels[t] + ' ' + t.charAt(0).toUpperCase() + t.slice(1)}</button>
+                          })}
                         </div>
                       </div>
-                      <div className="flex gap-1">
-                        {['number', 'text', 'select'].map(function (t) {
-                          var active = dimType === t
-                          var labels = { number: '123', text: 'Abc', select: '▾' }
-                          return <button key={t} type="button" onClick={function () { updateDimType(i, t) }} className={"px-2.5 py-1 text-[11px] font-semibold rounded border transition-colors " + (active ? "border-indigo-500 bg-indigo-50 text-indigo-700" : "border-gray-200 text-gray-400 hover:bg-gray-50")}>{labels[t] + ' ' + t.charAt(0).toUpperCase() + t.slice(1)}</button>
-                        })}
-                      </div>
+                      {editDimIdx === i && (
+                        <div className="bg-purple-50 rounded-b-lg p-3 border border-t-0 border-purple-200 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <p className="text-xs font-bold text-purple-700 uppercase tracking-wider">Options — {dim.name}</p>
+                            <button type="button" onClick={saveDimOptions} className="text-xs font-bold text-white bg-purple-600 px-3 py-1 rounded hover:bg-purple-700">✓ Done</button>
+                          </div>
+                          {editDimOptions.length === 0 && <p className="text-xs text-purple-400">No options yet — add some below</p>}
+                          {editDimOptions.map(function (opt, oi) {
+                            return (
+                              <div key={oi} className="flex items-center gap-2 bg-white rounded px-3 py-1.5 border border-purple-100">
+                                <span className="flex-1 text-sm text-gray-800">{opt}</span>
+                                <button type="button" onClick={function () { setEditDimOptions(function (prev) { return prev.filter(function (_, j) { return j !== oi }) }) }} className="text-xs text-red-400 hover:text-red-600">✕</button>
+                              </div>
+                            )
+                          })}
+                          <div className="flex gap-2">
+                            <input type="text" value={newDimOption} onChange={function (e) { setNewDimOption(e.target.value) }}
+                              placeholder="New option..." className="flex-1 px-2 py-1.5 border border-purple-200 rounded text-sm focus:outline-none focus:ring-2 focus:ring-purple-400"
+                              onKeyDown={function (e) { if (e.key === 'Enter') { e.preventDefault(); if (newDimOption.trim()) { setEditDimOptions(function (prev) { return prev.concat([newDimOption.trim()]) }); setNewDimOption('') } } }} />
+                            <button type="button" onClick={function () { if (newDimOption.trim()) { setEditDimOptions(function (prev) { return prev.concat([newDimOption.trim()]) }); setNewDimOption('') } }} disabled={!newDimOption.trim()}
+                              className="px-3 py-1.5 text-xs text-white bg-purple-600 rounded hover:bg-purple-700 disabled:opacity-50 font-medium">+ Add</button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )
                 })}
-                {editDimIdx !== null && (
-                  <div className="bg-purple-50 rounded-lg p-3 border border-purple-200 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <p className="text-xs font-bold text-purple-700 uppercase tracking-wider">Dropdown Options — {editCatDims[editDimIdx]?.name}</p>
-                      <button type="button" onClick={saveDimOptions} className="text-xs font-bold text-white bg-purple-600 px-3 py-1 rounded hover:bg-purple-700">✓ Done</button>
-                    </div>
-                    {editDimOptions.map(function (opt, oi) {
-                      return (
-                        <div key={oi} className="flex items-center gap-2 bg-white rounded px-3 py-1.5 border border-purple-100">
-                          <span className="flex-1 text-sm text-gray-800">{opt}</span>
-                          <button type="button" onClick={function () { setEditDimOptions(function (prev) { return prev.filter(function (_, j) { return j !== oi }) }) }} className="text-xs text-red-400 hover:text-red-600">✕</button>
-                        </div>
-                      )
-                    })}
-                    <div className="flex gap-2">
-                      <input type="text" value={newDimOption} onChange={function (e) { setNewDimOption(e.target.value) }}
-                        placeholder="New option..." className="flex-1 px-2 py-1.5 border border-purple-200 rounded text-sm focus:outline-none focus:ring-2 focus:ring-purple-400"
-                        onKeyDown={function (e) { if (e.key === 'Enter') { e.preventDefault(); if (newDimOption.trim()) { setEditDimOptions(function (prev) { return prev.concat([newDimOption.trim()]) }); setNewDimOption('') } } }} />
-                      <button type="button" onClick={function () { if (newDimOption.trim()) { setEditDimOptions(function (prev) { return prev.concat([newDimOption.trim()]) }); setNewDimOption('') } }} disabled={!newDimOption.trim()}
-                        className="px-3 py-1.5 text-xs text-white bg-purple-600 rounded hover:bg-purple-700 disabled:opacity-50 font-medium">+ Add</button>
-                    </div>
-                  </div>
-                )}
                 <div className="flex gap-2 pt-1">
                   <input type="text" value={newDimName} onChange={function (e) { setNewDimName(e.target.value) }}
                     placeholder="e.g. Length, Breadth, Width..."
