@@ -176,7 +176,7 @@ function AdminItems({ profile }) {
         i.season_reorder_qty || i.min_order_qty || '',
         i.off_season_reorder_qty || i.reorder_qty || '',
         i.rate_paise ? (i.rate_paise / 100) : '',
-        i.is_asset || '', i.dimensions && Array.isArray(i.dimensions) ? i.dimensions.map(function (d) { return d.name + ':' + (d.qty || '') + ' ' + (d.unit || '') }).join('; ') : '', venueCodes, venueSubVenues, venueQtys, imgUrl,
+        i.is_asset || '', i.dimensions && Array.isArray(i.dimensions) ? i.dimensions.map(function (d) { var t = d.type || 'number'; if (t === 'number') return d.name + ':' + (d.qty || '') + ' ' + (d.unit || ''); return d.name + ':' + (d.value || '') }).join('; ') : '', venueCodes, venueSubVenues, venueQtys, imgUrl,
         i.entry_date || (i.created_at ? i.created_at.split('T')[0] : '')
       ].map(csvEscape).join(',')
     })

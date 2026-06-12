@@ -189,17 +189,54 @@ function Categories() {
     setEditCatSubDept(cat.sub_department_id ? String(cat.sub_department_id) : '')
     setEditCatExpTypes(cat.expense_type_ids || [])
     setNewDimName('')
+    setNewDimType('number')
+    setEditDimIdx(null)
+    setEditDimOptions([])
+    setNewDimOption('')
     setNewSubName('')
     setError('')
   }
+
+  var [newDimType, setNewDimType] = useState('number')
+  var [editDimIdx, setEditDimIdx] = useState(null)
+  var [editDimOptions, setEditDimOptions] = useState([])
+  var [newDimOption, setNewDimOption] = useState('')
 
   function addDimField() {
     if (!newDimName.trim()) return
     var exists = editCatDims.some(function (d) { return d.name.toLowerCase() === newDimName.trim().toLowerCase() })
     if (exists) { setError('Dimension "' + newDimName.trim() + '" already exists'); return }
-    setEditCatDims(function (prev) { return [...prev, { name: newDimName.trim() }] })
+    var field = { name: newDimName.trim(), type: newDimType }
+    if (newDimType === 'select') field.options = []
+    setEditCatDims(function (prev) { return prev.concat([field]) })
     setNewDimName('')
+    setNewDimType('number')
     setError('')
+  }
+
+  function updateDimType(index, newType) {
+    setEditCatDims(function (prev) { return prev.map(function (d, i) {
+      if (i !== index) return d
+      var updated = { name: d.name, type: newType }
+      if (newType === 'select') updated.options = d.options || []
+      return updated
+    }) })
+  }
+
+  function openDimOptions(index) {
+    setEditDimIdx(index)
+    setEditDimOptions((editCatDims[index].options || []).slice())
+    setNewDimOption('')
+  }
+
+  function closeDimOptions() { setEditDimIdx(null); setEditDimOptions([]); setNewDimOption('') }
+
+  function saveDimOptions() {
+    setEditCatDims(function (prev) { return prev.map(function (d, i) {
+      if (i !== editDimIdx) return d
+      return Object.assign({}, d, { options: editDimOptions })
+    }) })
+    closeDimOptions()
   }
 
   function removeDimField(index) {
@@ -970,19 +1007,62 @@ function Categories() {
                   <p className="text-xs text-gray-400">No dimensions — items in this category won't show dimension inputs</p>
                 )}
                 {editCatDims.map(function (dim, i) {
+                  var dimType = dim.type || 'number'
+                  var typeLabels = { number: '123 Number', text: 'Abc Text', select: '▾ Dropdown' }
                   return (
-                    <div key={i} className="flex items-center justify-between bg-white rounded px-3 py-2 border border-gray-200">
-                      <span className="text-sm text-gray-800">{dim.name}</span>
-                      <button type="button" onClick={function () { removeDimField(i) }}
-                        className="text-xs text-red-400 hover:text-red-600">✕</button>
+                    <div key={i} className="bg-white rounded-lg px-3 py-2.5 border border-gray-200 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-medium text-gray-800">{dim.name}</span>
+                        <div className="flex items-center gap-2">
+                          <span className={"text-[10px] font-bold px-2 py-0.5 rounded-full " + (dimType === 'number' ? "bg-blue-50 text-blue-600" : dimType === 'text' ? "bg-green-50 text-green-600" : "bg-purple-50 text-purple-600")}>{typeLabels[dimType]}</span>
+                          {dimType === 'select' && <button type="button" onClick={function () { openDimOptions(i) }} className="text-[11px] text-indigo-600 font-semibold hover:text-indigo-800">{(dim.options || []).length} options ⚙</button>}
+                          <button type="button" onClick={function () { removeDimField(i) }} className="text-xs text-red-400 hover:text-red-600">✕</button>
+                        </div>
+                      </div>
+                      <div className="flex gap-1">
+                        {['number', 'text', 'select'].map(function (t) {
+                          var active = dimType === t
+                          var labels = { number: '123', text: 'Abc', select: '▾' }
+                          return <button key={t} type="button" onClick={function () { updateDimType(i, t) }} className={"px-2.5 py-1 text-[11px] font-semibold rounded border transition-colors " + (active ? "border-indigo-500 bg-indigo-50 text-indigo-700" : "border-gray-200 text-gray-400 hover:bg-gray-50")}>{labels[t] + ' ' + t.charAt(0).toUpperCase() + t.slice(1)}</button>
+                        })}
+                      </div>
                     </div>
                   )
                 })}
+                {editDimIdx !== null && (
+                  <div className="bg-purple-50 rounded-lg p-3 border border-purple-200 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-bold text-purple-700 uppercase tracking-wider">Dropdown Options — {editCatDims[editDimIdx]?.name}</p>
+                      <button type="button" onClick={saveDimOptions} className="text-xs font-bold text-white bg-purple-600 px-3 py-1 rounded hover:bg-purple-700">✓ Done</button>
+                    </div>
+                    {editDimOptions.map(function (opt, oi) {
+                      return (
+                        <div key={oi} className="flex items-center gap-2 bg-white rounded px-3 py-1.5 border border-purple-100">
+                          <span className="flex-1 text-sm text-gray-800">{opt}</span>
+                          <button type="button" onClick={function () { setEditDimOptions(function (prev) { return prev.filter(function (_, j) { return j !== oi }) }) }} className="text-xs text-red-400 hover:text-red-600">✕</button>
+                        </div>
+                      )
+                    })}
+                    <div className="flex gap-2">
+                      <input type="text" value={newDimOption} onChange={function (e) { setNewDimOption(e.target.value) }}
+                        placeholder="New option..." className="flex-1 px-2 py-1.5 border border-purple-200 rounded text-sm focus:outline-none focus:ring-2 focus:ring-purple-400"
+                        onKeyDown={function (e) { if (e.key === 'Enter') { e.preventDefault(); if (newDimOption.trim()) { setEditDimOptions(function (prev) { return prev.concat([newDimOption.trim()]) }); setNewDimOption('') } } }} />
+                      <button type="button" onClick={function () { if (newDimOption.trim()) { setEditDimOptions(function (prev) { return prev.concat([newDimOption.trim()]) }); setNewDimOption('') } }} disabled={!newDimOption.trim()}
+                        className="px-3 py-1.5 text-xs text-white bg-purple-600 rounded hover:bg-purple-700 disabled:opacity-50 font-medium">+ Add</button>
+                    </div>
+                  </div>
+                )}
                 <div className="flex gap-2 pt-1">
                   <input type="text" value={newDimName} onChange={function (e) { setNewDimName(e.target.value) }}
                     placeholder="e.g. Length, Breadth, Width..."
                     className="flex-1 px-2 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     onKeyDown={function (e) { if (e.key === 'Enter') { e.preventDefault(); addDimField() } }} />
+                  <select value={newDimType} onChange={function (e) { setNewDimType(e.target.value) }}
+                    className="px-2 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    <option value="number">123 Number</option>
+                    <option value="text">Abc Text</option>
+                    <option value="select">▾ Dropdown</option>
+                  </select>
                   <button type="button" onClick={addDimField} disabled={!newDimName.trim()}
                     className="px-3 py-1.5 text-xs text-white bg-indigo-600 rounded hover:bg-indigo-700 disabled:opacity-50 transition-colors font-medium">
                     + Add

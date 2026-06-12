@@ -154,8 +154,12 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved }) {
       if (fields.length > 0) {
         setDimensionValues(function (prev) {
           return fields.map(function (f) {
+            var fType = f.type || 'number'
             var existing = prev.find(function (d) { return d.name === f.name })
-            return existing || { name: f.name, qty: '', unit: 'Pieces' }
+            if (existing) return Object.assign({}, existing, { type: fType, options: f.options })
+            if (fType === 'text') return { name: f.name, type: 'text', value: '' }
+            if (fType === 'select') return { name: f.name, type: 'select', value: '', options: f.options || [] }
+            return { name: f.name, type: 'number', qty: '', unit: 'Pieces' }
           })
         })
       }
@@ -695,16 +699,36 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved }) {
         <div className="bg-gray-50 rounded-lg border border-gray-200 p-4 space-y-3">
           <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Dimensions</h3>
           {dimensionValues.map(function (dim, index) {
+            var dimType = dim.type || 'number'
+            if (dimType === 'text') {
+              return (
+                <div key={dim.name}>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{dim.name}</label>
+                  <input type="text" value={dim.value || ''} onChange={function (e) { setDimensionValues(function (prev) { return prev.map(function (d, i) { if (i !== index) return d; return Object.assign({}, d, { value: e.target.value }) }) }) }} placeholder={'Enter ' + dim.name + '...'} maxLength="500" className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" style={{ fontSize: '16px' }} />
+                </div>
+              )
+            }
+            if (dimType === 'select') {
+              return (
+                <div key={dim.name}>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{dim.name}</label>
+                  <select value={dim.value || ''} onChange={function (e) { setDimensionValues(function (prev) { return prev.map(function (d, i) { if (i !== index) return d; return Object.assign({}, d, { value: e.target.value }) }) }) }} className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white">
+                    <option value="">Select {dim.name}...</option>
+                    {(dim.options || []).map(function (opt) { return <option key={opt} value={opt}>{opt}</option> })}
+                  </select>
+                </div>
+              )
+            }
             return (
               <div key={dim.name} className="grid grid-cols-12 gap-2 items-end">
                 <div className="col-span-4"><label className="block text-sm font-medium text-gray-700 mb-1">{dim.name}</label></div>
                 <div className="col-span-4">
                   <label className="block text-[11px] text-gray-400 mb-1">Quantity</label>
-                  <input type="number" min="0" step="any" inputMode="decimal" value={dim.qty} onChange={function (e) { setDimensionValues(function (prev) { return prev.map(function (d, i) { if (i !== index) return d; return { ...d, qty: e.target.value } }) }) }} placeholder="0" className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                  <input type="number" min="0" step="any" inputMode="decimal" value={dim.qty} onChange={function (e) { setDimensionValues(function (prev) { return prev.map(function (d, i) { if (i !== index) return d; return Object.assign({}, d, { qty: e.target.value }) }) }) }} placeholder="0" className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
                 </div>
                 <div className="col-span-4">
                   <label className="block text-[11px] text-gray-400 mb-1">Unit</label>
-                  <select value={dim.unit} onChange={function (e) { setDimensionValues(function (prev) { return prev.map(function (d, i) { if (i !== index) return d; return { ...d, unit: e.target.value } }) }) }} className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                  <select value={dim.unit} onChange={function (e) { setDimensionValues(function (prev) { return prev.map(function (d, i) { if (i !== index) return d; return Object.assign({}, d, { unit: e.target.value }) }) }) }} className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
                     {UNITS.map(function (u) { return <option key={u} value={u}>{u}</option> })}
                   </select>
                 </div>
