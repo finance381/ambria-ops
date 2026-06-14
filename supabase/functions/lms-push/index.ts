@@ -167,6 +167,7 @@ serve(async (req) => {
       fis_priority: q.priority || "Silver",
       fis_enq_mode: q.inquiry_mode || "Walk-in",
       fis_total_amt: totalRupees,
+      fis_proposal: q.notes || "",
     }
 
     // POST to LMS
