@@ -49,6 +49,7 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved }) {
   var recognitionRef = useRef(null)
   var [saving, setSaving] = useState(false)
   var [errors, setErrors] = useState({})
+  var itemSearchTimer = useRef(null)
   var [dimensionValues, setDimensionValues] = useState(seed?.dimensions || [])
   var [categoryDimFields, setCategoryDimFields] = useState([])
   var [cateringStoreSubDeptId, setCateringStoreSubDeptId] = useState(null)
@@ -129,23 +130,21 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved }) {
         setBrandList(brands)
       })
   }, [categoryId, cateringStoreSubDeptId, name])
-  useEffect(function () {
-    if (categoryId) {
-      var isCatStore = false
-      if (cateringStoreSubDeptId) {
-        var cat = categories.find(function (c) { return String(c.id) === categoryId })
-        isCatStore = cat?.sub_department_id === cateringStoreSubDeptId
-      }
-      var query
-      if (isCatStore) {
-        query = supabase.from('catering_store_items').select('id, name, name_hindi, unit, type, description, season_reorder_qty, off_season_reorder_qty, rate_paise, is_asset, department, brand, pack_size_qty, pack_size_unit, status').eq('category_id', Number(categoryId)).in('status', ['approved', 'pending', 'pending_dept'])
-      } else {
-        query = supabase.from('inventory_items').select('id, name, name_hindi, unit, type, description, min_order_qty, reorder_qty, rate_paise, is_asset, department, dimensions, status').eq('category_id', Number(categoryId)).in('status', ['approved', 'pending', 'pending_dept'])
-      }
-      if (subCategoryId) query = query.eq('sub_category_id', Number(subCategoryId))
-      query.order('name').then(function ({ data }) { setExistingItems(data || []) })
-    } else { setExistingItems([]) }
-  }, [categoryId, subCategoryId, cateringStoreSubDeptId])
+  function searchItems(term) {
+    if (itemSearchTimer.current) clearTimeout(itemSearchTimer.current)
+    if (!term || term.length < 2) { setExistingItems([]); return }
+    itemSearchTimer.current = setTimeout(function () {
+      var searchTerm = term.trim().replace(/%/g, '\\%').replace(/_/g, '\\_')
+      Promise.all([
+        supabase.from('inventory_items').select('id, name, name_hindi, unit, type, description, min_order_qty, reorder_qty, rate_paise, is_asset, department, dimensions, image_path, category_id, sub_category_id, status').ilike('name', '%' + searchTerm + '%').in('status', ['approved', 'pending', 'pending_dept']).order('name').limit(20),
+        supabase.from('catering_store_items').select('id, name, name_hindi, unit, type, description, season_reorder_qty, off_season_reorder_qty, rate_paise, is_asset, department, brand, pack_size_qty, pack_size_unit, image_path, category_id, sub_category_id, status').ilike('name', '%' + searchTerm + '%').in('status', ['approved', 'pending', 'pending_dept']).order('name').limit(20)
+      ]).then(function (results) {
+        var inv = (results[0].data || []).map(function (i) { return Object.assign({}, i, { _source: 'inventory' }) })
+        var cs = (results[1].data || []).map(function (i) { return Object.assign({}, i, { _source: 'catering_store' }) })
+        setExistingItems(inv.concat(cs))
+      })
+    }, 300)
+  }
   useEffect(function () {
     if (categoryId) {
       var cat = categories.find(function (c) { return String(c.id) === categoryId })
@@ -165,6 +164,25 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved }) {
       }
     } else { setCategoryDimFields([]); setDimensionValues([]) }
   }, [categoryId, categories])
+
+  useEffect(function () {
+    if (isEdit) return
+    var genFields = categoryDimFields.filter(function (f) { return f.nameGen })
+    if (genFields.length === 0) return
+    var subCat = subCategories.find(function (s) { return String(s.id) === subCategoryId })
+    if (!subCat) return
+    var parts = [subCat.name]
+    genFields.forEach(function (f) {
+      var dim = dimensionValues.find(function (d) { return d.name === f.name })
+      if (!dim) return
+      var dimType = f.type || 'number'
+      var val = ''
+      if (dimType === 'number') { val = (dim.qty ? dim.qty + ' ' + (dim.unit || '') : '').trim() }
+      else { val = (dim.value || '').trim() }
+      if (val) parts.push(val)
+    })
+    if (parts.length > 1) { setName(parts.join(' — ')); setHiEdited(false) }
+  }, [subCategoryId, dimensionValues, categoryDimFields])
 
   async function loadLookups() {
     var [catRes, deptRes, venueRes, subVenueRes, subDeptRes] = await Promise.all([
@@ -206,53 +224,38 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved }) {
 
   function handleItemNameSelect(val) {
     setName(val); if (!val) return
-    // Prefer approved match; fall back to pending for name/metadata only
     var match = existingItems.find(function (i) { return i.name === val && i.status === 'approved' })
       || existingItems.find(function (i) { return i.name === val })
     var loadedHindi = false
     if (match) {
-      var isApproved = match.status === 'approved'
+      // Fill category + sub-category from matched item
+      if (match.category_id) setCategoryId(String(match.category_id))
+      if (match.sub_category_id) setSubCategoryId(String(match.sub_category_id))
 
-      // Common fields — always populate for consistency
+      // Metadata fields
       if (match.name_hindi) { setNameHindi(match.name_hindi); setHiEdited(true); loadedHindi = true }
       if (match.unit) setUnit(match.unit)
       if (match.type) setType(match.type)
       if (match.description) setDescription(match.description)
-      if (isApproved && match.rate_paise) setRatePaise(match.rate_paise / 100)
       if (match.is_asset && match.is_asset !== 'unknown') setIsAsset(match.is_asset)
 
-      // Reorder fields — only from approved
-      if (isApproved) {
-        if (match.season_reorder_qty != null) { setMinOrderQty(match.season_reorder_qty) }
-        else if (match.min_order_qty != null) { setMinOrderQty(match.min_order_qty) }
-        if (match.off_season_reorder_qty != null) { setReorderQty(match.off_season_reorder_qty) }
-        else if (match.reorder_qty != null) { setReorderQty(match.reorder_qty) }
-      }
-
-      // Catering store fields — brand/pack metadata always
+      // Catering store fields
       if (match.brand) setPackSizeBrand(match.brand)
       if (match.pack_size_qty) setPackSizeQty(String(match.pack_size_qty))
       if (match.pack_size_unit) setPackSizeUnit(match.pack_size_unit)
 
-      // Dimensions — only from approved items
-      if (isApproved && match.dimensions && Array.isArray(match.dimensions) && match.dimensions.length > 0) {
+      // Dimensions
+      if (match.dimensions && Array.isArray(match.dimensions) && match.dimensions.length > 0) {
         setDimensionValues(match.dimensions)
       }
 
-      // Load allocations — only from approved items
-      if (isApproved && match.id) {
-        var isCatStoreItem = match.brand !== undefined || match.pack_size_qty !== undefined
-        var aTable = isCatStoreItem ? 'cs_venue_allocations' : 'venue_allocations'
-        supabase.from(aTable).select('venue_id, sub_venue_id, qty').eq('item_id', match.id)
-          .then(function (res) {
-            var data = res.data
-            if (data && data.length > 0) {
-              setAllocations(data.map(function (va) {
-                return { department: match.department || allocations[0]?.department || '', venue_id: String(va.venue_id), sub_venue_id: va.sub_venue_id ? String(va.sub_venue_id) : '', qty: '' }
-              }))
-            }
-          })
+      // Image
+      if (match.image_path) {
+        setImagePreview(getImageUrl(match.image_path))
+        setImageFile(null)
       }
+
+      // Skip: qty, rate_paise, min_order_qty, reorder_qty, allocations
     }
     if (!hiEdited && !loadedHindi) {
       translateToHindi(val, function (translated) { if (translated) setNameHindi(translated) })
@@ -572,7 +575,7 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved }) {
         </div>
         <SearchDropdown label={t('Category')} required items={catItems} value={categoryId} onChange={setCategoryId} placeholder={t('Search Category...')} error={errors.cat} />
         <SearchDropdown label={t('Sub-Category')} items={subCatItems} value={subCategoryId} onChange={setSubCategoryId} placeholder={t('Search Sub-Category...')} />
-        <SearchDropdown label={t('Item Name')} required items={itemNameItems} value={name} onChange={handleItemNameSelect} allowAdd onAdd={function (val) { setName(val) }} placeholder={t('Search Item Name...')} error={errors.item} />
+        <SearchDropdown label={t('Item Name')} required items={itemNameItems} value={name} onChange={handleItemNameSelect} allowAdd onAdd={function (val) { setName(val); searchItems(val) }} placeholder={t('Search Item Name...')} error={errors.item} onInputChange={searchItems} />
         {showPackSize && (
           <div className="bg-amber-50 rounded-lg border border-amber-200 p-3 space-y-2">
             <h4 className="text-[11px] font-bold text-amber-700 uppercase tracking-wider">Pack Size</h4>

@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 
-function SearchDropdown({ items, value, onChange, onAdd, placeholder, allowAdd, label, required, error, voiceLang }) {
+function SearchDropdown({ items, value, onChange, onAdd, onInputChange, placeholder, allowAdd, label, required, error, voiceLang }) {
   var [query, setQuery] = useState('')
   var [open, setOpen] = useState(false)
   var [hlIdx, setHlIdx] = useState(-1)
@@ -57,10 +57,12 @@ function SearchDropdown({ items, value, onChange, onAdd, placeholder, allowAdd, 
   }
 
   function handleInputChange(e) {
-    setQuery(e.target.value)
+    var val = e.target.value
+    setQuery(val)
     onChange('')
     setOpen(true)
     setHlIdx(-1)
+    if (onInputChange) onInputChange(val)
   }
 
   function handleFocus() {

@@ -206,7 +206,7 @@ function Categories() {
     if (!newDimName.trim()) return
     var exists = editCatDims.some(function (d) { return d.name.toLowerCase() === newDimName.trim().toLowerCase() })
     if (exists) { setError('Dimension "' + newDimName.trim() + '" already exists'); return }
-    var field = { name: newDimName.trim(), type: newDimType }
+    var field = { name: newDimName.trim(), type: newDimType, nameGen: false }
     if (newDimType === 'select') field.options = []
     setEditCatDims(function (prev) { return prev.concat([field]) })
     setNewDimName('')
@@ -1020,12 +1020,17 @@ function Categories() {
                             <button type="button" onClick={function () { removeDimField(i) }} className="text-xs text-red-400 hover:text-red-600">✕</button>
                           </div>
                         </div>
-                        <div className="flex gap-1">
+                        <div className="flex gap-1 items-center">
                           {['number', 'text', 'select'].map(function (t) {
                             var active = dimType === t
                             var labels = { number: '123', text: 'Abc', select: '▾' }
                             return <button key={t} type="button" onClick={function () { updateDimType(i, t) }} className={"px-2.5 py-1 text-[11px] font-semibold rounded border transition-colors " + (active ? "border-indigo-500 bg-indigo-50 text-indigo-700" : "border-gray-200 text-gray-400 hover:bg-gray-50")}>{labels[t] + ' ' + t.charAt(0).toUpperCase() + t.slice(1)}</button>
                           })}
+                          <span className="mx-1 text-gray-300">|</span>
+                          <button type="button" onClick={function () { setEditCatDims(function (prev) { return prev.map(function (d, j) { if (j !== i) return d; return Object.assign({}, d, { nameGen: !d.nameGen }) }) }) }}
+                            className={"px-2.5 py-1 text-[11px] font-semibold rounded border transition-colors " + (dim.nameGen ? "border-amber-500 bg-amber-50 text-amber-700" : "border-gray-200 text-gray-400 hover:bg-gray-50")}>
+                            🏷 Name Gen
+                          </button>
                         </div>
                       </div>
                       {editDimIdx === i && (
