@@ -350,23 +350,39 @@ function Categories() {
 
   // ═══ CSV EXPORT/IMPORT ═══
   function exportCSV() {
-    var rows = [['Category', 'Code', 'Sub-category']]
+    function esc(v) { var s = String(v == null ? '' : v); if (s.indexOf(',') !== -1 || s.indexOf('"') !== -1 || s.indexOf('\n') !== -1) return '"' + s.replace(/"/g, '""') + '"'; return s }
+    var headers = ['Category', 'Code', 'Department', 'Sub-department', 'Item Type', 'Expense Categories', 'Dimension Fields', 'Sub-categories']
+    var rows = []
     categories.forEach(function (cat) {
-      var subs = subCategories.filter(function (s) { return s.category_id === cat.id })
-      if (subs.length === 0) {
-        rows.push([cat.name, cat.code || '', ''])
-      } else {
-        subs.forEach(function (sub) {
-          rows.push([cat.name, cat.code || '', sub.name])
-        })
+      var dept = ''
+      var subDeptName = ''
+      if (cat.sub_department_id) {
+        var sd = subDepartments.find(function (s) { return s.id === cat.sub_department_id })
+        if (sd) {
+          subDeptName = sd.name
+          var d = departments.find(function (dp) { return dp.id === sd.department_id })
+          if (d) dept = d.name
+        }
       }
+      var itemType = cat.consumable === false ? 'Asset' : 'Consumable'
+      var expCats = (cat.expense_type_ids || []).map(function (eid) {
+        var et = expenseTypes.find(function (e) { return e.id === eid })
+        return et ? et.name : ''
+      }).filter(Boolean).join('; ')
+      var dims = (cat.dimension_fields || []).map(function (df) {
+        var t = df.type || 'number'
+        var parts = df.name
+        if (t !== 'number') parts = parts + ' [' + t + ']'
+        if (t === 'select' && df.options && df.options.length > 0) parts = parts + ' (' + df.options.join('|') + ')'
+        if (df.nameGen) parts = parts + ' *nameGen'
+        return parts
+      }).join('; ')
+      var subs = subCategories.filter(function (s) { return s.category_id === cat.id }).map(function (s) { return s.name }).join('; ')
+      rows.push([cat.name, cat.code || '', dept, subDeptName, itemType, expCats, dims, subs].map(esc).join(','))
     })
-    var csv = rows.map(function (r) { return r.join(',') }).join('\n')
-    var blob = new Blob([csv], { type: 'text/csv' })
-    var url = URL.createObjectURL(blob)
-    var a = document.createElement('a')
-    a.href = url; a.download = 'categories.csv'; a.click()
-    URL.revokeObjectURL(url)
+    var csv = '\uFEFF' + headers.join(',') + '\n' + rows.join('\n')
+    var blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+    var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'ambria_categories_' + new Date().toISOString().split('T')[0] + '.csv'; a.click()
   }
 
   async function importCSV(e) {
