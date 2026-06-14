@@ -53,7 +53,7 @@ const DJ_LABELS: Record<number, string> = {
 // Amounts ≥1L: ceil to nearest 0.5L first (matches UI fmtRound), then halve.
 // Amounts <1L: exact halve (matches UI fmtK display in K).
 function paiseToRupees(p: number | null): string {
-  if (!p) return "0"
+  if (p == null) return "0"
   const lakhs = p / 10000000
   if (lakhs >= 1) {
     const rounded = Math.ceil(lakhs * 2) / 2
@@ -124,8 +124,8 @@ serve(async (req) => {
 
     // Use deal breakdowns when negotiated, else quote tier
     const hasDeal = q.deal_value_paise != null && q.deal_value_paise > 0
-    const vmPaise = hasDeal && q.deal_vm_paise != null ? q.deal_vm_paise : (q.vm_q_paise || 0)
-    const decorPaise = hasDeal && q.deal_decor_paise != null ? q.deal_decor_paise : (q.decor_q_paise || 0)
+    const vmPaise = Math.max(0, hasDeal && q.deal_vm_paise != null ? q.deal_vm_paise : (q.vm_q_paise || 0))
+    const decorPaise = Math.max(0, hasDeal && q.deal_decor_paise != null ? q.deal_decor_paise : (q.decor_q_paise || 0))
     const djPaise = Math.max(0, hasDeal && q.deal_ent_paise != null ? q.deal_ent_paise : (q.dj_q_paise || 0))
     const menuValueRupees = paiseToRupees(vmPaise)
     const extraPlateRupees = (vmPaise && q.pax) ? String(Math.round(vmPaise / q.pax / 200)) : "0"

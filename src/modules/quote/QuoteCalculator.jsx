@@ -432,7 +432,7 @@ function QuoteCalculator({ profile }) {
     var sl = SLOTS[slot] || '-'
     var et = currentET.label || '-'
     var today = new Date(); var dd = String(today.getDate()).padStart(2,'0'); var mm = String(today.getMonth()+1).padStart(2,'0'); var yy = today.getFullYear(); var todayStr = dd + '-' + mm + '-' + yy
-    function fmtAmt(n) { var rupees = Math.round(n * 100000); return '\u20B9' + rupees.toLocaleString('en-IN') }
+    function fmtAmt(n) { var rounded = n >= 1 ? Math.ceil(n * 2) / 2 : n; var rupees = Math.round(rounded * 100000); return '\u20B9' + rupees.toLocaleString('en-IN') }
 
     var rows = []
     if (includeMenu) rows.push([1, 'Venue + Menu (' + ml + ' ' + fp + ', ' + pax + ' pax)', fmtAmt(adjVm.q || 0)])
