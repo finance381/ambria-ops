@@ -201,6 +201,8 @@ function Categories() {
   var [editDimIdx, setEditDimIdx] = useState(null)
   var [editDimOptions, setEditDimOptions] = useState([])
   var [newDimOption, setNewDimOption] = useState('')
+  var [dimPasteOpen, setDimPasteOpen] = useState(false)
+  var [dimPasteText, setDimPasteText] = useState('')
 
   function addDimField() {
     if (!newDimName.trim()) return
@@ -229,7 +231,7 @@ function Categories() {
     setNewDimOption('')
   }
 
-  function closeDimOptions() { setEditDimIdx(null); setEditDimOptions([]); setNewDimOption('') }
+  function closeDimOptions() { setEditDimIdx(null); setEditDimOptions([]); setNewDimOption(''); setDimPasteOpen(false); setDimPasteText('') }
 
   function saveDimOptions() {
     setEditCatDims(function (prev) { return prev.map(function (d, i) {
@@ -1072,7 +1074,31 @@ function Categories() {
                               onKeyDown={function (e) { if (e.key === 'Enter') { e.preventDefault(); if (newDimOption.trim()) { setEditDimOptions(function (prev) { return prev.concat([newDimOption.trim()]) }); setNewDimOption('') } } }} />
                             <button type="button" onClick={function () { if (newDimOption.trim()) { setEditDimOptions(function (prev) { return prev.concat([newDimOption.trim()]) }); setNewDimOption('') } }} disabled={!newDimOption.trim()}
                               className="px-3 py-1.5 text-xs text-white bg-purple-600 rounded hover:bg-purple-700 disabled:opacity-50 font-medium">+ Add</button>
+                            <button type="button" onClick={function () { setDimPasteOpen(function (p) { return !p }) }}
+                              className={"px-3 py-1.5 text-xs font-medium rounded border transition-colors " + (dimPasteOpen ? "bg-purple-100 border-purple-400 text-purple-700" : "border-purple-200 text-purple-600 hover:bg-purple-50")}>📋 Paste</button>
                           </div>
+                          {dimPasteOpen && (
+                            <div className="space-y-1.5">
+                              <textarea value={dimPasteText} onChange={function (e) { setDimPasteText(e.target.value) }}
+                                rows="4" placeholder={"Paste one option per line...\ne.g.\nYellow\nRed\nBlue\nGreen"}
+                                className="w-full px-2.5 py-2 border border-purple-200 rounded text-sm focus:outline-none focus:ring-2 focus:ring-purple-400 resize-none" style={{ fontSize: '16px' }} />
+                              <div className="flex gap-2 justify-end">
+                                <span className="text-[11px] text-purple-400 self-center">{dimPasteText.trim() ? dimPasteText.trim().split('\n').filter(function (l) { return l.trim() }).length + ' items' : ''}</span>
+                                <button type="button" onClick={function () {
+                                  var lines = dimPasteText.split('\n').map(function (l) { return l.trim() }).filter(Boolean)
+                                  if (lines.length === 0) return
+                                  setEditDimOptions(function (prev) {
+                                    var existing = prev.map(function (o) { return o.toLowerCase() })
+                                    var newOpts = lines.filter(function (l) { return existing.indexOf(l.toLowerCase()) === -1 })
+                                    return prev.concat(newOpts)
+                                  })
+                                  setDimPasteText('')
+                                  setDimPasteOpen(false)
+                                }} disabled={!dimPasteText.trim()}
+                                  className="px-3 py-1.5 text-xs text-white bg-purple-600 rounded hover:bg-purple-700 disabled:opacity-50 font-medium">Import {dimPasteText.trim() ? dimPasteText.trim().split('\n').filter(function (l) { return l.trim() }).length : 0} Items</button>
+                              </div>
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
