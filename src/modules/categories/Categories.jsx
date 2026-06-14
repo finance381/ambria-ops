@@ -366,7 +366,7 @@ function Categories() {
       }
       var itemType = cat.consumable === false ? 'Asset' : 'Consumable'
       var expCats = (cat.expense_type_ids || []).map(function (eid) {
-        var et = expenseTypes.find(function (e) { return e.id === eid })
+        var et = expTypes.find(function (e) { return e.id === eid })
         return et ? et.name : ''
       }).filter(Boolean).join('; ')
       var dims = (cat.dimension_fields || []).map(function (df) {
