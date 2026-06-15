@@ -50,6 +50,8 @@ function Categories() {
   var [editSubDeptExpTypes, setEditSubDeptExpTypes] = useState([])
   var [editCatExpTypes, setEditCatExpTypes] = useState([])
   var [editCatDims, setEditCatDims] = useState([])
+  var [dragDimIdx, setDragDimIdx] = useState(null)
+  var [dragOverIdx, setDragOverIdx] = useState(null)
   var [editCatSubs, setEditCatSubs] = useState([])
   var [newDimName, setNewDimName] = useState('')
   var [newSubName, setNewSubName] = useState('')
@@ -1028,10 +1030,24 @@ function Categories() {
                   var dimType = dim.type || 'number'
                   var typeLabels = { number: '123 Number', text: 'Abc Text', select: '▾ Dropdown' }
                   return (
-                    <div key={i} className="space-y-0">
-                      <div className={"bg-white px-3 py-2.5 border border-gray-200 space-y-2 " + (editDimIdx === i ? "rounded-t-lg" : "rounded-lg")}>
+                    <div key={i} className="space-y-0" draggable={editDimIdx === null}
+                      onDragStart={function () { setDragDimIdx(i) }}
+                      onDragOver={function (e) { e.preventDefault(); setDragOverIdx(i) }}
+                      onDragEnd={function () {
+                        if (dragDimIdx !== null && dragOverIdx !== null && dragDimIdx !== dragOverIdx) {
+                          setEditCatDims(function (prev) {
+                            var arr = prev.slice(); var item = arr.splice(dragDimIdx, 1)[0]; arr.splice(dragOverIdx, 0, item); return arr
+                          })
+                        }
+                        setDragDimIdx(null); setDragOverIdx(null)
+                      }}
+                      onDragLeave={function () { setDragOverIdx(null) }}>
+                      <div className={"bg-white px-3 py-2.5 border space-y-2 transition-all " + (editDimIdx === i ? "rounded-t-lg border-gray-200" : "rounded-lg " + (dragOverIdx === i ? "border-indigo-400 bg-indigo-50" : "border-gray-200"))}>
                         <div className="flex items-center justify-between">
-                          <span className="text-sm font-medium text-gray-800">{dim.name}</span>
+                          <div className="flex items-center gap-2">
+                            <span className={"text-gray-400 select-none " + (editDimIdx === null ? "cursor-grab active:cursor-grabbing" : "")} title="Drag to reorder">⠿</span>
+                            <span className="text-sm font-medium text-gray-800">{dim.name}</span>
+                          </div>
                           <div className="flex items-center gap-2">
                             <span className={"text-[10px] font-bold px-2 py-0.5 rounded-full " + (dimType === 'number' ? "bg-blue-50 text-blue-600" : dimType === 'text' ? "bg-green-50 text-green-600" : "bg-purple-50 text-purple-600")}>{typeLabels[dimType]}</span>
                             {dimType === 'select' && <button type="button" onClick={function () { editDimIdx === i ? closeDimOptions() : openDimOptions(i) }} className="text-[11px] text-indigo-600 font-semibold hover:text-indigo-800">{(dim.options || []).length} options ⚙</button>}
