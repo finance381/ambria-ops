@@ -17,7 +17,7 @@ function SearchDropdown({ items, value, onChange, onAdd, onInputChange, placehol
     if (isFocused.current) return
     if (value) {
       var match = items.find(function (i) { return i.value === value })
-      if (match) setQuery(match.label)
+      setQuery(match ? match.label : value)
     } else {
       setQuery('')
     }
