@@ -32,6 +32,7 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved }) {
   var [description, setDescription] = useState(seed?.description || '')
   var [nameHindi, setNameHindi] = useState(seed?.name_hindi || '')
   var [hiEdited, setHiEdited] = useState(false)
+  var nameManual = useRef(false)
   var [qty, setQty] = useState(seed?.qty ?? '')
   var [unit, setUnit] = useState(seed?.unit || 'Pieces')
   var [minOrderQty, setMinOrderQty] = useState(seed?.min_order_qty ?? seed?.season_reorder_qty ?? '')
@@ -167,6 +168,7 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved }) {
 
   useEffect(function () {
     if (isEdit) return
+    if (nameManual.current) return
     var genFields = categoryDimFields.filter(function (f) { return f.nameGen })
     if (genFields.length === 0) return
     var subCat = subCategories.find(function (s) { return String(s.id) === subCategoryId })
@@ -223,7 +225,7 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved }) {
   function removeImage() { setImageFile(null); setImagePreview('') }
 
   function handleItemNameSelect(val) {
-    setName(val); if (!val) return
+    setName(val); nameManual.current = !!val; if (!val) return
     var match = existingItems.find(function (i) { return i.name === val && i.status === 'approved' })
       || existingItems.find(function (i) { return i.name === val })
     var loadedHindi = false
@@ -330,7 +332,7 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved }) {
   }
 
   function resetForm() {
-    setCategoryId(''); setSubCategoryId(''); setName(''); setDescription(''); setNameHindi(''); setQty(''); setUnit('Pieces')
+    setCategoryId(''); setSubCategoryId(''); setName(''); setDescription(''); setNameHindi(''); setQty(''); setUnit('Pieces'); nameManual.current = false
     setMinOrderQty(''); setReorderQty(''); setRatePaise(''); setIsAsset('unknown'); setType('Indoor')
     setImageFile(null); setImagePreview(''); setErrors({}); setAllocations([{ department: '', venue_id: '', sub_venue_id: '', qty: '' }])
     setCropSrc(null); setHiEdited(false); setDimensionValues([]); setCategoryDimFields([])
@@ -575,7 +577,7 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved }) {
         </div>
         <SearchDropdown label={t('Category')} required items={catItems} value={categoryId} onChange={setCategoryId} placeholder={t('Search Category...')} error={errors.cat} />
         <SearchDropdown label={t('Sub-Category')} items={subCatItems} value={subCategoryId} onChange={setSubCategoryId} placeholder={t('Search Sub-Category...')} />
-        <SearchDropdown label={t('Item Name')} required items={itemNameItems} value={name} onChange={handleItemNameSelect} allowAdd onAdd={function (val) { setName(val); searchItems(val) }} placeholder={t('Search Item Name...')} error={errors.item} onInputChange={searchItems} />
+        <SearchDropdown label={t('Item Name')} required items={itemNameItems} value={name} onChange={handleItemNameSelect} allowAdd onAdd={function (val) { setName(val); nameManual.current = true }} placeholder={t('Search Item Name...')} error={errors.item} onInputChange={searchItems} />
         {showPackSize && (
           <div className="bg-amber-50 rounded-lg border border-amber-200 p-3 space-y-2">
             <h4 className="text-[11px] font-bold text-amber-700 uppercase tracking-wider">Pack Size</h4>
