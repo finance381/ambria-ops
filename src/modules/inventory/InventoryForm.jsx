@@ -171,9 +171,7 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved }) {
     if (nameManual.current) return
     var genFields = categoryDimFields.filter(function (f) { return f.nameGen })
     if (genFields.length === 0) return
-    var subCat = subCategories.find(function (s) { return String(s.id) === subCategoryId })
-    if (!subCat) return
-    var parts = [subCat.name]
+    var parts = []
     genFields.forEach(function (f) {
       var dim = dimensionValues.find(function (d) { return d.name === f.name })
       if (!dim) return
@@ -183,7 +181,7 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved }) {
       else { val = (dim.value || '').trim() }
       if (val) parts.push(val)
     })
-    if (parts.length > 1) { setName(parts.join(' — ')); setHiEdited(false) }
+    if (parts.length > 0) { setName(parts.join(' ')); setHiEdited(false) }
   }, [subCategoryId, dimensionValues, categoryDimFields])
 
   async function loadLookups() {
