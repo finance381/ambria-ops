@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import Modal from '../../components/ui/Modal'
 import { logActivity } from '../../lib/logger'
+import { useRealtime } from '../../lib/useRealtime'
 
 function Categories() {
   var [tab, setTab] = useState('departments')
@@ -10,6 +11,7 @@ function Categories() {
   var [subCategories, setSubCategories] = useState([])
   var [venues, setVenues] = useState([])
   var [loading, setLoading] = useState(true)
+  useRealtime(['categories', 'sub_categories', 'departments', 'sub_departments', 'venues', 'sub_venues'], function () { if (!saving) loadAll() })
 
   // Add form state
   var [newDept, setNewDept] = useState('')

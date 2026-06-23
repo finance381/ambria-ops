@@ -8,6 +8,7 @@ import ExpenseTypeMaster from './ExpenseTypeMaster'
 import AllExpenses from './AllExpenses'
 import ExpenseEditForm from './ExpenseEditForm'
 import ExpenseDetail from './ExpenseDetail'
+import { useRealtime } from '../../lib/useRealtime'
 import ExpenseReport from './ExpenseReport'
 import ReviewHistory from './ReviewHistory'
 import { pushBack, goBack as navBack } from '../../lib/backNav'
@@ -22,6 +23,7 @@ function Expenses({ profile, masterMode }) {
   var [approvalHasMore, setApprovalHasMore] = useState(false)
   var [loading, setLoading] = useState(true)
   var [loadingMore, setLoadingMore] = useState(false)
+  useRealtime(['expenses', 'expense_allocations'], function () { loadMyExpenses(false); loadApprovalExpenses(false) })
   var [detailExp, setDetailExp] = useState(null)
   var [statusFilter, setStatusFilter] = useState('')
   var [dateFrom, setDateFrom] = useState('')

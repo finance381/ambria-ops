@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react'
 import { formatDate, titleCase } from '../../lib/format'
 import Modal from '../../components/ui/Modal'
 import InventoryForm from './InventoryForm'
+import { useRealtime } from '../../lib/useRealtime'
 
 
 function Inventory({ profile }) {
@@ -11,6 +12,7 @@ function Inventory({ profile }) {
   var [loading, setLoading] = useState(true)
   var [editItem, setEditItem] = useState(null)
   var [enlargedImg, setEnlargedImg] = useState(null)
+  useRealtime(['inventory_items', 'catering_store_items', 'venue_allocations', 'cs_venue_allocations'], function () { loadItems() })
   var [search, setSearch] = useState('')
   var [catFilter, setCatFilter] = useState('')
   var [subCatFilter, setSubCatFilter] = useState('')

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import { titleCase, formatDate, formatPoints } from '../../lib/format'
 import { logActivity } from '../../lib/logger'
+import { useRealtime } from '../../lib/useRealtime'
 import Modal from '../../components/ui/Modal'
 import { Badge } from '../../components/ui/Badge'
 import { APPROVAL_STATUS_COLORS, APPROVAL_STATUS_LABELS } from '../../lib/constants'
@@ -31,6 +32,7 @@ function Requisitions({ profile, onBack }) {
   var [approvalHasMore, setApprovalHasMore] = useState(false)
   var [loading, setLoading] = useState(true)
   var [loadingMore, setLoadingMore] = useState(false)
+  useRealtime(['requisitions', 'requisition_items'], function () { loadMyReqs(false); loadApprovalReqs(false) })
   var [detailReq, setDetailReq] = useState(null)
   var [detailItems, setDetailItems] = useState([])
   var [statusFilter, setStatusFilter] = useState('')

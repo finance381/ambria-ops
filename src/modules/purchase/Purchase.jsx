@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { titleCase, formatDate, formatPaise } from '../../lib/format'
 import { logActivity } from '../../lib/logger'
+import { useRealtime } from '../../lib/useRealtime'
 import { generatePoPdf, generateComparisonPdf, generateReceivingPdf, generateReceivingListPdf } from '../../lib/pdf'
 import SearchDropdown from '../../components/ui/SearchDropdown'
 import InventoryForm from '../inventory/InventoryForm'
@@ -59,6 +60,7 @@ function Purchase({ profile, mode }) {
   var [loading, setLoading] = useState(true)
   var [queueLoading, setQueueLoading] = useState(true)
   var [saving, setSaving] = useState(false)
+  useRealtime(['purchase_orders', 'purchase_order_items'], function () { if (!saving) { loadQueue(); loadPos() } })
   var [vendorList, setVendorList] = useState([])
   var [staffList, setStaffList] = useState([])
   var [receivingItems, setReceivingItems] = useState([])

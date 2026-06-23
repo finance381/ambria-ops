@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase, getImageUrl } from '../../lib/supabase'
 import { titleCase, formatDate } from '../../lib/format'
 import { logActivity } from '../../lib/logger'
+import { useRealtime } from '../../lib/useRealtime'
 import Modal from '../../components/ui/Modal'
 import InventoryForm from '../inventory/InventoryForm'
 
@@ -15,6 +16,7 @@ function AdminReview({ profile }) {
   var [enlargedImg, setEnlargedImg] = useState(null)
   var [editingItem, setEditingItem] = useState(null)
   var [search, setSearch] = useState('')
+  useRealtime(['inventory_items', 'catering_store_items', 'categories', 'sub_categories'], function () { if (!saving) loadPending() })
   var [searchDebounced, setSearchDebounced] = useState('')
   var [venueFilter, setVenueFilter] = useState('')
   var [catFilter, setCatFilter] = useState('')
