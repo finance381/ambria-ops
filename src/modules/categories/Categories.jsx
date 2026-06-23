@@ -49,6 +49,8 @@ function Categories() {
   var [editDeptExpTypes, setEditDeptExpTypes] = useState([])
   var [editSubDeptExpTypes, setEditSubDeptExpTypes] = useState([])
   var [editCatExpTypes, setEditCatExpTypes] = useState([])
+  var [editCatExpSubTypes, setEditCatExpSubTypes] = useState([])
+  var [expSubTypes, setExpSubTypes] = useState([])
   var [editCatDims, setEditCatDims] = useState([])
   var [dragDimIdx, setDragDimIdx] = useState(null)
   var [dragOverIdx, setDragOverIdx] = useState(null)
@@ -60,6 +62,9 @@ function Categories() {
     loadAll()
     supabase.from('expense_types').select('id, name, active').eq('active', true).order('sort_order').then(function (res) {
       setExpTypes(res.data || [])
+    })
+    supabase.from('expense_sub_types').select('id, name, expense_type_id, active').eq('active', true).order('sort_order').then(function (res) {
+      setExpSubTypes(res.data || [])
     })
   }, [])
 
@@ -190,6 +195,7 @@ function Categories() {
     setEditCatSubs(subCategories.filter(function (s) { return s.category_id === cat.id }))
     setEditCatSubDept(cat.sub_department_id ? String(cat.sub_department_id) : '')
     setEditCatExpTypes(cat.expense_type_ids || [])
+    setEditCatExpSubTypes(cat.expense_sub_type_ids || [])
     setNewDimName('')
     setNewDimType('number')
     setEditDimIdx(null)
@@ -292,6 +298,7 @@ function Categories() {
       sub_department_id: editCatSubDept ? Number(editCatSubDept) : null,
       consumable: editCatConsumable,
       expense_type_ids: editCatExpTypes,
+      expense_sub_type_ids: editCatExpSubTypes,
     }).eq('id', editCat.id)
     if (err) { setError(err.message) } else {
       setEditCat(null)
@@ -353,7 +360,7 @@ function Categories() {
   // ═══ CSV EXPORT/IMPORT ═══
   function exportCSV() {
     function esc(v) { var s = String(v == null ? '' : v); if (s.indexOf(',') !== -1 || s.indexOf('"') !== -1 || s.indexOf('\n') !== -1) return '"' + s.replace(/"/g, '""') + '"'; return s }
-    var headers = ['Category', 'Code', 'Department', 'Sub-department', 'Item Type', 'Expense Categories', 'Dimension Fields', 'Sub-categories']
+    var headers = ['Category', 'Code', 'Department', 'Sub-department', 'Item Type', 'Expense Categories', 'Expense Sub-Categories', 'Dimension Fields', 'Sub-categories']
     var rows = []
     categories.forEach(function (cat) {
       var dept = ''
@@ -380,7 +387,8 @@ function Categories() {
         return parts
       }).join('; ')
       var subs = subCategories.filter(function (s) { return s.category_id === cat.id }).map(function (s) { return s.name }).join('; ')
-      rows.push([cat.name, cat.code || '', dept, subDeptName, itemType, expCats, dims, subs].map(esc).join(','))
+      var expSubCats = (cat.expense_sub_type_ids || []).map(function (sid) { var st = expSubTypes.find(function (s) { return s.id === sid }); return st ? st.name : '' }).filter(Boolean).join('; ')
+      rows.push([cat.name, cat.code || '', dept, subDeptName, itemType, expCats, expSubCats, dims, subs].map(esc).join(','))
     })
     var csv = '\uFEFF' + headers.join(',') + '\n' + rows.join('\n')
     var blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
@@ -959,9 +967,13 @@ function Categories() {
                       (checked ? "bg-purple-50 border-purple-300 text-purple-700" : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50")}>
                       <input type="checkbox" checked={checked}
                         onChange={function () {
-                          setEditCatExpTypes(function (prev) {
-                            return checked ? prev.filter(function (id) { return id !== et.id }) : prev.concat([et.id])
-                          })
+                          if (checked) {
+                            setEditCatExpTypes(function (prev) { return prev.filter(function (id) { return id !== et.id }) })
+                            var childIds = expSubTypes.filter(function (st) { return st.expense_type_id === et.id }).map(function (st) { return st.id })
+                            if (childIds.length > 0) setEditCatExpSubTypes(function (prev) { return prev.filter(function (id) { return childIds.indexOf(id) === -1 }) })
+                          } else {
+                            setEditCatExpTypes(function (prev) { return prev.concat([et.id]) })
+                          }
                         }}
                         className="w-3.5 h-3.5 rounded" />
                       {et.name}
@@ -970,6 +982,47 @@ function Categories() {
                 })}
               </div>
             </div>
+            {/* Expense Sub-Categories (cascading) */}
+            {editCatExpTypes.length > 0 && (function () {
+              var relevantSubs = expSubTypes.filter(function (st) { return editCatExpTypes.indexOf(st.expense_type_id) !== -1 })
+              if (relevantSubs.length === 0) return null
+              return (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Expense Sub-Categories</label>
+                  <div className="space-y-2">
+                    {editCatExpTypes.map(function (etId) {
+                      var et = expTypes.find(function (e) { return e.id === etId })
+                      if (!et) return null
+                      var subs = expSubTypes.filter(function (st) { return st.expense_type_id === etId })
+                      if (subs.length === 0) return null
+                      return (
+                        <div key={etId}>
+                          <p className="text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">{et.name}</p>
+                          <div className="flex flex-wrap gap-2">
+                            {subs.map(function (st) {
+                              var checked = editCatExpSubTypes.includes(st.id)
+                              return (
+                                <label key={st.id} className={"flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border cursor-pointer transition-colors " +
+                                  (checked ? "bg-indigo-50 border-indigo-300 text-indigo-700" : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50")}>
+                                  <input type="checkbox" checked={checked}
+                                    onChange={function () {
+                                      setEditCatExpSubTypes(function (prev) {
+                                        return checked ? prev.filter(function (id) { return id !== st.id }) : prev.concat([st.id])
+                                      })
+                                    }}
+                                    className="w-3.5 h-3.5 rounded" />
+                                  {st.name}
+                                </label>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )
+            })()}
             {/* Sub-categories */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Sub-categories</label>
