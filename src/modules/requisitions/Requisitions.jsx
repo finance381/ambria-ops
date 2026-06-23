@@ -365,7 +365,7 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
   var [expFieldValues, setExpFieldValues] = useState({})
   var [expTypeSearch, setExpTypeSearch] = useState('')
   var [expTypeOpen, setExpTypeOpen] = useState(false)
-  var [expAllocations, setExpAllocations] = useState([{ department: '', venue_id: '', amount: '' }])
+  var [expAllocations, setExpAllocations] = useState([{ departmentId: '', subDepartmentId: '', venue_id: '', amount: '' }])
   var [listening, setListening] = useState(false)
   var searchContainerRef = useRef(null)
   var recognitionRef = useRef(null)
@@ -1278,31 +1278,50 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-bold text-gray-500">Allocations</span>
-              <button type="button" onClick={function () { setExpAllocations(function (p) { return p.concat([{ department: '', venue_id: '', amount: '' }]) }) }}
+              <button type="button" onClick={function () { setExpAllocations(function (p) { return p.concat([{ departmentId: '', subDepartmentId: '', venue_id: '', amount: '' }]) }) }}
                 className="text-[11px] font-semibold text-amber-700 hover:text-amber-900">+ Row</button>
             </div>
             {expAllocations.map(function (alloc, aIdx) {
+              var allocSubDepts = alloc.departmentId ? subDepartments.filter(function (sd) { return sd.department_id === Number(alloc.departmentId) }) : []
               return (
-                <div key={aIdx} className="flex gap-2 items-end">
-                  <div className="flex-1">
-                    <select value={alloc.venue_id}
-                      onChange={function (e) { setExpAllocations(function (p) { return p.map(function (a, j) { return j === aIdx ? Object.assign({}, a, { venue_id: e.target.value }) : a }) }) }}
-                      className="w-full px-2 py-1.5 border border-gray-200 rounded-md text-[12px] focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
-                      style={{ fontSize: '16px' }}>
-                      <option value="">Venue</option>
-                      {venues.map(function (v) { return <option key={v.id} value={String(v.id)}>{v.code || v.name}</option> })}
-                    </select>
-                  </div>
-                  <div className="w-20">
-                    <input type="number" min="0" step="any" inputMode="decimal" value={alloc.amount}
-                      onChange={function (e) { setExpAllocations(function (p) { return p.map(function (a, j) { return j === aIdx ? Object.assign({}, a, { amount: e.target.value }) : a }) }) }}
-                      placeholder="Amt"
-                      className="w-full px-2 py-1.5 border border-gray-200 rounded-md text-[12px] focus:outline-none focus:ring-2 focus:ring-amber-500"
-                      style={{ fontSize: '16px' }} />
+                <div key={aIdx} className="flex gap-2 items-start">
+                  <div className="flex-1 space-y-1.5">
+                    <div className="grid grid-cols-2 gap-2">
+                      <select value={alloc.departmentId}
+                        onChange={function (e) { setExpAllocations(function (p) { return p.map(function (a, j) { return j === aIdx ? Object.assign({}, a, { departmentId: e.target.value, subDepartmentId: '' }) : a }) }) }}
+                        className="w-full px-2 py-1.5 border border-gray-200 rounded-md text-[12px] focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
+                        style={{ fontSize: '16px' }}>
+                        <option value="">Dept</option>
+                        {departments.map(function (d) { return <option key={d.id} value={String(d.id)}>{d.name}</option> })}
+                      </select>
+                      {allocSubDepts.length > 0 && (
+                        <select value={alloc.subDepartmentId}
+                          onChange={function (e) { setExpAllocations(function (p) { return p.map(function (a, j) { return j === aIdx ? Object.assign({}, a, { subDepartmentId: e.target.value }) : a }) }) }}
+                          className="w-full px-2 py-1.5 border border-gray-200 rounded-md text-[12px] focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
+                          style={{ fontSize: '16px' }}>
+                          <option value="">Sub-dept</option>
+                          {allocSubDepts.map(function (sd) { return <option key={sd.id} value={String(sd.id)}>{sd.name}</option> })}
+                        </select>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <select value={alloc.venue_id}
+                        onChange={function (e) { setExpAllocations(function (p) { return p.map(function (a, j) { return j === aIdx ? Object.assign({}, a, { venue_id: e.target.value }) : a }) }) }}
+                        className="w-full px-2 py-1.5 border border-gray-200 rounded-md text-[12px] focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
+                        style={{ fontSize: '16px' }}>
+                        <option value="">Venue</option>
+                        {venues.map(function (v) { return <option key={v.id} value={String(v.id)}>{v.code || v.name}</option> })}
+                      </select>
+                      <input type="number" min="0" step="any" inputMode="decimal" value={alloc.amount}
+                        onChange={function (e) { setExpAllocations(function (p) { return p.map(function (a, j) { return j === aIdx ? Object.assign({}, a, { amount: e.target.value }) : a }) }) }}
+                        placeholder="Amt"
+                        className="w-full px-2 py-1.5 border border-gray-200 rounded-md text-[12px] focus:outline-none focus:ring-2 focus:ring-amber-500"
+                        style={{ fontSize: '16px' }} />
+                    </div>
                   </div>
                   {expAllocations.length > 1 && (
                     <button type="button" onClick={function () { setExpAllocations(function (p) { return p.filter(function (_, j) { return j !== aIdx }) }) }}
-                      className="text-xs text-red-400 hover:text-red-600 p-1">✕</button>
+                      className="text-xs text-red-400 hover:text-red-600 p-1 mt-1">✕</button>
                   )}
                 </div>
               )

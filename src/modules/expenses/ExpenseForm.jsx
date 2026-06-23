@@ -19,7 +19,7 @@ function makeEntry() {
     taxAmount: '',
     expenseDate: new Date().toISOString().split('T')[0],
     fieldValues: {},
-    allocations: [{ department: '', venueId: '', amountPaise: '' }],
+    allocations: [{ departmentId: '', subDepartmentId: '', venueId: '', amountPaise: '' }],
     receiptFile: null,
     receiptPreview: '',
     audioBlob: null,
@@ -29,7 +29,7 @@ function makeEntry() {
 }
 
 function makeAllocation() {
-  return { department: '', venueId: '', amountPaise: '' }
+  return { departmentId: '', subDepartmentId: '', venueId: '', amountPaise: '' }
 }
 
 function ExpenseForm({ profile, onDone }) {
@@ -421,11 +421,13 @@ function ExpenseForm({ profile, onDone }) {
 
           var deptName = e.department ? (departments.find(function (d) { return String(d.id) === e.department }) || {}).name || '' : ''
           var allocRows = e.allocations
-            .filter(function (a) { return a.venueId })
+            .filter(function (a) { return a.venueId || a.departmentId })
             .map(function (a) {
               return {
                 expense_id: exp.id,
-                department: deptName,
+                department: a.departmentId ? (departments.find(function (d) { return String(d.id) === a.departmentId }) || {}).name || deptName : deptName,
+                department_id: a.departmentId ? Number(a.departmentId) : null,
+                sub_department_id: a.subDepartmentId ? Number(a.subDepartmentId) : null,
                 venue_id: a.venueId ? Number(a.venueId) : null,
                 amount_paise: a.amountPaise ? Math.round(Number(a.amountPaise) * 100) : 0
               }
@@ -660,18 +662,37 @@ function ExpenseForm({ profile, onDone }) {
                 </div>
                 <div className="space-y-2">
                   {entry.allocations.map(function (alloc, aIdx) {
+                    var allocSubDepts = alloc.departmentId ? subDepartments.filter(function (sd) { return sd.department_id === Number(alloc.departmentId) }) : []
                     return (
                       <div key={aIdx} className="flex gap-2 items-start">
-                        <div className="flex-1 grid grid-cols-2 gap-2">
-                          <select value={alloc.venueId}
-                            onChange={function (e) { updateAllocation(idx, aIdx, 'venueId', e.target.value) }}
-                            className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs bg-white focus:ring-2 focus:ring-amber-300">
-                            <option value="">Venue</option>
-                            {venues.map(function (v) { return <option key={v.id} value={String(v.id)}>{v.code}</option> })}
-                          </select>
-                          <input type="number" inputMode="numeric" value={alloc.amountPaise}
-                            onChange={function (e) { updateAllocation(idx, aIdx, 'amountPaise', e.target.value) }}
-                            placeholder="Amt" className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs focus:ring-2 focus:ring-amber-300" />
+                        <div className="flex-1 space-y-1.5">
+                          <div className="grid grid-cols-2 gap-2">
+                            <select value={alloc.departmentId}
+                              onChange={function (e) { updateAllocation(idx, aIdx, 'departmentId', e.target.value); updateAllocation(idx, aIdx, 'subDepartmentId', '') }}
+                              className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs bg-white focus:ring-2 focus:ring-amber-300" style={{ fontSize: '16px' }}>
+                              <option value="">Dept</option>
+                              {departments.map(function (d) { return <option key={d.id} value={String(d.id)}>{d.name}</option> })}
+                            </select>
+                            {allocSubDepts.length > 0 && (
+                              <select value={alloc.subDepartmentId}
+                                onChange={function (e) { updateAllocation(idx, aIdx, 'subDepartmentId', e.target.value) }}
+                                className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs bg-white focus:ring-2 focus:ring-amber-300" style={{ fontSize: '16px' }}>
+                                <option value="">Sub-dept</option>
+                                {allocSubDepts.map(function (sd) { return <option key={sd.id} value={String(sd.id)}>{sd.name}</option> })}
+                              </select>
+                            )}
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <select value={alloc.venueId}
+                              onChange={function (e) { updateAllocation(idx, aIdx, 'venueId', e.target.value) }}
+                              className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs bg-white focus:ring-2 focus:ring-amber-300" style={{ fontSize: '16px' }}>
+                              <option value="">Venue</option>
+                              {venues.map(function (v) { return <option key={v.id} value={String(v.id)}>{v.code}</option> })}
+                            </select>
+                            <input type="number" inputMode="numeric" value={alloc.amountPaise}
+                              onChange={function (e) { updateAllocation(idx, aIdx, 'amountPaise', e.target.value) }}
+                              placeholder="Amt" className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs focus:ring-2 focus:ring-amber-300" style={{ fontSize: '16px' }} />
+                          </div>
                         </div>
                         {entry.allocations.length > 1 && (
                           <button type="button" onClick={function () { removeAllocation(idx, aIdx) }}
