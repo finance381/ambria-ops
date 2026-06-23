@@ -668,7 +668,7 @@ function ExpenseForm({ profile, onDone }) {
                         <div className="flex-1 space-y-1.5">
                           <div className="grid grid-cols-2 gap-2">
                             <select value={alloc.departmentId}
-                              onChange={function (e) { updateAllocation(idx, aIdx, 'departmentId', e.target.value); updateAllocation(idx, aIdx, 'subDepartmentId', '') }}
+                              onChange={function (e) { setEntries(function (prev) { return prev.map(function (en, i) { if (i !== idx) return en; var copy = Object.assign({}, en); copy.allocations = en.allocations.map(function (a, j) { return j === aIdx ? Object.assign({}, a, { departmentId: e.target.value, subDepartmentId: '' }) : a }); return copy }) }) }}
                               className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs bg-white focus:ring-2 focus:ring-amber-300" style={{ fontSize: '16px' }}>
                               <option value="">Dept</option>
                               {departments.map(function (d) { return <option key={d.id} value={String(d.id)}>{d.name}</option> })}
