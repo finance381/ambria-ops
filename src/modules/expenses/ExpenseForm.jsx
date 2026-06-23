@@ -16,6 +16,7 @@ function makeEntry() {
     expenseSubTypeId: '',
     description: '',
     amount: '',
+    taxAmount: '',
     expenseDate: new Date().toISOString().split('T')[0],
     fieldValues: {},
     allocations: [{ department: '', venueId: '', amountPaise: '' }],
@@ -390,6 +391,7 @@ function ExpenseForm({ profile, onDone }) {
             expense_type_id: Number(e.expenseTypeId),
             expense_sub_type_id: Number(e.expenseSubTypeId),
             amount_paise: paise,
+            tax_paise: e.taxAmount ? Math.round(Number(e.taxAmount) * 100) : 0,
             description: e.description.trim(),
             expense_date: e.expenseDate,
             status: 'recorded',
@@ -625,14 +627,21 @@ function ExpenseForm({ profile, onDone }) {
                 })
               })}
 
-              {/* Amount + Date row */}
-              <div className="grid grid-cols-2 gap-3">
+              {/* Amount + Tax + Date row */}
+              <div className="grid grid-cols-3 gap-3">
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">Amount (pts)</label>
                   <input type="number" inputMode="numeric" value={entry.amount}
                     onChange={function (e) { updateEntry(idx, 'amount', e.target.value) }}
                     placeholder="0" min="1"
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-300" />
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-300" style={{ fontSize: '16px' }} />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Tax (pts)</label>
+                  <input type="number" inputMode="numeric" value={entry.taxAmount}
+                    onChange={function (e) { updateEntry(idx, 'taxAmount', e.target.value) }}
+                    placeholder="0" min="0"
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-300" style={{ fontSize: '16px' }} />
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">Date</label>
