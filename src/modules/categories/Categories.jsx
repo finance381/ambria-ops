@@ -362,7 +362,7 @@ function Categories() {
   // ═══ CSV EXPORT/IMPORT ═══
   function exportCSV() {
     function esc(v) { var s = String(v == null ? '' : v); if (s.indexOf(',') !== -1 || s.indexOf('"') !== -1 || s.indexOf('\n') !== -1) return '"' + s.replace(/"/g, '""') + '"'; return s }
-    var headers = ['Category', 'Code', 'Department', 'Sub-department', 'Item Type', 'Expense Categories', 'Expense Sub-Categories', 'Dimension Fields', 'Sub-categories']
+    var headers = ['ID', 'Category', 'Code', 'Department', 'Sub-department', 'Item Type', 'Expense Categories', 'Expense Sub-Categories', 'Dimension Fields', 'Sub-categories']
     var rows = []
     categories.forEach(function (cat) {
       var dept = ''
@@ -388,9 +388,9 @@ function Categories() {
         if (df.nameGen) parts = parts + ' *nameGen'
         return parts
       }).join('; ')
-      var subs = subCategories.filter(function (s) { return s.category_id === cat.id }).map(function (s) { return s.name }).join('; ')
+      var subs = subCategories.filter(function (s) { return Number(s.category_id) === Number(cat.id) }).map(function (s) { return s.name }).join('; ')
       var expSubCats = (cat.expense_sub_type_ids || []).map(function (sid) { var st = expSubTypes.find(function (s) { return s.id === sid }); return st ? st.name : '' }).filter(Boolean).join('; ')
-      rows.push([cat.name, cat.code || '', dept, subDeptName, itemType, expCats, expSubCats, dims, subs].map(esc).join(','))
+      rows.push([cat.id, cat.name, cat.code || '', dept, subDeptName, itemType, expCats, expSubCats, dims, subs].map(esc).join(','))
     })
     var csv = '\uFEFF' + headers.join(',') + '\n' + rows.join('\n')
     var blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
@@ -403,32 +403,48 @@ function Categories() {
     var text = await file.text()
     var lines = text.split('\n').filter(function (l) { return l.trim() })
     if (lines.length < 2) { alert('CSV must have header + at least 1 row'); return }
-    var imported = 0
+    var header = lines[0].toLowerCase().replace(/[\uFEFF]/g, '')
+    var cols0 = header.split(',').map(function (h) { return h.trim() })
+    var hasId = cols0[0] === 'id'
+    var offset = hasId ? 1 : 0
+    var created = 0; var updated = 0; var skipped = 0
     for (var r = 1; r < lines.length; r++) {
       var cols = lines[r].split(',')
-      var catName = (cols[0] || '').trim()
-      var catCode = (cols[1] || '').trim().toUpperCase()
-      var subName = (cols[2] || '').trim()
-      if (!catName) continue
-      var existing = categories.find(function (c) { return c.name.toLowerCase() === catName.toLowerCase() })
-      var catId
-      if (existing) {
-        catId = existing.id
-      } else {
-        var payload = { name: catName, status: 'approved' }
-        if (catCode) payload.code = catCode
-        var { data: newCatData } = await supabase.from('categories').insert(payload).select().single()
-        if (newCatData) { catId = newCatData.id }
-      }
-      if (subName && catId) {
-        var existSub = subCategories.find(function (s) { return s.category_id === catId && s.name.toLowerCase() === subName.toLowerCase() })
-        if (!existSub) {
-          await supabase.from('sub_categories').insert({ name: subName, category_id: catId, status: 'approved' })
+      var rowId = hasId ? (cols[0] || '').trim() : ''
+      var catName = (cols[offset] || '').trim()
+      var catCode = (cols[offset + 1] || '').trim().toUpperCase()
+      if (!catName) { skipped++; continue }
+      var catId = null
+      if (rowId) {
+        var byId = categories.find(function (c) { return String(c.id) === rowId })
+        if (byId) {
+          var updates = {}
+          if (catName && catName !== byId.name) updates.name = catName
+          if (catCode && catCode !== (byId.code || '')) updates.code = catCode
+          if (Object.keys(updates).length > 0) {
+            await supabase.from('categories').update(updates).eq('id', byId.id)
+            updated++
+          } else { skipped++ }
+          catId = byId.id
         }
       }
-      imported++
+      if (!catId) {
+        var byName = categories.find(function (c) { return c.name.toLowerCase() === catName.toLowerCase() })
+        if (byName) {
+          catId = byName.id
+          if (catCode && catCode !== (byName.code || '')) {
+            await supabase.from('categories').update({ code: catCode }).eq('id', byName.id)
+            updated++
+          } else { skipped++ }
+        } else {
+          var payload = { name: catName, status: 'approved' }
+          if (catCode) payload.code = catCode
+          var { data: newCatData } = await supabase.from('categories').insert(payload).select().single()
+          if (newCatData) { catId = newCatData.id; created++ }
+        }
+      }
     }
-    alert(imported + ' rows imported')
+    alert('Import done: ' + created + ' created, ' + updated + ' updated, ' + skipped + ' unchanged')
     loadAll()
     e.target.value = ''
   }
