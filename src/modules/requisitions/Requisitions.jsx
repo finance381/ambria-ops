@@ -73,7 +73,7 @@ function Requisitions({ profile, onBack }) {
     else setLoadingMore(true)
 
     var query = supabase.from('requisitions')
-      .select('id, department, urgency, purpose, status, created_at, needed_by, requested_by, rejection_reason, event_id, sub_department_id, category_id, sub_category_id, req_type, expense_type_id, expense_sub_type_id, expense_amount_paise, expense_date, receipt_path, events(event_name), expense_types(name), expense_sub_types(name), profiles:requested_by(name), categories(name), sub_departments(name)')
+      .select('id, department, urgency, purpose, status, created_at, needed_by, requested_by, rejection_reason, event_id, sub_department_id, category_id, sub_category_id, req_type, expense_type_id, expense_sub_type_id, expense_amount_paise, expense_date, receipt_path, expense_alloc_json, events(event_name), expense_types(name), expense_sub_types(name), profiles:requested_by(name), categories(name), sub_departments(name)')
       .eq('requested_by', profile.id)
       .order('created_at', { ascending: false })
       .range(offset, offset + PAGE_SIZE)
@@ -112,7 +112,7 @@ function Requisitions({ profile, onBack }) {
     if (statuses.length === 0) { setApprovalReqs([]); return }
 
     var query = supabase.from('requisitions')
-      .select('id, department, urgency, purpose, status, created_at, needed_by, requested_by, rejection_reason, req_type, expense_type_id, expense_sub_type_id, expense_amount_paise, expense_date, receipt_path, expense_types(name), expense_sub_types(name)')
+      .select('id, department, urgency, purpose, status, created_at, needed_by, requested_by, rejection_reason, req_type, expense_type_id, expense_sub_type_id, expense_amount_paise, expense_date, receipt_path, expense_alloc_json, expense_types(name), expense_sub_types(name)')
       .neq('requested_by', profile.id)
       .in('status', statuses)
       .order('created_at', { ascending: false })
@@ -152,30 +152,25 @@ function Requisitions({ profile, onBack }) {
     pushBack(function () { setView(req._fromApprove ? 'approve' : 'list'); setDetailReq(null); setDetailItems([]) })
     setDetailReq(req)
     if (req.req_type === 'expense') {
-      setDetailItems([])
-      // Fetch expense allocations stored on the requisition
-      supabase.from('expense_allocations')
-        .select('id, department, venue_id, sub_venue_id, amount_paise, department_id, sub_department_id')
-        .eq('requisition_id', req.id)
-        .then(function (res) {
-          var rows = res.data || []
-          if (rows.length > 0) {
-            var vIds = rows.map(function (r) { return r.venue_id }).filter(Boolean)
-            var dIds = rows.map(function (r) { return r.department_id }).filter(Boolean)
-            var sdIds = rows.map(function (r) { return r.sub_department_id }).filter(Boolean)
-            Promise.all([
-              vIds.length > 0 ? supabase.from('venues').select('id, code, name').in('id', vIds) : { data: [] },
-              dIds.length > 0 ? supabase.from('departments').select('id, name').in('id', dIds) : { data: [] },
-              sdIds.length > 0 ? supabase.from('sub_departments').select('id, name').in('id', sdIds) : { data: [] }
-            ]).then(function (results) {
-              var nameMap = {}
-              ;(results[0].data || []).forEach(function (v) { nameMap['v_' + v.id] = v.code || v.name })
-              ;(results[1].data || []).forEach(function (d) { nameMap['d_' + d.id] = d.name })
-              ;(results[2].data || []).forEach(function (sd) { nameMap['sd_' + sd.id] = sd.name })
-              setDetailItems(rows.map(function (r) { return Object.assign({}, r, { _names: nameMap }) }))
-            })
-          }
+      var allocRows = req.expense_alloc_json || []
+      if (allocRows.length > 0) {
+        var vIds = allocRows.map(function (r) { return r.venue_id }).filter(Boolean)
+        var dIds = allocRows.map(function (r) { return r.department_id }).filter(Boolean)
+        var sdIds = allocRows.map(function (r) { return r.sub_department_id }).filter(Boolean)
+        Promise.all([
+          vIds.length > 0 ? supabase.from('venues').select('id, code, name').in('id', vIds) : { data: [] },
+          dIds.length > 0 ? supabase.from('departments').select('id, name').in('id', dIds) : { data: [] },
+          sdIds.length > 0 ? supabase.from('sub_departments').select('id, name').in('id', sdIds) : { data: [] }
+        ]).then(function (results) {
+          var nameMap = {}
+          ;(results[0].data || []).forEach(function (v) { nameMap['v_' + v.id] = v.code || v.name })
+          ;(results[1].data || []).forEach(function (d) { nameMap['d_' + d.id] = d.name })
+          ;(results[2].data || []).forEach(function (sd) { nameMap['sd_' + sd.id] = sd.name })
+          setDetailItems(allocRows.map(function (r) { return Object.assign({}, r, { _names: nameMap }) }))
         })
+      } else {
+        setDetailItems([])
+      }
       setView('detail')
       return
     }
@@ -390,7 +385,14 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
   var [expFieldValues, setExpFieldValues] = useState({})
   var [expTypeSearch, setExpTypeSearch] = useState('')
   var [expTypeOpen, setExpTypeOpen] = useState(false)
-  var [expAllocations, setExpAllocations] = useState([{ departmentId: '', subDepartmentId: '', venue_id: '', amount: '' }])
+  var [expAllocations, setExpAllocations] = useState(function () {
+    if (editReq && editReq.expense_alloc_json && editReq.expense_alloc_json.length > 0) {
+      return editReq.expense_alloc_json.map(function (a) {
+        return { departmentId: a.department_id ? String(a.department_id) : '', subDepartmentId: a.sub_department_id ? String(a.sub_department_id) : '', venue_id: a.venue_id ? String(a.venue_id) : '', amount: a.amount_paise ? String(a.amount_paise / 100) : '' }
+      })
+    }
+    return [{ departmentId: '', subDepartmentId: '', venue_id: '', amount: '' }]
+  })
   var [listening, setListening] = useState(false)
   var searchContainerRef = useRef(null)
   var recognitionRef = useRef(null)
@@ -721,6 +723,11 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
           expense_date: expDate || null,
           receipt_path: receiptPath,
         }
+        var allocJson = expAllocations.filter(function (a) { return a.venue_id || a.departmentId || Number(a.amount) > 0 }).map(function (a) {
+          return { department_id: a.departmentId ? Number(a.departmentId) : null, sub_department_id: a.subDepartmentId ? Number(a.subDepartmentId) : null, venue_id: a.venue_id ? Number(a.venue_id) : null, amount_paise: Math.round(Number(a.amount || 0) * 100) }
+        })
+        expPayload.expense_alloc_json = allocJson
+
         if (isEditing) {
           var { error: expUpdErr } = await supabase.from('requisitions').update(expPayload).eq('id', editReq.id)
           if (expUpdErr) throw new Error(expUpdErr.message)
@@ -1609,6 +1616,22 @@ function RequisitionDetail({ req, items, profile, isAdmin, isDeptApprover, onBac
         receipt_path: req.receipt_path || null,
       }).select('id').single()
       if (insErr) throw new Error(insErr.message)
+
+      // Copy allocations from requisition to expense
+      var allocRows = req.expense_alloc_json || []
+      if (allocRows.length > 0) {
+        var expAllocs = allocRows.map(function (a) {
+          return {
+            expense_id: newExp.id,
+            department: req.department || null,
+            department_id: a.department_id || null,
+            sub_department_id: a.sub_department_id || null,
+            venue_id: a.venue_id || null,
+            amount_paise: a.amount_paise || 0,
+          }
+        })
+        await supabase.from('expense_allocations').insert(expAllocs)
+      }
 
       try {
         await supabase.rpc('wallet_self_debit', {
