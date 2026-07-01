@@ -417,11 +417,17 @@ function ExpenseTypeMaster({ onBack }) {
   var [types, setTypes] = useState([])
   var [loading, setLoading] = useState(true)
   var [editId, setEditId] = useState(null)
-  var [form, setForm] = useState({ name: '', description: '', icon: '' })
+  var [form, setForm] = useState({ name: '', description: '', icon: '', department_id: '', sub_department_id: '' })
   var [saving, setSaving] = useState(false)
   var [subView, setSubView] = useState(null)
+  var [departments, setDepartments] = useState([])
+  var [subDepartments, setSubDepartments] = useState([])
 
-  useEffect(function () { load() }, [])
+  useEffect(function () {
+    load()
+    supabase.from('departments').select('id, name').eq('active', true).order('name').then(function (r) { setDepartments(r.data || []) })
+    supabase.from('sub_departments').select('id, name, department_id').eq('active', true).order('name').then(function (r) { setSubDepartments(r.data || []) })
+  }, [])
 
   async function load() {
     var { data } = await supabase.from('expense_types')
@@ -434,38 +440,37 @@ function ExpenseTypeMaster({ onBack }) {
   }
 
   function openAdd() {
-    setForm({ name: '', description: '', icon: '' })
+    setForm({ name: '', description: '', icon: '', department_id: '', sub_department_id: '' })
     setEditId('new')
   }
 
   function openEdit(t) {
-    setForm({ name: t.name, description: t.description || '', icon: t.icon || '' })
+    setForm({ name: t.name, description: t.description || '', icon: t.icon || '', department_id: t.department_id ? String(t.department_id) : '', sub_department_id: t.sub_department_id ? String(t.sub_department_id) : '' })
     setEditId(t.id)
   }
 
   function cancelEdit() {
-    setForm({ name: '', description: '', icon: '' })
+    setForm({ name: '', description: '', icon: '', department_id: '', sub_department_id: '' })
     setEditId(null)
   }
 
   async function saveType() {
     if (!form.name.trim() || saving) return
     setSaving(true)
+    var payload = {
+      name: form.name.trim(),
+      description: form.description.trim() || null,
+      icon: form.icon.trim() || null,
+      department_id: form.department_id ? Number(form.department_id) : null,
+      sub_department_id: form.sub_department_id ? Number(form.sub_department_id) : null,
+    }
     if (editId === 'new') {
-      var { error } = await supabase.from('expense_types').insert({
-        name: form.name.trim(),
-        description: form.description.trim() || null,
-        icon: form.icon.trim() || null,
-        sort_order: types.length,
-        active: true,
-      })
+      payload.sort_order = types.length
+      payload.active = true
+      var { error } = await supabase.from('expense_types').insert(payload)
       if (error) { alert('Add failed: ' + error.message); setSaving(false); return }
     } else {
-      var { error: uErr } = await supabase.from('expense_types').update({
-        name: form.name.trim(),
-        description: form.description.trim() || null,
-        icon: form.icon.trim() || null,
-      }).eq('id', editId)
+      var { error: uErr } = await supabase.from('expense_types').update(payload).eq('id', editId)
       if (uErr) { alert('Update failed: ' + uErr.message); setSaving(false); return }
     }
     setSaving(false)
@@ -516,73 +521,176 @@ function ExpenseTypeMaster({ onBack }) {
 
       {types.map(function (t) {
         var subCount = (t.expense_sub_types || []).length
+        var isEditing = editId === t.id
         return (
-          <div key={t.id} className="bg-white border border-gray-200 rounded-xl p-4">
-            <div className="flex items-center justify-between">
-              <div className="flex-1 cursor-pointer" onClick={function () { setSubView(t) }}>
-                <div className="flex items-center gap-2">
-                  {t.icon && <span className="text-lg">{t.icon}</span>}
-                  <span className="text-sm font-semibold text-gray-900">{t.name}</span>
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 font-bold">
-                    {subCount} sub-type{subCount !== 1 ? 's' : ''}
-                  </span>
+          <div key={t.id}>
+            {!isEditing && (
+              <div className="bg-white border border-gray-200 rounded-xl p-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex-1 cursor-pointer" onClick={function () { setSubView(t) }}>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {t.icon && <span className="text-lg">{t.icon}</span>}
+                      <span className="text-sm font-semibold text-gray-900">{t.name}</span>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 font-bold">
+                        {subCount} sub-type{subCount !== 1 ? 's' : ''}
+                      </span>
+                      {t.department_id && (function () {
+                        var d = departments.find(function (x) { return x.id === t.department_id })
+                        var sd = t.sub_department_id ? subDepartments.find(function (x) { return x.id === t.sub_department_id }) : null
+                        if (!d) return null
+                        return <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 font-bold">{d.name}{sd ? ' › ' + sd.name : ''}</span>
+                      })()}
+                    </div>
+                    {t.description && <p className="text-xs text-gray-400 mt-0.5">{t.description}</p>}
+                  </div>
+                  <div className="flex gap-1">
+                    <button onClick={function () { setSubView(t) }}
+                      className="px-2 py-1 text-xs text-indigo-600 hover:bg-indigo-50 rounded font-medium">Sub-Types →</button>
+                    <button onClick={function () { openEdit(t) }}
+                      className="px-2 py-1 text-xs text-gray-500 hover:bg-gray-100 rounded">✎</button>
+                    <button onClick={function () { deleteType(t) }}
+                      className="px-2 py-1 text-xs text-red-400 hover:text-red-600 hover:bg-red-50 rounded">✕</button>
+                  </div>
                 </div>
-                {t.description && <p className="text-xs text-gray-400 mt-0.5">{t.description}</p>}
               </div>
-              <div className="flex gap-1">
-                <button onClick={function () { setSubView(t) }}
-                  className="px-2 py-1 text-xs text-indigo-600 hover:bg-indigo-50 rounded font-medium">Sub-Types →</button>
-                <button onClick={function () { openEdit(t) }}
-                  className="px-2 py-1 text-xs text-gray-500 hover:bg-gray-100 rounded">✎</button>
-                <button onClick={function () { deleteType(t) }}
-                  className="px-2 py-1 text-xs text-red-400 hover:text-red-600 hover:bg-red-50 rounded">✕</button>
-              </div>
-            </div>
+            )}
+            {isEditing && (function () {
+              var formSubDepts = form.department_id ? subDepartments.filter(function (sd) { return sd.department_id === Number(form.department_id) }) : []
+              return (
+                <div className="bg-white border-2 border-indigo-300 rounded-xl p-4 space-y-3">
+                  <p className="text-sm font-bold text-indigo-700">Edit Expense Type</p>
+                  <div className="grid grid-cols-6 gap-3">
+                    <div className="col-span-1">
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Icon</label>
+                      <input type="text" value={form.icon}
+                        onChange={function (e) { setForm(Object.assign({}, form, { icon: e.target.value })) }}
+                        placeholder="💰"
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm text-center"
+                        style={{ fontSize: '16px' }}
+                        maxLength={4} />
+                    </div>
+                    <div className="col-span-5">
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Name *</label>
+                      <input type="text" value={form.name}
+                        onChange={function (e) { setForm(Object.assign({}, form, { name: e.target.value })) }}
+                        placeholder="e.g. Transport, Vendor Payment, Utility"
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+                        style={{ fontSize: '16px' }} />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Description</label>
+                    <input type="text" value={form.description}
+                      onChange={function (e) { setForm(Object.assign({}, form, { description: e.target.value })) }}
+                      placeholder="Optional description"
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+                      style={{ fontSize: '16px' }} />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Department</label>
+                      <select value={form.department_id}
+                        onChange={function (e) { setForm(Object.assign({}, form, { department_id: e.target.value, sub_department_id: '' })) }}
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white"
+                        style={{ fontSize: '16px' }}>
+                        <option value="">All departments</option>
+                        {departments.map(function (d) { return <option key={d.id} value={String(d.id)}>{d.name}</option> })}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Sub-department</label>
+                      <select value={form.sub_department_id}
+                        onChange={function (e) { setForm(Object.assign({}, form, { sub_department_id: e.target.value })) }}
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white"
+                        style={{ fontSize: '16px' }}
+                        disabled={formSubDepts.length === 0}>
+                        <option value="">All</option>
+                        {formSubDepts.map(function (sd) { return <option key={sd.id} value={String(sd.id)}>{sd.name}</option> })}
+                      </select>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={cancelEdit}
+                      className="flex-1 py-2 text-sm text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 font-medium">Cancel</button>
+                    <button onClick={saveType} disabled={!form.name.trim() || saving}
+                      className="flex-1 py-2 text-sm text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 font-medium">
+                      {saving ? 'Saving...' : 'Update'}
+                    </button>
+                  </div>
+                </div>
+              )
+            })()}
           </div>
         )
       })}
 
-      {/* Add/Edit form */}
-      {editId && (
-        <div className="bg-white border-2 border-indigo-300 rounded-xl p-4 space-y-3">
-          <p className="text-sm font-bold text-indigo-700">{editId === 'new' ? 'New Expense Type' : 'Edit Expense Type'}</p>
-          <div className="grid grid-cols-6 gap-3">
-            <div className="col-span-1">
-              <label className="block text-xs font-medium text-gray-600 mb-1">Icon</label>
-              <input type="text" value={form.icon}
-                onChange={function (e) { setForm(Object.assign({}, form, { icon: e.target.value })) }}
-                placeholder="💰"
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm text-center"
-                style={{ fontSize: '16px' }}
-                maxLength={4} />
+      {/* Add NEW form — shown at bottom only for new */}
+      {editId === 'new' && (function () {
+        var formSubDepts = form.department_id ? subDepartments.filter(function (sd) { return sd.department_id === Number(form.department_id) }) : []
+        return (
+          <div className="bg-white border-2 border-indigo-300 rounded-xl p-4 space-y-3">
+            <p className="text-sm font-bold text-indigo-700">New Expense Type</p>
+            <div className="grid grid-cols-6 gap-3">
+              <div className="col-span-1">
+                <label className="block text-xs font-medium text-gray-600 mb-1">Icon</label>
+                <input type="text" value={form.icon}
+                  onChange={function (e) { setForm(Object.assign({}, form, { icon: e.target.value })) }}
+                  placeholder="💰"
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm text-center"
+                  style={{ fontSize: '16px' }}
+                  maxLength={4} />
+              </div>
+              <div className="col-span-5">
+                <label className="block text-xs font-medium text-gray-600 mb-1">Name *</label>
+                <input type="text" value={form.name}
+                  onChange={function (e) { setForm(Object.assign({}, form, { name: e.target.value })) }}
+                  placeholder="e.g. Transport, Vendor Payment, Utility"
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+                  style={{ fontSize: '16px' }} />
+              </div>
             </div>
-            <div className="col-span-5">
-              <label className="block text-xs font-medium text-gray-600 mb-1">Name *</label>
-              <input type="text" value={form.name}
-                onChange={function (e) { setForm(Object.assign({}, form, { name: e.target.value })) }}
-                placeholder="e.g. Transport, Vendor Payment, Utility"
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Description</label>
+              <input type="text" value={form.description}
+                onChange={function (e) { setForm(Object.assign({}, form, { description: e.target.value })) }}
+                placeholder="Optional description"
                 className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
                 style={{ fontSize: '16px' }} />
             </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Department</label>
+                <select value={form.department_id}
+                  onChange={function (e) { setForm(Object.assign({}, form, { department_id: e.target.value, sub_department_id: '' })) }}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white"
+                  style={{ fontSize: '16px' }}>
+                  <option value="">All departments</option>
+                  {departments.map(function (d) { return <option key={d.id} value={String(d.id)}>{d.name}</option> })}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Sub-department</label>
+                <select value={form.sub_department_id}
+                  onChange={function (e) { setForm(Object.assign({}, form, { sub_department_id: e.target.value })) }}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white"
+                  style={{ fontSize: '16px' }}
+                  disabled={formSubDepts.length === 0}>
+                  <option value="">All</option>
+                  {formSubDepts.map(function (sd) { return <option key={sd.id} value={String(sd.id)}>{sd.name}</option> })}
+                </select>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={cancelEdit}
+                className="flex-1 py-2 text-sm text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 font-medium">Cancel</button>
+              <button onClick={saveType} disabled={!form.name.trim() || saving}
+                className="flex-1 py-2 text-sm text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 font-medium">
+                {saving ? 'Saving...' : 'Add'}
+              </button>
+            </div>
           </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Description</label>
-            <input type="text" value={form.description}
-              onChange={function (e) { setForm(Object.assign({}, form, { description: e.target.value })) }}
-              placeholder="Optional description"
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
-              style={{ fontSize: '16px' }} />
-          </div>
-          <div className="flex gap-2">
-            <button onClick={cancelEdit}
-              className="flex-1 py-2 text-sm text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 font-medium">Cancel</button>
-            <button onClick={saveType} disabled={!form.name.trim() || saving}
-              className="flex-1 py-2 text-sm text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 font-medium">
-              {saving ? 'Saving...' : (editId === 'new' ? 'Add' : 'Update')}
-            </button>
-          </div>
-        </div>
-      )}
+        )
+      })()}
     </div>
   )
 }

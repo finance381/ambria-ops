@@ -1321,38 +1321,56 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
                             className="absolute top-1.5 right-1.5 w-5 h-5 flex items-center justify-center text-[10px] text-red-400 hover:text-red-600 hover:bg-red-50 rounded-full">✕</button>
                         )}
                         <div className="space-y-2">
-                          <div className="grid grid-cols-2 gap-2">
-                            <select value={alloc.departmentId}
-                              onChange={function (e) { setExpAllocations(function (p) { return p.map(function (a, j) { return j === aIdx ? Object.assign({}, a, { departmentId: e.target.value, subDepartmentId: '' }) : a }) }) }}
-                              className="w-full px-2 py-2 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-2 focus:ring-amber-500 bg-gray-50"
-                              style={{ fontSize: '16px' }}>
-                              <option value="">Dept</option>
-                              {departments.map(function (d) { return <option key={d.id} value={String(d.id)}>{d.name}</option> })}
-                            </select>
-                            {allocSubDepts.length > 0 ? (
-                              <select value={alloc.subDepartmentId}
-                                onChange={function (e) { setExpAllocations(function (p) { return p.map(function (a, j) { return j === aIdx ? Object.assign({}, a, { subDepartmentId: e.target.value }) : a }) }) }}
-                                className="w-full px-2 py-2 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-2 focus:ring-amber-500 bg-gray-50"
-                                style={{ fontSize: '16px' }}>
-                                <option value="">Sub-dept</option>
-                                {allocSubDepts.map(function (sd) { return <option key={sd.id} value={String(sd.id)}>{sd.name}</option> })}
-                              </select>
-                            ) : <div />}
-                          </div>
-                          <div className="grid grid-cols-2 gap-2">
-                            <select value={alloc.venue_id}
-                              onChange={function (e) { setExpAllocations(function (p) { return p.map(function (a, j) { return j === aIdx ? Object.assign({}, a, { venue_id: e.target.value }) : a }) }) }}
-                              className="w-full px-2 py-2 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-2 focus:ring-amber-500 bg-gray-50"
-                              style={{ fontSize: '16px' }}>
-                              <option value="">Venue</option>
-                              {venues.map(function (v) { return <option key={v.id} value={String(v.id)}>{v.code || v.name}</option> })}
-                            </select>
-                            <input type="number" min="0" step="any" inputMode="decimal" value={alloc.amount}
-                              onChange={function (e) { setExpAllocations(function (p) { return p.map(function (a, j) { return j === aIdx ? Object.assign({}, a, { amount: e.target.value }) : a }) }) }}
-                              placeholder="Amount"
-                              className="w-full px-2 py-2 border border-gray-200 rounded-md text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-amber-500"
-                              style={{ fontSize: '16px' }} />
-                          </div>
+                          {(function () {
+                            var selDept = alloc.departmentId ? departments.find(function (d) { return String(d.id) === alloc.departmentId }) : null
+                            var isVenueDept = selDept && selDept.name === 'Venues'
+                            return (
+                              <div className="space-y-2">
+                                <div className="grid grid-cols-2 gap-2">
+                                  <select value={alloc.departmentId}
+                                    onChange={function (e) { setExpAllocations(function (p) { return p.map(function (a, j) { return j === aIdx ? Object.assign({}, a, { departmentId: e.target.value, subDepartmentId: '', venue_id: '' }) : a }) }) }}
+                                    className="w-full px-2 py-2 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-2 focus:ring-amber-500 bg-gray-50"
+                                    style={{ fontSize: '16px' }}>
+                                    <option value="">Dept</option>
+                                    {departments.map(function (d) { return <option key={d.id} value={String(d.id)}>{d.name}</option> })}
+                                  </select>
+                                  {isVenueDept ? (
+                                    <select value={alloc.venue_id}
+                                      onChange={function (e) { setExpAllocations(function (p) { return p.map(function (a, j) { return j === aIdx ? Object.assign({}, a, { venue_id: e.target.value }) : a }) }) }}
+                                      className="w-full px-2 py-2 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-2 focus:ring-amber-500 bg-gray-50"
+                                      style={{ fontSize: '16px' }}>
+                                      <option value="">Venue</option>
+                                      {venues.map(function (v) { return <option key={v.id} value={String(v.id)}>{v.code || v.name}</option> })}
+                                    </select>
+                                  ) : allocSubDepts.length > 0 ? (
+                                    <select value={alloc.subDepartmentId}
+                                      onChange={function (e) { setExpAllocations(function (p) { return p.map(function (a, j) { return j === aIdx ? Object.assign({}, a, { subDepartmentId: e.target.value }) : a }) }) }}
+                                      className="w-full px-2 py-2 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-2 focus:ring-amber-500 bg-gray-50"
+                                      style={{ fontSize: '16px' }}>
+                                      <option value="">Sub-dept</option>
+                                      {allocSubDepts.map(function (sd) { return <option key={sd.id} value={String(sd.id)}>{sd.name}</option> })}
+                                    </select>
+                                  ) : <div />}
+                                </div>
+                                <div className={"grid gap-2 " + (isVenueDept ? "" : "grid-cols-2")}>
+                                  {!isVenueDept && (
+                                    <select value={alloc.venue_id}
+                                      onChange={function (e) { setExpAllocations(function (p) { return p.map(function (a, j) { return j === aIdx ? Object.assign({}, a, { venue_id: e.target.value }) : a }) }) }}
+                                      className="w-full px-2 py-2 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-2 focus:ring-amber-500 bg-gray-50"
+                                      style={{ fontSize: '16px' }}>
+                                      <option value="">Venue</option>
+                                      {venues.map(function (v) { return <option key={v.id} value={String(v.id)}>{v.code || v.name}</option> })}
+                                    </select>
+                                  )}
+                                  <input type="number" min="0" step="any" inputMode="decimal" value={alloc.amount}
+                                    onChange={function (e) { setExpAllocations(function (p) { return p.map(function (a, j) { return j === aIdx ? Object.assign({}, a, { amount: e.target.value }) : a }) }) }}
+                                    placeholder="Amount"
+                                    className="w-full px-2 py-2 border border-gray-200 rounded-md text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-amber-500"
+                                    style={{ fontSize: '16px' }} />
+                                </div>
+                              </div>
+                            )
+                          })()}
                         </div>
                       </div>
                     )
