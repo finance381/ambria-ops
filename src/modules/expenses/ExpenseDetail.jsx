@@ -34,7 +34,7 @@ function ExpenseDetail({ exp, profile, subCatMap, isAdmin, isDeptApprover, onBac
 
   useEffect(function () {
     supabase.from('expense_allocations')
-      .select('id, department, venue_id, sub_venue_id, amount_paise')
+      .select('id, department, venue_id, sub_venue_id, amount_paise, department_id, sub_department_id')
       .eq('expense_id', exp.id)
       .then(function (res) {
         var rows = res.data || []
@@ -42,13 +42,19 @@ function ExpenseDetail({ exp, profile, subCatMap, isAdmin, isDeptApprover, onBac
         if (rows.length > 0) {
           var vIds = rows.map(function (r) { return r.venue_id }).filter(Boolean)
           var svIds = rows.map(function (r) { return r.sub_venue_id }).filter(Boolean)
+          var dIds = rows.map(function (r) { return r.department_id }).filter(Boolean)
+          var sdIds = rows.map(function (r) { return r.sub_department_id }).filter(Boolean)
           Promise.all([
             vIds.length > 0 ? supabase.from('venues').select('id, code, name').in('id', vIds) : { data: [] },
-            svIds.length > 0 ? supabase.from('sub_venues').select('id, name').in('id', svIds) : { data: [] }
+            svIds.length > 0 ? supabase.from('sub_venues').select('id, name').in('id', svIds) : { data: [] },
+            dIds.length > 0 ? supabase.from('departments').select('id, name').in('id', dIds) : { data: [] },
+            sdIds.length > 0 ? supabase.from('sub_departments').select('id, name').in('id', sdIds) : { data: [] }
           ]).then(function (results) {
             var map = {}
             ;(results[0].data || []).forEach(function (v) { map['v_' + v.id] = v.code + ' — ' + v.name })
             ;(results[1].data || []).forEach(function (sv) { map['sv_' + sv.id] = sv.name })
+            ;(results[2].data || []).forEach(function (d) { map['d_' + d.id] = d.name })
+            ;(results[3].data || []).forEach(function (sd) { map['sd_' + sd.id] = sd.name })
             setAllocVenues(map)
           })
         }
@@ -349,6 +355,12 @@ function ExpenseDetail({ exp, profile, subCatMap, isAdmin, isDeptApprover, onBac
             </div>
           )
         })}
+        {exp.tax_paise > 0 && (
+          <div className="flex justify-between">
+            <span className="text-sm text-gray-500">Tax</span>
+            <span className="text-sm text-gray-800">{formatPoints(exp.tax_paise)}</span>
+          </div>
+        )}
         {exp.description && (
           <div className="border-t border-gray-100 pt-3">
             <span className="text-xs font-medium text-gray-500 uppercase tracking-wider">Description</span>
@@ -361,18 +373,26 @@ function ExpenseDetail({ exp, profile, subCatMap, isAdmin, isDeptApprover, onBac
       </div>
 
       {allocations.length > 0 && (
-        <div className="bg-white border border-gray-200 rounded-lg p-4">
-          <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Allocations</p>
-          <div className="space-y-1.5">
+        <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+          <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
+            <p className="text-xs font-bold text-gray-500 uppercase tracking-wider">Allocations</p>
+            <p className="text-xs font-bold text-gray-700">{formatPoints(allocations.reduce(function (s, a) { return s + (a.amount_paise || 0) }, 0))}</p>
+          </div>
+          <div className="divide-y divide-gray-100">
             {allocations.map(function (a) {
+              var deptLabel = a.department_id && allocVenues['d_' + a.department_id] ? allocVenues['d_' + a.department_id] : a.department || '—'
+              var subDeptLabel = a.sub_department_id && allocVenues['sd_' + a.sub_department_id] ? allocVenues['sd_' + a.sub_department_id] : null
+              var venueLabel = a.venue_id && allocVenues['v_' + a.venue_id] ? allocVenues['v_' + a.venue_id] : null
+              var subVenueLabel = a.sub_venue_id && allocVenues['sv_' + a.sub_venue_id] ? allocVenues['sv_' + a.sub_venue_id] : null
               return (
-                <div key={a.id} className="flex items-center justify-between text-sm">
-                  <span className="text-gray-700">
-                    {a.department}
-                    {a.venue_id && allocVenues['v_' + a.venue_id] ? ' · ' + allocVenues['v_' + a.venue_id] : ''}
-                    {a.sub_venue_id && allocVenues['sv_' + a.sub_venue_id] ? ' > ' + allocVenues['sv_' + a.sub_venue_id] : ''}
-                  </span>
-                  {a.amount_paise > 0 && <span className="font-medium text-gray-800">{formatPoints(a.amount_paise)}</span>}
+                <div key={a.id} className="px-4 py-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-gray-800">{deptLabel}{subDeptLabel ? ' › ' + subDeptLabel : ''}</span>
+                    {a.amount_paise > 0 && <span className="text-sm font-bold text-gray-900">{formatPoints(a.amount_paise)}</span>}
+                  </div>
+                  {venueLabel && (
+                    <p className="text-[11px] text-gray-500 mt-0.5">{venueLabel}{subVenueLabel ? ' › ' + subVenueLabel : ''}</p>
+                  )}
                 </div>
               )
             })}

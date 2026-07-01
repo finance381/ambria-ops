@@ -73,7 +73,7 @@ function Requisitions({ profile, onBack }) {
     else setLoadingMore(true)
 
     var query = supabase.from('requisitions')
-      .select('id, department, urgency, purpose, status, created_at, needed_by, requested_by, rejection_reason, event_id, sub_department_id, category_id, sub_category_id, req_type, expense_type_id, expense_sub_type_id, expense_amount_paise, expense_date, receipt_path, events(event_name), expense_types(name), expense_sub_types(name), profiles:requested_by(name)')
+      .select('id, department, urgency, purpose, status, created_at, needed_by, requested_by, rejection_reason, event_id, sub_department_id, category_id, sub_category_id, req_type, expense_type_id, expense_sub_type_id, expense_amount_paise, expense_date, receipt_path, events(event_name), expense_types(name), expense_sub_types(name), profiles:requested_by(name), categories(name), sub_departments(name)')
       .eq('requested_by', profile.id)
       .order('created_at', { ascending: false })
       .range(offset, offset + PAGE_SIZE)
@@ -153,6 +153,29 @@ function Requisitions({ profile, onBack }) {
     setDetailReq(req)
     if (req.req_type === 'expense') {
       setDetailItems([])
+      // Fetch expense allocations stored on the requisition
+      supabase.from('expense_allocations')
+        .select('id, department, venue_id, sub_venue_id, amount_paise, department_id, sub_department_id')
+        .eq('requisition_id', req.id)
+        .then(function (res) {
+          var rows = res.data || []
+          if (rows.length > 0) {
+            var vIds = rows.map(function (r) { return r.venue_id }).filter(Boolean)
+            var dIds = rows.map(function (r) { return r.department_id }).filter(Boolean)
+            var sdIds = rows.map(function (r) { return r.sub_department_id }).filter(Boolean)
+            Promise.all([
+              vIds.length > 0 ? supabase.from('venues').select('id, code, name').in('id', vIds) : { data: [] },
+              dIds.length > 0 ? supabase.from('departments').select('id, name').in('id', dIds) : { data: [] },
+              sdIds.length > 0 ? supabase.from('sub_departments').select('id, name').in('id', sdIds) : { data: [] }
+            ]).then(function (results) {
+              var nameMap = {}
+              ;(results[0].data || []).forEach(function (v) { nameMap['v_' + v.id] = v.code || v.name })
+              ;(results[1].data || []).forEach(function (d) { nameMap['d_' + d.id] = d.name })
+              ;(results[2].data || []).forEach(function (sd) { nameMap['sd_' + sd.id] = sd.name })
+              setDetailItems(rows.map(function (r) { return Object.assign({}, r, { _names: nameMap }) }))
+            })
+          }
+        })
       setView('detail')
       return
     }
@@ -1664,51 +1687,100 @@ function RequisitionDetail({ req, items, profile, isAdmin, isDeptApprover, onBac
 
       {/* Expense-type detail */}
       {req.req_type === 'expense' && (
-        <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-3">
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">💰 Expense Request</span>
+        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+          <div className="px-4 py-2.5 bg-amber-50 border-b border-amber-200 flex items-center justify-between">
+            <span className="text-[10px] font-bold uppercase tracking-wide text-amber-700">💰 Expense Request</span>
+            <span className="text-sm font-bold text-amber-900">{formatPoints(req.expense_amount_paise)}</span>
           </div>
-          {req.expense_types?.name && (
+          <div className="p-4 space-y-3">
+            {req.expense_types?.name && (
+              <div className="flex justify-between">
+                <span className="text-sm text-gray-500">Type</span>
+                <span className="text-sm text-gray-800 text-right">{req.expense_types.name}{req.expense_sub_types?.name ? ' › ' + req.expense_sub_types.name : ''}</span>
+              </div>
+            )}
+            {req.categories?.name && (
+              <div className="flex justify-between">
+                <span className="text-sm text-gray-500">Category</span>
+                <span className="text-sm text-gray-800">{req.categories.name}</span>
+              </div>
+            )}
             <div className="flex justify-between">
-              <span className="text-sm text-gray-500">Expense Type</span>
-              <span className="text-sm text-gray-800">{req.expense_types.name}{req.expense_sub_types?.name ? ' > ' + req.expense_sub_types.name : ''}</span>
+              <span className="text-sm text-gray-500">Department</span>
+              <span className="text-sm text-gray-800">{req.department}{req.sub_departments?.name ? ' › ' + req.sub_departments.name : ''}</span>
             </div>
-          )}
-          <div className="flex justify-between">
-            <span className="text-sm text-gray-500">Amount</span>
-            <span className="text-sm font-bold text-gray-900">{formatPoints(req.expense_amount_paise)}</span>
+            {req.expense_date && (
+              <div className="flex justify-between">
+                <span className="text-sm text-gray-500">Expense Date</span>
+                <span className="text-sm text-gray-800">{formatDate(req.expense_date)}</span>
+              </div>
+            )}
+            {req.event_id && req.events?.event_name && (
+              <div className="flex justify-between">
+                <span className="text-sm text-gray-500">Event</span>
+                <span className="text-sm text-gray-800">📅 {req.events.event_name}</span>
+              </div>
+            )}
+            {req.purpose && (
+              <div className="border-t border-gray-100 pt-3">
+                <span className="text-xs font-medium text-gray-500 uppercase tracking-wider">Purpose</span>
+                <p className="text-sm text-gray-800 mt-1">{req.purpose}</p>
+              </div>
+            )}
           </div>
-          {req.expense_date && (
-            <div className="flex justify-between">
-              <span className="text-sm text-gray-500">Expense Date</span>
-              <span className="text-sm text-gray-800">{formatDate(req.expense_date)}</span>
-            </div>
-          )}
-          {req.purpose && (
-            <div>
-              <span className="text-sm text-gray-500">Purpose</span>
-              <p className="text-sm text-gray-800 mt-0.5">{req.purpose}</p>
-            </div>
-          )}
+
+          {/* Receipt */}
           {(function () {
             var rUrl = req.receipt_path ? supabase.storage.from('receipts').getPublicUrl(req.receipt_path).data?.publicUrl : null
-            if (!rUrl) return null
+            if (!rUrl) return (
+              <div className="px-4 py-2.5 bg-amber-50/50 border-t border-amber-100 flex items-center gap-2">
+                <span className="text-amber-500">⚠</span>
+                <span className="text-xs font-medium text-amber-700">No receipt attached</span>
+              </div>
+            )
             return (
-              <div>
-                <span className="text-sm text-gray-500">Receipt</span>
+              <div className="border-t border-gray-200 p-3">
+                <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">📎 Receipt</p>
                 {/\.(jpg|jpeg|png|gif|webp)$/i.test(req.receipt_path || '') ? (
                   <a href={rUrl} target="_blank" rel="noopener noreferrer">
-                    <img src={rUrl} alt="Receipt" className="mt-1 w-full max-h-60 object-contain rounded-lg border border-gray-200 bg-gray-50" />
+                    <img src={rUrl} alt="Receipt" className="w-full max-h-60 object-contain rounded-lg border border-gray-200 bg-gray-50" />
                   </a>
                 ) : (
                   <a href={rUrl} target="_blank" rel="noopener noreferrer"
-                    className="mt-1 inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors">
-                    📎 View Receipt
+                    className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors">
+                    📎 View Attachment
                   </a>
                 )}
               </div>
             )
           })()}
+
+          {/* Allocations from detailItems (expense allocs loaded in openDetail) */}
+          {items.length > 0 && items[0]._names && (
+            <div className="border-t border-gray-200">
+              <div className="px-4 py-2 bg-gray-50 flex items-center justify-between">
+                <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Allocations</span>
+                <span className="text-xs font-bold text-gray-700">{formatPoints(items.reduce(function (s, a) { return s + (a.amount_paise || 0) }, 0))}</span>
+              </div>
+              <div className="divide-y divide-gray-100">
+                {items.map(function (a) {
+                  var nm = a._names || {}
+                  var deptLabel = a.department_id && nm['d_' + a.department_id] ? nm['d_' + a.department_id] : a.department || '—'
+                  var subDeptLabel = a.sub_department_id && nm['sd_' + a.sub_department_id] ? nm['sd_' + a.sub_department_id] : null
+                  var venueLabel = a.venue_id && nm['v_' + a.venue_id] ? nm['v_' + a.venue_id] : null
+                  return (
+                    <div key={a.id} className="px-4 py-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-medium text-gray-800">{deptLabel}{subDeptLabel ? ' › ' + subDeptLabel : ''}</span>
+                        {a.amount_paise > 0 && <span className="text-sm font-bold text-gray-900">{formatPoints(a.amount_paise)}</span>}
+                      </div>
+                      {venueLabel && <p className="text-[11px] text-gray-500 mt-0.5">{venueLabel}</p>}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
