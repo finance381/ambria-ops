@@ -11,6 +11,7 @@ function makeEntry() {
     _key: Date.now() + '_' + Math.random().toString(36).slice(2, 8),
     department: '',
     subDeptId: '',
+    venueIdTop: '',
     categoryId: '',
     expenseTypeId: '',
     expenseSubTypeId: '',
@@ -132,7 +133,7 @@ function ExpenseForm({ profile, onDone }) {
       if (i !== idx) return e
       var copy = Object.assign({}, e)
       copy[field] = val
-      if (field === 'department') { copy.subDeptId = ''; copy.categoryId = '' }
+      if (field === 'department') { copy.subDeptId = ''; copy.venueIdTop = ''; copy.categoryId = '' }
       if (field === 'subDeptId') copy.categoryId = ''
       if (field === 'expenseTypeId') { copy.expenseSubTypeId = ''; copy.fieldValues = {} }
       if (field === 'expenseSubTypeId') { copy.fieldValues = {} }
@@ -538,8 +539,22 @@ function ExpenseForm({ profile, onDone }) {
                 </select>
               </div>
 
-              {/* Sub-department */}
+              {/* Sub-department or Venue */}
               {entry.department && (function () {
+                var selDept = departments.find(function (d) { return String(d.id) === entry.department })
+                var isVenueDept = selDept && selDept.name.toLowerCase().indexOf('venue') === 0
+                if (isVenueDept) {
+                  return (
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Venue</label>
+                      <select value={entry.venueIdTop} onChange={function (e) { updateEntry(idx, 'venueIdTop', e.target.value) }}
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-amber-300" style={{ fontSize: '16px' }}>
+                        <option value="">Select venue...</option>
+                        {venues.map(function (v) { return <option key={v.id} value={String(v.id)}>{v.code + ' — ' + v.name}</option> })}
+                      </select>
+                    </div>
+                  )
+                }
                 var deptSubs = subDepartments.filter(function (sd) { return sd.department_id === Number(entry.department) })
                 if (deptSubs.length === 0) return null
                 return (
@@ -663,32 +678,43 @@ function ExpenseForm({ profile, onDone }) {
                 <div className="space-y-2">
                   {entry.allocations.map(function (alloc, aIdx) {
                     var allocSubDepts = alloc.departmentId ? subDepartments.filter(function (sd) { return sd.department_id === Number(alloc.departmentId) }) : []
+                    var allocDept = alloc.departmentId ? departments.find(function (d) { return String(d.id) === alloc.departmentId }) : null
+                    var allocIsVenue = allocDept && allocDept.name.toLowerCase().indexOf('venue') === 0
                     return (
                       <div key={aIdx} className="flex gap-2 items-start">
                         <div className="flex-1 space-y-1.5">
                           <div className="grid grid-cols-2 gap-2">
                             <select value={alloc.departmentId}
-                              onChange={function (e) { setEntries(function (prev) { return prev.map(function (en, i) { if (i !== idx) return en; var copy = Object.assign({}, en); copy.allocations = en.allocations.map(function (a, j) { return j === aIdx ? Object.assign({}, a, { departmentId: e.target.value, subDepartmentId: '' }) : a }); return copy }) }) }}
+                              onChange={function (e) { setEntries(function (prev) { return prev.map(function (en, i) { if (i !== idx) return en; var copy = Object.assign({}, en); copy.allocations = en.allocations.map(function (a, j) { return j === aIdx ? Object.assign({}, a, { departmentId: e.target.value, subDepartmentId: '', venueId: '' }) : a }); return copy }) }) }}
                               className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs bg-white focus:ring-2 focus:ring-amber-300" style={{ fontSize: '16px' }}>
                               <option value="">Dept</option>
                               {departments.map(function (d) { return <option key={d.id} value={String(d.id)}>{d.name}</option> })}
                             </select>
-                            {allocSubDepts.length > 0 && (
+                            {allocIsVenue ? (
+                              <select value={alloc.venueId}
+                                onChange={function (e) { updateAllocation(idx, aIdx, 'venueId', e.target.value) }}
+                                className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs bg-white focus:ring-2 focus:ring-amber-300" style={{ fontSize: '16px' }}>
+                                <option value="">Venue</option>
+                                {venues.map(function (v) { return <option key={v.id} value={String(v.id)}>{v.code + ' — ' + v.name}</option> })}
+                              </select>
+                            ) : allocSubDepts.length > 0 ? (
                               <select value={alloc.subDepartmentId}
                                 onChange={function (e) { updateAllocation(idx, aIdx, 'subDepartmentId', e.target.value) }}
                                 className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs bg-white focus:ring-2 focus:ring-amber-300" style={{ fontSize: '16px' }}>
                                 <option value="">Sub-dept</option>
                                 {allocSubDepts.map(function (sd) { return <option key={sd.id} value={String(sd.id)}>{sd.name}</option> })}
                               </select>
-                            )}
+                            ) : <div />}
                           </div>
-                          <div className="grid grid-cols-2 gap-2">
-                            <select value={alloc.venueId}
-                              onChange={function (e) { updateAllocation(idx, aIdx, 'venueId', e.target.value) }}
-                              className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs bg-white focus:ring-2 focus:ring-amber-300" style={{ fontSize: '16px' }}>
-                              <option value="">Venue</option>
-                              {venues.map(function (v) { return <option key={v.id} value={String(v.id)}>{v.code}</option> })}
-                            </select>
+                          <div className={"grid gap-2 " + (allocIsVenue ? "" : "grid-cols-2")}>
+                            {!allocIsVenue && (
+                              <select value={alloc.venueId}
+                                onChange={function (e) { updateAllocation(idx, aIdx, 'venueId', e.target.value) }}
+                                className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs bg-white focus:ring-2 focus:ring-amber-300" style={{ fontSize: '16px' }}>
+                                <option value="">Venue</option>
+                                {venues.map(function (v) { return <option key={v.id} value={String(v.id)}>{v.code}</option> })}
+                              </select>
+                            )}
                             <input type="number" inputMode="numeric" value={alloc.amountPaise}
                               onChange={function (e) { updateAllocation(idx, aIdx, 'amountPaise', e.target.value) }}
                               placeholder="Amt" className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs focus:ring-2 focus:ring-amber-300" style={{ fontSize: '16px' }} />
