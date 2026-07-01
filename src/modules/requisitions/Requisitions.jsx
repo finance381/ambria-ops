@@ -1323,7 +1323,7 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
                         <div className="space-y-2">
                           {(function () {
                             var selDept = alloc.departmentId ? departments.find(function (d) { return String(d.id) === alloc.departmentId }) : null
-                            var isVenueDept = selDept && selDept.name === 'Venues'
+                            var isVenueDept = selDept && selDept.name.toLowerCase().indexOf('venue') === 0
                             return (
                               <div className="space-y-2">
                                 <div className="grid grid-cols-2 gap-2">
