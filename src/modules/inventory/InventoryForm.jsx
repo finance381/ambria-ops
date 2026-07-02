@@ -32,7 +32,7 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved }) {
   var [description, setDescription] = useState(seed?.description || '')
   var [nameHindi, setNameHindi] = useState(seed?.name_hindi || '')
   var [hiEdited, setHiEdited] = useState(false)
-  var nameManual = useRef(false)
+  var nameManual = useRef(!!item)
   var [qty, setQty] = useState(seed?.qty ?? '')
   var [unit, setUnit] = useState(seed?.unit || 'Pieces')
   var [minOrderQty, setMinOrderQty] = useState(seed?.min_order_qty ?? seed?.season_reorder_qty ?? '')
@@ -161,9 +161,10 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved }) {
             if (existing) {
               var merged = Object.assign({}, existing, { type: fType, options: f.options })
               // Migrate legacy: select/text values were stored in qty instead of value
-              if ((fType === 'select' || fType === 'text') && !merged.value && merged.qty) {
-                merged.value = merged.qty + (merged.unit && merged.unit !== 'Pieces' ? ' ' + merged.unit : '')
-                merged.value = merged.value.trim()
+              if ((fType === 'select' || fType === 'text') && !merged.value) {
+                var effQ = merged.qty && merged.qty !== 'Pieces' ? merged.qty : ''
+                var effU = merged.unit && merged.unit !== 'Pieces' ? merged.unit : ''
+                merged.value = (effQ + (effU ? ' ' + effU : '')).trim()
               }
               return merged
             }
@@ -322,7 +323,7 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved }) {
 
   async function uploadImage(itemId, prefix) {
     if (!imageFile) return null
-    var ext = imageFile.name.split('.').pop() || 'jpg'; var path = (prefix || 'inventory') + '/' + itemId + '.' + ext
+    var ext = imageFile.name.split('.').pop() || 'jpg'; var path = (prefix || 'inventory') + '/' + itemId + '_' + Date.now() + '.' + ext
     var { error } = await supabase.storage.from('images').upload(path, imageFile, { upsert: true })
     if (error) { setErrors(function (prev) { return { ...prev, img: 'Upload failed: ' + error.message } }); return null }
     return path

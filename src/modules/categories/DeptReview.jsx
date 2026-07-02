@@ -15,6 +15,7 @@ function DeptReview({ profile }) {
   var [editingItem, setEditingItem] = useState(null)
   var [dateFilter, setDateFilter] = useState('')
   var [catFilter, setCatFilter] = useState('')
+  var [subCatFilter, setSubCatFilter] = useState('')
   var [search, setSearch] = useState('')
   var [venueFilter, setVenueFilter] = useState('')
   var [subVenueFilter, setSubVenueFilter] = useState('')
@@ -113,6 +114,7 @@ function DeptReview({ profile }) {
   var filtered = items.filter(function (item) {
    var matchDate = !dateFilter || (item.entry_date || item.created_at || '').substring(0, 10) === dateFilter
    var matchCat = !catFilter || String(item.category_id) === catFilter
+   var matchSubCat = !subCatFilter || String(item.sub_category_id) === subCatFilter
    var matchSearch = !search ||
      item.name.toLowerCase().includes(searchLower) ||
      (item.name_hindi || '').toLowerCase().includes(searchLower) ||
@@ -122,7 +124,7 @@ function DeptReview({ profile }) {
    var matchStatus = item.status === statusTab
    var matchVenue = !venueFilter || (item.venue_allocations || []).some(function (va) { return String(va.venue_id) === venueFilter })
    var matchSubVenue = !subVenueFilter || (item.venue_allocations || []).some(function (va) { return String(va.sub_venue_id) === subVenueFilter })
-    return matchStatus && matchDate && matchSearch && matchCat && matchVenue && matchSubVenue
+    return matchStatus && matchDate && matchSearch && matchCat && matchSubCat && matchVenue && matchSubVenue
   })
 
   var venueMap = {}
@@ -149,7 +151,7 @@ function DeptReview({ profile }) {
   })
   subVenueOptions.sort(function (a, b) { return a.name.localeCompare(b.name) })
 
-  var hasFilters = dateFilter || catFilter || search || venueFilter || subVenueFilter
+  var hasFilters = dateFilter || catFilter || subCatFilter || search || venueFilter || subVenueFilter
 
   return (
     <div className="space-y-3">
@@ -179,10 +181,19 @@ function DeptReview({ profile }) {
           className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
           style={{ fontSize: '16px' }} />
         <select value={catFilter}
-          onChange={function (e) { setCatFilter(e.target.value) }}
+          onChange={function (e) { setCatFilter(e.target.value); setSubCatFilter('') }}
           className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
           <option value="">All Categories</option>
           {catOptions.map(function (c) { return <option key={c.id} value={String(c.id)}>{c.name}</option> })}
+        </select>
+        <select value={subCatFilter}
+          onChange={function (e) { setSubCatFilter(e.target.value) }}
+          className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+          <option value="">All Sub-categories</option>
+          {[...new Set(items.filter(function (i) { return i.status === statusTab && (!catFilter || String(i.category_id) === catFilter) && i.sub_category_id }).map(function (i) { return i.sub_category_id }))].map(function (scid) {
+            var it = items.find(function (i) { return i.sub_category_id === scid })
+            return <option key={scid} value={String(scid)}>{it?.sub_categories?.name || '—'}</option>
+          })}
         </select>
         <select value={venueFilter}
           onChange={function (e) { setVenueFilter(e.target.value); setSubVenueFilter('') }}
@@ -199,7 +210,7 @@ function DeptReview({ profile }) {
           </select>
         )}
         {hasFilters && (
-          <button onClick={function () { setDateFilter(''); setCatFilter(''); setSearch(''); setVenueFilter(''); setSubVenueFilter('') }}
+          <button onClick={function () { setDateFilter(''); setCatFilter(''); setSubCatFilter(''); setSearch(''); setVenueFilter(''); setSubVenueFilter('') }}
             className="px-3 py-2 text-xs font-bold text-gray-500 bg-gray-100 rounded-lg hover:bg-gray-200 active:bg-gray-300 transition-colors">
             ✕ Reset
           </button>
