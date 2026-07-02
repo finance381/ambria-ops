@@ -148,26 +148,27 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved }) {
   }
   useEffect(function () {
     if (categoryId) {
+      if (categories.length === 0) return // categories still loading — don't wipe dimensions yet
       var cat = categories.find(function (c) { return String(c.id) === categoryId })
       var fields = cat?.dimension_fields || []
       setCategoryDimFields(fields)
       if (fields.length > 0) {
         setDimensionValues(function (prev) {
+          var source = prev.length > 0 ? prev : (seed?.dimensions || [])
           return fields.map(function (f) {
             var fType = f.type || 'number'
-            var existing = prev.find(function (d) { return d.name === f.name })
+            var existing = source.find(function (d) { return d.name === f.name })
             if (existing) return Object.assign({}, existing, { type: fType, options: f.options })
             if (fType === 'text') return { name: f.name, type: 'text', value: '' }
             if (fType === 'select') return { name: f.name, type: 'select', value: '', options: f.options || [] }
             return { name: f.name, type: 'number', qty: '', unit: 'Pieces' }
           })
         })
-      }
+      } else { setDimensionValues([]) }
     } else { setCategoryDimFields([]); setDimensionValues([]) }
   }, [categoryId, categories])
 
   useEffect(function () {
-    if (isEdit) return
     if (nameManual.current) return
     var genFields = categoryDimFields.filter(function (f) { return f.nameGen })
     if (genFields.length === 0) return
@@ -321,9 +322,23 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved }) {
 
   function validate() {
     var errs = {}
-    if (!categoryId) errs.cat = 'Category is required' || 'Category is required'
-    if (!name.trim()) errs.item = 'Item name is required' || 'Item name is required'
-    if (!qty && qty !== 0) errs.qty = 'Quantity is required' || 'Quantity is required'
+    if (!categoryId) errs.cat = 'Category is required'
+    var hasNameGen = categoryDimFields.some(function (f) { return f.nameGen })
+    if (!name.trim() && hasNameGen) {
+      var parts = []
+      categoryDimFields.filter(function (f) { return f.nameGen }).forEach(function (f) {
+        var dim = dimensionValues.find(function (d) { return d.name === f.name })
+        if (!dim) return
+        var dimType = f.type || 'number'
+        var val = ''
+        if (dimType === 'number') { val = (dim.qty ? dim.qty + ' ' + (dim.unit || '') : '').trim() }
+        else { val = (dim.value || '').trim() }
+        if (val) parts.push(val)
+      })
+      if (parts.length > 0) setName(parts.join(' '))
+    }
+    if (!name.trim() && !hasNameGen) errs.item = 'Item name is required'
+    if (!qty && qty !== 0) errs.qty = 'Quantity is required'
     var hasAlloc = allocations.some(function (a) { return a.department && a.qty })
     if (!hasAlloc) errs.dept = 'At least one allocation is required'
     setErrors(errs); return Object.keys(errs).length === 0

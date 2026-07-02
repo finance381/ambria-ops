@@ -54,6 +54,7 @@ function ExpenseForm({ profile, onDone }) {
   var voice = useVoice()
   var [error, setError] = useState('')
   var [success, setSuccess] = useState('')
+  var [zoomImg, setZoomImg] = useState('')
 
   useEffect(function () { loadRefData() }, [])
 
@@ -735,7 +736,10 @@ function ExpenseForm({ profile, onDone }) {
                 <label className="block text-xs font-medium text-gray-600 mb-1">Receipt <span className="text-red-500">*</span></label>
                 {entry.receiptPreview ? (
                   <div className="relative inline-block">
-                    <img src={entry.receiptPreview} alt="Receipt" className="h-32 rounded-lg border border-gray-200 object-cover" />
+                    <img src={entry.receiptPreview} alt="Receipt"
+                      onClick={function () { setZoomImg(entry.receiptPreview) }}
+                      className="h-32 rounded-lg border border-gray-200 object-cover cursor-pointer active:opacity-80" />
+                    <p className="text-[10px] text-gray-400 text-center mt-1">Tap to enlarge</p>
                     <button type="button" onClick={function () { removeReceipt(idx) }}
                       className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full text-xs flex items-center justify-center shadow-sm hover:bg-red-600">✕</button>
                   </div>
@@ -786,6 +790,15 @@ function ExpenseForm({ profile, onDone }) {
           {saving ? 'Submitting...' : 'Submit ' + entries.length + ' Expense' + (entries.length > 1 ? 's' : '')}
         </button>
       </div>
+
+      {zoomImg && (
+        <div onClick={function () { setZoomImg('') }}
+          className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4" style={{ margin: 0 }}>
+          <button onClick={function () { setZoomImg('') }}
+            className="absolute top-4 right-4 w-10 h-10 bg-white/20 text-white rounded-full text-xl flex items-center justify-center hover:bg-white/30">✕</button>
+          <img src={zoomImg} alt="Receipt" className="max-w-full max-h-full object-contain rounded-lg" />
+        </div>
+      )}
     </div>
   )
 }

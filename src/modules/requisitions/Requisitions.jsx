@@ -379,6 +379,7 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
   var [expAmount, setExpAmount] = useState(editReq?.expense_amount_paise ? String(editReq.expense_amount_paise / 100) : '')
   var [expDate, setExpDate] = useState(editReq?.expense_date || new Date().toISOString().slice(0, 10))
   var [expReceipt, setExpReceipt] = useState(null)
+  var [expReceiptZoom, setExpReceiptZoom] = useState('')
   var [expSubTypeId, setExpSubTypeId] = useState(editReq?.expense_sub_type_id ? String(editReq.expense_sub_type_id) : '')
   var [expSubTypes, setExpSubTypes] = useState([])
   var [expSubTypeFields, setExpSubTypeFields] = useState([])
@@ -1392,22 +1393,35 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">📷 Receipt / Quote</label>
             {expReceipt ? (
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-green-600 font-medium truncate flex-1">✓ {expReceipt.name}</span>
-                <button type="button" onClick={function () { setExpReceipt(null) }}
-                  className="text-xs text-red-500 font-bold hover:text-red-700">✕</button>
+              <div className="space-y-1.5">
+                {expReceipt._preview && /\.(jpg|jpeg|png|gif|webp)$/i.test(expReceipt.name) ? (
+                  <div className="relative inline-block">
+                    <img src={expReceipt._preview} alt="Receipt"
+                      onClick={function () { setExpReceiptZoom(expReceipt._preview) }}
+                      className="h-32 rounded-lg border border-gray-200 object-cover cursor-pointer active:opacity-80" />
+                    <p className="text-[10px] text-gray-400 text-center mt-1">Tap to enlarge</p>
+                    <button type="button" onClick={function () { if (expReceipt._preview) URL.revokeObjectURL(expReceipt._preview); setExpReceipt(null) }}
+                      className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full text-xs flex items-center justify-center shadow-sm hover:bg-red-600">✕</button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-green-600 font-medium truncate flex-1">✓ {expReceipt.name}</span>
+                    <button type="button" onClick={function () { setExpReceipt(null) }}
+                      className="text-xs text-red-500 font-bold hover:text-red-700">✕</button>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="flex gap-2">
                 <label className="flex-1 py-2.5 text-center text-sm text-amber-700 border border-dashed border-amber-300 rounded-lg cursor-pointer hover:bg-amber-100 transition-colors">
                   📁 Gallery
                   <input type="file" accept="image/*" className="hidden"
-                    onChange={function (e) { if (e.target.files?.[0]) setExpReceipt(e.target.files[0]); e.target.value = '' }} />
+                    onChange={function (e) { var f = e.target.files?.[0]; if (f) { f._preview = URL.createObjectURL(f); setExpReceipt(f) } e.target.value = '' }} />
                 </label>
                 <label className="flex-1 py-2.5 text-center text-sm text-amber-700 border border-dashed border-amber-300 rounded-lg cursor-pointer hover:bg-amber-100 transition-colors">
                   📷 Camera
                   <input type="file" accept="image/*" capture="environment" className="hidden"
-                    onChange={function (e) { if (e.target.files?.[0]) setExpReceipt(e.target.files[0]); e.target.value = '' }} />
+                    onChange={function (e) { var f = e.target.files?.[0]; if (f) { f._preview = URL.createObjectURL(f); setExpReceipt(f) } e.target.value = '' }} />
                 </label>
               </div>
             )}
@@ -1438,6 +1452,15 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
           {saving ? (isEditing ? 'Updating...' : 'Submitting...') : (isEditing ? 'Update Request' : 'Submit Request')}
         </button>
       </div>
+
+      {expReceiptZoom && (
+        <div onClick={function () { setExpReceiptZoom('') }}
+          className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4" style={{ margin: 0 }}>
+          <button onClick={function () { setExpReceiptZoom('') }}
+            className="absolute top-4 right-4 w-10 h-10 bg-white/20 text-white rounded-full text-xl flex items-center justify-center hover:bg-white/30">✕</button>
+          <img src={expReceiptZoom} alt="Receipt" className="max-w-full max-h-full object-contain rounded-lg" />
+        </div>
+      )}
     </div>
   )
 }
@@ -1449,6 +1472,7 @@ function RequisitionDetail({ req, items, profile, isAdmin, isDeptApprover, onBac
   var [saving, setSaving] = useState(false)
   var [rejectMode, setRejectMode] = useState(false)
   var [rejectReason, setRejectReason] = useState('')
+  var [zoomImg, setZoomImg] = useState('')
   var [poStatuses, setPoStatuses] = useState({})
   var [stockQty, setStockQty] = useState({})
   var [stockLoading, setStockLoading] = useState(false)
@@ -1783,9 +1807,12 @@ function RequisitionDetail({ req, items, profile, isAdmin, isDeptApprover, onBac
               <div className="border-t border-gray-200 p-3">
                 <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">📎 Receipt</p>
                 {/\.(jpg|jpeg|png|gif|webp)$/i.test(req.receipt_path || '') ? (
-                  <a href={rUrl} target="_blank" rel="noopener noreferrer">
-                    <img src={rUrl} alt="Receipt" className="w-full max-h-60 object-contain rounded-lg border border-gray-200 bg-gray-50" />
-                  </a>
+                  <div>
+                    <img src={rUrl} alt="Receipt"
+                      onClick={function () { setZoomImg(rUrl) }}
+                      className="w-full max-h-60 object-contain rounded-lg border border-gray-200 bg-gray-50 cursor-pointer active:opacity-80" />
+                    <p className="text-[10px] text-gray-400 text-center mt-1">Tap to enlarge</p>
+                  </div>
                 ) : (
                   <a href={rUrl} target="_blank" rel="noopener noreferrer"
                     className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors">
@@ -2094,6 +2121,15 @@ function RequisitionDetail({ req, items, profile, isAdmin, isDeptApprover, onBac
               {saving ? 'Deleting...' : 'Confirm Delete'}
             </button>
           </div>
+        </div>
+      )}
+
+      {zoomImg && (
+        <div onClick={function () { setZoomImg('') }}
+          className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4" style={{ margin: 0 }}>
+          <button onClick={function () { setZoomImg('') }}
+            className="absolute top-4 right-4 w-10 h-10 bg-white/20 text-white rounded-full text-xl flex items-center justify-center hover:bg-white/30">✕</button>
+          <img src={zoomImg} alt="Receipt" className="max-w-full max-h-full object-contain rounded-lg" />
         </div>
       )}
     </div>
