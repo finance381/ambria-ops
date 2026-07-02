@@ -380,7 +380,13 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved }) {
     if (isCatStore) {
       payload = { name: name.trim(), category_id: Number(categoryId), sub_category_id: subCategoryId ? Number(subCategoryId) : null, type: type, qty: Number(qty) || 0, unit: unit, description: description.trim() || null, name_hindi: hindiName || null, brand: packSizeBrand.trim() || null, pack_size_qty: packSizeQty ? Number(packSizeQty) : null, pack_size_unit: packSizeUnit, season_reorder_qty: minOrderQty ? Number(minOrderQty) : null, off_season_reorder_qty: reorderQty ? Number(reorderQty) : null, rate_paise: ratePaise ? Math.round(Number(ratePaise) * 100) : null, is_asset: isAsset, department: allocations[0]?.department || null }
     } else {
-      payload = { name: name.trim(), category_id: Number(categoryId), sub_category_id: subCategoryId ? Number(subCategoryId) : null, type: type, qty: Number(qty) || 0, unit: unit, description: description.trim() || null, name_hindi: hindiName || null, min_order_qty: minOrderQty ? Number(minOrderQty) : null, reorder_qty: reorderQty ? Number(reorderQty) : null, rate_paise: ratePaise ? Math.round(Number(ratePaise) * 100) : null, is_asset: isAsset, department: allocations[0]?.department || null, dimensions: dimensionValues.length > 0 ? dimensionValues : null }
+      var cleanDims = dimensionValues.length > 0 ? dimensionValues.map(function (d) {
+        var dt = d.type || 'number'
+        if (dt === 'select' || dt === 'text') return { name: d.name, type: dt, value: d.value || '' }
+        return { name: d.name, type: 'number', qty: d.qty || '', unit: d.unit || 'Pieces' }
+      }) : null
+      payload = { name: name.trim(), category_id: Number(categoryId), sub_category_id: subCategoryId ? Number(subCategoryId) : null, type: type, qty: Number(qty) || 0, unit: unit, description: description.trim() || null, name_hindi: hindiName || null, min_order_qty: minOrderQty ? Number(minOrderQty) : null, reorder_qty: reorderQty ? Number(reorderQty) : null, rate_paise: ratePaise ? Math.round(Number(ratePaise) * 100) : null, is_asset: isAsset, department: allocations[0]?.department || null, dimensions: cleanDims }
+
     }
     if (!isEdit && profile?.id) { payload.submitted_by = profile.id }
     if (!isEdit) {
