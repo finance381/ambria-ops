@@ -312,8 +312,8 @@ function AdminItems({ profile }) {
     for (var c = 0; c < rows.length; c++) {
       try {
         var result = await processImportRow(rows[c])
-        if (result) done++; else { skipped++; skippedRows.push({ row: c + 1, cat: findCol(rows[c], ['category']) || '—', id: findCol(rows[c], ['id', 'inventory id', 'inventory_id']) || '—', name: findCol(rows[c], ['name']) || '—' }) }
-      } catch (_) { skipped++ }
+        if (result === true) done++; else { skipped++; skippedRows.push({ row: c + 1, reason: typeof result === 'string' ? result : 'Processing failed', cat: findCol(rows[c], ['category']) || '—', id: findCol(rows[c], ['id', 'inventory id', 'inventory_id']) || '—', name: findCol(rows[c], ['name']) || '—' }) }
+      } catch (err) { skipped++; skippedRows.push({ row: c + 1, reason: err?.message || 'Unexpected error', cat: findCol(rows[c], ['category']) || '—', id: findCol(rows[c], ['id', 'inventory id', 'inventory_id']) || '—', name: findCol(rows[c], ['name']) || '—' }) }
       if ((c + 1) % 20 === 0 || c === rows.length - 1) {
         setImportProgress({ done: done, total: rows.length, skipped: skipped, skippedRows: skippedRows })
       }
@@ -338,6 +338,9 @@ function AdminItems({ profile }) {
     var catId = cat?.id || null
     var subCat = subCatName ? subCategoriesAll.find(function (sc) { return sc.name.toLowerCase() === subCatName.toLowerCase() && (!catId || sc.category_id === catId) }) : null
     var subCatId = subCat?.id || null
+
+    if (catName && !cat) return 'Category "' + catName + '" not found in masters'
+    if (subCatName && !subCat) return 'Sub-category "' + subCatName + '" not found' + (catName ? ' under "' + catName + '"' : '')
 
     var isCatStore = false
     if (catId) {
@@ -372,6 +375,19 @@ function AdminItems({ profile }) {
     var subVenueName = findCol(r, ['sub-venue', 'sub_venue', 'subvenue'])
     var venueQty = Number(findCol(r, ['venue qty', 'venue_qty'])) || newQty
 
+    if (venueCode) {
+      var vcCheck = venueCode.split(';').map(function (v) { return v.trim() }).filter(Boolean)
+      var svCheck = subVenueName ? subVenueName.split(';').map(function (s) { return s.trim() }) : []
+      for (var vci = 0; vci < vcCheck.length; vci++) {
+        var matchVen = venues.find(function (v) { return v.code.toLowerCase() === vcCheck[vci].toLowerCase() })
+        if (!matchVen) return 'Venue code "' + vcCheck[vci] + '" not found in masters'
+        if (svCheck[vci] && svCheck[vci] !== '') {
+          var matchSv = subVenues.find(function (s) { return s.name.toLowerCase() === svCheck[vci].toLowerCase() && s.venue_id === matchVen.id })
+          if (!matchSv) return 'Sub-venue "' + svCheck[vci] + '" not found under ' + vcCheck[vci]
+        }
+      }
+    }
+
     var nameHindi = findCol(r, ['name hindi', 'name_hindi'])
     var unit = findCol(r, ['unit'])
     var dept = findCol(r, ['department', 'dept'])
@@ -386,7 +402,7 @@ function AdminItems({ profile }) {
     var reord = findCol(r, ['reorder qty', 'reorder_qty', 'off season reorder qty'])
 
     if (importMode === 'update') {
-      if (!existing) return false
+      if (!existing) return 'No matching item found (ID: ' + (rowId || 'none') + ')'
       var updatePayload = {}
       if (itemName) updatePayload.name = itemName
       if (nameHindi) updatePayload.name_hindi = nameHindi
@@ -399,7 +415,7 @@ function AdminItems({ profile }) {
       if (rate) updatePayload.rate_paise = Math.round(Number(rate) * 100)
       if (isAsset) updatePayload.is_asset = isAsset.toLowerCase()
       if (parsedDims) updatePayload.dimensions = parsedDims
-      if (newQty > 0 && !venueCode) updatePayload.qty = newQty
+      if (newQty > 0) updatePayload.qty = newQty
       if (isCatStore) {
         if (brand) updatePayload.brand = brand
         if (packQty) updatePayload.pack_size_qty = Number(packQty)
@@ -412,7 +428,7 @@ function AdminItems({ profile }) {
       }
       if (Object.keys(updatePayload).length > 0) {
         var { error: updErr } = await supabase.from(tableName).update(updatePayload).eq('id', existing.id)
-        if (updErr) return false
+        if (updErr) return 'DB update failed: ' + updErr.message
       }
       // Update venue allocations if provided
       if (venueCode) {
@@ -454,7 +470,7 @@ function AdminItems({ profile }) {
     // ADD mode
     if (existing) {
       var { error: qtyErr } = await supabase.from(tableName).update({ qty: (existing.qty || 0) + newQty }).eq('id', existing.id)
-      if (qtyErr) return false
+      if (qtyErr) return 'Qty update failed: ' + qtyErr.message
       if (venueCode) {
         var venue = venues.find(function (v) { return v.code.toLowerCase() === venueCode.toLowerCase() })
         if (venue) {
@@ -498,8 +514,9 @@ function AdminItems({ profile }) {
       if (minOrd) payload.min_order_qty = Number(minOrd)
       if (reord) payload.reorder_qty = Number(reord)
     }
+    if (!catId) return 'Category required for new items'
     var { data: newItem, error: insErr } = await supabase.from(tableName).insert(payload).select('id').single()
-    if (insErr) return false
+    if (insErr) return 'Insert failed: ' + insErr.message
     if (newItem && venueCode) {
       var venue = venues.find(function (v) { return v.code.toLowerCase() === venueCode.toLowerCase() })
       if (venue) {
@@ -981,12 +998,21 @@ function AdminItems({ profile }) {
                 </div>
                 {importProgress.skippedRows && importProgress.skippedRows.length > 0 && !importing && (
                   <div className="mt-3 max-h-40 overflow-y-auto">
-                    <p className="text-[11px] font-bold text-amber-700 uppercase tracking-wider mb-1">Skipped Items</p>
+                    <div className="flex items-center justify-between mb-1">
+                      <p className="text-[11px] font-bold text-amber-700 uppercase tracking-wider">Skipped Items</p>
+                      <button onClick={function () {
+                        var hdr = ['Row', 'ID', 'Name', 'Category', 'Reason']
+                        var csvRows = importProgress.skippedRows.map(function (s) { return [s.row, s.id, s.name, s.cat, s.reason || ''].map(csvEscape).join(',') })
+                        var csv = '\uFEFF' + hdr.join(',') + '\n' + csvRows.join('\n')
+                        var blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+                        var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'skipped_rows_' + new Date().toISOString().split('T')[0] + '.csv'; a.click()
+                      }} className="text-[10px] text-indigo-600 font-medium hover:underline">📥 Download CSV</button>
+                    </div>
                     <table className="w-full text-[11px]">
-                      <thead><tr className="text-left text-gray-500"><th className="pr-2 py-0.5">Row</th><th className="pr-2 py-0.5">Category</th><th className="pr-2 py-0.5">ID</th><th className="py-0.5">Name</th></tr></thead>
+                      <thead><tr className="text-left text-gray-500"><th className="pr-2 py-0.5">Row</th><th className="pr-2 py-0.5">ID</th><th className="pr-2 py-0.5">Name</th><th className="py-0.5">Reason</th></tr></thead>
                       <tbody>
                         {importProgress.skippedRows.map(function (s, i) {
-                          return <tr key={i} className="text-gray-600 border-t border-gray-100"><td className="pr-2 py-0.5">{s.row}</td><td className="pr-2 py-0.5">{s.cat}</td><td className="pr-2 py-0.5 font-mono">{s.id}</td><td className="py-0.5">{s.name}</td></tr>
+                          return <tr key={i} className="text-gray-600 border-t border-gray-100"><td className="pr-2 py-0.5">{s.row}</td><td className="pr-2 py-0.5 font-mono">{s.id}</td><td className="pr-2 py-0.5">{s.name}</td><td className="py-0.5 text-amber-700">{s.reason}</td></tr>
                         })}
                       </tbody>
                     </table>
