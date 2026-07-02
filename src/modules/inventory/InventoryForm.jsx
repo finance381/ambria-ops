@@ -158,7 +158,15 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved }) {
           return fields.map(function (f) {
             var fType = f.type || 'number'
             var existing = source.find(function (d) { return d.name === f.name })
-            if (existing) return Object.assign({}, existing, { type: fType, options: f.options })
+            if (existing) {
+              var merged = Object.assign({}, existing, { type: fType, options: f.options })
+              // Migrate legacy: select/text values were stored in qty instead of value
+              if ((fType === 'select' || fType === 'text') && !merged.value && merged.qty) {
+                merged.value = merged.qty + (merged.unit && merged.unit !== 'Pieces' ? ' ' + merged.unit : '')
+                merged.value = merged.value.trim()
+              }
+              return merged
+            }
             if (fType === 'text') return { name: f.name, type: 'text', value: '' }
             if (fType === 'select') return { name: f.name, type: 'select', value: '', options: f.options || [] }
             return { name: f.name, type: 'number', qty: '', unit: 'Pieces' }
