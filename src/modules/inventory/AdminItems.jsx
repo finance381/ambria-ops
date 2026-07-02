@@ -453,8 +453,10 @@ function AdminItems({ profile }) {
           var otherAllocsTotal = (allAllocs || []).reduce(function (sum, a) {
             return sum + (existAlloc && a.id === existAlloc.id ? 0 : (a.qty || 0))
           }, 0)
-          var newTotal = otherAllocsTotal + vQty
-          await supabase.from(tableName).update({ qty: newTotal }).eq('id', existing.id)
+          if (!updatePayload.qty) {
+            var newTotal = otherAllocsTotal + vQty
+            await supabase.from(tableName).update({ qty: newTotal }).eq('id', existing.id)
+          }
           if (existAlloc) {
             await supabase.from(allocTable).update({ qty: vQty }).eq('id', existAlloc.id)
           } else {
