@@ -64,6 +64,7 @@ var GROUPS = [
 ]
 
 import { pushBack, goBack as navBack } from '../../lib/backNav'
+import { formatPoints } from '../../lib/format'
 
 function Shell({ profile, onSignOut }) {
   var [activeGroup, setActiveGroup] = useState(null)
@@ -76,6 +77,17 @@ function Shell({ profile, onSignOut }) {
 
   var [badges, setBadges] = useState({})
   var [lastBadgeLoad, setLastBadgeLoad] = useState(0)
+  var [walletBalance, setWalletBalance] = useState(null)
+  var [walletPending, setWalletPending] = useState(0)
+
+  useEffect(function () {
+    if (!profile?.id) return
+    supabase.from('wallets').select('balance_paise').eq('user_id', profile.id).maybeSingle()
+      .then(function (res) { setWalletBalance(res.data?.balance_paise || 0) })
+    supabase.from('wallet_transfers').select('id', { count: 'exact', head: true })
+      .eq('to_user_id', profile.id).eq('status', 'pending')
+      .then(function (res) { setWalletPending(res.count || 0) })
+  }, [profile?.id, tab])
 
   // Filter groups: only show groups where user has at least one sub-feature permission
   var visibleGroups = GROUPS.map(function (g) {
@@ -353,6 +365,25 @@ function Shell({ profile, onSignOut }) {
 
         {/* Level 0: Group Cards */}
         {!activeGroup && !tab && (
+          <>
+            {perms.indexOf('feature_expenses') !== -1 && walletBalance !== null && (
+              <button
+                onClick={function () { setActiveGroup('expenses'); setTab('expenses') }}
+                className={"relative w-full mb-3 rounded-xl p-3 flex items-center justify-between border shadow-sm active:scale-[0.99] transition-all " + (walletBalance < 0 ? "bg-red-50 border-red-200" : "bg-green-50 border-green-200")}>
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl">💰</span>
+                  <div className="text-left">
+                    <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Wallet Balance</p>
+                    <p className={"text-lg font-bold " + (walletBalance < 0 ? "text-red-700" : "text-green-700")}>{formatPoints(walletBalance)}</p>
+                  </div>
+                </div>
+                {walletPending > 0 && (
+                  <span className="min-w-[24px] h-6 px-2 bg-amber-500 text-white text-[11px] font-bold rounded-full flex items-center justify-center">
+                    {walletPending} pending
+                  </span>
+                )}
+              </button>
+            )}
           <div className="grid grid-cols-2 gap-3 pt-2">
             {visibleGroups.map(function (g) {
               var badge = groupBadge(g)
@@ -378,6 +409,7 @@ function Shell({ profile, onSignOut }) {
               </div>
             )}
           </div>
+          </>
         )}
 
         {/* Level 1: Sub-Cards within a group */}

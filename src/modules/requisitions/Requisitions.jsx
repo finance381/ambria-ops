@@ -57,7 +57,11 @@ function Requisitions({ profile, onBack }) {
 
   useEffect(function () {
     supabase.from('departments').select('id, name').eq('active', true).then(function (res) {
-      setDepartments(res.data || [])
+      var all = res.data || []
+      var isAdminRole = profile?.role === 'admin' || profile?.role === 'auditor'
+      var userDeptIds = profile?.event_dept_ids || []
+      var filtered = (isAdminRole || userDeptIds.length === 0) ? all : all.filter(function (d) { return userDeptIds.indexOf(d.id) !== -1 })
+      setDepartments(filtered)
     })
   }, [])
 

@@ -72,7 +72,10 @@ function ExpenseForm({ profile, onDone }) {
     setSubCategories(scR.data || [])
     setExpenseTypes(etR.data || [])
     setExpenseSubTypes(estR.data || [])
-    setDepartments(dR.data || [])
+    var allDepts = dR.data || []
+    var isAdminRole = profile?.role === 'admin' || profile?.role === 'auditor'
+    var userDeptIds = profile?.event_dept_ids || []
+    setDepartments((isAdminRole || userDeptIds.length === 0) ? allDepts : allDepts.filter(function (d) { return userDeptIds.indexOf(d.id) !== -1 }))
     setVenues(vR.data || [])
     setSubDepartments(sdR.data || [])
     setLoading(false)

@@ -225,16 +225,32 @@ function Users() {
       })
     }
 
+    if (!removing) {
+      var sd = subDepartments.find(function (s) { return s.id === id })
+      if (sd && sd.department_id && !editEventDeptIds.includes(sd.department_id)) {
+        setEditEventDeptIds(function (prev) { return [...prev, sd.department_id] })
+      }
+    }
     setEditSubDeptIds(function (prev) {
       return removing ? prev.filter(function (c) { return c !== id }) : [...prev, id]
     })
   }
 
   function toggleEventDeptId(id) {
-    setEditEventDeptIds(function (prev) {
-      if (prev.includes(id)) return prev.filter(function (c) { return c !== id })
-      return [...prev, id]
-    })
+    var removing = editEventDeptIds.includes(id)
+    if (removing) {
+      // Cascade: remove sub-depts (and their cats) belonging to this dept
+      var deptSdIds = subDepartments.filter(function (sd) { return sd.department_id === id }).map(function (sd) { return sd.id })
+      var remainingSdIds = editSubDeptIds.filter(function (sid) { return deptSdIds.indexOf(sid) === -1 })
+      var protectedCatIds = categories.filter(function (c) { return remainingSdIds.indexOf(c.sub_department_id) !== -1 }).map(function (c) { return c.id })
+      var protectedSubCatIds = subCategories.filter(function (sc) { return protectedCatIds.indexOf(sc.category_id) !== -1 }).map(function (sc) { return sc.id })
+      var removedCatIds = categories.filter(function (c) { return deptSdIds.indexOf(c.sub_department_id) !== -1 }).map(function (c) { return c.id })
+      var removedSubCatIds = subCategories.filter(function (sc) { return removedCatIds.indexOf(sc.category_id) !== -1 }).map(function (sc) { return sc.id })
+      setEditSubDeptIds(remainingSdIds)
+      setEditCatIds(function (prev) { return prev.filter(function (cid) { return removedCatIds.indexOf(cid) === -1 || protectedCatIds.indexOf(cid) !== -1 }) })
+      setEditSubCatIds(function (prev) { return prev.filter(function (sid) { return removedSubCatIds.indexOf(sid) === -1 || protectedSubCatIds.indexOf(sid) !== -1 }) })
+    }
+    setEditEventDeptIds(function (prev) { return removing ? prev.filter(function (c) { return c !== id }) : [...prev, id] })
   }
 
   function addCustomRole(val) {
@@ -517,13 +533,34 @@ function Users() {
                 </span>
               )}
             </div>
+            {/* Departments */}
+            {departments.length > 0 && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Departments</label>
+                <div className="bg-gray-50 rounded-lg p-3 max-h-36 overflow-y-auto">
+                  <div className="grid grid-cols-2 gap-2">
+                    {departments.map(function (d) {
+                      var isChecked = editEventDeptIds.includes(d.id)
+                      return (
+                        <label key={d.id} className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                          <input type="checkbox" checked={isChecked} onChange={function () { toggleEventDeptId(d.id) }}
+                            className="w-4 h-4 accent-indigo-600" />
+                          <span>{d.name}</span>
+                        </label>
+                      )
+                    })}
+                  </div>
+                </div>
+                <p className="text-[11px] text-gray-500 mt-1">Assigned departments limit what user sees in requisition/expense forms</p>
+              </div>
+            )}
             {/* Sub-departments */}
-            {subDepartments.length > 0 && (
+            {subDepartments.length > 0 && editEventDeptIds.length > 0 && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Sub-departments</label>
                 <div className="bg-gray-50 rounded-lg p-3 max-h-36 overflow-y-auto">
                   <div className="grid grid-cols-2 gap-2">
-                    {subDepartments.filter(function (sd) { return sd.active }).map(function (sd) {
+                    {subDepartments.filter(function (sd) { return sd.active && editEventDeptIds.indexOf(sd.department_id) !== -1 }).map(function (sd) {
                       var isChecked = editSubDeptIds.includes(sd.id)
                       return (
                         <label key={sd.id} className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
