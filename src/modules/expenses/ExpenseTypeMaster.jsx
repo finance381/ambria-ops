@@ -573,12 +573,10 @@ function ExpenseTypeMaster({ onBack }) {
         }
         var groupMap = {}
         filtered.forEach(function (t) {
-          var key = (t.department_id || 0) + '_' + (t.sub_department_id || 0)
+          var key = String(t.department_id || 0)
           if (!groupMap[key]) {
             var d = t.department_id ? departments.find(function (x) { return x.id === t.department_id }) : null
-            var sd = t.sub_department_id ? subDepartments.find(function (x) { return x.id === t.sub_department_id }) : null
-            var label = d ? d.name + (sd ? ' › ' + sd.name : '') : 'Unassigned'
-            groupMap[key] = { key: key, label: label, deptId: t.department_id || 0, items: [] }
+            groupMap[key] = { key: key, label: d ? d.name : 'Unassigned', deptId: t.department_id || 0, items: [] }
           }
           groupMap[key].items.push(t)
         })
@@ -615,6 +613,10 @@ function ExpenseTypeMaster({ onBack }) {
                               <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 font-bold">
                                 {subCount} sub-type{subCount !== 1 ? 's' : ''}
                               </span>
+                              {t.sub_department_id && (function () {
+                                var sd = subDepartments.find(function (x) { return x.id === t.sub_department_id })
+                                return sd ? <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 font-bold">{sd.name}</span> : null
+                              })()}
                             </div>
                             {t.description && <p className="text-xs text-gray-400 mt-0.5">{t.description}</p>}
                           </div>
