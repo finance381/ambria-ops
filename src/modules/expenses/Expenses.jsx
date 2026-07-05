@@ -53,11 +53,33 @@ function Expenses({ profile, masterMode }) {
     return function () { clearTimeout(timer) }
   }, [expSearch])
 
+  var [catDeptMap, setCatDeptMap] = useState({})
+  var [collapsedGroups, setCollapsedGroups] = useState({})
+
   useEffect(function () {
     supabase.from('sub_categories').select('id, name').then(function (res) {
       var map = {}
       ;(res.data || []).forEach(function (sc) { map[sc.id] = sc.name })
       setSubCatMap(map)
+    })
+    // Build category → dept/sub-dept lookup
+    Promise.all([
+      supabase.from('categories').select('id, sub_department_id'),
+      supabase.from('sub_departments').select('id, name, department_id'),
+      supabase.from('departments').select('id, name'),
+    ]).then(function (res) {
+      var cats = res[0].data || []
+      var sds = res[1].data || []
+      var deps = res[2].data || []
+      var sdById = {}; sds.forEach(function (s) { sdById[s.id] = s })
+      var dById = {}; deps.forEach(function (d) { dById[d.id] = d })
+      var map = {}
+      cats.forEach(function (c) {
+        var sd = c.sub_department_id ? sdById[c.sub_department_id] : null
+        var d = sd && sd.department_id ? dById[sd.department_id] : null
+        map[c.id] = { deptId: d ? d.id : null, deptName: d ? d.name : 'Unassigned', subDeptId: sd ? sd.id : null, subDeptName: sd ? sd.name : '' }
+      })
+      setCatDeptMap(map)
     })
   }, [])
 
@@ -481,14 +503,43 @@ function Expenses({ profile, masterMode }) {
       )}
 
       <div className="space-y-3">
-        {displayList.map(function (exp) {
-          return (
-            <div key={exp.id}
-              onClick={function () {
-                var e = Object.assign({}, exp, { _fromApprove: view === 'approve' })
-                openDetail(e)
-              }}
-              className="bg-white border border-gray-200 rounded-xl p-4 hover:shadow-md active:bg-gray-50 cursor-pointer transition-all">
+        {(function () {
+          // Group by dept > sub-dept
+          var groups = {}
+          displayList.forEach(function (exp) {
+            var info = catDeptMap[exp.category_id] || { deptName: 'Unassigned', subDeptName: '' }
+            var key = info.deptName + '§' + info.subDeptName
+            if (!groups[key]) groups[key] = { deptName: info.deptName, subDeptName: info.subDeptName, items: [], total: 0 }
+            groups[key].items.push(exp)
+            groups[key].total += (exp.amount_paise || 0)
+          })
+          var groupKeys = Object.keys(groups).sort()
+          return groupKeys.map(function (gk) {
+            var grp = groups[gk]
+            var isCollapsed = collapsedGroups[gk]
+            return (
+              <div key={gk} className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+                <button onClick={function () { setCollapsedGroups(function (p) { var n = Object.assign({}, p); n[gk] = !p[gk]; return n }) }}
+                  className="w-full flex items-center justify-between px-4 py-2.5 bg-indigo-50 hover:bg-indigo-100 transition-colors border-b border-indigo-100">
+                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                    <span className="text-xs">{isCollapsed ? '▶' : '▼'}</span>
+                    <div className="text-left flex-1 min-w-0">
+                      <p className="text-sm font-bold text-indigo-800 truncate">{grp.deptName}{grp.subDeptName ? ' › ' + grp.subDeptName : ''}</p>
+                      <p className="text-[10px] text-indigo-500 font-medium">{grp.items.length} expense{grp.items.length !== 1 ? 's' : ''}</p>
+                    </div>
+                  </div>
+                  <span className="text-sm font-bold text-indigo-700 flex-shrink-0 ml-2">{formatPoints(grp.total)}</span>
+                </button>
+                {!isCollapsed && (
+                  <div className="divide-y divide-gray-100">
+                    {grp.items.map(function (exp) {
+                      return (
+                        <div key={exp.id}
+                          onClick={function () {
+                            var e = Object.assign({}, exp, { _fromApprove: view === 'approve' })
+                            openDetail(e)
+                          }}
+                          className="p-3 hover:bg-gray-50 active:bg-gray-100 cursor-pointer transition-colors">
               <div className="flex items-start justify-between mb-1">
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-semibold text-gray-900 truncate">{exp.description || 'Expense'}</p>
@@ -528,9 +579,15 @@ function Expenses({ profile, masterMode }) {
               {exp.receipt_path && (
                 <span className="text-[10px] text-green-600 font-medium mt-1">📎 Receipt attached</span>
               )}
-            </div>
-          )
-        })}
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            )
+          })
+        })()}
       </div>
 
       {/* Load More */}

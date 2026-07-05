@@ -56,11 +56,11 @@ function ExpenseForm({ profile, onDone }) {
   var [success, setSuccess] = useState('')
   var [zoomImg, setZoomImg] = useState('')
 
-  useEffect(function () { loadRefData() }, [])
+  useEffect(function () { loadRefData(); ensureLookupData('vendors') }, [])
 
   async function loadRefData() {
     var [catR, scR, etR, estR, dR, vR, sdR] = await Promise.all([
-      supabase.from('categories').select('id, name, sub_department_id').order('name'),
+      supabase.from('categories').select('id, name, sub_department_id, expense_type_ids').order('name'),
       supabase.from('sub_categories').select('id, category_id, name').order('name'),
       supabase.from('expense_types').select('id, name, icon, description, sort_order').eq('active', true).order('sort_order').order('name'),
       supabase.from('expense_sub_types').select('id, expense_type_id, name, extra_fields, active, sort_order').eq('active', true).order('sort_order').order('name'),
@@ -105,14 +105,11 @@ function ExpenseForm({ profile, onDone }) {
     if (!source || lookupCache[source]) return
     var items = []
     if (source === 'vendors') {
-      var { data } = await supabase.from('purchase_order_items')
-        .select('vendor_name').not('vendor_name', 'is', null).order('vendor_name')
-      var seen = {}
-      ;(data || []).forEach(function (r) {
-        if (r.vendor_name && !seen[r.vendor_name]) {
-          seen[r.vendor_name] = true
-          items.push({ label: r.vendor_name, value: r.vendor_name })
-        }
+      var { data } = await supabase.from('vendors')
+        .select('id, name, contact, phone').eq('active', true).order('name')
+      ;(data || []).forEach(function (v) {
+        var label = v.contact ? v.name + ' — ' + v.contact : v.name
+        items.push({ label: label, value: v.name })
       })
     } else if (source === 'staff') {
       var { data: pData } = await supabase.from('profiles').select('id, name').order('name')
@@ -559,7 +556,13 @@ function ExpenseForm({ profile, onDone }) {
                     </div>
                   )
                 }
-                var deptSubs = subDepartments.filter(function (sd) { return sd.department_id === Number(entry.department) })
+                var isAdminRoleSd = profile?.role === 'admin' || profile?.role === 'auditor'
+                var userSdIds = profile?.sub_department_ids || []
+                var deptSubs = subDepartments.filter(function (sd) {
+                  if (sd.department_id !== Number(entry.department)) return false
+                  if (isAdminRoleSd || userSdIds.length === 0) return true
+                  return userSdIds.indexOf(sd.id) !== -1
+                })
                 if (deptSubs.length === 0) return null
                 return (
                   <div>
@@ -585,17 +588,24 @@ function ExpenseForm({ profile, onDone }) {
               })()}
 
               {/* Expense Type */}
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Expense Type</label>
-                <select value={entry.expenseTypeId}
-                  onChange={function (e) { updateEntry(idx, 'expenseTypeId', e.target.value) }}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-amber-300" style={{ fontSize: '16px' }}>
-                  <option value="">Select type...</option>
-                  {expenseTypes.map(function (et) {
-                    return <option key={et.id} value={String(et.id)}>{(et.icon ? et.icon + ' ' : '') + et.name}</option>
-                  })}
-                </select>
-              </div>
+              {(function () {
+                var selCat = entry.categoryId ? categories.find(function (c) { return String(c.id) === entry.categoryId }) : null
+                var catEtIds = selCat && Array.isArray(selCat.expense_type_ids) && selCat.expense_type_ids.length > 0 ? selCat.expense_type_ids : null
+                var typeList = catEtIds ? expenseTypes.filter(function (et) { return catEtIds.indexOf(et.id) !== -1 }) : expenseTypes
+                return (
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Expense Type</label>
+                    <select value={entry.expenseTypeId}
+                      onChange={function (e) { updateEntry(idx, 'expenseTypeId', e.target.value) }}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-amber-300" style={{ fontSize: '16px' }}>
+                      <option value="">Select type...</option>
+                      {typeList.map(function (et) {
+                        return <option key={et.id} value={String(et.id)}>{(et.icon ? et.icon + ' ' : '') + et.name}</option>
+                      })}
+                    </select>
+                  </div>
+                )
+              })()}
 
               {/* Sub-Type */}
               {entry.expenseTypeId && subTypesForType.length > 0 && (
