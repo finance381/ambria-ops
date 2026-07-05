@@ -60,7 +60,7 @@ function ExpenseForm({ profile, onDone }) {
 
   async function loadRefData() {
     var [catR, scR, etR, estR, dR, vR, sdR] = await Promise.all([
-      supabase.from('categories').select('id, name, sub_department_id, expense_type_ids').order('name'),
+      supabase.from('categories').select('id, name, sub_department_id, expense_type_ids, expense_sub_type_ids').order('name'),
       supabase.from('sub_categories').select('id, category_id, name').order('name'),
       supabase.from('expense_types').select('id, name, icon, description, sort_order').eq('active', true).order('sort_order').order('name'),
       supabase.from('expense_sub_types').select('id, expense_type_id, name, extra_fields, active, sort_order').eq('active', true).order('sort_order').order('name'),
@@ -134,8 +134,9 @@ function ExpenseForm({ profile, onDone }) {
       if (i !== idx) return e
       var copy = Object.assign({}, e)
       copy[field] = val
-      if (field === 'department') { copy.subDeptId = ''; copy.venueIdTop = ''; copy.categoryId = '' }
-      if (field === 'subDeptId') copy.categoryId = ''
+      if (field === 'department') { copy.subDeptId = ''; copy.venueIdTop = ''; copy.categoryId = ''; copy.expenseTypeId = ''; copy.expenseSubTypeId = ''; copy.fieldValues = {} }
+      if (field === 'subDeptId') { copy.categoryId = ''; copy.expenseTypeId = ''; copy.expenseSubTypeId = ''; copy.fieldValues = {} }
+      if (field === 'categoryId') { copy.expenseTypeId = ''; copy.expenseSubTypeId = ''; copy.fieldValues = {} }
       if (field === 'expenseTypeId') { copy.expenseSubTypeId = ''; copy.fieldValues = {} }
       if (field === 'expenseSubTypeId') { copy.fieldValues = {} }
       return copy
@@ -512,7 +513,13 @@ function ExpenseForm({ profile, onDone }) {
       </div>
 
       {entries.map(function (entry, idx) {
-        var subTypesForType = expenseSubTypes.filter(function (st) { return st.expense_type_id === Number(entry.expenseTypeId) })
+        var selCatForSt = entry.categoryId ? categories.find(function (c) { return String(c.id) === entry.categoryId }) : null
+        var catSstIds = selCatForSt && Array.isArray(selCatForSt.expense_sub_type_ids) && selCatForSt.expense_sub_type_ids.length > 0 ? selCatForSt.expense_sub_type_ids : null
+        var subTypesForType = expenseSubTypes.filter(function (st) {
+          if (st.expense_type_id !== Number(entry.expenseTypeId)) return false
+          if (catSstIds && catSstIds.indexOf(st.id) === -1) return false
+          return true
+        })
         var subTypeFields = entry.expenseSubTypeId ? getSubTypeFields(entry.expenseSubTypeId) : []
 
         return (

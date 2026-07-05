@@ -422,6 +422,17 @@ function ExpenseTypeMaster({ onBack }) {
   var [subView, setSubView] = useState(null)
   var [departments, setDepartments] = useState([])
   var [subDepartments, setSubDepartments] = useState([])
+  var [search, setSearch] = useState('')
+  var [deptFilter, setDeptFilter] = useState('')
+  var [collapsed, setCollapsed] = useState({})
+
+  function toggleCollapsed(key) {
+    setCollapsed(function (prev) {
+      var next = Object.assign({}, prev)
+      next[key] = !prev[key]
+      return next
+    })
+  }
 
   useEffect(function () {
     load()
@@ -513,47 +524,111 @@ function ExpenseTypeMaster({ onBack }) {
         </button>
       </div>
 
+      {/* Filter row */}
+      {types.length > 0 && (
+        <div className="flex gap-2 flex-wrap">
+          <input type="text" value={search}
+            onChange={function (e) { setSearch(e.target.value) }}
+            placeholder="🔍 Search types..."
+            className="flex-1 min-w-[180px] px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white"
+            style={{ fontSize: '16px' }} />
+          <select value={deptFilter}
+            onChange={function (e) { setDeptFilter(e.target.value) }}
+            className="px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white"
+            style={{ fontSize: '16px' }}>
+            <option value="">All departments</option>
+            <option value="none">Unassigned</option>
+            {departments.map(function (d) { return <option key={d.id} value={String(d.id)}>{d.name}</option> })}
+          </select>
+          {(search || deptFilter) && (
+            <button type="button" onClick={function () { setSearch(''); setDeptFilter('') }}
+              className="px-3 py-2 text-xs text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 font-medium">Reset</button>
+          )}
+        </div>
+      )}
+
       {types.length === 0 && !editId && (
         <div className="bg-white border border-gray-200 rounded-xl p-8 text-center">
           <p className="text-gray-400 text-sm">No expense types yet. Add one to get started.</p>
         </div>
       )}
 
-      {types.map(function (t) {
-        var subCount = (t.expense_sub_types || []).length
-        var isEditing = editId === t.id
-        return (
-          <div key={t.id}>
-            {!isEditing && (
-              <div className="bg-white border border-gray-200 rounded-xl p-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex-1 cursor-pointer" onClick={function () { setSubView(t) }}>
-                    <div className="flex items-center gap-2 flex-wrap">
-                      {t.icon && <span className="text-lg">{t.icon}</span>}
-                      <span className="text-sm font-semibold text-gray-900">{t.name}</span>
-                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 font-bold">
-                        {subCount} sub-type{subCount !== 1 ? 's' : ''}
-                      </span>
-                      {t.department_id && (function () {
-                        var d = departments.find(function (x) { return x.id === t.department_id })
-                        var sd = t.sub_department_id ? subDepartments.find(function (x) { return x.id === t.sub_department_id }) : null
-                        if (!d) return null
-                        return <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 font-bold">{d.name}{sd ? ' › ' + sd.name : ''}</span>
-                      })()}
-                    </div>
-                    {t.description && <p className="text-xs text-gray-400 mt-0.5">{t.description}</p>}
-                  </div>
-                  <div className="flex gap-1">
-                    <button onClick={function () { setSubView(t) }}
-                      className="px-2 py-1 text-xs text-indigo-600 hover:bg-indigo-50 rounded font-medium">Sub-Types →</button>
-                    <button onClick={function () { openEdit(t) }}
-                      className="px-2 py-1 text-xs text-gray-500 hover:bg-gray-100 rounded">✎</button>
-                    <button onClick={function () { deleteType(t) }}
-                      className="px-2 py-1 text-xs text-red-400 hover:text-red-600 hover:bg-red-50 rounded">✕</button>
-                  </div>
+      {(function () {
+        var q = search.trim().toLowerCase()
+        var filtered = types.filter(function (t) {
+          if (deptFilter === 'none' && t.department_id) return false
+          if (deptFilter && deptFilter !== 'none' && String(t.department_id || '') !== deptFilter) return false
+          if (q) {
+            var hay = (t.name || '').toLowerCase() + ' ' + (t.description || '').toLowerCase()
+            if (hay.indexOf(q) === -1) return false
+          }
+          return true
+        })
+        if (types.length > 0 && filtered.length === 0) {
+          return (
+            <div className="bg-white border border-gray-200 rounded-xl p-8 text-center">
+              <p className="text-gray-400 text-sm">No types match filters</p>
+            </div>
+          )
+        }
+        var groupMap = {}
+        filtered.forEach(function (t) {
+          var key = (t.department_id || 0) + '_' + (t.sub_department_id || 0)
+          if (!groupMap[key]) {
+            var d = t.department_id ? departments.find(function (x) { return x.id === t.department_id }) : null
+            var sd = t.sub_department_id ? subDepartments.find(function (x) { return x.id === t.sub_department_id }) : null
+            var label = d ? d.name + (sd ? ' › ' + sd.name : '') : 'Unassigned'
+            groupMap[key] = { key: key, label: label, deptId: t.department_id || 0, items: [] }
+          }
+          groupMap[key].items.push(t)
+        })
+        var groups = Object.keys(groupMap).map(function (k) { return groupMap[k] }).sort(function (a, b) {
+          if (a.deptId === 0 && b.deptId !== 0) return 1
+          if (b.deptId === 0 && a.deptId !== 0) return -1
+          return a.label.localeCompare(b.label)
+        })
+        var forceOpen = !!q
+        return groups.map(function (g) {
+          var open = forceOpen || !collapsed[g.key]
+          return (
+            <div key={g.key} className="space-y-2">
+              <button type="button" onClick={function () { toggleCollapsed(g.key) }}
+                className="w-full flex items-center justify-between px-3 py-2 bg-gray-100 border border-gray-200 rounded-lg hover:bg-gray-200">
+                <span className="text-xs font-bold text-gray-700 uppercase tracking-wide">{g.label}</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-white text-gray-600 font-bold">{g.items.length}</span>
+                  <span className="text-gray-500 text-xs">{open ? '▾' : '▸'}</span>
                 </div>
-              </div>
-            )}
+              </button>
+              {open && g.items.map(function (t) {
+                var subCount = (t.expense_sub_types || []).length
+                var isEditing = editId === t.id
+                return (
+                  <div key={t.id}>
+                    {!isEditing && (
+                      <div className="bg-white border border-gray-200 rounded-xl p-4">
+                        <div className="flex items-center justify-between">
+                          <div className="flex-1 cursor-pointer" onClick={function () { setSubView(t) }}>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              {t.icon && <span className="text-lg">{t.icon}</span>}
+                              <span className="text-sm font-semibold text-gray-900">{t.name}</span>
+                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 font-bold">
+                                {subCount} sub-type{subCount !== 1 ? 's' : ''}
+                              </span>
+                            </div>
+                            {t.description && <p className="text-xs text-gray-400 mt-0.5">{t.description}</p>}
+                          </div>
+                          <div className="flex gap-1">
+                            <button onClick={function () { setSubView(t) }}
+                              className="px-2 py-1 text-xs text-indigo-600 hover:bg-indigo-50 rounded font-medium">Sub-Types →</button>
+                            <button onClick={function () { openEdit(t) }}
+                              className="px-2 py-1 text-xs text-gray-500 hover:bg-gray-100 rounded">✎</button>
+                            <button onClick={function () { deleteType(t) }}
+                              className="px-2 py-1 text-xs text-red-400 hover:text-red-600 hover:bg-red-50 rounded">✕</button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
             {isEditing && (function () {
               var formSubDepts = form.department_id ? subDepartments.filter(function (sd) { return sd.department_id === Number(form.department_id) }) : []
               return (
@@ -623,6 +698,10 @@ function ExpenseTypeMaster({ onBack }) {
           </div>
         )
       })}
+            </div>
+          )
+        })
+      })()}
 
       {/* Add NEW form — shown at bottom only for new */}
       {editId === 'new' && (function () {
