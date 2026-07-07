@@ -383,9 +383,18 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved }) {
     } else {
       var cleanDims = dimensionValues.length > 0 ? dimensionValues.map(function (d) {
         var dt = d.type || 'number'
-        if (dt === 'select' || dt === 'text') return { name: d.name, type: dt, value: d.value || '' }
-        return { name: d.name, type: 'number', qty: d.qty || '', unit: d.unit || 'Pieces' }
-      }) : null
+        if (dt === 'select' || dt === 'text') {
+          var v = (d.value || '').toString().trim()
+          if (!v || v.toLowerCase() === 'pieces') return null
+          return { name: d.name, type: dt, value: v }
+        }
+        var q = (d.qty == null ? '' : String(d.qty)).trim()
+        if (!q) return null
+        var u = (d.unit || '').toString().trim()
+        if (u.toLowerCase() === 'pieces') u = ''
+        return { name: d.name, type: 'number', qty: q, unit: u }
+      }).filter(function (x) { return x !== null }) : []
+      if (cleanDims.length === 0) cleanDims = null
       payload = { name: name.trim(), category_id: Number(categoryId), sub_category_id: subCategoryId ? Number(subCategoryId) : null, type: type, qty: Number(qty) || 0, unit: unit, description: description.trim() || null, name_hindi: hindiName || null, min_order_qty: minOrderQty ? Number(minOrderQty) : null, reorder_qty: reorderQty ? Number(reorderQty) : null, rate_paise: ratePaise ? Math.round(Number(ratePaise) * 100) : null, is_asset: isAsset, department: allocations[0]?.department || null, dimensions: cleanDims }
 
     }

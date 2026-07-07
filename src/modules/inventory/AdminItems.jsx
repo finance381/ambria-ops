@@ -147,6 +147,27 @@ function AdminItems({ profile }) {
     setPage(1)
   }
 
+  function formatDimensionsCsv(dims) {
+    if (!Array.isArray(dims) || dims.length === 0) return ''
+    var parts = []
+    dims.forEach(function (d) {
+      if (!d || !d.name) return
+      var t = d.type || 'number'
+      var val = ''
+      var unit = ''
+      if (t === 'number') {
+        val = d.qty != null ? String(d.qty).trim() : ''
+        unit = d.unit ? String(d.unit).trim() : ''
+        if (unit.toLowerCase() === 'pieces') unit = ''
+      } else {
+        val = d.value != null ? String(d.value).trim() : ''
+      }
+      if (!val || val.toLowerCase() === 'pieces') return
+      parts.push(d.name + ': ' + val + (unit ? ' ' + unit : ''))
+    })
+    return parts.join('; ')
+  }
+
   function csvEscape(val) {
     var s = String(val == null ? '' : val)
     if (s.includes(',') || s.includes('"') || s.includes('\n')) return '"' + s.replace(/"/g, '""') + '"'
@@ -176,7 +197,7 @@ function AdminItems({ profile }) {
         i.season_reorder_qty || i.min_order_qty || '',
         i.off_season_reorder_qty || i.reorder_qty || '',
         i.rate_paise ? (i.rate_paise / 100) : '',
-        i.is_asset || '', i.dimensions && Array.isArray(i.dimensions) ? i.dimensions.map(function (d) { var t = d.type || 'number'; if (t === 'number') return d.name + ':' + (d.qty || '') + ' ' + (d.unit || ''); return d.name + ':' + (d.value || '') }).join('; ') : '', venueCodes, venueSubVenues, venueQtys, imgUrl,
+        i.is_asset || '', formatDimensionsCsv(i.dimensions), venueCodes, venueSubVenues, venueQtys, imgUrl,
         i.entry_date || (i.created_at ? i.created_at.split('T')[0] : '')
       ].map(csvEscape).join(',')
     })
