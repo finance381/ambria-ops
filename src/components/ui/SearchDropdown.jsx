@@ -17,9 +17,10 @@ function SearchDropdown({ items, value, onChange, onAdd, onInputChange, placehol
     if (isFocused.current) return
     if (value) {
       var match = items.find(function (i) { return i.value === value })
-      setQuery(match ? match.label : value)
+      var next = match ? match.label : value
+      setQuery(function (prev) { return prev === next ? prev : next })
     } else {
-      setQuery('')
+      setQuery(function (prev) { return prev === '' ? prev : '' })
     }
   }, [value, items])
 
@@ -59,7 +60,7 @@ function SearchDropdown({ items, value, onChange, onAdd, onInputChange, placehol
   function handleInputChange(e) {
     var val = e.target.value
     setQuery(val)
-    onChange('')
+    if (value) onChange('')
     setOpen(true)
     setHlIdx(-1)
     if (onInputChange) onInputChange(val)
@@ -73,7 +74,7 @@ function SearchDropdown({ items, value, onChange, onAdd, onInputChange, placehol
   function handleClear() {
     isFocused.current = false
     setQuery('')
-    onChange('')
+    if (value) onChange('')
     setOpen(false)
     inputRef.current?.focus()
   }
@@ -117,7 +118,7 @@ function SearchDropdown({ items, value, onChange, onAdd, onInputChange, placehol
     recognition.onresult = function (ev) {
       var transcript = ev.results[0][0].transcript
       setQuery(transcript)
-      onChange('')
+      if (value) onChange('')
       setOpen(true)
       setListening(false)
       recognitionRef.current = null

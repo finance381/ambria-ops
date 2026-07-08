@@ -449,14 +449,22 @@ function Purchase({ profile, mode }) {
   // ─── ASSIGN PURCHASER (admin only) ───
   async function assignPurchaser(poId, userId) {
     if (saving) return
+    var newAssignee = userId || null
+    var currentAssignee = (activePo && activePo.id === poId) ? (activePo.assigned_to || null) : null
+    if (newAssignee === currentAssignee) return
     setSaving(true)
-    var { error } = await supabase.from('purchase_orders').update({ assigned_to: userId || null }).eq('id', poId)
+    var { error } = await supabase.from('purchase_orders').update({ assigned_to: newAssignee }).eq('id', poId)
     if (error) { alert('Assign failed: ' + error.message); setSaving(false); return }
-    var staff = staffList.find(function (s) { return s.id === userId })
+    var staff = newAssignee ? staffList.find(function (s) { return s.id === newAssignee }) : null
     try { await logActivity('PO_ASSIGN', 'PO ' + poId.slice(0, 8) + ' → ' + (staff?.name || 'unassigned')) } catch (_) {}
-    setActivePo(function (prev) { return prev ? Object.assign({}, prev, { assigned_to: userId }) : prev })
+    setActivePo(function (prev) { return prev ? Object.assign({}, prev, { assigned_to: newAssignee }) : prev })
+    setPoList(function (prev) {
+      return prev.map(function (p) {
+        if (p.id !== poId) return p
+        return Object.assign({}, p, { assigned_to: newAssignee, assignee: { name: staff?.name || null } })
+      })
+    })
     setSaving(false)
-    loadPos()
   }
 
   // ─── DELETE DRAFT PO (admin only) ───
