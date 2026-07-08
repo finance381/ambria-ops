@@ -94,7 +94,9 @@ function Purchase({ profile, mode }) {
 
   // ─── QUEUE: approved requisition items not yet in any PO ───
   async function loadQueue() {
-    setQueueLoading(true)
+    // Do NOT set queueLoading=true on refetches — it caused the whole component
+    // to blank via the top-level gate. Refetches are silent; the queue tab uses
+    // its existing data until the new set arrives.
     var { data: itemsRaw, error } = await supabase
       .from('requisition_items')
       .select('id, item_id, item_name, category_id, qty, unit, notes, _source, estimated_cost_paise, po_item_id, item_status, requisition_id, categories(name)')
@@ -582,7 +584,12 @@ function Purchase({ profile, mode }) {
     setSaving(false)
   }
 
-  if (loading || queueLoading) {
+  // Only block on initial mount when there's nothing to show yet.
+  // `loading` only goes from true → false (never back), so this shows once.
+  // Never block on `queueLoading` — it fires on every refetch and would blank
+  // the detail view. The queue tab has its own local indicator further down.
+  // Never block when a detail view is already open — its data is already loaded.
+  if (loading && view !== 'detail') {
     return <p className="text-gray-400 text-sm text-center py-8">Loading...</p>
   }
 
