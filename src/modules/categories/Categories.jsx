@@ -6,6 +6,7 @@ import { useRealtime } from '../../lib/useRealtime'
 
 function Categories() {
   var [tab, setTab] = useState('departments')
+  var [importSummary, setImportSummary] = useState(null)
   var [departments, setDepartments] = useState([])
   var [categories, setCategories] = useState([])
   var [subCategories, setSubCategories] = useState([])
@@ -397,56 +398,193 @@ function Categories() {
     var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'ambria_categories_' + new Date().toISOString().split('T')[0] + '.csv'; a.click()
   }
 
+  function parseCsvLine(line) {
+    var result = []; var current = ''; var inQuotes = false
+    for (var i = 0; i < line.length; i++) {
+      var ch = line[i]
+      if (inQuotes) {
+        if (ch === '"' && line[i + 1] === '"') { current += '"'; i++ }
+        else if (ch === '"') { inQuotes = false }
+        else { current += ch }
+      } else {
+        if (ch === '"') { inQuotes = true }
+        else if (ch === ',') { result.push(current.trim()); current = '' }
+        else { current += ch }
+      }
+    }
+    result.push(current.trim())
+    return result
+  }
+
+  function parseDimField(raw) {
+    var s = String(raw || '').trim()
+    if (!s) return null
+    var nameGen = false
+    if (s.indexOf('*nameGen') !== -1) { nameGen = true; s = s.replace('*nameGen', '').trim() }
+    var type = 'number'
+    var options = []
+    var typeMatch = s.match(/\[(\w+)\]/)
+    if (typeMatch) { type = typeMatch[1].toLowerCase(); s = s.replace(typeMatch[0], '').trim() }
+    var optMatch = s.match(/\(([^)]+)\)/)
+    if (optMatch) {
+      options = optMatch[1].split('|').map(function (o) { return o.trim() }).filter(Boolean)
+      s = s.replace(optMatch[0], '').trim()
+    }
+    var name = s.trim()
+    if (!name) return null
+    var df = { name: name, type: type, nameGen: nameGen }
+    if (type === 'select') df.options = options
+    return df
+  }
+
   async function importCSV(e) {
     var file = e.target.files?.[0]
     if (!file) return
+    var input = e.target
     var text = await file.text()
-    var lines = text.split('\n').filter(function (l) { return l.trim() })
-    if (lines.length < 2) { alert('CSV must have header + at least 1 row'); return }
-    var header = lines[0].toLowerCase().replace(/[\uFEFF]/g, '')
-    var cols0 = header.split(',').map(function (h) { return h.trim() })
-    var hasId = cols0[0] === 'id'
-    var offset = hasId ? 1 : 0
-    var created = 0; var updated = 0; var skipped = 0
+    var lines = text.split(/\r?\n/).filter(function (l) { return l.trim() })
+    if (lines.length < 2) { alert('CSV must have header + at least 1 row'); input.value = ''; return }
+
+    // Header-indexed lookup (resilient to reordering)
+    var header = parseCsvLine(lines[0]).map(function (h) { return h.replace(/^\uFEFF/, '').trim().toLowerCase() })
+    function idx(name) { return header.indexOf(name.toLowerCase()) }
+    function col(row, name) { var i = idx(name); return i === -1 ? '' : (row[i] || '').trim() }
+    if (idx('category') === -1) { alert('CSV must have a "Category" column'); input.value = ''; return }
+
+    var hasHeader = { id: idx('id') !== -1, code: idx('code') !== -1, dept: idx('department') !== -1, subDept: idx('sub-department') !== -1, itemType: idx('item type') !== -1, expCats: idx('expense categories') !== -1, expSubCats: idx('expense sub-categories') !== -1, dims: idx('dimension fields') !== -1, subs: idx('sub-categories') !== -1 }
+
+    // Master-data lookup maps
+    var subDeptByKey = {}
+    subDepartments.forEach(function (sd) {
+      var d = departments.find(function (dp) { return dp.id === sd.department_id })
+      if (d) subDeptByKey[d.name.toLowerCase() + '||' + sd.name.toLowerCase()] = sd
+    })
+    var expTypeByName = {}; expTypes.forEach(function (et) { expTypeByName[et.name.toLowerCase()] = et })
+    var expSubTypeByName = {}; expSubTypes.forEach(function (st) { expSubTypeByName[st.name.toLowerCase()] = st })
+
+    setSaving(true) // gates useRealtime.loadAll — one final refresh instead of N
+    var created = 0; var updated = 0; var subsCreated = 0; var skipped = 0; var skippedRows = []
+
     for (var r = 1; r < lines.length; r++) {
-      var cols = lines[r].split(',')
-      var rowId = hasId ? (cols[0] || '').trim() : ''
-      var catName = (cols[offset] || '').trim()
-      var catCode = (cols[offset + 1] || '').trim().toUpperCase()
-      if (!catName) { skipped++; continue }
-      var catId = null
-      if (rowId) {
-        var byId = categories.find(function (c) { return String(c.id) === rowId })
-        if (byId) {
-          var updates = {}
-          if (catName && catName !== byId.name) updates.name = catName
-          if (catCode && catCode !== (byId.code || '')) updates.code = catCode
-          if (Object.keys(updates).length > 0) {
-            await supabase.from('categories').update(updates).eq('id', byId.id)
-            updated++
-          } else { skipped++ }
-          catId = byId.id
+      var raw = parseCsvLine(lines[r])
+      var catName = col(raw, 'category')
+      if (!catName) continue
+
+      try {
+        var rowId = hasHeader.id ? col(raw, 'id') : ''
+        var catCode = col(raw, 'code').toUpperCase()
+        var deptName = col(raw, 'department')
+        var subDeptName = col(raw, 'sub-department')
+        var itemType = col(raw, 'item type').toLowerCase()
+        var expCatsRaw = col(raw, 'expense categories')
+        var expSubCatsRaw = col(raw, 'expense sub-categories')
+        var dimsRaw = col(raw, 'dimension fields')
+        var subsRaw = col(raw, 'sub-categories')
+
+        // Resolve sub_department_id (hard skip if provided but unresolved)
+        var subDeptId = null
+        if (hasHeader.subDept) {
+          if (subDeptName && deptName) {
+            var sd = subDeptByKey[deptName.toLowerCase() + '||' + subDeptName.toLowerCase()]
+            if (!sd) { skipped++; skippedRows.push({ row: r + 1, cat: catName, reason: 'Unknown sub-dept "' + deptName + ' → ' + subDeptName + '"' }); continue }
+            subDeptId = sd.id
+          } else if (subDeptName && !deptName) {
+            skipped++; skippedRows.push({ row: r + 1, cat: catName, reason: 'Sub-dept "' + subDeptName + '" needs Department column filled' }); continue
+          }
         }
-      }
-      if (!catId) {
-        var byName = categories.find(function (c) { return c.name.toLowerCase() === catName.toLowerCase() })
-        if (byName) {
-          catId = byName.id
-          if (catCode && catCode !== (byName.code || '')) {
-            await supabase.from('categories').update({ code: catCode }).eq('id', byName.id)
-            updated++
-          } else { skipped++ }
+
+        // Resolve expense_type_ids (warning if unknown)
+        var expIds = []; var expUnknown = []
+        if (hasHeader.expCats && expCatsRaw) {
+          expCatsRaw.split(';').forEach(function (n) {
+            var nm = n.trim(); if (!nm) return
+            var et = expTypeByName[nm.toLowerCase()]
+            if (et) { if (expIds.indexOf(et.id) === -1) expIds.push(et.id) } else expUnknown.push(nm)
+          })
+        }
+        var expSubIds = []; var expSubUnknown = []
+        if (hasHeader.expSubCats && expSubCatsRaw) {
+          expSubCatsRaw.split(';').forEach(function (n) {
+            var nm = n.trim(); if (!nm) return
+            var st = expSubTypeByName[nm.toLowerCase()]
+            if (st) { if (expSubIds.indexOf(st.id) === -1) expSubIds.push(st.id) } else expSubUnknown.push(nm)
+          })
+        }
+
+        // Parse dimension fields
+        var dimFields = []
+        if (hasHeader.dims && dimsRaw) {
+          dimsRaw.split(';').forEach(function (d) {
+            var df = parseDimField(d)
+            if (df) dimFields.push(df)
+          })
+        }
+
+        // Match: ID first, then name
+        var existing = null
+        if (rowId) existing = categories.find(function (c) { return String(c.id) === rowId })
+        if (!existing) existing = categories.find(function (c) { return c.name.toLowerCase() === catName.toLowerCase() })
+
+        // Build payload — only include fields whose headers were in the CSV
+        var payload = { name: catName }
+        if (hasHeader.code) payload.code = catCode || null
+        if (hasHeader.subDept) payload.sub_department_id = subDeptId
+        if (hasHeader.itemType) payload.consumable = itemType === 'asset' ? false : true
+        if (hasHeader.expCats) payload.expense_type_ids = expIds
+        if (hasHeader.expSubCats) payload.expense_sub_type_ids = expSubIds
+        if (hasHeader.dims) payload.dimension_fields = dimFields
+
+        var catId
+        if (existing) {
+          catId = existing.id
+          var { error: updErr } = await supabase.from('categories').update(payload).eq('id', catId)
+          if (updErr) { skipped++; skippedRows.push({ row: r + 1, cat: catName, reason: 'Update failed: ' + updErr.message }); continue }
+          updated++
         } else {
-          var payload = { name: catName, status: 'approved' }
-          if (catCode) payload.code = catCode
-          var { data: newCatData } = await supabase.from('categories').insert(payload).select().single()
-          if (newCatData) { catId = newCatData.id; created++ }
+          payload.status = 'approved'
+          var { data: newRow, error: insErr } = await supabase.from('categories').insert(payload).select().single()
+          if (insErr || !newRow) { skipped++; skippedRows.push({ row: r + 1, cat: catName, reason: 'Insert failed: ' + (insErr?.message || 'unknown') }); continue }
+          catId = newRow.id
+          created++
         }
+
+        // Sub-categories: create missing (never delete)
+        if (hasHeader.subs && subsRaw && catId) {
+          var subNames = subsRaw.split(';').map(function (n) { return n.trim() }).filter(Boolean)
+          for (var si = 0; si < subNames.length; si++) {
+            var nm = subNames[si]
+            var existSub = subCategories.find(function (s) { return s.category_id === catId && s.name.toLowerCase() === nm.toLowerCase() })
+            if (!existSub) {
+              var { error: subErr } = await supabase.from('sub_categories').insert({ name: nm, category_id: catId, status: 'approved' })
+              if (!subErr) subsCreated++
+            }
+          }
+        }
+
+        // Warnings (row still counted as processed)
+        if (expUnknown.length > 0 || expSubUnknown.length > 0) {
+          skippedRows.push({ row: r + 1, cat: catName, warning: true, reason: 'Processed with warnings — unknown: ' + expUnknown.concat(expSubUnknown).join(', ') })
+        }
+      } catch (err) {
+        skipped++
+        skippedRows.push({ row: r + 1, cat: catName, reason: err?.message || 'Unexpected error' })
       }
     }
-    alert('Import done: ' + created + ' created, ' + updated + ' updated, ' + skipped + ' unchanged')
+
+    try { await logActivity('IMPORT_CSV', 'CATEGORIES | ' + created + ' created, ' + updated + ' updated, ' + subsCreated + ' sub-cats, ' + skipped + ' skipped') } catch (_) {}
+    setImportSummary({ created: created, updated: updated, subsCreated: subsCreated, skipped: skipped, skippedRows: skippedRows })
+    input.value = ''
+    setSaving(false)
     loadAll()
-    e.target.value = ''
+  }
+
+  function downloadSkippedCsv() {
+    if (!importSummary || !importSummary.skippedRows || importSummary.skippedRows.length === 0) return
+    function esc(v) { var s = String(v == null ? '' : v); if (s.indexOf(',') !== -1 || s.indexOf('"') !== -1 || s.indexOf('\n') !== -1) return '"' + s.replace(/"/g, '""') + '"'; return s }
+    var rows = importSummary.skippedRows.map(function (s) { return [s.row, s.cat, s.warning ? 'warning' : 'skipped', s.reason].map(esc).join(',') })
+    var csv = '\uFEFF' + 'Row,Category,Type,Reason\n' + rows.join('\n')
+    var blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+    var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'categories_import_skipped_' + new Date().toISOString().split('T')[0] + '.csv'; a.click()
   }
 
   if (loading) {
@@ -729,6 +867,27 @@ function Categories() {
               <input type="file" accept=".csv" onChange={importCSV} className="hidden" />
             </label>
           </div>
+          {importSummary && (
+            <div className="bg-indigo-50 border border-indigo-200 rounded-md px-3 py-2 flex items-center justify-between text-xs">
+              <div className="text-gray-700">
+                <span className="font-semibold text-indigo-700">Import done:</span>
+                <span className="ml-2">{importSummary.created} created</span>
+                <span className="ml-2">· {importSummary.updated} updated</span>
+                <span className="ml-2">· {importSummary.subsCreated} sub-cats</span>
+                {importSummary.skipped > 0 && <span className="ml-2 text-amber-700 font-medium">· {importSummary.skipped} skipped</span>}
+              </div>
+              <div className="flex items-center gap-2">
+                {importSummary.skippedRows && importSummary.skippedRows.length > 0 && (
+                  <button onClick={downloadSkippedCsv}
+                    className="px-2 py-1 text-xs font-medium bg-white border border-indigo-300 text-indigo-700 rounded hover:bg-indigo-100">
+                    Download skipped/warnings CSV
+                  </button>
+                )}
+                <button onClick={function () { setImportSummary(null) }}
+                  className="text-gray-400 hover:text-gray-600 text-base leading-none">×</button>
+              </div>
+            </div>
+          )}
 
           {/* Add category */}
           <input type="text" value={catSearch}

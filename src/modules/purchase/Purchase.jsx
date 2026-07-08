@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import { titleCase, formatDate, formatPaise } from '../../lib/format'
 import { logActivity } from '../../lib/logger'
@@ -69,6 +69,7 @@ function Purchase({ profile, mode }) {
   var [receiveQty, setReceiveQty] = useState('')
   var [showInvForm, setShowInvForm] = useState(null)
 
+  var assignLockRef = useRef(false)
   var isAdmin = profile?.role === 'admin' || profile?.role === 'auditor'
   var hasPurchase = (profile?.permissions || []).indexOf('feature_purchase') !== -1
   var hasReceive = (profile?.permissions || []).indexOf('feature_receive') !== -1
@@ -446,25 +447,29 @@ function Purchase({ profile, mode }) {
     loadPos()
   }
 
-  // ─── ASSIGN PURCHASER (admin only) ───
+  // ─── ASSIGN PURCHASER (admin only) — ref-locked, no saving toggle ───
   async function assignPurchaser(poId, userId) {
-    if (saving) return
+    if (assignLockRef.current) return
     var newAssignee = userId || null
     var currentAssignee = (activePo && activePo.id === poId) ? (activePo.assigned_to || null) : null
     if (newAssignee === currentAssignee) return
-    setSaving(true)
-    var { error } = await supabase.from('purchase_orders').update({ assigned_to: newAssignee }).eq('id', poId)
-    if (error) { alert('Assign failed: ' + error.message); setSaving(false); return }
-    var staff = newAssignee ? staffList.find(function (s) { return s.id === newAssignee }) : null
-    try { await logActivity('PO_ASSIGN', 'PO ' + poId.slice(0, 8) + ' → ' + (staff?.name || 'unassigned')) } catch (_) {}
-    setActivePo(function (prev) { return prev ? Object.assign({}, prev, { assigned_to: newAssignee }) : prev })
-    setPoList(function (prev) {
-      return prev.map(function (p) {
-        if (p.id !== poId) return p
-        return Object.assign({}, p, { assigned_to: newAssignee, assignee: { name: staff?.name || null } })
+    assignLockRef.current = true
+    try {
+      var { error } = await supabase.from('purchase_orders').update({ assigned_to: newAssignee }).eq('id', poId)
+      if (error) { alert('Assign failed: ' + error.message); return }
+      var staff = newAssignee ? staffList.find(function (s) { return s.id === newAssignee }) : null
+      try { await logActivity('PO_ASSIGN', 'PO ' + poId.slice(0, 8) + ' → ' + (staff?.name || 'unassigned')) } catch (_) {}
+      // Both setState calls in the same tick — React 18 batches → single re-render
+      setActivePo(function (prev) { return prev ? Object.assign({}, prev, { assigned_to: newAssignee }) : prev })
+      setPoList(function (prev) {
+        return prev.map(function (p) {
+          if (p.id !== poId) return p
+          return Object.assign({}, p, { assigned_to: newAssignee, assignee: { name: staff?.name || null } })
+        })
       })
-    })
-    setSaving(false)
+    } finally {
+      assignLockRef.current = false
+    }
   }
 
   // ─── DELETE DRAFT PO (admin only) ───
@@ -1147,7 +1152,9 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, ve
     if (it.status === 'pending_return') pendingReturnCount++
     if (it.status === 'returned') returnedCount++
   })
-  var staffItems = staffList.map(function (s) { return { label: s.name + (s.role === 'admin' ? ' (Admin)' : ''), value: s.id } })
+  var staffItems = useMemo(function () {
+    return staffList.map(function (s) { return { label: s.name + (s.role === 'admin' ? ' (Admin)' : ''), value: s.id } })
+  }, [staffList])
 
   function startVendorEdit(it) {
     setEditingVendor(it.id)
