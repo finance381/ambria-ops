@@ -432,9 +432,40 @@ function Categories() {
     }
     var name = s.trim()
     if (!name) return null
+    // Defensive: if name still has structural chars, the CSV round-trip mangled this dim.
+    // Signal caller to skip the whole dims column and preserve existing DB value.
+    if (/[[\]()|]/.test(name)) return { _garbled: true, raw: raw }
     var df = { name: name, type: type, nameGen: nameGen }
     if (type === 'select') df.options = options
     return df
+  }
+
+  function idsEqual(a, b) {
+    var aA = Array.isArray(a) ? a.slice() : []
+    var bA = Array.isArray(b) ? b.slice() : []
+    if (aA.length !== bA.length) return false
+    aA.sort(); bA.sort()
+    for (var i = 0; i < aA.length; i++) if (aA[i] !== bA[i]) return false
+    return true
+  }
+
+  function dimsEqual(a, b) {
+    var aA = Array.isArray(a) ? a : []
+    var bA = Array.isArray(b) ? b : []
+    if (aA.length !== bA.length) return false
+    for (var i = 0; i < aA.length; i++) {
+      var x = aA[i] || {}; var y = bA[i] || {}
+      if ((x.name || '') !== (y.name || '')) return false
+      if ((x.type || 'number') !== (y.type || 'number')) return false
+      if (!!x.nameGen !== !!y.nameGen) return false
+      if ((x.type || 'number') === 'select') {
+        var xo = (x.options || []).slice().sort()
+        var yo = (y.options || []).slice().sort()
+        if (xo.length !== yo.length) return false
+        for (var j = 0; j < xo.length; j++) if (xo[j] !== yo[j]) return false
+      }
+    }
+    return true
   }
 
   async function importCSV(e) {
@@ -463,7 +494,7 @@ function Categories() {
     var expSubTypeByName = {}; expSubTypes.forEach(function (st) { expSubTypeByName[st.name.toLowerCase()] = st })
 
     setSaving(true) // gates useRealtime.loadAll — one final refresh instead of N
-    var created = 0; var updated = 0; var subsCreated = 0; var skipped = 0; var skippedRows = []
+    var created = 0; var updated = 0; var unchanged = 0; var subsCreated = 0; var skipped = 0; var skippedRows = []
 
     for (var r = 1; r < lines.length; r++) {
       var raw = parseCsvLine(lines[r])
@@ -511,11 +542,12 @@ function Categories() {
           })
         }
 
-        // Parse dimension fields
-        var dimFields = []
+        // Parse dimension fields (detect garbled ones — CSV editors sometimes mangle)
+        var dimFields = []; var dimGarbled = false
         if (hasHeader.dims && dimsRaw) {
           dimsRaw.split(';').forEach(function (d) {
             var df = parseDimField(d)
+            if (df && df._garbled) { dimGarbled = true; return }
             if (df) dimFields.push(df)
           })
         }
@@ -525,22 +557,56 @@ function Categories() {
         if (rowId) existing = categories.find(function (c) { return String(c.id) === rowId })
         if (!existing) existing = categories.find(function (c) { return c.name.toLowerCase() === catName.toLowerCase() })
 
-        // Build payload — only include fields whose headers were in the CSV
-        var payload = { name: catName }
-        if (hasHeader.code) payload.code = catCode || null
-        if (hasHeader.subDept) payload.sub_department_id = subDeptId
-        if (hasHeader.itemType) payload.consumable = itemType === 'asset' ? false : true
-        if (hasHeader.expCats) payload.expense_type_ids = expIds
-        if (hasHeader.expSubCats) payload.expense_sub_type_ids = expSubIds
-        if (hasHeader.dims) payload.dimension_fields = dimFields
-
         var catId
         if (existing) {
           catId = existing.id
-          var { error: updErr } = await supabase.from('categories').update(payload).eq('id', catId)
-          if (updErr) { skipped++; skippedRows.push({ row: r + 1, cat: catName, reason: 'Update failed: ' + updErr.message }); continue }
-          updated++
+          // Change-detection: build minimal payload with only fields that ACTUALLY differ.
+          // A sub-dept-only edit must not overwrite dims/expense/etc, even if headers are present.
+          var payload = {}
+          if (existing.name !== catName) payload.name = catName
+          if (hasHeader.code) {
+            var curCode = existing.code || null
+            var newCode = catCode || null
+            if (curCode !== newCode) payload.code = newCode
+          }
+          if (hasHeader.subDept && (existing.sub_department_id || null) !== subDeptId) {
+            payload.sub_department_id = subDeptId
+          }
+          if (hasHeader.itemType) {
+            var newCons = itemType === 'asset' ? false : true
+            var curCons = existing.consumable !== false
+            if (curCons !== newCons) payload.consumable = newCons
+          }
+          if (hasHeader.expCats && !idsEqual(existing.expense_type_ids, expIds)) {
+            payload.expense_type_ids = expIds
+          }
+          if (hasHeader.expSubCats && !idsEqual(existing.expense_sub_type_ids, expSubIds)) {
+            payload.expense_sub_type_ids = expSubIds
+          }
+          if (hasHeader.dims) {
+            if (dimGarbled) {
+              skippedRows.push({ row: r + 1, cat: catName, warning: true, reason: 'dimension_fields skipped — one or more dims parsed garbled (likely Excel/CSV round-trip). Existing dims preserved.' })
+            } else if (!dimsEqual(existing.dimension_fields || [], dimFields)) {
+              payload.dimension_fields = dimFields
+            }
+          }
+
+          if (Object.keys(payload).length === 0) {
+            unchanged++
+          } else {
+            var { error: updErr } = await supabase.from('categories').update(payload).eq('id', catId)
+            if (updErr) { skipped++; skippedRows.push({ row: r + 1, cat: catName, reason: 'Update failed: ' + updErr.message }); continue }
+            updated++
+          }
         } else {
+          // New row: include everything parsed
+          var payload = { name: catName }
+          if (hasHeader.code) payload.code = catCode || null
+          if (hasHeader.subDept) payload.sub_department_id = subDeptId
+          if (hasHeader.itemType) payload.consumable = itemType === 'asset' ? false : true
+          if (hasHeader.expCats) payload.expense_type_ids = expIds
+          if (hasHeader.expSubCats) payload.expense_sub_type_ids = expSubIds
+          if (hasHeader.dims && !dimGarbled) payload.dimension_fields = dimFields
           payload.status = 'approved'
           var { data: newRow, error: insErr } = await supabase.from('categories').insert(payload).select().single()
           if (insErr || !newRow) { skipped++; skippedRows.push({ row: r + 1, cat: catName, reason: 'Insert failed: ' + (insErr?.message || 'unknown') }); continue }
@@ -571,8 +637,8 @@ function Categories() {
       }
     }
 
-    try { await logActivity('IMPORT_CSV', 'CATEGORIES | ' + created + ' created, ' + updated + ' updated, ' + subsCreated + ' sub-cats, ' + skipped + ' skipped') } catch (_) {}
-    setImportSummary({ created: created, updated: updated, subsCreated: subsCreated, skipped: skipped, skippedRows: skippedRows })
+    try { await logActivity('IMPORT_CSV', 'CATEGORIES | ' + created + ' created, ' + updated + ' updated, ' + unchanged + ' unchanged, ' + subsCreated + ' sub-cats, ' + skipped + ' skipped') } catch (_) {}
+    setImportSummary({ created: created, updated: updated, unchanged: unchanged, subsCreated: subsCreated, skipped: skipped, skippedRows: skippedRows })
     input.value = ''
     setSaving(false)
     loadAll()
@@ -873,6 +939,7 @@ function Categories() {
                 <span className="font-semibold text-indigo-700">Import done:</span>
                 <span className="ml-2">{importSummary.created} created</span>
                 <span className="ml-2">· {importSummary.updated} updated</span>
+                {importSummary.unchanged > 0 && <span className="ml-2 text-gray-500">· {importSummary.unchanged} unchanged</span>}
                 <span className="ml-2">· {importSummary.subsCreated} sub-cats</span>
                 {importSummary.skipped > 0 && <span className="ml-2 text-amber-700 font-medium">· {importSummary.skipped} skipped</span>}
               </div>
