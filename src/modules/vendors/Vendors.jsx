@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import { logActivity } from '../../lib/logger'
 
@@ -12,6 +12,9 @@ function Vendors({ profile }) {
   var [showInactive, setShowInactive] = useState(false)
   var [editing, setEditing] = useState(null)
   var [form, setForm] = useState({ name: '', contact: '', phone: '', phone2: '', email: '', address: '', category_ids: [], notes: '', opening_balance: '', gst_number: '', pan_number: '', bank_account: '', bank_ifsc: '', vendor_type: 'Supplier', lead_time_days: '', referred_by: '' })
+  var [importReview, setImportReview] = useState(null)
+  var [importSummary, setImportSummary] = useState(null)
+  var importFileRef = useRef(null)
 
   useEffect(function () { loadAll() }, [])
 
@@ -119,6 +122,286 @@ function Vendors({ profile }) {
     loadAll()
   }
 
+  function parseCsvLine(line) {
+    var result = []; var current = ''; var inQuotes = false
+    for (var i = 0; i < line.length; i++) {
+      var ch = line[i]
+      if (inQuotes) {
+        if (ch === '"' && line[i + 1] === '"') { current += '"'; i++ }
+        else if (ch === '"') { inQuotes = false }
+        else { current += ch }
+      } else {
+        if (ch === '"') { inQuotes = true }
+        else if (ch === ',') { result.push(current.trim()); current = '' }
+        else { current += ch }
+      }
+    }
+    result.push(current.trim())
+    return result
+  }
+
+  var fieldLabels = {
+    name: 'Name', vendor_type: 'Type', referred_by: 'Referred By', contact: 'Contact',
+    phone: 'Phone', phone2: 'Phone 2', email: 'Email', address: 'Address',
+    category_ids: 'Categories', lead_time_days: 'Lead Time',
+    opening_balance_paise: 'Opening Balance', gst_number: 'GST', pan_number: 'PAN',
+    bank_account: 'Bank Account', bank_ifsc: 'Bank IFSC', notes: 'Notes', active: 'Active',
+  }
+
+  async function handleImportFile(e) {
+    var file = e.target.files?.[0]
+    if (!file) return
+    var input = e.target
+    var text = await file.text()
+    var lines = text.split(/\r?\n/).filter(function (l) { return l.trim() })
+    if (lines.length < 2) { alert('CSV must have header + at least 1 row'); input.value = ''; return }
+
+    var header = parseCsvLine(lines[0]).map(function (h) { return h.replace(/^\uFEFF/, '').trim().toLowerCase() })
+    function idx(n) { return header.indexOf(n.toLowerCase()) }
+    function col(row, n) { var i = idx(n); return i === -1 ? '' : (row[i] || '').trim() }
+    if (idx('name') === -1) { alert('CSV must have a "Name" column'); input.value = ''; return }
+
+    var openingKey = idx('opening balance (\u20B9)') !== -1 ? 'opening balance (\u20B9)' : 'opening balance'
+    var has = {
+      id: idx('id') !== -1, type: idx('vendor type') !== -1, referred: idx('referred by') !== -1,
+      contact: idx('contact person') !== -1, phone: idx('phone') !== -1, phone2: idx('phone 2') !== -1,
+      email: idx('email') !== -1, address: idx('address') !== -1, cats: idx('categories') !== -1,
+      lead: idx('lead time (days)') !== -1, opening: idx(openingKey) !== -1,
+      gst: idx('gst number') !== -1, pan: idx('pan number') !== -1,
+      bank: idx('bank account') !== -1, ifsc: idx('bank ifsc') !== -1,
+      notes: idx('notes') !== -1, active: idx('active') !== -1,
+    }
+
+    var catByName = {}; categories.forEach(function (c) { catByName[c.name.toLowerCase()] = c })
+
+    function parseText(row, cellName) {
+      var v = col(row, cellName)
+      if (v === '') return undefined
+      if (v.toLowerCase() === '[clear]') return null
+      return v
+    }
+    function parseIntCell(row, cellName) {
+      var v = col(row, cellName)
+      if (v === '') return undefined
+      if (v.toLowerCase() === '[clear]') return null
+      var n = parseInt(v, 10); return isNaN(n) ? undefined : n
+    }
+    function parseRupees(row, cellName) {
+      var v = col(row, cellName)
+      if (v === '') return undefined
+      if (v.toLowerCase() === '[clear]') return 0
+      var n = Number(v); return isNaN(n) ? undefined : Math.round(n * 100)
+    }
+    function parseBool(row, cellName) {
+      var v = col(row, cellName).toLowerCase()
+      if (v === '') return undefined
+      return (v === 'yes' || v === 'true' || v === '1' || v === 'y')
+    }
+    function scalarDiffer(a, b) {
+      var na = a == null || a === '' ? null : a
+      var nb = b == null || b === '' ? null : b
+      return na !== nb
+    }
+    function arrayDiffer(a, b) {
+      var sa = (a || []).slice().sort(); var sb = (b || []).slice().sort()
+      if (sa.length !== sb.length) return true
+      for (var i = 0; i < sa.length; i++) if (sa[i] !== sb[i]) return true
+      return false
+    }
+
+    var updates = [], unchanged = [], newRows = [], skipped = []
+
+    for (var r = 1; r < lines.length; r++) {
+      var raw = parseCsvLine(lines[r])
+      var name = col(raw, 'name')
+      if (!name) { skipped.push({ row: r + 1, name: '(empty)', reason: 'Missing Name' }); continue }
+
+      var rowId = has.id ? col(raw, 'id') : ''
+      var existing = null
+      if (rowId) existing = vendors.find(function (v) { return String(v.id) === rowId })
+      if (rowId && !existing) { skipped.push({ row: r + 1, name: name, reason: 'ID "' + rowId + '" not found' }); continue }
+      if (!existing) existing = vendors.find(function (v) { return v.name.toLowerCase() === name.toLowerCase() })
+
+      var catIds; var catUnknown = []
+      if (has.cats) {
+        var catsRaw = col(raw, 'categories')
+        if (catsRaw === '') catIds = undefined
+        else if (catsRaw.toLowerCase() === '[clear]') catIds = []
+        else {
+          catIds = []
+          catsRaw.split('|').forEach(function (n) {
+            var nm = n.trim(); if (!nm) return
+            var c = catByName[nm.toLowerCase()]
+            if (c) { if (catIds.indexOf(c.id) === -1) catIds.push(c.id) } else catUnknown.push(nm)
+          })
+        }
+      }
+
+      var parsed = {}
+      if (has.type)     parsed.vendor_type = parseText(raw, 'vendor type')
+      if (has.referred) parsed.referred_by = parseText(raw, 'referred by')
+      if (has.contact)  parsed.contact = parseText(raw, 'contact person')
+      if (has.phone)    parsed.phone = parseText(raw, 'phone')
+      if (has.phone2)   parsed.phone2 = parseText(raw, 'phone 2')
+      if (has.email)    parsed.email = parseText(raw, 'email')
+      if (has.address)  parsed.address = parseText(raw, 'address')
+      if (has.cats)     parsed.category_ids = catIds
+      if (has.lead)     parsed.lead_time_days = parseIntCell(raw, 'lead time (days)')
+      if (has.opening)  parsed.opening_balance_paise = parseRupees(raw, openingKey)
+      if (has.gst)      parsed.gst_number = parseText(raw, 'gst number')
+      if (has.pan)      parsed.pan_number = parseText(raw, 'pan number')
+      if (has.bank)     parsed.bank_account = parseText(raw, 'bank account')
+      if (has.ifsc)     parsed.bank_ifsc = parseText(raw, 'bank ifsc')
+      if (has.notes)    parsed.notes = parseText(raw, 'notes')
+      if (has.active)   parsed.active = parseBool(raw, 'active')
+
+      var warnings = []
+      if (catUnknown.length > 0) warnings.push('Unknown categories: ' + catUnknown.join(', '))
+
+      if (existing) {
+        var payload = {}; var changedFields = []
+        if (name !== existing.name) { payload.name = name; changedFields.push('name') }
+        Object.keys(parsed).forEach(function (k) {
+          var v = parsed[k]
+          if (v === undefined) return
+          var differ = (k === 'category_ids') ? arrayDiffer(existing[k], v) : scalarDiffer(existing[k], v)
+          if (differ) { payload[k] = v; changedFields.push(k) }
+        })
+        if (Object.keys(payload).length === 0) unchanged.push({ row: r + 1, name: name, warnings: warnings })
+        else updates.push({ row: r + 1, id: existing.id, name: name, payload: payload, changedFields: changedFields, warnings: warnings })
+      } else {
+        var insertPayload = { name: name }
+        Object.keys(parsed).forEach(function (k) { if (parsed[k] !== undefined) insertPayload[k] = parsed[k] })
+        if (insertPayload.vendor_type == null) insertPayload.vendor_type = 'Supplier'
+        if (insertPayload.active == null) insertPayload.active = true
+        if (insertPayload.opening_balance_paise == null) insertPayload.opening_balance_paise = 0
+        if (insertPayload.category_ids == null) insertPayload.category_ids = []
+        newRows.push({ row: r + 1, name: name, payload: insertPayload, warnings: warnings })
+      }
+    }
+
+    var newRowsSelected = {}
+    newRows.forEach(function (_, i) { newRowsSelected[i] = true })
+
+    setImportReview({ updates: updates, unchanged: unchanged, newRows: newRows, skipped: skipped, newRowsSelected: newRowsSelected })
+    setImportSummary(null)
+    input.value = ''
+  }
+
+  function toggleNewRow(i) {
+    setImportReview(function (prev) {
+      if (!prev) return prev
+      var sel = Object.assign({}, prev.newRowsSelected)
+      sel[i] = !sel[i]
+      return Object.assign({}, prev, { newRowsSelected: sel })
+    })
+  }
+
+  function toggleAllNewRows(checked) {
+    setImportReview(function (prev) {
+      if (!prev) return prev
+      var sel = {}
+      prev.newRows.forEach(function (_, i) { sel[i] = checked })
+      return Object.assign({}, prev, { newRowsSelected: sel })
+    })
+  }
+
+  function cancelImport() { setImportReview(null) }
+
+  async function confirmImport() {
+    if (!importReview || saving) return
+    setSaving(true)
+    var updated = 0, inserted = 0
+    var failed = []
+
+    for (var i = 0; i < importReview.updates.length; i++) {
+      var u = importReview.updates[i]
+      var { error } = await supabase.from('vendors').update(u.payload).eq('id', u.id)
+      if (error) failed.push({ row: u.row, name: u.name, reason: 'Update failed: ' + error.message })
+      else updated++
+    }
+
+    for (var j = 0; j < importReview.newRows.length; j++) {
+      if (!importReview.newRowsSelected[j]) continue
+      var nr = importReview.newRows[j]
+      var payload = Object.assign({ created_by: profile.id }, nr.payload)
+      var { error: insErr } = await supabase.from('vendors').insert(payload)
+      if (insErr) failed.push({ row: nr.row, name: nr.name, reason: 'Insert failed: ' + insErr.message })
+      else inserted++
+    }
+
+    try { await logActivity('IMPORT_CSV', 'VENDORS | ' + updated + ' updated, ' + inserted + ' inserted, ' + importReview.unchanged.length + ' unchanged, ' + (importReview.skipped.length + failed.length) + ' errors') } catch (_) {}
+
+    setImportSummary({
+      updated: updated,
+      inserted: inserted,
+      unchanged: importReview.unchanged.length,
+      skipped: importReview.skipped.concat(failed),
+    })
+    setImportReview(null)
+    setSaving(false)
+    loadAll()
+  }
+
+  function downloadSkippedCsv() {
+    if (!importSummary || !importSummary.skipped || importSummary.skipped.length === 0) return
+    function esc(v) { var s = String(v == null ? '' : v); if (s.indexOf(',') !== -1 || s.indexOf('"') !== -1 || s.indexOf('\n') !== -1) return '"' + s.replace(/"/g, '""') + '"'; return s }
+    var rows = importSummary.skipped.map(function (s) { return [s.row, s.name, s.reason].map(esc).join(',') })
+    var csv = '\uFEFF' + ['Row', 'Name', 'Reason'].join(',') + '\n' + rows.join('\n')
+    var blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    var url = URL.createObjectURL(blob)
+    var a = document.createElement('a'); a.href = url; a.download = 'vendor_import_issues.csv'
+    document.body.appendChild(a); a.click(); document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+
+  function exportCSV() {
+    function esc(v) {
+      var s = String(v == null ? '' : v)
+      if (s.indexOf(',') !== -1 || s.indexOf('"') !== -1 || s.indexOf('\n') !== -1) return '"' + s.replace(/"/g, '""') + '"'
+      return s
+    }
+    var catNameById = {}
+    categories.forEach(function (c) { catNameById[c.id] = c.name })
+
+    var headers = ['ID', 'Name', 'Vendor Type', 'Referred By', 'Contact Person', 'Phone', 'Phone 2', 'Email', 'Address', 'Categories', 'Lead Time (days)', 'Opening Balance (\u20B9)', 'GST Number', 'PAN Number', 'Bank Account', 'Bank IFSC', 'Notes', 'Active']
+    var rows = vendors.map(function (v) {
+      var catNames = (v.category_ids || []).map(function (cid) { return catNameById[cid] }).filter(Boolean).join(' | ')
+      var openingRupees = v.opening_balance_paise ? (v.opening_balance_paise / 100).toFixed(2) : ''
+      return [
+        v.id,
+        v.name || '',
+        v.vendor_type || '',
+        v.referred_by || '',
+        v.contact || '',
+        v.phone || '',
+        v.phone2 || '',
+        v.email || '',
+        v.address || '',
+        catNames,
+        v.lead_time_days == null ? '' : v.lead_time_days,
+        openingRupees,
+        v.gst_number || '',
+        v.pan_number || '',
+        v.bank_account || '',
+        v.bank_ifsc || '',
+        v.notes || '',
+        v.active ? 'Yes' : 'No',
+      ].map(esc).join(',')
+    })
+
+    var csv = '\uFEFF' + headers.map(esc).join(',') + '\n' + rows.join('\n')
+    var d = new Date()
+    var stamp = d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0')
+    var blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    var url = URL.createObjectURL(blob)
+    var a = document.createElement('a')
+    a.href = url; a.download = 'vendors_' + stamp + '.csv'
+    document.body.appendChild(a); a.click(); document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+    try { logActivity('EXPORT_CSV', 'VENDORS | ' + vendors.length + ' rows') } catch (_) {}
+  }
+
   var filtered = vendors.filter(function (v) {
     if (!showInactive && !v.active) return false
     if (search && v.name.toLowerCase().indexOf(search.toLowerCase()) === -1) return false
@@ -134,6 +417,134 @@ function Vendors({ profile }) {
   var taggedCount = vendors.filter(function (v) { return (v.category_ids || []).length > 0 }).length
 
   if (loading) return <p className="text-gray-400 text-sm text-center py-12">Loading vendors...</p>
+
+  // ═══ IMPORT REVIEW VIEW ═══
+  if (importReview) {
+    var newRowsSelectedCount = 0
+    importReview.newRows.forEach(function (_, i) { if (importReview.newRowsSelected[i]) newRowsSelectedCount++ })
+    var newRowsAllChecked = importReview.newRows.length > 0 && newRowsSelectedCount === importReview.newRows.length
+    var totalChanges = importReview.updates.length + newRowsSelectedCount
+
+    return (
+      <div className="max-w-3xl mx-auto space-y-5 pb-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-lg font-bold text-gray-900">Import Review</h3>
+            <p className="text-xs text-gray-400 mt-0.5">Confirm changes below — nothing is saved until you click Apply</p>
+          </div>
+          <button onClick={cancelImport} disabled={saving}
+            className="text-sm text-gray-400 hover:text-gray-600 transition-colors disabled:opacity-50">✕ Cancel</button>
+        </div>
+
+        <div className="grid grid-cols-4 gap-3">
+          <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3">
+            <p className="text-2xl font-bold text-blue-700">{importReview.updates.length}</p>
+            <p className="text-[11px] text-blue-600 font-medium mt-0.5">Will update</p>
+          </div>
+          <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-3">
+            <p className="text-2xl font-bold text-green-700">{newRowsSelectedCount}<span className="text-sm text-green-500">/{importReview.newRows.length}</span></p>
+            <p className="text-[11px] text-green-600 font-medium mt-0.5">New (selected)</p>
+          </div>
+          <div className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-3">
+            <p className="text-2xl font-bold text-gray-700">{importReview.unchanged.length}</p>
+            <p className="text-[11px] text-gray-500 font-medium mt-0.5">Unchanged</p>
+          </div>
+          <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+            <p className="text-2xl font-bold text-amber-700">{importReview.skipped.length}</p>
+            <p className="text-[11px] text-amber-600 font-medium mt-0.5">Errors</p>
+          </div>
+        </div>
+
+        {importReview.updates.length > 0 && (
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+            <div className="px-5 py-3 bg-blue-50 border-b border-blue-200">
+              <p className="text-xs font-bold text-blue-700 uppercase tracking-wider">Updates</p>
+            </div>
+            <div className="divide-y divide-gray-100 max-h-64 overflow-y-auto">
+              {importReview.updates.map(function (u) {
+                return (
+                  <div key={u.row} className="px-5 py-2.5 flex items-center gap-3 text-xs">
+                    <span className="text-gray-400 font-mono w-10 flex-shrink-0">#{u.row}</span>
+                    <span className="font-medium text-gray-700 truncate flex-1">{u.name}</span>
+                    <span className="text-gray-500 text-right">{u.changedFields.map(function (f) { return fieldLabels[f] || f }).join(', ')}</span>
+                    {u.warnings.length > 0 && (<span className="text-amber-600" title={u.warnings.join('; ')}>⚠</span>)}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
+        {importReview.newRows.length > 0 && (
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+            <div className="px-5 py-3 bg-green-50 border-b border-green-200 flex items-center justify-between">
+              <p className="text-xs font-bold text-green-700 uppercase tracking-wider">New Vendors — check to insert</p>
+              <label className="flex items-center gap-2 text-xs text-green-700 font-semibold cursor-pointer">
+                <input type="checkbox" checked={newRowsAllChecked}
+                  onChange={function (e) { toggleAllNewRows(e.target.checked) }}
+                  className="rounded" />
+                {newRowsAllChecked ? 'Deselect all' : 'Select all'}
+              </label>
+            </div>
+            <div className="divide-y divide-gray-100 max-h-72 overflow-y-auto">
+              {importReview.newRows.map(function (nr, i) {
+                var checked = !!importReview.newRowsSelected[i]
+                return (
+                  <label key={i} className={"flex items-start gap-3 px-5 py-2.5 cursor-pointer transition-colors " + (checked ? "bg-white" : "bg-gray-50")}>
+                    <input type="checkbox" checked={checked}
+                      onChange={function () { toggleNewRow(i) }}
+                      className="rounded mt-0.5" />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-gray-400 font-mono text-[11px]">#{nr.row}</span>
+                        <span className="font-medium text-sm text-gray-800 truncate">{nr.name}</span>
+                        {nr.warnings.length > 0 && (<span className="text-amber-600 text-xs" title={nr.warnings.join('; ')}>⚠</span>)}
+                      </div>
+                      <p className="text-[11px] text-gray-500 mt-0.5">
+                        {nr.payload.vendor_type || 'Supplier'}
+                        {nr.payload.phone ? ' · ' + nr.payload.phone : ''}
+                        {nr.payload.contact ? ' · ' + nr.payload.contact : ''}
+                      </p>
+                    </div>
+                  </label>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
+        {importReview.skipped.length > 0 && (
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+            <div className="px-5 py-3 bg-amber-50 border-b border-amber-200">
+              <p className="text-xs font-bold text-amber-700 uppercase tracking-wider">Errors — will not be imported</p>
+            </div>
+            <div className="divide-y divide-gray-100 max-h-48 overflow-y-auto">
+              {importReview.skipped.map(function (s, si) {
+                return (
+                  <div key={si} className="px-5 py-2.5 flex items-center gap-3 text-xs">
+                    <span className="text-gray-400 font-mono w-10 flex-shrink-0">#{s.row}</span>
+                    <span className="font-medium text-gray-700 w-40 truncate">{s.name}</span>
+                    <span className="text-amber-600 flex-1">{s.reason}</span>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
+        <div className="flex items-center justify-end gap-3 sticky bottom-0 bg-gray-50/95 backdrop-blur py-3 -mx-2 px-2 border-t border-gray-200">
+          <button onClick={cancelImport} disabled={saving}
+            className="px-5 py-2.5 text-sm font-semibold text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors">
+            Cancel
+          </button>
+          <button onClick={confirmImport} disabled={saving || totalChanges === 0}
+            className="px-5 py-2.5 text-sm font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm">
+            {saving ? 'Applying...' : 'Confirm & Apply — ' + totalChanges + ' change' + (totalChanges !== 1 ? 's' : '')}
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   // ═══ FORM VIEW ═══
   if (editing) {
@@ -373,11 +784,43 @@ function Vendors({ profile }) {
             className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
           Show inactive
         </label>
+        <input type="file" accept=".csv,text/csv" ref={importFileRef} onChange={handleImportFile} style={{ display: 'none' }} />
+        <button onClick={function () { if (importFileRef.current) importFileRef.current.click() }}
+          className="px-3 py-2.5 text-sm font-semibold text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors whitespace-nowrap ml-auto"
+          title="Import from CSV — review before applying">
+          ⤒ Import CSV
+        </button>
+        <button onClick={exportCSV} disabled={vendors.length === 0}
+          className="px-3 py-2.5 text-sm font-semibold text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
+          title="Export vendors — includes GST, PAN, bank details">
+          ⤓ Export CSV
+        </button>
         <button onClick={startAdd}
-          className="px-5 py-2.5 text-sm font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 active:bg-indigo-800 transition-colors shadow-sm whitespace-nowrap ml-auto">
+          className="px-5 py-2.5 text-sm font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 active:bg-indigo-800 transition-colors shadow-sm whitespace-nowrap">
           + Add Vendor
         </button>
       </div>
+
+      {/* Import summary banner */}
+      {importSummary && (
+        <div className="bg-white border border-gray-200 rounded-xl px-4 py-3 shadow-sm flex items-center gap-4 flex-wrap">
+          <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Import result</span>
+          <span className="text-xs text-blue-700 font-semibold">{importSummary.updated} updated</span>
+          <span className="text-xs text-green-700 font-semibold">{importSummary.inserted} inserted</span>
+          <span className="text-xs text-gray-500 font-semibold">{importSummary.unchanged} unchanged</span>
+          {importSummary.skipped.length > 0 && (
+            <span className="text-xs text-amber-700 font-semibold">{importSummary.skipped.length} error{importSummary.skipped.length !== 1 ? 's' : ''}</span>
+          )}
+          {importSummary.skipped.length > 0 && (
+            <button onClick={downloadSkippedCsv}
+              className="text-xs text-indigo-600 font-semibold hover:text-indigo-700 underline">
+              Download error log
+            </button>
+          )}
+          <button onClick={function () { setImportSummary(null) }}
+            className="ml-auto text-xs text-gray-400 hover:text-gray-600">✕</button>
+        </div>
+      )}
 
       {/* Results count */}
       {(search || catFilter) && (
