@@ -56,7 +56,7 @@ function Requisitions({ profile, onBack }) {
   }
 
   useEffect(function () {
-    supabase.from('departments').select('id, name').eq('active', true).then(function (res) {
+    supabase.from('departments').select('id, name').eq('active', true).eq('hide_from_lists', false).then(function (res) {
       var all = res.data || []
       var isAdminRole = profile?.role === 'admin' || profile?.role === 'auditor'
       var userDeptIds = profile?.event_dept_ids || []
@@ -488,8 +488,8 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
 
   async function loadLookups() {
     var [deptRes, subDeptRes, catRes, subCatRes, venueRes, expTypeRes, expSubTypeRes, invRes, csRes] = await Promise.all([
-      supabase.from('departments').select('id, name').eq('active', true).order('name'),
-      supabase.from('sub_departments').select('id, name, department_id').eq('active', true).order('name'),
+      supabase.from('departments').select('id, name').eq('active', true).eq('hide_from_lists', false).order('name'),
+      supabase.from('sub_departments').select('id, name, department_id, departments!inner(hide_from_lists)').eq('active', true).eq('departments.hide_from_lists', false).order('name'),
       supabase.from('categories').select('id, name, sub_department_id, expense_type_ids').order('name'),
       supabase.from('sub_categories').select('id, name, category_id').order('name'),
       supabase.from('venues').select('id, code, name').order('name'),

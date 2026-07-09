@@ -99,7 +99,7 @@ function ProductionOrders({ profile }) {
         .or('function_date.gte.' + new Date(Date.now() - 90 * 86400000).toISOString().split('T')[0] + ',function_date.is.null')
         .order('function_date', { ascending: false, nullsFirst: false }).limit(200),
       supabase.rpc('get_profiles_with_dept'),
-      supabase.from('departments').select('id, name').eq('active', true).order('name'),
+      supabase.from('departments').select('id, name').eq('active', true).eq('hide_from_lists', false).order('name'),
       supabase.from('categories').select('id, name').order('name'),
       supabase.from('sub_categories').select('id, name, category_id').order('name'),
     ])

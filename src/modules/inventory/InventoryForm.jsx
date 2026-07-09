@@ -197,7 +197,7 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved }) {
   async function loadLookups() {
     var [catRes, deptRes, venueRes, subVenueRes, subDeptRes] = await Promise.all([
       supabase.from('categories').select('*').order('name'),
-      supabase.from('departments').select('*').eq('active', true).order('name'),
+      supabase.from('departments').select('*').eq('active', true).eq('hide_from_lists', false).order('name'),
       supabase.from('venues').select('*').eq('active', true).order('code'),
       supabase.from('sub_venues').select('id, name, venue_id').eq('active', true).order('name'),
       supabase.from('sub_departments').select('id, name').eq('name', 'Catering Store').limit(1)

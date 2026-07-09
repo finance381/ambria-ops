@@ -141,7 +141,7 @@ function Events({ profile }) {
       .gte('function_date', dateFloorStr)
       .order('function_date', { ascending: false })
       .limit(2000),
-      supabase.from('departments').select('id, name').eq('active', true),
+      supabase.from('departments').select('id, name').eq('active', true).eq('hide_from_lists', false),
     ])
     var data = eventsRes.data || []
     setDepartments(deptRes.data || [])

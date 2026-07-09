@@ -1,0 +1,15 @@
+﻿C:\GYV\ambria-ops\src\modules\categories\Categories.jsx:81: supabase.from('sub_departments').select('*').order('name'),
+C:\GYV\ambria-ops\src\modules\categories\Categories.jsx:125: var { error: err } = await supabase.from('sub_departments').insert({ name: val, department_id: deptId, code: code })
+C:\GYV\ambria-ops\src\modules\categories\Categories.jsx:137: var { error: err } = await supabase.from('sub_departments').delete().eq('id', sd.id)
+C:\GYV\ambria-ops\src\modules\categories\Categories.jsx:142: await supabase.from('sub_departments').update({ active: !sd.active }).eq('id', sd.id)
+C:\GYV\ambria-ops\src\modules\categories\Categories.jsx:157: await supabase.from('sub_departments').update({ name: editSubDeptName.trim(), expense_type_ids: editSubDeptExpTypes }).eq('id', editingSubDept.id)
+C:\GYV\ambria-ops\src\modules\categories\PendingReview.jsx:46: supabase.from('sub_departments').select('id, name, department_id').eq('active', true).order('name'),
+C:\GYV\ambria-ops\src\modules\expenses\ExpenseDetail.jsx:51: sdIds.length > 0 ? supabase.from('sub_departments').select('id, name').in('id', sdIds) : { data: [] }
+C:\GYV\ambria-ops\src\modules\expenses\ExpenseForm.jsx:69: supabase.from('sub_departments').select('id, name, department_id').eq('active', true).order('name'),
+C:\GYV\ambria-ops\src\modules\expenses\Expenses.jsx:68: supabase.from('sub_departments').select('id, name, department_id'),
+C:\GYV\ambria-ops\src\modules\expenses\ExpenseTypeMaster.jsx:440: supabase.from('sub_departments').select('id, name, department_id').eq('active', true).order('name').then(function (r) { setSubDepartments(r.data || []) })
+C:\GYV\ambria-ops\src\modules\inventory\AdminItems.jsx:112: supabase.from('sub_departments').select('id, name, department_id').eq('active', true).order('name'),
+C:\GYV\ambria-ops\src\modules\inventory\InventoryForm.jsx:203: supabase.from('sub_departments').select('id, name').eq('name', 'Catering Store').limit(1)
+C:\GYV\ambria-ops\src\modules\requisitions\Requisitions.jsx:167: sdIds.length > 0 ? supabase.from('sub_departments').select('id, name').in('id', sdIds) : { data: [] }
+C:\GYV\ambria-ops\src\modules\requisitions\Requisitions.jsx:492: supabase.from('sub_departments').select('id, name, department_id').eq('active', true).order('name'),
+C:\GYV\ambria-ops\src\modules\users\Users.jsx:116: supabase.from('sub_departments').select('id, name, department_id, active').order('name'),

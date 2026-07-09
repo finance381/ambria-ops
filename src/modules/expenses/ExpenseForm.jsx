@@ -64,9 +64,9 @@ function ExpenseForm({ profile, onDone }) {
       supabase.from('sub_categories').select('id, category_id, name').order('name'),
       supabase.from('expense_types').select('id, name, icon, description, sort_order').eq('active', true).order('sort_order').order('name'),
       supabase.from('expense_sub_types').select('id, expense_type_id, name, extra_fields, active, sort_order').eq('active', true).order('sort_order').order('name'),
-      supabase.from('departments').select('id, name').eq('active', true).order('name'),
+      supabase.from('departments').select('id, name').eq('active', true).eq('hide_from_lists', false).order('name'),
       supabase.from('venues').select('id, code, name').eq('active', true).order('name'),
-      supabase.from('sub_departments').select('id, name, department_id').eq('active', true).order('name'),
+      supabase.from('sub_departments').select('id, name, department_id, departments!inner(hide_from_lists)').eq('active', true).eq('departments.hide_from_lists', false).order('name'),
     ])
     setCategories(catR.data || [])
     setSubCategories(scR.data || [])
