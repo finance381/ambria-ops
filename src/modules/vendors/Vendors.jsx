@@ -11,7 +11,7 @@ function Vendors({ profile }) {
   var [catFilter, setCatFilter] = useState('')
   var [showInactive, setShowInactive] = useState(false)
   var [editing, setEditing] = useState(null)
-  var [form, setForm] = useState({ name: '', contact: '', phone: '', phone2: '', email: '', address: '', category_ids: [], notes: '', opening_balance: '', gst_number: '', pan_number: '', bank_account: '', bank_ifsc: '', vendor_type: 'Supplier', lead_time_days: '' })
+  var [form, setForm] = useState({ name: '', contact: '', phone: '', phone2: '', email: '', address: '', category_ids: [], notes: '', opening_balance: '', gst_number: '', pan_number: '', bank_account: '', bank_ifsc: '', vendor_type: 'Supplier', lead_time_days: '', referred_by: '' })
 
   useEffect(function () { loadAll() }, [])
 
@@ -28,7 +28,7 @@ function Vendors({ profile }) {
 
   function startAdd() {
     setEditing('new')
-    setForm({ name: '', contact: '', phone: '', phone2: '', email: '', address: '', category_ids: [], notes: '', opening_balance: '', gst_number: '', pan_number: '', bank_account: '', bank_ifsc: '', vendor_type: 'Supplier', lead_time_days: '' })
+    setForm({ name: '', contact: '', phone: '', phone2: '', email: '', address: '', category_ids: [], notes: '', opening_balance: '', gst_number: '', pan_number: '', bank_account: '', bank_ifsc: '', vendor_type: 'Supplier', lead_time_days: '', referred_by: '' })
   }
 
   function startEdit(v) {
@@ -49,12 +49,13 @@ function Vendors({ profile }) {
       bank_ifsc: v.bank_ifsc || '',
       vendor_type: v.vendor_type || 'Supplier',
       lead_time_days: v.lead_time_days ? String(v.lead_time_days) : '',
+      referred_by: v.referred_by || '',
     })
   }
 
   function cancelEdit() {
     setEditing(null)
-    setForm({ name: '', contact: '', phone: '', phone2: '', email: '', address: '', category_ids: [], notes: '', opening_balance: '', gst_number: '', pan_number: '', bank_account: '', bank_ifsc: '', vendor_type: 'Supplier', lead_time_days: '' })
+    setForm({ name: '', contact: '', phone: '', phone2: '', email: '', address: '', category_ids: [], notes: '', opening_balance: '', gst_number: '', pan_number: '', bank_account: '', bank_ifsc: '', vendor_type: 'Supplier', lead_time_days: '', referred_by: '' })
   }
 
   function toggleCat(catId) {
@@ -88,6 +89,7 @@ function Vendors({ profile }) {
       bank_ifsc: form.bank_ifsc.trim() || null,
       vendor_type: form.vendor_type || 'Supplier',
       lead_time_days: form.lead_time_days ? Number(form.lead_time_days) : null,
+      referred_by: form.referred_by.trim() || null,
     }
 
     if (editing === 'new') {
@@ -167,6 +169,14 @@ function Vendors({ profile }) {
                     return <option key={t} value={t}>{t}</option>
                   })}
                 </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Referred By</label>
+                <input type="text" value={form.referred_by}
+                  onChange={function (e) { setForm(function (p) { return Object.assign({}, p, { referred_by: e.target.value }) }) }}
+                  placeholder="Employee name (for fuzzy match later)"
+                  className="w-full px-4 py-3 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-gray-50"
+                  style={{ fontSize: '16px' }} />
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Lead Time (days)</label>
