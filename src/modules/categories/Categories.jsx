@@ -50,6 +50,7 @@ function Categories() {
   var [editCatConsumable, setEditCatConsumable] = useState(true)
   var [expTypes, setExpTypes] = useState([])
   var [editDeptExpTypes, setEditDeptExpTypes] = useState([])
+  var [editDeptHideFromLists, setEditDeptHideFromLists] = useState(false)
   var [editSubDeptExpTypes, setEditSubDeptExpTypes] = useState([])
   var [editCatExpTypes, setEditCatExpTypes] = useState([])
   var [editCatExpSubTypes, setEditCatExpSubTypes] = useState([])
@@ -113,7 +114,7 @@ function Categories() {
 
   async function saveEditDept(dept) {
     if (!editVal.trim()) return
-    var { error: err } = await supabase.from('departments').update({ name: editVal.trim(), category_ids: editDeptCats, expense_type_ids: editDeptExpTypes }).eq('id', dept.id)
+    var { error: err } = await supabase.from('departments').update({ name: editVal.trim(), category_ids: editDeptCats, expense_type_ids: editDeptExpTypes, hide_from_lists: !!editDeptHideFromLists }).eq('id', dept.id)
     if (err) { setError(err.message) } else { setEditing(null); loadAll() }
   }
   async function addSubDepartment(deptId) {
@@ -721,6 +722,12 @@ function Categories() {
                         <button onClick={function () { saveEditDept(dept) }} className="text-xs px-2 py-1 rounded bg-indigo-600 text-white">Save</button>
                         <button onClick={function () { setEditing(null) }} className="text-xs px-2 py-1 rounded bg-gray-100 text-gray-600">Cancel</button>
                       </div>
+                      <label className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer">
+                        <input type="checkbox" checked={editDeptHideFromLists}
+                          onChange={function (e) { setEditDeptHideFromLists(e.target.checked) }}
+                          className="w-3.5 h-3.5 rounded" />
+                        <span>Hide from lists <span className="text-gray-400">(dropdowns / allocation; still visible in admin reports)</span></span>
+                      </label>
                       <div>
                         <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">Inventory Categories</label>
                         <div className="flex flex-wrap gap-2 mt-1">
@@ -773,12 +780,15 @@ function Categories() {
                             (dept.active ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500")}>
                             {dept.active ? 'Active' : 'Inactive'}
                           </span>
+                          {dept.hide_from_lists && (
+                            <span className="text-xs px-1.5 py-0.5 rounded-full font-medium bg-amber-100 text-amber-700" title="Hidden from lookup lists; visible in admin reports">Hidden</span>
+                          )}
                           {deptSubDepts.length > 0 && (
                             <span className="text-xs text-gray-400">{deptSubDepts.length} sub-dept{deptSubDepts.length !== 1 ? 's' : ''}</span>
                           )}
                         </div>
                         <div className="flex gap-2">
-                          <button onClick={function () { setEditing('dept-' + dept.id); setEditVal(dept.name); setEditDeptCats(dept.category_ids || []); setEditDeptExpTypes(dept.expense_type_ids || []) }}
+                          <button onClick={function () { setEditing('dept-' + dept.id); setEditVal(dept.name); setEditDeptCats(dept.category_ids || []); setEditDeptExpTypes(dept.expense_type_ids || []); setEditDeptHideFromLists(!!dept.hide_from_lists) }}
                             className="text-xs px-2 py-1 rounded bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors">Edit</button>
                           <button onClick={function () { toggleDepartment(dept) }}
                             className="text-xs px-2 py-1 rounded bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors">
