@@ -426,7 +426,7 @@ function Categories() {
     var options = []
     var typeMatch = s.match(/\[(\w+)\]/)
     if (typeMatch) { type = typeMatch[1].toLowerCase(); s = s.replace(typeMatch[0], '').trim() }
-    var optMatch = s.match(/\(([^)]+)\)/)
+    var optMatch = s.match(/\((.+)\)\s*$/)
     if (optMatch) {
       options = optMatch[1].split('|').map(function (o) { return o.trim() }).filter(Boolean)
       s = s.replace(optMatch[0], '').trim()
