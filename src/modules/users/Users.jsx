@@ -14,7 +14,7 @@ var PERM_GROUPS = [
   ]},
   { group: 'Events', icon: '📅', children: [
     { key: 'feature_events', label: 'Events', grants: ['feature_events'], optional: [{ key: 'event_buffer', label: 'Set setup/teardown days' }] },
-    { key: 'feature_requisitions', label: 'Requisitions', grants: ['feature_requisitions'] },
+    { key: 'feature_requisitions', label: 'Requisitions', grants: ['feature_requisitions'], optional: [{ key: 'req_dept_approve', label: 'Dept-tier approve' }, { key: 'req_admin_approve', label: 'Admin-tier approve' }] },
     { key: 'feature_production', label: 'Production Orders', grants: ['feature_production'] },
     { key: 'feature_manpower', label: 'Manpower', grants: ['feature_manpower'] },
   ]},
@@ -53,6 +53,13 @@ function Users() {
   var [editExpenseSubTypeIds, setEditExpenseSubTypeIds] = useState([])
   var [expenseTypes, setExpenseTypes] = useState([])
   var [expenseSubTypes, setExpenseSubTypes] = useState([])
+
+  // Sidebar nav + per-list search filters
+  var [activePanel, setActivePanel] = useState('identity')
+  var [expTypeSearch, setExpTypeSearch] = useState('')
+  var [expSubTypeSearch, setExpSubTypeSearch] = useState('')
+  var [catFilter, setCatFilter] = useState('')
+  var [subCatFilter, setSubCatFilter] = useState('')
   var [deleteConfirm, setDeleteConfirm] = useState(null)
   var [editEmail, setEditEmail] = useState('')
 
@@ -145,6 +152,8 @@ function Users() {
     setEditEventDeptIds(user.event_dept_ids || [])
     setEditExpenseTypeIds(user.expense_type_ids || [])
     setEditExpenseSubTypeIds(user.expense_sub_type_ids || [])
+    setActivePanel('identity')
+    setExpTypeSearch(''); setExpSubTypeSearch(''); setCatFilter(''); setSubCatFilter('')
     setError('')
     setRoleSearch('')
     setRoleDropOpen(false)
@@ -467,7 +476,35 @@ function Users() {
       {/* ═══ EDIT USER MODAL ═══ */}
       <Modal open={!!editUser} onClose={function () { setEditUser(null) }} title={'Edit: ' + (editUser?.name || '')}>
         {editUser && (
-          <form onSubmit={saveUser} className="space-y-4">
+          <div className="flex" style={{ minHeight: '440px' }}>
+            {/* Sidebar */}
+            <div className="w-40 border-r border-gray-200 bg-gray-50 p-2 flex-shrink-0 space-y-1 overflow-y-auto">
+              {[
+                { key: 'identity', label: 'Identity', icon: '👤', count: null },
+                { key: 'event', label: 'Event', icon: '📅', count: editEventDeptIds.length },
+                { key: 'expense', label: 'Expense', icon: '💰', count: editSubDeptIds.length + editExpenseTypeIds.length + editExpenseSubTypeIds.length },
+                { key: 'inventory', label: 'Inventory', icon: '📦', count: editCatIds.length + editSubCatIds.length },
+                { key: 'permissions', label: 'Permissions', icon: '🔑', count: editPerms.length },
+              ].map(function (nav) {
+                var isActive = activePanel === nav.key
+                return (
+                  <button key={nav.key} type="button" onClick={function () { setActivePanel(nav.key) }}
+                    className={"w-full flex items-center gap-2 px-2.5 py-2 rounded-md text-sm text-left transition-colors " +
+                      (isActive ? "bg-white text-gray-900 font-medium border border-gray-200 shadow-sm" : "text-gray-500 hover:bg-white/60")}>
+                    <span>{nav.icon}</span>
+                    <span className="flex-1">{nav.label}</span>
+                    {nav.count !== null && nav.count > 0 && (
+                      <span className={"text-[10px] px-1.5 py-0.5 rounded-full font-medium " +
+                        (isActive ? "bg-indigo-100 text-indigo-700" : "bg-gray-200 text-gray-500")}>{nav.count}</span>
+                    )}
+                  </button>
+                )
+              })}
+            </div>
+            {/* Main pane */}
+            <form onSubmit={saveUser} className="flex-1 min-w-0 flex flex-col">
+              <div className="flex-1 p-4 space-y-4 overflow-y-auto">
+                {activePanel === 'identity' && (<div className="space-y-4">
             <div className="bg-gray-50 rounded-lg p-3">
               <p className="text-sm font-medium text-gray-800">{editUser.name}</p>
               <p className="text-xs text-gray-400 mb-2">{editUser.id}</p>
@@ -525,6 +562,10 @@ function Users() {
                 </span>
               )}
             </div>
+            </div>)}
+
+                {activePanel === 'event' && (<div className="space-y-3">
+                  <p className="text-[11px] text-gray-400">Departments this user can see events for.</p>
             {/* Departments */}
             {departments.length > 0 && (
               <div>
@@ -546,6 +587,9 @@ function Users() {
                 <p className="text-[11px] text-gray-500 mt-1">Assigned departments limit what user sees in requisition/expense forms</p>
               </div>
             )}
+            </div>)}
+
+                {activePanel === 'expense' && (<div className="space-y-4">
             {/* Sub-departments */}
             {subDepartments.length > 0 && editEventDeptIds.length > 0 && (
               <div>
@@ -568,100 +612,192 @@ function Users() {
               </div>
             )}
 
-            {/* Expense Types — controls which types user can pick in expense/requisition forms */}
+            {/* Expense Types */}
             {expenseTypes.length > 0 && (
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Expense Types</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-sm font-medium text-gray-700">Expense Types</label>
+                  <span className="text-[11px] text-gray-500">{editExpenseTypeIds.length} of {expenseTypes.length}</span>
+                </div>
                 <p className="text-[11px] text-gray-400 mb-2">Expense types this user can log against.</p>
-                <div className="bg-gray-50 rounded-lg p-3 max-h-48 overflow-y-auto">
-                  <div className="grid grid-cols-2 gap-2">
-                    {expenseTypes.map(function (et) {
-                      var isChecked = editExpenseTypeIds.includes(et.id)
-                      return (
-                        <label key={et.id} className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
-                          <input type="checkbox" checked={isChecked} onChange={function () { toggleExpenseTypeId(et.id) }}
-                            className="w-4 h-4 accent-indigo-600" />
-                          <span>{et.icon ? et.icon + ' ' : ''}{et.name}</span>
-                        </label>
-                      )
-                    })}
-                  </div>
-                </div>
+                <input type="text" value={expTypeSearch} onChange={function (e) { setExpTypeSearch(e.target.value) }}
+                  placeholder={"Search " + expenseTypes.length + " types..."}
+                  className="w-full mb-2 px-2 py-1.5 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                {(function () {
+                  var visible = expenseTypes.filter(function (et) { return !expTypeSearch || et.name.toLowerCase().indexOf(expTypeSearch.toLowerCase()) !== -1 })
+                  var visibleIds = visible.map(function (et) { return et.id })
+                  var allVisibleOn = visible.length > 0 && visible.every(function (et) { return editExpenseTypeIds.includes(et.id) })
+                  return (
+                    <div>
+                      <div className="flex gap-3 mb-1 text-[11px] text-indigo-600">
+                        <button type="button" onClick={function () { visible.forEach(function (et) { if (!editExpenseTypeIds.includes(et.id)) toggleExpenseTypeId(et.id) }) }}
+                          disabled={allVisibleOn}
+                          className="hover:underline disabled:text-gray-300 disabled:no-underline">Select all{expTypeSearch ? ' visible' : ''}</button>
+                        <button type="button" onClick={function () { visible.forEach(function (et) { if (editExpenseTypeIds.includes(et.id)) toggleExpenseTypeId(et.id) }) }}
+                          className="hover:underline">Clear{expTypeSearch ? ' visible' : ''}</button>
+                      </div>
+                      <div className="bg-gray-50 rounded-lg p-3 max-h-48 overflow-y-auto">
+                        {visible.length === 0 && <p className="text-xs text-gray-400">No matches</p>}
+                        <div className="grid grid-cols-2 gap-2">
+                          {visible.map(function (et) {
+                            var isChecked = editExpenseTypeIds.includes(et.id)
+                            return (
+                              <label key={et.id} className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                                <input type="checkbox" checked={isChecked} onChange={function () { toggleExpenseTypeId(et.id) }}
+                                  className="w-4 h-4 accent-indigo-600" />
+                                <span>{et.icon ? et.icon + ' ' : ''}{et.name}</span>
+                              </label>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })()}
               </div>
             )}
 
-            {/* Expense Sub-types — filtered by selected types */}
+            {/* Expense Sub-types */}
             {expenseTypes.length > 0 && (
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Expense Sub-types
-                  {editExpenseTypeIds.length > 0 && <span className="text-xs text-gray-400 ml-1">(filtered by selected types)</span>}
-                </label>
-                <div className="bg-gray-50 rounded-lg p-3 max-h-48 overflow-y-auto">
-                  {filteredExpenseSubTypes.length === 0 && <p className="text-xs text-gray-400">No sub-types{editExpenseTypeIds.length > 0 ? ' for selected types' : ''}</p>}
-                  <div className="grid grid-cols-2 gap-2">
-                    {filteredExpenseSubTypes.map(function (st) {
-                      var isChecked = editExpenseSubTypeIds.includes(st.id)
-                      var parentType = expenseTypes.find(function (t) { return t.id === st.expense_type_id })
-                      return (
-                        <label key={st.id} className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
-                          <input type="checkbox" checked={isChecked} onChange={function () { toggleExpenseSubTypeId(st.id) }}
-                            className="w-4 h-4 accent-indigo-600" />
-                          <span>{st.name} {parentType ? <span className="text-[10px] text-gray-400">({parentType.name})</span> : ''}</span>
-                        </label>
-                      )
-                    })}
-                  </div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-sm font-medium text-gray-700">
+                    Expense Sub-types
+                    {editExpenseTypeIds.length > 0 && <span className="text-xs text-gray-400 ml-1 font-normal">(filtered by selected types)</span>}
+                  </label>
+                  <span className="text-[11px] text-gray-500">{editExpenseSubTypeIds.length} of {filteredExpenseSubTypes.length}</span>
                 </div>
+                <input type="text" value={expSubTypeSearch} onChange={function (e) { setExpSubTypeSearch(e.target.value) }}
+                  placeholder={"Search sub-types..."}
+                  className="w-full mb-2 px-2 py-1.5 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                {(function () {
+                  var visible = filteredExpenseSubTypes.filter(function (st) { return !expSubTypeSearch || st.name.toLowerCase().indexOf(expSubTypeSearch.toLowerCase()) !== -1 })
+                  var allVisibleOn = visible.length > 0 && visible.every(function (st) { return editExpenseSubTypeIds.includes(st.id) })
+                  return (
+                    <div>
+                      <div className="flex gap-3 mb-1 text-[11px] text-indigo-600">
+                        <button type="button" onClick={function () { visible.forEach(function (st) { if (!editExpenseSubTypeIds.includes(st.id)) toggleExpenseSubTypeId(st.id) }) }}
+                          disabled={allVisibleOn}
+                          className="hover:underline disabled:text-gray-300 disabled:no-underline">Select all{expSubTypeSearch ? ' visible' : ''}</button>
+                        <button type="button" onClick={function () { visible.forEach(function (st) { if (editExpenseSubTypeIds.includes(st.id)) toggleExpenseSubTypeId(st.id) }) }}
+                          className="hover:underline">Clear{expSubTypeSearch ? ' visible' : ''}</button>
+                      </div>
+                      <div className="bg-gray-50 rounded-lg p-3 max-h-48 overflow-y-auto">
+                        {visible.length === 0 && <p className="text-xs text-gray-400">No matches</p>}
+                        <div className="grid grid-cols-2 gap-2">
+                          {visible.map(function (st) {
+                            var isChecked = editExpenseSubTypeIds.includes(st.id)
+                            var parentType = expenseTypes.find(function (t) { return t.id === st.expense_type_id })
+                            return (
+                              <label key={st.id} className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                                <input type="checkbox" checked={isChecked} onChange={function () { toggleExpenseSubTypeId(st.id) }}
+                                  className="w-4 h-4 accent-indigo-600" />
+                                <span>{st.name} {parentType ? <span className="text-[10px] text-gray-400">({parentType.name})</span> : ''}</span>
+                              </label>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })()}
               </div>
             )}
 
-            {/* Categories — inventory access, independent of sub-dept */}
+            </div>)}
+
+                {activePanel === 'inventory' && (<div className="space-y-4">
+            {/* Categories — inventory access */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Assigned Categories</label>
-              <p className="text-[11px] text-gray-400 mb-2">Inventory categories this user can see and act on.</p>
-              <div className="bg-gray-50 rounded-lg p-3 max-h-48 overflow-y-auto">
-                {categories.length === 0 && <p className="text-xs text-gray-400">No categories</p>}
-                <div className="grid grid-cols-2 gap-2">
-                  {categories.map(function (cat) {
-                    var isChecked = editCatIds.includes(cat.id)
-                    return (
-                      <label key={cat.id} className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
-                        <input type="checkbox" checked={isChecked}
-                          onChange={function () { toggleCatId(cat.id) }}
-                          className="w-4 h-4 accent-indigo-600" />
-                        <span>{cat.name}</span>
-                      </label>
-                    )
-                  })}
-                </div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-sm font-medium text-gray-700">Assigned Categories</label>
+                <span className="text-[11px] text-gray-500">{editCatIds.length} of {categories.length}</span>
               </div>
+              <p className="text-[11px] text-gray-400 mb-2">Inventory categories this user can see and act on.</p>
+              <input type="text" value={catFilter} onChange={function (e) { setCatFilter(e.target.value) }}
+                placeholder={"Search " + categories.length + " categories..."}
+                className="w-full mb-2 px-2 py-1.5 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+              {(function () {
+                var visible = categories.filter(function (c) { return !catFilter || c.name.toLowerCase().indexOf(catFilter.toLowerCase()) !== -1 })
+                var allVisibleOn = visible.length > 0 && visible.every(function (c) { return editCatIds.includes(c.id) })
+                return (
+                  <div>
+                    <div className="flex gap-3 mb-1 text-[11px] text-indigo-600">
+                      <button type="button" onClick={function () { visible.forEach(function (c) { if (!editCatIds.includes(c.id)) toggleCatId(c.id) }) }}
+                        disabled={allVisibleOn}
+                        className="hover:underline disabled:text-gray-300 disabled:no-underline">Select all{catFilter ? ' visible' : ''}</button>
+                      <button type="button" onClick={function () { visible.forEach(function (c) { if (editCatIds.includes(c.id)) toggleCatId(c.id) }) }}
+                        className="hover:underline">Clear{catFilter ? ' visible' : ''}</button>
+                    </div>
+                    <div className="bg-gray-50 rounded-lg p-3 max-h-48 overflow-y-auto">
+                      {visible.length === 0 && <p className="text-xs text-gray-400">No matches</p>}
+                      <div className="grid grid-cols-2 gap-2">
+                        {visible.map(function (cat) {
+                          var isChecked = editCatIds.includes(cat.id)
+                          return (
+                            <label key={cat.id} className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                              <input type="checkbox" checked={isChecked}
+                                onChange={function () { toggleCatId(cat.id) }}
+                                className="w-4 h-4 accent-indigo-600" />
+                              <span>{cat.name}</span>
+                            </label>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                )
+              })()}
             </div>
 
-            {/* Sub-categories — filtered by selected categories */}
+            {/* Sub-categories */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Assigned Sub-categories
-                {editCatIds.length > 0 && <span className="text-xs text-gray-400 ml-1">(filtered by selected categories)</span>}
-              </label>
-              <div className="bg-gray-50 rounded-lg p-3 max-h-48 overflow-y-auto">
-                {filteredSubCats.length === 0 && <p className="text-xs text-gray-400">No sub-categories{editCatIds.length > 0 ? ' for selected categories' : ''}</p>}
-                <div className="grid grid-cols-2 gap-2">
-                  {filteredSubCats.map(function (sc) {
-                    var isChecked = editSubCatIds.includes(sc.id)
-                    var parentCat = categories.find(function (c) { return c.id === sc.category_id })
-                    return (
-                      <label key={sc.id} className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
-                        <input type="checkbox" checked={isChecked}
-                          onChange={function () { toggleSubCatId(sc.id) }}
-                          className="w-4 h-4 accent-indigo-600" />
-                        <span>{sc.name} {parentCat ? <span className="text-[10px] text-gray-400">({parentCat.name})</span> : ''}</span>
-                      </label>
-                    )
-                  })}
-                </div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-sm font-medium text-gray-700">
+                  Assigned Sub-categories
+                  {editCatIds.length > 0 && <span className="text-xs text-gray-400 ml-1 font-normal">(filtered by selected categories)</span>}
+                </label>
+                <span className="text-[11px] text-gray-500">{editSubCatIds.length} of {filteredSubCats.length}</span>
               </div>
+              <input type="text" value={subCatFilter} onChange={function (e) { setSubCatFilter(e.target.value) }}
+                placeholder="Search sub-categories..."
+                className="w-full mb-2 px-2 py-1.5 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+              {(function () {
+                var visible = filteredSubCats.filter(function (sc) { return !subCatFilter || sc.name.toLowerCase().indexOf(subCatFilter.toLowerCase()) !== -1 })
+                var allVisibleOn = visible.length > 0 && visible.every(function (sc) { return editSubCatIds.includes(sc.id) })
+                return (
+                  <div>
+                    <div className="flex gap-3 mb-1 text-[11px] text-indigo-600">
+                      <button type="button" onClick={function () { visible.forEach(function (sc) { if (!editSubCatIds.includes(sc.id)) toggleSubCatId(sc.id) }) }}
+                        disabled={allVisibleOn}
+                        className="hover:underline disabled:text-gray-300 disabled:no-underline">Select all{subCatFilter ? ' visible' : ''}</button>
+                      <button type="button" onClick={function () { visible.forEach(function (sc) { if (editSubCatIds.includes(sc.id)) toggleSubCatId(sc.id) }) }}
+                        className="hover:underline">Clear{subCatFilter ? ' visible' : ''}</button>
+                    </div>
+                    <div className="bg-gray-50 rounded-lg p-3 max-h-48 overflow-y-auto">
+                      {visible.length === 0 && <p className="text-xs text-gray-400">No matches</p>}
+                      <div className="grid grid-cols-2 gap-2">
+                        {visible.map(function (sc) {
+                          var isChecked = editSubCatIds.includes(sc.id)
+                          var parentCat = categories.find(function (c) { return c.id === sc.category_id })
+                          return (
+                            <label key={sc.id} className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                              <input type="checkbox" checked={isChecked}
+                                onChange={function () { toggleSubCatId(sc.id) }}
+                                className="w-4 h-4 accent-indigo-600" />
+                              <span>{sc.name} {parentCat ? <span className="text-[10px] text-gray-400">({parentCat.name})</span> : ''}</span>
+                            </label>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                )
+              })()}
             </div>
+            </div>)}
+
+                {activePanel === 'permissions' && (<div>
             {/* Permissions — Grouped */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Permissions</label>
@@ -747,6 +883,10 @@ function Users() {
               </div>
             </div>
 
+            </div>)}
+              </div>
+              {/* Universal bottom */}
+              <div className="border-t border-gray-200 bg-white p-3 space-y-3 flex-shrink-0">
             {/* Active toggle — only for signed-in users */}
             {editUser._source !== 'approved' && (
               <div className="flex items-center justify-between bg-gray-50 rounded-lg p-3">
@@ -800,7 +940,9 @@ function Users() {
                 </button>
               </div>
             </div>
-          </form>
+              </div>
+            </form>
+          </div>
         )}
       </Modal>
 

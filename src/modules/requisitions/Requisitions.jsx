@@ -40,15 +40,16 @@ function Requisitions({ profile, onBack }) {
   var [editItems, setEditItems] = useState([])
   var [departments, setDepartments] = useState([])
 
-  var isAdmin = profile?.role === 'admin' || (profile?.permissions && profile.permissions.indexOf('feature_requisitions') >= 0 && (profile.permissions.indexOf('dept_approve') >= 0 || profile.permissions.indexOf('admin_approve') >= 0))
+  var isAdmin = profile?.role === 'admin'
   var isAuditor = profile?.role === 'auditor'
-  var isDeptApprover = (profile?.permissions || []).indexOf('dept_approve') !== -1
-  var hasReqApprove = isAdmin || isAuditor || isDeptApprover
+  var isReqDeptApprover = (profile?.permissions || []).indexOf('req_dept_approve') !== -1
+  var isReqAdminApprover = (profile?.permissions || []).indexOf('req_admin_approve') !== -1
+  var hasReqApprove = isAdmin || isAuditor || isReqDeptApprover || isReqAdminApprover
   var showApproveTab = hasReqApprove && (profile?.permissions || []).indexOf('feature_requisitions') !== -1
 
   // Derive dept names for scoping non-admin dept approvers
   var approverDeptNames = []
-  if (isDeptApprover && !isAdmin && !isAuditor) {
+  if ((isReqDeptApprover || isReqAdminApprover) && !isAdmin && !isAuditor) {
     var deptIds = profile?.event_dept_ids || []
     if (deptIds.length > 0) {
       approverDeptNames = departments.filter(function (d) { return deptIds.indexOf(d.id) !== -1 }).map(function (d) { return d.name })
@@ -108,11 +109,8 @@ function Requisitions({ profile, onBack }) {
     if (append) setLoadingMore(true)
 
     var statuses = []
-    if (isAdmin || isAuditor) {
-      statuses = isDeptApprover ? ['pending_dept', 'pending'] : ['pending']
-    } else if (isDeptApprover) {
-      statuses = ['pending_dept']
-    }
+    if (isAdmin || isAuditor || isReqDeptApprover) statuses.push('pending_dept')
+    if (isAdmin || isAuditor || isReqAdminApprover) statuses.push('pending')
     if (statuses.length === 0) { setApprovalReqs([]); return }
 
     var query = supabase.from('requisitions')
@@ -122,8 +120,8 @@ function Requisitions({ profile, onBack }) {
       .order('created_at', { ascending: false })
       .range(offset, offset + PAGE_SIZE)
 
-    // Dept-scoped: non-admin dept approvers only see their departments
-    if (isDeptApprover && !isAdmin && !isAuditor && approverDeptNames.length > 0) {
+    // Dept-scoped: non-admin approvers only see their departments
+    if ((isReqDeptApprover || isReqAdminApprover) && !isAdmin && !isAuditor && approverDeptNames.length > 0) {
       query = query.in('department', approverDeptNames)
     }
 
@@ -233,7 +231,9 @@ function Requisitions({ profile, onBack }) {
         items={detailItems}
         profile={profile}
         isAdmin={isAdmin}
-        isDeptApprover={isDeptApprover}
+        isAuditor={isAuditor}
+        isReqDeptApprover={isReqDeptApprover}
+        isReqAdminApprover={isReqAdminApprover}
         onBack={function () { navBack() }}
         onUpdated={function () { loadMyReqs(false); loadApprovalReqs(false); setView(detailReq._fromApprove ? 'approve' : 'list'); setDetailReq(null); setDetailItems([]) }}
         onEdit={function () { startEdit(detailReq, detailItems) }}
@@ -738,12 +738,12 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
           if (expUpdErr) throw new Error(expUpdErr.message)
           try { await logActivity('REQUISITION_EDIT', purpose.trim() + ' | expense | ' + (amtPaise / 100)) } catch (_) {}
         } else {
-          var selfIsDeptApprover = (profile?.permissions || []).indexOf('dept_approve') !== -1
+          var selfIsReqDeptApprover = (profile?.permissions || []).indexOf('req_dept_approve') !== -1
           var isAdminRole = profile?.role === 'admin' || profile?.role === 'auditor'
           var status = 'pending_dept'
           if (isAdminRole) { status = 'approved' }
-          else if (selfIsDeptApprover) { status = 'pending'; expPayload.dept_approved_by = profile.id; expPayload.dept_approved_at = new Date().toISOString() }
-          else { var { data: hasAppr } = await supabase.rpc('has_dept_approvers', { p_exclude_id: profile.id }); if (!hasAppr) status = 'pending' }
+          else if (selfIsReqDeptApprover) { status = 'pending'; expPayload.dept_approved_by = profile.id; expPayload.dept_approved_at = new Date().toISOString() }
+          else { var { data: hasAppr } = await supabase.rpc('has_req_dept_approvers', { p_exclude_id: profile.id }); if (!hasAppr) status = 'pending' }
           expPayload.status = status
           var { error: expInsErr } = await supabase.from('requisitions').insert(expPayload)
           if (expInsErr) throw new Error(expInsErr.message)
@@ -810,7 +810,7 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
         logActivity('REQUISITION_EDIT', purpose.trim() + ' | ' + lineItems.length + ' items')
       } else {
         // ─── CREATE new requisition ───
-        var selfIsDeptApprover = (profile?.permissions || []).indexOf('dept_approve') !== -1
+        var selfIsReqDeptApprover = (profile?.permissions || []).indexOf('req_dept_approve') !== -1
         var isAdminRole = profile?.role === 'admin' || profile?.role === 'auditor'
 
         var status = 'pending_dept'
@@ -819,12 +819,12 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
 
         if (isAdminRole) {
           status = 'approved'
-        } else if (selfIsDeptApprover) {
+        } else if (selfIsReqDeptApprover) {
           status = 'pending'
           deptApprovedBy = profile.id
           deptApprovedAt = new Date().toISOString()
         } else {
-          var { data: hasAppr } = await supabase.rpc('has_dept_approvers', { p_exclude_id: profile.id })
+          var { data: hasAppr } = await supabase.rpc('has_req_dept_approvers', { p_exclude_id: profile.id })
           if (hasAppr) {
             status = 'pending_dept'
           } else {
@@ -1478,7 +1478,7 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
 // ═══════════════════════════════════════════════════════════════
 // DETAIL + APPROVAL VIEW
 // ═══════════════════════════════════════════════════════════════
-function RequisitionDetail({ req, items, profile, isAdmin, isDeptApprover, onBack, onUpdated, onEdit }) {
+function RequisitionDetail({ req, items, profile, isAdmin, isAuditor, isReqDeptApprover, isReqAdminApprover, onBack, onUpdated, onEdit }) {
   var [saving, setSaving] = useState(false)
   var [rejectMode, setRejectMode] = useState(false)
   var [rejectReason, setRejectReason] = useState('')
@@ -1550,10 +1550,10 @@ function RequisitionDetail({ req, items, profile, isAdmin, isDeptApprover, onBac
     }).catch(function () { setStockLoading(false) })
   }, [items, req.status])
 
-  var canDeptApprove = isDeptApprover && req.status === 'pending_dept' && req.requested_by !== profile?.id
-  var canAdminApprove = isAdmin && req.status === 'pending'
+  var canDeptApprove = (isReqDeptApprover || isAdmin || isAuditor) && req.status === 'pending_dept' && req.requested_by !== profile?.id
+  var canAdminApprove = (isReqAdminApprover || isAdmin || isAuditor) && req.status === 'pending'
   var canApprove = canDeptApprove || canAdminApprove
-  var canDelete = (req.requested_by === profile?.id && (req.status === 'pending_dept' || req.status === 'pending')) || isAdmin
+  var canDelete = (req.requested_by === profile?.id && (req.status === 'pending_dept' || req.status === 'pending')) || isAdmin || isReqAdminApprover
   var canEdit = req.requested_by === profile?.id && (req.status === 'pending_dept' || req.status === 'pending')
   var noneInPO = items.length > 0 && items.every(function (li) { return !li.po_item_id })
   var canCancel = req.requested_by === profile?.id && req.status === 'approved' && noneInPO
