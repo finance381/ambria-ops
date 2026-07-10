@@ -41,7 +41,8 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved }) {
   var [isAsset, setIsAsset] = useState(seed?.is_asset ?? 'unknown')
   var [venues, setVenues] = useState([])
   var [subVenues, setSubVenues] = useState([])
-  var [allocations, setAllocations] = useState([{ department: '', venue_id: '', sub_venue_id: '', qty: '' }])
+  var [subDepartments, setSubDepartments] = useState([])
+  var [allocations, setAllocations] = useState([{ department: '', sub_department_id: '', venue_id: '', sub_venue_id: '', qty: '' }])
   var [type, setType] = useState(seed?.type || 'Indoor')
   var [imageFile, setImageFile] = useState(null)
   var [imagePreview, setImagePreview] = useState(seed?.image_path ? getImageUrl(seed.image_path) : '')
@@ -89,12 +90,12 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved }) {
       if (isEdit && item?.id) {
         var source = deriveSource(item, lookups.cats, lookups.csId)
         var allocTbl = source === 'catering_store' ? 'cs_venue_allocations' : 'venue_allocations'
-        supabase.from(allocTbl).select('venue_id, sub_venue_id, qty').eq('item_id', item.id)
+        supabase.from(allocTbl).select('venue_id, sub_venue_id, sub_department_id, qty').eq('item_id', item.id)
           .then(function (res) {
             var data = res.data || []
             if (data.length > 0) {
               setAllocations(data.map(function (va) {
-                return { department: item.department || '', venue_id: String(va.venue_id), sub_venue_id: va.sub_venue_id ? String(va.sub_venue_id) : '', qty: String(va.qty) }
+                return { department: item.department || '', sub_department_id: va.sub_department_id ? String(va.sub_department_id) : '', venue_id: String(va.venue_id), sub_venue_id: va.sub_venue_id ? String(va.sub_venue_id) : '', qty: String(va.qty) }
               }))
             }
           })
@@ -200,24 +201,26 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved }) {
       supabase.from('departments').select('*').eq('active', true).eq('hide_from_lists', false).order('name'),
       supabase.from('venues').select('*').eq('active', true).order('code'),
       supabase.from('sub_venues').select('id, name, venue_id').eq('active', true).order('name'),
-      supabase.from('sub_departments').select('id, name').eq('name', 'Catering Store').limit(1)
+      supabase.from('sub_departments').select('id, name, department_id, active').order('name')
     ])
-    var cateringStoreId = (subDeptRes.data || [])[0]?.id || null
+    var allSubDepts = subDeptRes.data || []
+    var cateringStoreId = (allSubDepts.find(function (s) { return s.name === 'Catering Store' }) || {}).id || null
 
    var allCats = filterUserCategories(catRes.data || [], profile)
     setCategories(allCats)
     setDepartments(deptRes.data || [])
     setVenues(venueRes.data || [])
     setSubVenues(subVenueRes.data || [])
+    setSubDepartments(allSubDepts)
     setCateringStoreSubDeptId(cateringStoreId)
     return { cats: allCats, csId: cateringStoreId }
   }
 
   function updateAllocation(index, field, value) {
-    setAllocations(function (prev) { return prev.map(function (row, i) { if (i !== index) return row; var updated = { ...row, [field]: value }; if (field === 'venue_id') updated.sub_venue_id = ''; return updated }) })
+    setAllocations(function (prev) { return prev.map(function (row, i) { if (i !== index) return row; var updated = { ...row, [field]: value }; if (field === 'venue_id') updated.sub_venue_id = ''; if (field === 'department') updated.sub_department_id = ''; return updated }) })
   }
   function addAllocationRow() {
-    setAllocations(function (prev) { return [...prev, { department: '', venue_id: '', sub_venue_id: '', qty: '' }] })
+    setAllocations(function (prev) { return [...prev, { department: '', sub_department_id: '', venue_id: '', sub_venue_id: '', qty: '' }] })
   }
   function removeAllocationRow(index) { setAllocations(function (prev) { if (prev.length <= 1) return prev; return prev.filter(function (_, i) { return i !== index }) }) }
 
@@ -300,12 +303,12 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved }) {
 
     // Load allocations — pre-fill venues, leave qty empty for user to enter
     if (match.id) {
-      supabase.from('cs_venue_allocations').select('venue_id, sub_venue_id, qty').eq('item_id', match.id)
+      supabase.from('cs_venue_allocations').select('venue_id, sub_venue_id, sub_department_id, qty').eq('item_id', match.id)
         .then(function (res) {
           var data = res.data
           if (data && data.length > 0) {
             setAllocations(data.map(function (va) {
-              return { department: match.department || allocations[0]?.department || '', venue_id: String(va.venue_id), sub_venue_id: va.sub_venue_id ? String(va.sub_venue_id) : '', qty: '' }
+              return { department: match.department || allocations[0]?.department || '', sub_department_id: va.sub_department_id ? String(va.sub_department_id) : '', venue_id: String(va.venue_id), sub_venue_id: va.sub_venue_id ? String(va.sub_venue_id) : '', qty: '' }
             }))
           }
         })
@@ -356,7 +359,7 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved }) {
   function resetForm() {
     setCategoryId(''); setSubCategoryId(''); setName(''); setDescription(''); setNameHindi(''); setQty(''); setUnit('Pieces'); nameManual.current = false
     setMinOrderQty(''); setReorderQty(''); setRatePaise(''); setIsAsset('unknown'); setType('Indoor')
-    setImageFile(null); setImagePreview(''); setErrors({}); setAllocations([{ department: '', venue_id: '', sub_venue_id: '', qty: '' }])
+    setImageFile(null); setImagePreview(''); setErrors({}); setAllocations([{ department: '', sub_department_id: '', venue_id: '', sub_venue_id: '', qty: '' }])
     setCropSrc(null); setHiEdited(false); setDimensionValues([]); setCategoryDimFields([])
     setPackSizeQty(''); setPackSizeUnit('Grams'); setPackSizeBrand(''); setBrandList([])
   }
@@ -446,22 +449,22 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved }) {
           var { data: targetAllocs } = await supabase.from(allocTable).select('*').eq('item_id', mergeTarget.id)
           var formRows = allocations.filter(function (a) { return a.venue_id && Number(a.qty) > 0 })
           // Build combined allocation list: start with form entries
-          var allAllocsToMerge = formRows.map(function (a) { return { venue_id: Number(a.venue_id), sub_venue_id: a.sub_venue_id ? Number(a.sub_venue_id) : null, qty: Number(a.qty) } })
+          var allAllocsToMerge = formRows.map(function (a) { return { venue_id: Number(a.venue_id), sub_venue_id: a.sub_venue_id ? Number(a.sub_venue_id) : null, sub_department_id: a.sub_department_id ? Number(a.sub_department_id) : null, qty: Number(a.qty) } })
           // Add any DB allocations not covered by form (in case form didn't load them)
           ;(dbAllocs || []).forEach(function (da) {
-            var inForm = allAllocsToMerge.some(function (fa) { return fa.venue_id === da.venue_id && (fa.sub_venue_id || null) === (da.sub_venue_id || null) })
-            if (!inForm) allAllocsToMerge.push({ venue_id: da.venue_id, sub_venue_id: da.sub_venue_id || null, qty: da.qty })
+            var inForm = allAllocsToMerge.some(function (fa) { return fa.venue_id === da.venue_id && (fa.sub_venue_id || null) === (da.sub_venue_id || null) && (fa.sub_department_id || null) === (da.sub_department_id || null) })
+            if (!inForm) allAllocsToMerge.push({ venue_id: da.venue_id, sub_venue_id: da.sub_venue_id || null, sub_department_id: da.sub_department_id || null, qty: da.qty })
           })
           // Merge each into target
           for (var ai = 0; ai < allAllocsToMerge.length; ai++) {
             var nr = allAllocsToMerge[ai]
             if (!nr.qty || nr.qty <= 0) continue
-            var match = (targetAllocs || []).find(function (ta) { return ta.venue_id === nr.venue_id && (ta.sub_venue_id || null) === (nr.sub_venue_id || null) })
+            var match = (targetAllocs || []).find(function (ta) { return ta.venue_id === nr.venue_id && (ta.sub_venue_id || null) === (nr.sub_venue_id || null) && (ta.sub_department_id || null) === (nr.sub_department_id || null) })
             if (match) {
               var { error: updErr } = await supabase.from(allocTable).update({ qty: Math.round((match.qty + nr.qty) * 1000) / 1000 }).eq('id', match.id)
               if (updErr) throw new Error('Merge allocation update failed: ' + updErr.message)
             } else {
-              var { error: insErr } = await supabase.from(allocTable).insert({ item_id: mergeTarget.id, venue_id: nr.venue_id, sub_venue_id: nr.sub_venue_id, qty: nr.qty })
+              var { error: insErr } = await supabase.from(allocTable).insert({ item_id: mergeTarget.id, venue_id: nr.venue_id, sub_venue_id: nr.sub_venue_id, sub_department_id: nr.sub_department_id, qty: nr.qty })
               if (insErr) throw new Error('Merge allocation insert failed: ' + insErr.message)
             }
           }
@@ -479,7 +482,7 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved }) {
           var { error: updateError } = await supabase.from(tableName).update(payload).eq('id', item.id)
           if (updateError) throw updateError
           await supabase.from(allocTable).delete().eq('item_id', item.id)
-          var venueRows = allocations.filter(function (a) { return a.venue_id && Number(a.qty) > 0 }).map(function (a) { return { item_id: item.id, venue_id: Number(a.venue_id), sub_venue_id: a.sub_venue_id ? Number(a.sub_venue_id) : null, qty: Number(a.qty) } })
+          var venueRows = allocations.filter(function (a) { return a.venue_id && Number(a.qty) > 0 }).map(function (a) { return { item_id: item.id, venue_id: Number(a.venue_id), sub_venue_id: a.sub_venue_id ? Number(a.sub_venue_id) : null, sub_department_id: a.sub_department_id ? Number(a.sub_department_id) : null, qty: Number(a.qty) } })
           if (venueRows.length > 0) { var { error: vaErr } = await supabase.from(allocTable).insert(venueRows); if (vaErr) throw new Error('Allocation save failed: ' + vaErr.message) }
           if (imageFile) { var path = await uploadImage(item.id, imgPrefix); if (path) await supabase.from(tableName).update({ image_path: path }).eq('id', item.id) }
         }
@@ -513,21 +516,22 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved }) {
           if (imageFile) { var imgPath = await uploadImage(existing.id, imgPrefix); if (imgPath) await supabase.from(tableName).update({ image_path: imgPath }).eq('id', existing.id) }
 
           // Merge allocations
-          var { data: oldAllocs, error: allocErr } = await supabase.from(allocTable).select('id, venue_id, sub_venue_id, qty').eq('item_id', existing.id)
+          var { data: oldAllocs, error: allocErr } = await supabase.from(allocTable).select('id, venue_id, sub_venue_id, sub_department_id, qty').eq('item_id', existing.id)
           if (allocErr) throw new Error('Failed to fetch allocations: ' + allocErr.message)
           var newVenueRows = allocations.filter(function (a) { return a.venue_id && Number(a.qty) > 0 })
           for (var ai = 0; ai < newVenueRows.length; ai++) {
             var nr = newVenueRows[ai]
             var nrVenueId = Number(nr.venue_id)
             var nrSubVenueId = nr.sub_venue_id ? Number(nr.sub_venue_id) : null
+            var nrSubDeptId = nr.sub_department_id ? Number(nr.sub_department_id) : null
             var nrQty = Number(nr.qty)
             if (!nrQty || nrQty <= 0) continue
-            var match = (oldAllocs || []).find(function (oa) { return oa.venue_id === nrVenueId && (oa.sub_venue_id || null) === nrSubVenueId })
+            var match = (oldAllocs || []).find(function (oa) { return oa.venue_id === nrVenueId && (oa.sub_venue_id || null) === nrSubVenueId && (oa.sub_department_id || null) === nrSubDeptId })
             if (match) {
               var { error: updErr } = await supabase.from(allocTable).update({ qty: Math.round((match.qty + nrQty) * 1000) / 1000 }).eq('id', match.id)
               if (updErr) throw new Error('Allocation update failed: ' + updErr.message)
             } else {
-              var { error: insErr } = await supabase.from(allocTable).insert({ item_id: existing.id, venue_id: nrVenueId, sub_venue_id: nrSubVenueId, qty: nrQty })
+              var { error: insErr } = await supabase.from(allocTable).insert({ item_id: existing.id, venue_id: nrVenueId, sub_venue_id: nrSubVenueId, sub_department_id: nrSubDeptId, qty: nrQty })
               if (insErr) throw new Error('Allocation insert failed: ' + insErr.message)
             }
           }
@@ -540,7 +544,7 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved }) {
 
           // Insert allocations for the new row
           if (targetItem) {
-            var venueRows = allocations.filter(function (a) { return a.venue_id && Number(a.qty) > 0 }).map(function (a) { return { item_id: targetItem.id, venue_id: Number(a.venue_id), sub_venue_id: a.sub_venue_id ? Number(a.sub_venue_id) : null, qty: Number(a.qty) } })
+            var venueRows = allocations.filter(function (a) { return a.venue_id && Number(a.qty) > 0 }).map(function (a) { return { item_id: targetItem.id, venue_id: Number(a.venue_id), sub_venue_id: a.sub_venue_id ? Number(a.sub_venue_id) : null, sub_department_id: a.sub_department_id ? Number(a.sub_department_id) : null, qty: Number(a.qty) } })
             if (venueRows.length > 0) { var { error: allocInsErr } = await supabase.from(allocTable).insert(venueRows); if (allocInsErr) throw new Error('Allocation save failed: ' + allocInsErr.message) }
           }
         }
@@ -720,6 +724,13 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved }) {
                 {allocations.length > 1 && <button type="button" onClick={function () { removeAllocationRow(index) }} className="text-xs text-red-400 hover:text-red-600 font-semibold">Remove</button>}
               </div>
               <SearchDropdown label={t('Department')} required items={deptItems} value={row.department} onChange={function (val) { updateAllocation(index, 'department', val) }} placeholder={t('Search Department...')} />
+              {row.department && (function () {
+                var parentDept = departments.find(function (d) { return d.name === row.department })
+                if (!parentDept) return null
+                var filtered = subDepartments.filter(function (sd) { return sd.department_id === parentDept.id && sd.active !== false })
+                if (filtered.length === 0) return null
+                return <SearchDropdown label={t('Sub-department') || 'Sub-department'} items={filtered.map(function (sd) { return { label: sd.name, value: String(sd.id) } })} value={row.sub_department_id} onChange={function (val) { updateAllocation(index, 'sub_department_id', val) }} placeholder="Select sub-department..." />
+              })()}
               <SearchDropdown label={t('Venue') || 'Venue'} items={venues.map(function (v) { return { label: v.code + ' — ' + v.name, value: String(v.id) } })} value={row.venue_id} onChange={function (val) { updateAllocation(index, 'venue_id', val) }} placeholder="Select venue..." />
               {row.venue_id && (function () {
                 var filtered = subVenues.filter(function (sv) { return String(sv.venue_id) === row.venue_id })
