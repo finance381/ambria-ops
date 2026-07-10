@@ -191,7 +191,7 @@ function Purchase({ profile, mode }) {
     var effStatus = isReceiver ? 'purchased' : receivingStatusFilter
     var q1 = supabase
       .from('purchase_order_items')
-      .select('id, po_id, item_id, item_name, category_id, _source, qty_ordered, actual_qty, unit, vendor_name, vendor_rate_paise, actual_cost_paise, status, purchased_by, purchased_at, received_by, received_at, categories(name)')
+      .select('id, po_id, item_id, item_name, category_id, _source, qty_ordered, actual_qty, unit, vendor_name, vendor_rate_paise, actual_cost_paise, status, purchased_by, purchased_at, received_by, received_at, expense_id, categories(name)')
       .order('purchased_at', { ascending: true })
       .limit(200)
     if (effStatus) q1 = q1.eq('status', effStatus)
@@ -200,7 +200,7 @@ function Purchase({ profile, mode }) {
       // FK hint fallback — retry without categories join
       var q2 = supabase
         .from('purchase_order_items')
-        .select('id, po_id, item_id, item_name, category_id, _source, qty_ordered, actual_qty, unit, vendor_name, vendor_rate_paise, actual_cost_paise, status, purchased_by, purchased_at, received_by, received_at')
+        .select('id, po_id, item_id, item_name, category_id, _source, qty_ordered, actual_qty, unit, vendor_name, vendor_rate_paise, actual_cost_paise, status, purchased_by, purchased_at, received_by, received_at, expense_id')
         .order('purchased_at', { ascending: true })
         .limit(200)
       if (effStatus) q2 = q2.eq('status', effStatus)
@@ -277,7 +277,7 @@ function Purchase({ profile, mode }) {
     setSaving(true)
     var { data } = await supabase
       .from('purchase_order_items')
-      .select('id, requisition_item_id, item_id, item_name, category_id, _source, qty_ordered, unit, vendor_name, vendor_contact, vendor_rate_paise, estimated_cost_paise, actual_cost_paise, actual_qty, purchased_by, purchased_at, received_by, received_at, inventory_item_id, cs_item_id, status, notes, receipt_path, categories(name)')
+      .select('id, requisition_item_id, item_id, item_name, category_id, _source, qty_ordered, unit, vendor_name, vendor_contact, vendor_rate_paise, estimated_cost_paise, actual_cost_paise, actual_qty, purchased_by, purchased_at, received_by, received_at, inventory_item_id, cs_item_id, status, notes, receipt_path, expense_id, categories(name)')
       .eq('po_id', po.id)
       .order('created_at')
 
@@ -437,6 +437,53 @@ function Purchase({ profile, mode }) {
         })
       } catch (_) {}
     }
+
+    // ─── Reversal expense (negative amount + deduction_type='return') ───
+    if (item.expense_id) {
+      try {
+        var { data: origExp } = await supabase.from('expenses')
+          .select('id, expense_type_id, expense_sub_type_id, category_id, batch_id, receipt_path')
+          .eq('id', item.expense_id)
+          .single()
+        if (origExp) {
+          var { data: origAllocs } = await supabase.from('expense_allocations')
+            .select('department, sub_department_id, venue_id, amount_paise')
+            .eq('expense_id', origExp.id)
+
+          var { data: revExp, error: revErr } = await supabase.from('expenses').insert({
+            user_id: item.purchased_by,
+            expense_type_id: origExp.expense_type_id,
+            expense_sub_type_id: origExp.expense_sub_type_id,
+            category_id: origExp.category_id,
+            amount_paise: -item.actual_cost_paise,
+            deduction_type: 'return',
+            description: 'PO Return: ' + titleCase(item.item_name) + ' | reversal of expense #' + origExp.id,
+            expense_date: new Date().toISOString().split('T')[0],
+            status: 'recorded',
+            receipt_path: origExp.receipt_path,
+            batch_id: origExp.batch_id,
+          }).select('id').single()
+
+          if (!revErr && revExp && (origAllocs || []).length > 0) {
+            var revAllocs = origAllocs.map(function (a) {
+              return {
+                expense_id: revExp.id,
+                department: a.department,
+                sub_department_id: a.sub_department_id,
+                venue_id: a.venue_id,
+                amount_paise: -a.amount_paise,
+              }
+            })
+            await supabase.from('expense_allocations').insert(revAllocs)
+          } else if (revErr) {
+            console.warn('Reversal insert failed:', revErr.message)
+          }
+        }
+      } catch (err) {
+        console.warn('Return reversal error:', err.message || err)
+      }
+    }
+
     // Unlink requisition item so it can be re-ordered if needed
     await supabase.from('requisition_items').update({ po_item_id: null }).match({ po_item_id: poItemId })
     // Update local state
@@ -535,7 +582,7 @@ function Purchase({ profile, mode }) {
   }
 
   // ─── MARK ITEM PURCHASED (purchaser) ───
-  async function markPurchased(poItemId, actualQty, actualCostPaise, receiptFile) {
+  async function markPurchased(poItemId, actualQty, actualCostPaise, receiptFile, expenseTypeId, expenseSubTypeId) {
     if (saving) return
     setSaving(true)
 
@@ -587,6 +634,98 @@ function Purchase({ profile, mode }) {
         })
       } catch (_) {}
     }
+
+    // ─── Create expense row (batch_id = PO id groups all items in this PO) ───
+    if (actualCostPaise > 0 && expenseTypeId) {
+      try {
+        var poItem = activePoItems.find(function (p) { return p.id === poItemId }) || {}
+        var poItemName = poItem.item_name || 'PO Item'
+        var reqItemId = poItem.requisition_item_id
+        var venueAllocs = []
+        var reqDept = null
+        var reqSubDeptId = null
+
+        if (reqItemId) {
+          var { data: reqAllocData } = await supabase
+            .from('requisition_item_allocations')
+            .select('venue_id, qty')
+            .eq('req_item_id', reqItemId)
+          venueAllocs = reqAllocData || []
+          var { data: reqItemRow } = await supabase
+            .from('requisition_items')
+            .select('requisition_id')
+            .eq('id', reqItemId)
+            .single()
+          if (reqItemRow?.requisition_id) {
+            var { data: reqRow } = await supabase
+              .from('requisitions')
+              .select('department, sub_department_id')
+              .eq('id', reqItemRow.requisition_id)
+              .single()
+            reqDept = reqRow?.department || null
+            reqSubDeptId = reqRow?.sub_department_id || null
+          }
+        }
+
+        var { data: newExp, error: expErr } = await supabase.from('expenses').insert({
+          user_id: profile.id,
+          expense_type_id: expenseTypeId,
+          expense_sub_type_id: expenseSubTypeId || null,
+          category_id: poItem.category_id || null,
+          amount_paise: actualCostPaise,
+          description: 'PO Purchase: ' + titleCase(poItemName) + ' | PO ' + (activePo?.id || '').slice(0, 8),
+          expense_date: new Date().toISOString().split('T')[0],
+          status: 'recorded',
+          receipt_path: receiptPath || null,
+          batch_id: activePo?.id || null,
+        }).select('id').single()
+
+        if (!expErr && newExp) {
+          // Split cost across venues by qty ratio; last row absorbs rounding remainder
+          var allocRows = []
+          var totalQty = venueAllocs.reduce(function (s, a) { return s + Number(a.qty || 0) }, 0)
+          if (totalQty > 0) {
+            var running = 0
+            venueAllocs.forEach(function (a, i) {
+              var share
+              if (i === venueAllocs.length - 1) {
+                share = actualCostPaise - running
+              } else {
+                share = Math.round((Number(a.qty) / totalQty) * actualCostPaise)
+                running += share
+              }
+              allocRows.push({
+                expense_id: newExp.id,
+                department: reqDept,
+                sub_department_id: reqSubDeptId,
+                venue_id: a.venue_id,
+                amount_paise: share,
+              })
+            })
+          } else {
+            allocRows.push({
+              expense_id: newExp.id,
+              department: reqDept,
+              sub_department_id: reqSubDeptId,
+              venue_id: null,
+              amount_paise: actualCostPaise,
+            })
+          }
+          await supabase.from('expense_allocations').insert(allocRows)
+
+          // Link expense back to PO item for return reversal
+          await supabase.from('purchase_order_items').update({ expense_id: newExp.id }).eq('id', poItemId)
+          setActivePoItems(function (prev) {
+            return prev.map(function (p) { return p.id === poItemId ? Object.assign({}, p, { expense_id: newExp.id }) : p })
+          })
+        } else if (expErr) {
+          console.warn('Expense insert failed:', expErr.message)
+        }
+      } catch (err) {
+        console.warn('Expense creation error:', err.message || err)
+      }
+    }
+
     try { await logActivity('PO_ITEM_PURCHASED', titleCase(activePoItems.find(function (p) { return p.id === poItemId })?.item_name || '') + ' | ₹' + (actualCostPaise / 100)) } catch (_) {}
     setSaving(false)
   }
@@ -1236,7 +1375,9 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, ve
   var [vendorSearch, setVendorSearch] = useState('')
   var [vendorMode, setVendorMode] = useState('select')
   var [purchasingItem, setPurchasingItem] = useState(null)
-  var [purchaseForm, setPurchaseForm] = useState({ qty: '', cost: '', receipt: null, vendorName: '', vendorRate: '' })
+  var [purchaseForm, setPurchaseForm] = useState({ qty: '', cost: '', receipt: null, vendorName: '', vendorRate: '', expenseTypeId: '', expenseSubTypeId: '' })
+  var [expenseTypes, setExpenseTypes] = useState([])
+  var [expenseSubTypes, setExpenseSubTypes] = useState([])
   var [rateHistory, setRateHistory] = useState([])
   var [rateLoading, setRateLoading] = useState(false)
   var [showAddVendor, setShowAddVendor] = useState(null)
@@ -1269,6 +1410,16 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, ve
     if (it.status === 'pending_return') pendingReturnCount++
     if (it.status === 'returned') returnedCount++
   })
+  useEffect(function () {
+    Promise.all([
+      supabase.from('expense_types').select('id, name, icon, sort_order').eq('active', true).order('sort_order').order('name'),
+      supabase.from('expense_sub_types').select('id, expense_type_id, name, active, sort_order').eq('active', true).order('sort_order').order('name'),
+    ]).then(function (res) {
+      setExpenseTypes(res[0].data || [])
+      setExpenseSubTypes(res[1].data || [])
+    })
+  }, [])
+
   var staffItems = useMemo(function () {
     return staffList.map(function (s) { return { label: s.name + (s.role === 'admin' ? ' (Admin)' : ''), value: s.id } })
   }, [staffList])
@@ -1330,6 +1481,8 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, ve
       receipt: null,
       vendorName: it.vendor_name || '',
       vendorRate: it.vendor_rate_paise ? String(it.vendor_rate_paise / 100) : '',
+      expenseTypeId: '',
+      expenseSubTypeId: '',
     })
   }
 
@@ -1338,6 +1491,7 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, ve
     var actualCostPaise = Math.round(Number(purchaseForm.cost) * 100)
     if (!actualQty || actualQty <= 0) { alert('Enter qty purchased'); return }
     if (!actualCostPaise || actualCostPaise <= 0) { alert('Enter actual cost'); return }
+    if (!purchaseForm.expenseTypeId) { alert('Select expense type'); return }
 
     var vendorChanged = false
     var item = items.find(function (it) { return it.id === poItemId })
@@ -1351,7 +1505,7 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, ve
       await onSaveVendor(poItemId, newVendorName || item.vendor_name, '', newRatePaise, null)
     }
 
-    await onMarkPurchased(poItemId, actualQty, actualCostPaise, purchaseForm.receipt)
+    await onMarkPurchased(poItemId, actualQty, actualCostPaise, purchaseForm.receipt, Number(purchaseForm.expenseTypeId), purchaseForm.expenseSubTypeId ? Number(purchaseForm.expenseSubTypeId) : null)
     setPurchasingItem(null)
 
     if (vendorChanged && newVendorName) {
@@ -1637,6 +1791,44 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, ve
                               className="w-full px-2 py-1.5 border border-green-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
                           </div>
                         </div>
+                        {(function () {
+                          var isAdminEt = profile?.role === 'admin' || profile?.role === 'auditor'
+                          var userEtIds = profile?.expense_type_ids || []
+                          var typeList = isAdminEt ? expenseTypes : expenseTypes.filter(function (et) { return userEtIds.indexOf(et.id) !== -1 })
+                          var subForType = purchaseForm.expenseTypeId
+                            ? expenseSubTypes.filter(function (st) { return st.expense_type_id === Number(purchaseForm.expenseTypeId) })
+                            : []
+                          return (
+                            <div className="grid grid-cols-2 gap-2">
+                              <div>
+                                <label className="block text-[11px] text-gray-500 mb-0.5">Expense Type *</label>
+                                <select value={purchaseForm.expenseTypeId}
+                                  onChange={function (e) { setPurchaseForm(function (p) { return Object.assign({}, p, { expenseTypeId: e.target.value, expenseSubTypeId: '' }) }) }}
+                                  className="w-full px-2 py-1.5 border border-green-200 rounded-md text-sm bg-white focus:outline-none focus:ring-2 focus:ring-green-500"
+                                  style={{ fontSize: '16px' }}>
+                                  <option value="">Select...</option>
+                                  {typeList.map(function (et) {
+                                    return <option key={et.id} value={String(et.id)}>{(et.icon ? et.icon + ' ' : '') + et.name}</option>
+                                  })}
+                                </select>
+                              </div>
+                              {subForType.length > 0 && (
+                                <div>
+                                  <label className="block text-[11px] text-gray-500 mb-0.5">Sub-Type</label>
+                                  <select value={purchaseForm.expenseSubTypeId}
+                                    onChange={function (e) { setPurchaseForm(function (p) { return Object.assign({}, p, { expenseSubTypeId: e.target.value }) }) }}
+                                    className="w-full px-2 py-1.5 border border-green-200 rounded-md text-sm bg-white focus:outline-none focus:ring-2 focus:ring-green-500"
+                                    style={{ fontSize: '16px' }}>
+                                    <option value="">Select...</option>
+                                    {subForType.map(function (st) {
+                                      return <option key={st.id} value={String(st.id)}>{st.name}</option>
+                                    })}
+                                  </select>
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })()}
                         <div>
                           <label className="block text-[11px] text-gray-500 mb-0.5">Upload Bill / Receipt</label>
                           <input type="file" accept="image/*,application/pdf"
