@@ -128,7 +128,7 @@ function Users() {
       supabase.from('sub_categories').select('id, name, category_id').order('name'),
       supabase.from('sub_departments').select('id, name, department_id, active').order('name'),
       supabase.from('departments').select('id, name').eq('active', true).order('name'),
-      supabase.from('expense_types').select('id, name, icon').eq('active', true).order('sort_order').order('name'),
+      supabase.from('expense_types').select('id, name, icon, department_id, sub_department_id').eq('active', true).order('sort_order').order('name'),
       supabase.from('expense_sub_types').select('id, name, expense_type_id').eq('active', true).order('sort_order').order('name'),
     ])
     setCategories(catRes.data || [])
@@ -224,7 +224,52 @@ function Users() {
     })
   }
 
+  // Given a sub-dept id, return matching expense_type ids (inclusive: type tagged to sub-dept OR tagged to parent-dept when no sub-dept)
+  function matchTypesForSubDept(sdId) {
+    var sd = subDepartments.find(function (s) { return s.id === sdId })
+    if (!sd) return []
+    return expenseTypes.filter(function (et) {
+      if (et.sub_department_id === sdId) return true
+      if (!et.sub_department_id && sd.department_id && et.department_id === sd.department_id) return true
+      return false
+    }).map(function (et) { return et.id })
+  }
+
   function toggleSubDeptId(id) {
+    var removing = editSubDeptIds.includes(id)
+    var thisTypeIds = matchTypesForSubDept(id)
+    var thisSubTypeIds = expenseSubTypes.filter(function (st) { return thisTypeIds.indexOf(st.expense_type_id) !== -1 }).map(function (st) { return st.id })
+
+    if (removing) {
+      // Types/sub-types kept because another still-checked sub-dept also matches them
+      var remainingSdIds = editSubDeptIds.filter(function (sid) { return sid !== id })
+      var protectedTypeIds = []
+      remainingSdIds.forEach(function (sid) {
+        matchTypesForSubDept(sid).forEach(function (tid) {
+          if (protectedTypeIds.indexOf(tid) === -1) protectedTypeIds.push(tid)
+        })
+      })
+      var protectedSubTypeIds = expenseSubTypes.filter(function (st) { return protectedTypeIds.indexOf(st.expense_type_id) !== -1 }).map(function (st) { return st.id })
+
+      setEditExpenseTypeIds(function (prev) {
+        return prev.filter(function (tid) { return thisTypeIds.indexOf(tid) === -1 || protectedTypeIds.indexOf(tid) !== -1 })
+      })
+      setEditExpenseSubTypeIds(function (prev) {
+        return prev.filter(function (sid) { return thisSubTypeIds.indexOf(sid) === -1 || protectedSubTypeIds.indexOf(sid) !== -1 })
+      })
+    } else {
+      setEditExpenseTypeIds(function (prev) {
+        var merged = prev.slice()
+        thisTypeIds.forEach(function (tid) { if (merged.indexOf(tid) === -1) merged.push(tid) })
+        return merged
+      })
+      setEditExpenseSubTypeIds(function (prev) {
+        var merged = prev.slice()
+        thisSubTypeIds.forEach(function (sid) { if (merged.indexOf(sid) === -1) merged.push(sid) })
+        return merged
+      })
+    }
+
     setEditSubDeptIds(function (prev) {
       if (prev.includes(id)) return prev.filter(function (c) { return c !== id })
       return [...prev, id]
