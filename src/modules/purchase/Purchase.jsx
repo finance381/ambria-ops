@@ -73,10 +73,15 @@ function Purchase({ profile, mode }) {
   var isAdmin = profile?.role === 'admin' || profile?.role === 'auditor'
   var hasPurchase = (profile?.permissions || []).indexOf('feature_purchase') !== -1
   var hasReceive = (profile?.permissions || []).indexOf('feature_receive') !== -1
-  var isReceiver = !isAdmin && (mode === 'receive' || (hasReceive && !hasPurchase))
+  // mode === 'receive' forces receiver-only view for everyone (incl. admin) — Shell routes here from Receive Items tile
+  var isReceiver = mode === 'receive' || (!isAdmin && hasReceive && !hasPurchase)
   var isPurchaser = !isAdmin && !isReceiver
 
   useEffect(function () {
+    if (isReceiver) {
+      loadReceiving()
+      return
+    }
     if (isAdmin) {
       loadQueue()
       loadStaff()
@@ -84,9 +89,6 @@ function Purchase({ profile, mode }) {
       supabase.from('vendors').select('id, name, contact, phone, category_ids, active').eq('active', true).order('name')
         .then(function (r) { setVendorList(r.data || []) })
         .catch(function () { setVendorList([]) })
-    }
-    if (isReceiver) {
-      loadReceiving()
     }
   }, [])
 
