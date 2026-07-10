@@ -474,7 +474,7 @@ function Users() {
       </div>
 
       {/* ═══ EDIT USER MODAL ═══ */}
-      <Modal open={!!editUser} onClose={function () { setEditUser(null) }} title={'Edit: ' + (editUser?.name || '')}>
+      <Modal open={!!editUser} onClose={function () { setEditUser(null) }} title={'Edit: ' + (editUser?.name || '')} wide>
         {editUser && (
           <div className="flex" style={{ minHeight: '440px' }}>
             {/* Sidebar */}
