@@ -68,6 +68,7 @@ function Purchase({ profile, mode }) {
   var [receivingItem, setReceivingItem] = useState(null)
   var [receiveQty, setReceiveQty] = useState('')
   var [showInvForm, setShowInvForm] = useState(null)
+  var [receivingStatusFilter, setReceivingStatusFilter] = useState('purchased')
 
   var assignLockRef = useRef(false)
   var isAdmin = profile?.role === 'admin' || profile?.role === 'auditor'
@@ -78,19 +79,19 @@ function Purchase({ profile, mode }) {
   var isPurchaser = !isAdmin && !isReceiver
 
   useEffect(function () {
-    if (isReceiver) {
-      loadReceiving()
-      return
-    }
+    if (isReceiver) return
     if (isAdmin) {
       loadQueue()
       loadStaff()
-      loadReceiving()
       supabase.from('vendors').select('id, name, contact, phone, category_ids, active').eq('active', true).order('name')
         .then(function (r) { setVendorList(r.data || []) })
         .catch(function () { setVendorList([]) })
     }
   }, [])
+
+  // Load receiving on mount + on filter change (both receiver and admin).
+  // Receiver ignores filter — always sees 'purchased'.
+  useEffect(function () { if (isReceiver || isAdmin) loadReceiving() }, [receivingStatusFilter])
 
   useEffect(function () { if (!isReceiver) loadPos() }, [poStatusFilter])
 
@@ -186,20 +187,24 @@ function Purchase({ profile, mode }) {
   // ─── RECEIVING: load purchased items awaiting receive ───
   async function loadReceiving() {
     setReceivingLoading(true)
-    var { data, error } = await supabase
+    // Receivers always see 'purchased' (action queue). Admin filters via chips; '' = all statuses.
+    var effStatus = isReceiver ? 'purchased' : receivingStatusFilter
+    var q1 = supabase
       .from('purchase_order_items')
-      .select('id, po_id, item_id, item_name, category_id, _source, qty_ordered, actual_qty, unit, vendor_name, vendor_rate_paise, actual_cost_paise, status, purchased_by, purchased_at, categories(name)')
-      .eq('status', 'purchased')
+      .select('id, po_id, item_id, item_name, category_id, _source, qty_ordered, actual_qty, unit, vendor_name, vendor_rate_paise, actual_cost_paise, status, purchased_by, purchased_at, received_by, received_at, categories(name)')
       .order('purchased_at', { ascending: true })
       .limit(200)
+    if (effStatus) q1 = q1.eq('status', effStatus)
+    var { data, error } = await q1
     if (error) {
       // FK hint fallback — retry without categories join
-      var { data: fb } = await supabase
+      var q2 = supabase
         .from('purchase_order_items')
-        .select('id, po_id, item_id, item_name, category_id, _source, qty_ordered, actual_qty, unit, vendor_name, vendor_rate_paise, actual_cost_paise, status, purchased_by, purchased_at')
-        .eq('status', 'purchased')
+        .select('id, po_id, item_id, item_name, category_id, _source, qty_ordered, actual_qty, unit, vendor_name, vendor_rate_paise, actual_cost_paise, status, purchased_by, purchased_at, received_by, received_at')
         .order('purchased_at', { ascending: true })
         .limit(200)
+      if (effStatus) q2 = q2.eq('status', effStatus)
+      var { data: fb } = await q2
       data = fb || []
       if (!fb) { setReceivingItems([]); setReceivingLoading(false); return }
     }
@@ -591,6 +596,13 @@ function Purchase({ profile, mode }) {
   // Never block on `queueLoading` — it fires on every refetch and would blank
   // the detail view. The queue tab has its own local indicator further down.
   // Never block when a detail view is already open — its data is already loaded.
+  // PO list split: when no status filter is applied, cancelled POs get their own
+  // section below the active list so admins don't lose them in the mix.
+  var activePos = poList.filter(function (p) { return p.status !== 'cancelled' })
+  var cancelledPos = poList.filter(function (p) { return p.status === 'cancelled' })
+  var showSplit = !poStatusFilter && cancelledPos.length > 0
+  var visiblePos = showSplit ? activePos : poList
+
   if (!isReceiver && loading && view !== 'detail') {
     return <p className="text-gray-400 text-sm text-center py-8">Loading...</p>
   }
@@ -914,7 +926,7 @@ function Purchase({ profile, mode }) {
             </div>
           )}
 
-          {poList.length > 0 && (
+          {visiblePos.length > 0 && (
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
               {/* Header */}
               <div className="hidden lg:grid grid-cols-12 gap-3 px-5 py-3 bg-gray-50 border-b border-gray-100 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
@@ -925,9 +937,8 @@ function Purchase({ profile, mode }) {
                 <div className="col-span-1">Status</div>
                 <div className="col-span-3 text-right">Notes</div>
               </div>
-              {/* Rows */}
               {/* Mobile cards */}
-              {poList.map(function (po, pi) {
+              {visiblePos.map(function (po, pi) {
                 var assigneeName = po.assignee?.name || null
                 return (
                   <div key={po.id}
@@ -951,16 +962,94 @@ function Purchase({ profile, mode }) {
                 )
               })}
               {/* Desktop grid */}
-              {poList.map(function (po, pi) {
+              {visiblePos.map(function (po, pi) {
                 var assigneeName = po.assignee?.name || null
                 return (
                   <div key={po.id}
                     onClick={function () { openPoDetail(po) }}
                     className={"hidden lg:grid grid-cols-12 gap-3 px-5 py-4 items-center cursor-pointer transition-colors " +
-                      (pi < poList.length - 1 ? "border-b border-gray-50 " : "") +
+                      (pi < visiblePos.length - 1 ? "border-b border-gray-50 " : "") +
                       "hover:bg-indigo-50/40"}>
                     <div className="col-span-2">
                       <p className="text-sm font-bold text-indigo-600">#{po.id.slice(0, 8)}</p>
+                    </div>
+                    <div className="col-span-2">
+                      <p className="text-xs text-gray-600">{formatDate(po.created_at)}</p>
+                    </div>
+                    <div className="col-span-2">
+                      <p className="text-xs text-gray-600">{po.profiles?.name || '—'}</p>
+                    </div>
+                    <div className="col-span-2">
+                      {assigneeName ? (
+                        <span className="text-xs font-medium text-gray-700">🛒 {assigneeName}</span>
+                      ) : (
+                        <span className="text-[11px] text-amber-500 font-medium">Unassigned</span>
+                      )}
+                    </div>
+                    <div className="col-span-1">
+                      <span className={"text-[10px] font-bold uppercase px-2 py-1 rounded-full " + (PO_STATUS_COLORS[po.status] || '')}>
+                        {PO_STATUS_LABELS[po.status] || po.status}
+                      </span>
+                    </div>
+                    <div className="col-span-3 text-right">
+                      <p className="text-xs text-gray-400 truncate">{po.notes || '—'}</p>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
+          {/* ═══ CANCELLED POs — surfaced as a peer section when no filter is applied ═══ */}
+          {showSplit && (
+            <div className="bg-white rounded-xl border-2 border-red-200 shadow-sm overflow-hidden">
+              <div className="px-5 py-3 bg-red-50 border-b border-red-100 flex items-center justify-between">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-red-700">🚫 Cancelled Purchase Orders</span>
+                <span className="text-[11px] font-bold text-red-700 bg-white px-2 py-0.5 rounded-full border border-red-200">{cancelledPos.length}</span>
+              </div>
+              <div className="hidden lg:grid grid-cols-12 gap-3 px-5 py-3 bg-gray-50 border-b border-gray-100 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                <div className="col-span-2">PO #</div>
+                <div className="col-span-2">Created</div>
+                <div className="col-span-2">Created By</div>
+                <div className="col-span-2">Assigned To</div>
+                <div className="col-span-1">Status</div>
+                <div className="col-span-3 text-right">Notes</div>
+              </div>
+              {/* Mobile cards */}
+              {cancelledPos.map(function (po, pi) {
+                var assigneeName = po.assignee?.name || null
+                return (
+                  <div key={po.id}
+                    onClick={function () { openPoDetail(po) }}
+                    className={"px-4 py-3 cursor-pointer transition-colors border-b border-red-50 hover:bg-red-50/40 lg:hidden opacity-75"}>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-bold text-red-600">#{po.id.slice(0, 8)}</p>
+                        <span className={"text-[10px] font-bold uppercase px-2 py-0.5 rounded-full " + (PO_STATUS_COLORS[po.status] || '')}>
+                          {PO_STATUS_LABELS[po.status] || po.status}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-gray-400">{formatDate(po.created_at)}</p>
+                    </div>
+                    <p className="text-[11px] text-gray-500 mt-1">
+                      {po.profiles?.name || '—'}
+                      {assigneeName ? ' · 🛒 ' + assigneeName : ' · Unassigned'}
+                    </p>
+                    {po.notes && <p className="text-[11px] text-gray-400 mt-0.5 truncate">{po.notes}</p>}
+                  </div>
+                )
+              })}
+              {/* Desktop grid */}
+              {cancelledPos.map(function (po, pi) {
+                var assigneeName = po.assignee?.name || null
+                return (
+                  <div key={po.id}
+                    onClick={function () { openPoDetail(po) }}
+                    className={"hidden lg:grid grid-cols-12 gap-3 px-5 py-4 items-center cursor-pointer transition-colors opacity-75 " +
+                      (pi < cancelledPos.length - 1 ? "border-b border-red-50 " : "") +
+                      "hover:bg-red-50/40"}>
+                    <div className="col-span-2">
+                      <p className="text-sm font-bold text-red-600">#{po.id.slice(0, 8)}</p>
                     </div>
                     <div className="col-span-2">
                       <p className="text-xs text-gray-600">{formatDate(po.created_at)}</p>
@@ -992,12 +1081,26 @@ function Purchase({ profile, mode }) {
       )}
 
       {/* ═══ RECEIVING TAB (Admin) ═══ */}
-      {tab === 'receiving' && receivingItems.length > 0 && (
-        <div className="flex justify-end">
-          <button onClick={function () { generateReceivingListPdf(receivingItems) }}
-            className="px-3 py-1.5 text-xs font-semibold text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
-            🖨️ Export PDF
-          </button>
+      {tab === 'receiving' && (
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <div className="flex gap-2 flex-wrap">
+            {['purchased', 'received', 'pending_return', 'returned', ''].map(function (s) {
+              var label = s ? ITEM_STATUS_LABELS[s] : 'All'
+              return (
+                <button key={s || 'all'} onClick={function () { setReceivingStatusFilter(s) }}
+                  className={"px-3 py-1.5 text-[11px] font-bold rounded-full border transition-colors " +
+                    (receivingStatusFilter === s ? "bg-gray-900 text-white border-gray-900" : "bg-white text-gray-500 border-gray-200 hover:bg-gray-50")}>
+                  {label}
+                </button>
+              )
+            })}
+          </div>
+          {receivingItems.length > 0 && (
+            <button onClick={function () { generateReceivingListPdf(receivingItems) }}
+              className="px-3 py-1.5 text-xs font-semibold text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
+              🖨️ Export PDF
+            </button>
+          )}
         </div>
       )}
       {tab === 'receiving' && (
@@ -1070,7 +1173,12 @@ function ReceivingContent({ items, loading, receivingItem, setReceivingItem, rec
           <div key={it.id} className="bg-white rounded-lg border border-gray-200 p-3 space-y-2">
             <div className="flex items-start justify-between">
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-gray-800">{titleCase(it.item_name)}</p>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <p className="text-sm font-semibold text-gray-800">{titleCase(it.item_name)}</p>
+                  <span className={"text-[10px] font-bold uppercase px-2 py-0.5 rounded-full " + (ITEM_STATUS_COLORS[it.status] || '')}>
+                    {ITEM_STATUS_LABELS[it.status] || it.status}
+                  </span>
+                </div>
                 <p className="text-[11px] text-gray-400 mt-0.5">
                   {it.categories?.name || '—'} · Ordered: {it.qty_ordered} {it.unit}
                   {it.actual_qty ? ' · Bought: ' + it.actual_qty : ''}
@@ -1082,7 +1190,7 @@ function ReceivingContent({ items, loading, receivingItem, setReceivingItem, rec
                 {it.po && <p className="text-[11px] text-gray-400">PO #{it.po_id.slice(0, 8)} · {it.po.profiles?.name || '—'}</p>}
               </div>
             </div>
-            {it._source !== 'new' && !isActive && (
+            {it._source !== 'new' && !isActive && it.status === 'purchased' && (
               <button onClick={function () { setReceivingItem(it.id); setReceiveQty(String(it.actual_qty || it.qty_ordered)) }}
                 className="w-full py-2 text-sm font-semibold text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors">
                 📦 Receive
@@ -1106,7 +1214,7 @@ function ReceivingContent({ items, loading, receivingItem, setReceivingItem, rec
                 </div>
               </div>
             )}
-            {it._source === 'new' && (
+            {it._source === 'new' && it.status === 'purchased' && (
               <button onClick={function () { setShowInvForm(it) }}
                 className="w-full py-2 text-sm font-semibold text-amber-600 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 transition-colors">
                 📋 Receive & Add to Inventory

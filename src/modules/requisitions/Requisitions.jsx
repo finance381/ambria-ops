@@ -30,9 +30,11 @@ function Requisitions({ profile, onBack }) {
   var [approvalReqs, setApprovalReqs] = useState([])
   var [myHasMore, setMyHasMore] = useState(false)
   var [approvalHasMore, setApprovalHasMore] = useState(false)
+  var [allReqs, setAllReqs] = useState([])
+  var [allHasMore, setAllHasMore] = useState(false)
   var [loading, setLoading] = useState(true)
   var [loadingMore, setLoadingMore] = useState(false)
-  useRealtime(['requisitions', 'requisition_items'], function () { loadMyReqs(false); loadApprovalReqs(false) })
+  useRealtime(['requisitions', 'requisition_items'], function () { loadMyReqs(false); loadApprovalReqs(false); loadAllReqs(false) })
   var [detailReq, setDetailReq] = useState(null)
   var [detailItems, setDetailItems] = useState([])
   var [statusFilter, setStatusFilter] = useState('')
@@ -70,6 +72,7 @@ function Requisitions({ profile, onBack }) {
     if (departments.length === 0) return
     loadMyReqs(false)
     loadApprovalReqs(false)
+    loadAllReqs(false)
   }, [statusFilter, departments])
 
   async function loadMyReqs(append) {
@@ -150,6 +153,42 @@ function Requisitions({ profile, onBack }) {
     setLoadingMore(false)
   }
 
+  // Admin/auditor only — every requisition across all users
+  async function loadAllReqs(append) {
+    if (!isAdmin && !isAuditor) { setAllReqs([]); return }
+    var offset = append ? allReqs.length : 0
+    if (append) setLoadingMore(true)
+
+    var query = supabase.from('requisitions')
+      .select('id, department, urgency, purpose, status, created_at, needed_by, requested_by, rejection_reason, event_id, sub_department_id, category_id, sub_category_id, req_type, expense_type_id, expense_sub_type_id, expense_amount_paise, expense_date, receipt_path, expense_alloc_json, events(event_name), expense_types(name), expense_sub_types(name), categories(name), sub_departments(name)')
+      .order('created_at', { ascending: false })
+      .range(offset, offset + PAGE_SIZE)
+
+    if (statusFilter) query = query.eq('status', statusFilter)
+
+    var { data, error } = await query
+    if (error) { alert('Failed to load: ' + error.message); setLoadingMore(false); return }
+
+    var rows = data || []
+    var hasMore = rows.length > PAGE_SIZE
+    if (hasMore) rows = rows.slice(0, PAGE_SIZE)
+
+    // Resolve requester names via RPC (avoids RLS surprises on nested profiles join)
+    var rUserIds = []
+    rows.forEach(function (r) { if (r.requested_by && rUserIds.indexOf(r.requested_by) === -1) rUserIds.push(r.requested_by) })
+    if (rUserIds.length > 0) {
+      var { data: rNames } = await supabase.rpc('get_profile_names', { p_ids: rUserIds })
+      var rMap = {}
+      ;(rNames || []).forEach(function (n) { rMap[n.id] = n.name })
+      rows = rows.map(function (r) { return Object.assign({}, r, { profiles: { name: rMap[r.requested_by] || null } }) })
+    }
+
+    if (append) setAllReqs(function (prev) { return prev.concat(rows) })
+    else setAllReqs(rows)
+    setAllHasMore(hasMore)
+    setLoadingMore(false)
+  }
+
   async function openDetail(req) {
     pushBack(function () { setView(req._fromApprove ? 'approve' : 'list'); setDetailReq(null); setDetailItems([]) })
     setDetailReq(req)
@@ -197,10 +236,11 @@ function Requisitions({ profile, onBack }) {
     setEditItems([])
     loadMyReqs(false)
     loadApprovalReqs(false)
+    loadAllReqs(false)
   }
 
-  var displayList = view === 'approve' ? approvalReqs : myReqs
-  var displayHasMore = view === 'approve' ? approvalHasMore : myHasMore
+  var displayList = view === 'approve' ? approvalReqs : view === 'all' ? allReqs : myReqs
+  var displayHasMore = view === 'approve' ? approvalHasMore : view === 'all' ? allHasMore : myHasMore
 
   if (loading) {
     return <p className="text-gray-400 text-sm text-center py-8">Loading...</p>
@@ -235,7 +275,7 @@ function Requisitions({ profile, onBack }) {
         isReqDeptApprover={isReqDeptApprover}
         isReqAdminApprover={isReqAdminApprover}
         onBack={function () { navBack() }}
-        onUpdated={function () { loadMyReqs(false); loadApprovalReqs(false); setView(detailReq._fromApprove ? 'approve' : 'list'); setDetailReq(null); setDetailItems([]) }}
+        onUpdated={function () { loadMyReqs(false); loadApprovalReqs(false); loadAllReqs(false); setView(detailReq._fromApprove ? 'approve' : detailReq._fromAll ? 'all' : 'list'); setDetailReq(null); setDetailItems([]) }}
         onEdit={function () { startEdit(detailReq, detailItems) }}
       />
     )
@@ -250,7 +290,7 @@ function Requisitions({ profile, onBack }) {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-lg font-bold text-gray-900">Requisitions</h2>
-          <p className="text-xs text-gray-400">{view === 'approve' ? approvalReqs.length + ' pending approval' : myReqs.length + ' requests'}</p>
+          <p className="text-xs text-gray-400">{view === 'approve' ? approvalReqs.length + ' pending approval' : view === 'all' ? allReqs.length + ' total (all users)' : myReqs.length + ' requests'}</p>
         </div>
         <button onClick={function () { pushBack(function () { setView('list'); setEditReq(null); setEditItems([]) }); setEditReq(null); setEditItems([]); setView('form') }}
           className="px-4 py-2 text-sm font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 active:bg-indigo-800 transition-colors">
@@ -274,11 +314,17 @@ function Requisitions({ profile, onBack }) {
               </span>
             )}
           </button>
+          {(isAdmin || isAuditor) && (
+            <button onClick={function () { setView('all'); setStatusFilter('') }}
+              className={"flex-1 py-2 text-sm font-semibold rounded-md transition-colors " + (view === 'all' ? "bg-white text-gray-900 shadow-sm" : "text-gray-500")}>
+              All
+            </button>
+          )}
         </div>
       )}
 
-      {/* Status filter — only on My Requests tab */}
-      {view === 'list' && (
+      {/* Status filter — on My Requests + All tabs */}
+      {(view === 'list' || view === 'all') && (
         <div className="flex gap-2 flex-wrap">
           {['', 'pending_dept', 'pending', 'approved', 'rejected', 'fulfilled', 'deleted'].map(function (s) {
             var label = s ? APPROVAL_STATUS_LABELS[s] : 'All'
@@ -296,7 +342,7 @@ function Requisitions({ profile, onBack }) {
       {/* List */}
       {displayList.length === 0 && (
         <div className="bg-white border border-gray-200 rounded-xl p-8 text-center">
-          <p className="text-gray-400 text-sm">{view === 'approve' ? 'No pending approvals' : 'No requisitions yet'}</p>
+          <p className="text-gray-400 text-sm">{view === 'approve' ? 'No pending approvals' : view === 'all' ? 'No requisitions match filter' : 'No requisitions yet'}</p>
         </div>
       )}
 
@@ -305,7 +351,7 @@ function Requisitions({ profile, onBack }) {
           return (
             <div key={req.id}
               onClick={function () {
-                var r = Object.assign({}, req, { _fromApprove: view === 'approve' })
+                var r = Object.assign({}, req, { _fromApprove: view === 'approve', _fromAll: view === 'all' })
                 openDetail(r)
               }}
               className="bg-white border border-gray-200 rounded-xl p-4 hover:shadow-md active:bg-gray-50 cursor-pointer transition-all">
@@ -315,7 +361,7 @@ function Requisitions({ profile, onBack }) {
                     {req.purpose || 'Requisition #' + req.id}
                   </p>
                   <p className="text-xs text-gray-400 mt-0.5">
-                    {view === 'approve' ? (req.profiles?.name || '—') + ' · ' : ''}
+                    {(view === 'approve' || view === 'all') ? (req.profiles?.name || '—') + ' · ' : ''}
                     {req.department} · {formatDate(req.created_at)}{req.needed_by ? ' · Need by ' + formatDate(req.needed_by) : ''}
                     {req.events?.event_name ? ' · 📅 ' + req.events.event_name : ''}
                   </p>
@@ -341,6 +387,7 @@ function Requisitions({ profile, onBack }) {
       {displayHasMore && (
         <button onClick={function () {
           if (view === 'approve') loadApprovalReqs(true)
+          else if (view === 'all') loadAllReqs(true)
           else loadMyReqs(true)
         }} disabled={loadingMore}
           className="w-full py-3 text-sm font-medium text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 disabled:opacity-50 transition-colors">
