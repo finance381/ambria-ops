@@ -200,7 +200,7 @@ function Purchase({ profile, mode }) {
       // FK hint fallback — retry without categories join
       var q2 = supabase
         .from('purchase_order_items')
-        .select('id, po_id, item_id, item_name, category_id, _source, qty_ordered, actual_qty, unit, vendor_name, vendor_rate_paise, actual_cost_paise, status, purchased_by, purchased_at, received_by, received_at, expense_id')
+        .select('id, po_id, item_id, item_name, category_id, _source, qty_ordered, actual_qty, unit, vendor_name, vendor_rate_paise, actual_cost_paise, status, purchased_by, purchased_at, received_by, received_at, expense_id, expense_type_id, expense_sub_type_id')
         .order('purchased_at', { ascending: true })
         .limit(200)
       if (effStatus) q2 = q2.eq('status', effStatus)
@@ -277,7 +277,7 @@ function Purchase({ profile, mode }) {
     setSaving(true)
     var { data } = await supabase
       .from('purchase_order_items')
-      .select('id, requisition_item_id, item_id, item_name, category_id, _source, qty_ordered, unit, vendor_name, vendor_contact, vendor_rate_paise, estimated_cost_paise, actual_cost_paise, actual_qty, purchased_by, purchased_at, received_by, received_at, inventory_item_id, cs_item_id, status, notes, receipt_path, expense_id, categories(name)')
+      .select('id, requisition_item_id, item_id, item_name, category_id, _source, qty_ordered, unit, vendor_name, vendor_contact, vendor_rate_paise, estimated_cost_paise, actual_cost_paise, actual_qty, purchased_by, purchased_at, received_by, received_at, inventory_item_id, cs_item_id, status, notes, receipt_path, expense_id, expense_type_id, expense_sub_type_id, categories(name)')
       .eq('po_id', po.id)
       .order('created_at')
 
@@ -582,7 +582,7 @@ function Purchase({ profile, mode }) {
   }
 
   // ─── MARK ITEM PURCHASED (purchaser) ───
-  async function markPurchased(poItemId, actualQty, actualCostPaise, receiptFile, expenseTypeId, expenseSubTypeId) {
+  async function markPurchased(poItemId, actualQty, actualCostPaise, receiptFile) {
     if (saving) return
     setSaving(true)
 
@@ -635,10 +635,10 @@ function Purchase({ profile, mode }) {
       } catch (_) {}
     }
 
-    // ─── Create expense row (batch_id = PO id groups all items in this PO) ───
-    if (actualCostPaise > 0 && expenseTypeId) {
+    // ─── Create expense row (type set by admin on PO item; batch_id = PO id) ───
+    var poItem = activePoItems.find(function (p) { return p.id === poItemId }) || {}
+    if (actualCostPaise > 0 && poItem.expense_type_id) {
       try {
-        var poItem = activePoItems.find(function (p) { return p.id === poItemId }) || {}
         var poItemName = poItem.item_name || 'PO Item'
         var reqItemId = poItem.requisition_item_id
         var venueAllocs = []
@@ -669,8 +669,8 @@ function Purchase({ profile, mode }) {
 
         var { data: newExp, error: expErr } = await supabase.from('expenses').insert({
           user_id: profile.id,
-          expense_type_id: expenseTypeId,
-          expense_sub_type_id: expenseSubTypeId || null,
+          expense_type_id: poItem.expense_type_id,
+          expense_sub_type_id: poItem.expense_sub_type_id || null,
           category_id: poItem.category_id || null,
           amount_paise: actualCostPaise,
           description: 'PO Purchase: ' + titleCase(poItemName) + ' | PO ' + (activePo?.id || '').slice(0, 8),
@@ -724,6 +724,8 @@ function Purchase({ profile, mode }) {
       } catch (err) {
         console.warn('Expense creation error:', err.message || err)
       }
+    } else if (actualCostPaise > 0 && !poItem.expense_type_id) {
+      console.warn('PO item ' + poItemId + ' missing expense_type_id — expense skipped')
     }
 
     try { await logActivity('PO_ITEM_PURCHASED', titleCase(activePoItems.find(function (p) { return p.id === poItemId })?.item_name || '') + ' | ₹' + (actualCostPaise / 100)) } catch (_) {}
@@ -1375,9 +1377,7 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, ve
   var [vendorSearch, setVendorSearch] = useState('')
   var [vendorMode, setVendorMode] = useState('select')
   var [purchasingItem, setPurchasingItem] = useState(null)
-  var [purchaseForm, setPurchaseForm] = useState({ qty: '', cost: '', receipt: null, vendorName: '', vendorRate: '', expenseTypeId: '', expenseSubTypeId: '' })
-  var [expenseTypes, setExpenseTypes] = useState([])
-  var [expenseSubTypes, setExpenseSubTypes] = useState([])
+  var [purchaseForm, setPurchaseForm] = useState({ qty: '', cost: '', receipt: null, vendorName: '', vendorRate: '' })
   var [rateHistory, setRateHistory] = useState([])
   var [rateLoading, setRateLoading] = useState(false)
   var [showAddVendor, setShowAddVendor] = useState(null)
@@ -1410,6 +1410,14 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, ve
     if (it.status === 'pending_return') pendingReturnCount++
     if (it.status === 'returned') returnedCount++
   })
+
+  var [expenseTypes, setExpenseTypes] = useState([])
+  var [expenseSubTypes, setExpenseSubTypes] = useState([])
+  var [bulkExpType, setBulkExpType] = useState('')
+  var [bulkExpSubType, setBulkExpSubType] = useState('')
+  var [editingItemExp, setEditingItemExp] = useState(null)
+  var [itemExpForm, setItemExpForm] = useState({ typeId: '', subTypeId: '' })
+
   useEffect(function () {
     Promise.all([
       supabase.from('expense_types').select('id, name, icon, sort_order').eq('active', true).order('sort_order').order('name'),
@@ -1419,6 +1427,51 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, ve
       setExpenseSubTypes(res[1].data || [])
     })
   }, [])
+
+  async function applyExpTypeToAll() {
+    if (!bulkExpType) { alert('Select expense type'); return }
+    var typeId = Number(bulkExpType)
+    var subTypeId = bulkExpSubType ? Number(bulkExpSubType) : null
+    var pendingItems = items.filter(function (it) { return it.status === 'pending' })
+    if (pendingItems.length === 0) { alert('No pending items to update'); return }
+    var existing = pendingItems.filter(function (it) { return it.expense_type_id })
+    if (existing.length > 0 && !confirm('Overwrite expense type on ' + existing.length + ' item(s) that already has one?')) return
+    var itemIds = pendingItems.map(function (it) { return it.id })
+    var { error } = await supabase.from('purchase_order_items')
+      .update({ expense_type_id: typeId, expense_sub_type_id: subTypeId })
+      .in('id', itemIds)
+    if (error) { alert('Failed: ' + error.message); return }
+    setItems(function (prev) {
+      return prev.map(function (it) {
+        if (itemIds.indexOf(it.id) === -1) return it
+        return Object.assign({}, it, { expense_type_id: typeId, expense_sub_type_id: subTypeId })
+      })
+    })
+    setBulkExpType('')
+    setBulkExpSubType('')
+  }
+
+  async function saveItemExpType(itemId) {
+    if (!itemExpForm.typeId) { alert('Select expense type'); return }
+    var typeId = Number(itemExpForm.typeId)
+    var subTypeId = itemExpForm.subTypeId ? Number(itemExpForm.subTypeId) : null
+    var { error } = await supabase.from('purchase_order_items')
+      .update({ expense_type_id: typeId, expense_sub_type_id: subTypeId })
+      .eq('id', itemId)
+    if (error) { alert('Failed: ' + error.message); return }
+    setItems(function (prev) {
+      return prev.map(function (it) { return it.id === itemId ? Object.assign({}, it, { expense_type_id: typeId, expense_sub_type_id: subTypeId }) : it })
+    })
+    setEditingItemExp(null)
+  }
+
+  function startEditItemExp(it) {
+    setEditingItemExp(it.id)
+    setItemExpForm({
+      typeId: it.expense_type_id ? String(it.expense_type_id) : '',
+      subTypeId: it.expense_sub_type_id ? String(it.expense_sub_type_id) : '',
+    })
+  }
 
   var staffItems = useMemo(function () {
     return staffList.map(function (s) { return { label: s.name + (s.role === 'admin' ? ' (Admin)' : ''), value: s.id } })
@@ -1481,8 +1534,6 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, ve
       receipt: null,
       vendorName: it.vendor_name || '',
       vendorRate: it.vendor_rate_paise ? String(it.vendor_rate_paise / 100) : '',
-      expenseTypeId: '',
-      expenseSubTypeId: '',
     })
   }
 
@@ -1491,7 +1542,6 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, ve
     var actualCostPaise = Math.round(Number(purchaseForm.cost) * 100)
     if (!actualQty || actualQty <= 0) { alert('Enter qty purchased'); return }
     if (!actualCostPaise || actualCostPaise <= 0) { alert('Enter actual cost'); return }
-    if (!purchaseForm.expenseTypeId) { alert('Select expense type'); return }
 
     var vendorChanged = false
     var item = items.find(function (it) { return it.id === poItemId })
@@ -1505,7 +1555,7 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, ve
       await onSaveVendor(poItemId, newVendorName || item.vendor_name, '', newRatePaise, null)
     }
 
-    await onMarkPurchased(poItemId, actualQty, actualCostPaise, purchaseForm.receipt, Number(purchaseForm.expenseTypeId), purchaseForm.expenseSubTypeId ? Number(purchaseForm.expenseSubTypeId) : null)
+    await onMarkPurchased(poItemId, actualQty, actualCostPaise, purchaseForm.receipt)
     setPurchasingItem(null)
 
     if (vendorChanged && newVendorName) {
@@ -1591,6 +1641,42 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, ve
             </div>
           )}
 
+          {/* Bulk expense type — admin, draft/confirmed */}
+          {canEdit && (function () {
+            var subForBulk = bulkExpType ? expenseSubTypes.filter(function (st) { return st.expense_type_id === Number(bulkExpType) }) : []
+            return (
+              <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
+                <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Expense Type — Apply to all pending items</p>
+                <div className="grid grid-cols-2 gap-2 mb-2">
+                  <select value={bulkExpType}
+                    onChange={function (e) { setBulkExpType(e.target.value); setBulkExpSubType('') }}
+                    className="w-full px-2 py-1.5 border border-gray-200 rounded-md text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    style={{ fontSize: '16px' }}>
+                    <option value="">Select type...</option>
+                    {expenseTypes.map(function (et) {
+                      return <option key={et.id} value={String(et.id)}>{(et.icon ? et.icon + ' ' : '') + et.name}</option>
+                    })}
+                  </select>
+                  {subForBulk.length > 0 && (
+                    <select value={bulkExpSubType}
+                      onChange={function (e) { setBulkExpSubType(e.target.value) }}
+                      className="w-full px-2 py-1.5 border border-gray-200 rounded-md text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      style={{ fontSize: '16px' }}>
+                      <option value="">Sub-type...</option>
+                      {subForBulk.map(function (st) {
+                        return <option key={st.id} value={String(st.id)}>{st.name}</option>
+                      })}
+                    </select>
+                  )}
+                </div>
+                <button onClick={applyExpTypeToAll} disabled={!bulkExpType || saving}
+                  className="w-full py-1.5 text-xs font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 disabled:opacity-50 transition-colors">
+                  Apply to all pending
+                </button>
+              </div>
+            )
+          })()}
+
           {/* Items table */}
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
             <div className="px-4 py-3 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
@@ -1620,6 +1706,55 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, ve
                             {it._source === 'new' ? 'New' : it._source === 'catering_store' ? 'CS' : 'INV'}
                           </span>
                         </p>
+                        {(function () {
+                          var et = it.expense_type_id ? expenseTypes.find(function (x) { return x.id === it.expense_type_id }) : null
+                          var st = it.expense_sub_type_id ? expenseSubTypes.find(function (x) { return x.id === it.expense_sub_type_id }) : null
+                          var canEditExp = canEdit && it.status === 'pending'
+                          var isEditingExp = editingItemExp === it.id
+                          if (isEditingExp) {
+                            var subForItem = itemExpForm.typeId ? expenseSubTypes.filter(function (s) { return s.expense_type_id === Number(itemExpForm.typeId) }) : []
+                            return (
+                              <div className="mt-1.5 flex flex-wrap items-center gap-1.5" onClick={function (e) { e.stopPropagation() }}>
+                                <select value={itemExpForm.typeId}
+                                  onChange={function (e) { setItemExpForm({ typeId: e.target.value, subTypeId: '' }) }}
+                                  className="px-1.5 py-1 border border-gray-200 rounded text-[11px] bg-white focus:outline-none focus:ring-1 focus:ring-blue-400"
+                                  style={{ fontSize: '16px' }}>
+                                  <option value="">Type...</option>
+                                  {expenseTypes.map(function (x) { return <option key={x.id} value={String(x.id)}>{x.name}</option> })}
+                                </select>
+                                {subForItem.length > 0 && (
+                                  <select value={itemExpForm.subTypeId}
+                                    onChange={function (e) { setItemExpForm(function (p) { return Object.assign({}, p, { subTypeId: e.target.value }) }) }}
+                                    className="px-1.5 py-1 border border-gray-200 rounded text-[11px] bg-white focus:outline-none focus:ring-1 focus:ring-blue-400"
+                                    style={{ fontSize: '16px' }}>
+                                    <option value="">Sub...</option>
+                                    {subForItem.map(function (x) { return <option key={x.id} value={String(x.id)}>{x.name}</option> })}
+                                  </select>
+                                )}
+                                <button onClick={function () { saveItemExpType(it.id) }} className="text-[10px] font-bold text-blue-600 px-1.5 py-1 hover:bg-blue-50 rounded">Save</button>
+                                <button onClick={function () { setEditingItemExp(null) }} className="text-[10px] text-gray-500 px-1.5 py-1 hover:bg-gray-50 rounded">Cancel</button>
+                              </div>
+                            )
+                          }
+                          return (
+                            <div className="mt-1 flex items-center gap-1.5">
+                              {et ? (
+                                <span className="text-[10px] font-medium text-emerald-700 bg-emerald-50 border border-emerald-100 px-1.5 py-0.5 rounded">
+                                  {(et.icon ? et.icon + ' ' : '') + et.name}{st ? ' · ' + st.name : ''}
+                                </span>
+                              ) : (
+                                <span className="text-[10px] font-medium text-amber-700 bg-amber-50 border border-amber-100 px-1.5 py-0.5 rounded">
+                                  ⚠ No expense type
+                                </span>
+                              )}
+                              {canEditExp && (
+                                <button onClick={function (e) { e.stopPropagation(); startEditItemExp(it) }} className="text-[10px] text-blue-600 hover:underline">
+                                  {et ? 'Change' : 'Set'}
+                                </button>
+                              )}
+                            </div>
+                          )
+                        })()}
                       </div>
                       {/* Cost columns */}
                       <div className="flex gap-4 flex-shrink-0 text-right">
@@ -1791,44 +1926,6 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, ve
                               className="w-full px-2 py-1.5 border border-green-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
                           </div>
                         </div>
-                        {(function () {
-                          var isAdminEt = profile?.role === 'admin' || profile?.role === 'auditor'
-                          var userEtIds = profile?.expense_type_ids || []
-                          var typeList = isAdminEt ? expenseTypes : expenseTypes.filter(function (et) { return userEtIds.indexOf(et.id) !== -1 })
-                          var subForType = purchaseForm.expenseTypeId
-                            ? expenseSubTypes.filter(function (st) { return st.expense_type_id === Number(purchaseForm.expenseTypeId) })
-                            : []
-                          return (
-                            <div className="grid grid-cols-2 gap-2">
-                              <div>
-                                <label className="block text-[11px] text-gray-500 mb-0.5">Expense Type *</label>
-                                <select value={purchaseForm.expenseTypeId}
-                                  onChange={function (e) { setPurchaseForm(function (p) { return Object.assign({}, p, { expenseTypeId: e.target.value, expenseSubTypeId: '' }) }) }}
-                                  className="w-full px-2 py-1.5 border border-green-200 rounded-md text-sm bg-white focus:outline-none focus:ring-2 focus:ring-green-500"
-                                  style={{ fontSize: '16px' }}>
-                                  <option value="">Select...</option>
-                                  {typeList.map(function (et) {
-                                    return <option key={et.id} value={String(et.id)}>{(et.icon ? et.icon + ' ' : '') + et.name}</option>
-                                  })}
-                                </select>
-                              </div>
-                              {subForType.length > 0 && (
-                                <div>
-                                  <label className="block text-[11px] text-gray-500 mb-0.5">Sub-Type</label>
-                                  <select value={purchaseForm.expenseSubTypeId}
-                                    onChange={function (e) { setPurchaseForm(function (p) { return Object.assign({}, p, { expenseSubTypeId: e.target.value }) }) }}
-                                    className="w-full px-2 py-1.5 border border-green-200 rounded-md text-sm bg-white focus:outline-none focus:ring-2 focus:ring-green-500"
-                                    style={{ fontSize: '16px' }}>
-                                    <option value="">Select...</option>
-                                    {subForType.map(function (st) {
-                                      return <option key={st.id} value={String(st.id)}>{st.name}</option>
-                                    })}
-                                  </select>
-                                </div>
-                              )}
-                            </div>
-                          )
-                        })()}
                         <div>
                           <label className="block text-[11px] text-gray-500 mb-0.5">Upload Bill / Receipt</label>
                           <input type="file" accept="image/*,application/pdf"
@@ -2030,6 +2127,8 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, ve
               {canConfirm && (
                 <button onClick={function () {
                   if (!po.assigned_to) { alert('Assign a purchaser before confirming'); return }
+                  var missing = items.filter(function (it) { return !it.expense_type_id })
+                  if (missing.length > 0) { alert('Set expense type on ' + missing.length + ' item(s) before confirming'); return }
                   onStatusChange(po.id, 'confirmed')
                 }} disabled={saving}
                   className="w-full py-3 text-sm font-bold text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors shadow-sm">
