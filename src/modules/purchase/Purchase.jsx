@@ -591,7 +591,7 @@ function Purchase({ profile, mode }) {
   // Never block on `queueLoading` — it fires on every refetch and would blank
   // the detail view. The queue tab has its own local indicator further down.
   // Never block when a detail view is already open — its data is already loaded.
-  if (loading && view !== 'detail') {
+  if (!isReceiver && loading && view !== 'detail') {
     return <p className="text-gray-400 text-sm text-center py-8">Loading...</p>
   }
 
