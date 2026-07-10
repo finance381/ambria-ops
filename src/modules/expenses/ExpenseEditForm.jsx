@@ -2,14 +2,8 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { formatPoints } from '../../lib/format'
 import { logActivity } from '../../lib/logger'
-import { filterUserCategories } from '../../lib/categories'
-import SearchDropdown from '../../components/ui/SearchDropdown'
 
 function ExpenseEditForm({ profile, editExp, walletBalance, onCancel, onSaved }) {
-  var [categories, setCategories] = useState([])
-  var [subCategories, setSubCategories] = useState([])
-  var [categoryId, setCategoryId] = useState(editExp ? String(editExp.category_id) : '')
-  var [subCategoryId, setSubCategoryId] = useState(editExp?.sub_category_id ? String(editExp.sub_category_id) : '')
   var [amount, setAmount] = useState(editExp ? String(editExp.amount_paise / 100) : '')
   var [description, setDescription] = useState(editExp ? (editExp.description || '') : '')
   var [expenseDate, setExpenseDate] = useState(editExp ? editExp.expense_date : new Date().toISOString().split('T')[0])
@@ -31,18 +25,6 @@ function ExpenseEditForm({ profile, editExp, walletBalance, onCancel, onSaved })
   var typeFields = editExp?.expense_types?.extra_fields || []
 
   useEffect(function () {
-    supabase.from('categories').select('id, name, status').order('name')
-      .then(function (res) { setCategories(res.data || []) })
-  }, [])
-
-  useEffect(function () {
-    if (categoryId) {
-      supabase.from('sub_categories').select('id, name').eq('category_id', Number(categoryId)).order('name')
-        .then(function (res) { setSubCategories(res.data || []) })
-    } else { setSubCategories([]); setSubCategoryId('') }
-  }, [categoryId])
-
-  useEffect(function () {
     if (!amount || !expenseDate || Number(amount) <= 0 || isEditing) { setDupeWarning(''); return }
     var paise = Math.round(Number(amount) * 100)
     supabase.from('expenses')
@@ -61,12 +43,8 @@ function ExpenseEditForm({ profile, editExp, walletBalance, onCancel, onSaved })
       })
   }, [amount, expenseDate])
 
-  var catItems = filterUserCategories(categories, profile).map(function (c) { return { label: c.name, value: String(c.id) } })
-  var subCatItems = subCategories.map(function (s) { return { label: s.name, value: String(s.id) } })
-
   function validate() {
     var errs = {}
-    if (!categoryId) errs.cat = 'Category required'
     if (!amount || Number(amount) <= 0) errs.amount = 'Amount required'
     if (!description.trim()) errs.desc = 'Description required'
     if (!expenseDate) errs.date = 'Date required'
@@ -149,8 +127,6 @@ function ExpenseEditForm({ profile, editExp, walletBalance, onCancel, onSaved })
 
       if (isEditing) {
         var { error: updErr } = await supabase.from('expenses').update({
-          category_id: Number(categoryId),
-          sub_category_id: subCategoryId ? Number(subCategoryId) : null,
           amount_paise: amountPaise,
           description: description.trim(),
           expense_date: expenseDate,
@@ -190,8 +166,6 @@ function ExpenseEditForm({ profile, editExp, walletBalance, onCancel, onSaved })
       } else {
         var { data: newExp, error: insErr } = await supabase.from('expenses').insert({
           user_id: profile.id,
-          category_id: Number(categoryId),
-          sub_category_id: subCategoryId ? Number(subCategoryId) : null,
           amount_paise: amountPaise,
           description: description.trim(),
           expense_date: expenseDate,
@@ -239,15 +213,6 @@ function ExpenseEditForm({ profile, editExp, walletBalance, onCancel, onSaved })
             style={{ fontSize: '16px' }} />
           {errors.date && <p className="text-xs text-red-500 mt-1">{errors.date}</p>}
         </div>
-
-        <SearchDropdown label="Category" required items={catItems} value={categoryId}
-          onChange={function (val) { setCategoryId(val); setSubCategoryId('') }}
-          placeholder="Search category..." error={errors.cat} />
-
-        {subCatItems.length > 0 && (
-          <SearchDropdown label="Sub-Category" items={subCatItems} value={subCategoryId}
-            onChange={setSubCategoryId} placeholder="Search sub-category..." />
-        )}
 
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Amount (Points) <span className="text-red-500">*</span></label>

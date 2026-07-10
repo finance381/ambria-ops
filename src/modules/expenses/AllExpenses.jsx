@@ -5,7 +5,7 @@ import { APPROVAL_STATUS_COLORS, APPROVAL_STATUS_LABELS } from '../../lib/consta
 
 var PAGE_SIZE = 20
 
-function AllExpenses({ subCatMap, onBack, onOpenDetail }) {
+function AllExpenses({ onBack, onOpenDetail }) {
   var [allExps, setAllExps] = useState([])
   var [allExpHasMore, setAllExpHasMore] = useState(false)
   var [allExpStatus, setAllExpStatus] = useState('')
@@ -15,11 +15,20 @@ function AllExpenses({ subCatMap, onBack, onOpenDetail }) {
   var [allExpSearchD, setAllExpSearchD] = useState('')
   var [allExpLoading, setAllExpLoading] = useState(false)
   var [allExpLoadingMore, setAllExpLoadingMore] = useState(false)
+  var [subDeptMap, setSubDeptMap] = useState({})
 
   useEffect(function () {
     var timer = setTimeout(function () { setAllExpSearchD(allExpSearch) }, 400)
     return function () { clearTimeout(timer) }
   }, [allExpSearch])
+
+  useEffect(function () {
+    supabase.from('sub_departments').select('id, name').then(function (res) {
+      var map = {}
+      ;(res.data || []).forEach(function (sd) { map[sd.id] = sd.name })
+      setSubDeptMap(map)
+    })
+  }, [])
 
   useEffect(function () {
     loadAllExps(false)
@@ -31,7 +40,7 @@ function AllExpenses({ subCatMap, onBack, onOpenDetail }) {
     else setAllExpLoading(true)
 
     var query = supabase.from('expenses')
-      .select('id, user_id, category_id, sub_category_id, expense_type_id, amount_paise, description, status, expense_date, receipt_path, created_at, rejection_reason, vendor_name, travel_from, travel_to, travel_mode, metadata, categories(name), expense_types(name, extra_fields)')
+      .select('id, user_id, batch_id, expense_type_id, amount_paise, description, status, expense_date, receipt_path, created_at, rejection_reason, vendor_name, travel_from, travel_to, travel_mode, metadata, expense_types(name, extra_fields), expense_allocations(department, department_id, sub_department_id, amount_paise)')
       .order('created_at', { ascending: false })
       .range(offset, offset + PAGE_SIZE)
 
@@ -67,13 +76,16 @@ function AllExpenses({ subCatMap, onBack, onOpenDetail }) {
 
   function exportAllExpCSV() {
     if (!allExps.length) return
-    var headers = ['Date', 'User', 'Category', 'Sub-Category', 'Amount (pts)', 'Description', 'Status']
+    var headers = ['Date', 'User', 'Department', 'Sub-Department', 'Amount (pts)', 'Description', 'Status']
     var rows = allExps.map(function (e) {
+      var firstAlloc = (e.expense_allocations && e.expense_allocations[0]) || {}
+      var deptName = firstAlloc.department || ''
+      var subDeptName = firstAlloc.sub_department_id ? (subDeptMap[firstAlloc.sub_department_id] || '') : ''
       return [
         e.expense_date || '',
         e.profiles?.name || '',
-        e.categories?.name || '',
-        subCatMap[e.sub_category_id] || '',
+        deptName,
+        subDeptName,
         e.amount_paise ? (e.amount_paise / 100) : 0,
         (e.description || '').replace(/,/g, ';'),
         e.status || '',
@@ -163,9 +175,16 @@ function AllExpenses({ subCatMap, onBack, onOpenDetail }) {
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold text-gray-900 truncate">{exp.description || 'Expense'}</p>
                     <p className="text-xs text-gray-400 mt-0.5">
-                      {exp.profiles?.name || '—'} · {exp.expense_types?.name ? exp.expense_types.name + ' · ' : ''}{exp.categories?.name || '—'}
-                      {exp.sub_category_id && subCatMap[exp.sub_category_id] ? ' > ' + subCatMap[exp.sub_category_id] : ''}
-                      {' · ' + formatDate(exp.expense_date)}
+                      {(exp.profiles?.name || '—') + ' · '}
+                      {exp.expense_types?.name ? exp.expense_types.name + ' · ' : ''}
+                      {(function () {
+                        var a = (exp.expense_allocations && exp.expense_allocations[0]) || null
+                        if (!a) return ''
+                        var d = a.department || ''
+                        var sd = a.sub_department_id ? (subDeptMap[a.sub_department_id] || '') : ''
+                        return (d + (sd ? ' › ' + sd : '') + (d || sd ? ' · ' : ''))
+                      })()}
+                      {formatDate(exp.expense_date)}
                     </p>
                   </div>
                   <div className="flex flex-col items-end gap-1 flex-shrink-0 ml-2">

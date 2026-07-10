@@ -37,7 +37,7 @@ function Expenses({ profile, masterMode }) {
   var [pendingReceiveCount, setPendingReceiveCount] = useState(0)
   var [myWallet, setMyWallet] = useState(null)
   var [showWallet, setShowWallet] = useState(false)
-  var [subCatMap, setSubCatMap] = useState({})
+  var [subDeptMap, setSubDeptMap] = useState({})
   var [typesModal, setTypesModal] = useState(false)
   var [reviewHistory, setReviewHistory] = useState(false)
 
@@ -53,33 +53,13 @@ function Expenses({ profile, masterMode }) {
     return function () { clearTimeout(timer) }
   }, [expSearch])
 
-  var [catDeptMap, setCatDeptMap] = useState({})
   var [collapsedGroups, setCollapsedGroups] = useState({})
 
   useEffect(function () {
-    supabase.from('sub_categories').select('id, name').then(function (res) {
+    supabase.from('sub_departments').select('id, name').then(function (res) {
       var map = {}
-      ;(res.data || []).forEach(function (sc) { map[sc.id] = sc.name })
-      setSubCatMap(map)
-    })
-    // Build category → dept/sub-dept lookup
-    Promise.all([
-      supabase.from('categories').select('id, sub_department_id'),
-      supabase.from('sub_departments').select('id, name, department_id'),
-      supabase.from('departments').select('id, name'),
-    ]).then(function (res) {
-      var cats = res[0].data || []
-      var sds = res[1].data || []
-      var deps = res[2].data || []
-      var sdById = {}; sds.forEach(function (s) { sdById[s.id] = s })
-      var dById = {}; deps.forEach(function (d) { dById[d.id] = d })
-      var map = {}
-      cats.forEach(function (c) {
-        var sd = c.sub_department_id ? sdById[c.sub_department_id] : null
-        var d = sd && sd.department_id ? dById[sd.department_id] : null
-        map[c.id] = { deptId: d ? d.id : null, deptName: d ? d.name : 'Unassigned', subDeptId: sd ? sd.id : null, subDeptName: sd ? sd.name : '' }
-      })
-      setCatDeptMap(map)
+      ;(res.data || []).forEach(function (sd) { map[sd.id] = sd.name })
+      setSubDeptMap(map)
     })
   }, [])
 
@@ -108,7 +88,7 @@ function Expenses({ profile, masterMode }) {
     else setLoadingMore(true)
 
     var query = supabase.from('expenses')
-      .select('id, category_id, sub_category_id, expense_type_id, expense_sub_type_id, amount_paise, tax_paise, description, status, expense_date, receipt_path, created_at, rejection_reason, flag_reason, penalty_paise, penalized_at, deduction_type, vendor_name, travel_from, travel_to, travel_mode, metadata, event_id, categories(name), expense_types(name), expense_sub_types(name, extra_fields), events(event_name)')
+      .select('id, batch_id, expense_type_id, expense_sub_type_id, amount_paise, tax_paise, description, status, expense_date, receipt_path, created_at, rejection_reason, flag_reason, penalty_paise, penalized_at, deduction_type, vendor_name, travel_from, travel_to, travel_mode, metadata, event_id, expense_types(name), expense_sub_types(name, extra_fields), events(event_name), expense_allocations(department, department_id, sub_department_id, amount_paise)')
       .eq('user_id', profile.id)
       .order('created_at', { ascending: false })
       .range(offset, offset + PAGE_SIZE)
@@ -144,7 +124,7 @@ function Expenses({ profile, masterMode }) {
     var statuses = ['recorded', 'flagged']
 
     var query = supabase.from('expenses')
-      .select('id, user_id, category_id, sub_category_id, expense_type_id, expense_sub_type_id, amount_paise, tax_paise, description, status, expense_date, receipt_path, created_at, rejection_reason, flag_reason, penalty_paise, deduction_type, vendor_name, travel_from, travel_to, travel_mode, metadata, event_id, categories(name), expense_types(name), expense_sub_types(name, extra_fields), events(event_name)')
+      .select('id, user_id, batch_id, expense_type_id, expense_sub_type_id, amount_paise, tax_paise, description, status, expense_date, receipt_path, created_at, rejection_reason, flag_reason, penalty_paise, deduction_type, vendor_name, travel_from, travel_to, travel_mode, metadata, event_id, expense_types(name), expense_sub_types(name, extra_fields), events(event_name), expense_allocations(department, department_id, sub_department_id, amount_paise)')
       .neq('user_id', profile.id)
       .in('status', statuses)
       .order('created_at', { ascending: false })
@@ -192,12 +172,15 @@ function Expenses({ profile, masterMode }) {
 
   function exportExpenseCSV() {
     if (!myExpenses.length) return
-    var headers = ['Date', 'Category', 'Sub-Category', 'Amount (pts)', 'Description', 'Status', 'Created']
+    var headers = ['Date', 'Department', 'Sub-Department', 'Amount (pts)', 'Description', 'Status', 'Created']
     var rows = myExpenses.map(function (e) {
+      var firstAlloc = (e.expense_allocations && e.expense_allocations[0]) || {}
+      var deptName = firstAlloc.department || ''
+      var subDeptName = firstAlloc.sub_department_id ? (subDeptMap[firstAlloc.sub_department_id] || '') : ''
       return [
         e.expense_date || '',
-        e.categories?.name || '',
-        subCatMap[e.sub_category_id] || '',
+        deptName,
+        subDeptName,
         e.amount_paise ? (e.amount_paise / 100) : 0,
         (e.description || '').replace(/,/g, ';'),
         e.status || '',
@@ -221,7 +204,6 @@ function Expenses({ profile, masterMode }) {
   if (allExpView && (isAdmin || isAuditor)) {
     return (
       <AllExpenses
-        subCatMap={subCatMap}
         onBack={function () { setAllExpView(false) }}
         onOpenDetail={function (exp) { setDetailExp(exp); setView('detail') }}
       />
@@ -280,7 +262,6 @@ function Expenses({ profile, masterMode }) {
       <ExpenseDetail
         exp={detailExp}
         profile={profile}
-        subCatMap={subCatMap}
         isAdmin={isAdmin}
         isDeptApprover={isDeptApprover}
         onBack={function () { navBack() }}
@@ -504,28 +485,35 @@ function Expenses({ profile, masterMode }) {
 
       <div className="space-y-3">
         {(function () {
-          // Group by dept > sub-dept
+          // Group by batch_id (submission unit); legacy null-batch rows are singleton groups
           var groups = {}
+          var orderKeys = []
           displayList.forEach(function (exp) {
-            var info = catDeptMap[exp.category_id] || { deptName: 'Unassigned', subDeptName: '' }
-            var key = info.deptName + '§' + info.subDeptName
-            if (!groups[key]) groups[key] = { deptName: info.deptName, subDeptName: info.subDeptName, items: [], total: 0 }
+            var key = exp.batch_id || ('solo_' + exp.id)
+            if (!groups[key]) {
+              groups[key] = { items: [], total: 0, submitter: exp.profiles?.name || '', latest: exp.created_at || '' }
+              orderKeys.push(key)
+            }
             groups[key].items.push(exp)
             groups[key].total += (exp.amount_paise || 0)
+            if (exp.created_at && exp.created_at > groups[key].latest) groups[key].latest = exp.created_at
           })
-          var groupKeys = Object.keys(groups).sort()
-          return groupKeys.map(function (gk) {
+          return orderKeys.map(function (gk) {
             var grp = groups[gk]
             var isCollapsed = collapsedGroups[gk]
+            var isSingleton = grp.items.length === 1
             return (
               <div key={gk} className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-                <button onClick={function () { setCollapsedGroups(function (p) { var n = Object.assign({}, p); n[gk] = !p[gk]; return n }) }}
+                <button onClick={function () { if (isSingleton) { openDetail(Object.assign({}, grp.items[0], { _fromApprove: view === 'approve' })); return } setCollapsedGroups(function (p) { var n = Object.assign({}, p); n[gk] = !p[gk]; return n }) }}
                   className="w-full flex items-center justify-between px-4 py-2.5 bg-indigo-50 hover:bg-indigo-100 transition-colors border-b border-indigo-100">
                   <div className="flex items-center gap-2 flex-1 min-w-0">
-                    <span className="text-xs">{isCollapsed ? '▶' : '▼'}</span>
+                    <span className="text-xs">{isSingleton ? '›' : (isCollapsed ? '▶' : '▼')}</span>
                     <div className="text-left flex-1 min-w-0">
-                      <p className="text-sm font-bold text-indigo-800 truncate">{grp.deptName}{grp.subDeptName ? ' › ' + grp.subDeptName : ''}</p>
-                      <p className="text-[10px] text-indigo-500 font-medium">{grp.items.length} expense{grp.items.length !== 1 ? 's' : ''}</p>
+                      <p className="text-sm font-bold text-indigo-800 truncate">
+                        {view === 'approve' && grp.submitter ? grp.submitter + ' · ' : ''}
+                        {isSingleton ? (grp.items[0].description || 'Expense') : (grp.items.length + ' entries')}
+                      </p>
+                      <p className="text-[10px] text-indigo-500 font-medium">{grp.latest ? formatDate(grp.latest) : ''}</p>
                     </div>
                   </div>
                   <span className="text-sm font-bold text-indigo-700 flex-shrink-0 ml-2">{formatPoints(grp.total)}</span>
@@ -544,11 +532,15 @@ function Expenses({ profile, masterMode }) {
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-semibold text-gray-900 truncate">{exp.description || 'Expense'}</p>
                   <p className="text-xs text-gray-400 mt-0.5">
-                    {view === 'approve' ? (exp.profiles?.name || '—') + ' · ' : ''}
                     {exp.expense_types?.name ? exp.expense_types.name + (exp.expense_sub_types?.name ? ' > ' + exp.expense_sub_types.name : '') + ' · ' : ''}
-                    {exp.categories?.name || '—'}
-                    {exp.sub_category_id && subCatMap[exp.sub_category_id] ? ' > ' + subCatMap[exp.sub_category_id] : ''}
-                    {' · ' + formatDate(exp.expense_date)}
+                    {(function () {
+                      var a = (exp.expense_allocations && exp.expense_allocations[0]) || null
+                      if (!a) return ''
+                      var d = a.department || ''
+                      var sd = a.sub_department_id ? (subDeptMap[a.sub_department_id] || '') : ''
+                      return (d + (sd ? ' › ' + sd : '') + (d || sd ? ' · ' : ''))
+                    })()}
+                    {formatDate(exp.expense_date)}
                   </p>
                 </div>
                 <div className="flex flex-col items-end gap-1 flex-shrink-0 ml-2">

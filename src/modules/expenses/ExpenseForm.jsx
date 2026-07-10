@@ -3,16 +3,11 @@ import { supabase } from '../../lib/supabase'
 import { logActivity } from '../../lib/logger'
 import SearchDropdown from '../../components/ui/SearchDropdown'
 import { useVoice } from '../../hooks/useVoice'
-import { filterUserCategories } from '../../lib/categories'
 import EventDatePicker from '../../components/ui/EventDatePicker'
 
 function makeEntry() {
   return {
     _key: Date.now() + '_' + Math.random().toString(36).slice(2, 8),
-    department: '',
-    subDeptId: '',
-    venueIdTop: '',
-    categoryId: '',
     expenseTypeId: '',
     expenseSubTypeId: '',
     description: '',
@@ -34,8 +29,6 @@ function makeAllocation() {
 }
 
 function ExpenseForm({ profile, onDone }) {
-  var [categories, setCategories] = useState([])
-  var [subCategories, setSubCategories] = useState([])
   var [expenseTypes, setExpenseTypes] = useState([])
   var [expenseSubTypes, setExpenseSubTypes] = useState([])
   var [departments, setDepartments] = useState([])
@@ -59,17 +52,13 @@ function ExpenseForm({ profile, onDone }) {
   useEffect(function () { loadRefData(); ensureLookupData('vendors') }, [])
 
   async function loadRefData() {
-    var [catR, scR, etR, estR, dR, vR, sdR] = await Promise.all([
-      supabase.from('categories').select('id, name, sub_department_id').order('name'),
-      supabase.from('sub_categories').select('id, category_id, name').order('name'),
+    var [etR, estR, dR, vR, sdR] = await Promise.all([
       supabase.from('expense_types').select('id, name, icon, description, sort_order').eq('active', true).order('sort_order').order('name'),
       supabase.from('expense_sub_types').select('id, expense_type_id, name, extra_fields, active, sort_order').eq('active', true).order('sort_order').order('name'),
       supabase.from('departments').select('id, name').eq('active', true).eq('hide_from_lists', false).order('name'),
       supabase.from('venues').select('id, code, name').eq('active', true).order('name'),
       supabase.from('sub_departments').select('id, name, department_id, departments!inner(hide_from_lists)').eq('active', true).eq('departments.hide_from_lists', false).order('name'),
     ])
-    setCategories(catR.data || [])
-    setSubCategories(scR.data || [])
     setExpenseTypes(etR.data || [])
     setExpenseSubTypes(estR.data || [])
     var allDepts = dR.data || []
@@ -134,9 +123,6 @@ function ExpenseForm({ profile, onDone }) {
       if (i !== idx) return e
       var copy = Object.assign({}, e)
       copy[field] = val
-      if (field === 'department') { copy.subDeptId = ''; copy.venueIdTop = ''; copy.categoryId = ''; copy.expenseTypeId = ''; copy.expenseSubTypeId = ''; copy.fieldValues = {} }
-      if (field === 'subDeptId') { copy.categoryId = ''; copy.expenseTypeId = ''; copy.expenseSubTypeId = ''; copy.fieldValues = {} }
-      if (field === 'categoryId') { copy.expenseTypeId = ''; copy.expenseSubTypeId = ''; copy.fieldValues = {} }
       if (field === 'expenseTypeId') { copy.expenseSubTypeId = ''; copy.fieldValues = {} }
       if (field === 'expenseSubTypeId') { copy.fieldValues = {} }
       return copy
@@ -352,7 +338,6 @@ function ExpenseForm({ profile, onDone }) {
   function validateEntries() {
     for (var i = 0; i < entries.length; i++) {
       var e = entries[i]
-      if (!e.categoryId) return 'Entry ' + (i + 1) + ': Select a category'
       if (!e.expenseTypeId) return 'Entry ' + (i + 1) + ': Select expense type'
       if (!e.expenseSubTypeId) return 'Entry ' + (i + 1) + ': Select sub-type'
       if (!e.description.trim()) return 'Entry ' + (i + 1) + ': Add description'
@@ -380,6 +365,7 @@ function ExpenseForm({ profile, onDone }) {
     setSaving(true)
     var submitted = 0
     var failed = 0
+    var batchId = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : null
 
     try {
       for (var i = 0; i < entries.length; i++) {
@@ -389,8 +375,7 @@ function ExpenseForm({ profile, onDone }) {
         try {
           var payload = {
             user_id: profile.id,
-            category_id: Number(e.categoryId),
-            sub_category_id: null,
+            batch_id: batchId,
             expense_type_id: Number(e.expenseTypeId),
             expense_sub_type_id: Number(e.expenseSubTypeId),
             amount_paise: paise,
@@ -422,13 +407,12 @@ function ExpenseForm({ profile, onDone }) {
             if (!aErr) await supabase.from('expenses').update({ receipt_path: aPath }).eq('id', exp.id)
           }
 
-          var deptName = e.department ? (departments.find(function (d) { return String(d.id) === e.department }) || {}).name || '' : ''
           var allocRows = e.allocations
             .filter(function (a) { return a.venueId || a.departmentId })
             .map(function (a) {
               return {
                 expense_id: exp.id,
-                department: a.departmentId ? (departments.find(function (d) { return String(d.id) === a.departmentId }) || {}).name || deptName : deptName,
+                department: a.departmentId ? (departments.find(function (d) { return String(d.id) === a.departmentId }) || {}).name || null : null,
                 department_id: a.departmentId ? Number(a.departmentId) : null,
                 sub_department_id: a.subDepartmentId ? Number(a.subDepartmentId) : null,
                 venue_id: a.venueId ? Number(a.venueId) : null,
@@ -537,63 +521,6 @@ function ExpenseForm({ profile, onDone }) {
             </div>
 
             <div className="p-4 space-y-3">
-              {/* Department */}
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Department</label>
-                <select value={entry.department} onChange={function (e) { updateEntry(idx, 'department', e.target.value) }}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-amber-300" style={{ fontSize: '16px' }}>
-                  <option value="">Select department...</option>
-                  {departments.map(function (d) { return <option key={d.id} value={String(d.id)}>{d.name}</option> })}
-                </select>
-              </div>
-
-              {/* Sub-department or Venue */}
-              {entry.department && (function () {
-                var selDept = departments.find(function (d) { return String(d.id) === entry.department })
-                var isVenueDept = selDept && selDept.name.toLowerCase().indexOf('venue') === 0
-                if (isVenueDept) {
-                  return (
-                    <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">Venue</label>
-                      <select value={entry.venueIdTop} onChange={function (e) { updateEntry(idx, 'venueIdTop', e.target.value) }}
-                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-amber-300" style={{ fontSize: '16px' }}>
-                        <option value="">Select venue...</option>
-                        {venues.map(function (v) { return <option key={v.id} value={String(v.id)}>{v.code + ' — ' + v.name}</option> })}
-                      </select>
-                    </div>
-                  )
-                }
-                var isAdminRoleSd = profile?.role === 'admin' || profile?.role === 'auditor'
-                var userSdIds = profile?.sub_department_ids || []
-                var deptSubs = subDepartments.filter(function (sd) {
-                  if (sd.department_id !== Number(entry.department)) return false
-                  if (isAdminRoleSd || userSdIds.length === 0) return true
-                  return userSdIds.indexOf(sd.id) !== -1
-                })
-                if (deptSubs.length === 0) return null
-                return (
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Sub-Department</label>
-                    <select value={entry.subDeptId} onChange={function (e) { updateEntry(idx, 'subDeptId', e.target.value) }}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-amber-300" style={{ fontSize: '16px' }}>
-                      <option value="">Select sub-department...</option>
-                      {deptSubs.map(function (sd) { return <option key={sd.id} value={String(sd.id)}>{sd.name}</option> })}
-                    </select>
-                  </div>
-                )
-              })()}
-
-              {/* Category */}
-              {(function () {
-                var catList = entry.subDeptId
-                  ? filterUserCategories(categories, profile).filter(function (c) { return c.sub_department_id === Number(entry.subDeptId) })
-                  : filterUserCategories(categories, profile)
-                return (
-                  <SearchDropdown label="Category" items={catList.map(function (c) { return { label: c.name, value: String(c.id) } })}
-                    value={entry.categoryId} onChange={function (val) { updateEntry(idx, 'categoryId', val) }} placeholder="Select category..." />
-                )
-              })()}
-
               {/* Expense Type */}
               {(function () {
                 var isAdminEt = profile?.role === 'admin' || profile?.role === 'auditor'

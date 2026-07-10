@@ -719,8 +719,6 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
           needed_by: neededBy || null,
           event_id: eventId ? Number(eventId) : null,
           sub_department_id: subDeptId ? Number(subDeptId) : null,
-          category_id: categoryId ? Number(categoryId) : null,
-          sub_category_id: subCategoryId ? Number(subCategoryId) : null,
           req_type: 'expense',
           expense_type_id: expTypeId ? Number(expTypeId) : null,
           expense_sub_type_id: expSubTypeId ? Number(expSubTypeId) : null,
@@ -924,7 +922,7 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
             </div>
           </div>
         )}
-        {subDeptCats.length > 0 && (
+        {subDeptCats.length > 0 && reqType === 'inventory' && (
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
             <select value={categoryId} onChange={function (e) { changeCategory(e.target.value) }}
@@ -1655,10 +1653,10 @@ function RequisitionDetail({ req, items, profile, isAdmin, isAuditor, isReqDeptA
     if (saving || req.req_type !== 'expense' || req.status !== 'approved' || req.requested_by !== profile?.id) return
     setSaving(true)
     try {
+      var batchId = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : null
       var { data: newExp, error: insErr } = await supabase.from('expenses').insert({
         user_id: profile.id,
-        category_id: req.category_id || null,
-        sub_category_id: req.sub_category_id || null,
+        batch_id: batchId,
         expense_type_id: req.expense_type_id || null,
         expense_sub_type_id: req.expense_sub_type_id || null,
         amount_paise: req.expense_amount_paise,

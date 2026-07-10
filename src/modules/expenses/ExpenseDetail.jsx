@@ -4,7 +4,7 @@ import { formatDate, formatPoints } from '../../lib/format'
 import { logActivity } from '../../lib/logger'
 import { APPROVAL_STATUS_COLORS, APPROVAL_STATUS_LABELS } from '../../lib/constants'
 
-function ExpenseDetail({ exp, profile, subCatMap, isAdmin, isDeptApprover, onBack, onUpdated, onEdit }) {
+function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdated, onEdit }) {
   var [saving, setSaving] = useState(false)
   var [rejectMode, setRejectMode] = useState(false)
   var [rejectReason, setRejectReason] = useState('')
@@ -312,10 +312,6 @@ function ExpenseDetail({ exp, profile, subCatMap, isAdmin, isDeptApprover, onBac
         <div className="flex justify-between">
           <span className="text-sm text-gray-500">Amount</span>
           <span className="text-sm font-bold text-gray-900">{formatPoints(exp.amount_paise)}</span>
-        </div>
-        <div className="flex justify-between">
-          <span className="text-sm text-gray-500">Category</span>
-          <span className="text-sm text-gray-800">{exp.categories?.name || '—'}{exp.sub_category_id && subCatMap[exp.sub_category_id] ? ' > ' + subCatMap[exp.sub_category_id] : ''}</span>
         </div>
         <div className="flex justify-between">
           <span className="text-sm text-gray-500">Date</span>

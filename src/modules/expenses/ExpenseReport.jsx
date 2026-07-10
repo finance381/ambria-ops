@@ -13,7 +13,7 @@ function ExpenseReport({ onBack }) {
   async function loadReport() {
     setReportLoading(true)
     var { data, error } = await supabase.from('expenses')
-      .select('id, user_id, category_id, amount_paise, status, expense_date, categories(name), profiles:user_id(name)')
+      .select('id, user_id, expense_type_id, amount_paise, status, expense_date, expense_types(name), profiles:user_id(name), expense_allocations(department, amount_paise)')
       .in('status', ['recorded', 'acknowledged', 'approved'])
       .gte('expense_date', reportFrom)
       .lte('expense_date', reportTo)
@@ -23,15 +23,25 @@ function ExpenseReport({ onBack }) {
     var rows = data || []
     var totalPaise = 0
     var byUser = {}
-    var byCat = {}
+    var byType = {}
+    var byDept = {}
     var byMonth = {}
     rows.forEach(function (r) {
       var amt = r.amount_paise || 0
       totalPaise += amt
       var uName = r.profiles?.name || '—'
       byUser[uName] = (byUser[uName] || 0) + amt
-      var cName = r.categories?.name || 'Uncategorized'
-      byCat[cName] = (byCat[cName] || 0) + amt
+      var tName = r.expense_types?.name || 'Untyped'
+      byType[tName] = (byType[tName] || 0) + amt
+      var allocs = r.expense_allocations || []
+      if (allocs.length === 0) {
+        byDept['Unallocated'] = (byDept['Unallocated'] || 0) + amt
+      } else {
+        allocs.forEach(function (a) {
+          var d = a.department || 'Unassigned'
+          byDept[d] = (byDept[d] || 0) + (a.amount_paise || 0)
+        })
+      }
       var month = (r.expense_date || '').slice(0, 7)
       if (month) byMonth[month] = (byMonth[month] || 0) + amt
     })
@@ -42,7 +52,8 @@ function ExpenseReport({ onBack }) {
       count: rows.length,
       totalPaise: totalPaise,
       byUser: sortObj(byUser),
-      byCat: sortObj(byCat),
+      byType: sortObj(byType),
+      byDept: sortObj(byDept),
       byMonth: Object.entries(byMonth).sort(function (a, b) { return a[0].localeCompare(b[0]) }),
     })
     setReportLoading(false)
@@ -59,9 +70,13 @@ function ExpenseReport({ onBack }) {
     sections.push('User,Amount (pts)')
     reportData.byUser.forEach(function (r) { sections.push(r[0] + ',' + (r[1] / 100)) })
     sections.push('')
-    sections.push('By Category')
-    sections.push('Category,Amount (pts)')
-    reportData.byCat.forEach(function (r) { sections.push(r[0] + ',' + (r[1] / 100)) })
+    sections.push('By Type')
+    sections.push('Type,Amount (pts)')
+    reportData.byType.forEach(function (r) { sections.push(r[0] + ',' + (r[1] / 100)) })
+    sections.push('')
+    sections.push('By Department')
+    sections.push('Department,Amount (pts)')
+    reportData.byDept.forEach(function (r) { sections.push(r[0] + ',' + (r[1] / 100)) })
     sections.push('')
     sections.push('By Month')
     sections.push('Month,Amount (pts)')
@@ -131,9 +146,9 @@ function ExpenseReport({ onBack }) {
             </div>
           </div>
           <div className="bg-white border border-gray-200 rounded-xl p-4">
-            <h3 className="text-sm font-bold text-gray-900 mb-3">By Category</h3>
+            <h3 className="text-sm font-bold text-gray-900 mb-3">By Type</h3>
             <div className="space-y-2">
-              {reportData.byCat.slice(0, 15).map(function (r) {
+              {reportData.byType.slice(0, 15).map(function (r) {
                 var pct = reportData.totalPaise > 0 ? Math.round(r[1] / reportData.totalPaise * 100) : 0
                 return (
                   <div key={r[0]} className="flex items-center justify-between">
@@ -141,6 +156,25 @@ function ExpenseReport({ onBack }) {
                       <p className="text-sm text-gray-800 truncate">{r[0]}</p>
                       <div className="w-full bg-gray-100 rounded-full h-1.5 mt-1">
                         <div className="bg-green-500 h-1.5 rounded-full" style={{ width: pct + '%' }}></div>
+                      </div>
+                    </div>
+                    <span className="text-sm font-bold text-gray-700 ml-3 flex-shrink-0">{formatPoints(r[1])}</span>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+          <div className="bg-white border border-gray-200 rounded-xl p-4">
+            <h3 className="text-sm font-bold text-gray-900 mb-3">By Department</h3>
+            <div className="space-y-2">
+              {reportData.byDept.slice(0, 15).map(function (r) {
+                var pct = reportData.totalPaise > 0 ? Math.round(r[1] / reportData.totalPaise * 100) : 0
+                return (
+                  <div key={r[0]} className="flex items-center justify-between">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-gray-800 truncate">{r[0]}</p>
+                      <div className="w-full bg-gray-100 rounded-full h-1.5 mt-1">
+                        <div className="bg-amber-500 h-1.5 rounded-full" style={{ width: pct + '%' }}></div>
                       </div>
                     </div>
                     <span className="text-sm font-bold text-gray-700 ml-3 flex-shrink-0">{formatPoints(r[1])}</span>
