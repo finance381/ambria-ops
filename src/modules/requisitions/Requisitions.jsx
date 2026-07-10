@@ -490,7 +490,7 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
     var [deptRes, subDeptRes, catRes, subCatRes, venueRes, expTypeRes, expSubTypeRes, invRes, csRes] = await Promise.all([
       supabase.from('departments').select('id, name').eq('active', true).eq('hide_from_lists', false).order('name'),
       supabase.from('sub_departments').select('id, name, department_id, departments!inner(hide_from_lists)').eq('active', true).eq('departments.hide_from_lists', false).order('name'),
-      supabase.from('categories').select('id, name, sub_department_id, expense_type_ids').order('name'),
+      supabase.from('categories').select('id, name, sub_department_id').order('name'),
       supabase.from('sub_categories').select('id, name, category_id').order('name'),
       supabase.from('venues').select('id, code, name').order('name'),
       supabase.from('expense_types').select('id, name').eq('active', true).order('name'),
@@ -662,9 +662,9 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
     return c.sub_department_id === Number(subDeptId)
   }) : []
   var catSubCats = categoryId ? subCategories.filter(function (sc) { return sc.category_id === Number(categoryId) }) : []
-  var selectedCatObj = categoryId ? categories.find(function (c) { return c.id === Number(categoryId) }) : null
-  var catExpTypeIds = selectedCatObj && Array.isArray(selectedCatObj.expense_type_ids) && selectedCatObj.expense_type_ids.length > 0 ? selectedCatObj.expense_type_ids : null
-  var filteredExpTypes = catExpTypeIds ? expenseTypes.filter(function (et) { return catExpTypeIds.indexOf(et.id) !== -1 }) : expenseTypes
+  var isAdminEt = profile?.role === 'admin' || profile?.role === 'auditor'
+  var userEtIds = profile?.expense_type_ids || []
+  var filteredExpTypes = isAdminEt ? expenseTypes : expenseTypes.filter(function (et) { return userEtIds.indexOf(et.id) !== -1 })
 
   function validate() {
     var errs = {}
@@ -1205,7 +1205,7 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
           <div className="relative">
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Expense Type
-              {catExpTypeIds && <span className="text-[10px] text-amber-600 ml-1">({filteredExpTypes.length} allowed)</span>}
+              {!isAdminEt && <span className="text-[10px] text-amber-600 ml-1">({filteredExpTypes.length} allowed)</span>}
             </label>
             <div className="relative">
               <input type="text"
@@ -1224,7 +1224,7 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
             {expTypeOpen && (function () {
               var q = expTypeSearch.toLowerCase()
               var matches = filteredExpTypes.filter(function (et) { return !q || et.name.toLowerCase().indexOf(q) !== -1 })
-              if (matches.length === 0) return <p className="text-[11px] text-gray-400 mt-1">{categoryId ? 'No expense types for this category' : 'Select a category first'}</p>
+              if (matches.length === 0) return <p className="text-[11px] text-gray-400 mt-1">{isAdminEt ? 'No expense types available' : 'No expense types assigned to you'}</p>
               return (
                 <div className="absolute z-10 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-40 overflow-y-auto">
                   {matches.map(function (et) {
@@ -1241,7 +1241,13 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
             })()}
           </div>
           {expTypeId && (function () {
-            var subTypesForType = expSubTypes.filter(function (st) { return st.expense_type_id === Number(expTypeId) })
+            var isAdminEst = profile?.role === 'admin' || profile?.role === 'auditor'
+            var userEstIds = profile?.expense_sub_type_ids || []
+            var subTypesForType = expSubTypes.filter(function (st) {
+              if (st.expense_type_id !== Number(expTypeId)) return false
+              if (!isAdminEst && userEstIds.indexOf(st.id) === -1) return false
+              return true
+            })
             if (subTypesForType.length === 0) return null
             if (subTypesForType.length === 1 && !expSubTypeId) {
               setTimeout(function () {

@@ -49,6 +49,10 @@ function Users() {
   var [editActive, setEditActive] = useState(true)
   var [editCatIds, setEditCatIds] = useState([])
   var [editSubCatIds, setEditSubCatIds] = useState([])
+  var [editExpenseTypeIds, setEditExpenseTypeIds] = useState([])
+  var [editExpenseSubTypeIds, setEditExpenseSubTypeIds] = useState([])
+  var [expenseTypes, setExpenseTypes] = useState([])
+  var [expenseSubTypes, setExpenseSubTypes] = useState([])
   var [deleteConfirm, setDeleteConfirm] = useState(null)
   var [editEmail, setEditEmail] = useState('')
 
@@ -103,6 +107,8 @@ function Users() {
         sub_category_ids: p.sub_category_ids || [],
         sub_department_ids: p.sub_department_ids || [],
         event_dept_ids: p.event_dept_ids || [],
+        expense_type_ids: p.expense_type_ids || [],
+        expense_sub_type_ids: p.expense_sub_type_ids || [],
         active: null,
       }
     }))
@@ -110,16 +116,20 @@ function Users() {
   }
 
   async function loadLookups() {
-    var [catRes, subCatRes, subDeptRes, deptRes] = await Promise.all([
+    var [catRes, subCatRes, subDeptRes, deptRes, etRes, estRes] = await Promise.all([
       supabase.from('categories').select('id, name, sub_department_id').order('name'),
       supabase.from('sub_categories').select('id, name, category_id').order('name'),
       supabase.from('sub_departments').select('id, name, department_id, active').order('name'),
       supabase.from('departments').select('id, name').eq('active', true).order('name'),
+      supabase.from('expense_types').select('id, name, icon').eq('active', true).order('sort_order').order('name'),
+      supabase.from('expense_sub_types').select('id, name, expense_type_id').eq('active', true).order('sort_order').order('name'),
     ])
     setCategories(catRes.data || [])
     setSubCategories(subCatRes.data || [])
     setSubDepartments(subDeptRes.data || [])
     setDepartments(deptRes.data || [])
+    setExpenseTypes(etRes.data || [])
+    setExpenseSubTypes(estRes.data || [])
   }
 
   // ═══ EDIT USER ═══
@@ -133,6 +143,8 @@ function Users() {
     setEditSubCatIds(user.sub_category_ids || [])
     setEditSubDeptIds(user.sub_department_ids || [])
     setEditEventDeptIds(user.event_dept_ids || [])
+    setEditExpenseTypeIds(user.expense_type_ids || [])
+    setEditExpenseSubTypeIds(user.expense_sub_type_ids || [])
     setError('')
     setRoleSearch('')
     setRoleDropOpen(false)
@@ -173,6 +185,31 @@ function Users() {
 
   function toggleSubCatId(id) {
     setEditSubCatIds(function (prev) {
+      if (prev.includes(id)) return prev.filter(function (c) { return c !== id })
+      return [...prev, id]
+    })
+  }
+
+  function toggleExpenseTypeId(id) {
+    var removing = editExpenseTypeIds.includes(id)
+    // Sub-types under this type (cascade auto-select-all on add)
+    var typeSubTypeIds = expenseSubTypes.filter(function (st) { return st.expense_type_id === id }).map(function (st) { return st.id })
+
+    if (removing) {
+      setEditExpenseTypeIds(function (prev) { return prev.filter(function (c) { return c !== id }) })
+      setEditExpenseSubTypeIds(function (prev) { return prev.filter(function (sid) { return !typeSubTypeIds.includes(sid) }) })
+    } else {
+      setEditExpenseTypeIds(function (prev) { return [...prev, id] })
+      setEditExpenseSubTypeIds(function (prev) {
+        var merged = prev.slice()
+        typeSubTypeIds.forEach(function (sid) { if (!merged.includes(sid)) merged.push(sid) })
+        return merged
+      })
+    }
+  }
+
+  function toggleExpenseSubTypeId(id) {
+    setEditExpenseSubTypeIds(function (prev) {
       if (prev.includes(id)) return prev.filter(function (c) { return c !== id })
       return [...prev, id]
     })
@@ -225,6 +262,8 @@ function Users() {
         sub_category_ids: editSubCatIds,
         sub_department_ids: editSubDeptIds,
         event_dept_ids: editEventDeptIds,
+        expense_type_ids: editExpenseTypeIds,
+        expense_sub_type_ids: editExpenseSubTypeIds,
       }).eq('email', editUser._email_key)
       err = res.error
     } else {
@@ -237,6 +276,8 @@ function Users() {
         sub_category_ids: editSubCatIds,
         sub_department_ids: editSubDeptIds,
         event_dept_ids: editEventDeptIds,
+        expense_type_ids: editExpenseTypeIds,
+        expense_sub_type_ids: editExpenseSubTypeIds,
         email: editEmail.trim().toLowerCase() || null,
       }).eq('id', editUser.id)
       err = res.error
@@ -310,6 +351,10 @@ function Users() {
   var filteredSubCats = editCatIds.length > 0
     ? subCategories.filter(function (sc) { return editCatIds.includes(sc.category_id) })
     : subCategories
+
+  var filteredExpenseSubTypes = editExpenseTypeIds.length > 0
+    ? expenseSubTypes.filter(function (st) { return editExpenseTypeIds.includes(st.expense_type_id) })
+    : expenseSubTypes
 
   var roleColors = {
     admin: 'bg-purple-100 text-purple-700',
@@ -520,6 +565,54 @@ function Users() {
                   </div>
                 </div>
                 <p className="text-[11px] text-gray-400 mt-1">Sub-departments this user can log expenses against.</p>
+              </div>
+            )}
+
+            {/* Expense Types — controls which types user can pick in expense/requisition forms */}
+            {expenseTypes.length > 0 && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Expense Types</label>
+                <p className="text-[11px] text-gray-400 mb-2">Expense types this user can log against.</p>
+                <div className="bg-gray-50 rounded-lg p-3 max-h-48 overflow-y-auto">
+                  <div className="grid grid-cols-2 gap-2">
+                    {expenseTypes.map(function (et) {
+                      var isChecked = editExpenseTypeIds.includes(et.id)
+                      return (
+                        <label key={et.id} className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                          <input type="checkbox" checked={isChecked} onChange={function () { toggleExpenseTypeId(et.id) }}
+                            className="w-4 h-4 accent-indigo-600" />
+                          <span>{et.icon ? et.icon + ' ' : ''}{et.name}</span>
+                        </label>
+                      )
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Expense Sub-types — filtered by selected types */}
+            {expenseTypes.length > 0 && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Expense Sub-types
+                  {editExpenseTypeIds.length > 0 && <span className="text-xs text-gray-400 ml-1">(filtered by selected types)</span>}
+                </label>
+                <div className="bg-gray-50 rounded-lg p-3 max-h-48 overflow-y-auto">
+                  {filteredExpenseSubTypes.length === 0 && <p className="text-xs text-gray-400">No sub-types{editExpenseTypeIds.length > 0 ? ' for selected types' : ''}</p>}
+                  <div className="grid grid-cols-2 gap-2">
+                    {filteredExpenseSubTypes.map(function (st) {
+                      var isChecked = editExpenseSubTypeIds.includes(st.id)
+                      var parentType = expenseTypes.find(function (t) { return t.id === st.expense_type_id })
+                      return (
+                        <label key={st.id} className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                          <input type="checkbox" checked={isChecked} onChange={function () { toggleExpenseSubTypeId(st.id) }}
+                            className="w-4 h-4 accent-indigo-600" />
+                          <span>{st.name} {parentType ? <span className="text-[10px] text-gray-400">({parentType.name})</span> : ''}</span>
+                        </label>
+                      )
+                    })}
+                  </div>
+                </div>
               </div>
             )}
 

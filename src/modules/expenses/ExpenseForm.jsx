@@ -60,7 +60,7 @@ function ExpenseForm({ profile, onDone }) {
 
   async function loadRefData() {
     var [catR, scR, etR, estR, dR, vR, sdR] = await Promise.all([
-      supabase.from('categories').select('id, name, sub_department_id, expense_type_ids, expense_sub_type_ids').order('name'),
+      supabase.from('categories').select('id, name, sub_department_id').order('name'),
       supabase.from('sub_categories').select('id, category_id, name').order('name'),
       supabase.from('expense_types').select('id, name, icon, description, sort_order').eq('active', true).order('sort_order').order('name'),
       supabase.from('expense_sub_types').select('id, expense_type_id, name, extra_fields, active, sort_order').eq('active', true).order('sort_order').order('name'),
@@ -513,11 +513,11 @@ function ExpenseForm({ profile, onDone }) {
       </div>
 
       {entries.map(function (entry, idx) {
-        var selCatForSt = entry.categoryId ? categories.find(function (c) { return String(c.id) === entry.categoryId }) : null
-        var catSstIds = selCatForSt && Array.isArray(selCatForSt.expense_sub_type_ids) && selCatForSt.expense_sub_type_ids.length > 0 ? selCatForSt.expense_sub_type_ids : null
+        var isAdminEst = profile?.role === 'admin' || profile?.role === 'auditor'
+        var userEstIds = profile?.expense_sub_type_ids || []
         var subTypesForType = expenseSubTypes.filter(function (st) {
           if (st.expense_type_id !== Number(entry.expenseTypeId)) return false
-          if (catSstIds && catSstIds.indexOf(st.id) === -1) return false
+          if (!isAdminEst && userEstIds.indexOf(st.id) === -1) return false
           return true
         })
         var subTypeFields = entry.expenseSubTypeId ? getSubTypeFields(entry.expenseSubTypeId) : []
@@ -596,9 +596,9 @@ function ExpenseForm({ profile, onDone }) {
 
               {/* Expense Type */}
               {(function () {
-                var selCat = entry.categoryId ? categories.find(function (c) { return String(c.id) === entry.categoryId }) : null
-                var catEtIds = selCat && Array.isArray(selCat.expense_type_ids) && selCat.expense_type_ids.length > 0 ? selCat.expense_type_ids : null
-                var typeList = catEtIds ? expenseTypes.filter(function (et) { return catEtIds.indexOf(et.id) !== -1 }) : expenseTypes
+                var isAdminEt = profile?.role === 'admin' || profile?.role === 'auditor'
+                var userEtIds = profile?.expense_type_ids || []
+                var typeList = isAdminEt ? expenseTypes : expenseTypes.filter(function (et) { return userEtIds.indexOf(et.id) !== -1 })
                 return (
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">Expense Type</label>
