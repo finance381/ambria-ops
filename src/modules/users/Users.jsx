@@ -151,13 +151,7 @@ function Users() {
   function toggleCatId(id) {
     var removing = editCatIds.includes(id)
 
-    // Don't allow unchecking if this cat is locked by a sub-dept
-    if (removing) {
-      var lockedCatIds = categories.filter(function (c) { return editSubDeptIds.includes(c.sub_department_id) }).map(function (c) { return c.id })
-      if (lockedCatIds.includes(id)) return // locked, can't uncheck
-    }
-
-    // Get sub-categories under this category
+    // Get sub-categories under this category (cascade auto-select-all on add)
     var catSubCatIds = subCategories.filter(function (sc) { return sc.category_id === id }).map(function (sc) { return sc.id })
 
     if (removing) {
@@ -178,13 +172,6 @@ function Users() {
   }
 
   function toggleSubCatId(id) {
-    // Don't allow unchecking if parent cat is locked by a sub-dept
-    var sc = subCategories.find(function (s) { return s.id === id })
-    if (sc) {
-      var parentCat = categories.find(function (c) { return c.id === sc.category_id })
-      if (parentCat && editSubDeptIds.includes(parentCat.sub_department_id)) return // locked
-    }
-
     setEditSubCatIds(function (prev) {
       if (prev.includes(id)) return prev.filter(function (c) { return c !== id })
       return [...prev, id]
@@ -192,65 +179,25 @@ function Users() {
   }
 
   function toggleSubDeptId(id) {
-    var removing = editSubDeptIds.includes(id)
-
-    // Compute which categories this sub-dept provides
-    var sdCatIds = categories.filter(function (c) { return c.sub_department_id === id }).map(function (c) { return c.id })
-    var sdSubCatIds = subCategories.filter(function (sc) { return sdCatIds.includes(sc.category_id) }).map(function (sc) { return sc.id })
-
-    if (removing) {
-      // Categories provided by OTHER still-checked sub-depts (excluding the one being removed)
-      var remainingSubDeptIds = editSubDeptIds.filter(function (sid) { return sid !== id })
-      var protectedCatIds = categories.filter(function (c) { return remainingSubDeptIds.includes(c.sub_department_id) }).map(function (c) { return c.id })
-      var protectedSubCatIds = subCategories.filter(function (sc) { return protectedCatIds.includes(sc.category_id) }).map(function (sc) { return sc.id })
-
-      // Remove cats + sub-cats from this sub-dept, unless protected by another sub-dept
-      setEditCatIds(function (prev) {
-        return prev.filter(function (cid) { return !sdCatIds.includes(cid) || protectedCatIds.includes(cid) })
-      })
-      setEditSubCatIds(function (prev) {
-        return prev.filter(function (sid) { return !sdSubCatIds.includes(sid) || protectedSubCatIds.includes(sid) })
-      })
-    } else {
-      // Add all cats + sub-cats from this sub-dept
-      setEditCatIds(function (prev) {
-        var merged = prev.slice()
-        sdCatIds.forEach(function (cid) { if (!merged.includes(cid)) merged.push(cid) })
-        return merged
-      })
-      setEditSubCatIds(function (prev) {
-        var merged = prev.slice()
-        sdSubCatIds.forEach(function (sid) { if (!merged.includes(sid)) merged.push(sid) })
-        return merged
-      })
-    }
-
-    if (!removing) {
-      var sd = subDepartments.find(function (s) { return s.id === id })
-      if (sd && sd.department_id && !editEventDeptIds.includes(sd.department_id)) {
-        setEditEventDeptIds(function (prev) { return [...prev, sd.department_id] })
-      }
-    }
     setEditSubDeptIds(function (prev) {
-      return removing ? prev.filter(function (c) { return c !== id }) : [...prev, id]
+      if (prev.includes(id)) return prev.filter(function (c) { return c !== id })
+      return [...prev, id]
     })
   }
 
   function toggleEventDeptId(id) {
     var removing = editEventDeptIds.includes(id)
     if (removing) {
-      // Cascade: remove sub-depts (and their cats) belonging to this dept
+      // Cascade: sub-depts belong to this dept — clear them so orphans aren't saved silently
       var deptSdIds = subDepartments.filter(function (sd) { return sd.department_id === id }).map(function (sd) { return sd.id })
-      var remainingSdIds = editSubDeptIds.filter(function (sid) { return deptSdIds.indexOf(sid) === -1 })
-      var protectedCatIds = categories.filter(function (c) { return remainingSdIds.indexOf(c.sub_department_id) !== -1 }).map(function (c) { return c.id })
-      var protectedSubCatIds = subCategories.filter(function (sc) { return protectedCatIds.indexOf(sc.category_id) !== -1 }).map(function (sc) { return sc.id })
-      var removedCatIds = categories.filter(function (c) { return deptSdIds.indexOf(c.sub_department_id) !== -1 }).map(function (c) { return c.id })
-      var removedSubCatIds = subCategories.filter(function (sc) { return removedCatIds.indexOf(sc.category_id) !== -1 }).map(function (sc) { return sc.id })
-      setEditSubDeptIds(remainingSdIds)
-      setEditCatIds(function (prev) { return prev.filter(function (cid) { return removedCatIds.indexOf(cid) === -1 || protectedCatIds.indexOf(cid) !== -1 }) })
-      setEditSubCatIds(function (prev) { return prev.filter(function (sid) { return removedSubCatIds.indexOf(sid) === -1 || protectedSubCatIds.indexOf(sid) !== -1 }) })
+      if (deptSdIds.length > 0) {
+        setEditSubDeptIds(function (prev) { return prev.filter(function (sid) { return deptSdIds.indexOf(sid) === -1 }) })
+      }
     }
-    setEditEventDeptIds(function (prev) { return removing ? prev.filter(function (c) { return c !== id }) : [...prev, id] })
+    setEditEventDeptIds(function (prev) {
+      if (prev.includes(id)) return prev.filter(function (c) { return c !== id })
+      return [...prev, id]
+    })
   }
 
   function addCustomRole(val) {
@@ -572,29 +519,25 @@ function Users() {
                     })}
                   </div>
                 </div>
-                <p className="text-[11px] text-gray-400 mt-1">Assigning a sub-dept auto-adds its categories to this user</p>
+                <p className="text-[11px] text-gray-400 mt-1">Sub-departments this user can log expenses against.</p>
               </div>
             )}
-            {/* Computed locked state */}
 
-            {/* Categories — multi-select */}
+            {/* Categories — inventory access, independent of sub-dept */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Assigned Categories</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Assigned Categories</label>
+              <p className="text-[11px] text-gray-400 mb-2">Inventory categories this user can see and act on.</p>
               <div className="bg-gray-50 rounded-lg p-3 max-h-48 overflow-y-auto">
                 {categories.length === 0 && <p className="text-xs text-gray-400">No categories</p>}
                 <div className="grid grid-cols-2 gap-2">
                   {categories.map(function (cat) {
                     var isChecked = editCatIds.includes(cat.id)
-                    var isLocked = editSubDeptIds.includes(cat.sub_department_id)
                     return (
-                      <label key={cat.id} className={"flex items-center gap-2 text-sm cursor-pointer " +
-                        (isLocked ? "text-indigo-600" : "text-gray-700")}>
+                      <label key={cat.id} className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
                         <input type="checkbox" checked={isChecked}
-                          disabled={isLocked}
                           onChange={function () { toggleCatId(cat.id) }}
                           className="w-4 h-4 accent-indigo-600" />
                         <span>{cat.name}</span>
-                        {isLocked && <span className="text-[10px] text-indigo-400">🔒</span>}
                       </label>
                     )
                   })}
@@ -602,7 +545,7 @@ function Users() {
               </div>
             </div>
 
-            {/* Sub-categories — multi-select, filtered */}
+            {/* Sub-categories — filtered by selected categories */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Assigned Sub-categories
@@ -614,43 +557,18 @@ function Users() {
                   {filteredSubCats.map(function (sc) {
                     var isChecked = editSubCatIds.includes(sc.id)
                     var parentCat = categories.find(function (c) { return c.id === sc.category_id })
-                    var isLocked = parentCat && editSubDeptIds.includes(parentCat.sub_department_id)
                     return (
-                      <label key={sc.id} className={"flex items-center gap-2 text-sm cursor-pointer " +
-                        (isLocked ? "text-indigo-600" : "text-gray-700")}>
+                      <label key={sc.id} className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
                         <input type="checkbox" checked={isChecked}
-                          disabled={isLocked}
                           onChange={function () { toggleSubCatId(sc.id) }}
                           className="w-4 h-4 accent-indigo-600" />
                         <span>{sc.name} {parentCat ? <span className="text-[10px] text-gray-400">({parentCat.name})</span> : ''}</span>
-                        {isLocked && <span className="text-[10px] text-indigo-400">🔒</span>}
                       </label>
                     )
                   })}
                 </div>
               </div>
             </div>
-            {/* Event Departments — separate from inventory */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Event Departments</label>
-              <p className="text-[11px] text-gray-400 mb-2">Controls which department events this user can see. Separate from inventory access.</p>
-              <div className="bg-gray-50 rounded-lg p-3">
-                <div className="flex flex-wrap gap-2">
-                  {departments.map(function (dept) {
-                    var isChecked = editEventDeptIds.includes(dept.id)
-                    return (
-                      <label key={dept.id} className={"flex items-center gap-1.5 text-xs px-2.5 py-2 rounded-lg border cursor-pointer transition-colors " +
-                        (isChecked ? "bg-indigo-50 border-indigo-300 text-indigo-700" : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50")}>
-                        <input type="checkbox" checked={isChecked} onChange={function () { toggleEventDeptId(dept.id) }}
-                          className="w-3.5 h-3.5 rounded" />
-                        {dept.name}
-                      </label>
-                    )
-                  })}
-                </div>
-              </div>
-            </div>
-
             {/* Permissions — Grouped */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Permissions</label>
