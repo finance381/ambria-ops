@@ -137,10 +137,21 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved }) {
     if (!term || term.length < 2) { setExistingItems([]); return }
     itemSearchTimer.current = setTimeout(function () {
       var searchTerm = term.trim().replace(/%/g, '\\%').replace(/_/g, '\\_')
-      Promise.all([
-        supabase.from('inventory_items').select('id, name, name_hindi, unit, type, description, min_order_qty, reorder_qty, rate_paise, is_asset, department, dimensions, image_path, category_id, sub_category_id, status').ilike('name', '%' + searchTerm + '%').in('status', ['approved', 'pending', 'pending_dept']).order('name').limit(20),
-        supabase.from('catering_store_items').select('id, name, name_hindi, unit, type, description, season_reorder_qty, off_season_reorder_qty, rate_paise, is_asset, department, brand, pack_size_qty, pack_size_unit, image_path, category_id, sub_category_id, status').ilike('name', '%' + searchTerm + '%').in('status', ['approved', 'pending', 'pending_dept']).order('name').limit(20)
-      ]).then(function (results) {
+      // Scope by sub-department of selected category (broaden beyond selected cat to sibling cats)
+      var scopeCatIds = null
+      if (categoryId) {
+        var selCat = categories.find(function (c) { return String(c.id) === categoryId })
+        if (selCat && selCat.sub_department_id) {
+          scopeCatIds = categories.filter(function (c) { return c.sub_department_id === selCat.sub_department_id }).map(function (c) { return c.id })
+        }
+      }
+      var invQ = supabase.from('inventory_items').select('id, name, name_hindi, unit, type, description, min_order_qty, reorder_qty, rate_paise, is_asset, department, dimensions, image_path, category_id, sub_category_id, status').ilike('name', '%' + searchTerm + '%').in('status', ['approved', 'pending', 'pending_dept'])
+      var csQ = supabase.from('catering_store_items').select('id, name, name_hindi, unit, type, description, season_reorder_qty, off_season_reorder_qty, rate_paise, is_asset, department, brand, pack_size_qty, pack_size_unit, image_path, category_id, sub_category_id, status').ilike('name', '%' + searchTerm + '%').in('status', ['approved', 'pending', 'pending_dept'])
+      if (scopeCatIds && scopeCatIds.length > 0) {
+        invQ = invQ.in('category_id', scopeCatIds)
+        csQ = csQ.in('category_id', scopeCatIds)
+      }
+      Promise.all([invQ.order('name').limit(20), csQ.order('name').limit(20)]).then(function (results) {
         var inv = (results[0].data || []).map(function (i) { return Object.assign({}, i, { _source: 'inventory' }) })
         var cs = (results[1].data || []).map(function (i) { return Object.assign({}, i, { _source: 'catering_store' }) })
         setExistingItems(inv.concat(cs))
@@ -764,14 +775,14 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved }) {
               )
             }
             if (dimType === 'select') {
+              var dimOptItems = (dim.options || []).map(function (opt) { return { label: opt, value: opt } })
               return (
                 <div key={dim.name} className="grid grid-cols-12 gap-2 items-end">
                   <div className="col-span-4"><label className="block text-sm font-medium text-gray-700 mb-1">{dim.name}</label></div>
                   <div className="col-span-8">
-                    <select value={dim.value || ''} onChange={function (e) { setDimensionValues(function (prev) { return prev.map(function (d, i) { if (i !== index) return d; return Object.assign({}, d, { value: e.target.value }) }) }) }} className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white" style={{ fontSize: '16px' }}>
-                      <option value="">Select {dim.name}...</option>
-                      {(dim.options || []).map(function (opt) { return <option key={opt} value={opt}>{opt}</option> })}
-                    </select>
+                    <SearchDropdown items={dimOptItems} value={dim.value || ''}
+                      onChange={function (val) { setDimensionValues(function (prev) { return prev.map(function (d, i) { if (i !== index) return d; return Object.assign({}, d, { value: val }) }) }) }}
+                      placeholder={'Search ' + dim.name + '...'} />
                   </div>
                 </div>
               )

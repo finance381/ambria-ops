@@ -199,6 +199,28 @@ function Users() {
     })
   }
 
+  function toggleInventorySubDeptId(sdId) {
+    var sdCatIds = categories.filter(function (c) { return c.sub_department_id === sdId }).map(function (c) { return c.id })
+    if (sdCatIds.length === 0) return
+    var sdSubCatIds = subCategories.filter(function (sc) { return sdCatIds.indexOf(sc.category_id) !== -1 }).map(function (sc) { return sc.id })
+    var allOn = sdCatIds.every(function (id) { return editCatIds.indexOf(id) !== -1 })
+    if (allOn) {
+      setEditCatIds(function (prev) { return prev.filter(function (id) { return sdCatIds.indexOf(id) === -1 }) })
+      setEditSubCatIds(function (prev) { return prev.filter(function (id) { return sdSubCatIds.indexOf(id) === -1 }) })
+    } else {
+      setEditCatIds(function (prev) {
+        var merged = prev.slice()
+        sdCatIds.forEach(function (id) { if (merged.indexOf(id) === -1) merged.push(id) })
+        return merged
+      })
+      setEditSubCatIds(function (prev) {
+        var merged = prev.slice()
+        sdSubCatIds.forEach(function (id) { if (merged.indexOf(id) === -1) merged.push(id) })
+        return merged
+      })
+    }
+  }
+
   function toggleExpenseTypeId(id) {
     var removing = editExpenseTypeIds.includes(id)
     // Sub-types under this type (cascade auto-select-all on add)
@@ -752,6 +774,45 @@ function Users() {
             </div>)}
 
                 {activePanel === 'inventory' && (<div className="space-y-4">
+            {/* Sub-departments — inventory quick-picker */}
+            {(function () {
+              var invSubDepts = subDepartments.filter(function (sd) {
+                if (!sd.active) return false
+                return categories.some(function (c) { return c.sub_department_id === sd.id })
+              })
+              if (invSubDepts.length === 0) return null
+              var onCount = invSubDepts.filter(function (sd) {
+                var sdCatIds = categories.filter(function (c) { return c.sub_department_id === sd.id }).map(function (c) { return c.id })
+                return sdCatIds.length > 0 && sdCatIds.every(function (id) { return editCatIds.indexOf(id) !== -1 })
+              }).length
+              return (
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-sm font-medium text-gray-700">Assigned Sub-departments</label>
+                    <span className="text-[11px] text-gray-500">{onCount} of {invSubDepts.length}</span>
+                  </div>
+                  <p className="text-[11px] text-gray-400 mb-2">Selecting a sub-department auto-assigns its categories and sub-categories.</p>
+                  <div className="bg-gray-50 rounded-lg p-3 max-h-40 overflow-y-auto">
+                    <div className="grid grid-cols-2 gap-2">
+                      {invSubDepts.map(function (sd) {
+                        var sdCatIds = categories.filter(function (c) { return c.sub_department_id === sd.id }).map(function (c) { return c.id })
+                        var isChecked = sdCatIds.length > 0 && sdCatIds.every(function (id) { return editCatIds.indexOf(id) !== -1 })
+                        var parentDept = departments.find(function (d) { return d.id === sd.department_id })
+                        return (
+                          <label key={sd.id} className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                            <input type="checkbox" checked={isChecked}
+                              onChange={function () { toggleInventorySubDeptId(sd.id) }}
+                              className="w-4 h-4 accent-indigo-600" />
+                            <span>{sd.name} <span className="text-[10px] text-gray-400">({sdCatIds.length}{parentDept ? ' · ' + parentDept.name : ''})</span></span>
+                          </label>
+                        )
+                      })}
+                    </div>
+                  </div>
+                </div>
+              )
+            })()}
+
             {/* Categories — inventory access */}
             <div>
               <div className="flex items-center justify-between mb-1">
