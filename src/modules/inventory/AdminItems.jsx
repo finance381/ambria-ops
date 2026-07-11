@@ -753,7 +753,7 @@ function AdminItems({ profile }) {
 
       {/* Table */}
       <div className="bg-white border border-gray-200 rounded-lg overflow-x-auto shadow-sm">
-        <table className="w-full text-sm" style={{ minWidth: 1280 }}>
+        <table className="w-full text-sm" style={{ minWidth: 1080 }}>
           <thead>
             <tr className="bg-gray-50 border-b border-gray-200">
               <th className="px-2 py-2.5 text-[11px] font-bold text-gray-500 uppercase tracking-wider" style={{ width: 70 }}></th>
@@ -761,13 +761,10 @@ function AdminItems({ profile }) {
               <th onClick={function () { handleSort('category') }} className="cursor-pointer select-none text-left px-3 py-2.5 text-[11px] font-bold text-gray-500 uppercase tracking-wider hover:text-gray-900">Category / Sub{sortArrow('category')}</th>
               <th onClick={function () { handleSort('masterDept') }} className="cursor-pointer select-none text-left px-3 py-2.5 text-[11px] font-bold text-gray-500 uppercase tracking-wider hover:text-gray-900">Master Dept{sortArrow('masterDept')}</th>
               <th onClick={function () { handleSort('stock') }} className="cursor-pointer select-none text-right px-3 py-2.5 text-[11px] font-bold text-gray-500 uppercase tracking-wider hover:text-gray-900">Stock{sortArrow('stock')}</th>
-              <th onClick={function () { handleSort('unit') }} className="cursor-pointer select-none text-left px-3 py-2.5 text-[11px] font-bold text-gray-500 uppercase tracking-wider hover:text-gray-900">Unit{sortArrow('unit')}</th>
-              <th onClick={function () { handleSort('venues') }} className="cursor-pointer select-none text-left px-4 py-3 text-[11px] font-bold text-gray-500 uppercase tracking-wider hover:text-gray-900">Venues{sortArrow('venues')}</th>
-              <th onClick={function () { handleSort('by') }} className="cursor-pointer select-none text-left px-4 py-3 text-[11px] font-bold text-gray-500 uppercase tracking-wider hover:text-gray-900">By{sortArrow('by')}</th>
-              <th onClick={function () { handleSort('date') }} className="cursor-pointer select-none text-left px-4 py-3 text-[11px] font-bold text-gray-500 uppercase tracking-wider hover:text-gray-900">Date{sortArrow('date')}</th>
-              <th onClick={function () { handleSort('status') }} className="cursor-pointer select-none text-left px-4 py-3 text-[11px] font-bold text-gray-500 uppercase tracking-wider hover:text-gray-900">Status{sortArrow('status')}</th>
-              <th onClick={function () { handleSort('allocDept') }} className="cursor-pointer select-none text-left px-3 py-2.5 text-[11px] font-bold text-gray-500 uppercase tracking-wider hover:text-gray-900">Alloc Dept{sortArrow('allocDept')}</th>
-              <th className="px-2 py-2.5 text-right text-[11px] font-bold text-gray-500 uppercase tracking-wider" style={{ width: 170 }}>Actions</th>
+              <th onClick={function () { handleSort('allocDept') }} className="cursor-pointer select-none text-left px-3 py-2.5 text-[11px] font-bold text-gray-500 uppercase tracking-wider hover:text-gray-900">Allocation{sortArrow('allocDept')}</th>
+              <th onClick={function () { handleSort('date') }} className="cursor-pointer select-none text-left px-3 py-2.5 text-[11px] font-bold text-gray-500 uppercase tracking-wider hover:text-gray-900">Submitted{sortArrow('date')}</th>
+              <th onClick={function () { handleSort('status') }} className="cursor-pointer select-none text-left px-3 py-2.5 text-[11px] font-bold text-gray-500 uppercase tracking-wider hover:text-gray-900">Status{sortArrow('status')}</th>
+              <th className="px-2 py-2.5 text-right text-[11px] font-bold text-gray-500 uppercase tracking-wider" style={{ width: 150 }}>Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -818,38 +815,13 @@ function AdminItems({ profile }) {
                       )
                     })()}
                   </td>
-                  <td className="px-3 py-2 text-right">
-                    <div className="font-medium text-gray-900">{item.qty}</div>
+                  <td className="px-3 py-2 text-right whitespace-nowrap">
+                    <div className="font-medium text-gray-900">{item.qty} <span className="text-[11px] font-normal text-gray-400">{item.unit || ''}</span></div>
                     {item.rate_paise && (profile?.role === 'admin' || profile?.role === 'auditor') ? <div className="text-[11px] text-gray-400">₹{(item.rate_paise / 100).toFixed(item.rate_paise % 100 ? 2 : 0)}</div> : null}
                   </td>
-                  <td className="px-3 py-2 text-gray-500">{item.unit}</td>
                   
                   <td className="px-3 py-2">
-                    {venueAllocs.length > 0 ? (
-                      <div className="flex flex-wrap gap-1">
-                        {venueAllocs.map(function (va, vi) {
-                          var svName = va.sub_venue_id ? (subVenues.find(function (sv) { return sv.id === va.sub_venue_id }) || {}).name : null
-                          return (
-                            <span key={(va.venues?.code || '') + '-' + vi} className="text-[11px] bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded font-medium">
-                              {va.venues?.code}{svName ? ':' + svName : ''}: {va.qty}
-                            </span>
-                          )
-                        })}
-                      </div>
-                    ) : '—'}
-                  </td>
-                  <td className="px-3 py-2">
-                    <div className="text-gray-600 text-[12px]">{item.profiles?.name || '—'}</div>
-                    <div className="text-[11px] text-gray-400 truncate max-w-[120px]">{item.profiles?.email || ''}</div>
-                  </td>
-                  <td className="px-3 py-2 text-gray-500 text-[12px] whitespace-nowrap">{formatDate(item.entry_date || item.created_at)}</td>
-                  <td className="px-3 py-2">
-                    <span className={"text-[11px] font-bold uppercase px-2 py-0.5 rounded-full " + (statusColors[item.status] || 'bg-gray-100 text-gray-600')}>
-                      {item.status}
-                    </span>
-                  </td>
-                  <td className="px-3 py-2">
-                    <div className="text-gray-600 text-[12px]">{item.department || '—'}</div>
+                    <div className="text-gray-700 text-[12px] font-medium">{item.department || '—'}</div>
                     {(function () {
                       var allocs = item.venue_allocations || []
                       var sdIds = []
@@ -859,8 +831,30 @@ function AdminItems({ profile }) {
                       if (names.length === 0) return null
                       return <div className="text-[11px] text-gray-400">{names.join(', ')}</div>
                     })()}
+                    {venueAllocs.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {venueAllocs.map(function (va, vi) {
+                          var svName = va.sub_venue_id ? (subVenues.find(function (sv) { return sv.id === va.sub_venue_id }) || {}).name : null
+                          return (
+                            <span key={(va.venues?.code || '') + '-' + vi} className="text-[11px] bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded font-medium">
+                              {va.venues?.code}{svName ? ':' + svName : ''}: {va.qty}
+                            </span>
+                          )
+                        })}
+                      </div>
+                    )}
                   </td>
-                  <td className="px-2 py-2 whitespace-nowrap" style={{ width: 170 }}>
+                  <td className="px-3 py-2">
+                    <div className="text-gray-700 text-[12px] font-medium">{item.profiles?.name || '—'}</div>
+                    <div className="text-[11px] text-gray-400 whitespace-nowrap">{formatDate(item.entry_date || item.created_at)}</div>
+                    {item.profiles?.email && <div className="text-[10px] text-gray-400 truncate max-w-[140px]">{item.profiles.email}</div>}
+                  </td>
+                  <td className="px-3 py-2">
+                    <span className={"text-[11px] font-bold uppercase px-2 py-0.5 rounded-full " + (statusColors[item.status] || 'bg-gray-100 text-gray-600')}>
+                      {item.status}
+                    </span>
+                  </td>
+                  <td className="px-2 py-2 whitespace-nowrap" style={{ width: 150 }}>
                     <div className="flex gap-1 justify-end">
                       <button
                         onClick={function () { setEditItem(item) }}
@@ -890,7 +884,7 @@ function AdminItems({ profile }) {
             })}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan="12" className="px-4 py-8 text-center text-gray-400">No items found</td>
+                <td colSpan="9" className="px-4 py-8 text-center text-gray-400">No items found</td>
               </tr>
             )}
           </tbody>
