@@ -49,6 +49,7 @@ function Categories() {
   var [editCatCode, setEditCatCode] = useState('')
   var [editCatConsumable, setEditCatConsumable] = useState(true)
   var [editDeptHideFromLists, setEditDeptHideFromLists] = useState(false)
+  var [editDeptIsDefault, setEditDeptIsDefault] = useState(false)
   var [editCatDims, setEditCatDims] = useState([])
   var [dragDimIdx, setDragDimIdx] = useState(null)
   var [dragOverIdx, setDragOverIdx] = useState(null)
@@ -113,8 +114,12 @@ function Categories() {
   async function saveEditDept(dept) {
     if (!editVal.trim()) return
     if (dupExists(departments, function (d) { return d.name }, editVal, dept.id)) { setError('Department "' + editVal.trim() + '" already exists'); return }
-    var { error: err } = await supabase.from('departments').update({ name: editVal.trim(), category_ids: editDeptCats, hide_from_lists: !!editDeptHideFromLists }).eq('id', dept.id)
-    if (err) { setError(err.message) } else { setEditing(null); loadAll() }
+    if (editDeptIsDefault) {
+      // Preclear other defaults so the partial unique index doesn't reject
+      await supabase.from('departments').update({ is_inventory_default: false }).neq('id', dept.id).eq('is_inventory_default', true)
+    }
+    var { error: err } = await supabase.from('departments').update({ name: editVal.trim(), category_ids: editDeptCats, hide_from_lists: !!editDeptHideFromLists, is_inventory_default: !!editDeptIsDefault }).eq('id', dept.id)
+    if (err) { setError(err.message) } else { logActivity('DEPT_UPDATE', dept.name + (editDeptIsDefault ? ' | ★ inventory default' : '')); setEditing(null); loadAll() }
   }
   async function addSubDepartment(deptId) {
     var val = (newSubDept[deptId] || '').trim()
@@ -704,6 +709,12 @@ function Categories() {
                           className="w-3.5 h-3.5 rounded" />
                         <span>Hide from lists <span className="text-gray-400">(dropdowns / allocation; still visible in admin reports)</span></span>
                       </label>
+                      <label className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer">
+                        <input type="checkbox" checked={editDeptIsDefault}
+                          onChange={function (e) { setEditDeptIsDefault(e.target.checked) }}
+                          className="w-3.5 h-3.5 rounded" />
+                        <span>★ Default for Inventory master <span className="text-gray-400">(AdminItems will filter Master Dept to this dept on load)</span></span>
+                      </label>
                       <div>
                         <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">Inventory Categories</label>
                         <div className="flex flex-wrap gap-2 mt-1">
@@ -738,12 +749,15 @@ function Categories() {
                           {dept.hide_from_lists && (
                             <span className="text-xs px-1.5 py-0.5 rounded-full font-medium bg-amber-100 text-amber-700" title="Hidden from lookup lists; visible in admin reports">Hidden</span>
                           )}
+                          {dept.is_inventory_default && (
+                            <span className="text-xs px-1.5 py-0.5 rounded-full font-medium bg-yellow-100 text-yellow-700" title="Default department for Inventory master — filters AdminItems on load">★ Inventory Default</span>
+                          )}
                           {deptSubDepts.length > 0 && (
                             <span className="text-xs text-gray-400">{deptSubDepts.length} sub-dept{deptSubDepts.length !== 1 ? 's' : ''}</span>
                           )}
                         </div>
                         <div className="flex gap-2">
-                          <button onClick={function () { setEditing('dept-' + dept.id); setEditVal(dept.name); setEditDeptCats(dept.category_ids || []); setEditDeptHideFromLists(!!dept.hide_from_lists) }}
+                          <button onClick={function () { setEditing('dept-' + dept.id); setEditVal(dept.name); setEditDeptCats(dept.category_ids || []); setEditDeptHideFromLists(!!dept.hide_from_lists); setEditDeptIsDefault(!!dept.is_inventory_default) }}
                             className="text-xs px-2 py-1 rounded bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors">Edit</button>
                           <button onClick={function () { toggleDepartment(dept) }}
                             className="text-xs px-2 py-1 rounded bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors">

@@ -74,6 +74,8 @@ function AdminItems({ profile }) {
   var [subCategoriesAll, setSubCategoriesAll] = useState([])
   var [subDepartments, setSubDepartments] = useState([])
   var [subDeptFilter, setSubDeptFilter] = useState([])
+  var [masterDeptFilter, setMasterDeptFilter] = useState([])
+  var [defaultApplied, setDefaultApplied] = useState(false)
   var [subVenues, setSubVenues] = useState([])
   var [subVenueFilter, setSubVenueFilter] = useState([])
   var [enlargedImg, setEnlargedImg] = useState(null)
@@ -106,7 +108,7 @@ function AdminItems({ profile }) {
         fetchAll(supabase.from('catering_store_items')
           .select('id, name, name_hindi, inventory_id, qty, unit, type, status, department, category_id, sub_category_id, rate_paise, is_asset, image_path, submitted_by, entry_date, description, brand, pack_size_qty, pack_size_unit, season_reorder_qty, off_season_reorder_qty, categories(name, sub_department_id), sub_categories(name), cs_venue_allocations(qty, venues(code, name), sub_venue_id, sub_department_id)')
           .order('created_at', { ascending: false })),
-        supabase.from('departments').select('id, name, category_ids').eq('active', true).order('name'),
+        supabase.from('departments').select('id, name, category_ids, is_inventory_default').eq('active', true).order('name'),
         supabase.from('venues').select('id, code, name').eq('active', true).order('code'),
         supabase.from('profiles').select('id, name, email'),
         supabase.from('categories').select('id, name, sub_department_id').order('name'),
@@ -130,7 +132,13 @@ function AdminItems({ profile }) {
       setItems(invItems.concat(csItems).sort(function (a, b) {
         return new Date(b.entry_date || 0) - new Date(a.entry_date || 0)
       }))
-      setDepartments(deptRes.data || [])
+      var loadedDepts = deptRes.data || []
+      setDepartments(loadedDepts)
+      if (!defaultApplied) {
+        var defDept = loadedDepts.find(function (d) { return d.is_inventory_default })
+        if (defDept) setMasterDeptFilter([String(defDept.id)])
+        setDefaultApplied(true)
+      }
       setVenues(venueRes.data || [])
       setCategories(catRes.data || [])
       setSubCategoriesAll(subCatRes.data || [])
@@ -145,6 +153,7 @@ function AdminItems({ profile }) {
 
   function resetFilters() {
     setSearch(''); setDeptFilter([]); setStatusFilter([]); setSubDeptFilter([])
+    setMasterDeptFilter([]); setDefaultApplied(true)
     setCatFilter([]); setSubCatFilter([]); setVenueFilter([]); setSubVenueFilter([])
     setPage(1)
   }
@@ -604,6 +613,12 @@ function AdminItems({ profile }) {
       (item.brand || '').toLowerCase().includes(searchLower)
     var matchDept = deptFilter.length === 0 || deptFilter.indexOf(item.department) !== -1
     var matchStatus = statusFilter.length === 0 || statusFilter.indexOf(item.status) !== -1
+    var matchMasterDept = masterDeptFilter.length === 0 || (function () {
+      var sdId = item.categories?.sub_department_id
+      if (!sdId) return false
+      var sd = subDepartments.find(function (x) { return x.id === sdId })
+      return sd && masterDeptFilter.indexOf(String(sd.department_id)) !== -1
+    })()
     var matchSubDept = subDeptFilter.length === 0 || (function () {
       var sdCatIds = categories.filter(function (c) { return subDeptFilter.indexOf(String(c.sub_department_id)) !== -1 }).map(function (c) { return c.id })
       return sdCatIds.indexOf(item.category_id) !== -1
@@ -612,7 +627,7 @@ function AdminItems({ profile }) {
     var matchSubVenue = subVenueFilter.length === 0 || (item.venue_allocations || []).some(function (va) { return subVenueFilter.indexOf(String(va.sub_venue_id)) !== -1 })
     var matchCat = catFilter.length === 0 || catFilter.indexOf(String(item.category_id)) !== -1
     var matchSubCat = subCatFilter.length === 0 || subCatFilter.indexOf(String(item.sub_category_id)) !== -1
-    return matchSearch && matchDept && matchSubDept && matchStatus && matchVenue && matchCat && matchSubCat && matchSubVenue
+    return matchSearch && matchMasterDept && matchDept && matchSubDept && matchStatus && matchVenue && matchCat && matchSubCat && matchSubVenue
   })
 
   function handleSort(key) {
@@ -663,15 +678,14 @@ function AdminItems({ profile }) {
           placeholder="Search name, ID, description, submitter..."
           className="flex-1 min-w-[200px] px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
         />
-        <FilterDropdown value={deptFilter} placeholder="All Departments" multi
-          onChange={function (v) { setDeptFilter(v); setSubDeptFilter([]); setCatFilter([]); setSubCatFilter([]); setPage(1) }}
-          options={departments.map(function (d) { return { label: d.name, value: d.name } })} />
-        <FilterDropdown value={subDeptFilter} placeholder="All Sub-depts" multi
+        <FilterDropdown value={masterDeptFilter} placeholder="Master Dept" multi
+          onChange={function (v) { setMasterDeptFilter(v); setSubDeptFilter([]); setCatFilter([]); setSubCatFilter([]); setPage(1) }}
+          options={departments.map(function (d) { return { label: d.name + (d.is_inventory_default ? ' ★' : ''), value: String(d.id) } })} />
+        <FilterDropdown value={subDeptFilter} placeholder="Master Sub-dept" multi
           onChange={function (v) { setSubDeptFilter(v); setCatFilter([]); setSubCatFilter([]); setPage(1) }}
           options={subDepartments.filter(function (sd) {
-            if (deptFilter.length === 0) return true
-            var deptIds = departments.filter(function (d) { return deptFilter.indexOf(d.name) !== -1 }).map(function (d) { return d.id })
-            return deptIds.indexOf(sd.department_id) !== -1
+            if (masterDeptFilter.length > 0) return masterDeptFilter.indexOf(String(sd.department_id)) !== -1
+            return true
           }).map(function (sd) { return { label: sd.name, value: String(sd.id) } })} />
         <FilterDropdown value={statusFilter} placeholder="All Statuses" multi
           onChange={function (v) { setStatusFilter(v); setPage(1) }}
@@ -704,6 +718,9 @@ function AdminItems({ profile }) {
             var vIds = venues.filter(function (v2) { return venueFilter.indexOf(v2.code) !== -1 }).map(function (v2) { return v2.id })
             return vIds.indexOf(sv.venue_id) !== -1
           }).map(function (sv) { return { label: sv.name, value: String(sv.id) } })} />
+        <FilterDropdown value={deptFilter} placeholder="Alloc Dept" multi
+          onChange={function (v) { setDeptFilter(v); setPage(1) }}
+          options={departments.map(function (d) { return { label: d.name, value: d.name } })} />
         <select
           value={perPage}
           onChange={function (e) { setPerPage(Number(e.target.value)); setPage(1) }}
@@ -717,7 +734,7 @@ function AdminItems({ profile }) {
         <div className="text-sm text-gray-400 self-center">
           {filtered.length} item{filtered.length !== 1 ? 's' : ''}
         </div>
-        {(search || deptFilter.length || statusFilter.length || subDeptFilter.length || catFilter.length || subCatFilter.length || venueFilter.length || subVenueFilter.length) && (
+        {(search || masterDeptFilter.length || deptFilter.length || statusFilter.length || subDeptFilter.length || catFilter.length || subCatFilter.length || venueFilter.length || subVenueFilter.length) && (
           <button onClick={resetFilters}
             className="px-3 py-2.5 text-sm text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-colors font-medium">✕ Reset</button>
         )}
@@ -740,13 +757,13 @@ function AdminItems({ profile }) {
               <th onClick={function () { handleSort('name') }} className="cursor-pointer select-none text-left px-3 py-2.5 text-[11px] font-bold text-gray-500 uppercase tracking-wider hover:text-gray-900">Item / Hindi{sortArrow('name')}</th>
               <th onClick={function () { handleSort('category') }} className="cursor-pointer select-none text-left px-3 py-2.5 text-[11px] font-bold text-gray-500 uppercase tracking-wider hover:text-gray-900">Category / Sub{sortArrow('category')}</th>
               <th onClick={function () { handleSort('masterDept') }} className="cursor-pointer select-none text-left px-3 py-2.5 text-[11px] font-bold text-gray-500 uppercase tracking-wider hover:text-gray-900">Master Dept{sortArrow('masterDept')}</th>
-              <th onClick={function () { handleSort('allocDept') }} className="cursor-pointer select-none text-left px-3 py-2.5 text-[11px] font-bold text-gray-500 uppercase tracking-wider hover:text-gray-900">Alloc Dept{sortArrow('allocDept')}</th>
               <th onClick={function () { handleSort('stock') }} className="cursor-pointer select-none text-right px-3 py-2.5 text-[11px] font-bold text-gray-500 uppercase tracking-wider hover:text-gray-900">Stock{sortArrow('stock')}</th>
               <th onClick={function () { handleSort('unit') }} className="cursor-pointer select-none text-left px-3 py-2.5 text-[11px] font-bold text-gray-500 uppercase tracking-wider hover:text-gray-900">Unit{sortArrow('unit')}</th>
               <th onClick={function () { handleSort('venues') }} className="cursor-pointer select-none text-left px-4 py-3 text-[11px] font-bold text-gray-500 uppercase tracking-wider hover:text-gray-900">Venues{sortArrow('venues')}</th>
               <th onClick={function () { handleSort('by') }} className="cursor-pointer select-none text-left px-4 py-3 text-[11px] font-bold text-gray-500 uppercase tracking-wider hover:text-gray-900">By{sortArrow('by')}</th>
               <th onClick={function () { handleSort('date') }} className="cursor-pointer select-none text-left px-4 py-3 text-[11px] font-bold text-gray-500 uppercase tracking-wider hover:text-gray-900">Date{sortArrow('date')}</th>
               <th onClick={function () { handleSort('status') }} className="cursor-pointer select-none text-left px-4 py-3 text-[11px] font-bold text-gray-500 uppercase tracking-wider hover:text-gray-900">Status{sortArrow('status')}</th>
+              <th onClick={function () { handleSort('allocDept') }} className="cursor-pointer select-none text-left px-3 py-2.5 text-[11px] font-bold text-gray-500 uppercase tracking-wider hover:text-gray-900">Alloc Dept{sortArrow('allocDept')}</th>
               <th className="px-3 py-2.5 text-[11px] font-bold text-gray-500 uppercase tracking-wider"></th>
             </tr>
           </thead>
@@ -798,18 +815,6 @@ function AdminItems({ profile }) {
                       )
                     })()}
                   </td>
-                  <td className="px-3 py-2">
-                    <div className="text-gray-600 text-[12px]">{item.department || '—'}</div>
-                    {(function () {
-                      var allocs = item.venue_allocations || []
-                      var sdIds = []
-                      allocs.forEach(function (va) { if (va.sub_department_id && sdIds.indexOf(va.sub_department_id) === -1) sdIds.push(va.sub_department_id) })
-                      if (sdIds.length === 0) return null
-                      var names = sdIds.map(function (id) { var sd = subDepartments.find(function (x) { return x.id === id }); return sd?.name }).filter(Boolean)
-                      if (names.length === 0) return null
-                      return <div className="text-[11px] text-gray-400">{names.join(', ')}</div>
-                    })()}
-                  </td>
                   <td className="px-3 py-2 text-right">
                     <div className="font-medium text-gray-900">{item.qty}</div>
                     {item.rate_paise && (profile?.role === 'admin' || profile?.role === 'auditor') ? <div className="text-[11px] text-gray-400">₹{(item.rate_paise / 100).toFixed(item.rate_paise % 100 ? 2 : 0)}</div> : null}
@@ -839,6 +844,18 @@ function AdminItems({ profile }) {
                     <span className={"text-[11px] font-bold uppercase px-2 py-0.5 rounded-full " + (statusColors[item.status] || 'bg-gray-100 text-gray-600')}>
                       {item.status}
                     </span>
+                  </td>
+                  <td className="px-3 py-2">
+                    <div className="text-gray-600 text-[12px]">{item.department || '—'}</div>
+                    {(function () {
+                      var allocs = item.venue_allocations || []
+                      var sdIds = []
+                      allocs.forEach(function (va) { if (va.sub_department_id && sdIds.indexOf(va.sub_department_id) === -1) sdIds.push(va.sub_department_id) })
+                      if (sdIds.length === 0) return null
+                      var names = sdIds.map(function (id) { var sd = subDepartments.find(function (x) { return x.id === id }); return sd?.name }).filter(Boolean)
+                      if (names.length === 0) return null
+                      return <div className="text-[11px] text-gray-400">{names.join(', ')}</div>
+                    })()}
                   </td>
                   <td className="px-3 py-2">
                     <div className="flex gap-1.5">
