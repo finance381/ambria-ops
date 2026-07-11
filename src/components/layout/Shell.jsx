@@ -15,6 +15,7 @@ import ProductionOrders from '../../modules/production/ProductionOrders'
 import Boxes from '../../modules/boxes/Boxes'
 import Challans from '../../modules/challans/Challans'
 import RateCardEditor from '../../modules/quote/RateCardEditor'
+import Vendors from '../../modules/vendors/Vendors'
 import AdminMobile from '../../modules/categories/AdminMobile.jsx'
 
 var GROUPS = [
@@ -43,6 +44,7 @@ var GROUPS = [
     key: 'procurement', label: 'Procurement', icon: '🛒', items: [
       { key: 'feature_requisitions', label: 'Requisitions', icon: '📋', tab: 'requisitions' },
       { key: 'feature_purchase', label: 'Purchase Orders', icon: '🛒', tab: 'purchase' },
+      { key: 'feature_vendors', label: 'Vendors', icon: '🏭', tab: 'vendors' },
     ]
   },
   {
@@ -482,6 +484,9 @@ function Shell({ profile, onSignOut }) {
         )}
         {tab === 'ratecard' && (
           <RateCardEditor profile={profile} />
+        )}
+        {tab === 'vendors' && (
+          <Vendors profile={profile} />
         )}
         {tab === 'admin' && isAdmin && (
           <AdminMobile profile={profile} />

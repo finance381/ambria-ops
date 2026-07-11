@@ -25,6 +25,7 @@ var PERM_GROUPS = [
   ]},
   { group: 'Operations', icon: '🚚', children: [
     { key: 'feature_purchase', label: 'Purchase Orders', grants: ['feature_purchase'] },
+    { key: 'feature_vendors', label: 'Vendors Master', grants: ['feature_vendors'] },
     { key: 'feature_receive', label: 'Receiving', grants: ['feature_receive'] },
     { key: 'feature_boxes', label: 'Boxes', grants: ['feature_boxes'] },
     { key: 'feature_challans', label: 'Challans', grants: ['feature_challans'] },
