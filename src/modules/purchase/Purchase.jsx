@@ -581,12 +581,12 @@ function Purchase({ profile, mode }) {
     if (error) alert('Save failed: ' + error.message)
   }
 
-  // ─── MARK ITEM PURCHASED (purchaser) ───
+  // ─── MARK ITEM PURCHASED (purchaser) — atomic via RPC ───
   async function markPurchased(poItemId, actualQty, actualCostPaise, receiptFile) {
     if (saving) return
     setSaving(true)
 
-    // Upload receipt if provided
+    // Upload receipt first (storage upload is not txn-safe; keep it client-side)
     var receiptPath = null
     if (receiptFile) {
       var ext = receiptFile.name.split('.').pop()
@@ -595,26 +595,33 @@ function Purchase({ profile, mode }) {
       if (!upErr) receiptPath = fileName
     }
 
-    var updateObj = {
-      actual_qty: actualQty,
-      actual_cost_paise: actualCostPaise,
-      purchased_by: profile.id,
-      purchased_at: new Date().toISOString(),
-      status: 'purchased',
-    }
-    if (receiptPath) updateObj.receipt_path = receiptPath
+    // Atomic: PO item update + wallet debit + expense + allocations + link
+    var { data: expenseId, error } = await supabase.rpc('record_po_purchase', {
+      p_po_item_id: poItemId,
+      p_actual_qty: actualQty,
+      p_actual_cost_paise: actualCostPaise,
+      p_receipt_path: receiptPath,
+    })
+    if (error) { alert('Purchase failed: ' + error.message); setSaving(false); return }
 
-    var { error } = await supabase.from('purchase_order_items').update(updateObj).eq('id', poItemId)
-    if (error) { alert('Failed: ' + error.message); setSaving(false); return }
-
-    // Update local state
+    // Update local state — mirror what the RPC wrote
+    var poItemName = (activePoItems.find(function (p) { return p.id === poItemId }) || {}).item_name || ''
     var updatedItems = activePoItems.map(function (p) {
-      if (p.id === poItemId) return Object.assign({}, p, updateObj)
-      return p
+      if (p.id !== poItemId) return p
+      var patch = {
+        actual_qty: actualQty,
+        actual_cost_paise: actualCostPaise,
+        purchased_by: profile.id,
+        purchased_at: new Date().toISOString(),
+        status: 'purchased',
+      }
+      if (receiptPath) patch.receipt_path = receiptPath
+      if (expenseId) patch.expense_id = expenseId
+      return Object.assign({}, p, patch)
     })
     setActivePoItems(updatedItems)
 
-    // Check if all items done — trigger auto-completes in DB, just update local state
+    // DB trigger auto-completes PO; mirror locally
     if (activePo) {
       var allDone = updatedItems.every(function (p) { return p.status === 'purchased' || p.status === 'cancelled' })
       if (allDone) {
@@ -623,112 +630,7 @@ function Purchase({ profile, mode }) {
       }
     }
 
-    if (actualCostPaise > 0) {
-      try {
-        var itemName = (activePoItems.find(function (p) { return p.id === poItemId }) || {}).item_name || 'PO Item'
-        await supabase.rpc('wallet_self_debit', {
-          p_amount_paise: actualCostPaise,
-          p_description: 'Purchase: ' + titleCase(itemName),
-          p_ref_type: 'purchase_order',
-          p_ref_id: String(poItemId),
-        })
-      } catch (_) {}
-    }
-
-    // ─── Create expense row (type set by admin on PO item; batch_id = PO id) ───
-    var poItem = activePoItems.find(function (p) { return p.id === poItemId }) || {}
-    if (actualCostPaise > 0 && poItem.expense_type_id) {
-      try {
-        var poItemName = poItem.item_name || 'PO Item'
-        var reqItemId = poItem.requisition_item_id
-        var venueAllocs = []
-        var reqDept = null
-        var reqSubDeptId = null
-
-        if (reqItemId) {
-          var { data: reqAllocData } = await supabase
-            .from('requisition_item_allocations')
-            .select('venue_id, qty')
-            .eq('req_item_id', reqItemId)
-          venueAllocs = reqAllocData || []
-          var { data: reqItemRow } = await supabase
-            .from('requisition_items')
-            .select('requisition_id')
-            .eq('id', reqItemId)
-            .single()
-          if (reqItemRow?.requisition_id) {
-            var { data: reqRow } = await supabase
-              .from('requisitions')
-              .select('department, sub_department_id')
-              .eq('id', reqItemRow.requisition_id)
-              .single()
-            reqDept = reqRow?.department || null
-            reqSubDeptId = reqRow?.sub_department_id || null
-          }
-        }
-
-        var { data: newExp, error: expErr } = await supabase.from('expenses').insert({
-          user_id: profile.id,
-          expense_type_id: poItem.expense_type_id,
-          expense_sub_type_id: poItem.expense_sub_type_id || null,
-          category_id: poItem.category_id || null,
-          amount_paise: actualCostPaise,
-          description: 'PO Purchase: ' + titleCase(poItemName) + ' | PO ' + (activePo?.id || '').slice(0, 8),
-          expense_date: new Date().toISOString().split('T')[0],
-          status: 'recorded',
-          receipt_path: receiptPath || null,
-          batch_id: activePo?.id || null,
-        }).select('id').single()
-
-        if (!expErr && newExp) {
-          // Split cost across venues by qty ratio; last row absorbs rounding remainder
-          var allocRows = []
-          var totalQty = venueAllocs.reduce(function (s, a) { return s + Number(a.qty || 0) }, 0)
-          if (totalQty > 0) {
-            var running = 0
-            venueAllocs.forEach(function (a, i) {
-              var share
-              if (i === venueAllocs.length - 1) {
-                share = actualCostPaise - running
-              } else {
-                share = Math.round((Number(a.qty) / totalQty) * actualCostPaise)
-                running += share
-              }
-              allocRows.push({
-                expense_id: newExp.id,
-                department: reqDept,
-                sub_department_id: reqSubDeptId,
-                venue_id: a.venue_id,
-                amount_paise: share,
-              })
-            })
-          } else {
-            allocRows.push({
-              expense_id: newExp.id,
-              department: reqDept,
-              sub_department_id: reqSubDeptId,
-              venue_id: null,
-              amount_paise: actualCostPaise,
-            })
-          }
-          await supabase.from('expense_allocations').insert(allocRows)
-
-          // Link expense back to PO item for return reversal
-          await supabase.from('purchase_order_items').update({ expense_id: newExp.id }).eq('id', poItemId)
-          setActivePoItems(function (prev) {
-            return prev.map(function (p) { return p.id === poItemId ? Object.assign({}, p, { expense_id: newExp.id }) : p })
-          })
-        } else if (expErr) {
-          console.warn('Expense insert failed:', expErr.message)
-        }
-      } catch (err) {
-        console.warn('Expense creation error:', err.message || err)
-      }
-    } else if (actualCostPaise > 0 && !poItem.expense_type_id) {
-      console.warn('PO item ' + poItemId + ' missing expense_type_id — expense skipped')
-    }
-
-    try { await logActivity('PO_ITEM_PURCHASED', titleCase(activePoItems.find(function (p) { return p.id === poItemId })?.item_name || '') + ' | ₹' + (actualCostPaise / 100)) } catch (_) {}
+    try { await logActivity('PO_ITEM_PURCHASED', titleCase(poItemName) + ' | ₹' + (actualCostPaise / 100)) } catch (_) {}
     setSaving(false)
   }
 
