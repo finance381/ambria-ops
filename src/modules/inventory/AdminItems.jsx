@@ -669,14 +669,14 @@ function AdminItems({ profile }) {
 
   return (
     <div className="space-y-4">
-      {/* Toolbar */}
-      <div className="flex gap-3 flex-wrap">
+      {/* Toolbar — filters row */}
+      <div className="flex gap-2 flex-wrap items-center">
         <input
           type="text"
           value={search}
           onChange={function (e) { setSearch(e.target.value); setPage(1) }}
           placeholder="Search name, ID, description, submitter..."
-          className="flex-1 min-w-[200px] px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          className="flex-1 min-w-[220px] px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
         />
         <FilterDropdown value={masterDeptFilter} placeholder="Master Dept" multi
           onChange={function (v) { setMasterDeptFilter(v); setSubDeptFilter([]); setCatFilter([]); setSubCatFilter([]); setPage(1) }}
@@ -721,6 +721,9 @@ function AdminItems({ profile }) {
         <FilterDropdown value={deptFilter} placeholder="Alloc Dept" multi
           onChange={function (v) { setDeptFilter(v); setPage(1) }}
           options={departments.map(function (d) { return { label: d.name, value: d.name } })} />
+      </div>
+      {/* Toolbar — actions row */}
+      <div className="flex gap-2 flex-wrap items-center">
         <select
           value={perPage}
           onChange={function (e) { setPerPage(Number(e.target.value)); setPage(1) }}
@@ -750,7 +753,7 @@ function AdminItems({ profile }) {
 
       {/* Table */}
       <div className="bg-white border border-gray-200 rounded-lg overflow-x-auto shadow-sm">
-        <table className="w-full text-sm" style={{ minWidth: 1000 }}>
+        <table className="w-full text-sm" style={{ minWidth: 1280 }}>
           <thead>
             <tr className="bg-gray-50 border-b border-gray-200">
               <th className="px-2 py-2.5 text-[11px] font-bold text-gray-500 uppercase tracking-wider" style={{ width: 70 }}></th>
@@ -764,7 +767,7 @@ function AdminItems({ profile }) {
               <th onClick={function () { handleSort('date') }} className="cursor-pointer select-none text-left px-4 py-3 text-[11px] font-bold text-gray-500 uppercase tracking-wider hover:text-gray-900">Date{sortArrow('date')}</th>
               <th onClick={function () { handleSort('status') }} className="cursor-pointer select-none text-left px-4 py-3 text-[11px] font-bold text-gray-500 uppercase tracking-wider hover:text-gray-900">Status{sortArrow('status')}</th>
               <th onClick={function () { handleSort('allocDept') }} className="cursor-pointer select-none text-left px-3 py-2.5 text-[11px] font-bold text-gray-500 uppercase tracking-wider hover:text-gray-900">Alloc Dept{sortArrow('allocDept')}</th>
-              <th className="px-3 py-2.5 text-[11px] font-bold text-gray-500 uppercase tracking-wider"></th>
+              <th className="px-2 py-2.5 text-right text-[11px] font-bold text-gray-500 uppercase tracking-wider" style={{ width: 170 }}>Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -857,11 +860,11 @@ function AdminItems({ profile }) {
                       return <div className="text-[11px] text-gray-400">{names.join(', ')}</div>
                     })()}
                   </td>
-                  <td className="px-3 py-2">
-                    <div className="flex gap-1.5">
+                  <td className="px-2 py-2 whitespace-nowrap" style={{ width: 170 }}>
+                    <div className="flex gap-1 justify-end">
                       <button
                         onClick={function () { setEditItem(item) }}
-                        className="px-2.5 py-1 text-[11px] font-semibold border border-gray-300 rounded text-gray-600 hover:border-gray-900 hover:text-gray-900 transition-colors"
+                        className="px-2 py-1 text-[11px] font-semibold border border-gray-300 rounded text-gray-600 hover:border-gray-900 hover:text-gray-900 transition-colors"
                       >Edit</button>
                       {item._source !== 'catering_store' && (
                         <button
