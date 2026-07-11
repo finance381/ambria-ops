@@ -79,9 +79,19 @@ function Categories() {
   }
 
   // ═══ DEPARTMENT CRUD ═══
+  function dupExists(list, keyFn, val, excludeId) {
+    var norm = String(val || '').trim().toLowerCase()
+    if (!norm) return false
+    return list.some(function (x) {
+      if (excludeId != null && x.id === excludeId) return false
+      return String(keyFn(x) || '').trim().toLowerCase() === norm
+    })
+  }
+
   async function addDepartment(e) {
     e.preventDefault()
     if (!newDept.trim()) return
+    if (dupExists(departments, function (d) { return d.name }, newDept)) { setError('Department "' + newDept.trim() + '" already exists'); return }
     setSaving(true); setError('')
     var { error: err } = await supabase.from('departments').insert({ name: newDept.trim() })
     if (err) { setError(err.message) } else { logActivity('DEPT_CREATE', newDept.trim()); setNewDept(''); loadAll() }
@@ -102,14 +112,18 @@ function Categories() {
 
   async function saveEditDept(dept) {
     if (!editVal.trim()) return
+    if (dupExists(departments, function (d) { return d.name }, editVal, dept.id)) { setError('Department "' + editVal.trim() + '" already exists'); return }
     var { error: err } = await supabase.from('departments').update({ name: editVal.trim(), category_ids: editDeptCats, hide_from_lists: !!editDeptHideFromLists }).eq('id', dept.id)
     if (err) { setError(err.message) } else { setEditing(null); loadAll() }
   }
   async function addSubDepartment(deptId) {
     var val = (newSubDept[deptId] || '').trim()
     if (!val) return
-    setSaving(true); setError('')
     var code = (newSubDeptCode[deptId] || '').trim().toUpperCase() || null
+    var deptSubs = subDepartments.filter(function (sd) { return sd.department_id === deptId })
+    if (dupExists(deptSubs, function (sd) { return sd.name }, val)) { setError('Sub-department "' + val + '" already exists in this department'); return }
+    if (code && dupExists(deptSubs, function (sd) { return sd.code }, code)) { setError('Sub-department code "' + code + '" already exists in this department'); return }
+    setSaving(true); setError('')
     var { error: err } = await supabase.from('sub_departments').insert({ name: val, department_id: deptId, code: code })
     if (err) { setError(err.message) } else {
       logActivity('SUB_DEPT_CREATE', (code ? code + ' — ' : '') + val)
@@ -139,6 +153,8 @@ function Categories() {
 
   async function saveEditSubDept() {
     if (!editingSubDept || !editSubDeptName.trim()) return
+    var siblingSubs = subDepartments.filter(function (sd) { return sd.department_id === editingSubDept.department_id })
+    if (dupExists(siblingSubs, function (sd) { return sd.name }, editSubDeptName, editingSubDept.id)) { setError('Sub-department "' + editSubDeptName.trim() + '" already exists in this department'); return }
     setSaving(true); setError('')
     // Update sub-dept name
     await supabase.from('sub_departments').update({ name: editSubDeptName.trim() }).eq('id', editingSubDept.id)
@@ -161,9 +177,12 @@ function Categories() {
   async function addCategory(e) {
     e.preventDefault()
     if (!newCat.trim()) return
+    var codeVal = newCatCode.trim().toUpperCase()
+    if (dupExists(categories, function (c) { return c.name }, newCat)) { setError('Category "' + newCat.trim() + '" already exists'); return }
+    if (codeVal && dupExists(categories, function (c) { return c.code }, codeVal)) { setError('Category code "' + codeVal + '" already exists'); return }
     setSaving(true); setError('')
     var payload = { name: newCat.trim() }
-    if (newCatCode.trim()) payload.code = newCatCode.trim().toUpperCase()
+    if (codeVal) payload.code = codeVal
     if (newCatSubDept) payload.sub_department_id = Number(newCatSubDept)
     var { error: err } = await supabase.from('categories').insert(payload)
     if (err) { setError(err.message) } else { logActivity('CAT_CREATE', newCat.trim()); setNewCat(''); setNewCatCode(''); setNewCatSubDept(''); loadAll() }
@@ -244,6 +263,7 @@ function Categories() {
 
   async function addEditSubCat() {
     if (!newSubName.trim() || !editCat) return
+    if (dupExists(editCatSubs, function (s) { return s.name }, newSubName)) { setError('Sub-category "' + newSubName.trim() + '" already exists in this category'); return }
     setSaving(true); setError('')
     var { data, error: err } = await supabase.from('sub_categories')
       .insert({ name: newSubName.trim(), category_id: editCat.id })
@@ -264,6 +284,7 @@ function Categories() {
 
   async function saveEditSubCat(sub) {
     if (!editVal.trim()) return
+    if (dupExists(editCatSubs, function (s) { return s.name }, editVal, sub.id)) { setError('Sub-category "' + editVal.trim() + '" already exists in this category'); return }
     setSaving(true); setError('')
     var { error: err } = await supabase.from('sub_categories').update({ name: editVal.trim() }).eq('id', sub.id)
     if (err) { setError(err.message) } else {
@@ -279,10 +300,13 @@ function Categories() {
   async function saveEditCat(e) {
     e.preventDefault()
     if (!editCatName.trim()) return
+    var codeVal = editCatCode.trim().toUpperCase()
+    if (dupExists(categories, function (c) { return c.name }, editCatName, editCat.id)) { setError('Category "' + editCatName.trim() + '" already exists'); return }
+    if (codeVal && dupExists(categories, function (c) { return c.code }, codeVal, editCat.id)) { setError('Category code "' + codeVal + '" already exists'); return }
     setSaving(true); setError('')
     var { error: err } = await supabase.from('categories').update({
       name: editCatName.trim(),
-      code: editCatCode.trim().toUpperCase() || null,
+      code: codeVal || null,
       dimension_fields: editCatDims,
       sub_department_id: editCatSubDept ? Number(editCatSubDept) : null,
       consumable: editCatConsumable,
@@ -298,8 +322,11 @@ function Categories() {
   async function addVenue(e) {
     e.preventDefault()
     if (!newVenueCode.trim() || !newVenueName.trim()) return
+    var codeVal = newVenueCode.trim().toUpperCase()
+    if (dupExists(venues, function (v) { return v.code }, codeVal)) { setError('Venue code "' + codeVal + '" already exists'); return }
+    if (dupExists(venues, function (v) { return v.name }, newVenueName)) { setError('Venue name "' + newVenueName.trim() + '" already exists'); return }
     setSaving(true); setError('')
-    var { error: err } = await supabase.from('venues').insert({ code: newVenueCode.trim().toUpperCase(), name: newVenueName.trim() })
+    var { error: err } = await supabase.from('venues').insert({ code: codeVal, name: newVenueName.trim() })
     if (err) { setError(err.message) } else { setNewVenueCode(''); setNewVenueName(''); loadAll() }
     setSaving(false)
   }
@@ -318,6 +345,8 @@ function Categories() {
   async function addSubVenue(venueId) {
     var val = (newSubVenue[venueId] || '').trim()
     if (!val) return
+    var venueSubs = subVenues.filter(function (sv) { return sv.venue_id === venueId })
+    if (dupExists(venueSubs, function (sv) { return sv.name }, val)) { setError('Sub-venue "' + val + '" already exists in this venue'); return }
     setSaving(true); setError('')
     var { error: err } = await supabase.from('sub_venues').insert({ name: val, venue_id: venueId })
     if (err) { setError(err.message) } else {
@@ -340,7 +369,10 @@ function Categories() {
 
   async function saveEditVenue(venue) {
     if (!editVal.trim() || !editVal2.trim()) return
-    var { error: err } = await supabase.from('venues').update({ code: editVal.trim().toUpperCase(), name: editVal2.trim() }).eq('id', venue.id)
+    var codeVal = editVal.trim().toUpperCase()
+    if (dupExists(venues, function (v) { return v.code }, codeVal, venue.id)) { setError('Venue code "' + codeVal + '" already exists'); return }
+    if (dupExists(venues, function (v) { return v.name }, editVal2, venue.id)) { setError('Venue name "' + editVal2.trim() + '" already exists'); return }
+    var { error: err } = await supabase.from('venues').update({ code: codeVal, name: editVal2.trim() }).eq('id', venue.id)
     if (err) { setError(err.message) } else { setEditing(null); loadAll() }
   }
 
