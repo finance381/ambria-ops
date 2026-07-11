@@ -5,6 +5,8 @@ import { logActivity } from '../../lib/logger'
 function Vendors({ profile }) {
   var [vendors, setVendors] = useState([])
   var [categories, setCategories] = useState([])
+  var [departments, setDepartments] = useState([])
+  var [subDepartments, setSubDepartments] = useState([])
   var [loading, setLoading] = useState(true)
   var [saving, setSaving] = useState(false)
   var [search, setSearch] = useState('')
@@ -20,12 +22,16 @@ function Vendors({ profile }) {
 
   async function loadAll() {
     setLoading(true)
-    var [vRes, cRes] = await Promise.all([
+    var [vRes, cRes, dRes, sdRes] = await Promise.all([
       supabase.from('vendors').select('*').order('name'),
-      supabase.from('categories').select('id, name').order('name'),
+      supabase.from('categories').select('id, name, sub_department_id').order('name'),
+      supabase.from('departments').select('id, name').eq('active', true).order('name'),
+      supabase.from('sub_departments').select('id, name, department_id').eq('active', true).order('name'),
     ])
     setVendors(vRes.data || [])
     setCategories(cRes.data || [])
+    setDepartments(dRes.data || [])
+    setSubDepartments(sdRes.data || [])
     setLoading(false)
   }
 
@@ -706,17 +712,60 @@ function Vendors({ profile }) {
                 <span className="text-[11px] text-indigo-600 font-semibold">{form.category_ids.length} selected</span>
               )}
             </div>
-            <div className="flex flex-wrap gap-2 max-h-56 overflow-y-auto p-1">
-              {categories.map(function (c) {
-                var selected = form.category_ids.indexOf(c.id) !== -1
-                return (
-                  <button key={c.id} type="button" onClick={function () { toggleCat(c.id) }}
-                    className={"px-3 py-1.5 text-xs font-semibold rounded-lg border transition-all " +
-                      (selected ? "bg-indigo-600 text-white border-indigo-600 shadow-sm" : "bg-white text-gray-500 border-gray-200 hover:border-indigo-300 hover:text-indigo-600")}>
-                    {c.name}
-                  </button>
-                )
-              })}
+            <div className="space-y-3 max-h-96 overflow-y-auto p-1">
+              {(function () {
+                // Group: dept → sub-dept → categories
+                var byDept = {}
+                categories.forEach(function (c) {
+                  var sd = subDepartments.find(function (s) { return s.id === c.sub_department_id })
+                  var deptKey = sd ? String(sd.department_id) : '__unassigned'
+                  var sdKey = sd ? String(sd.id) : '__none'
+                  if (!byDept[deptKey]) byDept[deptKey] = {}
+                  if (!byDept[deptKey][sdKey]) byDept[deptKey][sdKey] = []
+                  byDept[deptKey][sdKey].push(c)
+                })
+                var orderedDepts = departments.filter(function (d) { return byDept[String(d.id)] })
+                var groups = orderedDepts.map(function (d) {
+                  var sdMap = byDept[String(d.id)]
+                  var sdList = subDepartments.filter(function (s) { return s.department_id === d.id && sdMap[String(s.id)] }).map(function (s) {
+                    return { key: 'sd' + s.id, name: s.name, cats: sdMap[String(s.id)] }
+                  })
+                  if (sdMap.__none) sdList.push({ key: 'd' + d.id + '-none', name: null, cats: sdMap.__none })
+                  return { key: 'd' + d.id, deptName: d.name, subGroups: sdList }
+                })
+                if (byDept.__unassigned) {
+                  groups.push({ key: 'unassigned', deptName: 'Unassigned', subGroups: [{ key: 'unassigned-flat', name: null, cats: byDept.__unassigned.__none || [] }] })
+                }
+                if (groups.length === 0) return <p className="text-xs text-gray-400 px-1">No categories available</p>
+                return groups.map(function (g) {
+                  return (
+                    <div key={g.key}>
+                      <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1.5">{g.deptName}</p>
+                      <div className="space-y-2 pl-2">
+                        {g.subGroups.map(function (sg) {
+                          return (
+                            <div key={sg.key}>
+                              {sg.name && <p className="text-[10px] text-gray-400 mb-1">{sg.name}</p>}
+                              <div className="flex flex-wrap gap-2">
+                                {sg.cats.map(function (c) {
+                                  var selected = form.category_ids.indexOf(c.id) !== -1
+                                  return (
+                                    <button key={c.id} type="button" onClick={function () { toggleCat(c.id) }}
+                                      className={"px-3 py-1.5 text-xs font-semibold rounded-lg border transition-all " +
+                                        (selected ? "bg-indigo-600 text-white border-indigo-600 shadow-sm" : "bg-white text-gray-500 border-gray-200 hover:border-indigo-300 hover:text-indigo-600")}>
+                                      {c.name}
+                                    </button>
+                                  )
+                                })}
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )
+                })
+              })()}
             </div>
           </div>
 

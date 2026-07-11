@@ -897,54 +897,86 @@ function Categories() {
             </button>
           </form>
 
-          {/* Category list */}
-          <div className="bg-white border border-gray-200 rounded-lg divide-y divide-gray-100">
-            {categories.filter(function (cat) {
-              return !catSearch || cat.name.toLowerCase().includes(catSearch.toLowerCase()) || (cat.code || '').toLowerCase().includes(catSearch.toLowerCase())
-            }).map(function (cat) {
-              var subCount = subCategories.filter(function (s) { return s.category_id === cat.id }).length
-              var dims = cat.dimension_fields || []
-              return (
-                <div key={cat.id} className="flex items-center justify-between px-4 py-3">
-                  <div className="flex items-center gap-2">
-                    {cat.code && (
-                      <span className="text-xs font-mono font-bold bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">{cat.code}</span>
-                    )}
-                    <span className="text-sm font-medium text-gray-800">{cat.name}</span>
-                    {(function () {
-                      var sd = subDepartments.find(function (s) { return s.id === cat.sub_department_id })
-                      if (!sd) return null
-                      var dept = departments.find(function (d) { return d.id === sd.department_id })
-                      return <span className="text-[11px] bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded font-medium">{dept?.name ? dept.name + ' → ' : ''}{sd.name}</span>
-                    })()}
-                    {subCount > 0 && (
-                      <span className="text-xs text-gray-400">{subCount} sub-categories</span>
-                    )}
-                    {dims.length > 0 && (
-                      <span className="text-xs bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded">{dims.length} dimensions</span>
-                    )}
-                    <span className={"text-[10px] font-bold px-1.5 py-0.5 rounded-full " +
-                      (cat.consumable === false ? "bg-blue-100 text-blue-700" : "bg-gray-100 text-gray-500")}>
-                      {cat.consumable === false ? 'Asset' : 'Consumable'}
-                    </span>
-                  </div>
-                  <div className="flex gap-2">
-                    <button onClick={function () { openEditCat(cat) }}
-                      className="text-xs px-2 py-1 rounded bg-indigo-50 text-indigo-600 hover:bg-indigo-100 transition-colors">
-                      Edit
-                    </button>
-                    <button onClick={function () { deleteCategory(cat) }}
-                      className="text-xs px-2 py-1 rounded bg-red-50 text-red-600 hover:bg-red-100 transition-colors">
-                      Delete
-                    </button>
-                  </div>
-                </div>
-              )
-            })}
-            {categories.length === 0 && (
-              <div className="px-4 py-6 text-center text-gray-400 text-sm">No categories yet</div>
-            )}
-          </div>
+          {/* Category list — grouped by dept */}
+          {(function () {
+            var searchLower = catSearch.toLowerCase()
+            var matchingCats = categories.filter(function (cat) {
+              return !catSearch || cat.name.toLowerCase().includes(searchLower) || (cat.code || '').toLowerCase().includes(searchLower)
+            })
+            var byDept = {}
+            matchingCats.forEach(function (cat) {
+              var sd = subDepartments.find(function (s) { return s.id === cat.sub_department_id })
+              var key = sd ? String(sd.department_id) : '__unassigned'
+              if (!byDept[key]) byDept[key] = []
+              byDept[key].push(cat)
+            })
+            var deptGroups = departments.filter(function (d) { return byDept[String(d.id)] }).map(function (d) {
+              return { key: 'd' + d.id, deptName: d.name, cats: byDept[String(d.id)].slice().sort(function (a, b) { return a.name.localeCompare(b.name) }) }
+            })
+            if (byDept.__unassigned) {
+              deptGroups.push({ key: 'unassigned', deptName: 'Unassigned', cats: byDept.__unassigned.slice().sort(function (a, b) { return a.name.localeCompare(b.name) }) })
+            }
+            if (categories.length === 0) {
+              return <div className="bg-white border border-gray-200 rounded-lg px-4 py-6 text-center text-gray-400 text-sm">No categories yet</div>
+            }
+            if (deptGroups.length === 0) {
+              return <div className="bg-white border border-gray-200 rounded-lg px-4 py-6 text-center text-gray-400 text-sm">No matches</div>
+            }
+            return (
+              <div className="space-y-3">
+                {deptGroups.map(function (g) {
+                  return (
+                    <div key={g.key} className="bg-white border border-gray-200 rounded-lg">
+                      <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 text-xs font-bold text-gray-600 uppercase tracking-wider flex items-center justify-between">
+                        <span>{g.deptName}</span>
+                        <span className="text-gray-400 font-normal normal-case">{g.cats.length} categor{g.cats.length === 1 ? 'y' : 'ies'}</span>
+                      </div>
+                      <div className="divide-y divide-gray-100">
+                        {g.cats.map(function (cat) {
+                          var subCount = subCategories.filter(function (s) { return s.category_id === cat.id }).length
+                          var dims = cat.dimension_fields || []
+                          var sd = subDepartments.find(function (s) { return s.id === cat.sub_department_id })
+                          return (
+                            <div key={cat.id} className="flex items-center justify-between px-4 py-3">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                {cat.code && (
+                                  <span className="text-xs font-mono font-bold bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">{cat.code}</span>
+                                )}
+                                <span className="text-sm font-medium text-gray-800">{cat.name}</span>
+                                {sd && (
+                                  <span className="text-[11px] bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded font-medium">{sd.name}</span>
+                                )}
+                                {subCount > 0 && (
+                                  <span className="text-xs text-gray-400">{subCount} sub-categories</span>
+                                )}
+                                {dims.length > 0 && (
+                                  <span className="text-xs bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded">{dims.length} dimensions</span>
+                                )}
+                                <span className={"text-[10px] font-bold px-1.5 py-0.5 rounded-full " +
+                                  (cat.consumable === false ? "bg-blue-100 text-blue-700" : "bg-gray-100 text-gray-500")}>
+                                  {cat.consumable === false ? 'Asset' : 'Consumable'}
+                                </span>
+                              </div>
+                              <div className="flex gap-2 flex-shrink-0">
+                                <button onClick={function () { openEditCat(cat) }}
+                                  className="text-xs px-2 py-1 rounded bg-indigo-50 text-indigo-600 hover:bg-indigo-100 transition-colors">
+                                  Edit
+                                </button>
+                                <button onClick={function () { deleteCategory(cat) }}
+                                  className="text-xs px-2 py-1 rounded bg-red-50 text-red-600 hover:bg-red-100 transition-colors">
+                                  Delete
+                                </button>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )
+          })()}
         </div>
       )}
 
