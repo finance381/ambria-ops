@@ -627,9 +627,10 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved }) {
             <button type="button" onClick={function () { setType('Premium') }} className={"flex-1 py-2 text-sm font-medium transition-colors " + (type === 'Premium' ? "bg-purple-600 text-white" : "text-gray-500 hover:bg-gray-50")}>★ Premium</button>
           </div>
         </div>
+        <SearchDropdown label={t('Existing Item Name')} required items={itemNameItems} value={name} onChange={handleItemNameSelect} allowAdd onAdd={function (val) { setName(val); nameManual.current = true }} placeholder={t('Search Existing Item Name...')} error={errors.item} onInputChange={searchItems} />
         <SearchDropdown label={t('Category')} required items={catItems} value={categoryId} onChange={setCategoryId} placeholder={t('Search Category...')} error={errors.cat} />
         <SearchDropdown label={t('Sub-Category')} items={subCatItems} value={subCategoryId} onChange={setSubCategoryId} placeholder={t('Search Sub-Category...')} />
-        <SearchDropdown label={t('Item Name')} required items={itemNameItems} value={name} onChange={handleItemNameSelect} allowAdd onAdd={function (val) { setName(val); nameManual.current = true }} placeholder={t('Search Item Name...')} error={errors.item} onInputChange={searchItems} />
+        
         {showPackSize && (
           <div className="bg-amber-50 rounded-lg border border-amber-200 p-3 space-y-2">
             <h4 className="text-[11px] font-bold text-amber-700 uppercase tracking-wider">Pack Size</h4>
