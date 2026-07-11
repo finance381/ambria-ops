@@ -812,8 +812,8 @@ function Vendors({ profile }) {
       </div>
 
       {/* Toolbar */}
-      <div className="bg-white rounded-xl border border-gray-200 px-3 py-3 md:px-4 shadow-sm space-y-2 md:space-y-0 md:flex md:items-center md:gap-3 md:flex-wrap">
-        <div className="md:flex-1 md:min-w-[220px] relative">
+      <div className="bg-white rounded-xl border border-gray-200 px-3 py-3 lg:px-4 shadow-sm space-y-2 lg:space-y-0 lg:flex lg:items-center lg:gap-3 lg:flex-wrap">
+        <div className="lg:flex-1 lg:min-w-[220px] relative">
           <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-300 text-sm">🔍</span>
           <input type="text" value={search}
             onChange={function (e) { setSearch(e.target.value) }}
@@ -823,7 +823,7 @@ function Vendors({ profile }) {
         </div>
         <select value={catFilter}
           onChange={function (e) { setCatFilter(e.target.value) }}
-          className="w-full md:w-auto px-3 py-2.5 border border-gray-200 rounded-lg text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 md:min-w-[180px]"
+          className="w-full lg:w-auto px-3 py-2.5 border border-gray-200 rounded-lg text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 lg:min-w-[180px]"
           style={{ fontSize: '16px' }}>
           <option value="">All Categories</option>
           {categories.map(function (c) { return <option key={c.id} value={c.id}>{c.name}</option> })}
@@ -835,20 +835,20 @@ function Vendors({ profile }) {
           Show inactive
         </label>
         <input type="file" accept=".csv,text/csv" ref={importFileRef} onChange={handleImportFile} style={{ display: 'none' }} />
-        <div className="grid grid-cols-2 gap-2 md:contents md:ml-auto">
+        <div className="grid grid-cols-2 gap-2 lg:contents lg:ml-auto">
           <button onClick={function () { if (importFileRef.current) importFileRef.current.click() }}
-            className="w-full md:w-auto px-3 py-2.5 text-sm font-semibold text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors whitespace-nowrap md:ml-auto"
+            className="w-full lg:w-auto px-3 py-2.5 text-sm font-semibold text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors whitespace-nowrap lg:ml-auto"
             title="Import from CSV — review before applying">
             ⤒ Import CSV
           </button>
           <button onClick={exportCSV} disabled={vendors.length === 0}
-            className="w-full md:w-auto px-3 py-2.5 text-sm font-semibold text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
+            className="w-full lg:w-auto px-3 py-2.5 text-sm font-semibold text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
             title="Export vendors — includes GST, PAN, bank details">
             ⤓ Export CSV
           </button>
         </div>
         <button onClick={startAdd}
-          className="w-full md:w-auto px-5 py-2.5 text-sm font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 active:bg-indigo-800 transition-colors shadow-sm whitespace-nowrap">
+          className="w-full lg:w-auto px-5 py-2.5 text-sm font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 active:bg-indigo-800 transition-colors shadow-sm whitespace-nowrap">
           + Add Vendor
         </button>
       </div>
@@ -902,7 +902,7 @@ function Vendors({ profile }) {
       {filtered.length > 0 && (
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
           {/* Header — desktop only */}
-          <div className="hidden md:grid grid-cols-12 gap-3 px-5 py-3 bg-gray-50 border-b border-gray-100 text-[11px] font-bold text-gray-400 uppercase tracking-wider">
+          <div className="hidden lg:grid grid-cols-12 gap-3 px-5 py-3 bg-gray-50 border-b border-gray-100 text-[11px] font-bold text-gray-400 uppercase tracking-wider">
             <div className="col-span-3">Vendor</div>
             <div className="col-span-2">Contact</div>
             <div className="col-span-4">Categories</div>
@@ -915,11 +915,11 @@ function Vendors({ profile }) {
             var catNames = (v.category_ids || []).map(function (cid) { return catMap[cid] }).filter(Boolean)
             return (
               <div key={v.id}
-                className={"px-4 py-3 md:px-5 md:py-4 md:grid md:grid-cols-12 md:gap-3 md:items-center transition-colors " +
-                  (vi < filtered.length - 1 ? "border-b border-gray-100 md:border-gray-50 " : "") +
+                className={"px-4 py-3 lg:px-5 lg:py-4 lg:grid lg:grid-cols-12 lg:gap-3 lg:items-center transition-colors " +
+                  (vi < filtered.length - 1 ? "border-b border-gray-100 lg:border-gray-50 " : "") +
                   (v.active ? "hover:bg-gray-50" : "opacity-50 bg-gray-50/50")}>
                 {/* Name + notes */}
-                <div className="md:col-span-3 min-w-0 flex items-start justify-between gap-2 md:block">
+                <div className="lg:col-span-3 min-w-0 flex items-start justify-between gap-2 lg:block">
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-semibold text-gray-800 truncate">{v.name}</p>
                     <div className="flex items-center gap-2 mt-0.5 flex-wrap">
@@ -933,19 +933,19 @@ function Vendors({ profile }) {
                     {v.notes && <p className="text-[11px] text-gray-400 truncate mt-0.5">{v.notes}</p>}
                   </div>
                   {/* Status pill inline with name on mobile */}
-                  <span className={"md:hidden shrink-0 text-[10px] font-bold uppercase px-2 py-0.5 rounded-full " +
+                  <span className={"lg:hidden shrink-0 text-[10px] font-bold uppercase px-2 py-0.5 rounded-full " +
                     (v.active ? "bg-green-50 text-green-600" : "bg-red-50 text-red-500")}>
                     {v.active ? 'Active' : 'Off'}
                   </span>
                 </div>
                 {/* Contact */}
-                <div className="md:col-span-2 min-w-0 mt-1.5 md:mt-0">
+                <div className="lg:col-span-2 min-w-0 mt-1.5 lg:mt-0">
                   {v.contact && <p className="text-xs text-gray-600 truncate">{v.contact}</p>}
                   {v.phone && <p className="text-[11px] text-gray-400 truncate">{v.phone}</p>}
-                  {!v.contact && !v.phone && <span className="text-[11px] text-gray-300 hidden md:inline">—</span>}
+                  {!v.contact && !v.phone && <span className="text-[11px] text-gray-300 hidden lg:inline">—</span>}
                 </div>
                 {/* Categories */}
-                <div className="md:col-span-4 min-w-0 mt-1.5 md:mt-0">
+                <div className="lg:col-span-4 min-w-0 mt-1.5 lg:mt-0">
                   {catNames.length > 0 ? (
                     <div className="flex flex-wrap gap-1">
                       {catNames.slice(0, 4).map(function (cn, ci) {
@@ -958,14 +958,14 @@ function Vendors({ profile }) {
                   )}
                 </div>
                 {/* Status (desktop only — mobile shows it inline with name) */}
-                <div className="hidden md:block md:col-span-1">
+                <div className="hidden lg:block lg:col-span-1">
                   <span className={"text-[10px] font-bold uppercase px-2 py-0.5 rounded-full " +
                     (v.active ? "bg-green-50 text-green-600" : "bg-red-50 text-red-500")}>
                     {v.active ? 'Active' : 'Off'}
                   </span>
                 </div>
                 {/* Actions */}
-                <div className="md:col-span-2 flex justify-end gap-4 mt-2 md:mt-0 pt-2 md:pt-0 border-t md:border-0 border-gray-100">
+                <div className="lg:col-span-2 flex justify-end gap-4 mt-2 lg:mt-0 pt-2 lg:pt-0 border-t lg:border-0 border-gray-100">
                   <button onClick={function () { startEdit(v) }}
                     className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 transition-colors">Edit</button>
                   <button onClick={function () { toggleActive(v) }}
