@@ -20,7 +20,15 @@ function makeEntry() {
     receiptPreview: '',
     audioBlob: null,
     audioUrl: '',
-    recording: false
+    recording: false,
+    isItemPurchase: false,
+    itemQuery: '',
+    itemMatchedId: null,
+    itemMatchedSource: null,
+    itemMatchedCategoryId: null,
+    itemQty: '',
+    itemUnit: 'Pieces',
+    itemNotes: ''
   }
 }
 
@@ -48,6 +56,9 @@ function ExpenseForm({ profile, onDone }) {
   var [error, setError] = useState('')
   var [success, setSuccess] = useState('')
   var [zoomImg, setZoomImg] = useState('')
+  var [itemSearchIdx, setItemSearchIdx] = useState(-1)
+  var [itemMatches, setItemMatches] = useState([])
+  var itemSearchTimer = useRef(null)
 
   useEffect(function () { loadRefData(); ensureLookupData('vendors') }, [])
 
@@ -211,6 +222,75 @@ function ExpenseForm({ profile, onDone }) {
     setEntries(updated)
   }
 
+  // ── Item receipt helpers ──
+  function toggleItemPurchase(idx) {
+    var updated = entries.map(function (e, i) {
+      if (i !== idx) return e
+      var on = !e.isItemPurchase
+      return Object.assign({}, e, {
+        isItemPurchase: on,
+        itemQuery: on ? e.itemQuery : '',
+        itemMatchedId: on ? e.itemMatchedId : null,
+        itemMatchedSource: on ? e.itemMatchedSource : null,
+        itemMatchedCategoryId: on ? e.itemMatchedCategoryId : null,
+        itemQty: on ? e.itemQty : '',
+        itemUnit: on ? e.itemUnit : 'Pieces',
+        itemNotes: on ? e.itemNotes : ''
+      })
+    })
+    setEntries(updated)
+    if (itemSearchIdx === idx) { setItemMatches([]); setItemSearchIdx(-1) }
+  }
+
+  function updateItemField(idx, field, val) {
+    var updated = entries.map(function (e, i) {
+      if (i !== idx) return e
+      var copy = Object.assign({}, e)
+      copy[field] = val
+      // Typing overrides a previous match
+      if (field === 'itemQuery') {
+        copy.itemMatchedId = null
+        copy.itemMatchedSource = null
+        copy.itemMatchedCategoryId = null
+      }
+      return copy
+    })
+    setEntries(updated)
+  }
+
+  function searchInventoryItems(entryIdx, term) {
+    setItemSearchIdx(entryIdx)
+    if (itemSearchTimer.current) clearTimeout(itemSearchTimer.current)
+    if (!term || term.trim().length < 2) { setItemMatches([]); return }
+    itemSearchTimer.current = setTimeout(function () {
+      var q = term.trim().replace(/%/g, '\\%').replace(/_/g, '\\_')
+      Promise.all([
+        supabase.from('inventory_items').select('id, name, unit, category_id').ilike('name', '%' + q + '%').eq('status', 'approved').order('name').limit(6),
+        supabase.from('catering_store_items').select('id, name, unit, category_id').ilike('name', '%' + q + '%').eq('status', 'approved').order('name').limit(6),
+      ]).then(function (results) {
+        var inv = (results[0].data || []).map(function (i) { return Object.assign({}, i, { _source: 'inventory' }) })
+        var cs = (results[1].data || []).map(function (i) { return Object.assign({}, i, { _source: 'catering_store' }) })
+        setItemMatches(inv.concat(cs).slice(0, 8))
+      })
+    }, 300)
+  }
+
+  function pickItemMatch(entryIdx, item) {
+    var updated = entries.map(function (e, i) {
+      if (i !== entryIdx) return e
+      return Object.assign({}, e, {
+        itemQuery: item.name,
+        itemMatchedId: item.id,
+        itemMatchedSource: item._source,
+        itemMatchedCategoryId: item.category_id || null,
+        itemUnit: item.unit || e.itemUnit
+      })
+    })
+    setEntries(updated)
+    setItemMatches([])
+    setItemSearchIdx(-1)
+  }
+
   function duplicateEntry(idx) {
     var src = entries[idx]
     var dup = Object.assign({}, src, {
@@ -349,6 +429,11 @@ function ExpenseForm({ profile, onDone }) {
           return 'Entry ' + (i + 1) + ': ' + fields[f].label + ' is required'
         }
       }
+      if (e.isItemPurchase) {
+        if (!e.itemQuery || !e.itemQuery.trim()) return 'Entry ' + (i + 1) + ': Item name required for physical item purchase'
+        if (!e.itemQty || Number(e.itemQty) <= 0) return 'Entry ' + (i + 1) + ': Item qty must be > 0'
+        if (!e.itemUnit) return 'Entry ' + (i + 1) + ': Item unit required'
+      }
       if (!e.receiptFile && !e.audioBlob) return 'Entry ' + (i + 1) + ': Receipt image or voice note is required'
     }
     return null
@@ -373,6 +458,22 @@ function ExpenseForm({ profile, onDone }) {
         var paise = Math.round(Number(e.amount) * 100)
 
         try {
+          var meta = Object.assign({}, e.fieldValues)
+          if (e.isItemPurchase) {
+            meta.item_receipt = {
+              query: (e.itemQuery || '').trim(),
+              matched_item_id: e.itemMatchedId,
+              matched_source: e.itemMatchedSource,
+              matched_category_id: e.itemMatchedCategoryId,
+              qty: Number(e.itemQty),
+              unit: e.itemUnit,
+              notes: (e.itemNotes || '').trim() || null,
+              resulting_item_id: null,
+              received_by: null,
+              received_at: null,
+              cancel_reason: null
+            }
+          }
           var payload = {
             user_id: profile.id,
             batch_id: batchId,
@@ -384,11 +485,12 @@ function ExpenseForm({ profile, onDone }) {
             expense_date: e.expenseDate,
             status: 'recorded',
             event_id: eventId ? Number(eventId) : null,
-            metadata: e.fieldValues,
+            metadata: meta,
             vendor_name: e.fieldValues.vendor_name || null,
             travel_from: e.fieldValues.travel_from || null,
             travel_to: e.fieldValues.travel_to || null,
             travel_mode: e.fieldValues.travel_mode || null,
+            item_receipt_status: e.isItemPurchase ? 'pending' : null,
           }
 
           var { data: exp, error: insErr } = await supabase.from('expenses').insert(payload).select('id').single()
@@ -614,6 +716,82 @@ function ExpenseForm({ profile, onDone }) {
                     onChange={function (e) { updateEntry(idx, 'expenseDate', e.target.value) }}
                     className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-300" />
                 </div>
+              </div>
+
+              {/* Item purchase toggle + fields */}
+              <div className={"border rounded-lg p-3 transition-colors " + (entry.isItemPurchase ? "border-indigo-200 bg-indigo-50/40" : "border-gray-100 bg-gray-50")}>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label className="text-xs font-semibold text-gray-700">📦 This is for a physical item</label>
+                    <p className="text-[10px] text-gray-400 mt-0.5">Item enters inventory via receiver</p>
+                  </div>
+                  <button type="button" onClick={function () { toggleItemPurchase(idx) }} className="flex items-center">
+                    <div className={"relative w-9 h-5 rounded-full transition-colors " + (entry.isItemPurchase ? "bg-indigo-500" : "bg-gray-300")}>
+                      <div className={"absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform " + (entry.isItemPurchase ? "translate-x-4" : "translate-x-0.5")} />
+                    </div>
+                  </button>
+                </div>
+
+                {entry.isItemPurchase && (
+                  <div className="mt-3 space-y-2.5">
+                    {/* Item name search */}
+                    <div className="relative">
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Item Name <span className="text-red-500">*</span>{entry.itemMatchedId && <span className="ml-2 text-[10px] font-bold text-green-600">✓ Matched existing</span>}</label>
+                      <input type="text" value={entry.itemQuery}
+                        onChange={function (e) { updateItemField(idx, 'itemQuery', e.target.value); searchInventoryItems(idx, e.target.value) }}
+                        onFocus={function () { if (entry.itemQuery && entry.itemQuery.length >= 2) searchInventoryItems(idx, entry.itemQuery) }}
+                        placeholder="Search or type new item name..."
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-300 bg-white" style={{ fontSize: '16px' }} />
+                      {itemSearchIdx === idx && itemMatches.length > 0 && (
+                        <div className="absolute z-20 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-56 overflow-y-auto">
+                          {itemMatches.map(function (m) {
+                            return (
+                              <button key={m._source + '_' + m.id} type="button"
+                                onMouseDown={function (evt) { evt.preventDefault(); pickItemMatch(idx, m) }}
+                                className="w-full text-left px-3 py-2 hover:bg-indigo-50 border-b border-gray-50 last:border-0">
+                                <div className="text-sm text-gray-800 font-medium truncate">{m.name}</div>
+                                <div className="text-[10px] text-gray-400">{m._source === 'catering_store' ? 'Catering Store' : 'Inventory'}{m.unit ? ' · ' + m.unit : ''}</div>
+                              </button>
+                            )
+                          })}
+                        </div>
+                      )}
+                      {entry.itemQuery && !entry.itemMatchedId && itemMatches.length === 0 && itemSearchIdx === idx && entry.itemQuery.length >= 2 && (
+                        <p className="text-[10px] text-amber-600 mt-1">No match — receiver will create as new inventory item</p>
+                      )}
+                    </div>
+
+                    {/* Qty + Unit */}
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">Qty <span className="text-red-500">*</span></label>
+                        <input type="number" inputMode="numeric" value={entry.itemQty}
+                          onChange={function (e) { updateItemField(idx, 'itemQty', e.target.value) }}
+                          placeholder="0" min="0" step="any"
+                          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-300 bg-white" style={{ fontSize: '16px' }} />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">Unit</label>
+                        <select value={entry.itemUnit}
+                          onChange={function (e) { updateItemField(idx, 'itemUnit', e.target.value) }}
+                          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-indigo-300" style={{ fontSize: '16px' }}>
+                          {['Pieces', 'Nos', 'Sets', 'Pairs', 'Dozens', 'Kg', 'Grams', 'Liters', 'ML', 'Meters', 'Feet', 'Rolls', 'Packets', 'Bags', 'Boxes', 'Cartons', 'Bottles', 'Sheets', 'Reams'].map(function (u) {
+                            return <option key={u} value={u}>{u}</option>
+                          })}
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Notes */}
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Notes <span className="text-gray-400">(brand, size, spec)</span></label>
+                      <input type="text" value={entry.itemNotes}
+                        onChange={function (e) { updateItemField(idx, 'itemNotes', e.target.value) }}
+                        placeholder="e.g. White ceramic, 10-inch round"
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-300 bg-white" style={{ fontSize: '16px' }} />
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Allocations */}

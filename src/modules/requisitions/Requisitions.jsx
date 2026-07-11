@@ -4,6 +4,7 @@ import { titleCase, formatDate, formatPoints } from '../../lib/format'
 import { logActivity } from '../../lib/logger'
 import { useRealtime } from '../../lib/useRealtime'
 import Modal from '../../components/ui/Modal'
+import ItemReceipts from './ItemReceipts'
 import { Badge } from '../../components/ui/Badge'
 import { APPROVAL_STATUS_COLORS, APPROVAL_STATUS_LABELS } from '../../lib/constants'
 import EventDatePicker from '../../components/ui/EventDatePicker'
@@ -34,7 +35,8 @@ function Requisitions({ profile, onBack }) {
   var [allHasMore, setAllHasMore] = useState(false)
   var [loading, setLoading] = useState(true)
   var [loadingMore, setLoadingMore] = useState(false)
-  useRealtime(['requisitions', 'requisition_items'], function () { loadMyReqs(false); loadApprovalReqs(false); loadAllReqs(false) })
+  var [pendingReceiptsCount, setPendingReceiptsCount] = useState(0)
+  useRealtime(['requisitions', 'requisition_items', 'expenses'], function () { loadMyReqs(false); loadApprovalReqs(false); loadAllReqs(false); loadReceiptsCount() })
   var [detailReq, setDetailReq] = useState(null)
   var [detailItems, setDetailItems] = useState([])
   var [statusFilter, setStatusFilter] = useState('')
@@ -48,6 +50,15 @@ function Requisitions({ profile, onBack }) {
   var isReqAdminApprover = (profile?.permissions || []).indexOf('req_admin_approve') !== -1
   var hasReqApprove = isAdmin || isAuditor || isReqDeptApprover || isReqAdminApprover
   var showApproveTab = hasReqApprove && (profile?.permissions || []).indexOf('feature_requisitions') !== -1
+  var isItemReceiver = isAdmin || isAuditor || (profile?.permissions || []).indexOf('feature_add') !== -1 || (profile?.permissions || []).indexOf('inventory_add') !== -1
+
+  async function loadReceiptsCount() {
+    if (!isItemReceiver) return
+    var { data, error } = await supabase.rpc('list_pending_expense_receipts', { p_limit: 100, p_offset: 0 })
+    if (!error) setPendingReceiptsCount((data || []).length)
+  }
+
+  useEffect(function () { loadReceiptsCount() }, [])
 
   // Derive dept names for scoping non-admin dept approvers
   var approverDeptNames = []
@@ -298,22 +309,35 @@ function Requisitions({ profile, onBack }) {
         </button>
       </div>
 
-      {/* Tabs: My Requests | Pending Approval */}
-      {showApproveTab && (
+      {/* Tabs: My Requests | Pending Approval | Item Receipts | All */}
+      {(showApproveTab || isItemReceiver) && (
         <div className="flex bg-gray-100 rounded-lg p-0.5">
           <button onClick={function () { setView('list'); setStatusFilter('') }}
             className={"flex-1 py-2 text-sm font-semibold rounded-md transition-colors " + (view === 'list' ? "bg-white text-gray-900 shadow-sm" : "text-gray-500")}>
             My Requests
           </button>
-          <button onClick={function () { setView('approve'); setStatusFilter('') }}
-            className={"flex-1 py-2 text-sm font-semibold rounded-md transition-colors relative " + (view === 'approve' ? "bg-white text-gray-900 shadow-sm" : "text-gray-500")}>
-            Approvals
-            {approvalReqs.length > 0 && (
-              <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
-                {approvalReqs.length}
-              </span>
-            )}
-          </button>
+          {showApproveTab && (
+            <button onClick={function () { setView('approve'); setStatusFilter('') }}
+              className={"flex-1 py-2 text-sm font-semibold rounded-md transition-colors relative " + (view === 'approve' ? "bg-white text-gray-900 shadow-sm" : "text-gray-500")}>
+              Approvals
+              {approvalReqs.length > 0 && (
+                <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+                  {approvalReqs.length}
+                </span>
+              )}
+            </button>
+          )}
+          {isItemReceiver && (
+            <button onClick={function () { setView('receipts'); setStatusFilter('') }}
+              className={"flex-1 py-2 text-sm font-semibold rounded-md transition-colors relative " + (view === 'receipts' ? "bg-white text-gray-900 shadow-sm" : "text-gray-500")}>
+              Item Receipts
+              {pendingReceiptsCount > 0 && (
+                <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+                  {pendingReceiptsCount > 99 ? '99+' : pendingReceiptsCount}
+                </span>
+              )}
+            </button>
+          )}
           {(isAdmin || isAuditor) && (
             <button onClick={function () { setView('all'); setStatusFilter('') }}
               className={"flex-1 py-2 text-sm font-semibold rounded-md transition-colors " + (view === 'all' ? "bg-white text-gray-900 shadow-sm" : "text-gray-500")}>
@@ -339,14 +363,18 @@ function Requisitions({ profile, onBack }) {
         </div>
       )}
 
-      {/* List */}
-      {displayList.length === 0 && (
+      {view === 'receipts' && (
+        <ItemReceipts profile={profile} onCountChange={setPendingReceiptsCount} />
+      )}
+
+      {/* List (hidden in receipts view) */}
+      {view !== 'receipts' && displayList.length === 0 && (
         <div className="bg-white border border-gray-200 rounded-xl p-8 text-center">
           <p className="text-gray-400 text-sm">{view === 'approve' ? 'No pending approvals' : view === 'all' ? 'No requisitions match filter' : 'No requisitions yet'}</p>
         </div>
       )}
 
-      <div className="space-y-3">
+      {view !== 'receipts' && <div className="space-y-3">
         {displayList.map(function (req) {
           return (
             <div key={req.id}
@@ -381,10 +409,10 @@ function Requisitions({ profile, onBack }) {
             </div>
           )
         })}
-      </div>
+      </div>}
 
       {/* Load More */}
-      {displayHasMore && (
+      {view !== 'receipts' && displayHasMore && (
         <button onClick={function () {
           if (view === 'approve') loadApprovalReqs(true)
           else if (view === 'all') loadAllReqs(true)
