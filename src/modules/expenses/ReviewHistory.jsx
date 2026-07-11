@@ -201,7 +201,7 @@ function ReviewHistory({ profile, onBack, onOpenDetail }) {
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold text-gray-900 truncate">{exp.description || 'Expense'}</p>
                     <p className="text-xs text-gray-400 mt-0.5">
-                      {exp.profiles?.name || '—'} · {exp.categories?.name || '—'} · {formatDate(exp.expense_date)}
+                      {exp.profiles?.name || '—'} · {formatDate(exp.expense_date)}
                     </p>
                   </div>
                   <div className="flex flex-col items-end gap-1 flex-shrink-0 ml-2">
