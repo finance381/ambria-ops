@@ -796,18 +796,18 @@ function Vendors({ profile }) {
   return (
     <div className="max-w-4xl mx-auto space-y-5">
       {/* Stats row */}
-      <div className="grid grid-cols-3 gap-2 md:gap-4">
-        <div className="bg-white rounded-xl border border-gray-200 px-3 py-3 md:px-5 md:py-4 shadow-sm">
-          <p className="text-xl md:text-2xl font-bold text-gray-900">{activeCount}</p>
-          <p className="text-[10px] md:text-xs text-gray-400 font-medium mt-0.5">Active Vendors</p>
+      <div className="grid grid-cols-3 gap-2 lg:gap-4">
+        <div className="bg-white rounded-xl border border-gray-200 px-3 py-3 lg:px-5 lg:py-4 shadow-sm">
+          <p className="text-xl lg:text-2xl font-bold text-gray-900">{activeCount}</p>
+          <p className="text-[10px] lg:text-xs text-gray-400 font-medium mt-0.5">Active Vendors</p>
         </div>
-        <div className="bg-white rounded-xl border border-gray-200 px-3 py-3 md:px-5 md:py-4 shadow-sm">
-          <p className="text-xl md:text-2xl font-bold text-indigo-600">{taggedCount}</p>
-          <p className="text-[10px] md:text-xs text-gray-400 font-medium mt-0.5">Category Tagged</p>
+        <div className="bg-white rounded-xl border border-gray-200 px-3 py-3 lg:px-5 lg:py-4 shadow-sm">
+          <p className="text-xl lg:text-2xl font-bold text-indigo-600">{taggedCount}</p>
+          <p className="text-[10px] lg:text-xs text-gray-400 font-medium mt-0.5">Category Tagged</p>
         </div>
-        <div className="bg-white rounded-xl border border-gray-200 px-3 py-3 md:px-5 md:py-4 shadow-sm">
-          <p className="text-xl md:text-2xl font-bold text-gray-400">{inactiveCount}</p>
-          <p className="text-[10px] md:text-xs text-gray-400 font-medium mt-0.5">Inactive</p>
+        <div className="bg-white rounded-xl border border-gray-200 px-3 py-3 lg:px-5 lg:py-4 shadow-sm">
+          <p className="text-xl lg:text-2xl font-bold text-gray-400">{inactiveCount}</p>
+          <p className="text-[10px] lg:text-xs text-gray-400 font-medium mt-0.5">Inactive</p>
         </div>
       </div>
 
