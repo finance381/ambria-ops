@@ -220,12 +220,15 @@ function AdminItems({ profile }) {
   function exportPdf() {
     function escHtml(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;') }
     var filterParts = []
-    if (masterDeptFilter.length) filterParts.push('Master Dept: ' + masterDeptFilter.map(function (id) { var d = departments.find(function (x) { return String(x.id) === id }); return d ? d.name : id }).join(', '))
-    if (subDeptFilter.length) filterParts.push('Sub-dept: ' + subDeptFilter.map(function (id) { var sd = subDepartments.find(function (x) { return String(x.id) === id }); return sd ? sd.name : id }).join(', '))
-    if (deptFilter.length) filterParts.push('Alloc Dept: ' + deptFilter.join(', '))
-    if (catFilter.length) filterParts.push('Cat: ' + catFilter.map(function (cid) { var c = categories.find(function (x) { return String(x.id) === cid }); return c ? c.name : cid }).join(', '))
-    if (venueFilter.length) filterParts.push('Venue: ' + venueFilter.join(', '))
-    if (statusFilter.length) filterParts.push('Status: ' + statusFilter.join(', '))
+    if (search && search.trim()) filterParts.push({ label: 'Search', value: search.trim() })
+    if (masterDeptFilter.length) filterParts.push({ label: 'Master Dept', value: masterDeptFilter.map(function (id) { var d = departments.find(function (x) { return String(x.id) === id }); return d ? d.name : id }).join(', ') })
+    if (subDeptFilter.length) filterParts.push({ label: 'Master Sub-dept', value: subDeptFilter.map(function (id) { var sd = subDepartments.find(function (x) { return String(x.id) === id }); return sd ? sd.name : id }).join(', ') })
+    if (statusFilter.length) filterParts.push({ label: 'Status', value: statusFilter.join(', ') })
+    if (catFilter.length) filterParts.push({ label: 'Category', value: catFilter.map(function (cid) { var c = categories.find(function (x) { return String(x.id) === cid }); return c ? c.name : cid }).join(', ') })
+    if (subCatFilter.length) filterParts.push({ label: 'Sub-category', value: subCatFilter.map(function (scid) { var sc = subCategoriesAll.find(function (x) { return String(x.id) === scid }); return sc ? sc.name : scid }).join(', ') })
+    if (venueFilter.length) filterParts.push({ label: 'Venue', value: venueFilter.join(', ') })
+    if (subVenueFilter.length) filterParts.push({ label: 'Sub-venue', value: subVenueFilter.map(function (svid) { var sv = subVenues.find(function (x) { return String(x.id) === svid }); return sv ? sv.name : svid }).join(', ') })
+    if (deptFilter.length) filterParts.push({ label: 'Alloc Dept', value: deptFilter.join(', ') })
     var rows = filtered.map(function (item, idx) {
       var allocs = item.venue_allocations || []
       if (venueFilter.length > 0) allocs = allocs.filter(function (va) { return va.venues && venueFilter.indexOf(va.venues.code) !== -1 })
@@ -273,11 +276,20 @@ function AdminItems({ profile }) {
       '.no-img{width:170px;height:170px;background:#f3f4f6;border-radius:8px;display:inline-block}' +
       '.inv-id{font-family:monospace;font-size:12px}' +
       '.num{font-size:14px;color:#888;font-weight:600}' +
+      '.filter-box{margin:8px 0 12px;padding:8px 10px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px}' +
+      '.filter-title{font-size:10px;font-weight:700;color:#888;letter-spacing:0.5px;text-transform:uppercase;margin-bottom:6px}' +
+      '.filter-chips{display:flex;flex-wrap:wrap;gap:6px}' +
+      '.filter-chip{display:inline-flex;align-items:baseline;gap:4px;font-size:11px;background:#fff;border:1px solid #d1d5db;border-radius:12px;padding:2px 10px}' +
+      '.filter-chip .k{font-weight:700;color:#4338ca}' +
+      '.filter-chip .v{color:#111}' +
       '@media print{body{margin:10px}@page{size:A4 landscape;margin:8mm}.item-row,.remarks-row{page-break-inside:avoid}.item-row{page-break-after:avoid}.remarks-row{page-break-before:avoid}}'
     var html = '<!DOCTYPE html><html><head><title>Ambria Inventory</title><style>' + css + '</style></head><body>'
     html += '<h1>Ambria Inventory</h1>'
-    if (filterParts.length) html += '<div class="filters">' + escHtml(filterParts.join('  |  ')) + '</div>'
     html += '<div class="filters">' + filtered.length + ' items | Exported ' + new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) + '</div>'
+    if (filterParts.length) {
+      var chips = filterParts.map(function (f) { return '<span class="filter-chip"><span class="k">' + escHtml(f.label) + ':</span><span class="v">' + escHtml(f.value) + '</span></span>' }).join('')
+      html += '<div class="filter-box"><div class="filter-title">Applied Filters</div><div class="filter-chips">' + chips + '</div></div>'
+    }
     html += '<table><thead><tr>' +
       '<th style="width:36px">#</th>' +
       '<th style="width:190px">Photo</th>' +
