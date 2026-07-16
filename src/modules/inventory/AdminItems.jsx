@@ -218,8 +218,11 @@ function AdminItems({ profile }) {
   }
 
   function exportPdf() {
+    function escHtml(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;') }
     var filterParts = []
-    if (deptFilter.length) filterParts.push('Dept: ' + deptFilter.join(', '))
+    if (masterDeptFilter.length) filterParts.push('Master Dept: ' + masterDeptFilter.map(function (id) { var d = departments.find(function (x) { return String(x.id) === id }); return d ? d.name : id }).join(', '))
+    if (subDeptFilter.length) filterParts.push('Sub-dept: ' + subDeptFilter.map(function (id) { var sd = subDepartments.find(function (x) { return String(x.id) === id }); return sd ? sd.name : id }).join(', '))
+    if (deptFilter.length) filterParts.push('Alloc Dept: ' + deptFilter.join(', '))
     if (catFilter.length) filterParts.push('Cat: ' + catFilter.map(function (cid) { var c = categories.find(function (x) { return String(x.id) === cid }); return c ? c.name : cid }).join(', '))
     if (venueFilter.length) filterParts.push('Venue: ' + venueFilter.join(', '))
     if (statusFilter.length) filterParts.push('Status: ' + statusFilter.join(', '))
@@ -227,36 +230,86 @@ function AdminItems({ profile }) {
       var allocs = item.venue_allocations || []
       if (venueFilter.length > 0) allocs = allocs.filter(function (va) { return va.venues && venueFilter.indexOf(va.venues.code) !== -1 })
       if (subVenueFilter.length > 0) allocs = allocs.filter(function (va) { return subVenueFilter.indexOf(String(va.sub_venue_id || '')) !== -1 })
-      var venueStr = allocs.map(function (va) { var svName = va.sub_venue_id ? (subVenues.find(function (sv) { return sv.id === va.sub_venue_id }) || {}).name : null; return (va.venues?.code || '') + (svName ? ':' + svName : '') + ':' + va.qty }).join(', ')
+      var subDeptMap = {}
+      allocs.forEach(function (va) {
+        var sdKey = va.sub_department_id || 'null'
+        if (!subDeptMap[sdKey]) {
+          var sd = subDepartments.find(function (x) { return x.id === va.sub_department_id })
+          subDeptMap[sdKey] = { name: sd ? sd.name : (item.department || '—'), total: 0, venues: [] }
+        }
+        subDeptMap[sdKey].total += (va.qty || 0)
+        var svName = va.sub_venue_id ? (subVenues.find(function (sv) { return sv.id === va.sub_venue_id }) || {}).name : null
+        subDeptMap[sdKey].venues.push({ code: (va.venues?.code || '') + (svName ? ':' + svName : ''), qty: va.qty || 0 })
+      })
+      var subDeptBlocks = Object.keys(subDeptMap).map(function (k) { return subDeptMap[k] })
+      var totalQty = venueFilter.length > 0 ? allocs.reduce(function (s, va) { return s + (va.qty || 0) }, 0) : item.qty
       var imgUrl = getImageUrl(item.image_path)
-      return { idx: idx + 1, invId: item.inventory_id || '', name: item.name, hindi: item.name_hindi || '', cat: item.categories?.name || '', subCat: item.sub_categories?.name || '', dept: item.department || '', qty: venueFilter.length > 0 ? allocs.reduce(function (s, va) { return s + (va.qty || 0) }, 0) : item.qty, unit: item.unit || '', venues: venueStr || '—', img: imgUrl || '' }
+      return { idx: idx + 1, invId: item.inventory_id || '', name: item.name, hindi: item.name_hindi || '', cat: item.categories?.name || '', subCat: item.sub_categories?.name || '', subDeptBlocks: subDeptBlocks, qty: totalQty, unit: item.unit || '', remarks: item.description || '', img: imgUrl || '' }
     })
     var w = window.open('', '_blank')
     if (!w) { alert('Pop-up blocked. Allow pop-ups for this site.'); return }
-    w.document.write('<!DOCTYPE html><html><head><title>Ambria Inventory</title><style>')
-    w.document.write('body{font-family:sans-serif;margin:20px;color:#333}')
-    w.document.write('h1{font-size:18px;margin:0 0 4px}')
-    w.document.write('.filters{font-size:10px;color:#888;margin-bottom:12px}')
-    w.document.write('table{border-collapse:collapse;width:100%;font-size:11px}')
-    w.document.write('th{background:#2E4057;color:#fff;padding:5px 6px;text-align:left;font-size:10px;font-weight:700}')
-    w.document.write('td{padding:4px 6px;border-bottom:1px solid #eee;vertical-align:middle}')
-    w.document.write('tr:nth-child(even){background:#f9f9f9}')
-    w.document.write('.hindi{font-size:10px;color:#888}')
-    w.document.write('.qty{text-align:right;font-weight:600}')
-    w.document.write('.venue{font-size:10px;color:#4338ca}')
-    w.document.write('.img{width:36px;height:36px;object-fit:cover;border-radius:4px;border:1px solid #ddd}')
-    w.document.write('.no-img{width:36px;height:36px;background:#f3f4f6;border-radius:4px;display:inline-block}')
-    w.document.write('@media print{body{margin:10px}@page{size:landscape;margin:10mm}}')
-    w.document.write('</style></head><body>')
-    w.document.write('<h1>Ambria Inventory</h1>')
-    if (filterParts.length) w.document.write('<div class="filters">' + filterParts.join('  |  ') + '</div>')
-    w.document.write('<div class="filters">' + filtered.length + ' items | Exported ' + new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) + '</div>')
-    w.document.write('<table><thead><tr><th>#</th><th></th><th>Inv ID</th><th>Item Name</th><th>Category</th><th>Sub-cat</th><th>Dept</th><th>Qty</th><th>Unit</th><th>Venues</th></tr></thead><tbody>')
+    var css = 'body{font-family:sans-serif;margin:20px;color:#333}' +
+      'h1{font-size:22px;margin:0 0 4px;font-weight:800}' +
+      '.filters{font-size:11px;color:#888;margin-bottom:6px}' +
+      'table{border-collapse:collapse;width:100%;font-size:12px}' +
+      'th{background:#fff;color:#666;padding:10px 8px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid #ddd}' +
+      'td{padding:10px 8px;vertical-align:middle}' +
+      '.item-row td{border-top:1px solid #e5e7eb}' +
+      '.remarks-row td{padding:2px 8px 12px;font-size:11px;color:#555;border-bottom:1px solid #e5e7eb}' +
+      '.remarks-lbl{font-weight:700;color:#888;letter-spacing:0.5px;margin-right:6px}' +
+      '.hindi{font-size:11px;color:#888;margin-top:2px}' +
+      '.subcat{font-size:11px;color:#888;margin-top:2px}' +
+      '.qty-big{font-size:22px;font-weight:700;color:#111}' +
+      '.unit{font-size:12px;color:#666}' +
+      '.name-big{font-size:14px;font-weight:700;color:#111}' +
+      '.cat-name{font-size:13px;font-weight:600;color:#111}' +
+      '.sd-block{margin-bottom:8px}' +
+      '.sd-block:last-child{margin-bottom:0}' +
+      '.sd-name{font-size:13px;font-weight:700;color:#111;margin-right:8px}' +
+      '.sd-total{display:inline-block;background:#065f46;color:#fff;font-size:11px;font-weight:700;padding:2px 10px;border-radius:12px;vertical-align:middle}' +
+      '.venues{margin-top:4px;display:flex;flex-wrap:wrap;gap:4px}' +
+      '.venue{font-size:11px;color:#4338ca;background:#eef2ff;padding:2px 8px;border-radius:6px;font-weight:600}' +
+      '.img{width:170px;height:170px;object-fit:cover;border-radius:8px;border:1px solid #ddd}' +
+      '.no-img{width:170px;height:170px;background:#f3f4f6;border-radius:8px;display:inline-block}' +
+      '.inv-id{font-family:monospace;font-size:12px}' +
+      '.num{font-size:14px;color:#888;font-weight:600}' +
+      '@media print{body{margin:10px}@page{size:A4 landscape;margin:8mm}.item-row,.remarks-row{page-break-inside:avoid}.item-row{page-break-after:avoid}.remarks-row{page-break-before:avoid}}'
+    var html = '<!DOCTYPE html><html><head><title>Ambria Inventory</title><style>' + css + '</style></head><body>'
+    html += '<h1>Ambria Inventory</h1>'
+    if (filterParts.length) html += '<div class="filters">' + escHtml(filterParts.join('  |  ')) + '</div>'
+    html += '<div class="filters">' + filtered.length + ' items | Exported ' + new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) + '</div>'
+    html += '<table><thead><tr>' +
+      '<th style="width:36px">#</th>' +
+      '<th style="width:190px">Photo</th>' +
+      '<th style="width:90px">Inv ID</th>' +
+      '<th>Item Name</th>' +
+      '<th>Category</th>' +
+      '<th>Sub-Department &amp; Venues</th>' +
+      '<th style="width:60px">Qty</th>' +
+      '<th style="width:60px">Unit</th>' +
+      '</tr></thead><tbody>'
     rows.forEach(function (r) {
       var imgHtml = r.img ? '<img class="img" src="' + r.img + '" loading="lazy" />' : '<span class="no-img"></span>'
-      w.document.write('<tr><td>' + r.idx + '</td><td>' + imgHtml + '</td><td>' + r.invId + '</td><td>' + r.name + (r.hindi ? '<br><span class="hindi">' + r.hindi + '</span>' : '') + '</td><td>' + r.cat + '</td><td>' + r.subCat + '</td><td>' + r.dept + '</td><td class="qty">' + r.qty + '</td><td>' + r.unit + '</td><td class="venue">' + r.venues + '</td></tr>')
+      var sdHtml = r.subDeptBlocks.length ? r.subDeptBlocks.map(function (sd) {
+        var venueChips = sd.venues.map(function (v) { return '<span class="venue">' + escHtml(v.code) + ':' + v.qty + '</span>' }).join('')
+        return '<div class="sd-block"><span class="sd-name">' + escHtml(sd.name || '—') + '</span><span class="sd-total">' + sd.total + '</span>' + (venueChips ? '<div class="venues">' + venueChips + '</div>' : '') + '</div>'
+      }).join('') : '<span style="color:#999">—</span>'
+      html += '<tr class="item-row">' +
+        '<td class="num">' + r.idx + '</td>' +
+        '<td>' + imgHtml + '</td>' +
+        '<td class="inv-id">' + escHtml(r.invId) + '</td>' +
+        '<td><div class="name-big">' + escHtml(r.name) + '</div>' + (r.hindi ? '<div class="hindi">' + escHtml(r.hindi) + '</div>' : '') + '</td>' +
+        '<td><div class="cat-name">' + escHtml(r.cat) + '</div>' + (r.subCat ? '<div class="subcat">' + escHtml(r.subCat) + '</div>' : '') + '</td>' +
+        '<td>' + sdHtml + '</td>' +
+        '<td class="qty-big">' + r.qty + '</td>' +
+        '<td class="unit">' + escHtml(r.unit) + '</td>' +
+        '</tr>'
+      if (r.remarks) {
+        html += '<tr class="remarks-row"><td></td><td colspan="7"><span class="remarks-lbl">REMARKS:</span>' + escHtml(r.remarks) + '</td></tr>'
+      }
     })
-    w.document.write('</tbody></table></body></html>')
+    html += '</tbody></table></body></html>'
+    w.document.write(html)
     w.document.close()
     setTimeout(function () { w.print() }, 1500)
   }
