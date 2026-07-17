@@ -1280,6 +1280,11 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, ve
   var [vendorMode, setVendorMode] = useState('select')
   var [purchasingItem, setPurchasingItem] = useState(null)
   var [purchaseForm, setPurchaseForm] = useState({ qty: '', cost: '', receipt: null, vendorName: '', vendorRate: '' })
+  var [selectedForPurchase, setSelectedForPurchase] = useState([])
+  var [multiOpen, setMultiOpen] = useState(false)
+  var [multiForm, setMultiForm] = useState({ vendor: '', vendorContact: '', receipt: null, items: {} })
+  var [multiProcessing, setMultiProcessing] = useState(false)
+  var [multiProgress, setMultiProgress] = useState(null)
   var [rateHistory, setRateHistory] = useState([])
   var [rateLoading, setRateLoading] = useState(false)
   var [showAddVendor, setShowAddVendor] = useState(null)
@@ -1315,6 +1320,8 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, ve
 
   var [expenseTypes, setExpenseTypes] = useState([])
   var [expenseSubTypes, setExpenseSubTypes] = useState([])
+  var [bulkVendor, setBulkVendor] = useState('')
+  var [bulkVendorRate, setBulkVendorRate] = useState('')
   var [expDepartments, setExpDepartments] = useState([])
   var [expSubDepartments, setExpSubDepartments] = useState([])
   var [expTypeDeptFilter, setExpTypeDeptFilter] = useState('')
@@ -1350,6 +1357,37 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, ve
     }
     return true
   })
+
+  async function applyVendorToAll() {
+    var vendorName = bulkVendor.trim()
+    if (!vendorName) { alert('Select or enter vendor'); return }
+    var pendingItems = items.filter(function (it) { return it.status === 'pending' })
+    if (pendingItems.length === 0) { alert('No pending items to update'); return }
+    var existing = pendingItems.filter(function (it) { return it.vendor_name })
+    if (existing.length > 0 && !confirm('Overwrite vendor on ' + existing.length + ' item(s) that already has one?')) return
+    var ratePaise = bulkVendorRate ? Math.round(Number(bulkVendorRate) * 100) : null
+    var vendorRow = (vendorList || []).find(function (v) { return v.name === vendorName })
+    var vendorContact = vendorRow ? (vendorRow.phone || vendorRow.contact || null) : null
+    for (var i = 0; i < pendingItems.length; i++) {
+      var it = pendingItems[i]
+      var patch = { vendor_name: vendorName, vendor_contact: vendorContact }
+      if (ratePaise) { patch.vendor_rate_paise = ratePaise; patch.estimated_cost_paise = ratePaise * it.qty_ordered }
+      var { error } = await supabase.from('purchase_order_items').update(patch).eq('id', it.id)
+      if (error) { alert('Failed on ' + it.item_name + ': ' + error.message); return }
+    }
+    var itemIds = pendingItems.map(function (it) { return it.id })
+    setItems(function (prev) {
+      return prev.map(function (it) {
+        if (itemIds.indexOf(it.id) === -1) return it
+        var patch = { vendor_name: vendorName, vendor_contact: vendorContact }
+        if (ratePaise) { patch.vendor_rate_paise = ratePaise; patch.estimated_cost_paise = ratePaise * it.qty_ordered }
+        return Object.assign({}, it, patch)
+      })
+    })
+    try { await logActivity('PO_BULK_VENDOR', vendorName + ' → ' + pendingItems.length + ' items') } catch (_) {}
+    setBulkVendor('')
+    setBulkVendorRate('')
+  }
 
   async function applyExpTypeToAll() {
     if (!bulkExpType) { alert('Select expense type'); return }
@@ -1458,6 +1496,115 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, ve
       vendorName: it.vendor_name || '',
       vendorRate: it.vendor_rate_paise ? String(it.vendor_rate_paise / 100) : '',
     })
+  }
+
+  function toggleSelectPurchase(id) {
+    setSelectedForPurchase(function (prev) {
+      if (prev.indexOf(id) === -1) return prev.concat([id])
+      return prev.filter(function (x) { return x !== id })
+    })
+  }
+
+  function openMultiPurchase() {
+    var selectedItems = items.filter(function (it) { return selectedForPurchase.indexOf(it.id) !== -1 && it.status === 'pending' })
+    if (selectedItems.length === 0) { alert('Select at least one pending item'); return }
+    // Guard: all items need resolvable expense type
+    var missing = selectedItems.filter(function (it) { return !it.expense_type_id && !it.categories?.default_expense_type_id })
+    if (missing.length > 0) {
+      alert('These items have no expense type set: ' + missing.map(function (m) { return m.item_name }).join(', ') + '. Ask admin to set one before bulk purchase.')
+      return
+    }
+    // Prefill shared vendor if all selected match
+    var vendors = selectedItems.map(function (it) { return it.vendor_name || '' }).filter(Boolean)
+    var uniq = vendors.filter(function (v, i, a) { return a.indexOf(v) === i })
+    var sharedVendor = uniq.length === 1 ? uniq[0] : ''
+    var sharedContact = ''
+    if (sharedVendor) {
+      var vRow = (vendorList || []).find(function (v) { return v.name === sharedVendor })
+      sharedContact = vRow ? (vRow.phone || vRow.contact || '') : (selectedItems[0].vendor_contact || '')
+    }
+    var itemForms = {}
+    selectedItems.forEach(function (it) {
+      itemForms[it.id] = {
+        qty: String(it.qty_ordered || ''),
+        cost: it.estimated_cost_paise ? String(it.estimated_cost_paise / 100) : '',
+      }
+    })
+    setMultiForm({ vendor: sharedVendor, vendorContact: sharedContact, receipt: null, items: itemForms })
+    setMultiProgress(null)
+    setMultiOpen(true)
+  }
+
+  async function confirmMultiPurchase() {
+    if (multiProcessing) return
+    var selectedItems = items.filter(function (it) { return selectedForPurchase.indexOf(it.id) !== -1 && it.status === 'pending' })
+    if (selectedItems.length === 0) { alert('No selected items still pending'); return }
+    for (var i = 0; i < selectedItems.length; i++) {
+      var f = multiForm.items[selectedItems[i].id] || {}
+      if (!Number(f.qty) || Number(f.qty) <= 0) { alert('Enter qty for all items'); return }
+      if (!Number(f.cost) || Number(f.cost) <= 0) { alert('Enter cost for all items'); return }
+    }
+    setMultiProcessing(true)
+    setMultiProgress({ done: 0, failed: 0, total: selectedItems.length, failedRows: [] })
+
+    // Upload receipt ONCE
+    var receiptPath = null
+    if (multiForm.receipt) {
+      var ext = multiForm.receipt.name.split('.').pop()
+      var fileName = profile.id + '/po-multi-' + Date.now() + '.' + ext
+      var { error: upErr } = await supabase.storage.from('receipts').upload(fileName, multiForm.receipt)
+      if (upErr) { alert('Receipt upload failed: ' + upErr.message); setMultiProcessing(false); return }
+      receiptPath = fileName
+    }
+
+    // Update vendor per item (only if changed) — one round-trip each
+    var vendorName = (multiForm.vendor || '').trim()
+    if (vendorName) {
+      var vendorContact = (multiForm.vendorContact || '').trim() || null
+      for (var i = 0; i < selectedItems.length; i++) {
+        var it = selectedItems[i]
+        if (it.vendor_name !== vendorName) {
+          await supabase.from('purchase_order_items').update({ vendor_name: vendorName, vendor_contact: vendorContact }).eq('id', it.id)
+        }
+      }
+    }
+
+    // Call record_po_purchase per item with shared receipt path
+    var done = 0, failed = 0, failedRows = []
+    for (var i = 0; i < selectedItems.length; i++) {
+      var it = selectedItems[i]
+      var f = multiForm.items[it.id]
+      try {
+        var { error } = await supabase.rpc('record_po_purchase', {
+          p_po_item_id: it.id,
+          p_actual_qty: Number(f.qty),
+          p_actual_cost_paise: Math.round(Number(f.cost) * 100),
+          p_receipt_path: receiptPath,
+        })
+        if (error) throw error
+        done++
+      } catch (err) {
+        failed++
+        failedRows.push({ name: it.item_name, reason: err?.message || 'Failed' })
+      }
+      setMultiProgress({ done: done, failed: failed, total: selectedItems.length, failedRows: failedRows })
+    }
+
+    // Refresh purchased items from DB
+    var { data: refreshed } = await supabase.from('purchase_order_items')
+      .select('id, status, actual_qty, actual_cost_paise, purchased_by, purchased_at, receipt_path, expense_id, vendor_name, vendor_contact')
+      .in('id', selectedItems.map(function (it) { return it.id }))
+    if (refreshed) {
+      setItems(function (prev) {
+        return prev.map(function (p) {
+          var upd = refreshed.find(function (r) { return r.id === p.id })
+          return upd ? Object.assign({}, p, upd) : p
+        })
+      })
+    }
+    try { await logActivity('PO_MULTI_PURCHASED', done + ' items | 1 bill') } catch (_) {}
+    setSelectedForPurchase([])
+    setMultiProcessing(false)
   }
 
   async function confirmPurchase(poItemId) {
@@ -1625,6 +1772,33 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, ve
               </div>
             )
           })()}
+
+          {/* Vendor — Apply to all pending items */}
+          {canEdit && items.some(function (it) { return it.status === 'pending' }) && (
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
+              <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Vendor — Apply to all pending items</p>
+              <div className="grid grid-cols-3 gap-2 mb-2">
+                <select value={bulkVendor}
+                  onChange={function (e) { setBulkVendor(e.target.value) }}
+                  className="col-span-2 w-full px-2 py-1.5 border border-gray-200 rounded-md text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  style={{ fontSize: '16px' }}>
+                  <option value="">Select vendor...</option>
+                  {(vendorList || []).map(function (v) {
+                    return <option key={v.id} value={v.name}>{v.name}{v.phone ? ' · ' + v.phone : ''}</option>
+                  })}
+                </select>
+                <input type="number" min="0" step="any" inputMode="decimal" value={bulkVendorRate}
+                  onChange={function (e) { setBulkVendorRate(e.target.value) }}
+                  placeholder="Rate ₹ (opt)"
+                  className="w-full px-2 py-1.5 border border-gray-200 rounded-md text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  style={{ fontSize: '16px' }} />
+              </div>
+              <button onClick={applyVendorToAll} disabled={!bulkVendor || saving}
+                className="w-full py-1.5 text-xs font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 disabled:opacity-50 transition-colors">
+                Apply to all pending
+              </button>
+            </div>
+          )}
 
           {/* Items table */}
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
@@ -1916,7 +2090,15 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, ve
                             ✕ Remove
                           </button>
                         )}
-                        {canPurchase && (
+                        {canPurchase && it.status === 'pending' && (
+                          <label className="flex items-center gap-1.5 text-[11px] font-semibold text-gray-600 hover:bg-gray-50 px-2 py-1.5 rounded-lg cursor-pointer transition-colors" onClick={function (e) { e.stopPropagation() }}>
+                            <input type="checkbox" checked={selectedForPurchase.indexOf(it.id) !== -1}
+                              onChange={function () { toggleSelectPurchase(it.id) }}
+                              className="w-3.5 h-3.5 accent-indigo-600" />
+                            Select
+                          </label>
+                        )}
+                        {canPurchase && selectedForPurchase.indexOf(it.id) === -1 && (
                           <button onClick={function (e) { e.stopPropagation(); startPurchase(it) }}
                             className="text-[11px] font-semibold text-green-600 hover:bg-green-50 px-3 py-1.5 rounded-lg transition-colors">
                             🛒 Mark Purchased
@@ -1930,6 +2112,136 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, ve
             </div>
           </div>
         </div>
+
+        {/* Multi-purchase floating bar (purchaser bulk mode) */}
+        {canPurchase && selectedForPurchase.length > 0 && (
+          <div className="fixed bottom-0 left-0 right-0 z-30 bg-white border-t-2 border-indigo-500 shadow-2xl px-4 py-3 flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-bold text-gray-900">{selectedForPurchase.length} item{selectedForPurchase.length !== 1 ? 's' : ''} selected</p>
+              <p className="text-[11px] text-gray-500">Same vendor · single bill · single upload</p>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={function () { setSelectedForPurchase([]) }}
+                className="px-3 py-2 text-xs font-semibold text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors">Clear</button>
+              <button onClick={openMultiPurchase}
+                className="px-4 py-2 text-sm font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors">
+                🛒 Mark {selectedForPurchase.length} Purchased Together
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Multi-purchase modal */}
+        {multiOpen && (
+          <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={function () { if (!multiProcessing) setMultiOpen(false) }}>
+            <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col" onClick={function (e) { e.stopPropagation() }}>
+              <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+                <h3 className="text-base font-bold text-gray-900">Mark {selectedForPurchase.length} Items Purchased</h3>
+                <button onClick={function () { if (!multiProcessing) setMultiOpen(false) }} disabled={multiProcessing}
+                  className="text-2xl text-gray-400 hover:text-gray-600 disabled:opacity-30">×</button>
+              </div>
+              <div className="flex-1 overflow-y-auto p-5 space-y-4">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Shared Vendor</label>
+                    <input type="text" list="multi-vendor-list" value={multiForm.vendor}
+                      onChange={function (e) {
+                        var name = e.target.value
+                        var vRow = (vendorList || []).find(function (v) { return v.name === name })
+                        setMultiForm(function (p) { return Object.assign({}, p, { vendor: name, vendorContact: vRow ? (vRow.phone || vRow.contact || '') : p.vendorContact }) })
+                      }}
+                      placeholder="Type or pick vendor..."
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      style={{ fontSize: '16px' }} />
+                    <datalist id="multi-vendor-list">
+                      {(vendorList || []).map(function (v) { return <option key={v.id} value={v.name}>{v.phone ? v.phone : ''}</option> })}
+                    </datalist>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Vendor Contact</label>
+                    <input type="text" value={multiForm.vendorContact}
+                      onChange={function (e) { setMultiForm(function (p) { return Object.assign({}, p, { vendorContact: e.target.value }) }) }}
+                      placeholder="Phone / contact"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      style={{ fontSize: '16px' }} />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Shared Bill / Receipt (one upload for all items)</label>
+                  <input type="file" accept="image/*,application/pdf"
+                    onChange={function (e) { setMultiForm(function (p) { return Object.assign({}, p, { receipt: e.target.files?.[0] || null }) }) }}
+                    className="w-full text-xs" />
+                  {multiForm.receipt && <p className="text-[11px] text-green-700 mt-1">✓ {multiForm.receipt.name}</p>}
+                </div>
+                <div className="border-t border-gray-100 pt-3">
+                  <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Items</p>
+                  <div className="space-y-2">
+                    {items.filter(function (it) { return selectedForPurchase.indexOf(it.id) !== -1 }).map(function (it) {
+                      var f = multiForm.items[it.id] || { qty: '', cost: '' }
+                      return (
+                        <div key={it.id} className="grid grid-cols-6 gap-2 items-center bg-gray-50 rounded-lg px-3 py-2">
+                          <div className="col-span-3">
+                            <p className="text-sm font-semibold text-gray-800 truncate">{it.item_name}</p>
+                            <p className="text-[10px] text-gray-500">Ordered: {it.qty_ordered} {it.unit}</p>
+                          </div>
+                          <input type="number" min="0" step="any" inputMode="numeric" value={f.qty}
+                            onChange={function (e) {
+                              var v = e.target.value
+                              setMultiForm(function (p) { var next = Object.assign({}, p.items); next[it.id] = Object.assign({}, next[it.id] || {}, { qty: v }); return Object.assign({}, p, { items: next }) })
+                            }}
+                            placeholder="Qty"
+                            className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                            style={{ fontSize: '16px' }} />
+                          <input type="number" min="0" step="any" inputMode="decimal" value={f.cost}
+                            onChange={function (e) {
+                              var v = e.target.value
+                              setMultiForm(function (p) { var next = Object.assign({}, p.items); next[it.id] = Object.assign({}, next[it.id] || {}, { cost: v }); return Object.assign({}, p, { items: next }) })
+                            }}
+                            placeholder="₹ Cost"
+                            className="col-span-2 w-full px-2 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                            style={{ fontSize: '16px' }} />
+                        </div>
+                      )
+                    })}
+                  </div>
+                  <div className="mt-3 flex items-center justify-between bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-2">
+                    <span className="text-xs font-bold text-indigo-700 uppercase tracking-wider">Total</span>
+                    <span className="text-lg font-bold text-indigo-900">₹{(items.filter(function (it) { return selectedForPurchase.indexOf(it.id) !== -1 }).reduce(function (s, it) { var f = multiForm.items[it.id] || {}; return s + (Number(f.cost) || 0) }, 0)).toFixed(2)}</span>
+                  </div>
+                </div>
+                {multiProgress && (
+                  <div className="bg-gray-50 rounded-lg p-3">
+                    <div className="flex justify-between text-sm mb-1">
+                      <span className="font-medium text-gray-700">{multiProgress.done + multiProgress.failed} / {multiProgress.total}</span>
+                      <span className="text-gray-500">{multiProgress.done} ok · {multiProgress.failed} failed</span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-2">
+                      <div className="bg-indigo-600 h-2 rounded-full transition-all" style={{ width: (multiProgress.total ? (((multiProgress.done + multiProgress.failed) / multiProgress.total) * 100) : 0) + '%' }}></div>
+                    </div>
+                    {multiProgress.failedRows && multiProgress.failedRows.length > 0 && (
+                      <details className="mt-2 text-xs">
+                        <summary className="cursor-pointer text-red-700 font-medium">Failed ({multiProgress.failedRows.length})</summary>
+                        <div className="mt-1 max-h-32 overflow-y-auto">
+                          {multiProgress.failedRows.map(function (f, i) {
+                            return <div key={i} className="text-[10px] text-red-800">{f.name} — {f.reason}</div>
+                          })}
+                        </div>
+                      </details>
+                    )}
+                  </div>
+                )}
+              </div>
+              <div className="px-5 py-4 border-t border-gray-100 flex justify-end gap-3">
+                <button onClick={function () { setMultiOpen(false) }} disabled={multiProcessing}
+                  className="px-4 py-2 text-sm text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 disabled:opacity-50 transition-colors">
+                  {multiProgress && !multiProcessing ? 'Close' : 'Cancel'}</button>
+                <button onClick={multiProgress && !multiProcessing ? function () { setMultiOpen(false) } : confirmMultiPurchase} disabled={multiProcessing}
+                  className="px-6 py-2 text-sm font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors">
+                  {multiProcessing ? 'Processing...' : multiProgress ? 'Done' : 'Confirm Purchase'}</button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* ═══ RIGHT: Summary sidebar ═══ */}
         <div className="w-full lg:w-80 lg:flex-shrink-0">
