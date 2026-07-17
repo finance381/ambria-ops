@@ -1446,7 +1446,7 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, ve
     if (!actualCostPaise || actualCostPaise <= 0) { alert('Enter actual cost'); return }
 
     // Guard: expense will fail to create if no expense type resolvable (POI or category default)
-    var checkItem = activePoItems.find(function (it) { return it.id === poItemId })
+    var checkItem = items.find(function (it) { return it.id === poItemId })
     if (checkItem && !checkItem.expense_type_id && !checkItem.categories?.default_expense_type_id) {
       alert('This item has no expense type set. Either click the Type link on the item to set one, or set a default on the Category via Masters → Categories.')
       return
