@@ -43,11 +43,17 @@ function Categories() {
   var [newSubDeptCode, setNewSubDeptCode] = useState({})
   var [editSubDeptCode, setEditSubDeptCode] = useState('')
 
+  // Expense type lookups (for category defaults)
+  var [expenseTypes, setExpenseTypes] = useState([])
+  var [expenseSubTypes, setExpenseSubTypes] = useState([])
+
   // Category edit modal
   var [editCat, setEditCat] = useState(null)
   var [editCatName, setEditCatName] = useState('')
   var [editCatCode, setEditCatCode] = useState('')
   var [editCatConsumable, setEditCatConsumable] = useState(true)
+  var [editCatDefaultExpTypeId, setEditCatDefaultExpTypeId] = useState('')
+  var [editCatDefaultExpSubTypeId, setEditCatDefaultExpSubTypeId] = useState('')
   var [editDeptHideFromLists, setEditDeptHideFromLists] = useState(false)
   var [editDeptIsDefault, setEditDeptIsDefault] = useState(false)
   var [editCatDims, setEditCatDims] = useState([])
@@ -69,12 +75,16 @@ function Categories() {
       supabase.from('venues').select('*').order('code'),
       supabase.from('sub_departments').select('*').order('name'),
       supabase.from('sub_venues').select('*').order('name'),
+      supabase.from('expense_types').select('id, name').eq('active', true).order('sort_order').order('name'),
+      supabase.from('expense_sub_types').select('id, name, expense_type_id').eq('active', true).order('sort_order').order('name'),
     ])
     setDepartments(deptRes.data || [])
     setCategories(catRes.data || [])
     setSubCategories(subRes.data || [])
     setVenues(venueRes.data || [])
     setSubDepartments(subDeptRes.data || [])
+    setExpenseTypes(etRes.data || [])
+    setExpenseSubTypes(estRes.data || [])
     setSubVenues(subVenueRes.data || [])
     setLoading(false)
   }
@@ -209,6 +219,8 @@ function Categories() {
     setEditCatDims(cat.dimension_fields || [])
     setEditCatSubs(subCategories.filter(function (s) { return s.category_id === cat.id }))
     setEditCatSubDept(cat.sub_department_id ? String(cat.sub_department_id) : '')
+    setEditCatDefaultExpTypeId(cat.default_expense_type_id ? String(cat.default_expense_type_id) : '')
+    setEditCatDefaultExpSubTypeId(cat.default_expense_sub_type_id ? String(cat.default_expense_sub_type_id) : '')
     setNewDimName('')
     setNewDimType('number')
     setEditDimIdx(null)
@@ -315,6 +327,8 @@ function Categories() {
       dimension_fields: editCatDims,
       sub_department_id: editCatSubDept ? Number(editCatSubDept) : null,
       consumable: editCatConsumable,
+      default_expense_type_id: editCatDefaultExpTypeId ? Number(editCatDefaultExpTypeId) : null,
+      default_expense_sub_type_id: editCatDefaultExpSubTypeId ? Number(editCatDefaultExpSubTypeId) : null,
     }).eq('id', editCat.id)
     if (err) { setError(err.message) } else {
       setEditCat(null)
@@ -1189,6 +1203,33 @@ function Categories() {
                 {editCatConsumable ? 'Stock qty will be deducted when issued from requisitions' : 'Stock qty stays unchanged — items are relocated, not consumed'}
               </p>
             </div>
+
+            {/* Default Expense Type (fallback for auto-expense from purchases) */}
+            {expenseTypes.length > 0 && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Default Expense Type <span className="text-[11px] font-normal text-gray-400">(used for auto-expense when PO item has none set)</span></label>
+                <div className="grid grid-cols-2 gap-3">
+                  <select value={editCatDefaultExpTypeId}
+                    onChange={function (e) { setEditCatDefaultExpTypeId(e.target.value); setEditCatDefaultExpSubTypeId('') }}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    style={{ fontSize: '16px' }}>
+                    <option value="">None (require per-PO)</option>
+                    {expenseTypes.map(function (et) { return <option key={et.id} value={String(et.id)}>{et.name}</option> })}
+                  </select>
+                  {editCatDefaultExpTypeId && (
+                    <select value={editCatDefaultExpSubTypeId}
+                      onChange={function (e) { setEditCatDefaultExpSubTypeId(e.target.value) }}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      style={{ fontSize: '16px' }}>
+                      <option value="">Any sub-type</option>
+                      {expenseSubTypes.filter(function (st) { return String(st.expense_type_id) === editCatDefaultExpTypeId }).map(function (st) {
+                        return <option key={st.id} value={String(st.id)}>{st.name}</option>
+                      })}
+                    </select>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Sub-categories */}
             <div>

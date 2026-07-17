@@ -277,7 +277,7 @@ function Purchase({ profile, mode }) {
     setSaving(true)
     var { data } = await supabase
       .from('purchase_order_items')
-      .select('id, requisition_item_id, item_id, item_name, category_id, _source, qty_ordered, unit, vendor_name, vendor_contact, vendor_rate_paise, estimated_cost_paise, actual_cost_paise, actual_qty, purchased_by, purchased_at, received_by, received_at, inventory_item_id, cs_item_id, status, notes, receipt_path, expense_id, expense_type_id, expense_sub_type_id, categories(name)')
+      .select('id, requisition_item_id, item_id, item_name, category_id, _source, qty_ordered, unit, vendor_name, vendor_contact, vendor_rate_paise, estimated_cost_paise, actual_cost_paise, actual_qty, purchased_by, purchased_at, received_by, received_at, inventory_item_id, cs_item_id, status, notes, receipt_path, expense_id, expense_type_id, expense_sub_type_id, categories(name, default_expense_type_id, default_expense_sub_type_id)')
       .eq('po_id', po.id)
       .order('created_at')
 
@@ -1444,6 +1444,13 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, ve
     var actualCostPaise = Math.round(Number(purchaseForm.cost) * 100)
     if (!actualQty || actualQty <= 0) { alert('Enter qty purchased'); return }
     if (!actualCostPaise || actualCostPaise <= 0) { alert('Enter actual cost'); return }
+
+    // Guard: expense will fail to create if no expense type resolvable (POI or category default)
+    var checkItem = activePoItems.find(function (it) { return it.id === poItemId })
+    if (checkItem && !checkItem.expense_type_id && !checkItem.categories?.default_expense_type_id) {
+      alert('This item has no expense type set. Either click the Type link on the item to set one, or set a default on the Category via Masters → Categories.')
+      return
+    }
 
     var vendorChanged = false
     var item = items.find(function (it) { return it.id === poItemId })
