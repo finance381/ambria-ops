@@ -1838,11 +1838,28 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, ve
                             var subForItem = itemExpForm.typeId ? expenseSubTypes.filter(function (s) { return s.expense_type_id === Number(itemExpForm.typeId) }) : []
                             return (
                               <div className="mt-1.5 flex flex-wrap items-center gap-1.5" onClick={function (e) { e.stopPropagation() }}>
+                                <select value={expTypeDeptFilter}
+                                  onChange={function (e) { setExpTypeDeptFilter(e.target.value); setExpTypeSubDeptFilter(''); setItemExpForm({ typeId: '', subTypeId: '' }) }}
+                                  className="px-1.5 py-1 border border-gray-200 rounded text-[11px] bg-gray-50 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                                  style={{ fontSize: '16px' }}>
+                                  <option value="">🔎 All Depts</option>
+                                  {expDepartments.map(function (d) { return <option key={d.id} value={String(d.id)}>{d.name}</option> })}
+                                </select>
+                                <select value={expTypeSubDeptFilter}
+                                  onChange={function (e) { setExpTypeSubDeptFilter(e.target.value); setItemExpForm({ typeId: '', subTypeId: '' }) }}
+                                  disabled={!expTypeDeptFilter}
+                                  className="px-1.5 py-1 border border-gray-200 rounded text-[11px] bg-gray-50 focus:outline-none focus:ring-1 focus:ring-blue-400 disabled:bg-gray-100 disabled:text-gray-400"
+                                  style={{ fontSize: '16px' }}>
+                                  <option value="">All Sub-depts</option>
+                                  {expSubDepartments.filter(function (sd) { return !expTypeDeptFilter || sd.department_id === Number(expTypeDeptFilter) }).map(function (sd) {
+                                    return <option key={sd.id} value={String(sd.id)}>{sd.name}</option>
+                                  })}
+                                </select>
                                 <select value={itemExpForm.typeId}
                                   onChange={function (e) { setItemExpForm({ typeId: e.target.value, subTypeId: '' }) }}
                                   className="px-1.5 py-1 border border-gray-200 rounded text-[11px] bg-white focus:outline-none focus:ring-1 focus:ring-blue-400"
                                   style={{ fontSize: '16px' }}>
-                                  <option value="">Type...</option>
+                                  <option value="">Type... ({filteredExpenseTypes.length})</option>
                                   {filteredExpenseTypes.map(function (x) { return <option key={x.id} value={String(x.id)}>{x.name}</option> })}
                                 </select>
                                 {subForItem.length > 0 && (
