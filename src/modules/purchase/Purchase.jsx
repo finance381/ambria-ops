@@ -1315,6 +1315,10 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, ve
 
   var [expenseTypes, setExpenseTypes] = useState([])
   var [expenseSubTypes, setExpenseSubTypes] = useState([])
+  var [expDepartments, setExpDepartments] = useState([])
+  var [expSubDepartments, setExpSubDepartments] = useState([])
+  var [expTypeDeptFilter, setExpTypeDeptFilter] = useState('')
+  var [expTypeSubDeptFilter, setExpTypeSubDeptFilter] = useState('')
   var [bulkExpType, setBulkExpType] = useState('')
   var [bulkExpSubType, setBulkExpSubType] = useState('')
   var [editingItemExp, setEditingItemExp] = useState(null)
@@ -1322,13 +1326,30 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, ve
 
   useEffect(function () {
     Promise.all([
-      supabase.from('expense_types').select('id, name, icon, sort_order').eq('active', true).order('sort_order').order('name'),
+      supabase.from('expense_types').select('id, name, icon, sort_order, department_id, sub_department_id').eq('active', true).order('sort_order').order('name'),
       supabase.from('expense_sub_types').select('id, expense_type_id, name, active, sort_order').eq('active', true).order('sort_order').order('name'),
+      supabase.from('departments').select('id, name').eq('active', true).order('name'),
+      supabase.from('sub_departments').select('id, name, department_id').eq('active', true).order('name'),
     ]).then(function (res) {
       setExpenseTypes(res[0].data || [])
       setExpenseSubTypes(res[1].data || [])
+      setExpDepartments(res[2].data || [])
+      setExpSubDepartments(res[3].data || [])
     })
   }, [])
+
+  // Filtered expense types (dept + sub-dept scoping — globals with null scope always show)
+  var filteredExpenseTypes = expenseTypes.filter(function (et) {
+    if (expTypeDeptFilter) {
+      var deptId = Number(expTypeDeptFilter)
+      if (et.department_id !== null && et.department_id !== deptId) return false
+    }
+    if (expTypeSubDeptFilter) {
+      var sdId = Number(expTypeSubDeptFilter)
+      if (et.sub_department_id !== null && et.sub_department_id !== sdId) return false
+    }
+    return true
+  })
 
   async function applyExpTypeToAll() {
     if (!bulkExpType) { alert('Select expense type'); return }
@@ -1557,12 +1578,31 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, ve
               <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
                 <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Expense Type — Apply to all pending items</p>
                 <div className="grid grid-cols-2 gap-2 mb-2">
+                  <select value={expTypeDeptFilter}
+                    onChange={function (e) { setExpTypeDeptFilter(e.target.value); setExpTypeSubDeptFilter(''); setBulkExpType(''); setBulkExpSubType('') }}
+                    className="w-full px-2 py-1.5 border border-gray-200 rounded-md text-xs bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    style={{ fontSize: '16px' }}>
+                    <option value="">🔎 All Depts</option>
+                    {expDepartments.map(function (d) { return <option key={d.id} value={String(d.id)}>{d.name}</option> })}
+                  </select>
+                  <select value={expTypeSubDeptFilter}
+                    onChange={function (e) { setExpTypeSubDeptFilter(e.target.value); setBulkExpType(''); setBulkExpSubType('') }}
+                    disabled={!expTypeDeptFilter}
+                    className="w-full px-2 py-1.5 border border-gray-200 rounded-md text-xs bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-400"
+                    style={{ fontSize: '16px' }}>
+                    <option value="">All Sub-depts</option>
+                    {expSubDepartments.filter(function (sd) { return !expTypeDeptFilter || sd.department_id === Number(expTypeDeptFilter) }).map(function (sd) {
+                      return <option key={sd.id} value={String(sd.id)}>{sd.name}</option>
+                    })}
+                  </select>
+                </div>
+                <div className="grid grid-cols-2 gap-2 mb-2">
                   <select value={bulkExpType}
                     onChange={function (e) { setBulkExpType(e.target.value); setBulkExpSubType('') }}
                     className="w-full px-2 py-1.5 border border-gray-200 rounded-md text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                     style={{ fontSize: '16px' }}>
-                    <option value="">Select type...</option>
-                    {expenseTypes.map(function (et) {
+                    <option value="">Select type... ({filteredExpenseTypes.length})</option>
+                    {filteredExpenseTypes.map(function (et) {
                       return <option key={et.id} value={String(et.id)}>{(et.icon ? et.icon + ' ' : '') + et.name}</option>
                     })}
                   </select>
@@ -1629,7 +1669,7 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, ve
                                   className="px-1.5 py-1 border border-gray-200 rounded text-[11px] bg-white focus:outline-none focus:ring-1 focus:ring-blue-400"
                                   style={{ fontSize: '16px' }}>
                                   <option value="">Type...</option>
-                                  {expenseTypes.map(function (x) { return <option key={x.id} value={String(x.id)}>{x.name}</option> })}
+                                  {filteredExpenseTypes.map(function (x) { return <option key={x.id} value={String(x.id)}>{x.name}</option> })}
                                 </select>
                                 {subForItem.length > 0 && (
                                   <select value={itemExpForm.subTypeId}
