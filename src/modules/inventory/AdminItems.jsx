@@ -94,6 +94,9 @@ function AdminItems({ profile }) {
   var [importProgress, setImportProgress] = useState(null) // { done, total, skipped }
   var [importing, setImporting] = useState(false)
   var [exportModal, setExportModal] = useState(false)
+  var [bulkImgModal, setBulkImgModal] = useState(null) // { file, matched, unmatched, duplicates, replacing, total }
+  var [bulkImgProgress, setBulkImgProgress] = useState(null) // { done, failed, total, failedRows }
+  var [bulkImgProcessing, setBulkImgProcessing] = useState(false)
 
   useEffect(function () {
     loadData()
@@ -397,6 +400,106 @@ function AdminItems({ profile }) {
   function findCol(row, keys) {
     for (var k = 0; k < keys.length; k++) { if (row[keys[k]] != null && row[keys[k]] !== '') return row[keys[k]] }
     return ''
+  }
+
+  // ─── BULK IMAGE IMPORT ─────────────────────────────────────
+  function compressImageBlob(blob, maxBytes, callback) {
+    var reader = new FileReader()
+    reader.onload = function (ev) {
+      var img = new Image()
+      img.onload = function () {
+        var canvas = document.createElement('canvas')
+        var maxDim = 1200; var w = img.width; var h = img.height
+        if (w > maxDim || h > maxDim) { if (w > h) { h = Math.round(h * maxDim / w); w = maxDim } else { w = Math.round(w * maxDim / h); h = maxDim } }
+        canvas.width = w; canvas.height = h
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h)
+        var q = 0.8; var dataUrl = canvas.toDataURL('image/jpeg', q)
+        while (dataUrl.length * 0.75 > maxBytes && q > 0.1) { q -= 0.1; dataUrl = canvas.toDataURL('image/jpeg', q) }
+        fetch(dataUrl).then(function (res) { return res.blob() }).then(callback).catch(function () { callback(blob) })
+      }
+      img.onerror = function () { callback(blob) }
+      img.src = ev.target.result
+    }
+    reader.readAsDataURL(blob)
+  }
+
+  async function parseBulkImageZip(e) {
+    var file = e.target.files?.[0]
+    if (!file) return
+    e.target.value = ''
+    if (file.size > 500 * 1024 * 1024) { alert('ZIP too large (max 500MB)'); return }
+    try {
+      var mod = await import('jszip')
+      var JSZip = mod.default || mod
+      var zip = await JSZip.loadAsync(file)
+      var entries = []
+      zip.forEach(function (relPath, entry) {
+        if (entry.dir) return
+        if (relPath.indexOf('__MACOSX') !== -1) return
+        var basename = relPath.split('/').pop()
+        if (!basename || basename.charAt(0) === '.') return
+        var m = basename.match(/^(.+?)\.(jpe?g|png|webp|gif)$/i)
+        if (!m) return
+        entries.push({ invId: m[1].trim(), ext: m[2].toLowerCase(), entry: entry, basename: basename })
+      })
+      if (entries.length === 0) { alert('No image files found in ZIP (jpg/jpeg/png/webp/gif).'); return }
+
+      var invMap = {}
+      items.forEach(function (it) {
+        if (it.inventory_id) invMap[String(it.inventory_id).toLowerCase()] = it
+      })
+
+      var matched = []; var unmatched = []; var seen = {}
+      entries.forEach(function (en) {
+        var key = en.invId.toLowerCase()
+        if (seen[key]) { seen[key].push(en.basename); return }
+        seen[key] = [en.basename]
+        var it = invMap[key]
+        if (it) matched.push(Object.assign({}, en, { item: it }))
+        else unmatched.push(en)
+      })
+      var duplicates = Object.keys(seen).filter(function (k) { return seen[k].length > 1 }).map(function (k) { return { key: k, files: seen[k] } })
+      var replacing = matched.filter(function (m) { return m.item.image_path }).length
+
+      setBulkImgModal({ file: file, matched: matched, unmatched: unmatched, duplicates: duplicates, replacing: replacing, total: entries.length })
+      setBulkImgProgress(null)
+    } catch (err) {
+      alert('Failed to read ZIP: ' + (err?.message || err))
+    }
+  }
+
+  async function runBulkImageImport() {
+    if (!bulkImgModal || bulkImgProcessing) return
+    setBulkImgProcessing(true)
+    var matched = bulkImgModal.matched
+    var done = 0; var failed = 0; var failedRows = []
+    var CHUNK = 4
+    for (var i = 0; i < matched.length; i += CHUNK) {
+      var batch = matched.slice(i, i + CHUNK)
+      var results = await Promise.all(batch.map(async function (m) {
+        try {
+          var rawBlob = await m.entry.async('blob')
+          var compressed = await new Promise(function (resolve) { compressImageBlob(rawBlob, 100 * 1024, resolve) })
+          var prefix = m.item._source === 'catering_store' ? 'catering' : 'inventory'
+          var tableName = m.item._source === 'catering_store' ? 'catering_store_items' : 'inventory_items'
+          var path = prefix + '/' + m.item.id + '_' + Date.now() + '.jpg'
+          var { error: upErr } = await supabase.storage.from('images').upload(path, compressed, { upsert: true, contentType: 'image/jpeg' })
+          if (upErr) throw upErr
+          var oldPath = m.item.image_path
+          var { error: updErr } = await supabase.from(tableName).update({ image_path: path }).eq('id', m.item.id)
+          if (updErr) throw updErr
+          if (oldPath && oldPath !== path) { try { await supabase.storage.from('images').remove([oldPath]) } catch (_) {} }
+          return { ok: true }
+        } catch (err) {
+          return { ok: false, invId: m.invId, basename: m.basename, reason: err?.message || 'Upload/update failed' }
+        }
+      }))
+      results.forEach(function (r) { if (r.ok) done++; else { failed++; failedRows.push(r) } })
+      setBulkImgProgress({ done: done, failed: failed, total: matched.length, failedRows: failedRows })
+    }
+    try { await logActivity('IMAGE_BULK_IMPORT', done + ' updated | ' + failed + ' failed | ' + bulkImgModal.unmatched.length + ' unmatched') } catch (_) {}
+    setBulkImgProcessing(false)
+    loadData()
   }
 
   async function runImport() {
@@ -812,6 +915,10 @@ function AdminItems({ profile }) {
           📤 Import
           <input type="file" accept=".csv" onChange={parseImportFile} className="hidden" />
         </label>
+        <label className="px-3 py-2.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-medium cursor-pointer">
+          🖼️ Bulk Images
+          <input type="file" accept=".zip,application/zip,application/x-zip-compressed" onChange={parseBulkImageZip} className="hidden" />
+        </label>
         <button onClick={downloadTemplate}
           className="px-3 py-2.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-medium">📋 Template</button>
       </div>
@@ -1191,6 +1298,85 @@ function AdminItems({ profile }) {
               <button onClick={importProgress && !importing ? function () { setImportModal(null); setImportProgress(null) } : runImport} disabled={importing}
                 className="px-6 py-2 text-sm text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors font-medium disabled:opacity-50">
                 {importing ? 'Importing...' : importProgress ? 'Done' : 'Start Import'}</button>
+            </div>
+          </div>
+        )}
+      </Modal>
+      {/* Bulk image import modal */}
+      <Modal open={!!bulkImgModal} onClose={function () { if (!bulkImgProcessing) { setBulkImgModal(null); setBulkImgProgress(null) } }} title="Bulk Image Import">
+        {bulkImgModal && (
+          <div className="space-y-4">
+            <div className="bg-gray-50 rounded-lg p-3">
+              <p className="text-sm font-medium text-gray-800">{bulkImgModal.file.name}</p>
+              <p className="text-xs text-gray-500 mt-1">{bulkImgModal.total} image{bulkImgModal.total !== 1 ? 's' : ''} in ZIP</p>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              <div className="bg-green-50 border border-green-200 rounded-lg p-2 text-center">
+                <div className="text-lg font-bold text-green-700">{bulkImgModal.matched.length}</div>
+                <div className="text-[10px] font-bold text-green-700 uppercase tracking-wider">Matched</div>
+              </div>
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-2 text-center">
+                <div className="text-lg font-bold text-amber-700">{bulkImgModal.replacing}</div>
+                <div className="text-[10px] font-bold text-amber-700 uppercase tracking-wider">Replacing</div>
+              </div>
+              <div className="bg-red-50 border border-red-200 rounded-lg p-2 text-center">
+                <div className="text-lg font-bold text-red-700">{bulkImgModal.unmatched.length}</div>
+                <div className="text-[10px] font-bold text-red-700 uppercase tracking-wider">Unmatched</div>
+              </div>
+            </div>
+            <p className="text-[11px] text-gray-500">
+              Filename must match inventory ID (e.g. <span className="font-mono">CS-994.jpg</span> → item with ID <span className="font-mono">CS-994</span>). Case-insensitive. Auto-compressed to ~100KB. Existing images are replaced.
+            </p>
+            {bulkImgModal.unmatched.length > 0 && (
+              <details className="text-xs">
+                <summary className="cursor-pointer text-amber-700 font-medium">Unmatched files ({bulkImgModal.unmatched.length})</summary>
+                <div className="mt-1 bg-amber-50 border border-amber-100 rounded p-2 max-h-32 overflow-y-auto">
+                  {bulkImgModal.unmatched.slice(0, 30).map(function (u, i) {
+                    return <div key={i} className="font-mono text-[10px] text-amber-800">{u.basename}</div>
+                  })}
+                  {bulkImgModal.unmatched.length > 30 && <div className="text-[10px] text-amber-600 mt-1">+ {bulkImgModal.unmatched.length - 30} more</div>}
+                </div>
+              </details>
+            )}
+            {bulkImgModal.duplicates.length > 0 && (
+              <details className="text-xs">
+                <summary className="cursor-pointer text-red-700 font-medium">Duplicate IDs in ZIP ({bulkImgModal.duplicates.length}) — first wins</summary>
+                <div className="mt-1 bg-red-50 border border-red-100 rounded p-2 max-h-32 overflow-y-auto">
+                  {bulkImgModal.duplicates.slice(0, 20).map(function (d, i) {
+                    return <div key={i} className="font-mono text-[10px] text-red-800">{d.key}: {d.files.join(', ')}</div>
+                  })}
+                </div>
+              </details>
+            )}
+            {bulkImgProgress && (
+              <div className="bg-gray-50 rounded-lg p-3">
+                <div className="flex justify-between text-sm mb-1">
+                  <span className="font-medium text-gray-700">{bulkImgProgress.done + bulkImgProgress.failed} / {bulkImgProgress.total}</span>
+                  <span className="text-gray-500">{bulkImgProgress.done} ok · {bulkImgProgress.failed} failed</span>
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-2">
+                  <div className="bg-indigo-600 h-2 rounded-full transition-all" style={{ width: (bulkImgProgress.total ? (((bulkImgProgress.done + bulkImgProgress.failed) / bulkImgProgress.total) * 100) : 0) + '%' }}></div>
+                </div>
+                {bulkImgProgress.failedRows && bulkImgProgress.failedRows.length > 0 && (
+                  <details className="mt-2 text-xs">
+                    <summary className="cursor-pointer text-red-700 font-medium">Failed ({bulkImgProgress.failedRows.length})</summary>
+                    <div className="mt-1 max-h-32 overflow-y-auto">
+                      {bulkImgProgress.failedRows.slice(0, 20).map(function (f, i) {
+                        return <div key={i} className="text-[10px] text-red-800"><span className="font-mono">{f.basename}</span> — {f.reason}</div>
+                      })}
+                    </div>
+                  </details>
+                )}
+              </div>
+            )}
+            <div className="flex gap-3 justify-end pt-1">
+              <button onClick={function () { setBulkImgModal(null); setBulkImgProgress(null) }} disabled={bulkImgProcessing}
+                className="px-4 py-2 text-sm text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors font-medium disabled:opacity-50">
+                {bulkImgProgress && !bulkImgProcessing ? 'Close' : 'Cancel'}</button>
+              <button onClick={bulkImgProgress && !bulkImgProcessing ? function () { setBulkImgModal(null); setBulkImgProgress(null) } : runBulkImageImport}
+                disabled={bulkImgProcessing || bulkImgModal.matched.length === 0}
+                className="px-6 py-2 text-sm text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors font-medium disabled:opacity-50">
+                {bulkImgProcessing ? 'Uploading...' : bulkImgProgress ? 'Done' : 'Upload ' + bulkImgModal.matched.length + ' Image' + (bulkImgModal.matched.length !== 1 ? 's' : '')}</button>
             </div>
           </div>
         )}
