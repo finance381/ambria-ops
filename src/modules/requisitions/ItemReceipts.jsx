@@ -57,7 +57,7 @@ function ItemReceipts({ profile, onCountChange }) {
       {receipts.map(function (r) {
         var ir = r.item_receipt || {}
         return (
-          <div key={r.id} onClick={function () { setActiveReceipt(r) }}
+          <div key={r.id + '_' + r.receipt_index} onClick={function () { setActiveReceipt(r) }}
             className="bg-white border border-gray-200 rounded-xl p-4 hover:shadow-md active:bg-gray-50 cursor-pointer transition-all">
             <div className="flex items-start justify-between mb-1">
               <div className="flex-1 min-w-0">
@@ -68,7 +68,7 @@ function ItemReceipts({ profile, onCountChange }) {
               </div>
               <div className="text-right ml-2 flex-shrink-0">
                 <p className="text-sm font-bold text-indigo-600">{ir.qty} {ir.unit}</p>
-                <p className="text-[11px] text-gray-400">{formatPoints(r.amount_paise)}</p>
+                <p className="text-[11px] text-gray-400">{formatPoints(r.line_amount_paise || r.amount_paise)}</p>
               </div>
             </div>
             <div className="flex items-center gap-2 flex-wrap mt-1">
@@ -154,6 +154,7 @@ function ReceiveModal({ receipt, profile, onClose, onDone }) {
     setSaving(true)
     var { error: err } = await supabase.rpc('receive_expense_item', {
       p_expense_id: receipt.id,
+      p_receipt_index: receipt.receipt_index,
       p_item_id: matchedId,
       p_qty: Number(receiveQty),
       p_source: matchedSource,
@@ -171,6 +172,7 @@ function ReceiveModal({ receipt, profile, onClose, onDone }) {
     setSaving(true)
     var { error: err } = await supabase.rpc('cancel_expense_item_receipt', {
       p_expense_id: receipt.id,
+      p_receipt_index: receipt.receipt_index,
       p_reason: cancelReason.trim(),
     })
     if (err) { setError(err.message); setSaving(false); return }
@@ -185,6 +187,7 @@ function ReceiveModal({ receipt, profile, onClose, onDone }) {
     var source = tableName === 'catering_store_items' ? 'catering_store' : 'inventory'
     var { error: err } = await supabase.rpc('link_expense_to_new_item', {
       p_expense_id: receipt.id,
+      p_receipt_index: receipt.receipt_index,
       p_new_item_id: savedItem.id,
       p_source: source,
     })

@@ -22,18 +22,26 @@ function makeEntry() {
     audioUrl: '',
     recording: false,
     isItemPurchase: false,
+    items: [makeItem()]
+  }
+}
+
+function makeAllocation() {
+  return { departmentId: '', subDepartmentId: '', venueId: '', amountPaise: '' }
+}
+
+function makeItem() {
+  return {
+    _key: Date.now() + '_' + Math.random().toString(36).slice(2, 8),
     itemQuery: '',
     itemMatchedId: null,
     itemMatchedSource: null,
     itemMatchedCategoryId: null,
     itemQty: '',
     itemUnit: 'Pieces',
-    itemNotes: ''
+    itemNotes: '',
+    itemRate: ''
   }
-}
-
-function makeAllocation() {
-  return { departmentId: '', subDepartmentId: '', venueId: '', amountPaise: '' }
 }
 
 function ExpenseForm({ profile, onDone }) {
@@ -56,7 +64,7 @@ function ExpenseForm({ profile, onDone }) {
   var [error, setError] = useState('')
   var [success, setSuccess] = useState('')
   var [zoomImg, setZoomImg] = useState('')
-  var [itemSearchIdx, setItemSearchIdx] = useState(-1)
+  var [itemSearchKey, setItemSearchKey] = useState('')
   var [itemMatches, setItemMatches] = useState([])
   var itemSearchTimer = useRef(null)
 
@@ -229,37 +237,66 @@ function ExpenseForm({ profile, onDone }) {
       var on = !e.isItemPurchase
       return Object.assign({}, e, {
         isItemPurchase: on,
-        itemQuery: on ? e.itemQuery : '',
-        itemMatchedId: on ? e.itemMatchedId : null,
-        itemMatchedSource: on ? e.itemMatchedSource : null,
-        itemMatchedCategoryId: on ? e.itemMatchedCategoryId : null,
-        itemQty: on ? e.itemQty : '',
-        itemUnit: on ? e.itemUnit : 'Pieces',
-        itemNotes: on ? e.itemNotes : ''
+        items: on ? (e.items && e.items.length > 0 ? e.items : [makeItem()]) : [makeItem()]
       })
     })
     setEntries(updated)
-    if (itemSearchIdx === idx) { setItemMatches([]); setItemSearchIdx(-1) }
+    setItemMatches([])
+    setItemSearchKey('')
   }
 
-  function updateItemField(idx, field, val) {
+  function computeItemsTotal(entry) {
+    if (!entry || !entry.items) return 0
+    var total = 0
+    entry.items.forEach(function (it) {
+      var qty = Number(it.itemQty) || 0
+      var rate = Number(it.itemRate) || 0
+      total += qty * rate
+    })
+    return total
+  }
+
+  function addItem(entryIdx) {
     var updated = entries.map(function (e, i) {
-      if (i !== idx) return e
+      if (i !== entryIdx) return e
+      return Object.assign({}, e, { items: e.items.concat([makeItem()]) })
+    })
+    setEntries(updated)
+  }
+
+  function removeItem(entryIdx, itemIdx) {
+    var updated = entries.map(function (e, i) {
+      if (i !== entryIdx) return e
+      if (e.items.length <= 1) return e
+      return Object.assign({}, e, { items: e.items.filter(function (_, j) { return j !== itemIdx }) })
+    })
+    setEntries(updated)
+    var key = entryIdx + '_' + itemIdx
+    if (itemSearchKey === key) { setItemMatches([]); setItemSearchKey('') }
+  }
+
+  function updateItem(entryIdx, itemIdx, field, val) {
+    var updated = entries.map(function (e, i) {
+      if (i !== entryIdx) return e
       var copy = Object.assign({}, e)
-      copy[field] = val
-      // Typing overrides a previous match
-      if (field === 'itemQuery') {
-        copy.itemMatchedId = null
-        copy.itemMatchedSource = null
-        copy.itemMatchedCategoryId = null
-      }
+      copy.items = e.items.map(function (it, j) {
+        if (j !== itemIdx) return it
+        var ic = Object.assign({}, it)
+        ic[field] = val
+        if (field === 'itemQuery') {
+          ic.itemMatchedId = null
+          ic.itemMatchedSource = null
+          ic.itemMatchedCategoryId = null
+        }
+        return ic
+      })
       return copy
     })
     setEntries(updated)
   }
 
-  function searchInventoryItems(entryIdx, term) {
-    setItemSearchIdx(entryIdx)
+  function searchInventoryItems(entryIdx, itemIdx, term) {
+    setItemSearchKey(entryIdx + '_' + itemIdx)
     if (itemSearchTimer.current) clearTimeout(itemSearchTimer.current)
     if (!term || term.trim().length < 2) { setItemMatches([]); return }
     itemSearchTimer.current = setTimeout(function () {
@@ -275,20 +312,25 @@ function ExpenseForm({ profile, onDone }) {
     }, 300)
   }
 
-  function pickItemMatch(entryIdx, item) {
+  function pickItemMatch(entryIdx, itemIdx, item) {
     var updated = entries.map(function (e, i) {
       if (i !== entryIdx) return e
-      return Object.assign({}, e, {
-        itemQuery: item.name,
-        itemMatchedId: item.id,
-        itemMatchedSource: item._source,
-        itemMatchedCategoryId: item.category_id || null,
-        itemUnit: item.unit || e.itemUnit
+      var copy = Object.assign({}, e)
+      copy.items = e.items.map(function (it, j) {
+        if (j !== itemIdx) return it
+        return Object.assign({}, it, {
+          itemQuery: item.name,
+          itemMatchedId: item.id,
+          itemMatchedSource: item._source,
+          itemMatchedCategoryId: item.category_id || null,
+          itemUnit: item.unit || it.itemUnit
+        })
       })
+      return copy
     })
     setEntries(updated)
     setItemMatches([])
-    setItemSearchIdx(-1)
+    setItemSearchKey('')
   }
 
   function duplicateEntry(idx) {
@@ -297,7 +339,10 @@ function ExpenseForm({ profile, onDone }) {
       _key: Date.now() + '_' + Math.random().toString(36).slice(2, 8),
       receiptFile: null, receiptPreview: '', audioBlob: null, audioUrl: '', recording: false,
       fieldValues: Object.assign({}, src.fieldValues),
-      allocations: src.allocations.map(function (a) { return Object.assign({}, a) })
+      allocations: src.allocations.map(function (a) { return Object.assign({}, a) }),
+      items: (src.items || []).map(function (it) {
+        return Object.assign({}, it, { _key: Date.now() + '_' + Math.random().toString(36).slice(2, 8) })
+      })
     })
     var updated = entries.slice()
     updated.splice(idx + 1, 0, dup)
@@ -421,7 +466,7 @@ function ExpenseForm({ profile, onDone }) {
       if (!e.expenseTypeId) return 'Entry ' + (i + 1) + ': Select expense type'
       if (!e.expenseSubTypeId) return 'Entry ' + (i + 1) + ': Select sub-type'
       if (!e.description.trim()) return 'Entry ' + (i + 1) + ': Add description'
-      if (!e.amount || Number(e.amount) <= 0) return 'Entry ' + (i + 1) + ': Enter valid amount'
+      if (!e.isItemPurchase && (!e.amount || Number(e.amount) <= 0)) return 'Entry ' + (i + 1) + ': Enter valid amount'
       if (!e.expenseDate) return 'Entry ' + (i + 1) + ': Select date'
       var fields = getSubTypeFields(e.expenseSubTypeId)
       for (var f = 0; f < fields.length; f++) {
@@ -430,9 +475,16 @@ function ExpenseForm({ profile, onDone }) {
         }
       }
       if (e.isItemPurchase) {
-        if (!e.itemQuery || !e.itemQuery.trim()) return 'Entry ' + (i + 1) + ': Item name required for physical item purchase'
-        if (!e.itemQty || Number(e.itemQty) <= 0) return 'Entry ' + (i + 1) + ': Item qty must be > 0'
-        if (!e.itemUnit) return 'Entry ' + (i + 1) + ': Item unit required'
+        if (!e.items || e.items.length === 0) return 'Entry ' + (i + 1) + ': Add at least one item'
+        for (var it = 0; it < e.items.length; it++) {
+          var im = e.items[it]
+          var itLabel = 'Entry ' + (i + 1) + ' \u00b7 Item ' + (it + 1)
+          if (!im.itemQuery || !im.itemQuery.trim()) return itLabel + ': Item name required'
+          if (!im.itemQty || Number(im.itemQty) <= 0) return itLabel + ': Qty must be > 0'
+          if (!im.itemUnit) return itLabel + ': Unit required'
+          if (im.itemRate === '' || im.itemRate === null || im.itemRate === undefined || Number(im.itemRate) < 0) return itLabel + ': Rate required'
+        }
+        if (computeItemsTotal(e) <= 0) return 'Entry ' + (i + 1) + ': Items total must be > 0'
       }
       if (!e.receiptFile && !e.audioBlob) return 'Entry ' + (i + 1) + ': Receipt image or voice note is required'
     }
@@ -455,24 +507,32 @@ function ExpenseForm({ profile, onDone }) {
     try {
       for (var i = 0; i < entries.length; i++) {
         var e = entries[i]
-        var paise = Math.round(Number(e.amount) * 100)
+        var paise = e.isItemPurchase
+          ? Math.round(computeItemsTotal(e) * 100)
+          : Math.round(Number(e.amount) * 100)
 
         try {
           var meta = Object.assign({}, e.fieldValues)
           if (e.isItemPurchase) {
-            meta.item_receipt = {
-              query: (e.itemQuery || '').trim(),
-              matched_item_id: e.itemMatchedId,
-              matched_source: e.itemMatchedSource,
-              matched_category_id: e.itemMatchedCategoryId,
-              qty: Number(e.itemQty),
-              unit: e.itemUnit,
-              notes: (e.itemNotes || '').trim() || null,
-              resulting_item_id: null,
-              received_by: null,
-              received_at: null,
-              cancel_reason: null
-            }
+            meta.item_receipts = e.items.map(function (im) {
+              var qtyN = Number(im.itemQty) || 0
+              var rateN = Number(im.itemRate) || 0
+              return {
+                query: (im.itemQuery || '').trim(),
+                matched_item_id: im.itemMatchedId,
+                matched_source: im.itemMatchedSource,
+                matched_category_id: im.itemMatchedCategoryId,
+                qty: qtyN,
+                unit: im.itemUnit,
+                notes: (im.itemNotes || '').trim() || null,
+                rate_paise: Math.round(rateN * 100),
+                line_total_paise: Math.round(qtyN * rateN * 100),
+                resulting_item_id: null,
+                received_by: null,
+                received_at: null,
+                cancel_reason: null
+              }
+            })
           }
           var payload = {
             user_id: profile.id,
@@ -694,35 +754,19 @@ function ExpenseForm({ profile, onDone }) {
                 })
               })}
 
-              {/* Amount + Tax + Date row */}
-              <div className="grid grid-cols-3 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Amount (pts)</label>
-                  <input type="number" inputMode="numeric" value={entry.amount}
-                    onChange={function (e) { updateEntry(idx, 'amount', e.target.value) }}
-                    placeholder="0" min="1"
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-300" style={{ fontSize: '16px' }} />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Tax (pts)</label>
-                  <input type="number" inputMode="numeric" value={entry.taxAmount}
-                    onChange={function (e) { updateEntry(idx, 'taxAmount', e.target.value) }}
-                    placeholder="0" min="0"
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-300" style={{ fontSize: '16px' }} />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Date</label>
-                  <input type="date" value={entry.expenseDate}
-                    onChange={function (e) { updateEntry(idx, 'expenseDate', e.target.value) }}
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-300" />
-                </div>
+              {/* Date */}
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Date</label>
+                <input type="date" value={entry.expenseDate}
+                  onChange={function (e) { updateEntry(idx, 'expenseDate', e.target.value) }}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-300" />
               </div>
 
               {/* Item purchase toggle + fields */}
               <div className={"border rounded-lg p-3 transition-colors " + (entry.isItemPurchase ? "border-indigo-200 bg-indigo-50/40" : "border-gray-100 bg-gray-50")}>
                 <div className="flex items-center justify-between">
                   <div>
-                    <label className="text-xs font-semibold text-gray-700">📦 This is for a physical item</label>
+                    <label className="text-xs font-semibold text-gray-700">📦 Item Select</label>
                     <p className="text-[10px] text-gray-400 mt-0.5">Item enters inventory via receiver</p>
                   </div>
                   <button type="button" onClick={function () { toggleItemPurchase(idx) }} className="flex items-center">
@@ -733,68 +777,106 @@ function ExpenseForm({ profile, onDone }) {
                 </div>
 
                 {entry.isItemPurchase && (
-                  <div className="mt-3 space-y-2.5">
-                    {/* Item name search */}
-                    <div className="relative">
-                      <label className="block text-xs font-medium text-gray-600 mb-1">Item Name <span className="text-red-500">*</span>{entry.itemMatchedId && <span className="ml-2 text-[10px] font-bold text-green-600">✓ Matched existing</span>}</label>
-                      <input type="text" value={entry.itemQuery}
-                        onChange={function (e) { updateItemField(idx, 'itemQuery', e.target.value); searchInventoryItems(idx, e.target.value) }}
-                        onFocus={function () { if (entry.itemQuery && entry.itemQuery.length >= 2) searchInventoryItems(idx, entry.itemQuery) }}
-                        placeholder="Search or type new item name..."
-                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-300 bg-white" style={{ fontSize: '16px' }} />
-                      {itemSearchIdx === idx && itemMatches.length > 0 && (
-                        <div className="absolute z-20 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-56 overflow-y-auto">
-                          {itemMatches.map(function (m) {
-                            return (
-                              <button key={m._source + '_' + m.id} type="button"
-                                onMouseDown={function (evt) { evt.preventDefault(); pickItemMatch(idx, m) }}
-                                className="w-full text-left px-3 py-2 hover:bg-indigo-50 border-b border-gray-50 last:border-0">
-                                <div className="text-sm text-gray-800 font-medium truncate">{m.name}</div>
-                                <div className="text-[10px] text-gray-400">{m._source === 'catering_store' ? 'Catering Store' : 'Inventory'}{m.unit ? ' · ' + m.unit : ''}</div>
-                              </button>
-                            )
-                          })}
+                  <div className="mt-3 space-y-3">
+                    {entry.items.map(function (im, iIdx) {
+                      var key = idx + '_' + iIdx
+                      var lineTotal = (Number(im.itemQty) || 0) * (Number(im.itemRate) || 0)
+                      return (
+                        <div key={im._key} className="border border-indigo-100 rounded-lg bg-white p-3 space-y-2.5">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] font-bold text-indigo-700">Item #{iIdx + 1}</span>
+                            {entry.items.length > 1 && (
+                              <button type="button" onClick={function () { removeItem(idx, iIdx) }}
+                                className="text-xs px-2 py-0.5 rounded bg-red-50 text-red-500 hover:bg-red-100" title="Remove item">✕</button>
+                            )}
+                          </div>
+
+                          {/* Item name search */}
+                          <div className="relative">
+                            <label className="block text-xs font-medium text-gray-600 mb-1">Item Name <span className="text-red-500">*</span>{im.itemMatchedId && <span className="ml-2 text-[10px] font-bold text-green-600">✓ Matched existing</span>}</label>
+                            <input type="text" value={im.itemQuery}
+                              onChange={function (e) { updateItem(idx, iIdx, 'itemQuery', e.target.value); searchInventoryItems(idx, iIdx, e.target.value) }}
+                              onFocus={function () { if (im.itemQuery && im.itemQuery.length >= 2) searchInventoryItems(idx, iIdx, im.itemQuery) }}
+                              placeholder="Search or type new item name..."
+                              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-300 bg-white" style={{ fontSize: '16px' }} />
+                            {itemSearchKey === key && itemMatches.length > 0 && (
+                              <div className="absolute z-20 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-56 overflow-y-auto">
+                                {itemMatches.map(function (m) {
+                                  return (
+                                    <button key={m._source + '_' + m.id} type="button"
+                                      onMouseDown={function (evt) { evt.preventDefault(); pickItemMatch(idx, iIdx, m) }}
+                                      className="w-full text-left px-3 py-2 hover:bg-indigo-50 border-b border-gray-50 last:border-0">
+                                      <div className="text-sm text-gray-800 font-medium truncate">{m.name}</div>
+                                      <div className="text-[10px] text-gray-400">{m._source === 'catering_store' ? 'Catering Store' : 'Inventory'}{m.unit ? ' · ' + m.unit : ''}</div>
+                                    </button>
+                                  )
+                                })}
+                              </div>
+                            )}
+                            {im.itemQuery && !im.itemMatchedId && itemMatches.length === 0 && itemSearchKey === key && im.itemQuery.length >= 2 && (
+                              <p className="text-[10px] text-amber-600 mt-1">No match — receiver will create as new inventory item</p>
+                            )}
+                          </div>
+
+                          {/* Qty + Unit */}
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="block text-xs font-medium text-gray-600 mb-1">Qty <span className="text-red-500">*</span></label>
+                              <input type="number" inputMode="numeric" value={im.itemQty}
+                                onChange={function (e) { updateItem(idx, iIdx, 'itemQty', e.target.value) }}
+                                placeholder="0" min="0" step="any"
+                                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-300 bg-white" style={{ fontSize: '16px' }} />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-gray-600 mb-1">Unit</label>
+                              <select value={im.itemUnit}
+                                onChange={function (e) { updateItem(idx, iIdx, 'itemUnit', e.target.value) }}
+                                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-indigo-300" style={{ fontSize: '16px' }}>
+                                {['Pieces', 'Nos', 'Sets', 'Pairs', 'Dozens', 'Kg', 'Grams', 'Liters', 'ML', 'Meters', 'Feet', 'Rolls', 'Packets', 'Bags', 'Boxes', 'Cartons', 'Bottles', 'Sheets', 'Reams'].map(function (u) {
+                                  return <option key={u} value={u}>{u}</option>
+                                })}
+                              </select>
+                            </div>
+                          </div>
+
+                          {/* Notes + Rate */}
+                          <div className="grid grid-cols-3 gap-2">
+                            <div className="col-span-2">
+                              <label className="block text-xs font-medium text-gray-600 mb-1">Notes <span className="text-gray-400">(brand, size, spec)</span></label>
+                              <input type="text" value={im.itemNotes}
+                                onChange={function (e) { updateItem(idx, iIdx, 'itemNotes', e.target.value) }}
+                                placeholder="e.g. White ceramic, 10-inch round"
+                                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-300 bg-white" style={{ fontSize: '16px' }} />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-gray-600 mb-1">Rate (pts) <span className="text-red-500">*</span></label>
+                              <input type="number" inputMode="decimal" value={im.itemRate}
+                                onChange={function (e) { updateItem(idx, iIdx, 'itemRate', e.target.value) }}
+                                placeholder="0" min="0" step="any"
+                                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-300 bg-white" style={{ fontSize: '16px' }} />
+                            </div>
+                          </div>
+
+                          {lineTotal > 0 && (
+                            <div className="flex items-center justify-end pt-1 border-t border-gray-100">
+                              <span className="text-[11px] text-gray-500">Line total:&nbsp;</span>
+                              <span className="text-xs font-bold text-indigo-700">{lineTotal.toLocaleString('en-IN', { maximumFractionDigits: 2 })} pts</span>
+                            </div>
+                          )}
                         </div>
-                      )}
-                      {entry.itemQuery && !entry.itemMatchedId && itemMatches.length === 0 && itemSearchIdx === idx && entry.itemQuery.length >= 2 && (
-                        <p className="text-[10px] text-amber-600 mt-1">No match — receiver will create as new inventory item</p>
-                      )}
-                    </div>
+                      )
+                    })}
 
-                    {/* Qty + Unit */}
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">Qty <span className="text-red-500">*</span></label>
-                        <input type="number" inputMode="numeric" value={entry.itemQty}
-                          onChange={function (e) { updateItemField(idx, 'itemQty', e.target.value) }}
-                          placeholder="0" min="0" step="any"
-                          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-300 bg-white" style={{ fontSize: '16px' }} />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">Unit</label>
-                        <select value={entry.itemUnit}
-                          onChange={function (e) { updateItemField(idx, 'itemUnit', e.target.value) }}
-                          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-indigo-300" style={{ fontSize: '16px' }}>
-                          {['Pieces', 'Nos', 'Sets', 'Pairs', 'Dozens', 'Kg', 'Grams', 'Liters', 'ML', 'Meters', 'Feet', 'Rolls', 'Packets', 'Bags', 'Boxes', 'Cartons', 'Bottles', 'Sheets', 'Reams'].map(function (u) {
-                            return <option key={u} value={u}>{u}</option>
-                          })}
-                        </select>
-                      </div>
-                    </div>
-
-                    {/* Notes */}
-                    <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">Notes <span className="text-gray-400">(brand, size, spec)</span></label>
-                      <input type="text" value={entry.itemNotes}
-                        onChange={function (e) { updateItemField(idx, 'itemNotes', e.target.value) }}
-                        placeholder="e.g. White ceramic, 10-inch round"
-                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-300 bg-white" style={{ fontSize: '16px' }} />
-                    </div>
+                    <button type="button" onClick={function () { addItem(idx) }}
+                      className="w-full py-2 rounded-lg border-2 border-dashed border-indigo-300 text-indigo-600 text-xs font-semibold hover:bg-indigo-50 transition-colors">
+                      + Add Item
+                    </button>
                   </div>
                 )}
               </div>
 
-              {/* Allocations */}
+              {/* Allocations — hidden in Item Select mode */}
+              {!entry.isItemPurchase && (
               <div className="border border-gray-100 rounded-lg bg-gray-50 p-3">
                 <div className="flex items-center justify-between mb-2">
                   <label className="text-xs font-semibold text-gray-600">Allocations</label>
@@ -854,6 +936,44 @@ function ExpenseForm({ profile, onDone }) {
                     )
                   })}
                 </div>
+              </div>
+              )}
+
+              {/* Amount + GST + Gross Total — bottom */}
+              <div className="border border-amber-200 rounded-lg bg-amber-50/40 p-3 space-y-2">
+                {entry.isItemPurchase && (
+                  <p className="text-[10px] text-amber-700 font-semibold">Amount auto-calculated from items × rate</p>
+                )}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Amount (pts) <span className="text-red-500">*</span></label>
+                    <input type="number" inputMode="decimal"
+                      value={entry.isItemPurchase ? computeItemsTotal(entry).toString() : entry.amount}
+                      onChange={function (e) { if (!entry.isItemPurchase) updateEntry(idx, 'amount', e.target.value) }}
+                      readOnly={entry.isItemPurchase}
+                      placeholder="0" min="0" step="any"
+                      className={"w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-amber-300 " + (entry.isItemPurchase ? "border-amber-200 bg-amber-100/60 text-gray-700 font-semibold cursor-not-allowed" : "border-gray-200 bg-white")}
+                      style={{ fontSize: '16px' }} />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">GST Amount (pts)</label>
+                    <input type="number" inputMode="decimal" value={entry.taxAmount}
+                      onChange={function (e) { updateEntry(idx, 'taxAmount', e.target.value) }}
+                      placeholder="0" min="0" step="any"
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-amber-300" style={{ fontSize: '16px' }} />
+                  </div>
+                </div>
+                {(function () {
+                  var amt = entry.isItemPurchase ? computeItemsTotal(entry) : (Number(entry.amount) || 0)
+                  var gst = Number(entry.taxAmount) || 0
+                  var gross = amt + gst
+                  return (
+                    <div className="flex items-center justify-between pt-2 border-t border-amber-200">
+                      <span className="text-xs font-semibold text-gray-600">Gross Total</span>
+                      <span className="text-base font-bold text-amber-800">{gross.toLocaleString('en-IN', { maximumFractionDigits: 2 })} pts</span>
+                    </div>
+                  )
+                })()}
               </div>
 
               {/* Receipt */}
