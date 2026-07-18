@@ -190,7 +190,7 @@ function AdminItems({ profile }) {
 
   function exportItems() {
     var headers = ['ID', 'Inventory ID', 'Name', 'Name Hindi', 'Category', 'Sub-category', 'Type', 'Qty', 'Unit', 'Department', 'Description', 'Status', 'Source', 'Brand', 'Pack Size Qty', 'Pack Size Unit', 'Min Order / Season Reorder', 'Reorder / Off Season Reorder', 'Rate (₹)', 'Is Asset', 'Dimensions', 'Venue Code', 'Sub-Venue', 'Venue Qty', 'Image URL', 'Date Added']
-    var rows = filtered.map(function (i) {
+    var rows = sorted.map(function (i) {
       var allocs = i.venue_allocations || []
       if (venueFilter.length > 0) {
         allocs = allocs.filter(function (va) { return va.venues && venueFilter.indexOf(va.venues.code) !== -1 })
@@ -232,7 +232,7 @@ function AdminItems({ profile }) {
     if (venueFilter.length) filterParts.push({ label: 'Venue', value: venueFilter.join(', ') })
     if (subVenueFilter.length) filterParts.push({ label: 'Sub-venue', value: subVenueFilter.map(function (svid) { var sv = subVenues.find(function (x) { return String(x.id) === svid }); return sv ? sv.name : svid }).join(', ') })
     if (deptFilter.length) filterParts.push({ label: 'Alloc Dept', value: deptFilter.join(', ') })
-    var rows = filtered.map(function (item, idx) {
+    var rows = sorted.map(function (item, idx) {
       var allocs = item.venue_allocations || []
       if (venueFilter.length > 0) allocs = allocs.filter(function (va) { return va.venues && venueFilter.indexOf(va.venues.code) !== -1 })
       if (subVenueFilter.length > 0) allocs = allocs.filter(function (va) { return subVenueFilter.indexOf(String(va.sub_venue_id || '')) !== -1 })

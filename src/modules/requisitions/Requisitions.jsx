@@ -54,8 +54,8 @@ function Requisitions({ profile, onBack }) {
 
   async function loadReceiptsCount() {
     if (!isItemReceiver) return
-    var { data, error } = await supabase.rpc('list_pending_expense_receipts', { p_limit: 100, p_offset: 0 })
-    if (!error) setPendingReceiptsCount((data || []).length)
+    var { data, error } = await supabase.rpc('count_pending_expense_receipts')
+    if (!error) setPendingReceiptsCount(Number(data) || 0)
   }
 
   useEffect(function () { loadReceiptsCount() }, [])
