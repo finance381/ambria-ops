@@ -183,10 +183,12 @@ function EmployeeDetail({ employeeId, jobDepartments, managers, profile, onEdit,
             <div className="col-span-2 flex flex-wrap gap-2">
               <DocButton label="Aadhaar Card" hasFile={!!row.aadhaar_file_path}
                 onOpen={function () { openDoc('aadhaar') }}
-                loading={docLoading === 'aadhaar'} />
+                loading={docLoading === 'aadhaar'}
+                expiryDate={row.aadhaar_expiry_date} />
               <DocButton label="PAN Card" hasFile={!!row.pan_file_path}
                 onOpen={function () { openDoc('pan') }}
-                loading={docLoading === 'pan'} />
+                loading={docLoading === 'pan'}
+                expiryDate={row.pan_expiry_date} />
             </div>
           </Section>
         </>
@@ -221,7 +223,7 @@ function Row({ label, value, span2, mono }) {
   )
 }
 
-function DocButton({ label, hasFile, onOpen, loading }) {
+function DocButton({ label, hasFile, onOpen, loading, expiryDate }) {
   if (!hasFile) {
     return (
       <div className="px-3 py-2 border border-gray-200 rounded-md text-xs text-gray-400 bg-gray-50">
@@ -229,11 +231,24 @@ function DocButton({ label, hasFile, onOpen, loading }) {
       </div>
     )
   }
+  var expiryStatus = null
+  if (expiryDate) {
+    var _today = new Date().toISOString().split('T')[0]
+    var _diff = Math.floor((new Date(expiryDate) - new Date(_today)) / 86400000)
+    if (_diff < 0) expiryStatus = { cls: 'text-red-600', label: 'Expired ' + expiryDate }
+    else if (_diff <= 30) expiryStatus = { cls: 'text-amber-600', label: _diff + 'd left · ' + expiryDate }
+    else expiryStatus = { cls: 'text-gray-500', label: 'Exp: ' + expiryDate }
+  }
   return (
-    <button onClick={onOpen} disabled={loading}
-      className="px-3 py-2 border border-indigo-200 bg-indigo-50 rounded-md text-xs font-medium text-indigo-700 hover:bg-indigo-100 disabled:opacity-50">
-      {loading ? '⏳ ' + label : '👁 View ' + label}
-    </button>
+    <div className="flex flex-col gap-1">
+      <button onClick={onOpen} disabled={loading}
+        className="px-3 py-2 border border-indigo-200 bg-indigo-50 rounded-md text-xs font-medium text-indigo-700 hover:bg-indigo-100 disabled:opacity-50">
+        {loading ? '⏳ ' + label : '👁 View ' + label}
+      </button>
+      {expiryStatus && (
+        <span className={"text-[10px] " + expiryStatus.cls}>⏱ {expiryStatus.label}</span>
+      )}
+    </div>
   )
 }
 

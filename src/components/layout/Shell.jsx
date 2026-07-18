@@ -22,7 +22,7 @@ import MyProfile from '../../modules/employees/MyProfile'
 var GROUPS = [
   {
     key: 'me', label: 'My Profile', icon: '🪪', items: [
-      { key: 'feature_my_profile', label: 'My Profile', icon: '🪪', tab: 'my_profile', always: true },
+      { key: 'feature_my_profile', label: 'My Profile', icon: '🪪', tab: 'my_profile' },
     ]
   },
   {

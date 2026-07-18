@@ -36,6 +36,12 @@ function Employees({ profile }) {
   var [viewRow, setViewRow] = useState(null)
   var [showCreate, setShowCreate] = useState(false)
 
+  // CSV import
+  var [importModal, setImportModal] = useState(null)  // { rows, header, fileName }
+  var [importing, setImporting] = useState(false)
+  var [importProgress, setImportProgress] = useState(null) // { done, total }
+  var [importSummary, setImportSummary] = useState(null)   // { created, skipped, skippedRows }
+
   var isAdminOrHR = profile && (profile.role === 'admin' || profile.role === 'auditor')
 
   useRealtime(['employees', 'job_departments'], function () { if (!saving) loadAll() })
@@ -123,6 +129,214 @@ function Employees({ profile }) {
     )
   }
 
+  // ═══ CSV IMPORT ═══
+  function parseCsvLine(line) {
+    var out = []; var cur = ''; var inQ = false
+    for (var i = 0; i < line.length; i++) {
+      var ch = line[i]
+      if (ch === '"') {
+        if (inQ && line[i + 1] === '"') { cur += '"'; i++ } else { inQ = !inQ }
+      } else if (ch === ',' && !inQ) { out.push(cur); cur = '' }
+      else { cur += ch }
+    }
+    out.push(cur)
+    return out
+  }
+
+  function handleCsvFile(e) {
+    var file = e.target.files[0]
+    if (!file) return
+    e.target.value = ''
+    var reader = new FileReader()
+    reader.onload = function (ev) {
+      var text = ev.target.result
+      var lines = text.split(/\r?\n/).filter(function (l) { return l.trim() })
+      if (lines.length < 2) { alert('CSV must have header + at least 1 data row'); return }
+      var header = parseCsvLine(lines[0]).map(function (h) { return h.replace(/^\uFEFF/, '').trim().toLowerCase() })
+      var mustHave = ['full_name', 'dob', 'gender', 'father_name', 'marital_status',
+        'contact_number', 'personal_email', 'emergency_contact',
+        'present_address', 'permanent_address', 'doj', 'designation']
+      var missing = mustHave.filter(function (h) { return header.indexOf(h) === -1 })
+      if (missing.length > 0) {
+        alert('CSV missing required columns:\n' + missing.join(', ') + '\n\nDownload template for reference.')
+        return
+      }
+      var parsedRows = []
+      for (var r = 1; r < lines.length; r++) {
+        var cols = parseCsvLine(lines[r])
+        var row = {}
+        header.forEach(function (h, i) { row[h] = (cols[i] || '').trim() })
+        if (row.full_name) parsedRows.push(row)
+      }
+      if (parsedRows.length === 0) { alert('No valid data rows found'); return }
+      setImportModal({ rows: parsedRows, header: header, fileName: file.name })
+      setImportSummary(null); setImportProgress(null)
+    }
+    reader.readAsText(file, 'UTF-8')
+  }
+
+  function downloadTemplate() {
+    var headers = ['full_name', 'dob', 'gender', 'father_name', 'blood_group', 'marital_status',
+      'contact_number', 'personal_email', 'emergency_contact', 'present_address', 'permanent_address',
+      'employee_code', 'doj', 'probation_end_date', 'confirmation_date', 'designation',
+      'job_departments', 'work_location', 'status',
+      'aadhaar_number', 'pan_number', 'uan', 'esic', 'pt_state',
+      'bank_account_number', 'ifsc_code', 'bank_name', 'ctc_annual_rupees',
+      'aadhaar_expiry_date', 'pan_expiry_date']
+    var sample = ['John Doe', '1995-04-15', 'male', 'Robert Doe', 'O+', 'single',
+      '+919999999999', 'john@example.com', '+919888888888', 'Delhi, India', 'Delhi, India',
+      '', '2024-01-15', '', '', 'Coordinator',
+      'Kitchen; F&B Service', 'Pushpanjali', 'probation',
+      '', '', '', '', 'Delhi',
+      '', '', '', '',
+      '', '']
+    var csv = headers.join(',') + '\n' + sample.map(function (v) {
+      var s = String(v || '')
+      if (s.indexOf(',') !== -1 || s.indexOf('"') !== -1 || s.indexOf('\n') !== -1) return '"' + s.replace(/"/g, '""') + '"'
+      return s
+    }).join(',') + '\n'
+    var blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    var url = URL.createObjectURL(blob)
+    var a = document.createElement('a')
+    a.href = url; a.download = 'employees_import_template.csv'; a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  function validateRow(row) {
+    // Format checks matching DB CHECK constraints
+    if (row.dob && isNaN(new Date(row.dob).getTime())) return 'Invalid dob (use YYYY-MM-DD)'
+    if (row.doj && isNaN(new Date(row.doj).getTime())) return 'Invalid doj (use YYYY-MM-DD)'
+    if (['male', 'female', 'other'].indexOf(row.gender.toLowerCase()) === -1) return 'gender must be male/female/other'
+    if (['single', 'married', 'divorced', 'widowed', 'separated'].indexOf(row.marital_status.toLowerCase()) === -1) return 'marital_status invalid'
+    if (row.personal_email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(row.personal_email)) return 'personal_email format invalid'
+    if (row.aadhaar_number && !/^[0-9]{12}$/.test(row.aadhaar_number)) return 'aadhaar_number must be 12 digits'
+    if (row.pan_number && !/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(row.pan_number.toUpperCase())) return 'pan_number format invalid'
+    if (row.ifsc_code && !/^[A-Z]{4}0[A-Z0-9]{6}$/.test(row.ifsc_code.toUpperCase())) return 'ifsc_code format invalid'
+    if (row.status && ['active', 'probation', 'on_leave', 'terminated', 'resigned'].indexOf(row.status.toLowerCase()) === -1) return 'status invalid'
+    return null
+  }
+
+  async function runImport() {
+    if (!importModal || importing) return
+    setImporting(true)
+    var rowsToImport = importModal.rows
+    var created = 0; var skipped = 0; var skippedRows = []
+
+    // Preload existing emails/aadhaar/PAN for dedup
+    var { data: existing } = await supabase.from('employees')
+      .select('personal_email, aadhaar_number, pan_number')
+    var emailSet = {}, aadhaarSet = {}, panSet = {}
+    ;(existing || []).forEach(function (e) {
+      if (e.personal_email) emailSet[e.personal_email.toLowerCase()] = true
+      if (e.aadhaar_number) aadhaarSet[e.aadhaar_number] = true
+      if (e.pan_number) panSet[e.pan_number] = true
+    })
+
+    // Job dept name → id map
+    var jdNameMap = {}
+    jobDepartments.forEach(function (d) { jdNameMap[d.name.toLowerCase()] = d.id })
+
+    for (var i = 0; i < rowsToImport.length; i++) {
+      setImportProgress({ done: i, total: rowsToImport.length })
+      var row = rowsToImport[i]
+
+      var validationErr = validateRow(row)
+      if (validationErr) { skipped++; skippedRows.push({ row: i + 2, name: row.full_name, reason: validationErr }); continue }
+
+      var emailLower = (row.personal_email || '').toLowerCase()
+      if (emailLower && emailSet[emailLower]) { skipped++; skippedRows.push({ row: i + 2, name: row.full_name, reason: 'Email already exists' }); continue }
+      if (row.aadhaar_number && aadhaarSet[row.aadhaar_number]) { skipped++; skippedRows.push({ row: i + 2, name: row.full_name, reason: 'Aadhaar already exists' }); continue }
+      var panUpper = (row.pan_number || '').toUpperCase()
+      if (panUpper && panSet[panUpper]) { skipped++; skippedRows.push({ row: i + 2, name: row.full_name, reason: 'PAN already exists' }); continue }
+
+      // Resolve job departments from semicolon-separated names
+      var jdIds = []
+      if (row.job_departments) {
+        var names = row.job_departments.split(';').map(function (n) { return n.trim() }).filter(Boolean)
+        var missingJd = []
+        names.forEach(function (nm) {
+          var id = jdNameMap[nm.toLowerCase()]
+          if (id) { jdIds.push(id) } else { missingJd.push(nm) }
+        })
+        if (missingJd.length > 0) {
+          skipped++
+          skippedRows.push({ row: i + 2, name: row.full_name, reason: 'Unknown job_departments: ' + missingJd.join(', ') })
+          continue
+        }
+      }
+
+      var payload = {
+        full_name: row.full_name,
+        dob: row.dob,
+        gender: row.gender.toLowerCase(),
+        father_name: row.father_name,
+        blood_group: row.blood_group || null,
+        marital_status: row.marital_status.toLowerCase(),
+        contact_number: row.contact_number,
+        personal_email: row.personal_email,
+        emergency_contact: row.emergency_contact,
+        present_address: row.present_address,
+        permanent_address: row.permanent_address,
+        doj: row.doj,
+        probation_end_date: row.probation_end_date || null,
+        confirmation_date: row.confirmation_date || null,
+        designation: row.designation,
+        job_department_ids: jdIds,
+        work_location: row.work_location || null,
+        status: (row.status || 'probation').toLowerCase(),
+        aadhaar_number: row.aadhaar_number || null,
+        pan_number: panUpper || null,
+        uan: row.uan || null,
+        esic: row.esic || null,
+        pt_state: row.pt_state || null,
+        bank_account_number: row.bank_account_number || null,
+        ifsc_code: (row.ifsc_code || '').toUpperCase() || null,
+        bank_name: row.bank_name || null,
+        ctc_annual_paise: row.ctc_annual_rupees ? Math.round(Number(row.ctc_annual_rupees) * 100) : null,
+        aadhaar_expiry_date: row.aadhaar_expiry_date || null,
+        pan_expiry_date: row.pan_expiry_date || null,
+        created_by: profile?.id || null,
+      }
+      if (row.employee_code) payload.employee_code = row.employee_code
+
+      var { error: insErr } = await supabase.from('employees').insert(payload)
+      if (insErr) {
+        skipped++
+        skippedRows.push({ row: i + 2, name: row.full_name, reason: insErr.message })
+      } else {
+        created++
+        // Update dedup sets so batch dups within same file get caught
+        if (emailLower) emailSet[emailLower] = true
+        if (row.aadhaar_number) aadhaarSet[row.aadhaar_number] = true
+        if (panUpper) panSet[panUpper] = true
+      }
+    }
+
+    setImportProgress({ done: rowsToImport.length, total: rowsToImport.length })
+
+    try { await logActivity('EMPLOYEE_IMPORT_CSV', created + ' created, ' + skipped + ' skipped') } catch (_) {}
+
+    setImportSummary({ created: created, skipped: skipped, skippedRows: skippedRows })
+    setImporting(false)
+    loadAll()
+  }
+
+  function downloadSkippedCsv() {
+    if (!importSummary || !importSummary.skippedRows || importSummary.skippedRows.length === 0) return
+    function esc(v) {
+      var s = String(v == null ? '' : v)
+      if (s.indexOf(',') !== -1 || s.indexOf('"') !== -1 || s.indexOf('\n') !== -1) return '"' + s.replace(/"/g, '""') + '"'
+      return s
+    }
+    var rows = importSummary.skippedRows.map(function (s) { return [s.row, s.name || '', s.reason].map(esc).join(',') })
+    var csv = 'Row,Name,Reason\n' + rows.join('\n')
+    var blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    var url = URL.createObjectURL(blob)
+    var a = document.createElement('a')
+    a.href = url; a.download = 'employees_import_skipped.csv'; a.click()
+    URL.revokeObjectURL(url)
+  }
+
   if (loading) {
     return <p className="text-sm text-gray-400 text-center py-8">Loading...</p>
   }
@@ -158,11 +372,42 @@ function Employees({ profile }) {
           Show exited
         </label>
 
-        <button onClick={function () { setShowCreate(true) }}
-          className="ml-auto px-4 py-2 text-sm text-white bg-indigo-600 rounded-md hover:bg-indigo-700 font-medium">
-          + Add Employee
-        </button>
+        <div className="ml-auto flex items-center gap-2">
+          <button onClick={downloadTemplate}
+            title="Download CSV template"
+            className="px-3 py-2 text-xs font-medium text-gray-600 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
+            ⬇ Template
+          </button>
+          <label className="px-3 py-2 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 cursor-pointer">
+            📥 Import CSV
+            <input type="file" accept=".csv,text/csv" onChange={handleCsvFile} className="hidden" />
+          </label>
+          <button onClick={function () { setShowCreate(true) }}
+            className="px-4 py-2 text-sm text-white bg-indigo-600 rounded-md hover:bg-indigo-700 font-medium">
+            + Add Employee
+          </button>
+        </div>
       </div>
+
+      {importSummary && (
+        <div className="bg-indigo-50 border border-indigo-200 rounded-md px-3 py-2 flex items-center justify-between text-xs">
+          <div className="text-gray-700">
+            <span className="font-semibold text-indigo-700">Import done:</span>
+            <span className="ml-2">{importSummary.created} created</span>
+            {importSummary.skipped > 0 && <span className="ml-2 text-amber-700 font-medium">· {importSummary.skipped} skipped</span>}
+          </div>
+          <div className="flex items-center gap-2">
+            {importSummary.skippedRows && importSummary.skippedRows.length > 0 && (
+              <button onClick={downloadSkippedCsv}
+                className="px-2 py-1 text-xs font-medium bg-white border border-indigo-300 text-indigo-700 rounded hover:bg-indigo-100">
+                Download skipped CSV
+              </button>
+            )}
+            <button onClick={function () { setImportSummary(null) }}
+              className="text-gray-400 hover:text-gray-600 text-base leading-none">×</button>
+          </div>
+        </div>
+      )}
 
       {/* Summary bar */}
       <div className="text-[11px] text-gray-500 flex flex-wrap gap-x-4">
@@ -278,6 +523,58 @@ function Employees({ profile }) {
             profile={profile}
             canEdit={isAdminOrHR}
             onEdit={function (r) { setViewRow(null); setEditRow(r) }} />
+        )}
+      </Modal>
+
+      {/* Import CSV preview modal */}
+      <Modal open={!!importModal}
+        onClose={function () { if (!importing) { setImportModal(null); setImportProgress(null) } }}
+        title="Import Employees from CSV">
+        {importModal && (
+          <div className="space-y-4">
+            <div className="bg-gray-50 rounded-lg p-3">
+              <p className="text-sm font-medium text-gray-800">{importModal.fileName}</p>
+              <p className="text-xs text-gray-500 mt-1">{importModal.rows.length} data rows found</p>
+              <div className="flex flex-wrap gap-1 mt-2">
+                {importModal.header.slice(0, 12).map(function (h) {
+                  return <span key={h} className="text-[10px] bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded font-mono">{h}</span>
+                })}
+                {importModal.header.length > 12 && <span className="text-[10px] text-gray-400">+{importModal.header.length - 12} more</span>}
+              </div>
+            </div>
+
+            <div className="bg-blue-50 border border-blue-200 rounded-md p-3 text-xs text-blue-800 space-y-1">
+              <p><b>Create-only mode.</b> Existing employees (matched by personal_email, aadhaar_number, or pan_number) will be skipped.</p>
+              <p><b>Job departments</b> should be semicolon-separated names matching the master list exactly (e.g., <code className="bg-white px-1 rounded">Kitchen; F&B Service</code>).</p>
+              <p><b>Files</b> (Aadhaar/PAN images) are not imported. Upload them via edit afterwards.</p>
+              <p><b>Employee code</b> auto-generated when blank; explicit codes are kept as-is.</p>
+            </div>
+
+            {importProgress && (
+              <div>
+                <div className="flex items-center justify-between text-xs text-gray-600 mb-1">
+                  <span>Importing...</span>
+                  <span>{importProgress.done} / {importProgress.total}</span>
+                </div>
+                <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
+                  <div className="h-full bg-indigo-500 transition-all"
+                    style={{ width: (importProgress.total > 0 ? (importProgress.done * 100 / importProgress.total) : 0) + '%' }} />
+                </div>
+              </div>
+            )}
+
+            <div className="flex gap-3 justify-end">
+              <button onClick={function () { setImportModal(null); setImportProgress(null) }}
+                disabled={importing}
+                className="px-4 py-2 text-sm text-gray-600 bg-gray-100 rounded-md hover:bg-gray-200 disabled:opacity-50 transition-colors">
+                Cancel
+              </button>
+              <button onClick={runImport} disabled={importing}
+                className="px-4 py-2 text-sm text-white bg-indigo-600 rounded-md hover:bg-indigo-700 disabled:opacity-50 transition-colors font-medium">
+                {importing ? 'Importing...' : ('Import ' + importModal.rows.length + ' Rows')}
+              </button>
+            </div>
+          </div>
         )}
       </Modal>
     </div>

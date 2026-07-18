@@ -6,6 +6,9 @@ import { logActivity } from '../../lib/logger'
 var DEFAULT_ROLES = ['admin', 'auditor', 'sales', 'production', 'logistics']
 
 var PERM_GROUPS = [
+  { group: 'Personal', icon: '🪪', children: [
+    { key: 'feature_my_profile', label: 'My Profile', grants: ['feature_my_profile'] },
+  ]},
   { group: 'Inventory', icon: '📦', children: [
     { key: 'feature_add', label: 'Add Items', grants: ['feature_add', 'inventory_add'] },
     { key: 'feature_items', label: 'View & Edit', grants: ['feature_items', 'inventory_view', 'inventory_edit'], optional: [{ key: 'inventory_delete', label: 'Delete items' }] },
@@ -444,7 +447,7 @@ function Users() {
       email: addEmail.trim().toLowerCase(),
       name: addName.trim(),
       role: addRole,
-      permissions: [],
+      permissions: ['feature_my_profile'],
     })
     if (err) {
       setError(err.message)

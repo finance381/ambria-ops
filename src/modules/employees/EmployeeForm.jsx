@@ -82,6 +82,8 @@ function EmployeeForm({ employee, profile, jobDepartments, managers, onClose, on
   var [panFile, setPanFile] = useState(null)
   var [aadhaarPath, setAadhaarPath] = useState('')
   var [panPath, setPanPath] = useState('')
+  var [aadhaarExpiry, setAadhaarExpiry] = useState('')
+  var [panExpiry, setPanExpiry] = useState('')
 
   useEffect(function () {
     if (!isEdit) return
@@ -122,6 +124,8 @@ function EmployeeForm({ employee, profile, jobDepartments, managers, onClose, on
 
     setAadhaarPath(e.aadhaar_file_path || '')
     setPanPath(e.pan_file_path || '')
+    setAadhaarExpiry(e.aadhaar_expiry_date || '')
+    setPanExpiry(e.pan_expiry_date || '')
   }, [employee])
 
   useEffect(function () {
@@ -219,6 +223,8 @@ function EmployeeForm({ employee, profile, jobDepartments, managers, onClose, on
       ifsc_code: ifsc.trim().toUpperCase() || null,
       bank_name: bankName.trim() || null,
       ctc_annual_paise: ctcRupees ? Math.round(Number(ctcRupees) * 100) : null,
+      aadhaar_expiry_date: aadhaarExpiry || null,
+      pan_expiry_date: panExpiry || null,
     }
 
     // Employee code: only send on insert if user overrode. Blank → let trigger generate.
@@ -550,11 +556,13 @@ function EmployeeForm({ employee, profile, jobDepartments, managers, onClose, on
 
           <DocSlot label="Aadhaar Card" existingPath={aadhaarPath}
             selectedFile={aadhaarFile} onSelect={setAadhaarFile}
-            employeeId={employee?.id} docType="aadhaar" />
+            employeeId={employee?.id} docType="aadhaar"
+            expiryDate={aadhaarExpiry} onExpiryChange={setAadhaarExpiry} />
 
           <DocSlot label="PAN Card" existingPath={panPath}
             selectedFile={panFile} onSelect={setPanFile}
-            employeeId={employee?.id} docType="pan" />
+            employeeId={employee?.id} docType="pan"
+            expiryDate={panExpiry} onExpiryChange={setPanExpiry} />
         </div>
       )}
 
@@ -590,7 +598,7 @@ function Field({ label, required, children }) {
   )
 }
 
-function DocSlot({ label, existingPath, selectedFile, onSelect, employeeId, docType }) {
+function DocSlot({ label, existingPath, selectedFile, onSelect, employeeId, docType, expiryDate, onExpiryChange }) {
   var [previewUrl, setPreviewUrl] = useState('')
   var [loadingPreview, setLoadingPreview] = useState(false)
 
@@ -630,6 +638,19 @@ function DocSlot({ label, existingPath, selectedFile, onSelect, employeeId, docT
       )}
       {existingPath && !selectedFile && (
         <p className="text-[11px] text-gray-400 mt-1 font-mono">On file: {existingPath}</p>
+      )}
+      {onExpiryChange && (
+        <div className="mt-2 flex items-center gap-2">
+          <label className="text-[11px] text-gray-500 whitespace-nowrap">Expiry date:</label>
+          <input type="date" value={expiryDate || ''}
+            onChange={function (e) { onExpiryChange(e.target.value) }}
+            style={{ fontSize: '16px' }}
+            className="flex-1 px-2 py-1 border border-gray-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+          {expiryDate && (
+            <button type="button" onClick={function () { onExpiryChange('') }}
+              className="text-[10px] text-gray-400 hover:text-red-500 px-1.5 rounded">Clear</button>
+          )}
+        </div>
       )}
     </div>
   )
