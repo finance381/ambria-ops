@@ -68,7 +68,7 @@ function Categories() {
   }, [])
 
   async function loadAll() {
-    var [deptRes, catRes, subRes, venueRes, subDeptRes, subVenueRes] = await Promise.all([
+    var [deptRes, catRes, subRes, venueRes, subDeptRes, subVenueRes, etRes, estRes] = await Promise.all([
       supabase.from('departments').select('*').order('name'),
       supabase.from('categories').select('*').order('name'),
       supabase.from('sub_categories').select('*, categories(name)').order('name'),
@@ -83,9 +83,9 @@ function Categories() {
     setSubCategories(subRes.data || [])
     setVenues(venueRes.data || [])
     setSubDepartments(subDeptRes.data || [])
+    setSubVenues(subVenueRes.data || [])
     setExpenseTypes(etRes.data || [])
     setExpenseSubTypes(estRes.data || [])
-    setSubVenues(subVenueRes.data || [])
     setLoading(false)
   }
 
