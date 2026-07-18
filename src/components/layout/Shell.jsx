@@ -17,8 +17,14 @@ import Challans from '../../modules/challans/Challans'
 import RateCardEditor from '../../modules/quote/RateCardEditor'
 import Vendors from '../../modules/vendors/Vendors'
 import AdminMobile from '../../modules/categories/AdminMobile.jsx'
+import MyProfile from '../../modules/employees/MyProfile'
 
 var GROUPS = [
+  {
+    key: 'me', label: 'My Profile', icon: '🪪', items: [
+      { key: 'feature_my_profile', label: 'My Profile', icon: '🪪', tab: 'my_profile', always: true },
+    ]
+  },
   {
     key: 'inventory', label: 'Inventory', icon: '📦', items: [
       { key: 'feature_add', label: 'Add Item', icon: '📝', tab: 'add' },
@@ -92,8 +98,9 @@ function Shell({ profile, onSignOut }) {
   }, [profile?.id, tab])
 
   // Filter groups: only show groups where user has at least one sub-feature permission
+  // Items marked `always:true` bypass the permission check (personal / self-service features)
   var visibleGroups = GROUPS.map(function (g) {
-    var visibleItems = g.items.filter(function (f) { return perms.indexOf(f.key) !== -1 })
+    var visibleItems = g.items.filter(function (f) { return f.always === true || perms.indexOf(f.key) !== -1 })
     if (visibleItems.length === 0) return null
     return Object.assign({}, g, { items: visibleItems })
   }).filter(Boolean)
@@ -490,6 +497,9 @@ function Shell({ profile, onSignOut }) {
         )}
         {tab === 'admin' && isAdmin && (
           <AdminMobile profile={profile} />
+        )}
+        {tab === 'my_profile' && (
+          <MyProfile profile={profile} />
         )}
       </main>
 

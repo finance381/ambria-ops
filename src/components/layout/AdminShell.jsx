@@ -20,6 +20,8 @@ var Requisitions = lazy(function () { return import('../../modules/requisitions/
 var StaffRoles = lazy(function () { return import('../../modules/manpower/StaffRoles') })
 var Analytics = lazy(function () { return import('../../modules/analytics/Analytics') })
 var Overview = lazy(function () { return import('../../modules/overview/Overview') })
+var JobDepartments = lazy(function () { return import('../../modules/employees/JobDepartments') })
+var Employees = lazy(function () { return import('../../modules/employees/Employees') })
 
 function ExpenseTypesMaster(props) {
   return <Expenses profile={props.profile} masterMode={true} />
@@ -52,12 +54,14 @@ var SUB_TAB_CONFIG = {
   ],
   masters: [
     { key: 'categories', label: 'Categories', component: Categories },
+    { key: 'job_departments', label: 'Job Departments', component: JobDepartments },
     { key: 'ratecard', label: 'Rate Card', component: RateCardEditor },
     { key: 'staff_roles', label: 'Staff Roles', component: StaffRoles },
     { key: 'expense_types', label: 'Expense Types', component: ExpenseTypesMaster },
   ],
   users: [
     { key: 'users', label: 'Users', component: Users },
+    { key: 'employees', label: 'Employees', component: Employees },
     { key: 'logs', label: 'Activity Logs', component: ActivityLogs },
   ],
   procurement: [

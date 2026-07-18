@@ -55,6 +55,11 @@ function Users() {
   var [expenseTypes, setExpenseTypes] = useState([])
   var [expenseSubTypes, setExpenseSubTypes] = useState([])
 
+  // Employee link
+  var [employees, setEmployees] = useState([])
+  var [editEmployeeId, setEditEmployeeId] = useState('')
+  var [originalEmployeeId, setOriginalEmployeeId] = useState('')
+
   // Sidebar nav + per-list search filters
   var [activePanel, setActivePanel] = useState('identity')
   var [expTypeSearch, setExpTypeSearch] = useState('')
@@ -82,7 +87,15 @@ function Users() {
   var [roleSearch, setRoleSearch] = useState('')
   var [roleDropOpen, setRoleDropOpen] = useState(false)
 
-  useEffect(function () { loadUsers(); loadLookups() }, [])
+  useEffect(function () { loadUsers(); loadLookups(); loadEmployees() }, [])
+
+  async function loadEmployees() {
+    var { data, error: err } = await supabase.from('employees')
+      .select('id, employee_code, full_name, designation, status, profile_id')
+      .in('status', ['active', 'probation', 'on_leave'])
+      .order('full_name')
+    if (!err) setEmployees(data || [])
+  }
 
   async function loadUsers() {
     var [profRes, pendRes] = await Promise.all([
@@ -142,6 +155,16 @@ function Users() {
 
   // ═══ EDIT USER ═══
   function openEdit(user) {
+    // Resolve linked employee (only signed-in profiles can be linked)
+    if (user._source === 'approved') {
+      setEditEmployeeId('')
+      setOriginalEmployeeId('')
+    } else {
+      var linked = employees.find(function (e) { return e.profile_id === user.id })
+      var eid = linked ? linked.id : ''
+      setEditEmployeeId(eid)
+      setOriginalEmployeeId(eid)
+    }
     setEditUser(user)
     setEditRole(user.role)
     setEditPhone(user.phone || '')
@@ -328,6 +351,26 @@ function Users() {
   async function saveUser(e) {
     e.preventDefault()
     setSaving(true); setError('')
+
+    // Handle employee link change (signed-in users only)
+    if (editUser._source !== 'approved' && editEmployeeId !== originalEmployeeId) {
+      var { error: linkErr } = await supabase.rpc('link_employee_to_profile', {
+        p_employee_id: editEmployeeId || null,
+        p_profile_id: editUser.id,
+      })
+      if (linkErr) {
+        setError('Employee link failed: ' + linkErr.message)
+        setSaving(false)
+        return
+      }
+      try {
+        await logActivity('EMPLOYEE_LINK',
+          (editUser.name || editUser.email) + ' → ' +
+          (editEmployeeId ? 'linked to ' + editEmployeeId : 'unlinked'))
+      } catch (_) {}
+      loadEmployees()
+    }
+
     var err
     if (editUser._source === 'approved') {
       var res = await supabase.from('approved_emails').update({
@@ -549,6 +592,7 @@ function Users() {
             <div className="w-40 border-r border-gray-200 bg-gray-50 p-2 flex-shrink-0 space-y-1 overflow-y-auto">
               {[
                 { key: 'identity', label: 'Identity', icon: '👤', count: null },
+                { key: 'employee', label: 'Employee', icon: '🪪', count: editEmployeeId ? 1 : null },
                 { key: 'event', label: 'Event', icon: '📅', count: editEventDeptIds.length },
                 { key: 'expense', label: 'Expense', icon: '💰', count: editSubDeptIds.length + editExpenseTypeIds.length + editExpenseSubTypeIds.length },
                 { key: 'inventory', label: 'Inventory', icon: '📦', count: editCatIds.length + editSubCatIds.length },
@@ -631,6 +675,84 @@ function Users() {
               )}
             </div>
             </div>)}
+            {activePanel === 'employee' && (
+  <div className="p-5 space-y-4">
+    <div className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">Employee Record Link</div>
+
+    {editUser._source === 'approved' ? (
+      <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+        <p className="text-xs text-amber-800">
+          Employee linking is available after the user first signs in with Google. Once signed in, edit them again to link.
+        </p>
+      </div>
+    ) : (
+      <>
+        {editEmployeeId ? (() => {
+          var linked = employees.find(function (e) { return e.id === editEmployeeId })
+          return (
+            <div className="bg-green-50 border border-green-200 rounded-lg p-3 flex items-start justify-between gap-3">
+              <div>
+                <div className="text-[10px] uppercase tracking-wider text-green-700 font-semibold">Currently linked</div>
+                {linked ? (
+                  <>
+                    <div className="text-sm font-semibold text-gray-800 mt-0.5">{linked.full_name}</div>
+                    <div className="text-xs font-mono text-gray-500">{linked.employee_code}</div>
+                    <div className="text-xs text-gray-600">{linked.designation || '—'}</div>
+                  </>
+                ) : (
+                  <div className="text-sm text-gray-500 mt-0.5">Linked (details loading...)</div>
+                )}
+              </div>
+              <button type="button" onClick={function () { setEditEmployeeId('') }}
+                className="text-xs px-2.5 py-1 bg-white border border-red-200 text-red-600 rounded hover:bg-red-50">
+                Unlink
+              </button>
+            </div>
+          )
+        })() : (
+          <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+            <p className="text-xs text-gray-500">This user is not linked to any employee record. Pick one below.</p>
+          </div>
+        )}
+
+        <div>
+          <div className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold mb-1.5">
+            {editEmployeeId ? 'Change to different employee' : 'Link to employee'}
+          </div>
+          {(function () {
+            var options = employees
+              .filter(function (e) {
+                // Show unlinked + currently-selected
+                if (e.id === editEmployeeId) return true
+                return !e.profile_id
+              })
+              .map(function (e) {
+                return { value: e.id, label: e.full_name + ' — ' + (e.designation || '—') + ' (' + e.employee_code + ')' }
+              })
+            return (
+              <select value={editEmployeeId}
+                onChange={function (e) { setEditEmployeeId(e.target.value) }}
+                style={{ fontSize: '16px' }}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                <option value="">— No linked employee —</option>
+                {options.map(function (o) { return <option key={o.value} value={o.value}>{o.label}</option> })}
+              </select>
+            )
+          })()}
+          <p className="text-[11px] text-gray-400 mt-1.5">
+            Only active/probation/on-leave employees without an existing app link are shown. To link a terminated employee (rare), reactivate their status first.
+          </p>
+        </div>
+
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+          <p className="text-[11px] text-blue-800">
+            Linking gives this user access to their own employee record — they can view personal info and update contact/address details via a self-service screen. Sensitive fields (bank/salary) remain visible only to admin & Finance/HR unless the user is the record's owner.
+          </p>
+        </div>
+      </>
+    )}
+  </div>
+)}
 
                 {activePanel === 'event' && (<div className="space-y-3">
                   <p className="text-[11px] text-gray-400">Departments this user can see events for.</p>
