@@ -16,7 +16,7 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
   var [deleteReason, setDeleteReason] = useState('')
   var [allocations, setAllocations] = useState([])
   var [allocVenues, setAllocVenues] = useState({})
-  var [imgFullscreen, setImgFullscreen] = useState(false)
+  var [imgFullscreen, setImgFullscreen] = useState('')
 
   useEffect(function () {
     supabase.from('expenses').select('deduction_type').not('deduction_type', 'is', null).neq('deduction_type', '')
@@ -66,9 +66,17 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
   var canEdit = exp.user_id === profile?.id && (exp.status === 'recorded' || exp.status === 'flagged')
   var canResubmit = exp.user_id === profile?.id && exp.status === 'flagged'
 
-  var receiptUrl = exp.receipt_path ? supabase.storage.from('receipts').getPublicUrl(exp.receipt_path).data?.publicUrl : null
-  var isVoiceReceipt = /\.(webm|ogg|mp3|wav)$/i.test(exp.receipt_path || '')
-  var isImageReceipt = /\.(jpg|jpeg|png|gif|webp)$/i.test(exp.receipt_path || '')
+  var receiptPaths = (exp.receipt_paths && exp.receipt_paths.length > 0)
+    ? exp.receipt_paths
+    : (exp.receipt_path ? [exp.receipt_path] : [])
+  var receipts = receiptPaths.map(function (path) {
+    return {
+      path: path,
+      url: supabase.storage.from('receipts').getPublicUrl(path).data?.publicUrl,
+      isVoice: /\.(webm|ogg|mp3|wav)$/i.test(path),
+      isImage: /\.(jpg|jpeg|png|gif|webp)$/i.test(path)
+    }
+  })
 
   async function acknowledge() {
     if (saving) return
@@ -188,8 +196,8 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
   async function deleteExp() {
     if (saving) return
     setSaving(true)
-    if (exp.receipt_path) {
-      await supabase.storage.from('receipts').remove([exp.receipt_path])
+    if (receiptPaths.length > 0) {
+      await supabase.storage.from('receipts').remove(receiptPaths)
     }
     var { error } = await supabase.from('expenses').delete().eq('id', exp.id)
     if (error) { alert('Delete failed: ' + error.message); setSaving(false); return }
@@ -260,30 +268,39 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
         </div>
       )}
 
-      {receiptUrl ? (
+      {receipts.length > 0 ? (
         <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
           <div className="px-4 py-2 bg-gray-50 border-b border-gray-200">
             <p className="text-xs font-bold text-gray-500 uppercase tracking-wider">
-              {isVoiceReceipt ? '🎙 Voice Receipt' : '📎 Receipt'}
+              {receipts.length === 1 && receipts[0].isVoice ? '🎙 Voice Receipt' : (receipts.length > 1 ? '📎 Receipts (' + receipts.length + ')' : '📎 Receipt')}
             </p>
           </div>
-          <div className="p-3">
-            {isVoiceReceipt ? (
-              <audio src={receiptUrl} controls className="w-full" />
-            ) : isImageReceipt ? (
-              <div>
-                <img
-                  src={receiptUrl} alt="Receipt"
-                  onClick={function () { setImgFullscreen(true) }}
-                  className="w-full max-h-64 object-contain rounded-lg border border-gray-100 bg-gray-50 cursor-pointer active:opacity-80"
-                />
-                <p className="text-[10px] text-gray-400 text-center mt-1">Tap to enlarge</p>
-              </div>
-            ) : (
-              <a href={receiptUrl} target="_blank" rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors">
-                📎 View Attachment
-              </a>
+          <div className="p-3 space-y-2">
+            {receipts.map(function (r, rIdx) {
+              if (r.isVoice) {
+                return <audio key={rIdx} src={r.url} controls className="w-full" />
+              }
+              if (r.isImage) {
+                return (
+                  <div key={rIdx}>
+                    <img
+                      src={r.url} alt={"Receipt " + (rIdx + 1)}
+                      onClick={function () { setImgFullscreen(r.url) }}
+                      className="w-full max-h-64 object-contain rounded-lg border border-gray-100 bg-gray-50 cursor-pointer active:opacity-80"
+                    />
+                    {receipts.length === 1 && <p className="text-[10px] text-gray-400 text-center mt-1">Tap to enlarge</p>}
+                  </div>
+                )
+              }
+              return (
+                <a key={rIdx} href={r.url} target="_blank" rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors">
+                  📎 View Attachment {receipts.length > 1 ? '#' + (rIdx + 1) : ''}
+                </a>
+              )
+            })}
+            {receipts.length > 1 && receipts.some(function (r) { return r.isImage }) && (
+              <p className="text-[10px] text-gray-400 text-center pt-1">Tap any image to enlarge</p>
             )}
           </div>
         </div>
@@ -294,17 +311,17 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
         </div>
       )}
 
-      {imgFullscreen && receiptUrl && (
+      {imgFullscreen && (
         <div
-          onClick={function () { setImgFullscreen(false) }}
+          onClick={function () { setImgFullscreen('') }}
           className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4"
           style={{ margin: 0 }}
         >
           <button
-            onClick={function () { setImgFullscreen(false) }}
+            onClick={function () { setImgFullscreen('') }}
             className="absolute top-4 right-4 w-10 h-10 bg-white/20 text-white rounded-full text-xl flex items-center justify-center hover:bg-white/30"
           >✕</button>
-          <img src={receiptUrl} alt="Receipt" className="max-w-full max-h-full object-contain rounded-lg" />
+          <img src={imgFullscreen} alt="Receipt" className="max-w-full max-h-full object-contain rounded-lg" />
         </div>
       )}
 

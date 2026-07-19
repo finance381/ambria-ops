@@ -13,7 +13,6 @@ var FIELD_TYPES = [
 var LOOKUP_SOURCES = [
   { value: 'vendors', label: 'Vendors (Master)' },
   { value: 'staff', label: 'Staff / Users' },
-  { value: 'categories', label: 'Inventory Categories' },
   { value: 'venues', label: 'Venues' },
 ]
 
