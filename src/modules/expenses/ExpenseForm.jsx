@@ -16,8 +16,8 @@ function makeEntry() {
     expenseDate: new Date().toISOString().split('T')[0],
     fieldValues: {},
     allocations: [{ departmentId: '', subDepartmentId: '', venueId: '', amountPaise: '' }],
-    receiptFile: null,
-    receiptPreview: '',
+    receiptFiles: [],
+    receiptPreviews: [],
     audioBlob: null,
     audioUrl: '',
     recording: false,
@@ -166,22 +166,27 @@ function ExpenseForm({ profile, onDone }) {
     setEntries(entries.filter(function (_, i) { return i !== idx }))
   }
 
-  function handleReceipt(idx, file) {
-    if (!file) return
-    var preview = URL.createObjectURL(file)
+  function addReceipts(idx, fileList) {
+    if (!fileList || fileList.length === 0) return
+    var files = Array.from(fileList)
     var updated = entries.map(function (e, i) {
       if (i !== idx) return e
-      if (e.receiptPreview) URL.revokeObjectURL(e.receiptPreview)
-      return Object.assign({}, e, { receiptFile: file, receiptPreview: preview })
+      var newFiles = e.receiptFiles.concat(files)
+      var newPreviews = e.receiptPreviews.concat(files.map(function (f) { return URL.createObjectURL(f) }))
+      return Object.assign({}, e, { receiptFiles: newFiles, receiptPreviews: newPreviews })
     })
     setEntries(updated)
   }
 
-  function removeReceipt(idx) {
+  function removeReceipt(idx, rIdx) {
     var updated = entries.map(function (e, i) {
       if (i !== idx) return e
-      if (e.receiptPreview) URL.revokeObjectURL(e.receiptPreview)
-      return Object.assign({}, e, { receiptFile: null, receiptPreview: '' })
+      var url = e.receiptPreviews[rIdx]
+      if (url) URL.revokeObjectURL(url)
+      return Object.assign({}, e, {
+        receiptFiles: e.receiptFiles.filter(function (_, j) { return j !== rIdx }),
+        receiptPreviews: e.receiptPreviews.filter(function (_, j) { return j !== rIdx })
+      })
     })
     setEntries(updated)
   }
@@ -201,7 +206,8 @@ function ExpenseForm({ profile, onDone }) {
         var updated = entries.map(function (e, i) {
           if (i !== idx) return e
           if (e.audioUrl) URL.revokeObjectURL(e.audioUrl)
-          return Object.assign({}, e, { audioBlob: blob, audioUrl: url, recording: false, receiptFile: null, receiptPreview: '' })
+          e.receiptPreviews.forEach(function (u) { URL.revokeObjectURL(u) })
+          return Object.assign({}, e, { audioBlob: blob, audioUrl: url, recording: false, receiptFiles: [], receiptPreviews: [] })
         })
         setEntries(updated)
         delete mediaRecorders.current[idx]
@@ -337,7 +343,7 @@ function ExpenseForm({ profile, onDone }) {
     var src = entries[idx]
     var dup = Object.assign({}, src, {
       _key: Date.now() + '_' + Math.random().toString(36).slice(2, 8),
-      receiptFile: null, receiptPreview: '', audioBlob: null, audioUrl: '', recording: false,
+      receiptFiles: [], receiptPreviews: [], audioBlob: null, audioUrl: '', recording: false,
       fieldValues: Object.assign({}, src.fieldValues),
       allocations: src.allocations.map(function (a) { return Object.assign({}, a) }),
       items: (src.items || []).map(function (it) {
@@ -386,7 +392,9 @@ function ExpenseForm({ profile, onDone }) {
   function getSubTypeFields(subTypeId) {
     var st = expenseSubTypes.find(function (s) { return s.id === Number(subTypeId) })
     if (!st || !st.extra_fields) return []
-    return st.extra_fields
+    return st.extra_fields.filter(function (f) {
+      return !(f.type === 'lookup' && f.source === 'categories')
+    })
   }
 
   function updateFieldValue(entryIdx, key, val) {
@@ -486,7 +494,7 @@ function ExpenseForm({ profile, onDone }) {
         }
         if (computeItemsTotal(e) <= 0) return 'Entry ' + (i + 1) + ': Items total must be > 0'
       }
-      if (!e.receiptFile && !e.audioBlob) return 'Entry ' + (i + 1) + ': Receipt image or voice note is required'
+      if (e.receiptFiles.length === 0 && !e.audioBlob) return 'Entry ' + (i + 1) + ': Receipt image or voice note is required'
     }
     return null
   }
@@ -556,17 +564,27 @@ function ExpenseForm({ profile, onDone }) {
           var { data: exp, error: insErr } = await supabase.from('expenses').insert(payload).select('id').single()
           if (insErr || !exp) { failed++; continue }
 
-          if (e.receiptFile) {
-            var ext = e.receiptFile.name.split('.').pop()
-            var rPath = profile.id + '/' + exp.id + '_' + Date.now() + '.' + ext
-            var { error: upErr } = await supabase.storage.from('receipts').upload(rPath, e.receiptFile, { upsert: true })
-            if (!upErr) await supabase.from('expenses').update({ receipt_path: rPath }).eq('id', exp.id)
+          if (e.receiptFiles && e.receiptFiles.length > 0) {
+            var uploadedPaths = []
+            for (var f = 0; f < e.receiptFiles.length; f++) {
+              var file = e.receiptFiles[f]
+              var ext = file.name.split('.').pop()
+              var rPath = profile.id + '/' + exp.id + '_' + Date.now() + '_' + f + '.' + ext
+              var { error: upErr } = await supabase.storage.from('receipts').upload(rPath, file, { upsert: true })
+              if (!upErr) uploadedPaths.push(rPath)
+            }
+            if (uploadedPaths.length > 0) {
+              await supabase.from('expenses').update({
+                receipt_paths: uploadedPaths,
+                receipt_path: uploadedPaths[0]
+              }).eq('id', exp.id)
+            }
           }
 
-          if (!e.receiptFile && e.audioBlob) {
+          if ((!e.receiptFiles || e.receiptFiles.length === 0) && e.audioBlob) {
             var aPath = profile.id + '/' + exp.id + '_voice_' + Date.now() + '.webm'
             var { error: aErr } = await supabase.storage.from('receipts').upload(aPath, e.audioBlob, { contentType: 'audio/webm', upsert: true })
-            if (!aErr) await supabase.from('expenses').update({ receipt_path: aPath }).eq('id', exp.id)
+            if (!aErr) await supabase.from('expenses').update({ receipt_path: aPath, receipt_paths: [aPath] }).eq('id', exp.id)
           }
 
           var allocRows = e.allocations
@@ -979,14 +997,43 @@ function ExpenseForm({ profile, onDone }) {
               {/* Receipt */}
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Receipt <span className="text-red-500">*</span></label>
-                {entry.receiptPreview ? (
-                  <div className="relative inline-block">
-                    <img src={entry.receiptPreview} alt="Receipt"
-                      onClick={function () { setZoomImg(entry.receiptPreview) }}
-                      className="h-32 rounded-lg border border-gray-200 object-cover cursor-pointer active:opacity-80" />
-                    <p className="text-[10px] text-gray-400 text-center mt-1">Tap to enlarge</p>
-                    <button type="button" onClick={function () { removeReceipt(idx) }}
-                      className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full text-xs flex items-center justify-center shadow-sm hover:bg-red-600">✕</button>
+                {entry.receiptFiles.length > 0 ? (
+                  <div>
+                    <div className="grid grid-cols-3 gap-2 mb-2">
+                      {entry.receiptPreviews.map(function (url, rIdx) {
+                        var file = entry.receiptFiles[rIdx]
+                        var isPdf = file && file.type === 'application/pdf'
+                        return (
+                          <div key={rIdx} className="relative">
+                            {isPdf ? (
+                              <div className="h-24 rounded-lg border border-gray-200 bg-gray-50 flex flex-col items-center justify-center text-gray-500 px-1">
+                                <span className="text-2xl">📄</span>
+                                <span className="text-[10px] truncate max-w-full">{file.name}</span>
+                              </div>
+                            ) : (
+                              <img src={url} alt={"Receipt " + (rIdx + 1)}
+                                onClick={function () { setZoomImg(url) }}
+                                className="h-24 w-full rounded-lg border border-gray-200 object-cover cursor-pointer active:opacity-80" />
+                            )}
+                            <button type="button" onClick={function () { removeReceipt(idx, rIdx) }}
+                              className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white rounded-full text-[10px] flex items-center justify-center shadow-sm hover:bg-red-600">✕</button>
+                          </div>
+                        )
+                      })}
+                    </div>
+                    <p className="text-[10px] text-gray-400 text-center mb-2">{entry.receiptFiles.length} receipt{entry.receiptFiles.length > 1 ? 's' : ''} attached · tap image to enlarge</p>
+                    <div className="flex gap-2">
+                      <label className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border-2 border-dashed border-gray-300 text-xs text-gray-500 hover:border-amber-400 hover:text-amber-600 cursor-pointer transition-colors">
+                        <span>📁</span><span>+ Add More</span>
+                        <input type="file" accept="image/*,.pdf" multiple className="hidden"
+                          onChange={function (e) { addReceipts(idx, e.target.files); e.target.value = '' }} />
+                      </label>
+                      <label className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border-2 border-dashed border-gray-300 text-xs text-gray-500 hover:border-amber-400 hover:text-amber-600 cursor-pointer transition-colors">
+                        <span>📷</span><span>+ Photo</span>
+                        <input type="file" accept="image/*" capture="environment" className="hidden"
+                          onChange={function (e) { addReceipts(idx, e.target.files); e.target.value = '' }} />
+                      </label>
+                    </div>
                   </div>
                 ) : entry.audioUrl ? (
                   <div className="flex items-center gap-3 p-3 rounded-lg bg-blue-50 border border-blue-200">
@@ -1003,13 +1050,13 @@ function ExpenseForm({ profile, onDone }) {
                   <div className="flex gap-2">
                     <label className="flex-1 flex items-center justify-center gap-1.5 py-3 rounded-lg border-2 border-dashed border-gray-300 text-sm text-gray-500 hover:border-amber-400 hover:text-amber-600 cursor-pointer transition-colors">
                       <span>📁</span><span>Gallery</span>
-                      <input type="file" accept="image/*,.pdf" className="hidden"
-                        onChange={function (e) { handleReceipt(idx, e.target.files?.[0] || null); e.target.value = '' }} />
+                      <input type="file" accept="image/*,.pdf" multiple className="hidden"
+                        onChange={function (e) { addReceipts(idx, e.target.files); e.target.value = '' }} />
                     </label>
                     <label className="flex-1 flex items-center justify-center gap-1.5 py-3 rounded-lg border-2 border-dashed border-gray-300 text-sm text-gray-500 hover:border-amber-400 hover:text-amber-600 cursor-pointer transition-colors">
                       <span>📷</span><span>Camera</span>
                       <input type="file" accept="image/*" capture="environment" className="hidden"
-                        onChange={function (e) { handleReceipt(idx, e.target.files?.[0] || null); e.target.value = '' }} />
+                        onChange={function (e) { addReceipts(idx, e.target.files); e.target.value = '' }} />
                     </label>
                     <button type="button" onClick={function () { startRecording(idx) }}
                       className="flex-1 flex items-center justify-center gap-1.5 py-3 rounded-lg border-2 border-dashed border-gray-300 text-sm text-gray-500 hover:border-blue-400 hover:text-blue-600 transition-colors">
