@@ -530,9 +530,15 @@ function Expenses({ profile, masterMode }) {
                           className="p-3 hover:bg-gray-50 active:bg-gray-100 cursor-pointer transition-colors">
               <div className="flex items-start justify-between mb-1">
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-gray-900 truncate">{exp.description || 'Expense'}</p>
-                  <p className="text-xs text-gray-400 mt-0.5">
-                    {exp.expense_types?.name ? exp.expense_types.name + (exp.expense_sub_types?.name ? ' > ' + exp.expense_sub_types.name : '') + ' · ' : ''}
+                  <p className="text-sm font-semibold text-gray-900 truncate">
+                    {exp.expense_types?.name
+                      ? exp.expense_types.name + (exp.expense_sub_types?.name ? ' > ' + exp.expense_sub_types.name : '')
+                      : 'Expense'}
+                  </p>
+                  {exp.description && (
+                    <p className="text-xs text-gray-600 mt-0.5 truncate">{exp.description}</p>
+                  )}
+                  <p className="text-[11px] text-gray-400 mt-0.5">
                     {(function () {
                       var a = (exp.expense_allocations && exp.expense_allocations[0]) || null
                       if (!a) return ''
