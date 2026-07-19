@@ -54,12 +54,19 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     if (isAdmin || isAuditor) {
       setWalletView('wallets')
       loadAllWallets()
-    } else if (myWallet) {
-      setWalletProfiles(function (prev) { var n = Object.assign({}, prev); n[profile.id] = profile; return n })
-      openWalletTxns(myWallet)
     }
     loadTransfers()
   }, [])
+
+  // For non-admin/auditor: open own wallet transactions once myWallet is available.
+  // Handles race where WalletManager mounts before parent's async wallet fetch resolves.
+  useEffect(function () {
+    if (isAdmin || isAuditor) return
+    if (!myWallet) return
+    if (walletView === 'transactions' && selectedWallet) return
+    setWalletProfiles(function (prev) { var n = Object.assign({}, prev); n[profile.id] = profile; return n })
+    openWalletTxns(myWallet)
+  }, [myWallet, isAdmin, isAuditor])
 
   function refreshBalance() {
     supabase.from('wallets').select('balance_paise').eq('user_id', profile.id).maybeSingle()

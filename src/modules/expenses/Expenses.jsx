@@ -302,10 +302,13 @@ function Expenses({ profile, masterMode }) {
   }
 
   if (showWallet) {
+    // Wallet management is role-based only — dept heads (expense_approve perm)
+    // must NOT see other users' wallets.
+    var isWalletAdmin = profile?.role === 'admin'
     return (
       <WalletManager
         profile={profile}
-        isAdmin={isAdmin}
+        isAdmin={isWalletAdmin}
         isAuditor={isAuditor}
         myWallet={myWallet}
         walletBalance={walletBalance}
@@ -329,9 +332,12 @@ function Expenses({ profile, masterMode }) {
           )}
           <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Wallet</p>
           <p className={"text-xl font-bold mt-1 " + (walletBalance < 0 ? "text-red-700" : "text-green-700")}>{formatPoints(walletBalance)}</p>
-          {(isAdmin || isAuditor) && <p className="text-[10px] text-indigo-600 font-medium mt-1">Manage →</p>}
-          {!(isAdmin || isAuditor) && pendingReceiveCount > 0 && <p className="text-[10px] text-amber-600 font-medium mt-1">{pendingReceiveCount} pending →</p>}
-          {!(isAdmin || isAuditor) && pendingReceiveCount === 0 && <p className="text-[10px] text-gray-400 font-medium mt-1">View history →</p>}
+          {(function () {
+            var isWalletAdmin = profile?.role === 'admin'
+            if (isWalletAdmin || isAuditor) return <p className="text-[10px] text-indigo-600 font-medium mt-1">Manage →</p>
+            if (pendingReceiveCount > 0) return <p className="text-[10px] text-amber-600 font-medium mt-1">{pendingReceiveCount} pending →</p>
+            return <p className="text-[10px] text-gray-400 font-medium mt-1">View history →</p>
+          })()}
         </div>
         <div className="rounded-xl p-4 border border-gray-200 bg-gray-50">
           <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Expenses</p>
