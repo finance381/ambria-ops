@@ -476,6 +476,11 @@ function ExpenseForm({ profile, onDone }) {
       if (!e.description.trim()) return 'Entry ' + (i + 1) + ': Add description'
       if (!e.isItemPurchase && (!e.amount || Number(e.amount) <= 0)) return 'Entry ' + (i + 1) + ': Enter valid amount'
       if (!e.expenseDate) return 'Entry ' + (i + 1) + ': Select date'
+      var _toYMD = function (d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') }
+      var _todayStr = _toYMD(new Date())
+      var _minStr = _toYMD(new Date(Date.now() - 3 * 86400000))
+      if (e.expenseDate > _todayStr) return 'Entry ' + (i + 1) + ': Future dates require a requisition, not a direct expense'
+      if (e.expenseDate < _minStr) return 'Entry ' + (i + 1) + ': Date is more than 3 days old — contact admin or raise a requisition'
       var fields = getSubTypeFields(e.expenseSubTypeId)
       for (var f = 0; f < fields.length; f++) {
         if (fields[f].required && !(e.fieldValues[fields[f].key] || '').toString().trim()) {
@@ -768,13 +773,21 @@ function ExpenseForm({ profile, onDone }) {
                 })
               })}
 
-              {/* Date */}
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Date</label>
-                <input type="date" value={entry.expenseDate}
-                  onChange={function (e) { updateEntry(idx, 'expenseDate', e.target.value) }}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-300" />
-              </div>
+              {/* Date — gated to today ± 3 days back */}
+              {(function () {
+                var toYMD = function (d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') }
+                var today = toYMD(new Date())
+                var minDate = toYMD(new Date(Date.now() - 3 * 86400000))
+                return (
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Date</label>
+                    <input type="date" value={entry.expenseDate} min={minDate} max={today}
+                      onChange={function (e) { updateEntry(idx, 'expenseDate', e.target.value) }}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-300" style={{ fontSize: '16px' }} />
+                    <p className="text-[10px] text-gray-500 mt-1">Today or up to 3 days back. For future expenses, raise a requisition instead.</p>
+                  </div>
+                )
+              })()}
 
               {/* Item purchase toggle + fields */}
               <div className={"border rounded-lg p-3 transition-colors " + (entry.isItemPurchase ? "border-indigo-200 bg-indigo-50/40" : "border-gray-100 bg-gray-50")}>
