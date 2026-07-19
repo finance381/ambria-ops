@@ -30,6 +30,40 @@ function makeAllocation() {
   return { departmentId: '', subDepartmentId: '', venueId: '', amountPaise: '' }
 }
 
+// Compresses image files to under MAX_KB. PDFs / non-images pass through untouched.
+async function compressImage(file, maxKB) {
+  if (!file || !file.type || file.type.indexOf('image/') !== 0) return file
+  if (file.size <= maxKB * 1024) return file
+  try {
+    var url = URL.createObjectURL(file)
+    var img = new Image()
+    await new Promise(function (res, rej) { img.onload = res; img.onerror = rej; img.src = url })
+    URL.revokeObjectURL(url)
+    var maxDim = 1600
+    var scale = Math.min(maxDim / img.width, maxDim / img.height, 1)
+    var canvas = document.createElement('canvas')
+    canvas.width = Math.round(img.width * scale)
+    canvas.height = Math.round(img.height * scale)
+    var ctx = canvas.getContext('2d')
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(0, 0, canvas.width, canvas.height)
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+    var quality = 0.88
+    var blob = null
+    for (var i = 0; i < 8; i++) {
+      blob = await new Promise(function (res) { canvas.toBlob(res, 'image/jpeg', quality) })
+      if (!blob) break
+      if (blob.size <= maxKB * 1024) break
+      quality = quality * 0.72
+    }
+    if (!blob) return file
+    var newName = (file.name || 'image').replace(/\.[^.]+$/, '') + '.jpg'
+    return new File([blob], newName, { type: 'image/jpeg', lastModified: Date.now() })
+  } catch (_) {
+    return file
+  }
+}
+
 function makeItem() {
   return {
     _key: Date.now() + '_' + Math.random().toString(36).slice(2, 8),
@@ -166,16 +200,22 @@ function ExpenseForm({ profile, onDone }) {
     setEntries(entries.filter(function (_, i) { return i !== idx }))
   }
 
-  function addReceipts(idx, fileList) {
+  async function addReceipts(idx, fileList) {
     if (!fileList || fileList.length === 0) return
-    var files = Array.from(fileList)
-    var updated = entries.map(function (e, i) {
-      if (i !== idx) return e
-      var newFiles = e.receiptFiles.concat(files)
-      var newPreviews = e.receiptPreviews.concat(files.map(function (f) { return URL.createObjectURL(f) }))
-      return Object.assign({}, e, { receiptFiles: newFiles, receiptPreviews: newPreviews })
+    var raw = Array.from(fileList)
+    var files = []
+    for (var i = 0; i < raw.length; i++) {
+      var f = await compressImage(raw[i], 100)
+      files.push(f)
+    }
+    setEntries(function (prev) {
+      return prev.map(function (e, ii) {
+        if (ii !== idx) return e
+        var newFiles = e.receiptFiles.concat(files)
+        var newPreviews = e.receiptPreviews.concat(files.map(function (fl) { return URL.createObjectURL(fl) }))
+        return Object.assign({}, e, { receiptFiles: newFiles, receiptPreviews: newPreviews })
+      })
     })
-    setEntries(updated)
   }
 
   function removeReceipt(idx, rIdx) {
@@ -571,25 +611,45 @@ function ExpenseForm({ profile, onDone }) {
 
           if (e.receiptFiles && e.receiptFiles.length > 0) {
             var uploadedPaths = []
+            var uploadErrors = []
             for (var f = 0; f < e.receiptFiles.length; f++) {
               var file = e.receiptFiles[f]
-              var ext = file.name.split('.').pop()
+              var ext = (file.name && file.name.indexOf('.') !== -1) ? file.name.split('.').pop() : 'jpg'
               var rPath = profile.id + '/' + exp.id + '_' + Date.now() + '_' + f + '.' + ext
               var { error: upErr } = await supabase.storage.from('receipts').upload(rPath, file, { upsert: true })
-              if (!upErr) uploadedPaths.push(rPath)
+              if (upErr) {
+                uploadErrors.push('File ' + (f + 1) + ' (' + (file.name || 'unnamed') + '): ' + upErr.message)
+              } else {
+                uploadedPaths.push(rPath)
+              }
             }
             if (uploadedPaths.length > 0) {
-              await supabase.from('expenses').update({
-                receipt_paths: uploadedPaths,
-                receipt_path: uploadedPaths[0]
-              }).eq('id', exp.id)
+              var { error: updErr } = await supabase.rpc('attach_expense_receipts', {
+                p_expense_id: exp.id,
+                p_paths: uploadedPaths
+              })
+              if (updErr) uploadErrors.push('Save paths failed: ' + updErr.message)
+            }
+            if (uploadErrors.length > 0) {
+              setError('Expense saved but ' + uploadErrors.length + ' receipt(s) failed to attach:\n' + uploadErrors.join('\n') + '\n\nEdit the expense to re-attach.')
+              setSaving(false)
+              return
             }
           }
 
           if ((!e.receiptFiles || e.receiptFiles.length === 0) && e.audioBlob) {
             var aPath = profile.id + '/' + exp.id + '_voice_' + Date.now() + '.webm'
             var { error: aErr } = await supabase.storage.from('receipts').upload(aPath, e.audioBlob, { contentType: 'audio/webm', upsert: true })
-            if (!aErr) await supabase.from('expenses').update({ receipt_path: aPath, receipt_paths: [aPath] }).eq('id', exp.id)
+            if (aErr) {
+              setError('Voice upload failed: ' + aErr.message); setSaving(false); return
+            }
+            var { error: aRpcErr } = await supabase.rpc('attach_expense_receipts', {
+              p_expense_id: exp.id,
+              p_paths: [aPath]
+            })
+            if (aRpcErr) {
+              setError('Voice attach failed: ' + aRpcErr.message); setSaving(false); return
+            }
           }
 
           var allocRows = e.allocations
