@@ -708,15 +708,13 @@ function ExpenseForm({ profile, onDone }) {
                 var typeList = isAdminEt ? expenseTypes : expenseTypes.filter(function (et) { return userEtIds.indexOf(et.id) !== -1 })
                 return (
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Expense Type</label>
-                    <select value={entry.expenseTypeId}
-                      onChange={function (e) { updateEntry(idx, 'expenseTypeId', e.target.value) }}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-amber-300" style={{ fontSize: '16px' }}>
-                      <option value="">Select type...</option>
-                      {typeList.map(function (et) {
-                        return <option key={et.id} value={String(et.id)}>{(et.icon ? et.icon + ' ' : '') + et.name}</option>
-                      })}
-                    </select>
+                    <SearchDropdown
+                      label="Expense Type"
+                      items={typeList.map(function (et) { return { label: (et.icon ? et.icon + ' ' : '') + et.name, value: String(et.id) } })}
+                      value={entry.expenseTypeId}
+                      onChange={function (val) { updateEntry(idx, 'expenseTypeId', val) }}
+                      placeholder="Search or select type..."
+                    />
                   </div>
                 )
               })()}
@@ -724,15 +722,13 @@ function ExpenseForm({ profile, onDone }) {
               {/* Sub-Type */}
               {entry.expenseTypeId && subTypesForType.length > 0 && (
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Sub-Type</label>
-                  <select value={entry.expenseSubTypeId}
-                    onChange={function (e) { updateEntry(idx, 'expenseSubTypeId', e.target.value) }}
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-amber-300" style={{ fontSize: '16px' }}>
-                    <option value="">Select sub-type...</option>
-                    {subTypesForType.map(function (st) {
-                      return <option key={st.id} value={String(st.id)}>{st.name}</option>
-                    })}
-                  </select>
+                  <SearchDropdown
+                    label="Sub-Type"
+                    items={subTypesForType.map(function (st) { return { label: st.name, value: String(st.id) } })}
+                    value={entry.expenseSubTypeId}
+                    onChange={function (val) { updateEntry(idx, 'expenseSubTypeId', val) }}
+                    placeholder="Search or select sub-type..."
+                  />
                 </div>
               )}
 
