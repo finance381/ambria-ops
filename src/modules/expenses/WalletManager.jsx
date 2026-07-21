@@ -550,7 +550,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                 ) : (
                   <label className="block w-full py-2.5 text-center text-sm text-indigo-600 border border-dashed border-indigo-300 rounded-lg cursor-pointer hover:bg-indigo-50 transition-colors">
                     Tap to attach photo
-                    <input type="file" accept="image/*" capture="environment" className="hidden"
+                    <input type="file" accept="image/*" capture="environment" className="sr-only"
                       onChange={function (e) { if (e.target.files?.[0]) setIssueImage(e.target.files[0]); e.target.value = '' }} />
                   </label>
                 )}
@@ -807,7 +807,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                 ) : (
                   <label className="block w-full py-3 text-center text-sm text-amber-700 border-2 border-dashed border-amber-300 rounded-lg cursor-pointer hover:bg-amber-50 transition-colors font-medium">
                     📷 Take photo of cash received
-                    <input type="file" accept="image/*" capture="environment" className="hidden"
+                    <input type="file" accept="image/*" capture="environment" className="sr-only"
                       onChange={function (e) { if (e.target.files?.[0]) setReceiveImage(e.target.files[0]); e.target.value = '' }} />
                   </label>
                 )}
@@ -855,7 +855,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                 ) : (
                   <label className="block w-full py-2.5 text-center text-sm text-blue-600 border border-dashed border-blue-300 rounded-lg cursor-pointer hover:bg-blue-50 transition-colors">
                     Tap to attach photo
-                    <input type="file" accept="image/*" capture="environment" className="hidden"
+                    <input type="file" accept="image/*" capture="environment" className="sr-only"
                       onChange={function (e) { if (e.target.files?.[0]) setCollectImage(e.target.files[0]); e.target.value = '' }} />
                   </label>
                 )}
@@ -907,7 +907,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                 ) : (
                   <label className="block w-full py-2.5 text-center text-sm text-emerald-600 border border-dashed border-emerald-300 rounded-lg cursor-pointer hover:bg-emerald-50 transition-colors">
                     Tap to attach photo
-                    <input type="file" accept="image/*" capture="environment" className="hidden"
+                    <input type="file" accept="image/*" capture="environment" className="sr-only"
                       onChange={function (e) { if (e.target.files?.[0]) setTransferImage(e.target.files[0]); e.target.value = '' }} />
                   </label>
                 )}
@@ -940,7 +940,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                 ) : (
                   <label className="block w-full py-3 text-center text-sm text-amber-700 border-2 border-dashed border-amber-300 rounded-lg cursor-pointer hover:bg-amber-50 transition-colors font-medium">
                     📷 Take photo of cash received
-                    <input type="file" accept="image/*" capture="environment" className="hidden"
+                    <input type="file" accept="image/*" capture="environment" className="sr-only"
                       onChange={function (e) { if (e.target.files?.[0]) setTransferConfirmImage(e.target.files[0]); e.target.value = '' }} />
                   </label>
                 )}
