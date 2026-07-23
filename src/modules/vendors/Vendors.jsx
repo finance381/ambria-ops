@@ -9,6 +9,8 @@ function Vendors({ profile }) {
   var [subDepartments, setSubDepartments] = useState([])
   var [expenseTypes, setExpenseTypes] = useState([])
   var [expenseSubTypes, setExpenseSubTypes] = useState([])
+  var [expandedExpTypes, setExpandedExpTypes] = useState({})
+  var [expandedCatDepts, setExpandedCatDepts] = useState({})
   var [loading, setLoading] = useState(true)
   var [saving, setSaving] = useState(false)
   var [search, setSearch] = useState('')
@@ -111,6 +113,14 @@ function Vendors({ profile }) {
       }
       return Object.assign({}, prev, { expense_type_ids: typeIds, expense_sub_type_ids: subTypeIds })
     })
+  }
+
+  function toggleExpTypeExpand(tId) {
+    setExpandedExpTypes(function (prev) { var n = Object.assign({}, prev); n[tId] = !prev[tId]; return n })
+  }
+
+  function toggleCatDeptExpand(deptKey) {
+    setExpandedCatDepts(function (prev) { var n = Object.assign({}, prev); n[deptKey] = !prev[deptKey]; return n })
   } 
 
   async function saveVendor() {
@@ -776,30 +786,41 @@ function Vendors({ profile }) {
                 }
                 if (groups.length === 0) return <p className="text-xs text-gray-400 px-1">No categories available</p>
                 return groups.map(function (g) {
+                  var deptCats = g.subGroups.reduce(function (a, sg) { return a.concat(sg.cats) }, [])
+                  var deptSelCount = deptCats.filter(function (c) { return form.category_ids.indexOf(c.id) !== -1 }).length
+                  var isExpanded = expandedCatDepts[g.key] != null ? expandedCatDepts[g.key] : (deptSelCount > 0)
                   return (
-                    <div key={g.key}>
-                      <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1.5">{g.deptName}</p>
-                      <div className="space-y-2 pl-2">
-                        {g.subGroups.map(function (sg) {
-                          return (
-                            <div key={sg.key}>
-                              {sg.name && <p className="text-[10px] text-gray-400 mb-1">{sg.name}</p>}
-                              <div className="flex flex-wrap gap-2">
-                                {sg.cats.map(function (c) {
-                                  var selected = form.category_ids.indexOf(c.id) !== -1
-                                  return (
-                                    <button key={c.id} type="button" onClick={function () { toggleCat(c.id) }}
-                                      className={"px-3 py-1.5 text-xs font-semibold rounded-lg border transition-all " +
-                                        (selected ? "bg-indigo-600 text-white border-indigo-600 shadow-sm" : "bg-white text-gray-500 border-gray-200 hover:border-indigo-300 hover:text-indigo-600")}>
-                                      {c.name}
-                                    </button>
-                                  )
-                                })}
+                    <div key={g.key} className="border border-gray-100 rounded-lg overflow-hidden">
+                      <button type="button" onClick={function () { toggleCatDeptExpand(g.key) }}
+                        className="w-full flex items-center justify-between px-3 py-2 bg-gray-50 hover:bg-gray-100">
+                        <span className="text-[10px] font-bold text-gray-700 uppercase tracking-wider">{g.deptName}</span>
+                        <span className="text-[10px] text-gray-400 font-normal">
+                          {deptSelCount > 0 ? deptSelCount + ' / ' : ''}{deptCats.length} categor{deptCats.length !== 1 ? 'ies' : 'y'} <span className="text-gray-500 ml-1">{isExpanded ? '▼' : '▶'}</span>
+                        </span>
+                      </button>
+                      {isExpanded && (
+                        <div className="space-y-2 p-2 bg-white">
+                          {g.subGroups.map(function (sg) {
+                            return (
+                              <div key={sg.key}>
+                                {sg.name && <p className="text-[10px] text-gray-400 mb-1">{sg.name}</p>}
+                                <div className="flex flex-wrap gap-2">
+                                  {sg.cats.map(function (c) {
+                                    var selected = form.category_ids.indexOf(c.id) !== -1
+                                    return (
+                                      <button key={c.id} type="button" onClick={function () { toggleCat(c.id) }}
+                                        className={"px-3 py-1.5 text-xs font-semibold rounded-lg border transition-all " +
+                                          (selected ? "bg-indigo-600 text-white border-indigo-600 shadow-sm" : "bg-white text-gray-500 border-gray-200 hover:border-indigo-300 hover:text-indigo-600")}>
+                                        {c.name}
+                                      </button>
+                                    )
+                                  })}
+                                </div>
                               </div>
-                            </div>
-                          )
-                        })}
-                      </div>
+                            )
+                          })}
+                        </div>
+                      )}
                     </div>
                   )
                 })
@@ -815,23 +836,33 @@ function Vendors({ profile }) {
                 <span className="text-[11px] text-indigo-600 font-semibold">{(form.expense_sub_type_ids || []).length} sub-type{(form.expense_sub_type_ids || []).length !== 1 ? 's' : ''} selected</span>
               )}
             </div>
-            <p className="text-[11px] text-gray-400 mb-2">Ticking a type also ticks all its sub-types. Vendor will appear in expense-form pickers for the ticked sub-types.</p>
-            <div className="space-y-3 max-h-80 overflow-y-auto p-1">
+            <p className="text-[11px] text-gray-400 mb-2">Tick a parent type to bulk-tick its sub-types. Click a row to expand and pick specific sub-types.</p>
+            <div className="space-y-2 max-h-80 overflow-y-auto p-1">
               {expenseTypes.length === 0 && <p className="text-xs text-gray-400 px-1">No expense types configured</p>}
               {expenseTypes.map(function (t) {
                 var subs = expenseSubTypes.filter(function (s) { return s.expense_type_id === t.id })
                 var typeChecked = (form.expense_type_ids || []).indexOf(t.id) !== -1
+                var selSubCount = subs.filter(function (s) { return (form.expense_sub_type_ids || []).indexOf(s.id) !== -1 }).length
+                var isExpanded = expandedExpTypes[t.id] != null ? expandedExpTypes[t.id] : (selSubCount > 0)
                 return (
-                  <div key={t.id}>
-                    <label className="flex items-center gap-2 text-[11px] font-bold text-gray-600 uppercase tracking-wider mb-1.5 cursor-pointer select-none">
+                  <div key={t.id} className="border border-gray-100 rounded-lg overflow-hidden">
+                    <div className="flex items-center gap-2 px-3 py-2 bg-gray-50">
                       <input type="checkbox" checked={typeChecked}
                         onChange={function () { toggleExpType(t.id) }}
+                        onClick={function (e) { e.stopPropagation() }}
                         className="w-3.5 h-3.5 rounded accent-indigo-600" />
-                      {t.icon ? t.icon + ' ' : ''}{t.name}
-                      <span className="text-[10px] text-gray-400 font-normal">({subs.length} sub-type{subs.length !== 1 ? 's' : ''})</span>
-                    </label>
-                    {subs.length > 0 && (
-                      <div className="flex flex-wrap gap-2 pl-6">
+                      <button type="button" onClick={function () { toggleExpTypeExpand(t.id) }}
+                        className="flex-1 flex items-center justify-between text-left">
+                        <span className="text-[11px] font-bold text-gray-700 uppercase tracking-wider">
+                          {t.icon ? t.icon + ' ' : ''}{t.name}
+                        </span>
+                        <span className="text-[10px] text-gray-400 font-normal">
+                          {selSubCount > 0 ? selSubCount + ' / ' : ''}{subs.length} sub-type{subs.length !== 1 ? 's' : ''} <span className="text-gray-500 ml-1">{isExpanded ? '▼' : '▶'}</span>
+                        </span>
+                      </button>
+                    </div>
+                    {isExpanded && subs.length > 0 && (
+                      <div className="flex flex-wrap gap-2 p-2 bg-white">
                         {subs.map(function (st) {
                           var selected = (form.expense_sub_type_ids || []).indexOf(st.id) !== -1
                           return (
