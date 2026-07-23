@@ -11,6 +11,7 @@ import QuoteCalculator from '../../modules/quote/QuoteCalculator'
 import Requisitions from '../../modules/requisitions/Requisitions'
 import Purchase from '../../modules/purchase/Purchase'
 import Expenses from '../../modules/expenses/Expenses'
+import Ledgers from '../../modules/expenses/Ledgers'
 import ProductionOrders from '../../modules/production/ProductionOrders'
 import Boxes from '../../modules/boxes/Boxes'
 import Challans from '../../modules/challans/Challans'
@@ -61,8 +62,9 @@ var GROUPS = [
     ]
   },
   {
-    key: 'expenses', label: 'Expenses', icon: '💰', items: [
+    key: 'expenses', label: 'Finance', icon: '💰', items: [
       { key: 'feature_expenses', label: 'PC & Direct Expenses', icon: '💰', tab: 'expenses' },
+      { key: 'feature_ledger_view', label: 'Ledgers', icon: '📒', tab: 'ledgers' },
     ]
   },
   {
@@ -479,6 +481,9 @@ function Shell({ profile, onSignOut }) {
         )}
         {tab === 'expenses' && (
           <Expenses profile={profile} />
+        )}
+        {tab === 'ledgers' && (
+          <Ledgers profile={profile} />
         )}
         {tab === 'purchase' && (
           <Purchase profile={profile} mode="purchase" />

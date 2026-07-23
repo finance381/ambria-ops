@@ -25,6 +25,7 @@ var PERM_GROUPS = [
     { key: 'feature_quote', label: 'Quote Calculator', grants: ['feature_quote'] },
     { key: 'feature_ratecard', label: 'Rate Card Editor', grants: ['feature_ratecard'] },
     { key: 'feature_expenses', label: 'Expenses', grants: ['feature_expenses', 'expense_submit'], optional: [{ key: 'expense_approve', label: 'Approve/reject expenses' }] },
+    { key: 'feature_ledger_view', label: 'Ledgers', grants: ['feature_ledger_view'] },
   ]},
   { group: 'Operations', icon: '🚚', children: [
     { key: 'feature_purchase', label: 'Purchase Orders', grants: ['feature_purchase'] },

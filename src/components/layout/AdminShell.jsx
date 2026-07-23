@@ -9,6 +9,7 @@ var Categories = lazy(function () { return import('../../modules/categories/Cate
 var Users = lazy(function () { return import('../../modules/users/Users') })
 var ActivityLogs = lazy(function () { return import('../../modules/logs/ActivityLogs') })
 var Expenses = lazy(function () { return import('../../modules/expenses/Expenses') })
+var Ledgers = lazy(function () { return import('../../modules/expenses/Ledgers') })
 var Dashboard = lazy(function () { return import('../../modules/dashboard/Dashboard') })
 var Boxes = lazy(function () { return import('../../modules/boxes/Boxes') })
 var ProductionOrders = lazy(function () { return import('../../modules/production/ProductionOrders') })
@@ -69,6 +70,10 @@ var SUB_TAB_CONFIG = {
     { key: 'purchase', label: 'Purchase Orders', component: Purchase },
     { key: 'vendors', label: 'Vendors', component: Vendors },
   ],
+  expenses: [
+    { key: 'expenses', label: 'Expenses', component: Expenses },
+    { key: 'ledgers', label: 'Ledgers', component: Ledgers },
+  ],
 }
 
 function TabbedSection({ config, profile, onNavigate, activeSubTab }) {
@@ -114,7 +119,7 @@ var MODULES = {
   events: Events,
   masters: makeTabbedModule('masters'),
   users: makeTabbedModule('users'),
-  expenses: Expenses,
+  expenses: makeTabbedModule('expenses'),
   procurement: makeTabbedModule('procurement'),
 }
 
