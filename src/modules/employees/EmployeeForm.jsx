@@ -31,7 +31,7 @@ function fileExt(f) {
   return parts.length > 1 ? parts.pop().toLowerCase() : ''
 }
 
-function EmployeeForm({ employee, profile, jobDepartments, managers, onClose, onSaved }) {
+function EmployeeForm({ employee, profile, jobDepartments, managers, canSeeSalary, onClose, onSaved }) {
   var isEdit = !!(employee && employee.id)
 
   var [tab, setTab] = useState('personal')
@@ -120,7 +120,8 @@ function EmployeeForm({ employee, profile, jobDepartments, managers, onClose, on
     setBankAccount(e.bank_account_number || '')
     setIfsc(e.ifsc_code || '')
     setBankName(e.bank_name || '')
-    setCtcRupees(e.ctc_annual_paise ? String(Math.round(e.ctc_annual_paise / 100)) : '')
+    setCtcRupees(canSeeSalary && e.ctc_annual_paise
+      ? String(Math.round(e.ctc_annual_paise / 100)) : '')
 
     setAadhaarPath(e.aadhaar_file_path || '')
     setPanPath(e.pan_file_path || '')
@@ -222,9 +223,11 @@ function EmployeeForm({ employee, profile, jobDepartments, managers, onClose, on
       bank_account_number: bankAccount.trim() || null,
       ifsc_code: ifsc.trim().toUpperCase() || null,
       bank_name: bankName.trim() || null,
-      ctc_annual_paise: ctcRupees ? Math.round(Number(ctcRupees) * 100) : null,
       aadhaar_expiry_date: aadhaarExpiry || null,
       pan_expiry_date: panExpiry || null,
+    }
+    if (canSeeSalary) {
+      payload.ctc_annual_paise = ctcRupees ? Math.round(Number(ctcRupees) * 100) : null
     }
 
     // Employee code: only send on insert if user overrode. Blank → let trigger generate.
@@ -537,12 +540,21 @@ function EmployeeForm({ employee, profile, jobDepartments, managers, onClose, on
                 onChange={function (e) { setBankName(e.target.value) }}
                 style={{ fontSize: '16px' }} className={inp} />
             </Field>
-            <Field label="Annual CTC (₹)">
-              <input type="number" value={ctcRupees}
-                onChange={function (e) { setCtcRupees(e.target.value) }}
-                placeholder="e.g. 600000" min="0" step="1"
-                style={{ fontSize: '16px' }} className={inp} />
-            </Field>
+            {canSeeSalary && (
+              <Field label="Annual CTC (₹)">
+                <input type="number" value={ctcRupees}
+                  onChange={function (e) { setCtcRupees(e.target.value) }}
+                  placeholder="e.g. 600000" min="0" step="1"
+                  style={{ fontSize: '16px' }} className={inp} />
+              </Field>
+            )}
+            {!canSeeSalary && (
+              <Field label="Annual CTC (₹)">
+                <div className="w-full px-3 py-2 border border-gray-200 bg-gray-50 rounded-md text-xs text-gray-400 italic">
+                  🔒 Restricted — no permission to view or edit
+                </div>
+              </Field>
+            )}
           </div>
         </div>
       )}

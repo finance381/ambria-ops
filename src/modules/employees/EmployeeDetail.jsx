@@ -18,7 +18,7 @@ function rupees(paise) {
   return '₹ ' + (paise / 100).toLocaleString('en-IN')
 }
 
-function EmployeeDetail({ employeeId, jobDepartments, managers, profile, onEdit, canEdit }) {
+function EmployeeDetail({ employeeId, jobDepartments, managers, profile, onEdit, canEdit, canSeeSalary }) {
   var [row, setRow] = useState(null)
   var [directReports, setDirectReports] = useState([])
   var [loading, setLoading] = useState(true)
@@ -34,6 +34,7 @@ function EmployeeDetail({ employeeId, jobDepartments, managers, profile, onEdit,
       .select('*').eq('id', employeeId).maybeSingle()
     if (err) { setError(err.message); setLoading(false); return }
     if (!data) { setError('Not found or access denied.'); setLoading(false); return }
+    if (!canSeeSalary) data.ctc_annual_paise = null
     setRow(data)
 
     var { data: reports } = await supabase.from('employees')
@@ -71,7 +72,7 @@ function EmployeeDetail({ employeeId, jobDepartments, managers, profile, onEdit,
   }
 
   var hasSensitive = row.aadhaar_number || row.pan_number || row.bank_account_number ||
-                     row.ifsc_code || row.bank_name || row.ctc_annual_paise ||
+                     row.ifsc_code || row.bank_name || (canSeeSalary && row.ctc_annual_paise) ||
                      row.uan || row.esic || row.aadhaar_file_path || row.pan_file_path
 
   return (
@@ -176,7 +177,9 @@ function EmployeeDetail({ employeeId, jobDepartments, managers, profile, onEdit,
             <Row label="Bank Name" value={row.bank_name} />
             <Row label="Account Number" value={row.bank_account_number} mono />
             <Row label="IFSC" value={row.ifsc_code} mono />
-            <Row label="Annual CTC" value={rupees(row.ctc_annual_paise)} />
+            {canSeeSalary
+              ? <Row label="Annual CTC" value={rupees(row.ctc_annual_paise)} />
+              : <Row label="Annual CTC" value={<span className="italic text-gray-400">🔒 Restricted</span>} />}
           </Section>
 
           <Section title="Documents">

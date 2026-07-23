@@ -42,17 +42,24 @@ function Employees({ profile }) {
   var [importProgress, setImportProgress] = useState(null) // { done, total }
   var [importSummary, setImportSummary] = useState(null)   // { created, skipped, skippedRows }
 
+  var perms = (profile && profile.permissions) || []
   var isAdminOrHR = profile && (profile.role === 'admin' || profile.role === 'auditor')
+  var hasEmployeesPerm = isAdminOrHR || perms.indexOf('feature_employees') !== -1
+  var canSeeAll = isAdminOrHR
+  var canSeeSalary = isAdminOrHR || perms.indexOf('feature_employees_salary') !== -1
 
   useRealtime(['employees', 'job_departments'], function () { if (!saving) loadAll() })
 
   useEffect(function () { loadAll() }, [])
 
   async function loadAll() {
+    var empQuery = supabase.from('employees')
+      .select('id, employee_code, full_name, designation, job_department_ids, contact_number, personal_email, status, doj, profile_id, reporting_manager_id, created_by')
+      .order('employee_code', { ascending: true })
+    if (!canSeeAll) empQuery = empQuery.eq('created_by', profile.id)
+
     var [empRes, jdRes] = await Promise.all([
-      supabase.from('employees')
-        .select('id, employee_code, full_name, designation, job_department_ids, contact_number, personal_email, status, doj, profile_id, reporting_manager_id')
-        .order('employee_code', { ascending: true }),
+      empQuery,
       supabase.from('job_departments').select('*').order('sort_order').order('name'),
     ])
     if (empRes.error) { console.error('Employees load:', empRes.error); }
@@ -373,19 +380,25 @@ function Employees({ profile }) {
         </label>
 
         <div className="ml-auto flex items-center gap-2">
-          <button onClick={downloadTemplate}
-            title="Download CSV template"
-            className="px-3 py-2 text-xs font-medium text-gray-600 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
-            ⬇ Template
-          </button>
-          <label className="px-3 py-2 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 cursor-pointer">
-            📥 Import CSV
-            <input type="file" accept=".csv,text/csv" onChange={handleCsvFile} className="hidden" />
-          </label>
-          <button onClick={function () { setShowCreate(true) }}
-            className="px-4 py-2 text-sm text-white bg-indigo-600 rounded-md hover:bg-indigo-700 font-medium">
-            + Add Employee
-          </button>
+          {isAdminOrHR && (
+            <button onClick={downloadTemplate}
+              title="Download CSV template"
+              className="px-3 py-2 text-xs font-medium text-gray-600 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
+              ⬇ Template
+            </button>
+          )}
+          {isAdminOrHR && (
+            <label className="px-3 py-2 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 cursor-pointer">
+              📥 Import CSV
+              <input type="file" accept=".csv,text/csv" onChange={handleCsvFile} className="hidden" />
+            </label>
+          )}
+          {hasEmployeesPerm && (
+            <button onClick={function () { setShowCreate(true) }}
+              className="px-4 py-2 text-sm text-white bg-indigo-600 rounded-md hover:bg-indigo-700 font-medium">
+              + Add Employee
+            </button>
+          )}
         </div>
       </div>
 
@@ -470,8 +483,10 @@ function Employees({ profile }) {
                     <td className="px-3 py-2 text-right whitespace-nowrap">
                       <button onClick={function () { setViewRow(r) }}
                         className="text-xs px-2 py-1 rounded text-gray-600 hover:bg-gray-100 mr-1">View</button>
-                      <button onClick={function () { setEditRow(r) }}
-                        className="text-xs px-2 py-1 rounded text-indigo-600 hover:bg-indigo-50">Edit</button>
+                      {(canSeeAll || r.created_by === profile.id) && (
+                        <button onClick={function () { setEditRow(r) }}
+                          className="text-xs px-2 py-1 rounded text-indigo-600 hover:bg-indigo-50">Edit</button>
+                      )}
                     </td>
                   </tr>
                 )
@@ -493,6 +508,7 @@ function Employees({ profile }) {
             profile={profile}
             jobDepartments={jobDepartments}
             managers={managerList}
+            canSeeSalary={canSeeSalary}
             onClose={function () { setShowCreate(false) }}
             onSaved={function () { setShowCreate(false); loadAll() }} />
         )}
@@ -507,6 +523,7 @@ function Employees({ profile }) {
             profile={profile}
             jobDepartments={jobDepartments}
             managers={managerList}
+            canSeeSalary={canSeeSalary}
             onClose={function () { setEditRow(null) }}
             onSaved={function () { setEditRow(null); loadAll() }} />
         )}
@@ -521,7 +538,8 @@ function Employees({ profile }) {
             jobDepartments={jobDepartments}
             managers={managerList}
             profile={profile}
-            canEdit={isAdminOrHR}
+            canEdit={canSeeAll || viewRow.created_by === profile.id}
+            canSeeSalary={canSeeSalary}
             onEdit={function (r) { setViewRow(null); setEditRow(r) }} />
         )}
       </Modal>

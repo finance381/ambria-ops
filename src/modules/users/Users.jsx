@@ -33,6 +33,9 @@ var PERM_GROUPS = [
     { key: 'feature_boxes', label: 'Boxes', grants: ['feature_boxes'] },
     { key: 'feature_challans', label: 'Challans', grants: ['feature_challans'] },
   ]},
+  { group: 'HR', icon: '👔', children: [
+    { key: 'feature_employees', label: 'Employees', grants: ['feature_employees'], optional: [{ key: 'feature_employees_salary', label: 'See salaries' }] },
+  ]},
   { group: 'Admin', icon: '⚙️', children: [
     { key: 'feature_admin', label: 'Admin Panel', grants: ['feature_admin'], optional: [{ key: 'admin_masters', label: 'Manage masters' }, { key: 'admin_users', label: 'Manage users' }, { key: 'admin_approve', label: 'Approve items' }] },
   ]},
