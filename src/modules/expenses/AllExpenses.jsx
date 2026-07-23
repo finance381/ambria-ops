@@ -17,30 +17,60 @@ function AllExpenses({ onBack, onOpenDetail, embedded }) {
   var [allExpLoadingMore, setAllExpLoadingMore] = useState(false)
   var [subDeptMap, setSubDeptMap] = useState({})
 
+  // Filter panel state
+  var [filtersOpen, setFiltersOpen] = useState(false)
+  var [deptFilter, setDeptFilter] = useState('')
+  var [subDeptFilter, setSubDeptFilter] = useState('')
+  var [venueFilter, setVenueFilter] = useState('')
+  var [userFilter, setUserFilter] = useState('')
+  var [amountMin, setAmountMin] = useState('')
+  var [amountMax, setAmountMax] = useState('')
+
+  // Filter lookups
+  var [deptOptions, setDeptOptions] = useState([])
+  var [subDeptOptions, setSubDeptOptions] = useState([])
+  var [venueOptions, setVenueOptions] = useState([])
+  var [userOptions, setUserOptions] = useState([])
+
   useEffect(function () {
     var timer = setTimeout(function () { setAllExpSearchD(allExpSearch) }, 400)
     return function () { clearTimeout(timer) }
   }, [allExpSearch])
 
   useEffect(function () {
-    supabase.from('sub_departments').select('id, name').then(function (res) {
+    Promise.all([
+      supabase.from('sub_departments').select('id, name, department_id').order('name'),
+      supabase.from('departments').select('id, name').eq('active', true).order('name'),
+      supabase.from('venues').select('id, code, name').eq('active', true).order('name'),
+      supabase.from('profiles').select('id, name').order('name'),
+    ]).then(function (res) {
+      var sds = res[0].data || []
       var map = {}
-      ;(res.data || []).forEach(function (sd) { map[sd.id] = sd.name })
+      sds.forEach(function (sd) { map[sd.id] = sd.name })
       setSubDeptMap(map)
+      setSubDeptOptions(sds)
+      setDeptOptions(res[1].data || [])
+      setVenueOptions(res[2].data || [])
+      setUserOptions(res[3].data || [])
     })
   }, [])
 
   useEffect(function () {
     loadAllExps(false)
-  }, [allExpStatus, allExpFrom, allExpTo, allExpSearchD])
+  }, [allExpStatus, allExpFrom, allExpTo, allExpSearchD, deptFilter, subDeptFilter, venueFilter, userFilter, amountMin, amountMax])
 
   async function loadAllExps(append) {
     var offset = append ? allExps.length : 0
     if (append) setAllExpLoadingMore(true)
     else setAllExpLoading(true)
 
+    var hasAllocFilter = !!(deptFilter || subDeptFilter || venueFilter)
+    var allocEmbed = hasAllocFilter
+      ? 'expense_allocations!inner(department, department_id, sub_department_id, venue_id, amount_paise)'
+      : 'expense_allocations(department, department_id, sub_department_id, venue_id, amount_paise)'
+
     var query = supabase.from('expenses')
-      .select('id, user_id, batch_id, expense_type_id, amount_paise, description, status, expense_date, receipt_path, created_at, rejection_reason, vendor_name, travel_from, travel_to, travel_mode, metadata, deleted_at, delete_reason, deleted_by, expense_types(name, extra_fields), expense_allocations(department, department_id, sub_department_id, amount_paise)')
+      .select('id, user_id, batch_id, expense_type_id, amount_paise, description, status, expense_date, receipt_path, created_at, rejection_reason, vendor_name, travel_from, travel_to, travel_mode, metadata, deleted_at, delete_reason, deleted_by, expense_types(name, extra_fields), ' + allocEmbed)
       .order('created_at', { ascending: false })
       .range(offset, offset + PAGE_SIZE)
 
@@ -52,6 +82,12 @@ function AllExpenses({ onBack, onOpenDetail, embedded }) {
     if (allExpFrom) query = query.gte('expense_date', allExpFrom)
     if (allExpTo) query = query.lte('expense_date', allExpTo)
     if (allExpSearchD) query = query.ilike('description', '%' + allExpSearchD + '%')
+    if (userFilter) query = query.eq('user_id', userFilter)
+    if (deptFilter) query = query.eq('expense_allocations.department_id', Number(deptFilter))
+    if (subDeptFilter) query = query.eq('expense_allocations.sub_department_id', Number(subDeptFilter))
+    if (venueFilter) query = query.eq('expense_allocations.venue_id', Number(venueFilter))
+    if (amountMin) query = query.gte('amount_paise', Math.round(Number(amountMin) * 100))
+    if (amountMax) query = query.lte('amount_paise', Math.round(Number(amountMax) * 100))
 
     var { data, error } = await query
     if (error) { alert('Failed: ' + error.message); setAllExpLoading(false); setAllExpLoadingMore(false); return }
@@ -128,39 +164,142 @@ function AllExpenses({ onBack, onOpenDetail, embedded }) {
         className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
         style={{ fontSize: '16px' }} />
 
-      <div className="flex gap-2 flex-wrap">
-        {['', 'recorded', 'acknowledged', 'flagged', 'penalized', 'deleted'].map(function (s) {
-          var label = s === 'deleted' ? 'Deleted' : (s ? APPROVAL_STATUS_LABELS[s] : 'All')
-          return (
-            <button key={s} onClick={function () { setAllExpStatus(s === allExpStatus ? '' : s) }}
-              className={"px-3 py-1.5 text-[11px] font-bold rounded-full border transition-colors " +
-                (allExpStatus === s ? "bg-gray-900 text-white border-gray-900" : "bg-white text-gray-500 border-gray-200 hover:bg-gray-50")}>
-              {label}
-            </button>
-          )
-        })}
-      </div>
-
-      <div className="flex gap-2">
-        <div className="flex-1">
-          <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">From</label>
-          <input type="date" value={allExpFrom} onChange={function (e) { setAllExpFrom(e.target.value) }}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            style={{ fontSize: '16px' }} />
-        </div>
-        <div className="flex-1">
-          <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">To</label>
-          <input type="date" value={allExpTo} onChange={function (e) { setAllExpTo(e.target.value) }}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            style={{ fontSize: '16px' }} />
-        </div>
-        {(allExpFrom || allExpTo) && (
-          <button onClick={function () { setAllExpFrom(''); setAllExpTo('') }}
-            className="self-end px-3 py-2 text-xs font-bold text-gray-500 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors mb-px">
-            Clear
-          </button>
-        )}
-      </div>
+      {(function () {
+        var count = 0
+        if (allExpStatus) count++
+        if (allExpFrom) count++
+        if (allExpTo) count++
+        if (userFilter) count++
+        if (deptFilter) count++
+        if (subDeptFilter) count++
+        if (venueFilter) count++
+        if (amountMin) count++
+        if (amountMax) count++
+        function resetFilters() {
+          setAllExpStatus(''); setAllExpFrom(''); setAllExpTo('')
+          setUserFilter(''); setDeptFilter(''); setSubDeptFilter(''); setVenueFilter('')
+          setAmountMin(''); setAmountMax('')
+        }
+        var subDeptFiltered = deptFilter
+          ? subDeptOptions.filter(function (sd) { return String(sd.department_id) === deptFilter })
+          : subDeptOptions
+        return (
+          <div className="space-y-2">
+            <div className="flex gap-2">
+              <button onClick={function () { setFiltersOpen(!filtersOpen) }}
+                className={"flex-1 py-2 text-xs font-bold rounded-lg border transition-colors " + (filtersOpen ? "bg-indigo-50 border-indigo-300 text-indigo-700" : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50")}>
+                {filtersOpen ? '▲' : '▼'} Filters{count > 0 ? ' · ' + count : ''}
+              </button>
+              {count > 0 && (
+                <button onClick={resetFilters}
+                  className="px-3 py-2 text-xs font-bold text-red-600 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 transition-colors">
+                  Reset
+                </button>
+              )}
+            </div>
+            {filtersOpen && (
+              <div className="bg-white border border-gray-200 rounded-xl p-3 space-y-3">
+                <div>
+                  <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Status</label>
+                  <div className="flex gap-2 flex-wrap">
+                    {['', 'recorded', 'acknowledged', 'flagged', 'penalized', 'deleted'].map(function (s) {
+                      var label = s === 'deleted' ? 'Deleted' : (s ? APPROVAL_STATUS_LABELS[s] : 'All')
+                      return (
+                        <button key={s} onClick={function () { setAllExpStatus(s === allExpStatus ? '' : s) }}
+                          className={"px-3 py-1.5 text-[11px] font-bold rounded-full border transition-colors " +
+                            (allExpStatus === s ? "bg-gray-900 text-white border-gray-900" : "bg-white text-gray-500 border-gray-200 hover:bg-gray-50")}>
+                          {label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+                {userOptions.length > 0 && (
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">User</label>
+                    <select value={userFilter} onChange={function (e) { setUserFilter(e.target.value) }}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
+                      style={{ fontSize: '16px' }}>
+                      <option value="">All users</option>
+                      {userOptions.map(function (u) {
+                        return <option key={u.id} value={u.id}>{u.name || '—'}</option>
+                      })}
+                    </select>
+                  </div>
+                )}
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Department</label>
+                    <select value={deptFilter}
+                      onChange={function (e) { setDeptFilter(e.target.value); setSubDeptFilter('') }}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
+                      style={{ fontSize: '16px' }}>
+                      <option value="">All</option>
+                      {deptOptions.map(function (d) {
+                        return <option key={d.id} value={d.id}>{d.name}</option>
+                      })}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Sub-Dept</label>
+                    <select value={subDeptFilter}
+                      onChange={function (e) { setSubDeptFilter(e.target.value) }}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
+                      style={{ fontSize: '16px' }}>
+                      <option value="">All</option>
+                      {subDeptFiltered.map(function (sd) {
+                        return <option key={sd.id} value={sd.id}>{sd.name}</option>
+                      })}
+                    </select>
+                  </div>
+                  <div className="col-span-2">
+                    <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Venue</label>
+                    <select value={venueFilter}
+                      onChange={function (e) { setVenueFilter(e.target.value) }}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
+                      style={{ fontSize: '16px' }}>
+                      <option value="">All venues</option>
+                      {venueOptions.map(function (v) {
+                        return <option key={v.id} value={v.id}>{v.code} — {v.name}</option>
+                      })}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Min (pts)</label>
+                    <input type="number" min="0" step="any" inputMode="decimal" value={amountMin}
+                      onChange={function (e) { setAmountMin(e.target.value) }}
+                      placeholder="0"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                      style={{ fontSize: '16px' }} />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Max (pts)</label>
+                    <input type="number" min="0" step="any" inputMode="decimal" value={amountMax}
+                      onChange={function (e) { setAmountMax(e.target.value) }}
+                      placeholder="∞"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                      style={{ fontSize: '16px' }} />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">From</label>
+                    <input type="date" value={allExpFrom}
+                      onChange={function (e) { setAllExpFrom(e.target.value) }}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                      style={{ fontSize: '16px' }} />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">To</label>
+                    <input type="date" value={allExpTo}
+                      onChange={function (e) { setAllExpTo(e.target.value) }}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                      style={{ fontSize: '16px' }} />
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )
+      })()}
 
       {allExpLoading && <p className="text-gray-400 text-sm text-center py-4">Loading...</p>}
 

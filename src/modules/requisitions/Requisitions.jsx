@@ -44,6 +44,21 @@ function Requisitions({ profile, onBack }) {
   var [editItems, setEditItems] = useState([])
   var [departments, setDepartments] = useState([])
 
+  // Filter panel state
+  var [filtersOpen, setFiltersOpen] = useState(false)
+  var [reqSearch, setReqSearch] = useState('')
+  var [reqSearchDebounced, setReqSearchDebounced] = useState('')
+  var [dateFrom, setDateFrom] = useState('')
+  var [dateTo, setDateTo] = useState('')
+  var [deptFilter, setDeptFilter] = useState('')      // stores dept id (string)
+  var [subDeptFilter, setSubDeptFilter] = useState('')
+  var [urgencyFilter, setUrgencyFilter] = useState('')
+  var [userFilter, setUserFilter] = useState('')
+
+  // Filter lookups
+  var [subDeptOptions, setSubDeptOptions] = useState([])
+  var [userOptions, setUserOptions] = useState([])
+
   var isAdmin = profile?.role === 'admin'
   var isAuditor = profile?.role === 'auditor'
   var isReqDeptApprover = (profile?.permissions || []).indexOf('req_dept_approve') !== -1
@@ -59,6 +74,11 @@ function Requisitions({ profile, onBack }) {
   }
 
   useEffect(function () { loadReceiptsCount() }, [])
+
+  useEffect(function () {
+    var t = setTimeout(function () { setReqSearchDebounced(reqSearch) }, 400)
+    return function () { clearTimeout(t) }
+  }, [reqSearch])
 
   // Derive dept names for scoping non-admin dept approvers
   var approverDeptNames = []
@@ -77,6 +97,14 @@ function Requisitions({ profile, onBack }) {
       var filtered = (isAdminRole || userDeptIds.length === 0) ? all : all.filter(function (d) { return userDeptIds.indexOf(d.id) !== -1 })
       setDepartments(filtered)
     })
+    supabase.from('sub_departments').select('id, name, department_id').order('name').then(function (res) {
+      setSubDeptOptions(res.data || [])
+    })
+    if (hasReqApprove) {
+      supabase.from('profiles').select('id, name').order('name').then(function (res) {
+        setUserOptions(res.data || [])
+      })
+    }
   }, [])
 
   useEffect(function () {
@@ -84,7 +112,7 @@ function Requisitions({ profile, onBack }) {
     loadMyReqs(false)
     loadApprovalReqs(false)
     loadAllReqs(false)
-  }, [statusFilter, departments])
+  }, [statusFilter, departments, urgencyFilter, dateFrom, dateTo, reqSearchDebounced, userFilter, deptFilter, subDeptFilter])
 
   async function loadMyReqs(append) {
     var offset = append ? myReqs.length : 0
@@ -98,6 +126,15 @@ function Requisitions({ profile, onBack }) {
       .range(offset, offset + PAGE_SIZE)
 
     if (statusFilter) query = query.eq('status', statusFilter)
+    if (urgencyFilter) query = query.eq('urgency', urgencyFilter)
+    if (dateFrom) query = query.gte('created_at', dateFrom)
+    if (dateTo) query = query.lte('created_at', dateTo + 'T23:59:59.999')
+    if (reqSearchDebounced) query = query.ilike('purpose', '%' + reqSearchDebounced + '%')
+    if (subDeptFilter) query = query.eq('sub_department_id', Number(subDeptFilter))
+    if (deptFilter) {
+      var selMyDept = departments.find(function (d) { return String(d.id) === deptFilter })
+      if (selMyDept) query = query.eq('department', selMyDept.name)
+    }
 
     var { data, error } = await query
     if (error) { alert('Failed to load: ' + error.message); setLoading(false); setLoadingMore(false); return }
@@ -139,6 +176,17 @@ function Requisitions({ profile, onBack }) {
       query = query.in('department', approverDeptNames)
     }
 
+    if (urgencyFilter) query = query.eq('urgency', urgencyFilter)
+    if (dateFrom) query = query.gte('created_at', dateFrom)
+    if (dateTo) query = query.lte('created_at', dateTo + 'T23:59:59.999')
+    if (reqSearchDebounced) query = query.ilike('purpose', '%' + reqSearchDebounced + '%')
+    if (userFilter) query = query.eq('requested_by', userFilter)
+    if (subDeptFilter) query = query.eq('sub_department_id', Number(subDeptFilter))
+    if (deptFilter) {
+      var selAppDept = departments.find(function (d) { return String(d.id) === deptFilter })
+      if (selAppDept) query = query.eq('department', selAppDept.name)
+    }
+
     var { data, error } = await query
     if (error) { alert('Failed to load approvals: ' + error.message); setLoadingMore(false); return }
 
@@ -176,6 +224,16 @@ function Requisitions({ profile, onBack }) {
       .range(offset, offset + PAGE_SIZE)
 
     if (statusFilter) query = query.eq('status', statusFilter)
+    if (urgencyFilter) query = query.eq('urgency', urgencyFilter)
+    if (dateFrom) query = query.gte('created_at', dateFrom)
+    if (dateTo) query = query.lte('created_at', dateTo + 'T23:59:59.999')
+    if (reqSearchDebounced) query = query.ilike('purpose', '%' + reqSearchDebounced + '%')
+    if (userFilter) query = query.eq('requested_by', userFilter)
+    if (subDeptFilter) query = query.eq('sub_department_id', Number(subDeptFilter))
+    if (deptFilter) {
+      var selAllDept = departments.find(function (d) { return String(d.id) === deptFilter })
+      if (selAllDept) query = query.eq('department', selAllDept.name)
+    }
 
     var { data, error } = await query
     if (error) { alert('Failed to load: ' + error.message); setLoadingMore(false); return }
@@ -347,21 +405,137 @@ function Requisitions({ profile, onBack }) {
         </div>
       )}
 
-      {/* Status filter — on My Requests + All tabs */}
-      {(view === 'list' || view === 'all') && (
-        <div className="flex gap-2 flex-wrap">
-          {['', 'pending_dept', 'pending', 'approved', 'rejected', 'fulfilled', 'deleted'].map(function (s) {
-            var label = s ? APPROVAL_STATUS_LABELS[s] : 'All'
-            return (
-              <button key={s} onClick={function () { setStatusFilter(s === statusFilter ? '' : s) }}
-                className={"px-3 py-1.5 text-[11px] font-bold rounded-full border transition-colors " +
-                  (statusFilter === s ? "bg-gray-900 text-white border-gray-900" : "bg-white text-gray-500 border-gray-200 hover:bg-gray-50")}>
-                {label}
-              </button>
-            )
-          })}
-        </div>
+      {/* Search + Filters — My / Approvals / All tabs */}
+      {(view === 'list' || view === 'approve' || view === 'all') && (
+        <input type="text" value={reqSearch} onChange={function (e) { setReqSearch(e.target.value) }}
+          placeholder="Search purpose..."
+          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          style={{ fontSize: '16px' }} />
       )}
+
+      {(view === 'list' || view === 'approve' || view === 'all') && (function () {
+        var count = 0
+        if ((view === 'list' || view === 'all') && statusFilter) count++
+        if (dateFrom) count++
+        if (dateTo) count++
+        if (deptFilter) count++
+        if (subDeptFilter) count++
+        if (urgencyFilter) count++
+        if ((view === 'approve' || view === 'all') && userFilter) count++
+        function resetFilters() {
+          setStatusFilter(''); setDateFrom(''); setDateTo('')
+          setDeptFilter(''); setSubDeptFilter(''); setUrgencyFilter('')
+          setUserFilter('')
+        }
+        var subDeptFiltered = deptFilter
+          ? subDeptOptions.filter(function (sd) { return String(sd.department_id) === deptFilter })
+          : subDeptOptions
+        return (
+          <div className="space-y-2">
+            <div className="flex gap-2">
+              <button onClick={function () { setFiltersOpen(!filtersOpen) }}
+                className={"flex-1 py-2 text-xs font-bold rounded-lg border transition-colors " + (filtersOpen ? "bg-indigo-50 border-indigo-300 text-indigo-700" : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50")}>
+                {filtersOpen ? '▲' : '▼'} Filters{count > 0 ? ' · ' + count : ''}
+              </button>
+              {count > 0 && (
+                <button onClick={resetFilters}
+                  className="px-3 py-2 text-xs font-bold text-red-600 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 transition-colors">
+                  Reset
+                </button>
+              )}
+            </div>
+            {filtersOpen && (
+              <div className="bg-white border border-gray-200 rounded-xl p-3 space-y-3">
+                {(view === 'list' || view === 'all') && (
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Status</label>
+                    <div className="flex gap-2 flex-wrap">
+                      {['', 'pending_dept', 'pending', 'approved', 'rejected', 'fulfilled', 'deleted'].map(function (s) {
+                        var label = s ? APPROVAL_STATUS_LABELS[s] : 'All'
+                        return (
+                          <button key={s} onClick={function () { setStatusFilter(s === statusFilter ? '' : s) }}
+                            className={"px-3 py-1.5 text-[11px] font-bold rounded-full border transition-colors " +
+                              (statusFilter === s ? "bg-gray-900 text-white border-gray-900" : "bg-white text-gray-500 border-gray-200 hover:bg-gray-50")}>
+                            {label}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+                <div>
+                  <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Urgency</label>
+                  <div className="flex gap-2 flex-wrap">
+                    {['', 'low', 'normal', 'urgent'].map(function (u) {
+                      var label = u ? u.charAt(0).toUpperCase() + u.slice(1) : 'All'
+                      return (
+                        <button key={u} onClick={function () { setUrgencyFilter(u === urgencyFilter ? '' : u) }}
+                          className={"px-3 py-1.5 text-[11px] font-bold rounded-full border transition-colors " +
+                            (urgencyFilter === u ? "bg-gray-900 text-white border-gray-900" : "bg-white text-gray-500 border-gray-200 hover:bg-gray-50")}>
+                          {label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+                {(view === 'approve' || view === 'all') && userOptions.length > 0 && (
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">User</label>
+                    <select value={userFilter} onChange={function (e) { setUserFilter(e.target.value) }}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
+                      style={{ fontSize: '16px' }}>
+                      <option value="">All users</option>
+                      {userOptions.map(function (u) {
+                        return <option key={u.id} value={u.id}>{u.name || '—'}</option>
+                      })}
+                    </select>
+                  </div>
+                )}
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Department</label>
+                    <select value={deptFilter}
+                      onChange={function (e) { setDeptFilter(e.target.value); setSubDeptFilter('') }}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
+                      style={{ fontSize: '16px' }}>
+                      <option value="">All</option>
+                      {departments.map(function (d) {
+                        return <option key={d.id} value={d.id}>{d.name}</option>
+                      })}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Sub-Dept</label>
+                    <select value={subDeptFilter}
+                      onChange={function (e) { setSubDeptFilter(e.target.value) }}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
+                      style={{ fontSize: '16px' }}>
+                      <option value="">All</option>
+                      {subDeptFiltered.map(function (sd) {
+                        return <option key={sd.id} value={sd.id}>{sd.name}</option>
+                      })}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">From</label>
+                    <input type="date" value={dateFrom}
+                      onChange={function (e) { setDateFrom(e.target.value) }}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                      style={{ fontSize: '16px' }} />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">To</label>
+                    <input type="date" value={dateTo}
+                      onChange={function (e) { setDateTo(e.target.value) }}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                      style={{ fontSize: '16px' }} />
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )
+      })()}
 
       {view === 'receipts' && (
         <ItemReceipts profile={profile} onCountChange={setPendingReceiptsCount} />
