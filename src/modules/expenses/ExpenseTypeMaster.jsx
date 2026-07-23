@@ -11,8 +11,8 @@ var FIELD_TYPES = [
 ]
 
 var LOOKUP_SOURCES = [
-  { value: 'vendors', label: 'Vendors (Master)' },
-  { value: 'staff', label: 'Staff / Users' },
+  { value: 'vendors', label: 'Vendors' },
+  { value: 'job_departments', label: 'Job Departments' },
   { value: 'venues', label: 'Venues' },
 ]
 
@@ -24,9 +24,15 @@ function FieldEditor({ subType, typeName, onBack, onSaved }) {
   var [saving, setSaving] = useState(false)
   var [editIdx, setEditIdx] = useState(null)
   var [form, setForm] = useState(null)
+  var [departments, setDepartments] = useState([])
+
+  useEffect(function () {
+    supabase.from('departments').select('id, name').eq('active', true).order('name')
+      .then(function (r) { setDepartments(r.data || []) })
+  }, [])
 
   function makeField() {
-    return { key: '', label: '', type: 'text', required: false, options: [], source: '' }
+    return { key: '', label: '', type: 'text', required: false, options: [], source: '', allowed_dept_ids: [] }
   }
 
   function openAdd() {
@@ -36,7 +42,7 @@ function FieldEditor({ subType, typeName, onBack, onSaved }) {
 
   function openEdit(idx) {
     var f = fields[idx]
-    setForm(Object.assign({}, f, { options: f.options || [], source: f.source || '' }))
+    setForm(Object.assign({}, f, { options: f.options || [], source: f.source || '', allowed_dept_ids: f.allowed_dept_ids || [] }))
     setEditIdx(idx)
   }
 
@@ -63,6 +69,9 @@ function FieldEditor({ subType, typeName, onBack, onSaved }) {
     }
     if (form.type === 'lookup') {
       field.source = form.source
+      if (form.source === 'job_departments') {
+        field.allowed_dept_ids = form.allowed_dept_ids || []
+      }
     }
 
     var updated
@@ -196,6 +205,37 @@ function FieldEditor({ subType, typeName, onBack, onSaved }) {
                 <option value="">Select source...</option>
                 {LOOKUP_SOURCES.map(function (s) { return <option key={s.value} value={s.value}>{s.label}</option> })}
               </select>
+            </div>
+          )}
+
+          {form.type === 'lookup' && form.source === 'job_departments' && (
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs font-medium text-gray-600">Departments to show</label>
+                <span className="text-[11px] text-gray-500">{(form.allowed_dept_ids || []).length} of {departments.length}</span>
+              </div>
+              <p className="text-[11px] text-gray-400 mb-2">Leave empty to show all. Otherwise only ticked departments appear in the dropdown.</p>
+              <div className="bg-gray-50 rounded-lg p-2 max-h-48 overflow-y-auto">
+                <div className="grid grid-cols-2 gap-1.5">
+                  {departments.map(function (d) {
+                    var checked = (form.allowed_dept_ids || []).indexOf(d.id) !== -1
+                    return (
+                      <label key={d.id} className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer">
+                        <input type="checkbox" checked={checked}
+                          onChange={function () {
+                            var current = (form.allowed_dept_ids || []).slice()
+                            var i = current.indexOf(d.id)
+                            if (i !== -1) current.splice(i, 1)
+                            else current.push(d.id)
+                            updateForm('allowed_dept_ids', current)
+                          }}
+                          className="w-3.5 h-3.5 rounded accent-indigo-600" />
+                        <span>{d.name}</span>
+                      </label>
+                    )
+                  })}
+                </div>
+              </div>
             </div>
           )}
 

@@ -7,13 +7,15 @@ function Vendors({ profile }) {
   var [categories, setCategories] = useState([])
   var [departments, setDepartments] = useState([])
   var [subDepartments, setSubDepartments] = useState([])
+  var [expenseTypes, setExpenseTypes] = useState([])
+  var [expenseSubTypes, setExpenseSubTypes] = useState([])
   var [loading, setLoading] = useState(true)
   var [saving, setSaving] = useState(false)
   var [search, setSearch] = useState('')
   var [catFilter, setCatFilter] = useState('')
   var [showInactive, setShowInactive] = useState(false)
   var [editing, setEditing] = useState(null)
-  var [form, setForm] = useState({ name: '', contact: '', phone: '', phone2: '', email: '', address: '', category_ids: [], notes: '', opening_balance: '', gst_number: '', pan_number: '', bank_account: '', bank_ifsc: '', vendor_type: 'Supplier', lead_time_days: '', referred_by: '' })
+  var [form, setForm] = useState({ name: '', contact: '', phone: '', phone2: '', email: '', address: '', category_ids: [], expense_type_ids: [], expense_sub_type_ids: [], notes: '', opening_balance: '', gst_number: '', pan_number: '', bank_account: '', bank_ifsc: '', vendor_type: 'Supplier', lead_time_days: '', referred_by: '' })
   var [importReview, setImportReview] = useState(null)
   var [importSummary, setImportSummary] = useState(null)
   var importFileRef = useRef(null)
@@ -22,22 +24,26 @@ function Vendors({ profile }) {
 
   async function loadAll() {
     setLoading(true)
-    var [vRes, cRes, dRes, sdRes] = await Promise.all([
+    var [vRes, cRes, dRes, sdRes, etRes, estRes] = await Promise.all([
       supabase.from('vendors').select('*').order('name'),
       supabase.from('categories').select('id, name, sub_department_id').order('name'),
       supabase.from('departments').select('id, name').eq('active', true).order('name'),
       supabase.from('sub_departments').select('id, name, department_id').eq('active', true).order('name'),
+      supabase.from('expense_types').select('id, name, icon').eq('active', true).order('sort_order').order('name'),
+      supabase.from('expense_sub_types').select('id, name, expense_type_id').eq('active', true).order('sort_order').order('name'),
     ])
     setVendors(vRes.data || [])
     setCategories(cRes.data || [])
     setDepartments(dRes.data || [])
     setSubDepartments(sdRes.data || [])
+    setExpenseTypes(etRes.data || [])
+    setExpenseSubTypes(estRes.data || [])
     setLoading(false)
   }
 
   function startAdd() {
     setEditing('new')
-    setForm({ name: '', contact: '', phone: '', phone2: '', email: '', address: '', category_ids: [], notes: '', opening_balance: '', gst_number: '', pan_number: '', bank_account: '', bank_ifsc: '', vendor_type: 'Supplier', lead_time_days: '', referred_by: '' })
+    setForm({ name: '', contact: '', phone: '', phone2: '', email: '', address: '', category_ids: [], expense_type_ids: [], expense_sub_type_ids: [], notes: '', opening_balance: '', gst_number: '', pan_number: '', bank_account: '', bank_ifsc: '', vendor_type: 'Supplier', lead_time_days: '', referred_by: '' })
   }
 
   function startEdit(v) {
@@ -50,6 +56,8 @@ function Vendors({ profile }) {
       email: v.email || '',
       address: v.address || '',
       category_ids: v.category_ids || [],
+      expense_type_ids: v.expense_type_ids || [],
+      expense_sub_type_ids: v.expense_sub_type_ids || [],
       notes: v.notes || '',
       opening_balance: v.opening_balance_paise ? String(v.opening_balance_paise / 100) : '',
       gst_number: v.gst_number || '',
@@ -64,7 +72,7 @@ function Vendors({ profile }) {
 
   function cancelEdit() {
     setEditing(null)
-    setForm({ name: '', contact: '', phone: '', phone2: '', email: '', address: '', category_ids: [], notes: '', opening_balance: '', gst_number: '', pan_number: '', bank_account: '', bank_ifsc: '', vendor_type: 'Supplier', lead_time_days: '', referred_by: '' })
+    setForm({ name: '', contact: '', phone: '', phone2: '', email: '', address: '', category_ids: [], expense_type_ids: [], expense_sub_type_ids: [], notes: '', opening_balance: '', gst_number: '', pan_number: '', bank_account: '', bank_ifsc: '', vendor_type: 'Supplier', lead_time_days: '', referred_by: '' })
   }
 
   function toggleCat(catId) {
@@ -76,6 +84,34 @@ function Vendors({ profile }) {
       return Object.assign({}, prev, { category_ids: ids })
     })
   }
+
+  function toggleExpSubType(stId) {
+    setForm(function (prev) {
+      var ids = (prev.expense_sub_type_ids || []).slice()
+      var idx = ids.indexOf(stId)
+      if (idx !== -1) ids.splice(idx, 1)
+      else ids.push(stId)
+      return Object.assign({}, prev, { expense_sub_type_ids: ids })
+    })
+  }
+
+  function toggleExpType(tId) {
+    // Toggling a type toggles all its sub-types atomically.
+    setForm(function (prev) {
+      var typeIds = (prev.expense_type_ids || []).slice()
+      var subTypeIds = (prev.expense_sub_type_ids || []).slice()
+      var childSubIds = expenseSubTypes.filter(function (s) { return s.expense_type_id === tId }).map(function (s) { return s.id })
+      var tIdx = typeIds.indexOf(tId)
+      if (tIdx !== -1) {
+        typeIds.splice(tIdx, 1)
+        subTypeIds = subTypeIds.filter(function (id) { return childSubIds.indexOf(id) === -1 })
+      } else {
+        typeIds.push(tId)
+        childSubIds.forEach(function (id) { if (subTypeIds.indexOf(id) === -1) subTypeIds.push(id) })
+      }
+      return Object.assign({}, prev, { expense_type_ids: typeIds, expense_sub_type_ids: subTypeIds })
+    })
+  } 
 
   async function saveVendor() {
     if (saving) return
@@ -90,6 +126,8 @@ function Vendors({ profile }) {
       email: form.email.trim() || null,
       address: form.address.trim() || null,
       category_ids: form.category_ids,
+      expense_type_ids: form.expense_type_ids || [],
+      expense_sub_type_ids: form.expense_sub_type_ids || [],
       notes: form.notes.trim() || null,
       opening_balance_paise: form.opening_balance ? Math.round(Number(form.opening_balance) * 100) : 0,
       gst_number: form.gst_number.trim() || null,
@@ -766,6 +804,49 @@ function Vendors({ profile }) {
                   )
                 })
               })()}
+            </div>
+          </div>
+
+          {/* Expense Types (groups vendor by which expense sub-types they serve) */}
+          <div className="p-5 border-t border-gray-100">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Expense Types</p>
+              {(form.expense_sub_type_ids || []).length > 0 && (
+                <span className="text-[11px] text-indigo-600 font-semibold">{(form.expense_sub_type_ids || []).length} sub-type{(form.expense_sub_type_ids || []).length !== 1 ? 's' : ''} selected</span>
+              )}
+            </div>
+            <p className="text-[11px] text-gray-400 mb-2">Ticking a type also ticks all its sub-types. Vendor will appear in expense-form pickers for the ticked sub-types.</p>
+            <div className="space-y-3 max-h-80 overflow-y-auto p-1">
+              {expenseTypes.length === 0 && <p className="text-xs text-gray-400 px-1">No expense types configured</p>}
+              {expenseTypes.map(function (t) {
+                var subs = expenseSubTypes.filter(function (s) { return s.expense_type_id === t.id })
+                var typeChecked = (form.expense_type_ids || []).indexOf(t.id) !== -1
+                return (
+                  <div key={t.id}>
+                    <label className="flex items-center gap-2 text-[11px] font-bold text-gray-600 uppercase tracking-wider mb-1.5 cursor-pointer select-none">
+                      <input type="checkbox" checked={typeChecked}
+                        onChange={function () { toggleExpType(t.id) }}
+                        className="w-3.5 h-3.5 rounded accent-indigo-600" />
+                      {t.icon ? t.icon + ' ' : ''}{t.name}
+                      <span className="text-[10px] text-gray-400 font-normal">({subs.length} sub-type{subs.length !== 1 ? 's' : ''})</span>
+                    </label>
+                    {subs.length > 0 && (
+                      <div className="flex flex-wrap gap-2 pl-6">
+                        {subs.map(function (st) {
+                          var selected = (form.expense_sub_type_ids || []).indexOf(st.id) !== -1
+                          return (
+                            <button key={st.id} type="button" onClick={function () { toggleExpSubType(st.id) }}
+                              className={"px-3 py-1.5 text-xs font-semibold rounded-lg border transition-all " +
+                                (selected ? "bg-indigo-50 border-indigo-300 text-indigo-700" : "bg-white border-gray-200 text-gray-500 hover:bg-gray-50")}>
+                              {st.name}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
             </div>
           </div>
 

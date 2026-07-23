@@ -147,12 +147,15 @@ function ExpenseForm({ profile, onDone }) {
     if (!source || lookupCache[source]) return
     var items = []
     if (source === 'vendors') {
+      // Store raw rows — filtered by parent sub-type at render time.
       var { data } = await supabase.from('vendors')
-        .select('id, name, contact, phone').eq('active', true).order('name')
-      ;(data || []).forEach(function (v) {
-        var label = v.contact ? v.name + ' — ' + v.contact : v.name
-        items.push({ label: label, value: v.name })
-      })
+        .select('id, name, contact, phone, expense_type_ids, expense_sub_type_ids').eq('active', true).order('name')
+      items = data || []
+    } else if (source === 'job_departments') {
+      // Store raw rows — filtered by field.allowed_dept_ids at render time.
+      var { data: jdData } = await supabase.from('departments')
+        .select('id, name').eq('active', true).order('name')
+      items = jdData || []
     } else if (source === 'staff') {
       var { data: pData } = await supabase.from('profiles').select('id, name').order('name')
       items = (pData || []).map(function (p) { return { label: p.name || '—', value: String(p.id) } })
@@ -447,12 +450,38 @@ function ExpenseForm({ profile, onDone }) {
     setEntries(updated)
   }
 
-  function renderDynamicField(field, value, onChange) {
+  function renderDynamicField(field, value, onChange, entry) {
     var cls = 'w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-300 focus:border-amber-400'
     var sty = { fontSize: '16px' }
 
     if (field.type === 'lookup') {
-      var items = lookupCache[field.source] || []
+      var items = []
+      if (field.source === 'vendors') {
+        // Filter vendors: match on current sub-type, or parent type if tagged at type level.
+        var raw = lookupCache.vendors || []
+        var subTypeIdNum = entry ? Number(entry.expenseSubTypeId) : 0
+        var subType = subTypeIdNum ? expenseSubTypes.find(function (s) { return s.id === subTypeIdNum }) : null
+        var parentTypeId = subType ? subType.expense_type_id : 0
+        items = raw.filter(function (v) {
+          if (!subTypeIdNum) return true
+          var stIds = v.expense_sub_type_ids || []
+          var tIds = v.expense_type_ids || []
+          return stIds.indexOf(subTypeIdNum) !== -1 || (parentTypeId && tIds.indexOf(parentTypeId) !== -1)
+        }).map(function (v) {
+          var label = v.contact ? v.name + ' — ' + v.contact : v.name
+          return { label: label, value: v.name }
+        })
+      } else if (field.source === 'job_departments') {
+        // Filter to admin-configured allowed depts (empty list ⇒ show all).
+        var rawDepts = lookupCache.job_departments || []
+        var allowedIds = field.allowed_dept_ids || []
+        items = rawDepts.filter(function (d) {
+          if (allowedIds.length === 0) return true
+          return allowedIds.indexOf(d.id) !== -1
+        }).map(function (d) { return { label: d.name, value: String(d.id) } })
+      } else {
+        items = lookupCache[field.source] || []
+      }
       return (
         <SearchDropdown
           key={field.key}
@@ -830,7 +859,7 @@ function ExpenseForm({ profile, onDone }) {
               {subTypeFields.map(function (field) {
                 return renderDynamicField(field, entry.fieldValues[field.key] || '', function (val) {
                   updateFieldValue(idx, field.key, val)
-                })
+                }, entry)
               })}
 
               {/* Date — gated to today ± 3 days back */}
