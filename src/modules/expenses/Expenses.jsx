@@ -115,8 +115,8 @@ function Expenses({ profile, masterMode }) {
 
     var hasAllocFilter = !!(deptFilter || subDeptFilter || venueFilter)
     var allocEmbed = hasAllocFilter
-      ? 'expense_allocations!inner(department, department_id, sub_department_id, venue_id, amount_paise)'
-      : 'expense_allocations(department, department_id, sub_department_id, venue_id, amount_paise)'
+      ? 'expense_allocations!inner(department, department_id, venue_id, amount_paise)'
+      : 'expense_allocations(department, department_id, venue_id, amount_paise)'
 
     var query = supabase.from('expenses')
       .select('id, batch_id, expense_type_id, expense_sub_type_id, amount_paise, tax_paise, description, status, expense_date, receipt_path, receipt_paths, created_at, rejection_reason, flag_reason, penalty_paise, penalized_at, deduction_type, vendor_name, travel_from, travel_to, travel_mode, metadata, event_id, deleted_at, expense_types(name), expense_sub_types(name, extra_fields), events(event_name), ' + allocEmbed)
@@ -130,7 +130,6 @@ function Expenses({ profile, masterMode }) {
     if (dateTo) query = query.lte('expense_date', dateTo)
     if (expSearchDebounced) query = query.ilike('description', '%' + expSearchDebounced + '%')
     if (deptFilter) query = query.eq('expense_allocations.department_id', Number(deptFilter))
-    if (subDeptFilter) query = query.eq('expense_allocations.sub_department_id', Number(subDeptFilter))
     if (venueFilter) query = query.eq('expense_allocations.venue_id', Number(venueFilter))
     if (amountMin) query = query.gte('amount_paise', Math.round(Number(amountMin) * 100))
     if (amountMax) query = query.lte('amount_paise', Math.round(Number(amountMax) * 100))
@@ -162,8 +161,8 @@ function Expenses({ profile, masterMode }) {
 
     var hasAllocFilter2 = !!(deptFilter || subDeptFilter || venueFilter)
     var allocEmbed2 = hasAllocFilter2
-      ? 'expense_allocations!inner(department, department_id, sub_department_id, venue_id, amount_paise)'
-      : 'expense_allocations(department, department_id, sub_department_id, venue_id, amount_paise)'
+      ? 'expense_allocations!inner(department, department_id, venue_id, amount_paise)'
+      : 'expense_allocations(department, department_id, venue_id, amount_paise)'
 
     var query = supabase.from('expenses')
       .select('id, user_id, batch_id, expense_type_id, expense_sub_type_id, amount_paise, tax_paise, description, status, expense_date, receipt_path, receipt_paths, created_at, rejection_reason, flag_reason, penalty_paise, deduction_type, vendor_name, travel_from, travel_to, travel_mode, metadata, event_id, deleted_at, expense_types(name), expense_sub_types(name, extra_fields), events(event_name), ' + allocEmbed2)
@@ -178,7 +177,6 @@ function Expenses({ profile, masterMode }) {
     if (expSearchDebounced) query = query.ilike('description', '%' + expSearchDebounced + '%')
     if (userFilter) query = query.eq('user_id', userFilter)
     if (deptFilter) query = query.eq('expense_allocations.department_id', Number(deptFilter))
-    if (subDeptFilter) query = query.eq('expense_allocations.sub_department_id', Number(subDeptFilter))
     if (venueFilter) query = query.eq('expense_allocations.venue_id', Number(venueFilter))
     if (amountMin) query = query.gte('amount_paise', Math.round(Number(amountMin) * 100))
     if (amountMax) query = query.lte('amount_paise', Math.round(Number(amountMax) * 100))

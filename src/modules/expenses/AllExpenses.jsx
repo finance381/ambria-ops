@@ -65,7 +65,7 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds }) {
 
   useEffect(function () {
     loadAllExps(false)
-  }, [allExpStatus, allExpFrom, allExpTo, allExpSearchD, deptFilter, subDeptFilter, venueFilter, userFilter, amountMin, amountMax, (scopeDeptIds || []).join(',')])
+  }, [allExpStatus, allExpFrom, allExpTo, allExpSearchD, deptFilter, expTypeFilter, expSubTypeFilter, venueFilter, userFilter, amountMin, amountMax, (scopeDeptIds || []).join(',')])
 
   async function loadAllExps(append) {
     var offset = append ? allExps.length : 0
