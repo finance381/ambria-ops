@@ -15,6 +15,7 @@ function ExpenseReport({ onBack }) {
     var { data, error } = await supabase.from('expenses')
       .select('id, user_id, expense_type_id, amount_paise, status, expense_date, expense_types(name), profiles:user_id(name), expense_allocations(department, amount_paise)')
       .in('status', ['recorded', 'acknowledged', 'approved'])
+      .is('deleted_at', null)
       .gte('expense_date', reportFrom)
       .lte('expense_date', reportTo)
       .order('expense_date', { ascending: false })

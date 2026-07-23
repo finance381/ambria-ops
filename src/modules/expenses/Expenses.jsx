@@ -87,8 +87,9 @@ function Expenses({ profile, masterMode }) {
     else setLoadingMore(true)
 
     var query = supabase.from('expenses')
-      .select('id, batch_id, expense_type_id, expense_sub_type_id, amount_paise, tax_paise, description, status, expense_date, receipt_path, receipt_paths, created_at, rejection_reason, flag_reason, penalty_paise, penalized_at, deduction_type, vendor_name, travel_from, travel_to, travel_mode, metadata, event_id, expense_types(name), expense_sub_types(name, extra_fields), events(event_name), expense_allocations(department, department_id, sub_department_id, amount_paise)')
+      .select('id, batch_id, expense_type_id, expense_sub_type_id, amount_paise, tax_paise, description, status, expense_date, receipt_path, receipt_paths, created_at, rejection_reason, flag_reason, penalty_paise, penalized_at, deduction_type, vendor_name, travel_from, travel_to, travel_mode, metadata, event_id, deleted_at, expense_types(name), expense_sub_types(name, extra_fields), events(event_name), expense_allocations(department, department_id, sub_department_id, amount_paise)')
       .eq('user_id', profile.id)
+      .is('deleted_at', null)
       .order('created_at', { ascending: false })
       .range(offset, offset + PAGE_SIZE)
 
@@ -123,9 +124,10 @@ function Expenses({ profile, masterMode }) {
     var statuses = ['recorded', 'flagged']
 
     var query = supabase.from('expenses')
-      .select('id, user_id, batch_id, expense_type_id, expense_sub_type_id, amount_paise, tax_paise, description, status, expense_date, receipt_path, receipt_paths, created_at, rejection_reason, flag_reason, penalty_paise, deduction_type, vendor_name, travel_from, travel_to, travel_mode, metadata, event_id, expense_types(name), expense_sub_types(name, extra_fields), events(event_name), expense_allocations(department, department_id, sub_department_id, amount_paise)')
+      .select('id, user_id, batch_id, expense_type_id, expense_sub_type_id, amount_paise, tax_paise, description, status, expense_date, receipt_path, receipt_paths, created_at, rejection_reason, flag_reason, penalty_paise, deduction_type, vendor_name, travel_from, travel_to, travel_mode, metadata, event_id, deleted_at, expense_types(name), expense_sub_types(name, extra_fields), events(event_name), expense_allocations(department, department_id, sub_department_id, amount_paise)')
       .neq('user_id', profile.id)
       .in('status', statuses)
+      .is('deleted_at', null)
       .order('created_at', { ascending: false })
       .range(offset, offset + PAGE_SIZE)
 

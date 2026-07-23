@@ -40,11 +40,15 @@ function AllExpenses({ onBack, onOpenDetail, embedded }) {
     else setAllExpLoading(true)
 
     var query = supabase.from('expenses')
-      .select('id, user_id, batch_id, expense_type_id, amount_paise, description, status, expense_date, receipt_path, created_at, rejection_reason, vendor_name, travel_from, travel_to, travel_mode, metadata, expense_types(name, extra_fields), expense_allocations(department, department_id, sub_department_id, amount_paise)')
+      .select('id, user_id, batch_id, expense_type_id, amount_paise, description, status, expense_date, receipt_path, created_at, rejection_reason, vendor_name, travel_from, travel_to, travel_mode, metadata, deleted_at, delete_reason, deleted_by, expense_types(name, extra_fields), expense_allocations(department, department_id, sub_department_id, amount_paise)')
       .order('created_at', { ascending: false })
       .range(offset, offset + PAGE_SIZE)
 
-    if (allExpStatus) query = query.eq('status', allExpStatus)
+    if (allExpStatus === 'deleted') {
+      query = query.not('deleted_at', 'is', null)
+    } else if (allExpStatus) {
+      query = query.eq('status', allExpStatus).is('deleted_at', null)
+    }
     if (allExpFrom) query = query.gte('expense_date', allExpFrom)
     if (allExpTo) query = query.lte('expense_date', allExpTo)
     if (allExpSearchD) query = query.ilike('description', '%' + allExpSearchD + '%')
@@ -125,8 +129,8 @@ function AllExpenses({ onBack, onOpenDetail, embedded }) {
         style={{ fontSize: '16px' }} />
 
       <div className="flex gap-2 flex-wrap">
-        {['', 'recorded', 'acknowledged', 'flagged', 'penalized'].map(function (s) {
-          var label = s ? APPROVAL_STATUS_LABELS[s] : 'All'
+        {['', 'recorded', 'acknowledged', 'flagged', 'penalized', 'deleted'].map(function (s) {
+          var label = s === 'deleted' ? 'Deleted' : (s ? APPROVAL_STATUS_LABELS[s] : 'All')
           return (
             <button key={s} onClick={function () { setAllExpStatus(s === allExpStatus ? '' : s) }}
               className={"px-3 py-1.5 text-[11px] font-bold rounded-full border transition-colors " +
@@ -191,8 +195,8 @@ function AllExpenses({ onBack, onOpenDetail, embedded }) {
                   </div>
                   <div className="flex flex-col items-end gap-1 flex-shrink-0 ml-2">
                     <span className="text-sm font-bold text-gray-800">{formatPoints(exp.amount_paise)}</span>
-                    <span className={"text-[10px] font-bold uppercase px-2 py-0.5 rounded-full " + (APPROVAL_STATUS_COLORS[exp.status] || 'bg-gray-100 text-gray-600')}>
-                      {APPROVAL_STATUS_LABELS[exp.status] || exp.status}
+                    <span className={"text-[10px] font-bold uppercase px-2 py-0.5 rounded-full " + (exp.deleted_at ? "bg-gray-200 text-gray-600" : (APPROVAL_STATUS_COLORS[exp.status] || 'bg-gray-100 text-gray-600'))}>
+                      {exp.deleted_at ? '🗑 Deleted' : (APPROVAL_STATUS_LABELS[exp.status] || exp.status)}
                     </span>
                   </div>
                 </div>

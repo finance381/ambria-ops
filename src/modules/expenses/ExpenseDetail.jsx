@@ -61,10 +61,11 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
       })
   }, [exp.id])
 
-  var canReview = (isAdmin || isDeptApprover) && (exp.status === 'recorded' || exp.status === 'flagged') && exp.user_id !== profile?.id
-  var canDelete = (exp.user_id === profile?.id && (exp.status === 'recorded' || exp.status === 'flagged')) || isAdmin
-  var canEdit = exp.user_id === profile?.id && (exp.status === 'recorded' || exp.status === 'flagged')
-  var canResubmit = exp.user_id === profile?.id && exp.status === 'flagged'
+  var isDeleted = !!exp.deleted_at
+  var canReview = !isDeleted && (isAdmin || isDeptApprover) && (exp.status === 'recorded' || exp.status === 'flagged') && exp.user_id !== profile?.id
+  var canDelete = !isDeleted && ((exp.user_id === profile?.id && (exp.status === 'recorded' || exp.status === 'flagged')) || isAdmin)
+  var canEdit = !isDeleted && exp.user_id === profile?.id && (exp.status === 'recorded' || exp.status === 'flagged')
+  var canResubmit = !isDeleted && exp.user_id === profile?.id && exp.status === 'flagged'
 
   var receiptPaths = (exp.receipt_paths && exp.receipt_paths.length > 0)
     ? exp.receipt_paths
@@ -196,10 +197,11 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
   async function deleteExp() {
     if (saving) return
     setSaving(true)
-    if (receiptPaths.length > 0) {
-      await supabase.storage.from('receipts').remove(receiptPaths)
-    }
-    var { error } = await supabase.from('expenses').delete().eq('id', exp.id)
+    var { error } = await supabase.from('expenses').update({
+      deleted_at: new Date().toISOString(),
+      deleted_by: profile.id,
+      delete_reason: deleteReason.trim() || null,
+    }).eq('id', exp.id)
     if (error) { alert('Delete failed: ' + error.message); setSaving(false); return }
     if (exp.status === 'recorded') {
       try {
@@ -247,6 +249,16 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
         <div className="bg-red-50 border border-red-200 rounded-lg p-3">
           <p className="text-xs font-bold text-red-700 mb-0.5">Rejection Reason</p>
           <p className="text-sm text-red-600">{exp.rejection_reason}</p>
+        </div>
+      )}
+
+      {isDeleted && (
+        <div className="bg-gray-100 border border-gray-300 rounded-lg p-3">
+          <p className="text-xs font-bold text-gray-700 mb-0.5">🗑 Deleted by user</p>
+          {exp.delete_reason && <p className="text-sm text-gray-600">{exp.delete_reason}</p>}
+          <p className="text-[11px] text-gray-500 mt-1">
+            {exp.deleted_at ? new Date(exp.deleted_at).toLocaleString() : ''}
+          </p>
         </div>
       )}
 
