@@ -34,7 +34,7 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
 
   useEffect(function () {
     supabase.from('expense_allocations')
-      .select('id, department, venue_id, sub_venue_id, amount_paise, department_id, sub_department_id')
+      .select('id, department, venue_id, sub_venue_id, amount_paise, department_id, expense_type_id, expense_sub_type_id, remarks')
       .eq('expense_id', exp.id)
       .then(function (res) {
         var rows = res.data || []
@@ -43,18 +43,21 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
           var vIds = rows.map(function (r) { return r.venue_id }).filter(Boolean)
           var svIds = rows.map(function (r) { return r.sub_venue_id }).filter(Boolean)
           var dIds = rows.map(function (r) { return r.department_id }).filter(Boolean)
-          var sdIds = rows.map(function (r) { return r.sub_department_id }).filter(Boolean)
+          var etIds = rows.map(function (r) { return r.expense_type_id }).filter(Boolean)
+          var estIds = rows.map(function (r) { return r.expense_sub_type_id }).filter(Boolean)
           Promise.all([
             vIds.length > 0 ? supabase.from('venues').select('id, code, name').in('id', vIds) : { data: [] },
             svIds.length > 0 ? supabase.from('sub_venues').select('id, name').in('id', svIds) : { data: [] },
             dIds.length > 0 ? supabase.from('departments').select('id, name').in('id', dIds) : { data: [] },
-            sdIds.length > 0 ? supabase.from('sub_departments').select('id, name').in('id', sdIds) : { data: [] }
+            etIds.length > 0 ? supabase.from('expense_types').select('id, name').in('id', etIds) : { data: [] },
+            estIds.length > 0 ? supabase.from('expense_sub_types').select('id, name').in('id', estIds) : { data: [] }
           ]).then(function (results) {
             var map = {}
             ;(results[0].data || []).forEach(function (v) { map['v_' + v.id] = v.code + ' — ' + v.name })
             ;(results[1].data || []).forEach(function (sv) { map['sv_' + sv.id] = sv.name })
             ;(results[2].data || []).forEach(function (d) { map['d_' + d.id] = d.name })
-            ;(results[3].data || []).forEach(function (sd) { map['sd_' + sd.id] = sd.name })
+            ;(results[3].data || []).forEach(function (et) { map['et_' + et.id] = et.name })
+            ;(results[4].data || []).forEach(function (est) { map['est_' + est.id] = est.name })
             setAllocVenues(map)
           })
         }
@@ -406,17 +409,24 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
           <div className="divide-y divide-gray-100">
             {allocations.map(function (a) {
               var deptLabel = a.department_id && allocVenues['d_' + a.department_id] ? allocVenues['d_' + a.department_id] : a.department || '—'
-              var subDeptLabel = a.sub_department_id && allocVenues['sd_' + a.sub_department_id] ? allocVenues['sd_' + a.sub_department_id] : null
+              var typeLabel = a.expense_type_id && allocVenues['et_' + a.expense_type_id] ? allocVenues['et_' + a.expense_type_id] : null
+              var subTypeLabel = a.expense_sub_type_id && allocVenues['est_' + a.expense_sub_type_id] ? allocVenues['est_' + a.expense_sub_type_id] : null
               var venueLabel = a.venue_id && allocVenues['v_' + a.venue_id] ? allocVenues['v_' + a.venue_id] : null
               var subVenueLabel = a.sub_venue_id && allocVenues['sv_' + a.sub_venue_id] ? allocVenues['sv_' + a.sub_venue_id] : null
               return (
                 <div key={a.id} className="px-4 py-2.5">
                   <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium text-gray-800">{deptLabel}{subDeptLabel ? ' › ' + subDeptLabel : ''}</span>
+                    <span className="text-sm font-medium text-gray-800">{deptLabel}</span>
                     {a.amount_paise > 0 && <span className="text-sm font-bold text-gray-900">{formatPoints(a.amount_paise)}</span>}
                   </div>
+                  {(typeLabel || subTypeLabel) && (
+                    <p className="text-[11px] text-indigo-600 font-medium mt-0.5">{typeLabel || '—'}{subTypeLabel ? ' › ' + subTypeLabel : ''}</p>
+                  )}
                   {venueLabel && (
                     <p className="text-[11px] text-gray-500 mt-0.5">{venueLabel}{subVenueLabel ? ' › ' + subVenueLabel : ''}</p>
+                  )}
+                  {a.remarks && (
+                    <p className="text-[11px] text-gray-500 italic mt-0.5">"{a.remarks}"</p>
                   )}
                 </div>
               )

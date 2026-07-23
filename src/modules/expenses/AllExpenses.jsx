@@ -5,7 +5,7 @@ import { APPROVAL_STATUS_COLORS, APPROVAL_STATUS_LABELS } from '../../lib/consta
 
 var PAGE_SIZE = 20
 
-function AllExpenses({ onBack, onOpenDetail, embedded }) {
+function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds }) {
   var [allExps, setAllExps] = useState([])
   var [allExpHasMore, setAllExpHasMore] = useState(false)
   var [allExpStatus, setAllExpStatus] = useState('')
@@ -15,12 +15,11 @@ function AllExpenses({ onBack, onOpenDetail, embedded }) {
   var [allExpSearchD, setAllExpSearchD] = useState('')
   var [allExpLoading, setAllExpLoading] = useState(false)
   var [allExpLoadingMore, setAllExpLoadingMore] = useState(false)
-  var [subDeptMap, setSubDeptMap] = useState({})
-
   // Filter panel state
   var [filtersOpen, setFiltersOpen] = useState(false)
   var [deptFilter, setDeptFilter] = useState('')
-  var [subDeptFilter, setSubDeptFilter] = useState('')
+  var [expTypeFilter, setExpTypeFilter] = useState('')
+  var [expSubTypeFilter, setExpSubTypeFilter] = useState('')
   var [venueFilter, setVenueFilter] = useState('')
   var [userFilter, setUserFilter] = useState('')
   var [amountMin, setAmountMin] = useState('')
@@ -28,7 +27,10 @@ function AllExpenses({ onBack, onOpenDetail, embedded }) {
 
   // Filter lookups
   var [deptOptions, setDeptOptions] = useState([])
-  var [subDeptOptions, setSubDeptOptions] = useState([])
+  var [expTypeOptions, setExpTypeOptions] = useState([])
+  var [expSubTypeOptions, setExpSubTypeOptions] = useState([])
+  var [expTypeMap, setExpTypeMap] = useState({})
+  var [expSubTypeMap, setExpSubTypeMap] = useState({})
   var [venueOptions, setVenueOptions] = useState([])
   var [userOptions, setUserOptions] = useState([])
 
@@ -39,35 +41,42 @@ function AllExpenses({ onBack, onOpenDetail, embedded }) {
 
   useEffect(function () {
     Promise.all([
-      supabase.from('sub_departments').select('id, name, department_id').order('name'),
+      supabase.from('expense_types').select('id, name, department_id').eq('active', true).order('name'),
       supabase.from('departments').select('id, name').eq('active', true).order('name'),
       supabase.from('venues').select('id, code, name').eq('active', true).order('name'),
       supabase.from('profiles').select('id, name').order('name'),
+      supabase.from('expense_sub_types').select('id, name, expense_type_id').eq('active', true).order('name'),
     ]).then(function (res) {
-      var sds = res[0].data || []
-      var map = {}
-      sds.forEach(function (sd) { map[sd.id] = sd.name })
-      setSubDeptMap(map)
-      setSubDeptOptions(sds)
+      var ets = res[0].data || []
+      var etMap = {}
+      ets.forEach(function (t) { etMap[t.id] = t.name })
+      setExpTypeMap(etMap)
+      setExpTypeOptions(ets)
       setDeptOptions(res[1].data || [])
       setVenueOptions(res[2].data || [])
       setUserOptions(res[3].data || [])
+      var ests = res[4].data || []
+      var estMap = {}
+      ests.forEach(function (s) { estMap[s.id] = s.name })
+      setExpSubTypeMap(estMap)
+      setExpSubTypeOptions(ests)
     })
   }, [])
 
   useEffect(function () {
     loadAllExps(false)
-  }, [allExpStatus, allExpFrom, allExpTo, allExpSearchD, deptFilter, subDeptFilter, venueFilter, userFilter, amountMin, amountMax])
+  }, [allExpStatus, allExpFrom, allExpTo, allExpSearchD, deptFilter, subDeptFilter, venueFilter, userFilter, amountMin, amountMax, (scopeDeptIds || []).join(',')])
 
   async function loadAllExps(append) {
     var offset = append ? allExps.length : 0
     if (append) setAllExpLoadingMore(true)
     else setAllExpLoading(true)
 
-    var hasAllocFilter = !!(deptFilter || subDeptFilter || venueFilter)
+    var hasScope = scopeDeptIds && scopeDeptIds.length > 0
+    var hasAllocFilter = !!(deptFilter || expTypeFilter || expSubTypeFilter || venueFilter) || hasScope
     var allocEmbed = hasAllocFilter
-      ? 'expense_allocations!inner(department, department_id, sub_department_id, venue_id, amount_paise)'
-      : 'expense_allocations(department, department_id, sub_department_id, venue_id, amount_paise)'
+      ? 'expense_allocations!inner(department, department_id, venue_id, amount_paise, expense_type_id, expense_sub_type_id, remarks)'
+      : 'expense_allocations(department, department_id, venue_id, amount_paise, expense_type_id, expense_sub_type_id, remarks)'
 
     var query = supabase.from('expenses')
       .select('id, user_id, batch_id, expense_type_id, amount_paise, description, status, expense_date, receipt_path, created_at, rejection_reason, vendor_name, travel_from, travel_to, travel_mode, metadata, deleted_at, delete_reason, deleted_by, expense_types(name, extra_fields), ' + allocEmbed)
@@ -84,8 +93,10 @@ function AllExpenses({ onBack, onOpenDetail, embedded }) {
     if (allExpSearchD) query = query.ilike('description', '%' + allExpSearchD + '%')
     if (userFilter) query = query.eq('user_id', userFilter)
     if (deptFilter) query = query.eq('expense_allocations.department_id', Number(deptFilter))
-    if (subDeptFilter) query = query.eq('expense_allocations.sub_department_id', Number(subDeptFilter))
+    if (expTypeFilter) query = query.eq('expense_allocations.expense_type_id', Number(expTypeFilter))
+    if (expSubTypeFilter) query = query.eq('expense_allocations.expense_sub_type_id', Number(expSubTypeFilter))
     if (venueFilter) query = query.eq('expense_allocations.venue_id', Number(venueFilter))
+    if (hasScope) query = query.in('expense_allocations.department_id', scopeDeptIds)
     if (amountMin) query = query.gte('amount_paise', Math.round(Number(amountMin) * 100))
     if (amountMax) query = query.lte('amount_paise', Math.round(Number(amountMax) * 100))
 
@@ -116,16 +127,18 @@ function AllExpenses({ onBack, onOpenDetail, embedded }) {
 
   function exportAllExpCSV() {
     if (!allExps.length) return
-    var headers = ['Date', 'User', 'Department', 'Sub-Department', 'Amount (pts)', 'Description', 'Status']
+    var headers = ['Date', 'User', 'Department', 'Type', 'Sub-Type', 'Amount (pts)', 'Description', 'Status']
     var rows = allExps.map(function (e) {
       var firstAlloc = (e.expense_allocations && e.expense_allocations[0]) || {}
       var deptName = firstAlloc.department || ''
-      var subDeptName = firstAlloc.sub_department_id ? (subDeptMap[firstAlloc.sub_department_id] || '') : ''
+      var typeName = firstAlloc.expense_type_id ? (expTypeMap[firstAlloc.expense_type_id] || '') : ''
+      var subTypeName = firstAlloc.expense_sub_type_id ? (expSubTypeMap[firstAlloc.expense_sub_type_id] || '') : ''
       return [
         e.expense_date || '',
         e.profiles?.name || '',
         deptName,
-        subDeptName,
+        typeName,
+        subTypeName,
         e.amount_paise ? (e.amount_paise / 100) : 0,
         (e.description || '').replace(/,/g, ';'),
         e.status || '',
@@ -171,18 +184,23 @@ function AllExpenses({ onBack, onOpenDetail, embedded }) {
         if (allExpTo) count++
         if (userFilter) count++
         if (deptFilter) count++
-        if (subDeptFilter) count++
+        if (expTypeFilter) count++
+        if (expSubTypeFilter) count++
         if (venueFilter) count++
         if (amountMin) count++
         if (amountMax) count++
         function resetFilters() {
           setAllExpStatus(''); setAllExpFrom(''); setAllExpTo('')
-          setUserFilter(''); setDeptFilter(''); setSubDeptFilter(''); setVenueFilter('')
+          setUserFilter(''); setDeptFilter(''); setExpTypeFilter(''); setExpSubTypeFilter(''); setVenueFilter('')
           setAmountMin(''); setAmountMax('')
         }
-        var subDeptFiltered = deptFilter
-          ? subDeptOptions.filter(function (sd) { return String(sd.department_id) === deptFilter })
-          : subDeptOptions
+        // Types scoped to selected dept (dept-agnostic types always visible)
+        var typesForDept = deptFilter
+          ? expTypeOptions.filter(function (t) { return !t.department_id || String(t.department_id) === deptFilter })
+          : expTypeOptions
+        var subTypesForType = expTypeFilter
+          ? expSubTypeOptions.filter(function (s) { return String(s.expense_type_id) === expTypeFilter })
+          : []
         return (
           <div className="space-y-2">
             <div className="flex gap-2">
@@ -241,14 +259,27 @@ function AllExpenses({ onBack, onOpenDetail, embedded }) {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Sub-Dept</label>
-                    <select value={subDeptFilter}
-                      onChange={function (e) { setSubDeptFilter(e.target.value) }}
+                    <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Type</label>
+                    <select value={expTypeFilter}
+                      onChange={function (e) { setExpTypeFilter(e.target.value); setExpSubTypeFilter('') }}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
                       style={{ fontSize: '16px' }}>
                       <option value="">All</option>
-                      {subDeptFiltered.map(function (sd) {
-                        return <option key={sd.id} value={sd.id}>{sd.name}</option>
+                      {typesForDept.map(function (t) {
+                        return <option key={t.id} value={t.id}>{t.name}</option>
+                      })}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Sub-Type</label>
+                    <select value={expSubTypeFilter}
+                      onChange={function (e) { setExpSubTypeFilter(e.target.value) }}
+                      disabled={!expTypeFilter}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white disabled:bg-gray-100 disabled:text-gray-400"
+                      style={{ fontSize: '16px' }}>
+                      <option value="">All</option>
+                      {subTypesForType.map(function (s) {
+                        return <option key={s.id} value={s.id}>{s.name}</option>
                       })}
                     </select>
                   </div>
@@ -326,8 +357,10 @@ function AllExpenses({ onBack, onOpenDetail, embedded }) {
                         var a = (exp.expense_allocations && exp.expense_allocations[0]) || null
                         if (!a) return ''
                         var d = a.department || ''
-                        var sd = a.sub_department_id ? (subDeptMap[a.sub_department_id] || '') : ''
-                        return (d + (sd ? ' › ' + sd : '') + (d || sd ? ' · ' : ''))
+                        var t = a.expense_type_id ? (expTypeMap[a.expense_type_id] || '') : ''
+                        var st = a.expense_sub_type_id ? (expSubTypeMap[a.expense_sub_type_id] || '') : ''
+                        var typeStr = t ? (t + (st ? ' › ' + st : '')) : ''
+                        return (d + (typeStr ? ' · ' + typeStr : '') + (d || typeStr ? ' · ' : ''))
                       })()}
                       {formatDate(exp.expense_date)}
                     </p>

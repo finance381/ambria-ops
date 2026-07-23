@@ -473,19 +473,20 @@ function Expenses({ profile, masterMode }) {
               </span>
             )}
           </button>
-          {(isAdmin || isAuditor) && (
+          {(isAdmin || isAuditor || isDeptApprover) && (
             <button onClick={function () { setView('all'); setStatusFilter('') }}
               className={"flex-1 py-2 text-sm font-semibold rounded-md transition-colors " + (view === 'all' ? "bg-white text-gray-900 shadow-sm" : "text-gray-500")}>
-              All
+              {(isAdmin || isAuditor) ? 'All' : 'Dept'}
             </button>
           )}
         </div>
       )}
 
-      {/* All Expenses body — admin/auditor tab */}
-      {view === 'all' && (isAdmin || isAuditor) && (
+      {/* All Expenses body — admin/auditor sees everything; dept approver sees only their scoped depts */}
+      {view === 'all' && (isAdmin || isAuditor || isDeptApprover) && (
         <AllExpenses
           embedded
+          scopeDeptIds={(isAdmin || isAuditor) ? null : (profile?.event_dept_ids || [])}
           onOpenDetail={function (exp) { openDetail(Object.assign({}, exp, { _fromAll: true })) }}
         />
       )}

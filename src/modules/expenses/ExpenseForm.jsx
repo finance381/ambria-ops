@@ -15,7 +15,7 @@ function makeEntry() {
     taxAmount: '',
     expenseDate: new Date().toISOString().split('T')[0],
     fieldValues: {},
-    allocations: [{ departmentId: '', subDepartmentId: '', venueId: '', amountPaise: '' }],
+    allocations: [{ departmentId: '', venueId: '', expenseTypeId: '', expenseSubTypeId: '', amountPaise: '', remarks: '' }],
     receiptFiles: [],
     receiptPreviews: [],
     audioBlob: null,
@@ -27,7 +27,7 @@ function makeEntry() {
 }
 
 function makeAllocation() {
-  return { departmentId: '', subDepartmentId: '', venueId: '', amountPaise: '' }
+  return { departmentId: '', venueId: '', expenseTypeId: '', expenseSubTypeId: '', amountPaise: '', remarks: '' }
 }
 
 // Compresses image files to under MAX_KB. PDFs / non-images pass through untouched.
@@ -62,6 +62,16 @@ async function compressImage(file, maxKB) {
   } catch (_) {
     return file
   }
+}
+
+// Extract dominant root token from a name for cross-dept sub-type matching
+// e.g. "flr-food" → "food", "fbr-food" → "food"
+function extractRootToken(name) {
+  if (!name) return ''
+  var tokens = String(name).toLowerCase().split(/[-_\s\/\.]+/).filter(function (t) { return t.length >= 3 })
+  if (tokens.length === 0) return String(name).toLowerCase()
+  tokens.sort(function (a, b) { return b.length - a.length })
+  return tokens[0]
 }
 
 function makeItem() {
@@ -417,7 +427,11 @@ function ExpenseForm({ profile, onDone }) {
   function addAllocation(entryIdx) {
     var updated = entries.map(function (e, i) {
       if (i !== entryIdx) return e
-      return Object.assign({}, e, { allocations: e.allocations.concat([makeAllocation()]) })
+      var nA = makeAllocation()
+      // Prefill from entry's top-level; dept-specific match applied when dept picked
+      nA.expenseTypeId = e.expenseTypeId || ''
+      nA.expenseSubTypeId = e.expenseSubTypeId || ''
+      return Object.assign({}, e, { allocations: e.allocations.concat([nA]) })
     })
     setEntries(updated)
   }
@@ -429,6 +443,29 @@ function ExpenseForm({ profile, onDone }) {
       return Object.assign({}, e, { allocations: e.allocations.filter(function (_, j) { return j !== allocIdx }) })
     })
     setEntries(updated)
+  }
+
+  // Pick best-matching allocation-scope type/sub-type for a dept.
+  // Ranks scoped types by root-token match against entry's top-level sub-type name.
+  // Falls back to top-level values if no dept-specific match exists.
+  function pickBestAllocType(entry, allocDeptIdStr) {
+    var fallback = { expenseTypeId: entry.expenseTypeId || '', expenseSubTypeId: entry.expenseSubTypeId || '' }
+    if (!allocDeptIdStr) return fallback
+    var deptId = Number(allocDeptIdStr)
+    var scopedTypes = expenseTypes.filter(function (t) { return t.department_id === deptId })
+    if (scopedTypes.length === 0) return fallback
+    var topSub = expenseSubTypes.find(function (s) { return String(s.id) === String(entry.expenseSubTypeId) })
+    var topType = expenseTypes.find(function (t) { return String(t.id) === String(entry.expenseTypeId) })
+    var root = extractRootToken(topSub ? topSub.name : (topType ? topType.name : ''))
+    if (!root) return { expenseTypeId: String(scopedTypes[0].id), expenseSubTypeId: '' }
+    var scopedTypeIds = scopedTypes.map(function (t) { return t.id })
+    var subMatch = expenseSubTypes.find(function (s) {
+      return scopedTypeIds.indexOf(s.expense_type_id) !== -1 && String(s.name || '').toLowerCase().indexOf(root) !== -1
+    })
+    if (subMatch) return { expenseTypeId: String(subMatch.expense_type_id), expenseSubTypeId: String(subMatch.id) }
+    var typeMatch = scopedTypes.find(function (t) { return String(t.name || '').toLowerCase().indexOf(root) !== -1 })
+    if (typeMatch) return { expenseTypeId: String(typeMatch.id), expenseSubTypeId: '' }
+    return fallback
   }
 
   // ── Sub-type field helpers ──
@@ -684,13 +721,18 @@ function ExpenseForm({ profile, onDone }) {
           var allocRows = e.allocations
             .filter(function (a) { return a.venueId || a.departmentId })
             .map(function (a) {
+              // Fallback allocation type to entry's top-level if user left it blank
+              var aTypeId = a.expenseTypeId ? Number(a.expenseTypeId) : (e.expenseTypeId ? Number(e.expenseTypeId) : null)
+              var aSubTypeId = a.expenseSubTypeId ? Number(a.expenseSubTypeId) : (e.expenseSubTypeId ? Number(e.expenseSubTypeId) : null)
               return {
                 expense_id: exp.id,
                 department: a.departmentId ? (departments.find(function (d) { return String(d.id) === a.departmentId }) || {}).name || null : null,
                 department_id: a.departmentId ? Number(a.departmentId) : null,
-                sub_department_id: a.subDepartmentId ? Number(a.subDepartmentId) : null,
                 venue_id: a.venueId ? Number(a.venueId) : null,
-                amount_paise: a.amountPaise ? Math.round(Number(a.amountPaise) * 100) : 0
+                expense_type_id: aTypeId,
+                expense_sub_type_id: aSubTypeId,
+                amount_paise: a.amountPaise ? Math.round(Number(a.amountPaise) * 100) : 0,
+                remarks: (a.remarks || '').trim() || null
               }
             })
           if (allocRows.length > 0) await supabase.from('expense_allocations').insert(allocRows)
@@ -1001,48 +1043,68 @@ function ExpenseForm({ profile, onDone }) {
                 </div>
                 <div className="space-y-2">
                   {entry.allocations.map(function (alloc, aIdx) {
-                    var allocSubDepts = alloc.departmentId ? subDepartments.filter(function (sd) { return sd.department_id === Number(alloc.departmentId) }) : []
-                    var allocDept = alloc.departmentId ? departments.find(function (d) { return String(d.id) === alloc.departmentId }) : null
-                    var allocIsVenue = allocDept && allocDept.name.toLowerCase().indexOf('venue') === 0
+                    var allocDeptId = alloc.departmentId ? Number(alloc.departmentId) : null
+                    var scopedTypes = allocDeptId ? expenseTypes.filter(function (t) { return t.department_id === allocDeptId }) : []
+                    var genericTypes = expenseTypes.filter(function (t) { return !t.department_id })
+                    var allocSubTypeOptions = alloc.expenseTypeId ? expenseSubTypes.filter(function (s) { return s.expense_type_id === Number(alloc.expenseTypeId) }) : []
+                    var isFallback = !!alloc.expenseTypeId && !!allocDeptId && scopedTypes.findIndex(function (t) { return String(t.id) === String(alloc.expenseTypeId) }) === -1
                     return (
                       <div key={aIdx} className="flex gap-2 items-start">
                         <div className="flex-1 space-y-1.5">
                           <div className="grid grid-cols-2 gap-2">
                             <select value={alloc.departmentId}
-                              onChange={function (e) { setEntries(function (prev) { return prev.map(function (en, i) { if (i !== idx) return en; var copy = Object.assign({}, en); copy.allocations = en.allocations.map(function (a, j) { return j === aIdx ? Object.assign({}, a, { departmentId: e.target.value, subDepartmentId: '', venueId: '' }) : a }); return copy }) }) }}
+                              onChange={function (e) {
+                                var newDept = e.target.value
+                                var pick = pickBestAllocType(entries[idx], newDept)
+                                setEntries(function (prev) { return prev.map(function (en, i) { if (i !== idx) return en; var copy = Object.assign({}, en); copy.allocations = en.allocations.map(function (a, j) { return j === aIdx ? Object.assign({}, a, { departmentId: newDept, expenseTypeId: pick.expenseTypeId, expenseSubTypeId: pick.expenseSubTypeId, venueId: '' }) : a }); return copy }) })
+                              }}
                               className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs bg-white focus:ring-2 focus:ring-amber-300" style={{ fontSize: '16px' }}>
                               <option value="">Dept</option>
                               {departments.map(function (d) { return <option key={d.id} value={String(d.id)}>{d.name}</option> })}
                             </select>
-                            {allocIsVenue ? (
-                              <select value={alloc.venueId}
-                                onChange={function (e) { updateAllocation(idx, aIdx, 'venueId', e.target.value) }}
-                                className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs bg-white focus:ring-2 focus:ring-amber-300" style={{ fontSize: '16px' }}>
-                                <option value="">Venue</option>
-                                {venues.map(function (v) { return <option key={v.id} value={String(v.id)}>{v.code + ' — ' + v.name}</option> })}
-                              </select>
-                            ) : allocSubDepts.length > 0 ? (
-                              <select value={alloc.subDepartmentId}
-                                onChange={function (e) { updateAllocation(idx, aIdx, 'subDepartmentId', e.target.value) }}
-                                className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs bg-white focus:ring-2 focus:ring-amber-300" style={{ fontSize: '16px' }}>
-                                <option value="">Sub-dept</option>
-                                {allocSubDepts.map(function (sd) { return <option key={sd.id} value={String(sd.id)}>{sd.name}</option> })}
-                              </select>
-                            ) : <div />}
+                            <select value={alloc.venueId}
+                              onChange={function (e) { updateAllocation(idx, aIdx, 'venueId', e.target.value) }}
+                              className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs bg-white focus:ring-2 focus:ring-amber-300" style={{ fontSize: '16px' }}>
+                              <option value="">Venue</option>
+                              {venues.map(function (v) { return <option key={v.id} value={String(v.id)}>{v.code}</option> })}
+                            </select>
                           </div>
-                          <div className={"grid gap-2 " + (allocIsVenue ? "" : "grid-cols-2")}>
-                            {!allocIsVenue && (
-                              <select value={alloc.venueId}
-                                onChange={function (e) { updateAllocation(idx, aIdx, 'venueId', e.target.value) }}
-                                className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs bg-white focus:ring-2 focus:ring-amber-300" style={{ fontSize: '16px' }}>
-                                <option value="">Venue</option>
-                                {venues.map(function (v) { return <option key={v.id} value={String(v.id)}>{v.code}</option> })}
-                              </select>
-                            )}
+                          <div className="grid grid-cols-2 gap-2">
+                            <select value={alloc.expenseTypeId}
+                              onChange={function (e) { setEntries(function (prev) { return prev.map(function (en, i) { if (i !== idx) return en; var copy = Object.assign({}, en); copy.allocations = en.allocations.map(function (a, j) { return j === aIdx ? Object.assign({}, a, { expenseTypeId: e.target.value, expenseSubTypeId: '' }) : a }); return copy }) }) }}
+                              className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs bg-white focus:ring-2 focus:ring-amber-300" style={{ fontSize: '16px' }}>
+                              <option value="">Type</option>
+                              {scopedTypes.length > 0 && (
+                                <optgroup label="Dept-specific">
+                                  {scopedTypes.map(function (t) { return <option key={t.id} value={String(t.id)}>{t.name}</option> })}
+                                </optgroup>
+                              )}
+                              {genericTypes.length > 0 && (
+                                <optgroup label="Generic">
+                                  {genericTypes.map(function (t) { return <option key={t.id} value={String(t.id)}>{t.name}</option> })}
+                                </optgroup>
+                              )}
+                            </select>
+                            <select value={alloc.expenseSubTypeId}
+                              onChange={function (e) { updateAllocation(idx, aIdx, 'expenseSubTypeId', e.target.value) }}
+                              disabled={!alloc.expenseTypeId}
+                              className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs bg-white focus:ring-2 focus:ring-amber-300 disabled:bg-gray-100 disabled:text-gray-400" style={{ fontSize: '16px' }}>
+                              <option value="">Sub-type</option>
+                              {allocSubTypeOptions.map(function (s) { return <option key={s.id} value={String(s.id)}>{s.name}</option> })}
+                            </select>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
                             <input type="number" inputMode="numeric" value={alloc.amountPaise}
                               onChange={function (e) { updateAllocation(idx, aIdx, 'amountPaise', e.target.value) }}
                               placeholder="Amt" className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs focus:ring-2 focus:ring-amber-300" style={{ fontSize: '16px' }} />
+                            <input type="text" value={alloc.remarks}
+                              onChange={function (e) { updateAllocation(idx, aIdx, 'remarks', e.target.value) }}
+                              placeholder="Remarks" maxLength={200}
+                              className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs focus:ring-2 focus:ring-amber-300" style={{ fontSize: '16px' }} />
                           </div>
+                          {isFallback && (
+                            <p className="text-[10px] text-amber-700 font-medium">⚠ No dept-specific match — using generic/top-level type</p>
+                          )}
                         </div>
                         {entry.allocations.length > 1 && (
                           <button type="button" onClick={function () { removeAllocation(idx, aIdx) }}
