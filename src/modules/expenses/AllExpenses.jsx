@@ -5,7 +5,7 @@ import { APPROVAL_STATUS_COLORS, APPROVAL_STATUS_LABELS } from '../../lib/consta
 
 var PAGE_SIZE = 20
 
-function AllExpenses({ onBack, onOpenDetail }) {
+function AllExpenses({ onBack, onOpenDetail, embedded }) {
   var [allExps, setAllExps] = useState([])
   var [allExpHasMore, setAllExpHasMore] = useState(false)
   var [allExpStatus, setAllExpStatus] = useState('')
@@ -101,11 +101,13 @@ function AllExpenses({ onBack, onOpenDetail }) {
   return (
     <div className="space-y-4">
       <div>
-        <button onClick={onBack}
-          className="text-sm text-indigo-600 font-medium hover:text-indigo-800 transition-colors mb-1">← Back to Expenses</button>
+        {!embedded && (
+          <button onClick={onBack}
+            className="text-sm text-indigo-600 font-medium hover:text-indigo-800 transition-colors mb-1">← Back to Expenses</button>
+        )}
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-lg font-bold text-gray-900">All Expenses</h2>
+            {!embedded && <h2 className="text-lg font-bold text-gray-900">All Expenses</h2>}
             <p className="text-xs text-gray-400">{allExps.length} shown · {formatPoints(allExpTotal)} total</p>
           </div>
           {allExps.length > 0 && (

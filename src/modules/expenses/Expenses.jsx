@@ -31,7 +31,6 @@ function Expenses({ profile, masterMode }) {
   var [expSearch, setExpSearch] = useState('')
   var [expSearchDebounced, setExpSearchDebounced] = useState('')
   var [reportView, setReportView] = useState(false)
-  var [allExpView, setAllExpView] = useState(false)
   var [editExp, setEditExp] = useState(null)
   var [walletBalance, setWalletBalance] = useState(0)
   var [pendingReceiveCount, setPendingReceiveCount] = useState(0)
@@ -156,7 +155,8 @@ function Expenses({ profile, masterMode }) {
   }
 
   function openDetail(exp) {
-    pushBack(function () { setView('list'); setDetailExp(null); setEditExp(null) })
+    var returnTo = exp._fromApprove ? 'approve' : exp._fromAll ? 'all' : 'list'
+    pushBack(function () { setView(returnTo); setDetailExp(null); setEditExp(null) })
     setDetailExp(exp)
     setView('detail')
   }
@@ -201,15 +201,6 @@ function Expenses({ profile, masterMode }) {
   if (masterMode) {
     return <ExpenseTypeMaster />
   }
-  if (allExpView && (isAdmin || isAuditor)) {
-    return (
-      <AllExpenses
-        onBack={function () { setAllExpView(false) }}
-        onOpenDetail={function (exp) { setDetailExp(exp); setView('detail') }}
-      />
-    )
-  }
-
   if (reviewHistory && (isAdmin || isAuditor)) {
     return (
       <ReviewHistory
@@ -265,7 +256,7 @@ function Expenses({ profile, masterMode }) {
         isAdmin={isAdmin}
         isDeptApprover={isDeptApprover}
         onBack={function () { navBack() }}
-        onUpdated={function () { loadMyExpenses(false); loadApprovalExpenses(false); if (allExpView) { setView('list'); setDetailExp(null); return } setView(detailExp._fromApprove ? 'approve' : 'list'); setDetailExp(null) }}
+        onUpdated={function () { loadMyExpenses(false); loadApprovalExpenses(false); setView(detailExp._fromApprove ? 'approve' : detailExp._fromAll ? 'all' : 'list'); setDetailExp(null) }}
         onEdit={function () { setEditExp(detailExp); setView('form') }}
       />
     )
@@ -353,10 +344,6 @@ function Expenses({ profile, masterMode }) {
             className="flex-1 py-2.5 text-xs font-bold text-amber-600 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 transition-colors">
             📊 Reports
           </button>
-          <button onClick={function () { setAllExpView(true) }}
-            className="flex-1 py-2.5 text-xs font-bold text-gray-600 bg-gray-50 border border-gray-200 rounded-lg hover:bg-gray-100 transition-colors">
-            📋 All Expenses
-          </button>
           <button onClick={function () { setReviewHistory(true) }}
             className="flex-1 py-2.5 text-xs font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors">
             🔍 My Reviews
@@ -373,11 +360,15 @@ function Expenses({ profile, masterMode }) {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-bold text-gray-900">My Expenses</h2>
+          <h2 className="text-lg font-bold text-gray-900">
+            {view === 'approve' ? 'Review' : view === 'all' ? 'All Expenses' : 'My Expenses'}
+          </h2>
           <p className="text-xs text-gray-400">
             {view === 'approve'
               ? approvalExpenses.length + ' pending review'
-              : myExpenses.length + ' expenses' + (myTotal > 0 ? ' · ' + formatPoints(myTotal) + ' total' : '')}
+              : view === 'all'
+                ? 'All users (admin view)'
+                : myExpenses.length + ' expenses' + (myTotal > 0 ? ' · ' + formatPoints(myTotal) + ' total' : '')}
           </p>
         </div>
         <div className="flex gap-2">
@@ -386,10 +377,6 @@ function Expenses({ profile, masterMode }) {
               <button onClick={function () { setReportView(true) }}
                 className="px-3 py-2 text-xs font-bold text-amber-600 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 transition-colors">
                 📊 Reports
-              </button>
-              <button onClick={function () { setAllExpView(true) }}
-                className="px-3 py-2 text-xs font-bold text-gray-600 bg-gray-50 border border-gray-200 rounded-lg hover:bg-gray-100 transition-colors">
-                📋 All
               </button>
               <button onClick={function () { setReviewHistory(true) }}
                 className="px-3 py-2 text-xs font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors">
@@ -432,7 +419,21 @@ function Expenses({ profile, masterMode }) {
               </span>
             )}
           </button>
+          {(isAdmin || isAuditor) && (
+            <button onClick={function () { setView('all'); setStatusFilter('') }}
+              className={"flex-1 py-2 text-sm font-semibold rounded-md transition-colors " + (view === 'all' ? "bg-white text-gray-900 shadow-sm" : "text-gray-500")}>
+              All
+            </button>
+          )}
         </div>
+      )}
+
+      {/* All Expenses body — admin/auditor tab */}
+      {view === 'all' && (isAdmin || isAuditor) && (
+        <AllExpenses
+          embedded
+          onOpenDetail={function (exp) { openDetail(Object.assign({}, exp, { _fromAll: true })) }}
+        />
       )}
 
       {/* Status filter — My Expenses only */}
@@ -483,13 +484,13 @@ function Expenses({ profile, masterMode }) {
       )}
 
       {/* List */}
-      {displayList.length === 0 && (
+      {view !== 'all' && displayList.length === 0 && (
         <div className="bg-white border border-gray-200 rounded-xl p-8 text-center">
           <p className="text-gray-400 text-sm">{view === 'approve' ? 'No pending reviews' : 'No expenses yet'}</p>
         </div>
       )}
 
-      <div className="space-y-3">
+      {view !== 'all' && <div className="space-y-3">
         {(function () {
           // Group by batch_id (submission unit); legacy null-batch rows are singleton groups
           var groups = {}
@@ -594,10 +595,10 @@ function Expenses({ profile, masterMode }) {
             )
           })
         })()}
-      </div>
+      </div>}
 
       {/* Load More */}
-      {displayHasMore && (
+      {view !== 'all' && displayHasMore && (
         <button onClick={function () {
           if (view === 'approve') loadApprovalExpenses(true)
           else loadMyExpenses(true)
