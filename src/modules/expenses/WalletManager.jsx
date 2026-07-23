@@ -5,6 +5,16 @@ import { logActivity } from '../../lib/logger'
 import SearchDropdown from '../../components/ui/SearchDropdown'
 import BottomSheet from '../../components/ui/BottomSheet'
 
+var REF_TYPE_LABELS = {
+  expense: 'Expense',
+  expense_refund: 'Refund',
+  transfer: 'Transfer',
+  issued: 'Issued',
+  deducted: 'Deducted',
+  collection: 'Collection',
+  opening: 'Opening',
+}
+
 function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, onClose, onBalanceChange }) {
   var [walletView, setWalletView] = useState(null)
   var [allWallets, setAllWallets] = useState([])
@@ -42,6 +52,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   var [transferConfirmImage, setTransferConfirmImage] = useState(null)
   var [transferConfirmSaving, setTransferConfirmSaving] = useState(false)
   var [transferParties, setTransferParties] = useState({})
+  var [expenseRefs, setExpenseRefs] = useState({})
   var [collectModal, setCollectModal] = useState(false)
   var [collectEvents, setCollectEvents] = useState([])
   var [collectEventId, setCollectEventId] = useState('')
@@ -129,6 +140,20 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
       setTransferParties(tMap)
     } else {
       setTransferParties({})
+    }
+    // Enrich expense + refund refs with type / sub-type / dept for finance context.
+    var expRefIds = txns.filter(function (tt) {
+      return (tt.reference_type === 'expense' || tt.reference_type === 'expense_refund') && tt.reference_id
+    }).map(function (tt) { return tt.reference_id })
+    if (expRefIds.length > 0) {
+      var { data: eData } = await supabase.from('expenses')
+        .select('id, description, amount_paise, expense_date, expense_types(name, icon), expense_sub_types(name), expense_allocations(department, sub_department_id)')
+        .in('id', expRefIds)
+      var eMap = {}
+      ;(eData || []).forEach(function (e) { eMap[e.id] = e })
+      setExpenseRefs(eMap)
+    } else {
+      setExpenseRefs({})
     }
     setWalletTxns(txns)
     if (wallet) setWalletView('transactions')
@@ -698,19 +723,44 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
               <div key={t.id} className={"bg-white border rounded-lg p-3 " + (t.status === 'pending' ? "border-amber-300 bg-amber-50/30" : "border-gray-200")}>
                 <div className="flex items-start justify-between">
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm text-gray-800">
-                      {t.description || '—'}
-                      {t.reference_type === 'transfer' && t.reference_id && transferParties[t.reference_id] && (function () {
-                        var tr = transferParties[t.reference_id]
-                        var cpId = t.type === 'debit' ? tr.to_user_id : tr.from_user_id
-                        var cpName = walletProfiles[cpId]?.name
-                        if (!cpName) return null
-                        return ' ' + (t.type === 'debit' ? '→' : '←') + ' ' + cpName
-                      })()}
-                    </p>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="text-sm text-gray-800">
+                        {t.description || '—'}
+                        {t.reference_type === 'transfer' && t.reference_id && transferParties[t.reference_id] && (function () {
+                          var tr = transferParties[t.reference_id]
+                          var cpId = t.type === 'debit' ? tr.to_user_id : tr.from_user_id
+                          var cpName = walletProfiles[cpId]?.name
+                          if (!cpName) return null
+                          return ' ' + (t.type === 'debit' ? '→' : '←') + ' ' + cpName
+                        })()}
+                      </p>
+                      {t.status === 'pending' && (
+                        <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded">Pending</span>
+                      )}
+                    </div>
+                    {/* Enrichment: expense/refund → type › sub-type · dept · (refund amount + date) */}
+                    {(t.reference_type === 'expense' || t.reference_type === 'expense_refund') && t.reference_id && expenseRefs[t.reference_id] && (function () {
+                      var e = expenseRefs[t.reference_id]
+                      var typeName = e.expense_types?.name || ''
+                      var subTypeName = e.expense_sub_types?.name || ''
+                      var alloc = (e.expense_allocations && e.expense_allocations[0]) || null
+                      var dept = alloc?.department || ''
+                      var parts = []
+                      if (typeName) parts.push((e.expense_types?.icon ? e.expense_types.icon + ' ' : '') + typeName + (subTypeName ? ' › ' + subTypeName : ''))
+                      if (dept) parts.push(dept)
+                      if (t.reference_type === 'expense_refund' && e.amount_paise) parts.push('orig ' + formatPoints(e.amount_paise) + ' on ' + formatDate(e.expense_date))
+                      if (parts.length === 0) return null
+                      return <p className="text-[11px] text-indigo-600 mt-0.5">{parts.join(' · ')}</p>
+                    })()}
                     <p className="text-[11px] text-gray-400">
                       {formatDate(t.created_at)}
-                      {t.reference_type ? ' · ' + t.reference_type : ''}
+                      {(function () {
+                        var d = new Date(t.created_at); if (isNaN(d)) return ''
+                        var hh = String(d.getHours()).padStart(2, '0'); var mm = String(d.getMinutes()).padStart(2, '0')
+                        return ' · ' + hh + ':' + mm
+                      })()}
+                      {t.reference_type ? ' · ' + (REF_TYPE_LABELS[t.reference_type] || t.reference_type) : ''}
+                      {t.reference_type && t.reference_id ? ' #' + String(t.reference_id).slice(0, 8) : ''}
                       {t.performed_by && walletProfiles[t.performed_by] ? ' · by ' + walletProfiles[t.performed_by].name : ''}
                     </p>
                     {t.received_at && <p className="text-[10px] text-green-600 font-medium mt-0.5">✓ Confirmed {formatDate(t.received_at)}</p>}
