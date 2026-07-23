@@ -25,6 +25,7 @@ function EmployeeDetail({ employeeId, jobDepartments, managers, profile, onEdit,
   var [error, setError] = useState('')
   var [showSensitive, setShowSensitive] = useState(false)
   var [docLoading, setDocLoading] = useState(null) // 'aadhaar' | 'pan'
+  var [photoUrl, setPhotoUrl] = useState('')
 
   useEffect(function () { loadRow() }, [employeeId])
 
@@ -34,8 +35,17 @@ function EmployeeDetail({ employeeId, jobDepartments, managers, profile, onEdit,
       .select('*').eq('id', employeeId).maybeSingle()
     if (err) { setError(err.message); setLoading(false); return }
     if (!data) { setError('Not found or access denied.'); setLoading(false); return }
-    if (!canSeeSalary) data.ctc_annual_paise = null
+    if (!canSeeSalary) {
+      data.ctc_annual_paise = null
+      data.monthly_cash_paise = null
+      data.monthly_bank_paise = null
+    }
     setRow(data)
+    // Fetch photo signed URL
+    if (data.photo_file_path) {
+      supabase.storage.from('employee-docs').createSignedUrl(data.photo_file_path, 600)
+        .then(function (r) { if (r.data) setPhotoUrl(r.data.signedUrl) })
+    }
 
     var { data: reports } = await supabase.from('employees')
       .select('id, employee_code, full_name, designation, status')
@@ -72,14 +82,23 @@ function EmployeeDetail({ employeeId, jobDepartments, managers, profile, onEdit,
   }
 
   var hasSensitive = row.aadhaar_number || row.pan_number || row.bank_account_number ||
-                     row.ifsc_code || row.bank_name || (canSeeSalary && row.ctc_annual_paise) ||
+                     row.ifsc_code || row.bank_name ||
+                     (canSeeSalary && (row.ctc_annual_paise || row.monthly_cash_paise || row.monthly_bank_paise)) ||
                      row.uan || row.esic || row.aadhaar_file_path || row.pan_file_path
 
   return (
     <div className="space-y-5">
       {/* Header */}
       <div className="flex items-start justify-between gap-3 pb-3 border-b border-gray-100">
-        <div>
+        <div className="flex items-start gap-3 flex-1 min-w-0">
+          <div className="w-16 h-16 rounded-full border-2 border-gray-200 overflow-hidden bg-gray-50 flex items-center justify-center flex-shrink-0">
+            {photoUrl ? (
+              <img src={photoUrl} className="w-full h-full object-cover" alt={row.full_name} />
+            ) : (
+              <span className="text-2xl text-gray-300">👤</span>
+            )}
+          </div>
+          <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <h3 className="text-lg font-bold text-gray-800">{row.full_name}</h3>
             <span className={"px-2 py-0.5 rounded-full text-[10px] font-semibold " + st.cls}>{st.label}</span>
@@ -87,6 +106,7 @@ function EmployeeDetail({ employeeId, jobDepartments, managers, profile, onEdit,
           </div>
           <div className="text-xs font-mono text-gray-500 mt-0.5">{row.employee_code}</div>
           <div className="text-xs text-gray-600 mt-1">{row.designation || '—'}{row.work_location ? ' · ' + row.work_location : ''}</div>
+          </div>
         </div>
         {canEdit && onEdit && (
           <button onClick={function () { onEdit(row) }}
@@ -177,9 +197,15 @@ function EmployeeDetail({ employeeId, jobDepartments, managers, profile, onEdit,
             <Row label="Bank Name" value={row.bank_name} />
             <Row label="Account Number" value={row.bank_account_number} mono />
             <Row label="IFSC" value={row.ifsc_code} mono />
-            {canSeeSalary
-              ? <Row label="Annual CTC" value={rupees(row.ctc_annual_paise)} />
-              : <Row label="Annual CTC" value={<span className="italic text-gray-400">🔒 Restricted</span>} />}
+            {canSeeSalary ? (
+              <>
+                <Row label="Monthly Cash" value={rupees(row.monthly_cash_paise)} />
+                <Row label="Monthly Bank" value={rupees(row.monthly_bank_paise)} />
+                <Row label="Annual CTC (derived)" value={rupees(row.ctc_annual_paise)} span2 />
+              </>
+            ) : (
+              <Row label="Salary" value={<span className="italic text-gray-400">🔒 Restricted</span>} span2 />
+            )}
           </Section>
 
           <Section title="Documents">

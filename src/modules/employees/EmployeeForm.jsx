@@ -75,7 +75,13 @@ function EmployeeForm({ employee, profile, jobDepartments, managers, canSeeSalar
   var [bankAccount, setBankAccount] = useState('')
   var [ifsc, setIfsc] = useState('')
   var [bankName, setBankName] = useState('')
-  var [ctcRupees, setCtcRupees] = useState('')
+  var [monthlyCashRupees, setMonthlyCashRupees] = useState('')
+  var [monthlyBankRupees, setMonthlyBankRupees] = useState('')
+
+  // Photo
+  var [photoFile, setPhotoFile] = useState(null)
+  var [photoPath, setPhotoPath] = useState('')
+  var [photoSignedUrl, setPhotoSignedUrl] = useState('')
 
   // Docs
   var [aadhaarFile, setAadhaarFile] = useState(null)
@@ -120,14 +126,24 @@ function EmployeeForm({ employee, profile, jobDepartments, managers, canSeeSalar
     setBankAccount(e.bank_account_number || '')
     setIfsc(e.ifsc_code || '')
     setBankName(e.bank_name || '')
-    setCtcRupees(canSeeSalary && e.ctc_annual_paise
-      ? String(Math.round(e.ctc_annual_paise / 100)) : '')
+    setMonthlyCashRupees(canSeeSalary && e.monthly_cash_paise
+      ? String(Math.round(e.monthly_cash_paise / 100)) : '')
+    setMonthlyBankRupees(canSeeSalary && e.monthly_bank_paise
+      ? String(Math.round(e.monthly_bank_paise / 100)) : '')
 
+    setPhotoPath(e.photo_file_path || '')
     setAadhaarPath(e.aadhaar_file_path || '')
     setPanPath(e.pan_file_path || '')
     setAadhaarExpiry(e.aadhaar_expiry_date || '')
     setPanExpiry(e.pan_expiry_date || '')
   }, [employee])
+
+  // Fetch signed URL for existing photo
+  useEffect(function () {
+    if (!photoPath) { setPhotoSignedUrl(''); return }
+    supabase.storage.from('employee-docs').createSignedUrl(photoPath, 600)
+      .then(function (res) { if (res.data) setPhotoSignedUrl(res.data.signedUrl) })
+  }, [photoPath])
 
   useEffect(function () {
     if (sameAddress) setPermanentAddress(presentAddress)
@@ -189,8 +205,8 @@ function EmployeeForm({ employee, profile, jobDepartments, managers, canSeeSalar
     var v = validate()
     if (v) { setTab(v.tab); setError(v.msg); return }
 
-    var fileErr = checkFile(aadhaarFile) || checkFile(panFile)
-    if (fileErr) { setTab('documents'); setError(fileErr); return }
+    var fileErr = checkFile(aadhaarFile) || checkFile(panFile) || checkFile(photoFile)
+    if (fileErr) { setError(fileErr); return }
 
     setSaving(true)
 
@@ -227,7 +243,11 @@ function EmployeeForm({ employee, profile, jobDepartments, managers, canSeeSalar
       pan_expiry_date: panExpiry || null,
     }
     if (canSeeSalary) {
-      payload.ctc_annual_paise = ctcRupees ? Math.round(Number(ctcRupees) * 100) : null
+      var cashP = monthlyCashRupees ? Math.round(Number(monthlyCashRupees) * 100) : 0
+      var bankP = monthlyBankRupees ? Math.round(Number(monthlyBankRupees) * 100) : 0
+      payload.monthly_cash_paise = cashP
+      payload.monthly_bank_paise = bankP
+      payload.ctc_annual_paise = (cashP + bankP) > 0 ? (cashP + bankP) * 12 : null
     }
 
     // Employee code: only send on insert if user overrode. Blank → let trigger generate.
@@ -277,6 +297,16 @@ function EmployeeForm({ employee, profile, jobDepartments, managers, canSeeSalar
         fileErrors.push('PAN upload failed: ' + (err.message || err))
       }
     }
+    if (photoFile) {
+      try {
+        var newPhotoPath = await uploadDoc(savedRow.id, 'photo', photoFile, photoPath)
+        setPhotoPath(newPhotoPath)
+        setPhotoFile(null)
+        await supabase.from('employees').update({ photo_file_path: newPhotoPath }).eq('id', savedRow.id)
+      } catch (err) {
+        fileErrors.push('Photo upload failed: ' + (err.message || err))
+      }
+    }
 
     try {
       await logActivity(isEdit ? 'EMPLOYEE_UPDATE' : 'EMPLOYEE_CREATE',
@@ -321,6 +351,32 @@ function EmployeeForm({ employee, profile, jobDepartments, managers, canSeeSalar
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
+      {/* Photo */}
+      <div className="flex items-center gap-4 pb-3 border-b border-gray-100">
+        <div className="w-20 h-20 rounded-full border-2 border-gray-200 overflow-hidden bg-gray-50 flex items-center justify-center flex-shrink-0">
+          {photoFile ? (
+            <img src={URL.createObjectURL(photoFile)} className="w-full h-full object-cover" alt="Preview" />
+          ) : photoSignedUrl ? (
+            <img src={photoSignedUrl} className="w-full h-full object-cover" alt="Employee" />
+          ) : (
+            <span className="text-3xl text-gray-300">👤</span>
+          )}
+        </div>
+        <div className="flex-1 min-w-0">
+          <label className="inline-block px-3 py-1.5 text-xs font-medium text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-md cursor-pointer hover:bg-indigo-100">
+            {(photoPath || photoFile) ? 'Replace Photo' : 'Upload Photo'}
+            <input type="file" accept="image/jpeg,image/png,image/webp"
+              onChange={function (e) { setPhotoFile(e.target.files[0] || null) }}
+              className="sr-only" />
+          </label>
+          {photoFile && (
+            <button type="button" onClick={function () { setPhotoFile(null) }}
+              className="ml-2 text-xs text-gray-500 hover:text-gray-700">Cancel selection</button>
+          )}
+          <p className="text-[10px] text-gray-400 mt-1">JPEG, PNG, WEBP. Max 10 MB.</p>
+        </div>
+      </div>
+
       {/* Tabs */}
       <div className="flex gap-1 bg-gray-100 rounded-lg p-0.5 overflow-x-auto">
         {TABS.map(function (t) {
@@ -541,21 +597,36 @@ function EmployeeForm({ employee, profile, jobDepartments, managers, canSeeSalar
                 style={{ fontSize: '16px' }} className={inp} />
             </Field>
             {canSeeSalary && (
-              <Field label="Annual CTC (₹)">
-                <input type="number" value={ctcRupees}
-                  onChange={function (e) { setCtcRupees(e.target.value) }}
-                  placeholder="e.g. 600000" min="0" step="1"
+              <Field label="Monthly Cash (₹)">
+                <input type="number" value={monthlyCashRupees}
+                  onChange={function (e) { setMonthlyCashRupees(e.target.value) }}
+                  placeholder="e.g. 15000" min="0" step="1"
+                  style={{ fontSize: '16px' }} className={inp} />
+              </Field>
+            )}
+            {canSeeSalary && (
+              <Field label="Monthly Bank (₹)">
+                <input type="number" value={monthlyBankRupees}
+                  onChange={function (e) { setMonthlyBankRupees(e.target.value) }}
+                  placeholder="e.g. 35000" min="0" step="1"
                   style={{ fontSize: '16px' }} className={inp} />
               </Field>
             )}
             {!canSeeSalary && (
-              <Field label="Annual CTC (₹)">
+              <div className="md:col-span-2">
                 <div className="w-full px-3 py-2 border border-gray-200 bg-gray-50 rounded-md text-xs text-gray-400 italic">
-                  🔒 Restricted — no permission to view or edit
+                  🔒 Monthly Cash / Bank Salary — Restricted, no permission to view or edit
                 </div>
-              </Field>
+              </div>
             )}
           </div>
+          {canSeeSalary && (Number(monthlyCashRupees) > 0 || Number(monthlyBankRupees) > 0) && (
+            <div className="bg-indigo-50 border border-indigo-100 rounded-md px-3 py-2 text-xs text-indigo-700">
+              <span className="font-semibold">Annual CTC:</span>{' '}
+              ₹ {((Number(monthlyCashRupees) || 0) + (Number(monthlyBankRupees) || 0)) * 12}
+              <span className="text-indigo-500 ml-1">(auto-computed as (Cash + Bank) × 12)</span>
+            </div>
+          )}
         </div>
       )}
 
