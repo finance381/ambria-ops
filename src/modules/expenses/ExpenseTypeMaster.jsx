@@ -27,7 +27,7 @@ function FieldEditor({ subType, typeName, onBack, onSaved }) {
   var [departments, setDepartments] = useState([])
 
   useEffect(function () {
-    supabase.from('departments').select('id, name').eq('active', true).order('name')
+    supabase.from('job_departments').select('id, name').eq('active', true).order('name')
       .then(function (r) { setDepartments(r.data || []) })
   }, [])
 

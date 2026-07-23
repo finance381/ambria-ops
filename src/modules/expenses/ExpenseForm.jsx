@@ -153,7 +153,7 @@ function ExpenseForm({ profile, onDone }) {
       items = data || []
     } else if (source === 'job_departments') {
       // Store raw rows — filtered by field.allowed_dept_ids at render time.
-      var { data: jdData } = await supabase.from('departments')
+      var { data: jdData } = await supabase.from('job_departments')
         .select('id, name').eq('active', true).order('name')
       items = jdData || []
     } else if (source === 'staff') {
