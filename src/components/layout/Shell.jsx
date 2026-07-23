@@ -16,6 +16,7 @@ import Boxes from '../../modules/boxes/Boxes'
 import Challans from '../../modules/challans/Challans'
 import RateCardEditor from '../../modules/quote/RateCardEditor'
 import Vendors from '../../modules/vendors/Vendors'
+import Employees from '../../modules/employees/Employees'
 import AdminMobile from '../../modules/categories/AdminMobile.jsx'
 import MyProfile from '../../modules/employees/MyProfile'
 
@@ -62,6 +63,11 @@ var GROUPS = [
   {
     key: 'expenses', label: 'Expenses', icon: '💰', items: [
       { key: 'feature_expenses', label: 'PC & Direct Expenses', icon: '💰', tab: 'expenses' },
+    ]
+  },
+  {
+    key: 'hr', label: 'HR', icon: '👔', items: [
+      { key: 'feature_employees', label: 'Employees', icon: '👤', tab: 'employees' },
     ]
   },
   {
@@ -494,6 +500,9 @@ function Shell({ profile, onSignOut }) {
         )}
         {tab === 'vendors' && (
           <Vendors profile={profile} />
+        )}
+        {tab === 'employees' && (
+          <Employees profile={profile} />
         )}
         {tab === 'admin' && isAdmin && (
           <AdminMobile profile={profile} />
