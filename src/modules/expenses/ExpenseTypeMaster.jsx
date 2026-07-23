@@ -27,8 +27,11 @@ function FieldEditor({ subType, typeName, onBack, onSaved }) {
   var [departments, setDepartments] = useState([])
 
   useEffect(function () {
-    supabase.from('job_departments').select('id, name').eq('active', true).order('name')
-      .then(function (r) { setDepartments(r.data || []) })
+    supabase.from('job_departments').select('id, name').order('name')
+      .then(function (r) {
+        if (r.error) { console.error('job_departments load failed:', r.error); return }
+        setDepartments(r.data || [])
+      })
   }, [])
 
   function makeField() {
