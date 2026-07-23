@@ -419,22 +419,28 @@ function Users() {
   async function deleteUser(userId) {
     setSaving(true); setError('')
     var target = editUser
-    var err
+    // Never-signed-in invitations have no FK references — safe to hard delete.
     if (target && target._source === 'approved') {
       var res = await supabase.from('approved_emails').delete().eq('email', target._email_key)
-      err = res.error
-    } else {
-      var res = await supabase.from('profiles').delete().eq('id', userId)
-      err = res.error
+      if (res.error) { setError(res.error.message); setSaving(false); return }
+      setDeleteConfirm(null); setEditUser(null); loadUsers()
+      try { await logActivity('USER_DELETE', target.email) } catch (_) {}
+      setSaving(false); return
     }
-    if (err) {
-      setError(err.message)
-    } else {
-      setDeleteConfirm(null)
-      setEditUser(null)
-      loadUsers()
-      try { await logActivity('USER_DELETE', target?.email || userId) } catch (_) {}
+    // Signed-in profile — attempt delete; on FK conflict surface actionable guidance.
+    var res = await supabase.from('profiles').delete().eq('id', userId)
+    if (res.error) {
+      var msg = res.error.message || ''
+      var isFk = res.error.code === '23503' || msg.indexOf('foreign key') !== -1 || msg.indexOf('violates') !== -1
+      if (isFk) {
+        setError('Cannot delete — this user has historical records (quotes, expenses, POs, etc.) that must be preserved for audit. Use the "Account Active" toggle above to deactivate them instead: they lose access, history stays intact.')
+      } else {
+        setError(msg)
+      }
+      setSaving(false); return
     }
+    setDeleteConfirm(null); setEditUser(null); loadUsers()
+    try { await logActivity('USER_DELETE', target?.email || userId) } catch (_) {}
     setSaving(false)
   }
 
