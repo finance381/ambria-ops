@@ -54,10 +54,12 @@ function Requisitions({ profile, onBack }) {
   var [subDeptFilter, setSubDeptFilter] = useState('')
   var [urgencyFilter, setUrgencyFilter] = useState('')
   var [userFilter, setUserFilter] = useState('')
+  var [venueFilter, setVenueFilter] = useState('')
 
   // Filter lookups
   var [subDeptOptions, setSubDeptOptions] = useState([])
   var [userOptions, setUserOptions] = useState([])
+  var [venueOptions, setVenueOptions] = useState([])
 
   var isAdmin = profile?.role === 'admin'
   var isAuditor = profile?.role === 'auditor'
@@ -100,6 +102,9 @@ function Requisitions({ profile, onBack }) {
     supabase.from('sub_departments').select('id, name, department_id').order('name').then(function (res) {
       setSubDeptOptions(res.data || [])
     })
+    supabase.from('venues').select('id, code, name').eq('active', true).order('name').then(function (res) {
+      setVenueOptions(res.data || [])
+    })
     if (hasReqApprove) {
       supabase.from('profiles').select('id, name').order('name').then(function (res) {
         setUserOptions(res.data || [])
@@ -112,7 +117,7 @@ function Requisitions({ profile, onBack }) {
     loadMyReqs(false)
     loadApprovalReqs(false)
     loadAllReqs(false)
-  }, [statusFilter, departments, urgencyFilter, dateFrom, dateTo, reqSearchDebounced, userFilter, deptFilter, subDeptFilter])
+  }, [statusFilter, departments, urgencyFilter, dateFrom, dateTo, reqSearchDebounced, userFilter, deptFilter, subDeptFilter, venueFilter])
 
   async function loadMyReqs(append) {
     var offset = append ? myReqs.length : 0
@@ -135,6 +140,7 @@ function Requisitions({ profile, onBack }) {
       var selMyDept = departments.find(function (d) { return String(d.id) === deptFilter })
       if (selMyDept) query = query.eq('department', selMyDept.name)
     }
+    if (venueFilter) query = query.overlaps('venue_ids', [Number(venueFilter)])
 
     var { data, error } = await query
     if (error) { alert('Failed to load: ' + error.message); setLoading(false); setLoadingMore(false); return }
@@ -186,6 +192,7 @@ function Requisitions({ profile, onBack }) {
       var selAppDept = departments.find(function (d) { return String(d.id) === deptFilter })
       if (selAppDept) query = query.eq('department', selAppDept.name)
     }
+    if (venueFilter) query = query.overlaps('venue_ids', [Number(venueFilter)])
 
     var { data, error } = await query
     if (error) { alert('Failed to load approvals: ' + error.message); setLoadingMore(false); return }
@@ -234,6 +241,7 @@ function Requisitions({ profile, onBack }) {
       var selAllDept = departments.find(function (d) { return String(d.id) === deptFilter })
       if (selAllDept) query = query.eq('department', selAllDept.name)
     }
+    if (venueFilter) query = query.overlaps('venue_ids', [Number(venueFilter)])
 
     var { data, error } = await query
     if (error) { alert('Failed to load: ' + error.message); setLoadingMore(false); return }
@@ -422,10 +430,11 @@ function Requisitions({ profile, onBack }) {
         if (subDeptFilter) count++
         if (urgencyFilter) count++
         if ((view === 'approve' || view === 'all') && userFilter) count++
+        if (venueFilter) count++
         function resetFilters() {
           setStatusFilter(''); setDateFrom(''); setDateTo('')
           setDeptFilter(''); setSubDeptFilter(''); setUrgencyFilter('')
-          setUserFilter('')
+          setUserFilter(''); setVenueFilter('')
         }
         var subDeptFiltered = deptFilter
           ? subDeptOptions.filter(function (sd) { return String(sd.department_id) === deptFilter })
@@ -513,6 +522,18 @@ function Requisitions({ profile, onBack }) {
                       <option value="">All</option>
                       {subDeptFiltered.map(function (sd) {
                         return <option key={sd.id} value={sd.id}>{sd.name}</option>
+                      })}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Venue</label>
+                    <select value={venueFilter}
+                      onChange={function (e) { setVenueFilter(e.target.value) }}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
+                      style={{ fontSize: '16px' }}>
+                      <option value="">All</option>
+                      {venueOptions.map(function (v) {
+                        return <option key={v.id} value={v.id}>{v.code ? (v.code + ' — ' + v.name) : v.name}</option>
                       })}
                     </select>
                   </div>
@@ -742,7 +763,7 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
       supabase.from('categories').select('id, name, sub_department_id').order('name'),
       supabase.from('sub_categories').select('id, name, category_id').order('name'),
       supabase.from('venues').select('id, code, name').order('name'),
-      supabase.from('expense_types').select('id, name').eq('active', true).order('name'),
+      supabase.from('expense_types').select('id, name, department_id').eq('active', true).order('name'),
       supabase.from('expense_sub_types').select('id, expense_type_id, name, extra_fields, active, sort_order').eq('active', true).order('sort_order').order('name'),
       supabase.from('inventory_items')
         .select('id, name, unit, qty, category_id, status, categories(name)')
@@ -1569,6 +1590,19 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
                   <button type="button" onClick={function () { setExpAllocations(function (p) { return p.concat([{ departmentId: '', subDepartmentId: '', venue_id: '', amount: '' }]) }) }}
                     className="text-[11px] font-bold text-amber-700 hover:text-amber-900 px-2 py-0.5 rounded bg-amber-200/60 hover:bg-amber-200">+ Add</button>
                 </div>
+                {(function () {
+                  if (!expTypeId) return null
+                  var t = expenseTypes.find(function (et) { return String(et.id) === String(expTypeId) })
+                  if (!t || !t.department_id) return null
+                  var mismatches = expAllocations.filter(function (a) { return a.departmentId && Number(a.departmentId) !== t.department_id })
+                  if (mismatches.length === 0) return null
+                  var typeDept = departments.find(function (d) { return d.id === t.department_id })
+                  return (
+                    <div className="mx-2.5 mt-2 px-2.5 py-1.5 bg-amber-50 border border-amber-300 rounded-md text-[11px] text-amber-800">
+                      ⚠️ Type "{t.name}" is scoped to <b>{typeDept?.name || ('dept #' + t.department_id)}</b>, but {mismatches.length} allocation{mismatches.length > 1 ? 's use' : ' uses'} a different dept. Allowed but flagged for review.
+                    </div>
+                  )
+                })()}
                 <div className="p-2.5 space-y-2">
                   {expAllocations.map(function (alloc, aIdx) {
                     var allocSubDepts = alloc.departmentId ? subDepartments.filter(function (sd) { return sd.department_id === Number(alloc.departmentId) }) : []
@@ -1927,6 +1961,8 @@ function RequisitionDetail({ req, items, profile, isAdmin, isAuditor, isReqDeptA
             sub_department_id: a.sub_department_id || null,
             venue_id: a.venue_id || null,
             amount_paise: a.amount_paise || 0,
+            expense_type_id: a.expense_type_id || req.expense_type_id || null,
+            expense_sub_type_id: a.expense_sub_type_id || req.expense_sub_type_id || null,
           }
         })
         await supabase.from('expense_allocations').insert(expAllocs)

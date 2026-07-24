@@ -126,6 +126,29 @@ function ExpenseEditForm({ profile, editExp, walletBalance, onCancel, onSaved })
       var amountPaise = Math.round(Number(amount) * 100)
 
       if (isEditing) {
+        // Invariant: sum(expense_allocations.amount_paise) MUST equal expenses.amount_paise.
+        // This form doesn't edit allocations. If amount changed:
+        //  · Single alloc → sync it to the new amount first (below).
+        //  · Multiple allocs summing to new amount → allow (rare but valid).
+        //  · Multiple allocs NOT summing to new amount → block; require full expense form.
+        var oldPaiseCheck = editExp.amount_paise || 0
+        if (amountPaise !== oldPaiseCheck) {
+          var { data: allocRows } = await supabase.from('expense_allocations')
+            .select('id, amount_paise').eq('expense_id', editExp.id)
+          var allocs = allocRows || []
+          if (allocs.length > 1) {
+            var allocSum = allocs.reduce(function (s, a) { return s + (a.amount_paise || 0) }, 0)
+            if (allocSum !== amountPaise) {
+              setErrors({ submit: 'This expense has ' + allocs.length + ' allocations totalling ' + formatPoints(allocSum) + '. Delete and re-create the expense to change the total.' })
+              setSaving(false)
+              return
+            }
+          } else if (allocs.length === 1) {
+            var { error: aErr } = await supabase.from('expense_allocations')
+              .update({ amount_paise: amountPaise }).eq('id', allocs[0].id)
+            if (aErr) { setErrors({ submit: 'Allocation sync failed: ' + aErr.message }); setSaving(false); return }
+          }
+        }
         var { error: updErr } = await supabase.from('expenses').update({
           amount_paise: amountPaise,
           description: description.trim(),

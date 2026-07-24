@@ -116,7 +116,7 @@ function ExpenseForm({ profile, onDone }) {
 
   async function loadRefData() {
     var [etR, estR, dR, vR, sdR] = await Promise.all([
-      supabase.from('expense_types').select('id, name, icon, description, sort_order').eq('active', true).order('sort_order').order('name'),
+      supabase.from('expense_types').select('id, name, icon, description, sort_order, department_id').eq('active', true).order('sort_order').order('name'),
       supabase.from('expense_sub_types').select('id, expense_type_id, name, extra_fields, active, sort_order').eq('active', true).order('sort_order').order('name'),
       supabase.from('departments').select('id, name').eq('active', true).eq('hide_from_lists', false).order('name'),
       supabase.from('venues').select('id, code, name').eq('active', true).order('name'),
@@ -1041,6 +1041,19 @@ function ExpenseForm({ profile, onDone }) {
                   <button type="button" onClick={function () { addAllocation(idx) }}
                     className="text-xs px-2 py-1 rounded bg-amber-100 text-amber-700 hover:bg-amber-200 font-medium">+ Row</button>
                 </div>
+                {(function () {
+                  if (!entry.expenseTypeId) return null
+                  var t = expenseTypes.find(function (et) { return String(et.id) === String(entry.expenseTypeId) })
+                  if (!t || !t.department_id) return null
+                  var mismatches = entry.allocations.filter(function (a) { return a.departmentId && Number(a.departmentId) !== t.department_id })
+                  if (mismatches.length === 0) return null
+                  var typeDept = departments.find(function (d) { return d.id === t.department_id })
+                  return (
+                    <div className="mb-2 px-2.5 py-1.5 bg-amber-50 border border-amber-300 rounded-md text-[11px] text-amber-800">
+                      ⚠️ Type "{t.name}" is scoped to <b>{typeDept?.name || ('dept #' + t.department_id)}</b>, but {mismatches.length} allocation{mismatches.length > 1 ? 's use' : ' uses'} a different dept. Allowed but flagged for review.
+                    </div>
+                  )
+                })()}
                 <div className="space-y-2">
                   {entry.allocations.map(function (alloc, aIdx) {
                     var allocDeptId = alloc.departmentId ? Number(alloc.departmentId) : null
