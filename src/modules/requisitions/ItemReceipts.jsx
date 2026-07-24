@@ -15,16 +15,42 @@ function ItemReceipts({ profile, onCountChange }) {
   var [loadingMore, setLoadingMore] = useState(false)
   var [activeReceipt, setActiveReceipt] = useState(null)
 
+  // Filters
+  var [filtersOpen, setFiltersOpen] = useState(false)
+  var [search, setSearch] = useState('')
+  var [searchDebounced, setSearchDebounced] = useState('')
+  var [submitterFilter, setSubmitterFilter] = useState('')
+  var [dateFrom, setDateFrom] = useState('')
+  var [dateTo, setDateTo] = useState('')
+  var [matchState, setMatchState] = useState('') // '' | 'matched' | 'new'
+  var [submitterOptions, setSubmitterOptions] = useState([])
+
+  // Debounce search
+  useEffect(function () {
+    var t = setTimeout(function () { setSearchDebounced(search) }, 300)
+    return function () { clearTimeout(t) }
+  }, [search])
+
+  // Submitter list — one shot
+  useEffect(function () {
+    supabase.from('profiles').select('id, name').eq('active', true).order('name').then(function (res) {
+      setSubmitterOptions(res.data || [])
+    })
+  }, [])
+
   useRealtime(['expenses'], function () { loadReceipts(false) })
-  useEffect(function () { loadReceipts(false) }, [])
+  useEffect(function () { loadReceipts(false) }, [searchDebounced, submitterFilter, dateFrom, dateTo, matchState])
 
   async function loadReceipts(append) {
     var offset = append ? receipts.length : 0
     if (append) setLoadingMore(true); else setLoading(true)
-    var { data, error } = await supabase.rpc('list_pending_expense_receipts', {
-      p_limit: PAGE_SIZE + 1,
-      p_offset: offset,
-    })
+    var params = { p_limit: PAGE_SIZE + 1, p_offset: offset }
+    if (searchDebounced) params.p_search = searchDebounced
+    if (submitterFilter)  params.p_submitter_id = submitterFilter
+    if (dateFrom)         params.p_date_from = dateFrom
+    if (dateTo)           params.p_date_to = dateTo
+    if (matchState)       params.p_match_state = matchState
+    var { data, error } = await supabase.rpc('list_pending_expense_receipts', params)
     if (error) {
       alert('Failed to load pending receipts: ' + error.message)
       setLoading(false); setLoadingMore(false)
@@ -45,13 +71,87 @@ function ItemReceipts({ profile, onCountChange }) {
     loadReceipts(false)
   }
 
-  if (loading) return <p className="text-gray-400 text-sm text-center py-8">Loading...</p>
+  var filterCount = 0
+  if (search) filterCount++
+  if (submitterFilter) filterCount++
+  if (dateFrom) filterCount++
+  if (dateTo) filterCount++
+  if (matchState) filterCount++
+  function resetFilters() {
+    setSearch(''); setSubmitterFilter(''); setDateFrom(''); setDateTo(''); setMatchState('')
+  }
 
   return (
     <div className="space-y-3">
-      {receipts.length === 0 && (
+      {/* Filter bar */}
+      <div className="space-y-2">
+        <div className="flex gap-2">
+          <input type="text" value={search}
+            onChange={function (e) { setSearch(e.target.value) }}
+            placeholder="Search item, notes, submitter..."
+            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            style={{ fontSize: '16px' }} />
+          <button onClick={function () { setFiltersOpen(!filtersOpen) }}
+            className={"px-3 py-2 text-xs font-bold rounded-lg border transition-colors " + (filtersOpen ? "bg-indigo-50 border-indigo-300 text-indigo-700" : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50")}>
+            {filtersOpen ? '▲' : '▼'} Filters{filterCount > 0 ? ' · ' + filterCount : ''}
+          </button>
+          {filterCount > 0 && (
+            <button onClick={resetFilters}
+              className="px-3 py-2 text-xs font-bold text-red-600 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 transition-colors">
+              Clear
+            </button>
+          )}
+        </div>
+        {filtersOpen && (
+          <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 space-y-2">
+            <div className="flex gap-2 flex-wrap">
+              {['', 'matched', 'new'].map(function (s) {
+                var label = s === '' ? 'All' : s === 'matched' ? '✓ Matched' : 'New item'
+                return (
+                  <button key={s || 'all'} onClick={function () { setMatchState(s) }}
+                    className={"px-3 py-1.5 text-[11px] font-bold rounded-full border transition-colors " +
+                      (matchState === s ? "bg-gray-900 text-white border-gray-900" : "bg-white text-gray-500 border-gray-200 hover:bg-gray-50")}>
+                    {label}
+                  </button>
+                )
+              })}
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="col-span-2">
+                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Submitter</label>
+                <select value={submitterFilter}
+                  onChange={function (e) { setSubmitterFilter(e.target.value) }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
+                  style={{ fontSize: '16px' }}>
+                  <option value="">All users</option>
+                  {submitterOptions.map(function (u) {
+                    return <option key={u.id} value={u.id}>{u.name || '—'}</option>
+                  })}
+                </select>
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">From</label>
+                <input type="date" value={dateFrom}
+                  onChange={function (e) { setDateFrom(e.target.value) }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                  style={{ fontSize: '16px' }} />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">To</label>
+                <input type="date" value={dateTo}
+                  onChange={function (e) { setDateTo(e.target.value) }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                  style={{ fontSize: '16px' }} />
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {loading && <p className="text-gray-400 text-sm text-center py-8">Loading...</p>}
+      {!loading && receipts.length === 0 && (
         <div className="bg-white border border-gray-200 rounded-xl p-8 text-center">
-          <p className="text-gray-400 text-sm">No pending item receipts</p>
+          <p className="text-gray-400 text-sm">No pending item receipts{filterCount > 0 ? ' match the filters' : ''}</p>
         </div>
       )}
       {receipts.map(function (r) {
