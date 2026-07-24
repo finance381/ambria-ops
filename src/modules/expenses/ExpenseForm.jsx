@@ -648,6 +648,12 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
 
   // ── Validation ──
   function validateEntries() {
+    if (isAdminEdit) {
+      var eA = entries[0]
+      if (!eA.expenseTypeId) return 'Select expense type'
+      if (!eA.expenseSubTypeId) return 'Select sub-type'
+      return null
+    }
     for (var i = 0; i < entries.length; i++) {
       var e = entries[i]
       if (!e.expenseTypeId) return 'Entry ' + (i + 1) + ': Select expense type'
@@ -715,6 +721,26 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
     // ── Edit branch ──
     if (isEditing) {
       var e0 = entries[0]
+
+      // Admin-only retype: change type/sub-type only, preserve everything else
+      if (isAdminEdit) {
+        try {
+          var { error: aErr } = await supabase.from('expenses').update({
+            expense_type_id: Number(e0.expenseTypeId),
+            expense_sub_type_id: Number(e0.expenseSubTypeId),
+          }).eq('id', editExp.id)
+          if (aErr) throw new Error(aErr.message)
+          try { await logActivity('EXPENSE_ADMIN_RETYPE', 'exp #' + editExp.id + ' | type=' + e0.expenseTypeId + '/' + e0.expenseSubTypeId) } catch (_) {}
+          setSaving(false)
+          setSuccess('Type updated')
+          setTimeout(function () { if (onDone) onDone() }, 800)
+        } catch (err) {
+          setError('Retype failed: ' + (err.message || err))
+          setSaving(false)
+        }
+        return
+      }
+
       var newPaise = e0.isItemPurchase
         ? Math.round(computeItemsTotal(e0) * 100)
         : Math.round(Number(e0.amount) * 100)
@@ -961,15 +987,61 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
     }
   }
 
+  var isAdminEdit = isEditing && editExp && profile && editExp.user_id !== profile.id
+
   if (loading) return <div className="text-center py-8 text-gray-500">Loading...</div>
 
   return (
     <div className="space-y-4">
       {error && error.indexOf('Insufficient wallet balance') === -1 && <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">{error}</div>}
       {success && <div className="p-3 rounded-lg bg-green-50 border border-green-200 text-green-700 text-sm">{success}</div>}
+      {isAdminEdit && (
+        <div className="p-3 rounded-lg bg-purple-50 border border-purple-200 text-purple-700 text-sm">
+          🔧 Admin retype — only expense type & sub-type will be saved. Amount, receipts, allocations, wallet remain unchanged.
+        </div>
+      )}
+      {isAdminEdit && entries.length > 0 && (function () {
+        var e0 = entries[0]
+        var isAdminEt = profile?.role === 'admin' || profile?.role === 'auditor'
+        var userEtIds = profile?.expense_type_ids || []
+        var typeList = isAdminEt ? expenseTypes : expenseTypes.filter(function (et) { return userEtIds.indexOf(et.id) !== -1 })
+        var userEstIds = profile?.expense_sub_type_ids || []
+        var subs = expenseSubTypes.filter(function (st) {
+          if (st.expense_type_id !== Number(e0.expenseTypeId)) return false
+          if (!isAdminEt && userEstIds.indexOf(st.id) === -1) return false
+          return true
+        })
+        return (
+          <div className="border border-purple-200 rounded-xl bg-white shadow-sm p-4 space-y-3">
+            <div>
+              <SearchDropdown
+                label="Expense Type"
+                items={typeList.map(function (et) { return { label: (et.icon ? et.icon + ' ' : '') + et.name, value: String(et.id) } })}
+                value={e0.expenseTypeId}
+                onChange={function (val) { updateEntry(0, 'expenseTypeId', val); updateEntry(0, 'expenseSubTypeId', '') }}
+                placeholder="Search or select type..."
+              />
+            </div>
+            {e0.expenseTypeId && subs.length > 0 && (
+              <div>
+                <SearchDropdown
+                  label="Sub-Type"
+                  items={subs.map(function (st) { return { label: st.name, value: String(st.id) } })}
+                  value={e0.expenseSubTypeId}
+                  onChange={function (val) { updateEntry(0, 'expenseSubTypeId', val) }}
+                  placeholder="Search or select sub-type..."
+                />
+              </div>
+            )}
+            {e0.expenseTypeId && subs.length === 0 && (
+              <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">No sub-types configured for this type</p>
+            )}
+          </div>
+        )
+      })()}
 
       {/* For a Function? */}
-      <div className="border border-gray-200 rounded-xl bg-white p-4 space-y-3">
+      <div className={"border border-gray-200 rounded-xl bg-white p-4 space-y-3 " + (isAdminEdit ? "hidden" : "")}>
         <div className="flex items-center justify-between">
           <label className="text-sm font-medium text-gray-700">For a Function?</label>
           <button type="button" onClick={function () { toggleFunction(!isFunction) }} className="flex items-center gap-2">
@@ -1012,6 +1084,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
       </div>
 
       {entries.map(function (entry, idx) {
+        if (isAdminEdit) return null
         var isAdminEst = profile?.role === 'admin' || profile?.role === 'auditor'
         var userEstIds = profile?.expense_sub_type_ids || []
         var subTypesForType = expenseSubTypes.filter(function (st) {
@@ -1492,6 +1565,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
 
       {(function () {
         if (walletBalance == null) return null
+        if (isAdminEdit) return null
         var totalPaise = 0
         for (var i = 0; i < entries.length; i++) {
           var e = entries[i]
@@ -1523,7 +1597,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
         <button type="button" onClick={handleSubmit} disabled={saving}
           className={'flex-1 py-2.5 rounded-xl font-semibold text-sm text-white shadow-sm transition-all ' +
             (saving ? 'bg-gray-400 cursor-not-allowed' : 'bg-amber-600 hover:bg-amber-700 active:scale-[0.98]')}>
-          {saving ? (isEditing ? 'Updating...' : 'Submitting...') : (isEditing ? 'Update Expense' : ('Submit ' + entries.length + ' Expense' + (entries.length > 1 ? 's' : '')))}
+          {saving ? (isEditing ? 'Updating...' : 'Submitting...') : (isAdminEdit ? 'Update Type' : (isEditing ? 'Update Expense' : ('Submit ' + entries.length + ' Expense' + (entries.length > 1 ? 's' : ''))))}
         </button>
       </div>
 
