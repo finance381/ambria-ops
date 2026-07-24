@@ -232,6 +232,10 @@ function Expenses({ profile, masterMode }) {
 
   // Total points for my expenses
   var myTotal = myExpenses.reduce(function (sum, e) { return sum + (e.amount_paise || 0) }, 0)
+  var monthPrefix = new Date().toISOString().slice(0, 7)
+  var myMonthExps = myExpenses.filter(function (e) { return (e.expense_date || '').slice(0, 7) === monthPrefix })
+  var monthCount = myMonthExps.length
+  var monthTotal = myMonthExps.reduce(function (sum, e) { return sum + (e.amount_paise || 0) }, 0)
   if (masterMode) {
     return <ExpenseTypeMaster />
   }
@@ -300,51 +304,19 @@ function Expenses({ profile, masterMode }) {
   return (
     <div className="space-y-4">
 
-      {/* Admin shortcuts */}
-      {(isAdmin || isAuditor) && (
-        <div className="flex gap-2 md:hidden">
-          <button onClick={function () { setReportView(true) }}
-            className="flex-1 py-2.5 text-xs font-bold text-amber-600 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 transition-colors">
-            📊 Reports
-          </button>
-          {(profile?.permissions || []).indexOf('admin_masters') !== -1 && (
-            <button onClick={function () { setTypesModal(true) }}
-              className="flex-1 py-2.5 text-xs font-bold text-purple-600 bg-purple-50 border border-purple-200 rounded-lg hover:bg-purple-100 transition-colors">
-              ⚙ Types
-            </button>
-          )}
-        </div>
-      )}
-
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-bold text-gray-900">
-            {view === 'approve' ? 'Review' : view === 'all' ? 'All Expenses' : 'My Expenses'}
-          </h2>
+          <h2 className="text-lg font-bold text-gray-900">Expenses</h2>
           <p className="text-xs text-gray-400">
             {view === 'approve'
               ? approvalExpenses.length + ' pending review'
               : view === 'all'
                 ? 'All users (admin view)'
-                : myExpenses.length + ' expenses' + (myTotal > 0 ? ' · ' + formatPoints(myTotal) + ' total' : '')}
+                : monthCount + ' this month' + (monthTotal > 0 ? ' · ' + formatPoints(monthTotal) : '')}
           </p>
         </div>
         <div className="flex gap-2">
-          {(isAdmin || isAuditor) && (
-            <div className="hidden md:flex gap-2">
-              <button onClick={function () { setReportView(true) }}
-                className="px-3 py-2 text-xs font-bold text-amber-600 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 transition-colors">
-                📊 Reports
-              </button>
-              {(profile?.permissions || []).indexOf('admin_masters') !== -1 && (
-                <button onClick={function () { setTypesModal(true) }}
-                  className="px-3 py-2 text-xs font-bold text-purple-600 bg-purple-50 border border-purple-200 rounded-lg hover:bg-purple-100 transition-colors">
-                  ⚙ Types
-                </button>
-              )}
-            </div>
-          )}
           {view === 'list' && myExpenses.length > 0 && (
             <button onClick={exportExpenseCSV}
               className="px-3 py-2 text-sm font-bold text-green-600 bg-green-50 border border-green-200 rounded-lg hover:bg-green-100 transition-colors">
@@ -358,12 +330,28 @@ function Expenses({ profile, masterMode }) {
         </div>
       </div>
 
+      {/* Admin shortcuts — Reports / Types */}
+      {(isAdmin || isAuditor) && (
+        <div className="flex gap-2 md:max-w-md">
+          <button onClick={function () { setReportView(true) }}
+            className="flex-1 py-2.5 text-xs font-bold text-amber-600 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 transition-colors">
+            📊 Reports
+          </button>
+          {(profile?.permissions || []).indexOf('admin_masters') !== -1 && (
+            <button onClick={function () { setTypesModal(true) }}
+              className="flex-1 py-2.5 text-xs font-bold text-purple-600 bg-purple-50 border border-purple-200 rounded-lg hover:bg-purple-100 transition-colors">
+              ⚙ Types
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Tabs */}
       {showApproveTab && (
         <div className="flex bg-gray-100 rounded-lg p-0.5 md:max-w-md">
           <button onClick={function () { setView('list'); setStatusFilter('') }}
             className={"flex-1 py-2 text-sm font-semibold rounded-md transition-colors " + (view === 'list' ? "bg-white text-gray-900 shadow-sm" : "text-gray-500")}>
-            My Expenses
+            Mine
           </button>
           <button onClick={function () { setView('approve'); setStatusFilter('') }}
             className={"flex-1 py-2 text-sm font-semibold rounded-md transition-colors relative " + (view === 'approve' ? "bg-white text-gray-900 shadow-sm" : "text-gray-500")}>

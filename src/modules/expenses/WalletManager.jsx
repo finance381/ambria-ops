@@ -69,19 +69,39 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     loadTransfers()
   }, [])
 
-  // For non-admin/auditor: open own wallet transactions once myWallet is available.
+  // For non-admin/auditor: land on dashboard once myWallet is available.
   // Handles race where WalletManager mounts before parent's async wallet fetch resolves.
   useEffect(function () {
     if (isAdmin || isAuditor) return
     if (!myWallet) return
-    if (walletView === 'transactions' && selectedWallet) return
+    if (walletView === 'dashboard' || walletView === 'transactions') return
     setWalletProfiles(function (prev) { var n = Object.assign({}, prev); n[profile.id] = profile; return n })
-    openWalletTxns(myWallet)
+    setSelectedWallet(myWallet)
+    setWalletView('dashboard')
+    loadRecentTxns(myWallet)
   }, [myWallet, isAdmin, isAuditor])
 
   function refreshBalance() {
     supabase.from('wallets').select('balance_paise').eq('user_id', profile.id).maybeSingle()
       .then(function (res) { onBalanceChange(res.data?.balance_paise || 0) })
+  }
+
+  async function loadRecentTxns(wallet) {
+    if (!wallet) return
+    var { data } = await supabase.from('wallet_transactions')
+      .select('*')
+      .eq('wallet_id', wallet.id)
+      .order('created_at', { ascending: false })
+      .limit(5)
+    var txns = data || []
+    var tRefIds = txns.filter(function (t) { return t.reference_type === 'transfer' && t.reference_id }).map(function (t) { return t.reference_id })
+    if (tRefIds.length > 0) {
+      var { data: tData } = await supabase.from('wallet_transfers').select('id, from_user_id, to_user_id').in('id', tRefIds)
+      var tMap = {}
+      ;(tData || []).forEach(function (tr) { tMap[tr.id] = tr })
+      setTransferParties(function (prev) { return Object.assign({}, prev, tMap) })
+    }
+    setWalletTxns(txns)
   }
 
   function handleBack() {
@@ -91,6 +111,11 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
       setWalletTxns([])
       setTxnFrom('')
       setTxnTo('')
+    } else if (walletView === 'transactions' && !isAdmin && !isAuditor) {
+      setWalletView('dashboard')
+      setTxnFrom('')
+      setTxnTo('')
+      loadRecentTxns(selectedWallet)
     } else {
       onClose()
     }
@@ -421,6 +446,114 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   }
 
   // ═══════════════════════════════════════════════
+  // WALLET DASHBOARD — Own wallet landing (mobile-first)
+  // ═══════════════════════════════════════════════
+  if (walletView === 'dashboard' && selectedWallet) {
+    var bal = selectedWallet.balance_paise || 0
+    var balColor = bal < 0 ? 'text-red-700' : bal === 0 ? 'text-gray-500' : 'text-green-800'
+    var balBg = bal < 0 ? 'bg-red-50 border-red-200' : bal === 0 ? 'bg-gray-50 border-gray-200' : 'bg-green-50 border-green-200'
+    var lastTxn = walletTxns[0]
+    var lastActivity = lastTxn ? formatDate(lastTxn.created_at) : 'none yet'
+    var showIssueTile = isAdmin || isAuditor
+    var receiveCount = pendingIncoming.length
+    return (
+      <div className="space-y-4 max-w-2xl mx-auto">
+        <div>
+          <button onClick={onClose}
+            className="text-sm text-indigo-600 font-medium hover:text-indigo-800 transition-colors mb-1">← Back</button>
+          <h2 className="text-lg font-bold text-gray-900">Wallet</h2>
+          <p className="text-xs text-gray-400">{profile.name || '—'} · <span className={"font-bold " + balColor}>{formatPoints(bal)}</span></p>
+        </div>
+
+        {/* Balance card */}
+        <div className={"border rounded-2xl p-5 " + balBg}>
+          <p className={"text-[11px] font-bold uppercase tracking-wider mb-1 " + balColor}>Balance</p>
+          <p className={"text-4xl font-bold " + balColor}>{formatPoints(bal)}</p>
+          <p className={"text-xs mt-2 " + balColor + " opacity-75"}>Last activity — {lastActivity}</p>
+        </div>
+
+        {/* 2x2 action grid */}
+        <div className="grid grid-cols-2 gap-3">
+          <button onClick={openCollectModal}
+            className="py-5 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 active:bg-gray-100 transition-colors flex flex-col items-center gap-1.5">
+            <span className="text-xl text-blue-600">↓</span>
+            <span className="text-sm font-bold text-gray-800">Collect</span>
+          </button>
+          <button onClick={openTransferModal}
+            className="py-5 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 active:bg-gray-100 transition-colors flex flex-col items-center gap-1.5">
+            <span className="text-xl text-emerald-600">⇄</span>
+            <span className="text-sm font-bold text-gray-800">Transfer</span>
+          </button>
+          <button onClick={function () { setWalletView('transactions'); openWalletTxns(selectedWallet) }}
+            className="py-5 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 active:bg-gray-100 transition-colors flex flex-col items-center gap-1.5">
+            <span className="text-xl text-gray-600">🕐</span>
+            <span className="text-sm font-bold text-gray-800">History</span>
+          </button>
+          {showIssueTile ? (
+            <button onClick={function () { setIssueModal(selectedWallet); setIssueAmount(''); setIssueDesc(''); setIssueType('credit') }}
+              className="py-5 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 active:bg-gray-100 transition-colors flex flex-col items-center gap-1.5">
+              <span className="text-xl text-indigo-600">+</span>
+              <span className="text-sm font-bold text-gray-800">Issue</span>
+            </button>
+          ) : receiveCount > 0 ? (
+            <button onClick={function () { setWalletView('transactions'); openWalletTxns(selectedWallet) }}
+              className="py-5 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 active:bg-gray-100 transition-colors flex flex-col items-center gap-1.5 relative">
+              <span className="text-xl text-orange-600">📥</span>
+              <span className="text-sm font-bold text-gray-800">Receive</span>
+              <span className="absolute top-2 right-2 min-w-[20px] h-5 px-1.5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">{receiveCount}</span>
+            </button>
+          ) : (
+            <div className="py-5 bg-gray-50 border border-dashed border-gray-200 rounded-xl flex items-center justify-center">
+              <span className="text-[11px] text-gray-400">No pending</span>
+            </div>
+          )}
+        </div>
+
+        {/* Recent transactions */}
+        <div>
+          <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-2">Recent Transactions</p>
+          {walletTxns.length === 0 ? (
+            <div className="py-6 text-center text-xs text-gray-400 bg-white border border-gray-200 rounded-xl">No transactions yet</div>
+          ) : (
+            <div className="space-y-2">
+              {walletTxns.slice(0, 5).map(function (t) {
+                var isCredit = t.type === 'credit'
+                return (
+                  <div key={t.id} className="flex items-center gap-3 p-3 bg-white border border-gray-200 rounded-xl">
+                    <div className={"w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 " + (isCredit ? "bg-green-50 text-green-600" : "bg-red-50 text-red-600")}>
+                      <span className="text-sm font-bold">{isCredit ? '+' : '−'}</span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-bold text-gray-800 truncate">{t.description || (isCredit ? 'Credit' : 'Debit')}</p>
+                      <p className="text-[11px] text-gray-400">{formatDate(t.created_at)}</p>
+                    </div>
+                    <span className={"text-sm font-bold flex-shrink-0 " + (isCredit ? "text-green-600" : "text-red-600")}>
+                      {isCredit ? '+' : '−'}{formatPoints(t.amount_paise)}
+                    </span>
+                  </div>
+                )
+              })}
+              {walletTxns.length >= 5 && (
+                <button onClick={function () { setWalletView('transactions'); openWalletTxns(selectedWallet) }}
+                  className="w-full py-2 text-xs font-bold text-indigo-600 hover:text-indigo-800 transition-colors">
+                  View all →
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+
+        {renderCollectModal()}
+        {renderTransferModal()}
+        {renderIssueModal()}
+        {renderReceiveModal()}
+        {renderTransferConfirmModal()}
+        {renderEnlargedImg()}
+      </div>
+    )
+  }
+
+  // ═══════════════════════════════════════════════
   // WALLET ADMIN — All balances
   // ═══════════════════════════════════════════════
   if (walletView === 'wallets') {
@@ -531,64 +664,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             </div>
           </div>
         )}
-        {issueModal && (
-          <BottomSheet open={true} onClose={function () { setIssueModal(null) }} title={issueType === 'debit' ? 'Deduct Points' : 'Issue Points'}>
-            <div className="space-y-4">
-              <div className="flex justify-end">
-                <div className="flex bg-gray-100 rounded-lg p-0.5">
-                  <button onClick={function () { setIssueType('credit') }}
-                    className={"px-3 py-1.5 text-xs font-bold rounded-md transition-colors " + (issueType === 'credit' ? "bg-white text-green-700 shadow-sm" : "text-gray-500")}>
-                    + Credit
-                  </button>
-                  <button onClick={function () { setIssueType('debit') }}
-                    className={"px-3 py-1.5 text-xs font-bold rounded-md transition-colors " + (issueType === 'debit' ? "bg-white text-red-700 shadow-sm" : "text-gray-500")}>
-                    − Debit
-                  </button>
-                </div>
-              </div>
-              <p className="text-sm text-gray-500">To: <span className="font-medium text-gray-800">{walletProfiles[issueModal.user_id]?.name || '—'}</span></p>
-              <p className="text-xs text-gray-400">Current balance: {formatPoints(issueModal.balance_paise)}</p>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Amount (Points)</label>
-                <input type="number" min="1" step="any" inputMode="decimal" value={issueAmount}
-                  onChange={function (e) { setIssueAmount(e.target.value) }}
-                  placeholder="0" className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  style={{ fontSize: '16px' }} />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-                <input type="text" value={issueDesc} onChange={function (e) { setIssueDesc(e.target.value) }}
-                  placeholder="e.g. Weekly allowance, Reimbursement..."
-                  maxLength="300" className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  style={{ fontSize: '16px' }} />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">📷 Cash Photo</label>
-                {issueImage ? (
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-green-600 font-medium truncate flex-1">✓ {issueImage.name}</span>
-                    <button onClick={function () { setIssueImage(null) }}
-                      className="text-xs text-red-500 font-bold hover:text-red-700">✕</button>
-                  </div>
-                ) : (
-                  <label className="block w-full py-2.5 text-center text-sm text-indigo-600 border border-dashed border-indigo-300 rounded-lg cursor-pointer hover:bg-indigo-50 transition-colors">
-                    Tap to attach photo
-                    <input type="file" accept="image/*" capture="environment" className="sr-only"
-                      onChange={function (e) { if (e.target.files?.[0]) setIssueImage(e.target.files[0]); e.target.value = '' }} />
-                  </label>
-                )}
-              </div>
-              <div className="flex gap-3 pt-2">
-                <button onClick={function () { setIssueModal(null); setIssueImage(null) }}
-                  className="flex-1 py-3 text-sm text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors font-semibold">Cancel</button>
-                <button onClick={issuePoints} disabled={issueSaving || !issueAmount || Number(issueAmount) <= 0}
-                  className="flex-1 py-3 text-sm text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition-colors font-semibold">
-                  {issueSaving ? (issueType === 'debit' ? 'Deducting...' : 'Issuing...') : (issueType === 'debit' ? 'Deduct ' : 'Issue ') + (issueAmount && Number(issueAmount) > 0 ? Number(issueAmount).toLocaleString('en-IN') + ' pts' : '')}
-                </button>
-              </div>
-            </div>
-          </BottomSheet>
-        )}
+        {renderIssueModal()}
       </div>
     )
   }
@@ -602,7 +678,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
       <div className="space-y-4">
         <div>
           <button onClick={handleBack}
-            className="text-sm text-indigo-600 font-medium hover:text-indigo-800 transition-colors mb-1">{(isAdmin || isAuditor) ? '← Back to Wallets' : '← Back to Expenses'}</button>
+            className="text-sm text-indigo-600 font-medium hover:text-indigo-800 transition-colors mb-1">{(isAdmin || isAuditor) ? '← Back to Wallets' : '← Back'}</button>
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-lg font-bold text-gray-900">{txnUser.name || '—'}</h2>
@@ -622,7 +698,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                 </button>
               )}
               {(isAdmin || isAuditor) && (
-                <button onClick={function () { setIssueModal(selectedWallet); setIssueAmount(''); setIssueDesc('') }}
+                <button onClick={function () { setIssueModal(selectedWallet); setIssueAmount(''); setIssueDesc(''); setIssueType('credit') }}
                   className="px-3 py-1.5 text-xs font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors">
                   + Issue
                 </button>
@@ -794,221 +870,12 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             )
           })}
         </div>
-        {issueModal && (
-          <BottomSheet open={true} onClose={function () { setIssueModal(null); setIssueImage(null) }} title="Issue Points">
-            <div className="space-y-4">
-              <p className="text-sm text-gray-500">To: <span className="font-medium text-gray-800">{walletProfiles[issueModal.user_id]?.name || '—'}</span></p>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Amount (Points)</label>
-                <input type="number" min="1" step="any" inputMode="decimal" value={issueAmount}
-                  onChange={function (e) { setIssueAmount(e.target.value) }}
-                  placeholder="0" className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  style={{ fontSize: '16px' }} />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-                <input type="text" value={issueDesc} onChange={function (e) { setIssueDesc(e.target.value) }}
-                  placeholder="e.g. Weekly allowance" maxLength="300"
-                  className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  style={{ fontSize: '16px' }} />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">📷 Cash Photo</label>
-                {issueImage ? (
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-green-600 font-medium truncate flex-1">✓ {issueImage.name}</span>
-                    <button onClick={function () { setIssueImage(null) }}
-                      className="text-xs text-red-500 font-bold hover:text-red-700">✕</button>
-                  </div>
-                ) : (
-                  <label className="block w-full py-2.5 text-center text-sm text-indigo-600 border border-dashed border-indigo-300 rounded-lg cursor-pointer hover:bg-indigo-50 transition-colors">
-                    Tap to attach photo
-                    <input type="file" accept="image/*" capture="environment" className="hidden"
-                      onChange={function (e) { if (e.target.files?.[0]) setIssueImage(e.target.files[0]); e.target.value = '' }} />
-                  </label>
-                )}
-              </div>
-              <div className="flex gap-3 pt-2">
-                <button onClick={function () { setIssueModal(null); setIssueImage(null) }}
-                  className="flex-1 py-3 text-sm text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors font-semibold">Cancel</button>
-                <button onClick={issuePoints} disabled={issueSaving || !issueAmount || Number(issueAmount) <= 0}
-                  className="flex-1 py-3 text-sm text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition-colors font-semibold">
-                  {issueSaving ? 'Issuing...' : 'Issue ' + (issueAmount && Number(issueAmount) > 0 ? Number(issueAmount).toLocaleString('en-IN') + ' pts' : '')}
-                </button>
-              </div>
-            </div>
-          </BottomSheet>
-        )}
-        {receiveModal && (
-          <BottomSheet open={true} onClose={function () { setReceiveModal(null); setReceiveImage(null) }} title="Confirm Cash Received">
-            <div className="space-y-4">
-              <p className="text-sm text-gray-500">Amount: <span className="font-bold text-green-700">{formatPoints(Math.abs(receiveModal.amount_paise))}</span></p>
-              <p className="text-xs text-gray-400">{receiveModal.description || '—'}</p>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">📷 Receipt Photo</label>
-                {receiveImage ? (
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-green-600 font-medium truncate flex-1">✓ {receiveImage.name}</span>
-                    <button onClick={function () { setReceiveImage(null) }}
-                      className="text-xs text-red-500 font-bold hover:text-red-700">✕</button>
-                  </div>
-                ) : (
-                  <label className="block w-full py-3 text-center text-sm text-amber-700 border-2 border-dashed border-amber-300 rounded-lg cursor-pointer hover:bg-amber-50 transition-colors font-medium">
-                    📷 Take photo of cash received
-                    <input type="file" accept="image/*" capture="environment" className="sr-only"
-                      onChange={function (e) { if (e.target.files?.[0]) setReceiveImage(e.target.files[0]); e.target.value = '' }} />
-                  </label>
-                )}
-              </div>
-              <div className="flex gap-3 pt-2">
-                <button onClick={function () { setReceiveModal(null); setReceiveImage(null) }}
-                  className="flex-1 py-3 text-sm text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors font-semibold">Cancel</button>
-                <button onClick={confirmReceive} disabled={receiveSaving}
-                  className="flex-1 py-3 text-sm text-white bg-green-600 rounded-xl hover:bg-green-700 disabled:opacity-50 transition-colors font-semibold">
-                  {receiveSaving ? 'Confirming...' : '✓ Confirm Received'}
-                </button>
-              </div>
-            </div>
-          </BottomSheet>
-        )}
-        {collectModal && (
-          <BottomSheet open={true} onClose={function () { setCollectModal(false) }} title="Collect Payment">
-            <div className="space-y-4">
-              <SearchDropdown label="Event" required
-                items={collectEvents.map(function (e) { return { label: e.event_name + (e.function_date ? ' · ' + e.function_date : '') + (e.venue_name ? ' · ' + e.venue_name : ''), value: String(e.id) } })}
-                value={collectEventId}
-                onChange={function (val) { setCollectEventId(val) }}
-                placeholder="Search event..." />
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Amount (Points)</label>
-                <input type="number" min="1" step="any" inputMode="decimal" value={collectAmount}
-                  onChange={function (e) { setCollectAmount(e.target.value) }}
-                  placeholder="0" className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  style={{ fontSize: '16px' }} />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-                <input type="text" value={collectDesc} onChange={function (e) { setCollectDesc(e.target.value) }}
-                  placeholder="e.g. Advance payment, Final settlement..."
-                  maxLength="300" className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  style={{ fontSize: '16px' }} />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">📷 Receipt Photo</label>
-                {collectImage ? (
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-green-600 font-medium truncate flex-1">✓ {collectImage.name}</span>
-                    <button onClick={function () { setCollectImage(null) }} className="text-xs text-red-500 font-bold hover:text-red-700">✕</button>
-                  </div>
-                ) : (
-                  <label className="block w-full py-2.5 text-center text-sm text-blue-600 border border-dashed border-blue-300 rounded-lg cursor-pointer hover:bg-blue-50 transition-colors">
-                    Tap to attach photo
-                    <input type="file" accept="image/*" capture="environment" className="sr-only"
-                      onChange={function (e) { if (e.target.files?.[0]) setCollectImage(e.target.files[0]); e.target.value = '' }} />
-                  </label>
-                )}
-              </div>
-              <div className="flex gap-3 pt-2">
-                <button onClick={function () { setCollectModal(false) }}
-                  className="flex-1 py-3 text-sm text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors font-semibold">Cancel</button>
-                <button onClick={submitCollection}
-                  disabled={collectSaving || !collectEventId || !collectAmount || Number(collectAmount) <= 0}
-                  className="flex-1 py-3 text-sm text-white bg-blue-600 rounded-xl hover:bg-blue-700 disabled:opacity-50 transition-colors font-semibold">
-                  {collectSaving ? 'Saving...' : 'Collect ' + (collectAmount && Number(collectAmount) > 0 ? Number(collectAmount).toLocaleString('en-IN') + ' pts' : '')}
-                </button>
-              </div>
-            </div>
-          </BottomSheet>
-        )}
-        {transferModal && (
-          <BottomSheet open={true} onClose={function () { setTransferModal(false) }} title="Transfer Cash">
-            <div className="space-y-4">
-              <SearchDropdown label="Send to" required
-                items={transferUsers.map(function (u) { return { label: u.name, value: u.id } })}
-                value={transferTo}
-                onChange={function (val) { setTransferTo(val) }}
-                placeholder="Search user..." />
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Amount (Points)</label>
-                <input type="number" min="1" step="any" inputMode="decimal" value={transferAmount}
-                  onChange={function (e) { setTransferAmount(e.target.value) }}
-                  placeholder="0" className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  style={{ fontSize: '16px' }} />
-                {transferAmount && Number(transferAmount) > 0 && walletBalance > 0 && Math.round(Number(transferAmount) * 100) > walletBalance && (
-                  <p className="text-xs text-red-500 mt-1">Exceeds balance ({formatPoints(walletBalance)})</p>
-                )}
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-                <input type="text" value={transferDesc} onChange={function (e) { setTransferDesc(e.target.value) }}
-                  placeholder="e.g. Repayment, Lunch money..." maxLength="300"
-                  className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  style={{ fontSize: '16px' }} />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">📷 Cash Photo</label>
-                {transferImage ? (
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-green-600 font-medium truncate flex-1">✓ {transferImage.name}</span>
-                    <button onClick={function () { setTransferImage(null) }} className="text-xs text-red-500 font-bold hover:text-red-700">✕</button>
-                  </div>
-                ) : (
-                  <label className="block w-full py-2.5 text-center text-sm text-emerald-600 border border-dashed border-emerald-300 rounded-lg cursor-pointer hover:bg-emerald-50 transition-colors">
-                    Tap to attach photo
-                    <input type="file" accept="image/*" capture="environment" className="sr-only"
-                      onChange={function (e) { if (e.target.files?.[0]) setTransferImage(e.target.files[0]); e.target.value = '' }} />
-                  </label>
-                )}
-              </div>
-              <div className="flex gap-3 pt-2">
-                <button onClick={function () { setTransferModal(false) }}
-                  className="flex-1 py-3 text-sm text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors font-semibold">Cancel</button>
-                <button onClick={initiateTransfer}
-                  disabled={transferSaving || !transferTo || !transferAmount || Number(transferAmount) <= 0}
-                  className="flex-1 py-3 text-sm text-white bg-emerald-600 rounded-xl hover:bg-emerald-700 disabled:opacity-50 transition-colors font-semibold">
-                  {transferSaving ? 'Sending...' : 'Send ' + (transferAmount && Number(transferAmount) > 0 ? Number(transferAmount).toLocaleString('en-IN') + ' pts' : '')}
-                </button>
-              </div>
-            </div>
-          </BottomSheet>
-        )}
-        {transferConfirmModal && (
-          <BottomSheet open={true} onClose={function () { setTransferConfirmModal(null); setTransferConfirmImage(null) }} title="Confirm Transfer Received">
-            <div className="space-y-4">
-              <p className="text-sm text-gray-500">From: <span className="font-bold text-gray-900">{transferConfirmModal._fromName}</span></p>
-              <p className="text-sm text-gray-500">Amount: <span className="font-bold text-green-700">{formatPoints(transferConfirmModal.amount_paise)}</span></p>
-              <p className="text-xs text-gray-400">{transferConfirmModal.description || '—'}</p>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">📷 Receipt Photo</label>
-                {transferConfirmImage ? (
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-green-600 font-medium truncate flex-1">✓ {transferConfirmImage.name}</span>
-                    <button onClick={function () { setTransferConfirmImage(null) }} className="text-xs text-red-500 font-bold hover:text-red-700">✕</button>
-                  </div>
-                ) : (
-                  <label className="block w-full py-3 text-center text-sm text-amber-700 border-2 border-dashed border-amber-300 rounded-lg cursor-pointer hover:bg-amber-50 transition-colors font-medium">
-                    📷 Take photo of cash received
-                    <input type="file" accept="image/*" capture="environment" className="sr-only"
-                      onChange={function (e) { if (e.target.files?.[0]) setTransferConfirmImage(e.target.files[0]); e.target.value = '' }} />
-                  </label>
-                )}
-              </div>
-              <div className="flex gap-3 pt-2">
-                <button onClick={function () { setTransferConfirmModal(null); setTransferConfirmImage(null) }}
-                  className="flex-1 py-3 text-sm text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors font-semibold">Cancel</button>
-                <button onClick={confirmTransferReceive} disabled={transferConfirmSaving}
-                  className="flex-1 py-3 text-sm text-white bg-green-600 rounded-xl hover:bg-green-700 disabled:opacity-50 transition-colors font-semibold">
-                  {transferConfirmSaving ? 'Confirming...' : '✓ Confirm Received'}
-                </button>
-              </div>
-            </div>
-          </BottomSheet>
-        )}
-        {enlargedWalletImg && (
-          <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4" onClick={function () { setEnlargedWalletImg(null) }}>
-            <img src={enlargedWalletImg} alt="" className="max-w-full max-h-[80vh] rounded-lg" />
-          </div>
-        )}
+        {renderIssueModal()}
+        {renderReceiveModal()}
+        {renderCollectModal()}
+        {renderTransferModal()}
+        {renderTransferConfirmModal()}
+        {renderEnlargedImg()}
       </div>
     )
   }
