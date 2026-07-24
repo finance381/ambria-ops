@@ -31,34 +31,19 @@ export function useAuth() {
   }, [])
 
   function fetchProfile(authUser) {
-    supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', authUser.id)
-      .maybeSingle()
-      .then(function ({ data, error }) {
-        if (data) {
-          data.email = authUser.email
-          setProfile(data)
-          setLoading(false)
-        } else {
-          // New Google user — profile created by trigger, retry once
-          setTimeout(function () {
-            supabase
-              .from('profiles')
-              .select('*')
-              .eq('id', authUser.id)
-              .maybeSingle()
-              .then(function ({ data: retryData }) {
-                if (retryData) {
-                  retryData.email = authUser.email
-                  setProfile(retryData)
-                }
-                setLoading(false)
-              })
-          }, 1500)
-        }
-      })
+    supabase.rpc('ensure_profile').then(function ({ data, error }) {
+      if (error) {
+        console.error('ensure_profile failed:', error)
+        setLoading(false)
+        return
+      }
+      var row = Array.isArray(data) ? data[0] : data
+      if (row) {
+        row.email = authUser.email
+        setProfile(row)
+      }
+      setLoading(false)
+    })
   }
 
   async function signIn(email, password) {
