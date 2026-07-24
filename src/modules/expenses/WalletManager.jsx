@@ -41,6 +41,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   var [enlargedWalletImg, setEnlargedWalletImg] = useState(null)
   var [pendingIncoming, setPendingIncoming] = useState([])
   var [pendingOutgoing, setPendingOutgoing] = useState([])
+  var [pendingIssues, setPendingIssues] = useState([])
   var [transferModal, setTransferModal] = useState(false)
   var [transferUsers, setTransferUsers] = useState([])
   var [transferTo, setTransferTo] = useState('')
@@ -280,9 +281,13 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   }
 
   async function loadTransfers() {
-    var [incRes, outRes] = await Promise.all([
+    var wid = myWallet?.id
+    var [incRes, outRes, issRes] = await Promise.all([
       supabase.from('wallet_transfers').select('id, from_user_id, amount_paise, description, sender_image_path, status, created_at').eq('to_user_id', profile.id).eq('status', 'pending').order('created_at', { ascending: false }),
       supabase.from('wallet_transfers').select('id, to_user_id, amount_paise, description, sender_image_path, status, created_at').eq('from_user_id', profile.id).eq('status', 'pending').order('created_at', { ascending: false }),
+      wid
+        ? supabase.from('wallet_transactions').select('id, type, amount_paise, description, performed_by, created_at, issued_image_path, wallet_id, status, reference_type').eq('wallet_id', wid).eq('status', 'pending').eq('type', 'credit').is('reference_type', null).order('created_at', { ascending: false })
+        : Promise.resolve({ data: [] }),
     ])
     var inc = incRes.data || []
     var out = outRes.data || []
@@ -298,6 +303,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     }
     setPendingIncoming(inc)
     setPendingOutgoing(out)
+    setPendingIssues(issRes.data || [])
   }
 
   async function openTransferModal() {
@@ -741,7 +747,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     var lastTxn = walletTxns[0]
     var lastActivity = lastTxn ? formatDate(lastTxn.created_at) : 'none yet'
     var showIssueTile = isAdmin || isAuditor
-    var receiveCount = pendingIncoming.length
+    var receiveCount = pendingIncoming.length + pendingIssues.length
     return (
       <div className="space-y-4 max-w-2xl mx-auto">
         <div>
@@ -810,7 +816,10 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                       <span className="text-sm font-bold">{isCredit ? '+' : '−'}</span>
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-bold text-gray-800 truncate">{t.description || (isCredit ? 'Credit' : 'Debit')}</p>
+                      <div className="flex items-center gap-1.5">
+                        <p className="text-sm font-bold text-gray-800 truncate">{t.description || (isCredit ? 'Credit' : 'Debit')}</p>
+                        {t.status === 'pending' && <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded flex-shrink-0">Pending</span>}
+                      </div>
                       <p className="text-[11px] text-gray-400">{formatDate(t.created_at)}</p>
                     </div>
                     <span className={"text-sm font-bold flex-shrink-0 " + (isCredit ? "text-green-600" : "text-red-600")}>

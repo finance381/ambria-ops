@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import { logActivity } from '../../lib/logger'
+import { formatPoints } from '../../lib/format'
 import SearchDropdown from '../../components/ui/SearchDropdown'
 import { useVoice } from '../../hooks/useVoice'
 import EventDatePicker from '../../components/ui/EventDatePicker'
@@ -783,7 +784,7 @@ function ExpenseForm({ profile, walletBalance, onDone }) {
 
   return (
     <div className="space-y-4">
-      {error && <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">{error}</div>}
+      {error && error.indexOf('Insufficient wallet balance') === -1 && <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">{error}</div>}
       {success && <div className="p-3 rounded-lg bg-green-50 border border-green-200 text-green-700 text-sm">{success}</div>}
 
       {/* For a Function? */}
@@ -1259,6 +1260,27 @@ function ExpenseForm({ profile, walletBalance, onDone }) {
           </div>
         )
       })}
+
+      {(function () {
+        if (walletBalance == null) return null
+        var totalPaise = 0
+        for (var i = 0; i < entries.length; i++) {
+          var e = entries[i]
+          var paise = e.isItemPurchase
+            ? Math.round(computeItemsTotal(e) * 100)
+            : Math.round(Number(e.amount || 0) * 100)
+          var taxP = e.taxAmount ? Math.round(Number(e.taxAmount) * 100) : 0
+          totalPaise += paise + taxP
+        }
+        if (totalPaise <= walletBalance) return null
+        var shortPts = ((totalPaise - walletBalance) / 100).toLocaleString('en-IN', { maximumFractionDigits: 2 })
+        var availPts = (walletBalance / 100).toLocaleString('en-IN', { maximumFractionDigits: 2 })
+        return (
+          <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
+            Insufficient wallet balance. Available: {availPts} pts. Short by {shortPts} pts.
+          </div>
+        )
+      })()}
 
       {/* Add entry + Submit bar */}
       <div className="flex gap-3">
