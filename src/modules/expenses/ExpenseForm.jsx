@@ -89,7 +89,66 @@ function makeItem() {
   }
 }
 
-function ExpenseForm({ profile, walletBalance, onDone }) {
+function hydrateEntry(exp) {
+  var meta = (exp.metadata && typeof exp.metadata === 'object') ? Object.assign({}, exp.metadata) : {}
+  if (!meta.vendor_name && exp.vendor_name) meta.vendor_name = exp.vendor_name
+  if (!meta.travel_from && exp.travel_from) meta.travel_from = exp.travel_from
+  if (!meta.travel_to && exp.travel_to) meta.travel_to = exp.travel_to
+  if (!meta.travel_mode && exp.travel_mode) meta.travel_mode = exp.travel_mode
+
+  var allocs = (exp.expense_allocations || []).map(function (a) {
+    return {
+      _origId: a.id,
+      departmentId: a.department_id ? String(a.department_id) : '',
+      venueId: a.venue_id ? String(a.venue_id) : '',
+      expenseTypeId: a.expense_type_id ? String(a.expense_type_id) : '',
+      expenseSubTypeId: a.expense_sub_type_id ? String(a.expense_sub_type_id) : '',
+      amountPaise: a.amount_paise != null ? String(a.amount_paise) : '',
+      remarks: a.remarks || ''
+    }
+  })
+  if (allocs.length === 0) {
+    allocs = [{ departmentId: '', venueId: '', expenseTypeId: '', expenseSubTypeId: '', amountPaise: '', remarks: '' }]
+  }
+
+  var itemsFromMeta = Array.isArray(meta.item_receipts) ? meta.item_receipts.map(function (it, i) {
+    return {
+      _key: Date.now() + '_i' + i + '_' + Math.random().toString(36).slice(2, 6),
+      itemQuery: it.query || '',
+      itemMatchedId: it.matched_item_id || null,
+      itemMatchedSource: it.matched_source || null,
+      itemMatchedCategoryId: it.matched_category_id || null,
+      itemQty: it.qty != null ? String(it.qty) : '',
+      itemUnit: it.unit || 'Pieces',
+      itemNotes: it.notes || '',
+      itemRate: it.rate_paise != null ? String(it.rate_paise / 100) : ''
+    }
+  }) : []
+
+  var isItemP = !!exp.item_receipt_status || itemsFromMeta.length > 0
+
+  return {
+    _key: Date.now() + '_' + Math.random().toString(36).slice(2, 8),
+    expenseTypeId: exp.expense_type_id ? String(exp.expense_type_id) : '',
+    expenseSubTypeId: exp.expense_sub_type_id ? String(exp.expense_sub_type_id) : '',
+    description: exp.description || '',
+    amount: exp.amount_paise != null ? String(exp.amount_paise / 100) : '',
+    taxAmount: exp.tax_paise ? String(exp.tax_paise / 100) : '',
+    expenseDate: exp.expense_date || new Date().toISOString().split('T')[0],
+    fieldValues: meta,
+    allocations: allocs,
+    receiptFiles: [],
+    receiptPreviews: [],
+    audioBlob: null,
+    audioUrl: '',
+    recording: false,
+    isItemPurchase: isItemP,
+    items: isItemP && itemsFromMeta.length > 0 ? itemsFromMeta : [makeItem()]
+  }
+}
+
+function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
+  var isEditing = !!editExp
   var [expenseTypes, setExpenseTypes] = useState([])
   var [expenseSubTypes, setExpenseSubTypes] = useState([])
   var [departments, setDepartments] = useState([])
@@ -98,11 +157,11 @@ function ExpenseForm({ profile, walletBalance, onDone }) {
   var [loading, setLoading] = useState(true)
   var [lookupCache, setLookupCache] = useState({})
 
-  var [entries, setEntries] = useState([makeEntry()])
+  var [entries, setEntries] = useState(function () { return [editExp ? hydrateEntry(editExp) : makeEntry()] })
   var [saving, setSaving] = useState(false)
-  var [isFunction, setIsFunction] = useState(false)
-  var [eventDate, setEventDate] = useState('')
-  var [eventId, setEventId] = useState('')
+  var [isFunction, setIsFunction] = useState(!!(editExp && editExp.event_id))
+  var [eventDate, setEventDate] = useState(editExp && editExp.event_id ? (editExp.expense_date || '') : '')
+  var [eventId, setEventId] = useState(editExp && editExp.event_id ? String(editExp.event_id) : '')
   var [events, setEvents] = useState([])
   var [eventsLoading, setEventsLoading] = useState(false)
   var voice = useVoice()
@@ -112,8 +171,21 @@ function ExpenseForm({ profile, walletBalance, onDone }) {
   var [itemSearchKey, setItemSearchKey] = useState('')
   var [itemMatches, setItemMatches] = useState([])
   var itemSearchTimer = useRef(null)
+  var [existingReceipts, setExistingReceipts] = useState(function () {
+    if (!editExp) return []
+    if (editExp.receipt_paths && editExp.receipt_paths.length > 0) return editExp.receipt_paths.slice()
+    if (editExp.receipt_path) return [editExp.receipt_path]
+    return []
+  })
+  var [removedReceipts, setRemovedReceipts] = useState([])
 
   useEffect(function () { loadRefData(); ensureLookupData('vendors') }, [])
+
+  useEffect(function () {
+    if (isEditing && editExp && editExp.event_id && editExp.expense_date) {
+      loadEventsByDate(editExp.expense_date)
+    }
+  }, [])
 
   async function loadRefData() {
     var [etR, estR, dR, vR, sdR] = await Promise.all([
@@ -606,7 +678,8 @@ function ExpenseForm({ profile, walletBalance, onDone }) {
         }
         if (computeItemsTotal(e) <= 0) return 'Entry ' + (i + 1) + ': Items total must be > 0'
       }
-      if (e.receiptFiles.length === 0 && !e.audioBlob) return 'Entry ' + (i + 1) + ': Receipt image or voice note is required'
+      var hasExistingReceipt = isEditing && existingReceipts.some(function (p) { return removedReceipts.indexOf(p) === -1 })
+      if (e.receiptFiles.length === 0 && !e.audioBlob && !hasExistingReceipt) return 'Entry ' + (i + 1) + ': Receipt image or voice note is required'
     }
     // Hard block: total across all entries must not exceed wallet balance
     if (walletBalance != null) {
@@ -619,9 +692,10 @@ function ExpenseForm({ profile, walletBalance, onDone }) {
         var enTax = en.taxAmount ? Math.round(Number(en.taxAmount) * 100) : 0
         totalPaise += enPaise + enTax
       }
-      if (totalPaise > walletBalance) {
-        var shortfallPts = ((totalPaise - walletBalance) / 100).toLocaleString('en-IN', { maximumFractionDigits: 2 })
-        var balancePts = (walletBalance / 100).toLocaleString('en-IN', { maximumFractionDigits: 2 })
+      var effAvail = walletBalance + (editExp ? (editExp.amount_paise || 0) : 0)
+      if (totalPaise > effAvail) {
+        var shortfallPts = ((totalPaise - effAvail) / 100).toLocaleString('en-IN', { maximumFractionDigits: 2 })
+        var balancePts = (effAvail / 100).toLocaleString('en-IN', { maximumFractionDigits: 2 })
         return 'Insufficient wallet balance. Available: ' + balancePts + ' pts. Short by ' + shortfallPts + ' pts.'
       }
     }
@@ -637,6 +711,113 @@ function ExpenseForm({ profile, walletBalance, onDone }) {
     if (valErr) { setError(valErr); return }
 
     setSaving(true)
+
+    // ── Edit branch ──
+    if (isEditing) {
+      var e0 = entries[0]
+      var newPaise = e0.isItemPurchase
+        ? Math.round(computeItemsTotal(e0) * 100)
+        : Math.round(Number(e0.amount) * 100)
+      try {
+        var editMeta = Object.assign({}, e0.fieldValues)
+        var keepPaths = existingReceipts.filter(function (p) { return removedReceipts.indexOf(p) === -1 })
+        var editPayload = {
+          expense_type_id: Number(e0.expenseTypeId),
+          expense_sub_type_id: Number(e0.expenseSubTypeId),
+          amount_paise: newPaise,
+          tax_paise: e0.taxAmount ? Math.round(Number(e0.taxAmount) * 100) : 0,
+          description: e0.description.trim(),
+          expense_date: e0.expenseDate,
+          event_id: eventId ? Number(eventId) : null,
+          metadata: editMeta,
+          vendor_name: e0.fieldValues.vendor_name || null,
+          travel_from: e0.fieldValues.travel_from || null,
+          travel_to: e0.fieldValues.travel_to || null,
+          travel_mode: e0.fieldValues.travel_mode || null,
+          receipt_paths: keepPaths,
+        }
+        var { error: updErr } = await supabase.from('expenses').update(editPayload).eq('id', editExp.id)
+        if (updErr) throw new Error(updErr.message)
+
+        // Upload new receipts (append via RPC)
+        if (e0.receiptFiles && e0.receiptFiles.length > 0) {
+          var editUploaded = []
+          var editUpErrs = []
+          for (var ef = 0; ef < e0.receiptFiles.length; ef++) {
+            var efile = e0.receiptFiles[ef]
+            var eext = (efile.name && efile.name.indexOf('.') !== -1) ? efile.name.split('.').pop() : 'jpg'
+            var erPath = profile.id + '/' + editExp.id + '_edit_' + Date.now() + '_' + ef + '.' + eext
+            var { error: eUpErr } = await supabase.storage.from('receipts').upload(erPath, efile, { upsert: true })
+            if (eUpErr) editUpErrs.push('File ' + (ef + 1) + ': ' + eUpErr.message)
+            else editUploaded.push(erPath)
+          }
+          if (editUploaded.length > 0) {
+            var { error: eAttErr } = await supabase.rpc('attach_expense_receipts', { p_expense_id: editExp.id, p_paths: editUploaded })
+            if (eAttErr) editUpErrs.push('Attach failed: ' + eAttErr.message)
+          }
+          if (editUpErrs.length > 0) { setError('Edit saved but some receipts failed:\n' + editUpErrs.join('\n')); setSaving(false); return }
+        }
+
+        // Voice (only if no image receipts)
+        if ((!e0.receiptFiles || e0.receiptFiles.length === 0) && e0.audioBlob) {
+          var eaPath = profile.id + '/' + editExp.id + '_voice_edit_' + Date.now() + '.webm'
+          var { error: eaErr } = await supabase.storage.from('receipts').upload(eaPath, e0.audioBlob, { contentType: 'audio/webm', upsert: true })
+          if (eaErr) { setError('Voice upload failed: ' + eaErr.message); setSaving(false); return }
+          var { error: eaRpcErr } = await supabase.rpc('attach_expense_receipts', { p_expense_id: editExp.id, p_paths: [eaPath] })
+          if (eaRpcErr) { setError('Voice attach failed: ' + eaRpcErr.message); setSaving(false); return }
+        }
+
+        // Delete removed receipt files (best-effort)
+        if (removedReceipts.length > 0) {
+          try { await supabase.storage.from('receipts').remove(removedReceipts) } catch (_) {}
+        }
+
+        // Replace allocations
+        await supabase.from('expense_allocations').delete().eq('expense_id', editExp.id)
+        var editAllocRows = e0.allocations
+          .filter(function (a) { return a.venueId || a.departmentId })
+          .map(function (a) {
+            var aTypeId = a.expenseTypeId ? Number(a.expenseTypeId) : (e0.expenseTypeId ? Number(e0.expenseTypeId) : null)
+            var aSubTypeId = a.expenseSubTypeId ? Number(a.expenseSubTypeId) : (e0.expenseSubTypeId ? Number(e0.expenseSubTypeId) : null)
+            return {
+              expense_id: editExp.id,
+              department: a.departmentId ? (departments.find(function (d) { return String(d.id) === a.departmentId }) || {}).name || null : null,
+              department_id: a.departmentId ? Number(a.departmentId) : null,
+              venue_id: a.venueId ? Number(a.venueId) : null,
+              expense_type_id: aTypeId,
+              expense_sub_type_id: aSubTypeId,
+              amount_paise: a.amountPaise ? Math.round(Number(a.amountPaise) * 100) : 0,
+              remarks: (a.remarks || '').trim() || null
+            }
+          })
+        if (editAllocRows.length > 0) await supabase.from('expense_allocations').insert(editAllocRows)
+
+        // Wallet diff
+        var oldPaise = editExp.amount_paise || 0
+        var diffPaise = newPaise - oldPaise
+        if (diffPaise !== 0) {
+          var wRpc = diffPaise > 0 ? 'wallet_self_debit' : 'wallet_self_credit'
+          var wAmt = Math.abs(diffPaise)
+          var wRef = diffPaise > 0 ? 'expense' : 'expense_refund'
+          var wDesc = 'Expense edited: ' + (diffPaise > 0 ? '+' : '-') + (wAmt / 100).toLocaleString('en-IN', { maximumFractionDigits: 2 }) + ' pts'
+          try {
+            await supabase.rpc(wRpc, { p_amount_paise: wAmt, p_description: wDesc, p_ref_type: wRef, p_ref_id: String(editExp.id) })
+          } catch (_) {}
+        }
+
+        try { await logActivity('EXPENSE_EDIT', e0.description.trim() + ' | ' + (newPaise / 100) + ' pts') } catch (_) {}
+
+        setSaving(false)
+        setSuccess('Expense updated')
+        setTimeout(function () { if (onDone) onDone() }, 1000)
+      } catch (err) {
+        setError('Update failed: ' + (err.message || err))
+        setSaving(false)
+      }
+      return
+    }
+
+    // ── Insert branch ──
     var submitted = 0
     var failed = 0
     var batchId = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : null
@@ -844,14 +1025,16 @@ function ExpenseForm({ profile, walletBalance, onDone }) {
           <div key={entry._key} className="border border-amber-200 rounded-xl bg-white shadow-sm overflow-hidden">
             <div className="flex items-center justify-between px-4 py-2 bg-amber-50 border-b border-amber-200">
               <span className="font-semibold text-amber-900 text-sm">{'Expense #' + (idx + 1)}</span>
-              <div className="flex gap-1">
-                <button type="button" onClick={function () { duplicateEntry(idx) }}
-                  className="text-xs px-2 py-1 rounded bg-amber-100 text-amber-700 hover:bg-amber-200" title="Duplicate">📋</button>
-                {entries.length > 1 && (
-                  <button type="button" onClick={function () { removeEntry(idx) }}
-                    className="text-xs px-2 py-1 rounded bg-red-100 text-red-600 hover:bg-red-200" title="Remove">✕</button>
-                )}
-              </div>
+              {!isEditing && (
+                <div className="flex gap-1">
+                  <button type="button" onClick={function () { duplicateEntry(idx) }}
+                    className="text-xs px-2 py-1 rounded bg-amber-100 text-amber-700 hover:bg-amber-200" title="Duplicate">📋</button>
+                  {entries.length > 1 && (
+                    <button type="button" onClick={function () { removeEntry(idx) }}
+                      className="text-xs px-2 py-1 rounded bg-red-100 text-red-600 hover:bg-red-200" title="Remove">✕</button>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="p-4 space-y-3">
@@ -945,15 +1128,20 @@ function ExpenseForm({ profile, walletBalance, onDone }) {
                     <label className="text-xs font-semibold text-gray-700">📦 Item Select</label>
                     <p className="text-[10px] text-gray-400 mt-0.5">Item enters inventory via receiver</p>
                   </div>
-                  <button type="button" onClick={function () { toggleItemPurchase(idx) }} className="flex items-center">
+                  <button type="button" onClick={function () { toggleItemPurchase(idx) }} disabled={isEditing} className={"flex items-center " + (isEditing ? "opacity-50 cursor-not-allowed" : "")}>
                     <div className={"relative w-9 h-5 rounded-full transition-colors " + (entry.isItemPurchase ? "bg-indigo-500" : "bg-gray-300")}>
                       <div className={"absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform " + (entry.isItemPurchase ? "translate-x-4" : "translate-x-0.5")} />
                     </div>
                   </button>
                 </div>
 
+                {entry.isItemPurchase && isEditing && (
+                  <div className="mt-3 mb-2 p-2 rounded-lg bg-amber-50 border border-amber-200">
+                    <p className="text-[11px] text-amber-700">🔒 Item details locked. Contact receiver to modify processed items.</p>
+                  </div>
+                )}
                 {entry.isItemPurchase && (
-                  <div className="mt-3 space-y-3">
+                  <div className={"mt-3 space-y-3 " + (isEditing ? "pointer-events-none opacity-70" : "")}>
                     {entry.items.map(function (im, iIdx) {
                       var key = idx + '_' + iIdx
                       var lineTotal = (Number(im.itemQty) || 0) * (Number(im.itemRate) || 0)
@@ -1188,6 +1376,47 @@ function ExpenseForm({ profile, walletBalance, onDone }) {
               {/* Receipt */}
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Receipt <span className="text-red-500">*</span></label>
+                {isEditing && existingReceipts.length > 0 && (function () {
+                  var visible = existingReceipts.filter(function (p) { return removedReceipts.indexOf(p) === -1 })
+                  var pending = removedReceipts.length
+                  return (
+                    <div className="mb-3 p-2 rounded-lg bg-blue-50 border border-blue-200">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-[11px] font-bold text-blue-700 uppercase tracking-wider">
+                          📎 Existing ({visible.length}{pending > 0 ? ' · ' + pending + ' marked to remove' : ''})
+                        </span>
+                        {pending > 0 && (
+                          <button type="button" onClick={function () { setRemovedReceipts([]) }}
+                            className="text-[10px] font-bold text-blue-600 hover:text-blue-800">Undo</button>
+                        )}
+                      </div>
+                      {visible.length > 0 && (
+                        <div className="grid grid-cols-3 gap-2">
+                          {visible.map(function (path) {
+                            var url = supabase.storage.from('receipts').getPublicUrl(path).data?.publicUrl
+                            var isVoice = /\.(webm|ogg|mp3|wav)$/i.test(path)
+                            var isPdf = /\.pdf$/i.test(path)
+                            return (
+                              <div key={path} className="relative">
+                                {isVoice ? (
+                                  <div className="h-24 rounded-lg border border-blue-200 bg-white flex items-center justify-center text-blue-600 text-2xl">🎙</div>
+                                ) : isPdf ? (
+                                  <div className="h-24 rounded-lg border border-blue-200 bg-white flex items-center justify-center text-blue-600 text-2xl">📄</div>
+                                ) : (
+                                  <img src={url} alt="Existing receipt"
+                                    onClick={function () { setZoomImg(url) }}
+                                    className="h-24 w-full rounded-lg border border-blue-200 object-cover cursor-pointer active:opacity-80" />
+                                )}
+                                <button type="button" onClick={function () { setRemovedReceipts(function (prev) { return prev.concat([path]) }) }}
+                                  className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white rounded-full text-[10px] flex items-center justify-center shadow-sm hover:bg-red-600">✕</button>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })()}
                 {entry.receiptFiles.length > 0 ? (
                   <div>
                     <div className="grid grid-cols-3 gap-2 mb-2">
@@ -1272,9 +1501,10 @@ function ExpenseForm({ profile, walletBalance, onDone }) {
           var taxP = e.taxAmount ? Math.round(Number(e.taxAmount) * 100) : 0
           totalPaise += paise + taxP
         }
-        if (totalPaise <= walletBalance) return null
-        var shortPts = ((totalPaise - walletBalance) / 100).toLocaleString('en-IN', { maximumFractionDigits: 2 })
-        var availPts = (walletBalance / 100).toLocaleString('en-IN', { maximumFractionDigits: 2 })
+        var effAvail = walletBalance + (editExp ? (editExp.amount_paise || 0) : 0)
+        if (totalPaise <= effAvail) return null
+        var shortPts = ((totalPaise - effAvail) / 100).toLocaleString('en-IN', { maximumFractionDigits: 2 })
+        var availPts = (effAvail / 100).toLocaleString('en-IN', { maximumFractionDigits: 2 })
         return (
           <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
             Insufficient wallet balance. Available: {availPts} pts. Short by {shortPts} pts.
@@ -1284,14 +1514,16 @@ function ExpenseForm({ profile, walletBalance, onDone }) {
 
       {/* Add entry + Submit bar */}
       <div className="flex gap-3">
-        <button type="button" onClick={addEntry}
-          className="flex-1 py-2.5 rounded-xl border-2 border-dashed border-amber-300 text-amber-700 font-medium text-sm hover:bg-amber-50 transition-colors">
-          + Add Another Expense
-        </button>
+        {!isEditing && (
+          <button type="button" onClick={addEntry}
+            className="flex-1 py-2.5 rounded-xl border-2 border-dashed border-amber-300 text-amber-700 font-medium text-sm hover:bg-amber-50 transition-colors">
+            + Add Another Expense
+          </button>
+        )}
         <button type="button" onClick={handleSubmit} disabled={saving}
           className={'flex-1 py-2.5 rounded-xl font-semibold text-sm text-white shadow-sm transition-all ' +
             (saving ? 'bg-gray-400 cursor-not-allowed' : 'bg-amber-600 hover:bg-amber-700 active:scale-[0.98]')}>
-          {saving ? 'Submitting...' : 'Submit ' + entries.length + ' Expense' + (entries.length > 1 ? 's' : '')}
+          {saving ? (isEditing ? 'Updating...' : 'Submitting...') : (isEditing ? 'Update Expense' : ('Submit ' + entries.length + ' Expense' + (entries.length > 1 ? 's' : '')))}
         </button>
       </div>
 

@@ -6,7 +6,6 @@ import { APPROVAL_STATUS_COLORS, APPROVAL_STATUS_LABELS } from '../../lib/consta
 import ExpenseTypeMaster from './ExpenseTypeMaster'
 import FilterDropdown from '../../components/ui/FilterDropdown'
 import AllExpenses from './AllExpenses'
-import ExpenseEditForm from './ExpenseEditForm'
 import ExpenseDetail from './ExpenseDetail'
 import { useRealtime } from '../../lib/useRealtime'
 import ExpenseReport from './ExpenseReport'
@@ -251,24 +250,13 @@ function Expenses({ profile, masterMode }) {
   // FORM VIEW
   // ═══════════════════════════════════════════════
   if (view === 'form') {
-    if (editExp) {
-      return (
-        <ExpenseEditForm
-          profile={profile}
-          editExp={editExp}
-          walletBalance={walletBalance}
-          onCancel={function () { setView('list'); setEditExp(null) }}
-          onSaved={handleFormDone}
-        />
-      )
-    }
     return (
       <div className="space-y-4">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-bold text-gray-900">New Expenses</h2>
-          <button onClick={function () { setView('list') }} className="text-sm text-gray-500 hover:text-gray-700 font-medium">Cancel</button>
+          <h2 className="text-lg font-bold text-gray-900">{editExp ? 'Edit Expense' : 'New Expenses'}</h2>
+          <button onClick={function () { setView('list'); setEditExp(null) }} className="text-sm text-gray-500 hover:text-gray-700 font-medium">Cancel</button>
         </div>
-        <ExpenseFormMulti profile={profile} walletBalance={walletBalance} onDone={handleFormDone} />
+        <ExpenseFormMulti profile={profile} walletBalance={walletBalance} editExp={editExp} onDone={handleFormDone} />
       </div>
     )
   }
