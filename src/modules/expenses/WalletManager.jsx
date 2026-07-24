@@ -208,6 +208,11 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
 
   async function issuePoints() {
     if (issueSaving || !issueModal || !issueAmount || Number(issueAmount) <= 0) return
+    // Image mandatory on credit (issue). Debit unchanged.
+    if (issueType !== 'debit' && !issueImage) {
+      alert('Receipt image is required when issuing points.')
+      return
+    }
     setIssueSaving(true)
     var amountPaise = Math.round(Number(issueAmount) * 100)
     var rpcName = issueType === 'debit' ? 'deduct_money' : 'issue_money'

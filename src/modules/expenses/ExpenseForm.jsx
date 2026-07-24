@@ -88,7 +88,7 @@ function makeItem() {
   }
 }
 
-function ExpenseForm({ profile, onDone }) {
+function ExpenseForm({ profile, walletBalance, onDone }) {
   var [expenseTypes, setExpenseTypes] = useState([])
   var [expenseSubTypes, setExpenseSubTypes] = useState([])
   var [departments, setDepartments] = useState([])
@@ -606,6 +606,23 @@ function ExpenseForm({ profile, onDone }) {
         if (computeItemsTotal(e) <= 0) return 'Entry ' + (i + 1) + ': Items total must be > 0'
       }
       if (e.receiptFiles.length === 0 && !e.audioBlob) return 'Entry ' + (i + 1) + ': Receipt image or voice note is required'
+    }
+    // Hard block: total across all entries must not exceed wallet balance
+    if (walletBalance != null) {
+      var totalPaise = 0
+      for (var k = 0; k < entries.length; k++) {
+        var en = entries[k]
+        var enPaise = en.isItemPurchase
+          ? Math.round(computeItemsTotal(en) * 100)
+          : Math.round(Number(en.amount || 0) * 100)
+        var enTax = en.taxAmount ? Math.round(Number(en.taxAmount) * 100) : 0
+        totalPaise += enPaise + enTax
+      }
+      if (totalPaise > walletBalance) {
+        var shortfallPts = ((totalPaise - walletBalance) / 100).toLocaleString('en-IN', { maximumFractionDigits: 2 })
+        var balancePts = (walletBalance / 100).toLocaleString('en-IN', { maximumFractionDigits: 2 })
+        return 'Insufficient wallet balance. Available: ' + balancePts + ' pts. Short by ' + shortfallPts + ' pts.'
+      }
     }
     return null
   }

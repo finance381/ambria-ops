@@ -268,7 +268,7 @@ function Expenses({ profile, masterMode }) {
           <h2 className="text-lg font-bold text-gray-900">New Expenses</h2>
           <button onClick={function () { setView('list') }} className="text-sm text-gray-500 hover:text-gray-700 font-medium">Cancel</button>
         </div>
-        <ExpenseFormMulti profile={profile} onDone={handleFormDone} />
+        <ExpenseFormMulti profile={profile} walletBalance={walletBalance} onDone={handleFormDone} />
       </div>
     )
   }
