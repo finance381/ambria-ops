@@ -86,6 +86,16 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
       .then(function (res) { onBalanceChange(res.data?.balance_paise || 0) })
   }
 
+  function refreshView() {
+    if (walletView === 'dashboard' && selectedWallet) {
+      loadRecentTxns(selectedWallet)
+    } else if (walletView === 'transactions' && selectedWallet) {
+      openWalletTxns(null)
+    } else if (walletView === 'wallets') {
+      loadAllWallets()
+    }
+  }
+
   async function loadRecentTxns(wallet) {
     if (!wallet) return
     var { data } = await supabase.from('wallet_transactions')
@@ -223,7 +233,8 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     setIssueImage(null)
     setIssueSaving(false)
     loadAllWallets()
-    openWalletTxns(null)
+    refreshBalance()
+    refreshView()
   }
 
   async function confirmReceive() {
@@ -247,7 +258,8 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     setReceiveImage(null)
     setReceiveSaving(false)
     refreshBalance()
-    openWalletTxns(null)
+    loadTransfers()
+    refreshView()
   }
 
   async function loadTransfers() {
@@ -308,6 +320,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     setTransferSaving(false)
     refreshBalance()
     loadTransfers()
+    refreshView()
   }
 
   async function confirmTransferReceive() {
@@ -332,6 +345,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     setTransferConfirmSaving(false)
     refreshBalance()
     loadTransfers()
+    refreshView()
   }
 
   async function cancelTransfer(t) {
@@ -449,7 +463,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   // WALLET DASHBOARD — Own wallet landing (mobile-first)
   // ═══════════════════════════════════════════════
   if (walletView === 'dashboard' && selectedWallet) {
-    var bal = selectedWallet.balance_paise || 0
+    var bal = walletBalance != null ? walletBalance : (selectedWallet.balance_paise || 0)
     var balColor = bal < 0 ? 'text-red-700' : bal === 0 ? 'text-gray-500' : 'text-green-800'
     var balBg = bal < 0 ? 'bg-red-50 border-red-200' : bal === 0 ? 'bg-gray-50 border-gray-200' : 'bg-green-50 border-green-200'
     var lastTxn = walletTxns[0]
