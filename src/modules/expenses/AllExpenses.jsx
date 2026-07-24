@@ -349,18 +349,23 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds }) {
                 className="bg-white border border-gray-200 rounded-xl p-4 hover:shadow-md active:bg-gray-50 cursor-pointer transition-all">
                 <div className="flex items-start justify-between mb-1">
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-gray-900 truncate">{exp.description || 'Expense'}</p>
-                    <p className="text-xs text-gray-400 mt-0.5">
-                      {(exp.profiles?.name || '—') + ' · '}
-                      {exp.expense_types?.name ? exp.expense_types.name + ' · ' : ''}
+                    <p className="text-sm font-semibold text-gray-900 truncate">
                       {(function () {
                         var a = (exp.expense_allocations && exp.expense_allocations[0]) || null
-                        if (!a) return ''
-                        var d = a.department || ''
-                        var t = a.expense_type_id ? (expTypeMap[a.expense_type_id] || '') : ''
-                        var st = a.expense_sub_type_id ? (expSubTypeMap[a.expense_sub_type_id] || '') : ''
-                        var typeStr = t ? (t + (st ? ' › ' + st : '')) : ''
-                        return (d + (typeStr ? ' · ' + typeStr : '') + (d || typeStr ? ' · ' : ''))
+                        var typeName = a && a.expense_type_id ? (expTypeMap[a.expense_type_id] || '') : (exp.expense_types?.name || '')
+                        var subTypeName = a && a.expense_sub_type_id ? (expSubTypeMap[a.expense_sub_type_id] || '') : ''
+                        return typeName ? typeName + (subTypeName ? ' › ' + subTypeName : '') : 'Expense'
+                      })()}
+                    </p>
+                    {exp.description && (
+                      <p className="text-xs text-gray-600 mt-0.5 truncate">{exp.description}</p>
+                    )}
+                    <p className="text-[11px] text-gray-400 mt-0.5">
+                      {(exp.profiles?.name || '—') + ' · '}
+                      {(function () {
+                        var a = (exp.expense_allocations && exp.expense_allocations[0]) || null
+                        var d = a ? (a.department || '') : ''
+                        return d ? d + ' · ' : ''
                       })()}
                       {formatDate(exp.expense_date)}
                     </p>

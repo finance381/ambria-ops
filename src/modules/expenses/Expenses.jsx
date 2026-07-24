@@ -3,14 +3,12 @@ import { supabase } from '../../lib/supabase'
 import { formatDate, formatPoints } from '../../lib/format'
 import ExpenseFormMulti from './ExpenseForm'
 import { APPROVAL_STATUS_COLORS, APPROVAL_STATUS_LABELS } from '../../lib/constants'
-import WalletManager from './WalletManager'
 import ExpenseTypeMaster from './ExpenseTypeMaster'
 import AllExpenses from './AllExpenses'
 import ExpenseEditForm from './ExpenseEditForm'
 import ExpenseDetail from './ExpenseDetail'
 import { useRealtime } from '../../lib/useRealtime'
 import ExpenseReport from './ExpenseReport'
-import ReviewHistory from './ReviewHistory'
 import { pushBack, goBack as navBack } from '../../lib/backNav'
 
 var PAGE_SIZE = 20
@@ -33,12 +31,8 @@ function Expenses({ profile, masterMode }) {
   var [reportView, setReportView] = useState(false)
   var [editExp, setEditExp] = useState(null)
   var [walletBalance, setWalletBalance] = useState(0)
-  var [pendingReceiveCount, setPendingReceiveCount] = useState(0)
-  var [myWallet, setMyWallet] = useState(null)
-  var [showWallet, setShowWallet] = useState(false)
   var [subDeptMap, setSubDeptMap] = useState({})
   var [typesModal, setTypesModal] = useState(false)
-  var [reviewHistory, setReviewHistory] = useState(false)
 
   // Filter panel state
   var [filtersOpen, setFiltersOpen] = useState(false)
@@ -90,21 +84,8 @@ function Expenses({ profile, masterMode }) {
   }, [])
 
    useEffect(function () {
-    supabase.from('wallets').select('id, balance_paise, user_id').eq('user_id', profile.id).maybeSingle()
-      .then(function (res) {
-        setWalletBalance(res.data?.balance_paise || 0)
-        if (res.data) setMyWallet(res.data)
-      })
-    supabase.from('wallet_transactions')
-      .select('id', { count: 'exact', head: true })
-      .eq('status', 'pending')
-      .eq('type', 'credit')
-      .then(function (res) { setPendingReceiveCount(res.count || 0) })
-    supabase.from('wallet_transfers')
-      .select('id', { count: 'exact', head: true })
-      .eq('to_user_id', profile.id)
-      .eq('status', 'pending')
-      .then(function (res) { setPendingReceiveCount(function (prev) { return prev + (res.count || 0) }) })
+    supabase.from('wallets').select('balance_paise').eq('user_id', profile.id).maybeSingle()
+      .then(function (res) { setWalletBalance(res.data?.balance_paise || 0) })
     loadMyExpenses(false)
     loadApprovalExpenses(false)
   }, [statusFilter, dateFrom, dateTo, expSearchDebounced, deptFilter, subDeptFilter, venueFilter, userFilter, amountMin, amountMax])
@@ -253,16 +234,6 @@ function Expenses({ profile, masterMode }) {
   if (masterMode) {
     return <ExpenseTypeMaster />
   }
-  if (reviewHistory && (isAdmin || isAuditor)) {
-    return (
-      <ReviewHistory
-        profile={profile}
-        onBack={function () { setReviewHistory(false) }}
-        onOpenDetail={function (exp) { setDetailExp(Object.assign({}, exp, { _fromApprove: true })); setView('detail') }}
-      />
-    )
-  }
-
   if (reportView && (isAdmin || isAuditor)) {
     return <ExpenseReport onBack={function () { setReportView(false) }} />
   }
@@ -323,71 +294,10 @@ function Expenses({ profile, masterMode }) {
   }
 
   // ═══════════════════════════════════════════════
-  // WALLET MANAGER
-  // ═══════════════════════════════════════════════
-  function refreshWalletInfo() {
-    supabase.from('wallets').select('id, balance_paise, user_id').eq('user_id', profile.id).maybeSingle()
-      .then(function (res) {
-        setWalletBalance(res.data?.balance_paise || 0)
-        if (res.data) setMyWallet(res.data)
-      })
-    setPendingReceiveCount(0)
-    supabase.from('wallet_transactions')
-      .select('id', { count: 'exact', head: true })
-      .eq('status', 'pending')
-      .eq('type', 'credit')
-      .then(function (res) { setPendingReceiveCount(res.count || 0) })
-    supabase.from('wallet_transfers')
-      .select('id', { count: 'exact', head: true })
-      .eq('to_user_id', profile.id)
-      .eq('status', 'pending')
-      .then(function (res) { setPendingReceiveCount(function (prev) { return prev + (res.count || 0) }) })
-  }
-
-  if (showWallet) {
-    // Wallet management is role-based only — dept heads (expense_approve perm)
-    // must NOT see other users' wallets.
-    var isWalletAdmin = profile?.role === 'admin'
-    return (
-      <WalletManager
-        profile={profile}
-        isAdmin={isWalletAdmin}
-        isAuditor={isAuditor}
-        myWallet={myWallet}
-        walletBalance={walletBalance}
-        onClose={function () { setShowWallet(false); refreshWalletInfo() }}
-        onBalanceChange={setWalletBalance}
-      />
-    )
-  }
-
-  // ═══════════════════════════════════════════════
   // LIST / APPROVE VIEW
   // ═══════════════════════════════════════════════
   return (
     <div className="space-y-4">
-      {/* Two cards: Wallet + Expenses */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <div className={"rounded-xl p-4 border cursor-pointer active:scale-[0.98] transition-transform relative " + (walletBalance < 0 ? "bg-red-50 border-red-200" : "bg-green-50 border-green-200")}
-          onClick={function () { setShowWallet(true) }}>
-          {pendingReceiveCount > 0 && (
-            <span className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">{pendingReceiveCount}</span>
-          )}
-          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Wallet</p>
-          <p className={"text-xl font-bold mt-1 " + (walletBalance < 0 ? "text-red-700" : "text-green-700")}>{formatPoints(walletBalance)}</p>
-          {(function () {
-            var isWalletAdmin = profile?.role === 'admin'
-            if (isWalletAdmin || isAuditor) return <p className="text-[10px] text-indigo-600 font-medium mt-1">Manage →</p>
-            if (pendingReceiveCount > 0) return <p className="text-[10px] text-amber-600 font-medium mt-1">{pendingReceiveCount} pending →</p>
-            return <p className="text-[10px] text-gray-400 font-medium mt-1">View history →</p>
-          })()}
-        </div>
-        <div className="rounded-xl p-4 border border-gray-200 bg-gray-50">
-          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Expenses</p>
-          <p className="text-xl font-bold mt-1 text-gray-800">{myExpenses.length}</p>
-          <p className="text-[10px] text-gray-400 mt-1">{myTotal > 0 ? formatPoints(myTotal) + ' total' : 'No expenses yet'}</p>
-        </div>
-      </div>
 
       {/* Admin shortcuts */}
       {(isAdmin || isAuditor) && (
@@ -395,10 +305,6 @@ function Expenses({ profile, masterMode }) {
           <button onClick={function () { setReportView(true) }}
             className="flex-1 py-2.5 text-xs font-bold text-amber-600 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 transition-colors">
             📊 Reports
-          </button>
-          <button onClick={function () { setReviewHistory(true) }}
-            className="flex-1 py-2.5 text-xs font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors">
-            🔍 My Reviews
           </button>
           {(profile?.permissions || []).indexOf('admin_masters') !== -1 && (
             <button onClick={function () { setTypesModal(true) }}
@@ -429,10 +335,6 @@ function Expenses({ profile, masterMode }) {
               <button onClick={function () { setReportView(true) }}
                 className="px-3 py-2 text-xs font-bold text-amber-600 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 transition-colors">
                 📊 Reports
-              </button>
-              <button onClick={function () { setReviewHistory(true) }}
-                className="px-3 py-2 text-xs font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors">
-                🔍 My Reviews
               </button>
               {(profile?.permissions || []).indexOf('admin_masters') !== -1 && (
                 <button onClick={function () { setTypesModal(true) }}

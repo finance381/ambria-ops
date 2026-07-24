@@ -10,6 +10,7 @@ var Users = lazy(function () { return import('../../modules/users/Users') })
 var ActivityLogs = lazy(function () { return import('../../modules/logs/ActivityLogs') })
 var Expenses = lazy(function () { return import('../../modules/expenses/Expenses') })
 var Ledgers = lazy(function () { return import('../../modules/expenses/Ledgers') })
+var Wallet = lazy(function () { return import('../../modules/expenses/Wallet') })
 var Dashboard = lazy(function () { return import('../../modules/dashboard/Dashboard') })
 var Boxes = lazy(function () { return import('../../modules/boxes/Boxes') })
 var ProductionOrders = lazy(function () { return import('../../modules/production/ProductionOrders') })
@@ -71,6 +72,7 @@ var SUB_TAB_CONFIG = {
     { key: 'vendors', label: 'Vendors', component: Vendors },
   ],
   expenses: [
+    { key: 'wallet', label: 'Wallet', component: Wallet },
     { key: 'expenses', label: 'Expenses', component: Expenses },
     { key: 'ledgers', label: 'Ledgers', component: Ledgers },
   ],
@@ -102,7 +104,7 @@ var ADMIN_TABS = [
   { key: 'events', label: 'Events', icon: '📅' },
   { key: 'masters', label: 'Masters', icon: '⚙️' },
   { key: 'users', label: 'Users', icon: '👥' },
-  { key: 'expenses', label: 'Expenses', icon: '💰' },
+  { key: 'expenses', label: 'Finance', icon: '💰' },
   { key: 'procurement', label: 'Procurement', icon: '🛒' },
 ]
 

@@ -12,6 +12,7 @@ import Requisitions from '../../modules/requisitions/Requisitions'
 import Purchase from '../../modules/purchase/Purchase'
 import Expenses from '../../modules/expenses/Expenses'
 import Ledgers from '../../modules/expenses/Ledgers'
+import Wallet from '../../modules/expenses/Wallet'
 import ProductionOrders from '../../modules/production/ProductionOrders'
 import Boxes from '../../modules/boxes/Boxes'
 import Challans from '../../modules/challans/Challans'
@@ -63,6 +64,7 @@ var GROUPS = [
   },
   {
     key: 'expenses', label: 'Finance', icon: '💰', items: [
+      { key: 'feature_wallet', label: 'Wallet', icon: '👛', tab: 'wallet' },
       { key: 'feature_expenses', label: 'PC & Direct Expenses', icon: '💰', tab: 'expenses' },
       { key: 'feature_ledger_view', label: 'Ledgers', icon: '📒', tab: 'ledgers' },
     ]
@@ -383,9 +385,9 @@ function Shell({ profile, onSignOut }) {
         {/* Level 0: Group Cards */}
         {!activeGroup && !tab && (
           <>
-            {perms.indexOf('feature_expenses') !== -1 && walletBalance !== null && (
+            {perms.indexOf('feature_wallet') !== -1 && walletBalance !== null && (
               <button
-                onClick={function () { setActiveGroup('expenses'); setTab('expenses') }}
+                onClick={function () { setActiveGroup('expenses'); setTab('wallet') }}
                 className={"relative w-full mb-3 rounded-xl p-3 flex items-center justify-between border shadow-sm active:scale-[0.99] transition-all " + (walletBalance < 0 ? "bg-red-50 border-red-200" : "bg-green-50 border-green-200")}>
                 <div className="flex items-center gap-3">
                   <span className="text-2xl">💰</span>
@@ -478,6 +480,9 @@ function Shell({ profile, onSignOut }) {
         )}
         {tab === 'requisitions' && (
           <Requisitions profile={profile} onBack={goBack} />
+        )}
+        {tab === 'wallet' && (
+          <Wallet profile={profile} />
         )}
         {tab === 'expenses' && (
           <Expenses profile={profile} />
