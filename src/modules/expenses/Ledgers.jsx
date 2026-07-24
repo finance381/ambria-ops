@@ -3,32 +3,42 @@ import { supabase } from '../../lib/supabase'
 import { formatPoints } from '../../lib/format'
 import { pushBack } from '../../lib/backNav'
 
-var STATUS_LABELS = {
-  recorded: 'Recorded',
-  flagged: 'Flagged',
-  acknowledged: 'Acknowledged',
-  deducted: 'Deducted',
-}
-
+var STATUS_LABELS = { recorded: 'Recorded', flagged: 'Flagged', acknowledged: 'Acknowledged', deducted: 'Deducted' }
 var STATUS_COLORS = {
   recorded: 'bg-amber-100 text-amber-700',
   flagged: 'bg-orange-100 text-orange-700',
   acknowledged: 'bg-green-100 text-green-700',
   deducted: 'bg-indigo-100 text-indigo-700',
 }
-
 var PAGE_SIZE = 50
+
+function fmtISO(d) { return d.toISOString().split('T')[0] }
+
+function getPresetRange(preset) {
+  var d = new Date()
+  if (preset === 'month') return { from: fmtISO(new Date(d.getFullYear(), d.getMonth(), 1)), to: fmtISO(d) }
+  if (preset === 'lastMonth') return { from: fmtISO(new Date(d.getFullYear(), d.getMonth() - 1, 1)), to: fmtISO(new Date(d.getFullYear(), d.getMonth(), 0)) }
+  if (preset === 'ytd') return { from: fmtISO(new Date(d.getFullYear(), 0, 1)), to: fmtISO(d) }
+  return null
+}
 
 function Ledgers({ profile }) {
   var isAdmin = profile?.role === 'admin' || profile?.role === 'auditor'
   var scopeDeptIds = isAdmin ? null : (profile?.event_dept_ids || [])
   var hasScope = !isAdmin && scopeDeptIds && scopeDeptIds.length > 0
 
-  var today = new Date().toISOString().split('T')[0]
-  var monthStart = new Date().toISOString().slice(0, 7) + '-01'
+  // Date state
+  var [datePreset, setDatePreset] = useState('month')
+  var [dateFrom, setDateFrom] = useState(function () { return getPresetRange('month').from })
+  var [dateTo, setDateTo] = useState(function () { return getPresetRange('month').to })
 
-  var [dateFrom, setDateFrom] = useState(monthStart)
-  var [dateTo, setDateTo] = useState(today)
+  // Filters
+  var [search, setSearch] = useState('')
+  var [searchDeb, setSearchDeb] = useState('')
+  var [userFilter, setUserFilter] = useState('')
+  var [venueFilter, setVenueFilter] = useState('')
+  var [statusFilter, setStatusFilter] = useState('')
+  var [pendingOnly, setPendingOnly] = useState(false)
 
   // Master maps
   var [deptMap, setDeptMap] = useState({})
@@ -39,13 +49,16 @@ function Ledgers({ profile }) {
   var [users, setUsers] = useState([])
   var [venues, setVenues] = useState([])
 
-  // List view
-  var [groups, setGroups] = useState([])
+  // List state
+  var [deptGroups, setDeptGroups] = useState([])
   var [totals, setTotals] = useState({ total: 0, pending: 0, committed: 0, allocs: 0 })
   var [loading, setLoading] = useState(false)
-  var [sortBy, setSortBy] = useState('total') // total | committed | pending | allocs
+  var [collapsedDepts, setCollapsedDepts] = useState({})
+  var [deptDelta, setDeptDelta] = useState({})
+  var allocSnapshot = useRef({})
+  var isFirstLoad = useRef(true)
 
-  // Drill view
+  // Drill state
   var [drillGroup, setDrillGroup] = useState(null)
   var [drillRows, setDrillRows] = useState([])
   var [drillOffset, setDrillOffset] = useState(0)
@@ -59,13 +72,20 @@ function Ledgers({ profile }) {
 
   useEffect(function () { loadMaps() }, [])
 
-  useEffect(function () { loadLedger() }, [dateFrom, dateTo, (scopeDeptIds || []).join(',')])
+  useEffect(function () {
+    var t = setTimeout(function () { setSearchDeb(search) }, 300)
+    return function () { clearTimeout(t) }
+  }, [search])
+
+  useEffect(function () {
+    isFirstLoad.current = true
+    loadLedger()
+  }, [dateFrom, dateTo, userFilter, venueFilter, statusFilter, (scopeDeptIds || []).join(',')])
 
   useEffect(function () {
     if (drillGroup) { setDrillOffset(0); loadDrill(false) }
   }, [drillGroup, drillUserFilter, drillStatusFilter, drillVenueFilter, dateFrom, dateTo])
 
-  // Real-time subscription (debounced 800ms)
   useEffect(function () {
     function schedule() {
       if (reloadTimer.current) clearTimeout(reloadTimer.current)
@@ -82,7 +102,7 @@ function Ledgers({ profile }) {
       if (reloadTimer.current) clearTimeout(reloadTimer.current)
       supabase.removeChannel(channel)
     }
-  }, [dateFrom, dateTo, drillGroup])
+  }, [dateFrom, dateTo, userFilter, venueFilter, statusFilter, drillGroup])
 
   async function loadMaps() {
     var res = await Promise.all([
@@ -104,15 +124,18 @@ function Ledgers({ profile }) {
 
   async function loadLedger() {
     setLoading(true)
+    var statusIn = statusFilter ? [statusFilter] : ['recorded', 'flagged', 'acknowledged', 'deducted']
     var rows = []; var from = 0; var pageSize = 1000
     while (true) {
       var q = supabase.from('v_ledger')
         .select('department_id, expense_type_id, expense_sub_type_id, amount_paise, pending_paise, committed_paise')
-        .in('status', ['recorded', 'flagged', 'acknowledged', 'deducted'])
+        .in('status', statusIn)
         .gte('expense_date', dateFrom)
         .lte('expense_date', dateTo)
         .range(from, from + pageSize - 1)
       if (hasScope) q = q.in('department_id', scopeDeptIds)
+      if (userFilter) q = q.eq('user_id', userFilter)
+      if (venueFilter) q = q.eq('venue_id', Number(venueFilter))
       var page = await q
       if (page.error) { alert('Load failed: ' + page.error.message); setLoading(false); return }
       var chunk = page.data || []
@@ -121,23 +144,53 @@ function Ledgers({ profile }) {
       from += pageSize
       if (from > 50000) break
     }
-    var groupMap = {}
+
+    var byDept = {}
     var total = 0, pending = 0, committed = 0
     rows.forEach(function (r) {
-      var k = (r.department_id || 0) + '|' + (r.expense_type_id || 0) + '|' + (r.expense_sub_type_id || 0)
-      if (!groupMap[k]) {
-        groupMap[k] = { deptId: r.department_id, typeId: r.expense_type_id, subTypeId: r.expense_sub_type_id, total: 0, pending: 0, committed: 0, allocs: 0 }
+      var deptKey = r.department_id != null ? String(r.department_id) : '__unassigned__'
+      var rowKey = (r.expense_type_id || 0) + '|' + (r.expense_sub_type_id || 0)
+      if (!byDept[deptKey]) {
+        byDept[deptKey] = { key: deptKey, deptId: r.department_id, total: 0, pending: 0, committed: 0, allocs: 0, rowMap: {} }
       }
-      var g = groupMap[k]
+      var g = byDept[deptKey]
       g.total += r.amount_paise || 0
       g.pending += r.pending_paise || 0
       g.committed += r.committed_paise || 0
       g.allocs += 1
+      if (!g.rowMap[rowKey]) {
+        g.rowMap[rowKey] = { typeId: r.expense_type_id, subTypeId: r.expense_sub_type_id, total: 0, pending: 0, committed: 0, allocs: 0 }
+      }
+      var rr = g.rowMap[rowKey]
+      rr.total += r.amount_paise || 0
+      rr.pending += r.pending_paise || 0
+      rr.committed += r.committed_paise || 0
+      rr.allocs += 1
       total += r.amount_paise || 0
       pending += r.pending_paise || 0
       committed += r.committed_paise || 0
     })
-    setGroups(Object.values(groupMap))
+    var groups = Object.values(byDept).map(function (g) {
+      var rowsArr = Object.values(g.rowMap).sort(function (a, b) { return b.total - a.total })
+      return { key: g.key, deptId: g.deptId, total: g.total, pending: g.pending, committed: g.committed, allocs: g.allocs, rows: rowsArr }
+    })
+    groups.sort(function (a, b) { return b.total - a.total })
+
+    // Delta tracking
+    var newDeltas = {}
+    if (isFirstLoad.current) {
+      var snap = {}
+      groups.forEach(function (g) { snap[g.key] = g.allocs })
+      allocSnapshot.current = snap
+      isFirstLoad.current = false
+    } else {
+      groups.forEach(function (g) {
+        var prev = allocSnapshot.current[g.key] || 0
+        if (g.allocs > prev) newDeltas[g.key] = g.allocs - prev
+      })
+    }
+    setDeptDelta(newDeltas)
+    setDeptGroups(groups)
     setTotals({ total: total, pending: pending, committed: committed, allocs: rows.length })
     setLoading(false)
   }
@@ -176,13 +229,16 @@ function Ledgers({ profile }) {
     setDrillLoading(false)
   }
 
-  function openGroup(g) {
+  function openRow(g, r) {
+    var deptName = g.deptId ? (deptMap[g.deptId] || 'Unassigned') : 'Unallocated'
+    var typeName = r.typeId ? (typeMap[r.typeId] || 'Untyped') : 'Untyped'
+    var subTypeName = r.subTypeId ? (subTypeMap[r.subTypeId] || '—') : '—'
     pushBack(function () { setDrillGroup(null); setDrillRows([]); setDrillOffset(0); setDrillUserFilter(''); setDrillStatusFilter(''); setDrillVenueFilter('') })
-    setDrillGroup(Object.assign({}, g, {
-      deptName: g.deptId ? (deptMap[g.deptId] || 'Unassigned') : 'Unallocated',
-      typeName: g.typeId ? (typeMap[g.typeId] || 'Untyped') : 'Untyped',
-      subTypeName: g.subTypeId ? (subTypeMap[g.subTypeId] || '—') : '—',
-    }))
+    setDrillGroup({
+      deptId: g.deptId, typeId: r.typeId, subTypeId: r.subTypeId,
+      deptName: deptName, typeName: typeName, subTypeName: subTypeName,
+      total: r.total, pending: r.pending, committed: r.committed
+    })
   }
 
   function closeDrill() {
@@ -190,23 +246,62 @@ function Ledgers({ profile }) {
     setDrillUserFilter(''); setDrillStatusFilter(''); setDrillVenueFilter('')
   }
 
+  function toggleDept(deptKey, currentAllocs) {
+    setCollapsedDepts(function (prev) {
+      var next = Object.assign({}, prev)
+      next[deptKey] = !prev[deptKey]
+      return next
+    })
+    allocSnapshot.current[deptKey] = currentAllocs
+    setDeptDelta(function (prev) {
+      var next = Object.assign({}, prev)
+      delete next[deptKey]
+      return next
+    })
+  }
+
+  function applyPreset(preset) {
+    setDatePreset(preset)
+    if (preset === 'custom') return
+    var r = getPresetRange(preset)
+    if (r) { setDateFrom(r.from); setDateTo(r.to) }
+  }
+
   function exportListCSV() {
-    if (!groups.length) return
+    if (!deptGroups.length) return
     function esc(v) { var s = String(v == null ? '' : v); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s }
     var lines = ['Department,Type,Sub-Type,Total (pts),Committed (pts),Pending (pts),Allocations']
-    var sorted = groups.slice().sort(function (a, b) { return b[sortBy] - a[sortBy] })
-    sorted.forEach(function (g) {
+    deptGroups.forEach(function (g) {
       var d = g.deptId ? (deptMap[g.deptId] || 'Unassigned') : 'Unallocated'
-      var t = g.typeId ? (typeMap[g.typeId] || 'Untyped') : 'Untyped'
-      var s = g.subTypeId ? (subTypeMap[g.subTypeId] || '—') : '—'
-      lines.push(esc(d) + ',' + esc(t) + ',' + esc(s) + ',' + (g.total / 100) + ',' + (g.committed / 100) + ',' + (g.pending / 100) + ',' + g.allocs)
+      lines.push(esc(d) + ' (subtotal),,,' + (g.total / 100) + ',' + (g.committed / 100) + ',' + (g.pending / 100) + ',' + g.allocs)
+      g.rows.forEach(function (r) {
+        var t = r.typeId ? (typeMap[r.typeId] || 'Untyped') : 'Untyped'
+        var s = r.subTypeId ? (subTypeMap[r.subTypeId] || '—') : '—'
+        lines.push(esc(d) + ',' + esc(t) + ',' + esc(s) + ',' + (r.total / 100) + ',' + (r.committed / 100) + ',' + (r.pending / 100) + ',' + r.allocs)
+      })
     })
     var csv = '\uFEFF' + lines.join('\n')
     var blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
     var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'ledgers_' + dateFrom + '_' + dateTo + '.csv'; a.click()
   }
 
-  var sortedGroups = groups.slice().sort(function (a, b) { return b[sortBy] - a[sortBy] })
+  // Client-side filter: search + pendingOnly
+  var visibleGroups = deptGroups.map(function (g) {
+    var deptName = g.deptId ? (deptMap[g.deptId] || 'Unassigned') : 'Unallocated'
+    var q = searchDeb.toLowerCase()
+    var deptMatch = !q || deptName.toLowerCase().indexOf(q) !== -1
+    var filteredRows = g.rows.filter(function (r) {
+      if (pendingOnly && r.pending === 0) return false
+      if (!q) return true
+      if (deptMatch) return true
+      var tn = r.typeId ? (typeMap[r.typeId] || '') : ''
+      var sn = r.subTypeId ? (subTypeMap[r.subTypeId] || '') : ''
+      return tn.toLowerCase().indexOf(q) !== -1 || sn.toLowerCase().indexOf(q) !== -1
+    })
+    if (pendingOnly && g.pending === 0) return null
+    if (q && !deptMatch && filteredRows.length === 0) return null
+    return Object.assign({}, g, { rows: filteredRows, deptName: deptName })
+  }).filter(Boolean)
 
   // ─── DRILL VIEW ───
   if (drillGroup) {
@@ -296,92 +391,136 @@ function Ledgers({ profile }) {
     )
   }
 
+  function PresetChip(props) {
+    var active = datePreset === props.k
+    return (
+      <button onClick={function () { applyPreset(props.k) }}
+        className={"px-2.5 py-1 text-[11px] font-semibold rounded-md transition-colors " + (active ? "bg-gray-900 text-white" : "bg-white border border-gray-200 text-gray-500 hover:text-gray-800")}>
+        {props.label}
+      </button>
+    )
+  }
+
   // ─── LIST VIEW ───
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       <div>
         <h2 className="text-lg font-bold text-gray-900">Ledgers</h2>
         <p className="text-xs text-gray-400">Live financial tracker · {totals.allocs} allocation{totals.allocs !== 1 ? 's' : ''}</p>
       </div>
 
-      <div className="flex gap-2 items-end">
-        <div className="flex-1">
-          <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">From</label>
-          <input type="date" value={dateFrom} onChange={function (e) { setDateFrom(e.target.value) }}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" style={{ fontSize: '16px' }} />
+      <div className="sticky top-0 z-10 bg-gray-50 pt-1 pb-3 border-b border-gray-200 space-y-2">
+        <div className="grid grid-cols-3 gap-3">
+          <div className="bg-indigo-50 border border-indigo-200 rounded-xl px-3 py-2 text-center">
+            <p className="text-[9px] font-bold text-indigo-400 uppercase">Total</p>
+            <p className="text-base font-bold text-indigo-700">{formatPoints(totals.total)}</p>
+          </div>
+          <div className="bg-green-50 border border-green-200 rounded-xl px-3 py-2 text-center">
+            <p className="text-[9px] font-bold text-green-500 uppercase">Committed</p>
+            <p className="text-base font-bold text-green-700">{formatPoints(totals.committed)}</p>
+          </div>
+          <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 text-center">
+            <p className="text-[9px] font-bold text-amber-500 uppercase">Pending</p>
+            <p className="text-base font-bold text-amber-700">{formatPoints(totals.pending)}</p>
+          </div>
         </div>
-        <div className="flex-1">
-          <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">To</label>
-          <input type="date" value={dateTo} onChange={function (e) { setDateTo(e.target.value) }}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" style={{ fontSize: '16px' }} />
+
+        <div className="flex flex-wrap items-center gap-1.5">
+          <PresetChip k="month" label="This month" />
+          <PresetChip k="lastMonth" label="Last month" />
+          <PresetChip k="ytd" label="YTD" />
+          <PresetChip k="custom" label="Custom" />
+          {datePreset === 'custom' && (
+            <>
+              <input type="date" value={dateFrom} onChange={function (e) { setDateFrom(e.target.value) }}
+                className="px-2 py-1 border border-gray-200 rounded-md text-[11px]" style={{ fontSize: '16px' }} />
+              <input type="date" value={dateTo} onChange={function (e) { setDateTo(e.target.value) }}
+                className="px-2 py-1 border border-gray-200 rounded-md text-[11px]" style={{ fontSize: '16px' }} />
+            </>
+          )}
         </div>
-        <button onClick={loadLedger} disabled={loading}
-          className="px-4 py-2 text-sm font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors">
-          {loading ? '...' : '↻'}
-        </button>
+
+        <input type="text" value={search} onChange={function (e) { setSearch(e.target.value) }}
+          placeholder="Search dept / type / sub-type..."
+          className="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-xs" style={{ fontSize: '16px' }} />
+
+        <div className="flex flex-wrap gap-1.5 items-center">
+          <select value={userFilter} onChange={function (e) { setUserFilter(e.target.value) }}
+            className="px-2 py-1 text-[11px] border border-gray-200 rounded-md flex-1 min-w-[100px]" style={{ fontSize: '16px' }}>
+            <option value="">All users</option>
+            {users.map(function (u) { return <option key={u.id} value={u.id}>{u.name}</option> })}
+          </select>
+          <select value={venueFilter} onChange={function (e) { setVenueFilter(e.target.value) }}
+            className="px-2 py-1 text-[11px] border border-gray-200 rounded-md flex-1 min-w-[100px]" style={{ fontSize: '16px' }}>
+            <option value="">All venues</option>
+            {venues.map(function (v) { return <option key={v.id} value={v.id}>{v.name || v.code}</option> })}
+          </select>
+          <select value={statusFilter} onChange={function (e) { setStatusFilter(e.target.value) }}
+            className="px-2 py-1 text-[11px] border border-gray-200 rounded-md flex-1 min-w-[100px]" style={{ fontSize: '16px' }}>
+            <option value="">All status</option>
+            <option value="recorded">Recorded</option>
+            <option value="flagged">Flagged</option>
+            <option value="acknowledged">Acknowledged</option>
+            <option value="deducted">Deducted</option>
+          </select>
+          <button onClick={function () { setPendingOnly(!pendingOnly) }}
+            className={"px-2 py-1 text-[11px] font-semibold rounded-md transition-colors " + (pendingOnly ? "bg-amber-100 border border-amber-300 text-amber-700" : "bg-white border border-gray-200 text-gray-500")}>
+            Pending only
+          </button>
+          <button onClick={exportListCSV} disabled={!deptGroups.length}
+            className="px-2 py-1 text-[11px] font-semibold text-green-600 bg-green-50 border border-green-200 rounded-md hover:bg-green-100 disabled:opacity-40">
+            ↓ CSV
+          </button>
+        </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-3">
-        <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4 text-center">
-          <p className="text-[10px] font-bold text-indigo-400 uppercase">Total</p>
-          <p className="text-lg font-bold text-indigo-700">{formatPoints(totals.total)}</p>
-        </div>
-        <div className="bg-green-50 border border-green-200 rounded-xl p-4 text-center">
-          <p className="text-[10px] font-bold text-green-500 uppercase">Committed</p>
-          <p className="text-lg font-bold text-green-700">{formatPoints(totals.committed)}</p>
-        </div>
-        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-center">
-          <p className="text-[10px] font-bold text-amber-500 uppercase">Pending</p>
-          <p className="text-lg font-bold text-amber-700">{formatPoints(totals.pending)}</p>
-        </div>
-      </div>
-
-      <div className="flex items-center justify-between">
-        <div className="flex gap-1">
-          {[['total', 'Total'], ['committed', 'Cmt'], ['pending', 'Pnd'], ['allocs', 'Allocs']].map(function (opt) {
-            var on = sortBy === opt[0]
-            return (
-              <button key={opt[0]} onClick={function () { setSortBy(opt[0]) }}
-                className={"px-2 py-1 text-[11px] font-semibold rounded-md transition-colors " + (on ? "bg-gray-900 text-white" : "bg-white border border-gray-200 text-gray-500 hover:text-gray-800")}>
-                {opt[1]}
-              </button>
-            )
-          })}
-        </div>
-        <button onClick={exportListCSV} disabled={!groups.length}
-          className="px-3 py-1 text-[11px] font-semibold text-green-600 bg-green-50 border border-green-200 rounded-md hover:bg-green-100 disabled:opacity-40 transition-colors">
-          ↓ CSV
-        </button>
-      </div>
-
-      {loading && groups.length === 0 ? (
+      {loading && deptGroups.length === 0 ? (
         <p className="text-center text-sm text-gray-400 py-8">Loading ledger...</p>
-      ) : sortedGroups.length === 0 ? (
-        <p className="text-center text-sm text-gray-400 py-8">No expenses in this range</p>
+      ) : visibleGroups.length === 0 ? (
+        <p className="text-center text-sm text-gray-400 py-8">No matches in this range</p>
       ) : (
-        <div className="space-y-2">
-          {sortedGroups.map(function (g, i) {
-            var d = g.deptId ? (deptMap[g.deptId] || 'Unassigned') : 'Unallocated'
-            var t = g.typeId ? (typeMap[g.typeId] || 'Untyped') : 'Untyped'
-            var s = g.subTypeId ? (subTypeMap[g.subTypeId] || '—') : '—'
+        <div className="space-y-1.5">
+          {visibleGroups.map(function (g) {
+            var collapsed = collapsedDepts[g.key]
+            var delta = deptDelta[g.key] || 0
             return (
-              <button key={i} onClick={function () { openGroup(g) }}
-                className="w-full text-left bg-white border border-gray-200 rounded-xl p-3 hover:border-indigo-300 hover:shadow-sm transition-all">
-                <div className="flex items-start justify-between">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-bold text-gray-900 truncate">{d}</p>
-                    <p className="text-xs text-gray-500 truncate">{t} › {s}</p>
+              <div key={g.key} className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+                <button onClick={function () { toggleDept(g.key, g.allocs) }}
+                  className="w-full flex items-center justify-between px-3 py-2 hover:bg-gray-50 transition-colors text-left">
+                  <div className="flex items-center gap-2 min-w-0 flex-1">
+                    <span className="text-xs text-gray-400 flex-shrink-0">{collapsed ? '▸' : '▾'}</span>
+                    <span className="text-sm font-bold text-gray-900 truncate">{g.deptName}</span>
+                    <span className="text-[10px] text-gray-400 flex-shrink-0">{g.rows.length} · {g.allocs}</span>
+                    {delta > 0 && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700 font-bold flex-shrink-0 animate-pulse">
+                        +{delta}
+                      </span>
+                    )}
                   </div>
-                  <div className="text-right ml-3 flex-shrink-0">
-                    <p className="text-sm font-bold text-gray-900">{formatPoints(g.total)}</p>
-                    <p className="text-[10px] text-gray-400">{g.allocs} alloc{g.allocs !== 1 ? 's' : ''}</p>
+                  <div className="flex gap-4 items-center flex-shrink-0 text-xs tabular-nums">
+                    <span className="text-green-700">{formatPoints(g.committed)}</span>
+                    <span className="text-amber-700">{formatPoints(g.pending)}</span>
+                    <span className="font-bold text-gray-900 min-w-[60px] text-right">{formatPoints(g.total)}</span>
                   </div>
-                </div>
-                <div className="flex gap-2 mt-2">
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-50 text-green-700 font-semibold">Cmt {formatPoints(g.committed)}</span>
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 font-semibold">Pnd {formatPoints(g.pending)}</span>
-                </div>
-              </button>
+                </button>
+                {!collapsed && g.rows.map(function (r, i) {
+                  var typeName = r.typeId ? (typeMap[r.typeId] || 'Untyped') : 'Untyped'
+                  var subTypeName = r.subTypeId ? (subTypeMap[r.subTypeId] || '—') : '—'
+                  return (
+                    <button key={i} onClick={function () { openRow(g, r) }}
+                      className="w-full grid grid-cols-[1fr_70px_70px_80px_36px] items-center px-3 py-2 pl-9 border-t border-gray-100 hover:bg-indigo-50 transition-colors text-left">
+                      <div className="min-w-0">
+                        <p className="text-xs text-gray-800 truncate">{subTypeName}</p>
+                        <p className="text-[10px] text-gray-500 truncate">{typeName}</p>
+                      </div>
+                      <span className="text-xs text-right text-green-700 tabular-nums">{formatPoints(r.committed)}</span>
+                      <span className="text-xs text-right text-amber-700 tabular-nums">{formatPoints(r.pending)}</span>
+                      <span className="text-xs text-right font-bold text-gray-800 tabular-nums">{formatPoints(r.total)}</span>
+                      <span className="text-[10px] text-right text-gray-400">{r.allocs}</span>
+                    </button>
+                  )
+                })}
+              </div>
             )
           })}
         </div>
