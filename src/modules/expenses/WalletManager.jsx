@@ -116,16 +116,28 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
 
   function handleBack() {
     if (walletView === 'transactions' && (isAdmin || isAuditor)) {
-      setWalletView('wallets')
-      setSelectedWallet(null)
-      setWalletTxns([])
-      setTxnFrom('')
-      setTxnTo('')
+      // Admin viewing own wallet: back to dashboard. Otherwise back to wallets list.
+      if (selectedWallet && selectedWallet.user_id === profile.id) {
+        setWalletView('dashboard')
+        setTxnFrom('')
+        setTxnTo('')
+        loadRecentTxns(selectedWallet)
+      } else {
+        setWalletView('wallets')
+        setSelectedWallet(null)
+        setWalletTxns([])
+        setTxnFrom('')
+        setTxnTo('')
+      }
     } else if (walletView === 'transactions' && !isAdmin && !isAuditor) {
       setWalletView('dashboard')
       setTxnFrom('')
       setTxnTo('')
       loadRecentTxns(selectedWallet)
+    } else if (walletView === 'dashboard' && (isAdmin || isAuditor)) {
+      setWalletView('wallets')
+      setSelectedWallet(null)
+      setWalletTxns([])
     } else {
       onClose()
     }
@@ -858,13 +870,15 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
           <div onClick={function () {
             setWalletProfiles(function (prev) { var n = Object.assign({}, prev); n[profile.id] = profile; return n })
             var w = Object.assign({}, myWallet, { balance_paise: walletBalance })
-            openWalletTxns(w)
+            setSelectedWallet(w)
+            setWalletView('dashboard')
+            loadRecentTxns(w)
             loadTransfers()
           }}
             className="relative bg-emerald-50 border border-emerald-200 rounded-xl p-4 flex items-center justify-between cursor-pointer active:scale-[0.98] transition-transform">
             <div>
               <p className="text-sm font-bold text-emerald-800">My Wallet</p>
-              <p className="text-xs text-emerald-600">{formatPoints(walletBalance)} · View transactions →</p>
+              <p className="text-xs text-emerald-600">{formatPoints(walletBalance)} · Open dashboard →</p>
             </div>
             {pendingIncoming.length > 0 && (
               <span className="px-2.5 py-1 text-[10px] font-bold text-amber-700 bg-amber-100 border border-amber-300 rounded-full">{pendingIncoming.length} incoming</span>
