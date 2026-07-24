@@ -97,6 +97,7 @@ function Shell({ profile, onSignOut }) {
   var [lastBadgeLoad, setLastBadgeLoad] = useState(0)
   var [walletBalance, setWalletBalance] = useState(null)
   var [walletPending, setWalletPending] = useState(0)
+  var [financeStats, setFinanceStats] = useState({ expMonthCount: 0, expMonthTotal: 0, ledgerMonthTotal: 0 })
 
   useEffect(function () {
     if (!profile?.id) return
@@ -105,6 +106,28 @@ function Shell({ profile, onSignOut }) {
     supabase.from('wallet_transfers').select('id', { count: 'exact', head: true })
       .eq('to_user_id', profile.id).eq('status', 'pending')
       .then(function (res) { setWalletPending(res.count || 0) })
+
+    var monthStart = new Date().toISOString().slice(0, 7) + '-01'
+    var hasExp = perms.indexOf('feature_expenses') !== -1
+    var hasLedger = perms.indexOf('feature_ledger_view') !== -1
+    if (hasExp || hasLedger) {
+      Promise.all([
+        hasExp
+          ? supabase.from('expenses').select('amount_paise').eq('user_id', profile.id).gte('expense_date', monthStart).is('deleted_at', null).limit(5000)
+          : Promise.resolve({ data: [] }),
+        hasLedger
+          ? supabase.from('v_ledger').select('amount_paise').gte('expense_date', monthStart).limit(10000)
+          : Promise.resolve({ data: [] })
+      ]).then(function (res) {
+        var exps = res[0].data || []
+        var ledgs = res[1].data || []
+        setFinanceStats({
+          expMonthCount: exps.length,
+          expMonthTotal: exps.reduce(function (s, e) { return s + (e.amount_paise || 0) }, 0),
+          ledgerMonthTotal: ledgs.reduce(function (s, a) { return s + (a.amount_paise || 0) }, 0),
+        })
+      })
+    }
   }, [profile?.id, tab])
 
   // Filter groups: only show groups where user has at least one sub-feature permission
@@ -435,6 +458,14 @@ function Shell({ profile, onSignOut }) {
         {activeGroup && !tab && currentGroup && (
           <div className="grid grid-cols-2 gap-3 pt-2">
             {currentGroup.items.map(function (f) {
+              var extra = null
+              if (f.key === 'feature_wallet' && walletBalance !== null) {
+                extra = <span className={"text-xs font-bold " + (walletBalance < 0 ? "text-red-600" : "text-green-700")}>{formatPoints(walletBalance)}</span>
+              } else if (f.key === 'feature_expenses' && financeStats.expMonthCount > 0) {
+                extra = <span className="text-xs text-gray-500 font-medium">{financeStats.expMonthCount + ' · ' + formatPoints(financeStats.expMonthTotal)}</span>
+              } else if (f.key === 'feature_ledger_view' && financeStats.ledgerMonthTotal > 0) {
+                extra = <span className="text-xs text-gray-500 font-medium">{formatPoints(financeStats.ledgerMonthTotal) + ' this month'}</span>
+              }
               return (
                 <button
                   key={f.key}
@@ -448,6 +479,7 @@ function Shell({ profile, onSignOut }) {
                   )}
                   <span className="text-2xl">{f.icon}</span>
                   <span className="text-sm font-semibold text-gray-800">{f.label}</span>
+                  {extra}
                 </button>
               )
             })}

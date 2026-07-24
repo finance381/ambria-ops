@@ -4,6 +4,7 @@ import { formatDate, formatPoints } from '../../lib/format'
 import ExpenseFormMulti from './ExpenseForm'
 import { APPROVAL_STATUS_COLORS, APPROVAL_STATUS_LABELS } from '../../lib/constants'
 import ExpenseTypeMaster from './ExpenseTypeMaster'
+import FilterDropdown from '../../components/ui/FilterDropdown'
 import AllExpenses from './AllExpenses'
 import ExpenseEditForm from './ExpenseEditForm'
 import ExpenseDetail from './ExpenseDetail'
@@ -359,7 +360,7 @@ function Expenses({ profile, masterMode }) {
 
       {/* Tabs */}
       {showApproveTab && (
-        <div className="flex bg-gray-100 rounded-lg p-0.5">
+        <div className="flex bg-gray-100 rounded-lg p-0.5 md:max-w-md">
           <button onClick={function () { setView('list'); setStatusFilter('') }}
             className={"flex-1 py-2 text-sm font-semibold rounded-md transition-colors " + (view === 'list' ? "bg-white text-gray-900 shadow-sm" : "text-gray-500")}>
             My Expenses
@@ -455,52 +456,29 @@ function Expenses({ profile, masterMode }) {
                 {view === 'approve' && userOptions.length > 0 && (
                   <div>
                     <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">User</label>
-                    <select value={userFilter} onChange={function (e) { setUserFilter(e.target.value) }}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
-                      style={{ fontSize: '16px' }}>
-                      <option value="">All users</option>
-                      {userOptions.map(function (u) {
-                        return <option key={u.id} value={u.id}>{u.name || '—'}</option>
-                      })}
-                    </select>
+                    <FilterDropdown value={userFilter} placeholder="All users"
+                      options={userOptions.map(function (u) { return { label: u.name || '—', value: String(u.id) } })}
+                      onChange={setUserFilter} />
                   </div>
                 )}
                 <div className="grid grid-cols-2 gap-2">
                   <div>
                     <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Department</label>
-                    <select value={deptFilter}
-                      onChange={function (e) { setDeptFilter(e.target.value); setSubDeptFilter('') }}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
-                      style={{ fontSize: '16px' }}>
-                      <option value="">All</option>
-                      {deptOptions.map(function (d) {
-                        return <option key={d.id} value={d.id}>{d.name}</option>
-                      })}
-                    </select>
+                    <FilterDropdown value={deptFilter} placeholder="All departments"
+                      options={deptOptions.map(function (d) { return { label: d.name, value: String(d.id) } })}
+                      onChange={function (v) { setDeptFilter(v); setSubDeptFilter('') }} />
                   </div>
                   <div>
                     <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Sub-Dept</label>
-                    <select value={subDeptFilter}
-                      onChange={function (e) { setSubDeptFilter(e.target.value) }}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
-                      style={{ fontSize: '16px' }}>
-                      <option value="">All</option>
-                      {subDeptFiltered.map(function (sd) {
-                        return <option key={sd.id} value={sd.id}>{sd.name}</option>
-                      })}
-                    </select>
+                    <FilterDropdown value={subDeptFilter} placeholder="All sub-depts"
+                      options={subDeptFiltered.map(function (sd) { return { label: sd.name, value: String(sd.id) } })}
+                      onChange={setSubDeptFilter} />
                   </div>
                   <div className="col-span-2">
                     <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Venue</label>
-                    <select value={venueFilter}
-                      onChange={function (e) { setVenueFilter(e.target.value) }}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
-                      style={{ fontSize: '16px' }}>
-                      <option value="">All venues</option>
-                      {venueOptions.map(function (v) {
-                        return <option key={v.id} value={v.id}>{v.code} — {v.name}</option>
-                      })}
-                    </select>
+                    <FilterDropdown value={venueFilter} placeholder="All venues"
+                      options={venueOptions.map(function (v) { return { label: v.code + ' — ' + v.name, value: String(v.id) } })}
+                      onChange={setVenueFilter} />
                   </div>
                   <div>
                     <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Min (pts)</label>
@@ -541,8 +519,16 @@ function Expenses({ profile, masterMode }) {
 
       {/* List */}
       {view !== 'all' && displayList.length === 0 && (
-        <div className="bg-white border border-gray-200 rounded-xl p-8 text-center">
-          <p className="text-gray-400 text-sm">{view === 'approve' ? 'No pending reviews' : 'No expenses yet'}</p>
+        <div className="bg-white border border-gray-200 rounded-xl p-8 md:p-12 text-center">
+          <div className="text-4xl mb-3">{view === 'approve' ? '✅' : '💸'}</div>
+          <p className="text-sm font-semibold text-gray-700 mb-1">{view === 'approve' ? 'Nothing to review' : 'No expenses yet'}</p>
+          <p className="text-xs text-gray-400 mb-4">{view === 'approve' ? 'Pending submissions will appear here' : 'Log your first expense to get started'}</p>
+          {view === 'list' && (
+            <button onClick={function () { setEditExp(null); setView('form') }}
+              className="px-5 py-2.5 text-sm font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors shadow-sm">
+              + Add First Expense
+            </button>
+          )}
         </div>
       )}
 

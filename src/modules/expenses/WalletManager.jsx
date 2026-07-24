@@ -436,9 +436,8 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <div>
-            <button onClick={onClose} className="text-sm text-indigo-600 font-medium hover:text-indigo-800 transition-colors mb-1">← Back to Expenses</button>
             <h2 className="text-lg font-bold text-gray-900">All Wallets</h2>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 mt-1">
               <p className="text-xs text-gray-400">{filteredWallets.length} wallets</p>
               {!bulkMode && (
                 <button onClick={function () { setBulkMode(true); setBulkSelected({}) }}
@@ -447,7 +446,6 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                 </button>
               )}
             </div>
-            
           </div>
         </div>
         <input type="text" value={walletSearch} onChange={function (e) { setWalletSearch(e.target.value) }}
@@ -472,7 +470,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
           </div>
         )}
 
-        <div className="space-y-2">
+        <div className="space-y-2 md:space-y-0 md:grid md:grid-cols-2 md:gap-2">
           {filteredWallets.map(function (w) {
             var p = walletProfiles[w.user_id] || {}
             return (
@@ -490,7 +488,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                   {w._pendingCount > 0 && (
                     <span className="px-2 py-0.5 text-[10px] font-bold text-amber-700 bg-amber-100 border border-amber-300 rounded-full">{w._pendingCount} pending</span>
                   )}
-                  <span className={"text-sm font-bold " + ((w.balance_paise || 0) < 0 ? "text-red-600" : "text-green-700")}>{formatPoints(w.balance_paise)}</span>
+                  <span className={"text-sm font-bold " + ((w.balance_paise || 0) < 0 ? "text-red-600" : (w.balance_paise || 0) === 0 ? "text-gray-400" : "text-green-700")}>{formatPoints(w.balance_paise)}</span>
                   <button onClick={function () { setIssueModal(w); setIssueAmount(''); setIssueDesc(''); setIssueType('credit') }}
                     className="px-3 py-1.5 text-xs font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors">
                     + Issue
