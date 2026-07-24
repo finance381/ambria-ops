@@ -460,6 +460,261 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   }
 
   // ═══════════════════════════════════════════════
+  // MODAL HELPERS — Shared across dashboard / wallets / transactions views
+  // ═══════════════════════════════════════════════
+  function renderIssueModal() {
+    if (!issueModal) return null
+    return (
+      <BottomSheet open={true} onClose={function () { setIssueModal(null); setIssueImage(null) }} title={issueType === 'debit' ? 'Deduct Points' : 'Issue Points'}>
+        <div className="space-y-4">
+          <div className="flex justify-end">
+            <div className="flex bg-gray-100 rounded-lg p-0.5">
+              <button onClick={function () { setIssueType('credit') }}
+                className={"px-3 py-1.5 text-xs font-bold rounded-md transition-colors " + (issueType === 'credit' ? "bg-white text-green-700 shadow-sm" : "text-gray-500")}>
+                + Credit
+              </button>
+              <button onClick={function () { setIssueType('debit') }}
+                className={"px-3 py-1.5 text-xs font-bold rounded-md transition-colors " + (issueType === 'debit' ? "bg-white text-red-700 shadow-sm" : "text-gray-500")}>
+                − Debit
+              </button>
+            </div>
+          </div>
+          <p className="text-sm text-gray-500">To: <span className="font-medium text-gray-800">{walletProfiles[issueModal.user_id]?.name || '—'}</span></p>
+          <p className="text-xs text-gray-400">Current balance: {formatPoints(issueModal.balance_paise)}</p>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Amount (Points)</label>
+            <input type="number" min="1" step="any" inputMode="decimal" value={issueAmount}
+              onChange={function (e) { setIssueAmount(e.target.value) }}
+              placeholder="0" className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              style={{ fontSize: '16px' }} />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+            <input type="text" value={issueDesc} onChange={function (e) { setIssueDesc(e.target.value) }}
+              placeholder="e.g. Weekly allowance, Reimbursement..."
+              maxLength="300" className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              style={{ fontSize: '16px' }} />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">📷 Cash Photo</label>
+            {issueImage ? (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-green-600 font-medium truncate flex-1">✓ {issueImage.name}</span>
+                <button onClick={function () { setIssueImage(null) }}
+                  className="text-xs text-red-500 font-bold hover:text-red-700">✕</button>
+              </div>
+            ) : (
+              <label className="block w-full py-2.5 text-center text-sm text-indigo-600 border border-dashed border-indigo-300 rounded-lg cursor-pointer hover:bg-indigo-50 transition-colors">
+                Tap to attach photo
+                <input type="file" accept="image/*" capture="environment" className="sr-only"
+                  onChange={function (e) { if (e.target.files?.[0]) setIssueImage(e.target.files[0]); e.target.value = '' }} />
+              </label>
+            )}
+          </div>
+          <div className="flex gap-3 pt-2">
+            <button onClick={function () { setIssueModal(null); setIssueImage(null) }}
+              className="flex-1 py-3 text-sm text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors font-semibold">Cancel</button>
+            <button onClick={issuePoints} disabled={issueSaving || !issueAmount || Number(issueAmount) <= 0}
+              className="flex-1 py-3 text-sm text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition-colors font-semibold">
+              {issueSaving ? (issueType === 'debit' ? 'Deducting...' : 'Issuing...') : (issueType === 'debit' ? 'Deduct ' : 'Issue ') + (issueAmount && Number(issueAmount) > 0 ? Number(issueAmount).toLocaleString('en-IN') + ' pts' : '')}
+            </button>
+          </div>
+        </div>
+      </BottomSheet>
+    )
+  }
+
+  function renderReceiveModal() {
+    if (!receiveModal) return null
+    return (
+      <BottomSheet open={true} onClose={function () { setReceiveModal(null); setReceiveImage(null) }} title="Confirm Cash Received">
+        <div className="space-y-4">
+          <p className="text-sm text-gray-500">Amount: <span className="font-bold text-green-700">{formatPoints(Math.abs(receiveModal.amount_paise))}</span></p>
+          <p className="text-xs text-gray-400">{receiveModal.description || '—'}</p>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">📷 Receipt Photo</label>
+            {receiveImage ? (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-green-600 font-medium truncate flex-1">✓ {receiveImage.name}</span>
+                <button onClick={function () { setReceiveImage(null) }}
+                  className="text-xs text-red-500 font-bold hover:text-red-700">✕</button>
+              </div>
+            ) : (
+              <label className="block w-full py-3 text-center text-sm text-amber-700 border-2 border-dashed border-amber-300 rounded-lg cursor-pointer hover:bg-amber-50 transition-colors font-medium">
+                📷 Take photo of cash received
+                <input type="file" accept="image/*" capture="environment" className="sr-only"
+                  onChange={function (e) { if (e.target.files?.[0]) setReceiveImage(e.target.files[0]); e.target.value = '' }} />
+              </label>
+            )}
+          </div>
+          <div className="flex gap-3 pt-2">
+            <button onClick={function () { setReceiveModal(null); setReceiveImage(null) }}
+              className="flex-1 py-3 text-sm text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors font-semibold">Cancel</button>
+            <button onClick={confirmReceive} disabled={receiveSaving}
+              className="flex-1 py-3 text-sm text-white bg-green-600 rounded-xl hover:bg-green-700 disabled:opacity-50 transition-colors font-semibold">
+              {receiveSaving ? 'Confirming...' : '✓ Confirm Received'}
+            </button>
+          </div>
+        </div>
+      </BottomSheet>
+    )
+  }
+
+  function renderCollectModal() {
+    if (!collectModal) return null
+    return (
+      <BottomSheet open={true} onClose={function () { setCollectModal(false) }} title="Collect Payment">
+        <div className="space-y-4">
+          <SearchDropdown label="Event" required
+            items={collectEvents.map(function (e) { return { label: e.event_name + (e.function_date ? ' · ' + e.function_date : '') + (e.venue_name ? ' · ' + e.venue_name : ''), value: String(e.id) } })}
+            value={collectEventId}
+            onChange={function (val) { setCollectEventId(val) }}
+            placeholder="Search event..." />
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Amount (Points)</label>
+            <input type="number" min="1" step="any" inputMode="decimal" value={collectAmount}
+              onChange={function (e) { setCollectAmount(e.target.value) }}
+              placeholder="0" className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              style={{ fontSize: '16px' }} />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+            <input type="text" value={collectDesc} onChange={function (e) { setCollectDesc(e.target.value) }}
+              placeholder="e.g. Advance payment, Final settlement..."
+              maxLength="300" className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              style={{ fontSize: '16px' }} />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">📷 Receipt Photo</label>
+            {collectImage ? (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-green-600 font-medium truncate flex-1">✓ {collectImage.name}</span>
+                <button onClick={function () { setCollectImage(null) }} className="text-xs text-red-500 font-bold hover:text-red-700">✕</button>
+              </div>
+            ) : (
+              <label className="block w-full py-2.5 text-center text-sm text-blue-600 border border-dashed border-blue-300 rounded-lg cursor-pointer hover:bg-blue-50 transition-colors">
+                Tap to attach photo
+                <input type="file" accept="image/*" capture="environment" className="sr-only"
+                  onChange={function (e) { if (e.target.files?.[0]) setCollectImage(e.target.files[0]); e.target.value = '' }} />
+              </label>
+            )}
+          </div>
+          <div className="flex gap-3 pt-2">
+            <button onClick={function () { setCollectModal(false) }}
+              className="flex-1 py-3 text-sm text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors font-semibold">Cancel</button>
+            <button onClick={submitCollection}
+              disabled={collectSaving || !collectEventId || !collectAmount || Number(collectAmount) <= 0}
+              className="flex-1 py-3 text-sm text-white bg-blue-600 rounded-xl hover:bg-blue-700 disabled:opacity-50 transition-colors font-semibold">
+              {collectSaving ? 'Saving...' : 'Collect ' + (collectAmount && Number(collectAmount) > 0 ? Number(collectAmount).toLocaleString('en-IN') + ' pts' : '')}
+            </button>
+          </div>
+        </div>
+      </BottomSheet>
+    )
+  }
+
+  function renderTransferModal() {
+    if (!transferModal) return null
+    return (
+      <BottomSheet open={true} onClose={function () { setTransferModal(false) }} title="Transfer Cash">
+        <div className="space-y-4">
+          <SearchDropdown label="Send to" required
+            items={transferUsers.map(function (u) { return { label: u.name, value: u.id } })}
+            value={transferTo}
+            onChange={function (val) { setTransferTo(val) }}
+            placeholder="Search user..." />
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Amount (Points)</label>
+            <input type="number" min="1" step="any" inputMode="decimal" value={transferAmount}
+              onChange={function (e) { setTransferAmount(e.target.value) }}
+              placeholder="0" className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              style={{ fontSize: '16px' }} />
+            {transferAmount && Number(transferAmount) > 0 && walletBalance > 0 && Math.round(Number(transferAmount) * 100) > walletBalance && (
+              <p className="text-xs text-red-500 mt-1">Exceeds balance ({formatPoints(walletBalance)})</p>
+            )}
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+            <input type="text" value={transferDesc} onChange={function (e) { setTransferDesc(e.target.value) }}
+              placeholder="e.g. Repayment, Lunch money..." maxLength="300"
+              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              style={{ fontSize: '16px' }} />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">📷 Cash Photo</label>
+            {transferImage ? (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-green-600 font-medium truncate flex-1">✓ {transferImage.name}</span>
+                <button onClick={function () { setTransferImage(null) }} className="text-xs text-red-500 font-bold hover:text-red-700">✕</button>
+              </div>
+            ) : (
+              <label className="block w-full py-2.5 text-center text-sm text-emerald-600 border border-dashed border-emerald-300 rounded-lg cursor-pointer hover:bg-emerald-50 transition-colors">
+                Tap to attach photo
+                <input type="file" accept="image/*" capture="environment" className="sr-only"
+                  onChange={function (e) { if (e.target.files?.[0]) setTransferImage(e.target.files[0]); e.target.value = '' }} />
+              </label>
+            )}
+          </div>
+          <div className="flex gap-3 pt-2">
+            <button onClick={function () { setTransferModal(false) }}
+              className="flex-1 py-3 text-sm text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors font-semibold">Cancel</button>
+            <button onClick={initiateTransfer}
+              disabled={transferSaving || !transferTo || !transferAmount || Number(transferAmount) <= 0}
+              className="flex-1 py-3 text-sm text-white bg-emerald-600 rounded-xl hover:bg-emerald-700 disabled:opacity-50 transition-colors font-semibold">
+              {transferSaving ? 'Sending...' : 'Send ' + (transferAmount && Number(transferAmount) > 0 ? Number(transferAmount).toLocaleString('en-IN') + ' pts' : '')}
+            </button>
+          </div>
+        </div>
+      </BottomSheet>
+    )
+  }
+
+  function renderTransferConfirmModal() {
+    if (!transferConfirmModal) return null
+    return (
+      <BottomSheet open={true} onClose={function () { setTransferConfirmModal(null); setTransferConfirmImage(null) }} title="Confirm Transfer Received">
+        <div className="space-y-4">
+          <p className="text-sm text-gray-500">From: <span className="font-bold text-gray-900">{transferConfirmModal._fromName}</span></p>
+          <p className="text-sm text-gray-500">Amount: <span className="font-bold text-green-700">{formatPoints(transferConfirmModal.amount_paise)}</span></p>
+          <p className="text-xs text-gray-400">{transferConfirmModal.description || '—'}</p>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">📷 Receipt Photo</label>
+            {transferConfirmImage ? (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-green-600 font-medium truncate flex-1">✓ {transferConfirmImage.name}</span>
+                <button onClick={function () { setTransferConfirmImage(null) }} className="text-xs text-red-500 font-bold hover:text-red-700">✕</button>
+              </div>
+            ) : (
+              <label className="block w-full py-3 text-center text-sm text-amber-700 border-2 border-dashed border-amber-300 rounded-lg cursor-pointer hover:bg-amber-50 transition-colors font-medium">
+                📷 Take photo of cash received
+                <input type="file" accept="image/*" capture="environment" className="sr-only"
+                  onChange={function (e) { if (e.target.files?.[0]) setTransferConfirmImage(e.target.files[0]); e.target.value = '' }} />
+              </label>
+            )}
+          </div>
+          <div className="flex gap-3 pt-2">
+            <button onClick={function () { setTransferConfirmModal(null); setTransferConfirmImage(null) }}
+              className="flex-1 py-3 text-sm text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors font-semibold">Cancel</button>
+            <button onClick={confirmTransferReceive} disabled={transferConfirmSaving}
+              className="flex-1 py-3 text-sm text-white bg-green-600 rounded-xl hover:bg-green-700 disabled:opacity-50 transition-colors font-semibold">
+              {transferConfirmSaving ? 'Confirming...' : '✓ Confirm Received'}
+            </button>
+          </div>
+        </div>
+      </BottomSheet>
+    )
+  }
+
+  function renderEnlargedImg() {
+    if (!enlargedWalletImg) return null
+    return (
+      <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4" onClick={function () { setEnlargedWalletImg(null) }}>
+        <img src={enlargedWalletImg} alt="" className="max-w-full max-h-[80vh] rounded-lg" />
+      </div>
+    )
+  }
+
+  // ═══════════════════════════════════════════════
   // WALLET DASHBOARD — Own wallet landing (mobile-first)
   // ═══════════════════════════════════════════════
   if (walletView === 'dashboard' && selectedWallet) {
