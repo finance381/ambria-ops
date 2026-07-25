@@ -77,6 +77,9 @@ function EmployeeForm({ employee, profile, jobDepartments, managers, canSeeSalar
   var [bankName, setBankName] = useState('')
   var [monthlyCashRupees, setMonthlyCashRupees] = useState('')
   var [monthlyBankRupees, setMonthlyBankRupees] = useState('')
+  var [nightWageRupees, setNightWageRupees] = useState('')
+  var [shiftFrom, setShiftFrom] = useState('')
+  var [shiftTo, setShiftTo] = useState('')
 
   // Photo
   var [photoFile, setPhotoFile] = useState(null)
@@ -130,6 +133,10 @@ function EmployeeForm({ employee, profile, jobDepartments, managers, canSeeSalar
       ? String(Math.round(e.monthly_cash_paise / 100)) : '')
     setMonthlyBankRupees(canSeeSalary && e.monthly_bank_paise
       ? String(Math.round(e.monthly_bank_paise / 100)) : '')
+    setNightWageRupees(canSeeSalary && e.night_wage_paise
+      ? String(Math.round(e.night_wage_paise / 100)) : '')
+    setShiftFrom(e.shift_start ? e.shift_start.slice(0, 5) : '')
+    setShiftTo(e.shift_end ? e.shift_end.slice(0, 5) : '')
 
     setPhotoPath(e.photo_file_path || '')
     setAadhaarPath(e.aadhaar_file_path || '')
@@ -241,12 +248,16 @@ function EmployeeForm({ employee, profile, jobDepartments, managers, canSeeSalar
       bank_name: bankName.trim() || null,
       aadhaar_expiry_date: aadhaarExpiry || null,
       pan_expiry_date: panExpiry || null,
+      shift_start: shiftFrom || null,
+      shift_end: shiftTo || null,
     }
     if (canSeeSalary) {
       var cashP = monthlyCashRupees ? Math.round(Number(monthlyCashRupees) * 100) : 0
       var bankP = monthlyBankRupees ? Math.round(Number(monthlyBankRupees) * 100) : 0
+      var nightP = nightWageRupees ? Math.round(Number(nightWageRupees) * 100) : 0
       payload.monthly_cash_paise = cashP
       payload.monthly_bank_paise = bankP
+      payload.night_wage_paise = nightP > 0 ? nightP : null
       payload.ctc_annual_paise = (cashP + bankP) > 0 ? (cashP + bankP) * 12 : null
     }
 
@@ -612,6 +623,24 @@ function EmployeeForm({ employee, profile, jobDepartments, managers, canSeeSalar
                   style={{ fontSize: '16px' }} className={inp} />
               </Field>
             )}
+            {canSeeSalary && (
+              <Field label="Night Wage (₹)">
+                <input type="number" value={nightWageRupees}
+                  onChange={function (e) { setNightWageRupees(e.target.value) }}
+                  placeholder="e.g. 500" min="0" step="1"
+                  style={{ fontSize: '16px' }} className={inp} />
+              </Field>
+            )}
+            <Field label="Shift From">
+              <input type="time" value={shiftFrom}
+                onChange={function (e) { setShiftFrom(e.target.value) }}
+                style={{ fontSize: '16px' }} className={inp} />
+            </Field>
+            <Field label="Shift To">
+              <input type="time" value={shiftTo}
+                onChange={function (e) { setShiftTo(e.target.value) }}
+                style={{ fontSize: '16px' }} className={inp} />
+            </Field>
             {!canSeeSalary && (
               <div className="md:col-span-2">
                 <div className="w-full px-3 py-2 border border-gray-200 bg-gray-50 rounded-md text-xs text-gray-400 italic">
