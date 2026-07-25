@@ -74,7 +74,7 @@ var SUB_TAB_CONFIG = {
   expenses: [
     { key: 'wallet', label: 'Wallet', component: Wallet },
     { key: 'expenses', label: 'Expenses', component: Expenses },
-    { key: 'ledgers', label: 'Ledgers', component: Ledgers },
+    { key: 'ledgers', label: 'Expense Ledger', component: Ledgers },
   ],
 }
 

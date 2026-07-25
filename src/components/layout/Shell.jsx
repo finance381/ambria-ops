@@ -66,7 +66,7 @@ var GROUPS = [
     key: 'expenses', label: 'Finance', icon: '💰', items: [
       { key: 'feature_wallet', label: 'Wallet', icon: '👛', tab: 'wallet' },
       { key: 'feature_expenses', label: 'PC & Direct Expenses', icon: '💰', tab: 'expenses' },
-      { key: 'feature_ledger_view', label: 'Ledgers', icon: '📒', tab: 'ledgers' },
+      { key: 'feature_ledger_view', label: 'Expense Ledger', icon: '📒', tab: 'ledgers' },
     ]
   },
   {
