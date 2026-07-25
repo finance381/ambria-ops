@@ -749,7 +749,8 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     var showIssueTile = isAdmin || isAuditor
     var receiveCount = pendingIncoming.length + pendingIssues.length
     return (
-      <div className="@container space-y-4 max-w-2xl mx-auto @3xl:max-w-none">
+      <div className="@container">
+      <div className="space-y-4 max-w-2xl mx-auto @3xl:max-w-none">
         <div>
           <button onClick={onClose}
             className="text-sm text-indigo-600 font-medium hover:text-indigo-800 transition-colors mb-1">← Back</button>
@@ -851,6 +852,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
         {renderReceiveModal()}
         {renderTransferConfirmModal()}
         {renderEnlargedImg()}
+      </div>
       </div>
     )
   }
