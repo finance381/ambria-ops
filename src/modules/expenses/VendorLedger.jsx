@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { logActivity } from '../../lib/logger'
 import { formatPoints } from '../../lib/format'
+import PayVendorModal from './PayVendorModal'
 
 function VendorLedger({ profile }) {
   var perms = (profile && profile.permissions) || []
@@ -70,47 +71,19 @@ function VendorLedger({ profile }) {
   }
 
   var [showPayModal, setShowPayModal] = useState(false)
-  var [payAmount, setPayAmount] = useState('')
-  var [payDescription, setPayDescription] = useState('')
-  var [payDate, setPayDate] = useState(new Date().toISOString().split('T')[0])
-  var [paySaving, setPaySaving] = useState(false)
-  var [payError, setPayError] = useState('')
-  var [payMode, setPayMode] = useState('')
 
   function payVendor() {
     if (!selectedVendor) return
-    setPayAmount('')
-    setPayMode('')
-    setPayDescription('Payment to ' + (selectedVendor.vendor_name || ''))
-    setPayDate(new Date().toISOString().split('T')[0])
-    setPayError('')
     setShowPayModal(true)
   }
 
-  async function submitPayment() {
-    if (paySaving) return
-    if (!payMode) { setPayError('Select cash or bank'); return }
-    var amtR = Number(payAmount || 0)
-    if (!isFinite(amtR) || amtR <= 0) { setPayError('Enter a valid amount'); return }
-    setPaySaving(true)
-    setPayError('')
-    var { error } = await supabase.rpc('pay_vendor', {
-      p_vendor_id: selectedVendor.vendor_id,
-      p_amount_paise: Math.round(amtR * 100),
-      p_description: (payDescription || '').trim() || null,
-      p_entry_date: payDate,
-      p_mode: payMode
-    })
-    if (error) {
-      setPayError(error.message || 'Payment failed')
-      setPaySaving(false)
-      return
-    }
-    try { logActivity('VENDOR_PAY', selectedVendor.vendor_name + ' | ' + amtR + ' pts') } catch (_) {}
-    setPaySaving(false)
+  async function onPaymentSuccess() {
     setShowPayModal(false)
-    await loadEntries(selectedVendor, showDeleted)
+    await loadVendors()
+    if (selectedVendor) await loadEntries(selectedVendor, showDeleted)
   }
+
+  
 
   async function reverseEntry(entryId) {
     var reason = prompt('Reason for reversal (optional)?')
@@ -321,85 +294,13 @@ function VendorLedger({ profile }) {
         </label>
       )}
 
-      {/* Pay Vendor modal */}
+      {/* Pay Vendor modal (shared component) */}
       {showPayModal && selectedVendor && (
-        <div className="fixed inset-0 z-50 bg-black/60 flex items-end sm:items-center justify-center p-0 sm:p-4"
-          onClick={function () { if (!paySaving) setShowPayModal(false) }}>
-          <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md p-5 space-y-3"
-            onClick={function (ev) { ev.stopPropagation() }}>
-            <div className="flex items-center justify-between">
-              <h3 className="text-base font-bold text-gray-900">Pay Vendor</h3>
-              <button onClick={function () { if (!paySaving) setShowPayModal(false) }}
-                className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
-            </div>
-            <p className="text-xs text-gray-500 -mt-2">{selectedVendor.vendor_name}</p>
-
-            {payError && (
-              <div className="p-2 rounded-lg bg-red-50 border border-red-200 text-red-700 text-xs">{payError}</div>
-            )}
-
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Pay Via <span className="text-red-500">*</span></label>
-              <div className="flex gap-2">
-                {[{ v: 'cash', label: '💵 Cash', bal: selectedVendor.cash_balance_paise || 0 }, { v: 'bank', label: '🏦 Bank', bal: selectedVendor.bank_balance_paise || 0 }].map(function (opt) {
-                  var active = payMode === opt.v
-                  return (
-                    <button key={opt.v} type="button"
-                      onClick={function () {
-                        setPayMode(opt.v)
-                        if (opt.bal > 0) setPayAmount(String(opt.bal / 100))
-                      }}
-                      className={"flex-1 px-3 py-2 rounded-lg text-sm font-semibold border transition-colors " + (active ? "bg-indigo-600 text-white border-indigo-600" : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50")}>
-                      <div>{opt.label}</div>
-                      <div className={"text-[10px] font-normal mt-0.5 " + (active ? "text-indigo-100" : "text-gray-500")}>
-                        Owed: {(opt.bal / 100).toLocaleString('en-IN', { maximumFractionDigits: 2 })} pts
-                      </div>
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Amount (pts) *</label>
-              <input type="number" inputMode="decimal" value={payAmount}
-                onChange={function (ev) { setPayAmount(ev.target.value) }}
-                placeholder="0" min="0" step="any"
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-indigo-300"
-                style={{ fontSize: '16px' }} />
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Payment Date</label>
-              <input type="date" value={payDate}
-                onChange={function (ev) { setPayDate(ev.target.value) }}
-                max={new Date().toISOString().split('T')[0]}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-indigo-300"
-                style={{ fontSize: '16px' }} />
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Description</label>
-              <input type="text" value={payDescription}
-                onChange={function (ev) { setPayDescription(ev.target.value) }}
-                placeholder="Payment to vendor"
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-indigo-300"
-                style={{ fontSize: '16px' }} />
-            </div>
-
-            <div className="flex gap-2 pt-2">
-              <button onClick={function () { if (!paySaving) setShowPayModal(false) }}
-                disabled={paySaving}
-                className="flex-1 py-2.5 text-sm font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 disabled:opacity-50">
-                Cancel
-              </button>
-              <button onClick={submitPayment} disabled={paySaving}
-                className="flex-1 py-2.5 text-sm font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50">
-                {paySaving ? 'Paying...' : 'Pay Vendor'}
-              </button>
-            </div>
-          </div>
-        </div>
+        <PayVendorModal
+          vendor={selectedVendor}
+          onClose={function () { setShowPayModal(false) }}
+          onSuccess={onPaymentSuccess}
+        />
       )}
 
       {/* Entries list */}

@@ -27,6 +27,7 @@ var PERM_GROUPS = [
     { key: 'feature_wallet', label: 'Wallet', grants: ['feature_wallet'] },
     { key: 'feature_expenses', label: 'Expenses', grants: ['feature_expenses', 'expense_submit'], optional: [{ key: 'expense_approve', label: 'Approve/reject expenses' }] },
     { key: 'feature_ledger_view', label: 'Expense Ledger', grants: ['feature_ledger_view'] },
+    { key: 'feature_payments', label: 'Payments', grants: ['feature_payments'] },
     { key: 'feature_vendor_ledger', label: 'Vendor Ledger', grants: ['feature_vendor_ledger'] },
   ]},
   { group: 'Operations', icon: '🚚', children: [

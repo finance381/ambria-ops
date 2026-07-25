@@ -13,6 +13,7 @@ import Purchase from '../../modules/purchase/Purchase'
 import Expenses from '../../modules/expenses/Expenses'
 import Ledgers from '../../modules/expenses/Ledgers'
 import VendorLedger from '../../modules/expenses/VendorLedger'
+import Payments from '../../modules/expenses/Payments'
 import Wallet from '../../modules/expenses/Wallet'
 import ProductionOrders from '../../modules/production/ProductionOrders'
 import Boxes from '../../modules/boxes/Boxes'
@@ -68,6 +69,7 @@ var GROUPS = [
       { key: 'feature_wallet', label: 'Wallet', icon: '👛', tab: 'wallet' },
       { key: 'feature_expenses', label: 'PC & Direct Expenses', icon: '💰', tab: 'expenses' },
       { key: 'feature_ledger_view', label: 'Expense Ledger', icon: '📒', tab: 'ledgers' },
+      { key: 'feature_payments', label: 'Payments', icon: '💳', tab: 'payments' },
       { key: 'feature_vendor_ledger', label: 'Vendor Ledger', icon: '🏭', tab: 'vendor_ledger' },
     ]
   },
@@ -309,6 +311,16 @@ function Shell({ profile, onSignOut }) {
           .then(function (res) { counts.feature_receive = res.count || 0 })
       )
     }
+
+    // Payments badge (vendors with any overdue purchase)
+    if (perms.indexOf('feature_payments') !== -1) {
+      promises.push(
+        supabase.from('v_vendor_ledger')
+          .select('vendor_id', { count: 'exact', head: true })
+          .gt('overdue_count', 0)
+          .then(function (res) { counts.feature_payments = res.count || 0 })
+      )
+    }
     
 
     await Promise.allSettled(promises)
@@ -526,6 +538,9 @@ function Shell({ profile, onSignOut }) {
         )}
         {tab === 'vendor_ledger' && (
           <VendorLedger profile={profile} />
+        )}
+        {tab === 'payments' && (
+          <Payments profile={profile} />
         )}
         {tab === 'purchase' && (
           <Purchase profile={profile} mode="purchase" />
