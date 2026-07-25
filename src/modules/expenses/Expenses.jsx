@@ -48,6 +48,7 @@ function Expenses({ profile, masterMode }) {
   var [subDeptOptions, setSubDeptOptions] = useState([])
   var [venueOptions, setVenueOptions] = useState([])
   var [userOptions, setUserOptions] = useState([])
+  var [profileMap, setProfileMap] = useState({})
 
   var isAdmin = profile?.role === 'admin' || (profile?.permissions && profile.permissions.indexOf('expense_approve') >= 0)
   var isAuditor = profile?.role === 'auditor'
@@ -76,11 +77,13 @@ function Expenses({ profile, masterMode }) {
       setDeptOptions(res[1].data || [])
       setVenueOptions(res[2].data || [])
     })
-    if (showApproveTab) {
-      supabase.from('profiles').select('id, name').order('name').then(function (res) {
-        setUserOptions(res.data || [])
-      })
-    }
+    supabase.from('profiles').select('id, name').order('name').then(function (res) {
+      var rows = res.data || []
+      if (showApproveTab) setUserOptions(rows)
+      var m = {}
+      rows.forEach(function (p) { m[p.id] = p.name || '' })
+      setProfileMap(m)
+    })
   }, [])
 
    useEffect(function () {
@@ -591,12 +594,18 @@ function Expenses({ profile, masterMode }) {
                     <span className="text-sm font-bold text-red-700">{formatPoints(exp.penalty_paise || 0)}</span>
                   </div>
                   {exp.flag_reason && <p className="text-[11px] text-red-500 mt-0.5 line-clamp-2">{exp.flag_reason}</p>}
+                  {exp.penalized_by && (
+                    <p className="text-[10px] text-red-400 mt-0.5">By {profileMap[exp.penalized_by] || '—'}{exp.penalized_at ? ' · ' + formatDate(exp.penalized_at) : ''}</p>
+                  )}
                 </div>
               )}
               {exp.status === 'flagged' && exp.flag_reason && (
                 <div className="mt-1.5 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
                   <p className="text-[11px] text-amber-600 font-medium">⚠ Flagged</p>
                   <p className="text-[11px] text-amber-500 mt-0.5 line-clamp-2">{exp.flag_reason}</p>
+                  {exp.reviewed_by && (
+                    <p className="text-[10px] text-amber-400 mt-0.5">By {profileMap[exp.reviewed_by] || '—'}{exp.reviewed_at ? ' · ' + formatDate(exp.reviewed_at) : ''}</p>
+                  )}
                 </div>
               )}
               {(function () {
