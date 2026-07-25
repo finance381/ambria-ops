@@ -232,7 +232,7 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
   }
 
   return (
-    <div className="space-y-4">
+    <div className="@container space-y-4">
       <div>
         <button onClick={onBack} className="text-sm text-indigo-600 font-medium hover:text-indigo-800 transition-colors mb-2">← Back</button>
         <div className="flex items-start justify-between">
@@ -283,6 +283,9 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
         </div>
       )}
 
+      <div className="space-y-4 @3xl:grid @3xl:grid-cols-12 @3xl:gap-5 @3xl:space-y-0 @3xl:items-start">
+        <div className="@3xl:col-span-6">
+
       {receipts.length > 0 ? (
         <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
           <div className="px-4 py-2 bg-gray-50 border-b border-gray-200">
@@ -301,7 +304,7 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
                     <img
                       src={r.url} alt={"Receipt " + (rIdx + 1)}
                       onClick={function () { setImgFullscreen(r.url) }}
-                      className="w-full max-h-64 object-contain rounded-lg border border-gray-100 bg-gray-50 cursor-pointer active:opacity-80"
+                      className="w-full max-h-64 @3xl:max-h-[520px] object-contain rounded-lg border border-gray-100 bg-gray-50 cursor-pointer active:opacity-80"
                     />
                     {receipts.length === 1 && <p className="text-[10px] text-gray-400 text-center mt-1">Tap to enlarge</p>}
                   </div>
@@ -339,6 +342,9 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
           <img src={imgFullscreen} alt="Receipt" className="max-w-full max-h-full object-contain rounded-lg" />
         </div>
       )}
+
+        </div>
+        <div className="@3xl:col-span-6 space-y-4">
 
       <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-3">
         <div className="flex justify-between">
@@ -571,6 +577,8 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
           </div>
         </div>
       )}
+        </div>
+      </div>
     </div>
   )
 }

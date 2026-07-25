@@ -749,13 +749,16 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     var showIssueTile = isAdmin || isAuditor
     var receiveCount = pendingIncoming.length + pendingIssues.length
     return (
-      <div className="space-y-4 max-w-2xl mx-auto">
+      <div className="@container space-y-4 max-w-2xl mx-auto @3xl:max-w-none">
         <div>
           <button onClick={onClose}
             className="text-sm text-indigo-600 font-medium hover:text-indigo-800 transition-colors mb-1">← Back</button>
           <h2 className="text-lg font-bold text-gray-900">Wallet</h2>
           <p className="text-xs text-gray-400">{profile.name || '—'} · <span className={"font-bold " + balColor}>{formatPoints(bal)}</span></p>
         </div>
+
+        <div className="space-y-4 @3xl:grid @3xl:grid-cols-12 @3xl:gap-5 @3xl:space-y-0 @3xl:items-start">
+          <div className="@3xl:col-span-5 space-y-4">
 
         {/* Balance card */}
         <div className={"border rounded-2xl p-5 " + balBg}>
@@ -800,7 +803,9 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             </div>
           )}
         </div>
+          </div>
 
+          <div className="@3xl:col-span-7">
         {/* Recent transactions */}
         <div>
           <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-2">Recent Transactions</p>
@@ -836,6 +841,8 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
               )}
             </div>
           )}
+        </div>
+          </div>
         </div>
 
         {renderCollectModal()}
