@@ -1281,6 +1281,7 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, ve
   var [purchasingItem, setPurchasingItem] = useState(null)
   var [purchaseForm, setPurchaseForm] = useState({ qty: '', cost: '', receipt: null, vendorName: '', vendorRate: '' })
   var [selectedForPurchase, setSelectedForPurchase] = useState([])
+  var [selectedForBulk, setSelectedForBulk] = useState([])
   var [multiOpen, setMultiOpen] = useState(false)
   var [multiForm, setMultiForm] = useState({ vendor: '', vendorContact: '', receipt: null, items: {} })
   var [multiProcessing, setMultiProcessing] = useState(false)
@@ -1361,21 +1362,25 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, ve
   async function applyVendorToAll() {
     var vendorName = bulkVendor.trim()
     if (!vendorName) { alert('Select or enter vendor'); return }
-    var pendingItems = items.filter(function (it) { return it.status === 'pending' })
-    if (pendingItems.length === 0) { alert('No pending items to update'); return }
-    var existing = pendingItems.filter(function (it) { return it.vendor_name })
+    var allPending = items.filter(function (it) { return it.status === 'pending' })
+    if (allPending.length === 0) { alert('No pending items to update'); return }
+    var targetItems = selectedForBulk.length > 0
+      ? allPending.filter(function (it) { return selectedForBulk.indexOf(it.id) !== -1 })
+      : allPending
+    if (targetItems.length === 0) { alert('No pending items in selection'); return }
+    var existing = targetItems.filter(function (it) { return it.vendor_name })
     if (existing.length > 0 && !confirm('Overwrite vendor on ' + existing.length + ' item(s) that already has one?')) return
     var ratePaise = bulkVendorRate ? Math.round(Number(bulkVendorRate) * 100) : null
     var vendorRow = (vendorList || []).find(function (v) { return v.name === vendorName })
     var vendorContact = vendorRow ? (vendorRow.phone || vendorRow.contact || null) : null
-    for (var i = 0; i < pendingItems.length; i++) {
-      var it = pendingItems[i]
+    for (var i = 0; i < targetItems.length; i++) {
+      var it = targetItems[i]
       var patch = { vendor_name: vendorName, vendor_contact: vendorContact }
       if (ratePaise) { patch.vendor_rate_paise = ratePaise; patch.estimated_cost_paise = ratePaise * it.qty_ordered }
       var { error } = await supabase.from('purchase_order_items').update(patch).eq('id', it.id)
       if (error) { alert('Failed on ' + it.item_name + ': ' + error.message); return }
     }
-    var itemIds = pendingItems.map(function (it) { return it.id })
+    var itemIds = targetItems.map(function (it) { return it.id })
     setItems(function (prev) {
       return prev.map(function (it) {
         if (itemIds.indexOf(it.id) === -1) return it
@@ -1384,20 +1389,25 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, ve
         return Object.assign({}, it, patch)
       })
     })
-    try { await logActivity('PO_BULK_VENDOR', vendorName + ' → ' + pendingItems.length + ' items') } catch (_) {}
+    try { await logActivity('PO_BULK_VENDOR', vendorName + ' → ' + targetItems.length + ' items') } catch (_) {}
     setBulkVendor('')
     setBulkVendorRate('')
+    setSelectedForBulk([])
   }
 
   async function applyExpTypeToAll() {
     if (!bulkExpType) { alert('Select expense type'); return }
     var typeId = Number(bulkExpType)
     var subTypeId = bulkExpSubType ? Number(bulkExpSubType) : null
-    var pendingItems = items.filter(function (it) { return it.status === 'pending' })
-    if (pendingItems.length === 0) { alert('No pending items to update'); return }
-    var existing = pendingItems.filter(function (it) { return it.expense_type_id })
+    var allPending = items.filter(function (it) { return it.status === 'pending' })
+    if (allPending.length === 0) { alert('No pending items to update'); return }
+    var targetItems = selectedForBulk.length > 0
+      ? allPending.filter(function (it) { return selectedForBulk.indexOf(it.id) !== -1 })
+      : allPending
+    if (targetItems.length === 0) { alert('No pending items in selection'); return }
+    var existing = targetItems.filter(function (it) { return it.expense_type_id })
     if (existing.length > 0 && !confirm('Overwrite expense type on ' + existing.length + ' item(s) that already has one?')) return
-    var itemIds = pendingItems.map(function (it) { return it.id })
+    var itemIds = targetItems.map(function (it) { return it.id })
     var { error } = await supabase.from('purchase_order_items')
       .update({ expense_type_id: typeId, expense_sub_type_id: subTypeId })
       .in('id', itemIds)
@@ -1408,8 +1418,10 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, ve
         return Object.assign({}, it, { expense_type_id: typeId, expense_sub_type_id: subTypeId })
       })
     })
+    try { await logActivity('PO_BULK_EXPTYPE', targetItems.length + ' items') } catch (_) {}
     setBulkExpType('')
     setBulkExpSubType('')
+    setSelectedForBulk([])
   }
 
   async function saveItemExpType(itemId) {
@@ -1723,7 +1735,7 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, ve
             var subForBulk = bulkExpType ? expenseSubTypes.filter(function (st) { return st.expense_type_id === Number(bulkExpType) }) : []
             return (
               <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
-                <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Expense Type — Apply to all pending items</p>
+                <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Expense Type — {selectedForBulk.length > 0 ? 'Apply to ' + selectedForBulk.length + ' selected' : 'Apply to all pending items'}</p>
                 <div className="grid grid-cols-2 gap-2 mb-2">
                   <select value={expTypeDeptFilter}
                     onChange={function (e) { setExpTypeDeptFilter(e.target.value); setExpTypeSubDeptFilter(''); setBulkExpType(''); setBulkExpSubType('') }}
@@ -1767,7 +1779,7 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, ve
                 </div>
                 <button onClick={applyExpTypeToAll} disabled={!bulkExpType || saving}
                   className="w-full py-1.5 text-xs font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 disabled:opacity-50 transition-colors">
-                  Apply to all pending
+                  {selectedForBulk.length > 0 ? 'Apply to ' + selectedForBulk.length + ' selected' : 'Apply to all pending'}
                 </button>
               </div>
             )
@@ -1776,7 +1788,7 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, ve
           {/* Vendor — Apply to all pending items */}
           {canEdit && items.some(function (it) { return it.status === 'pending' }) && (
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
-              <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Vendor — Apply to all pending items</p>
+              <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Vendor — {selectedForBulk.length > 0 ? 'Apply to ' + selectedForBulk.length + ' selected' : 'Apply to all pending items'}</p>
               <div className="grid grid-cols-3 gap-2 mb-2">
                 <select value={bulkVendor}
                   onChange={function (e) { setBulkVendor(e.target.value) }}
@@ -1795,7 +1807,7 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, ve
               </div>
               <button onClick={applyVendorToAll} disabled={!bulkVendor || saving}
                 className="w-full py-1.5 text-xs font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 disabled:opacity-50 transition-colors">
-                Apply to all pending
+                {selectedForBulk.length > 0 ? 'Apply to ' + selectedForBulk.length + ' selected' : 'Apply to all pending'}
               </button>
             </div>
           )}
@@ -1806,6 +1818,22 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, ve
               <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">{items.length + ' Item' + (items.length !== 1 ? 's' : '')}</span>
               <span className="text-xs text-gray-400">{purchasedCount + receivedCount} of {items.length} done</span>
             </div>
+            {canEdit && pendingCount > 0 && (
+              <div className="px-4 py-2 bg-blue-50/40 border-b border-gray-100 flex items-center gap-2 text-xs">
+                <span className="text-gray-500">{selectedForBulk.length > 0 ? selectedForBulk.length + ' of ' + pendingCount + ' selected' : 'Bulk select:'}</span>
+                <button onClick={function () {
+                  var pendingIds = items.filter(function (it) { return it.status === 'pending' }).map(function (it) { return it.id })
+                  setSelectedForBulk(selectedForBulk.length === pendingIds.length ? [] : pendingIds)
+                }} className="font-semibold text-blue-700 hover:underline">
+                  {selectedForBulk.length === pendingCount ? 'Clear all' : 'Select all pending'}
+                </button>
+                {selectedForBulk.length > 0 && selectedForBulk.length !== pendingCount && (
+                  <button onClick={function () { setSelectedForBulk([]) }} className="font-semibold text-gray-500 hover:underline ml-auto">
+                    Clear
+                  </button>
+                )}
+              </div>
+            )}
 
             <div className="divide-y divide-gray-50">
               {items.map(function (it) {
@@ -1817,6 +1845,19 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, ve
                   <div key={it.id} className="px-4 py-4 space-y-2">
                     {/* Item row */}
                     <div className="flex items-start justify-between gap-3">
+                      {canEdit && it.status === 'pending' && (
+                        <input type="checkbox" checked={selectedForBulk.indexOf(it.id) !== -1}
+                          onChange={function (e) {
+                            e.stopPropagation()
+                            setSelectedForBulk(function (prev) {
+                              if (prev.indexOf(it.id) !== -1) return prev.filter(function (x) { return x !== it.id })
+                              return prev.concat([it.id])
+                            })
+                          }}
+                          onClick={function (e) { e.stopPropagation() }}
+                          className="mt-1 w-4 h-4 accent-blue-600 cursor-pointer flex-shrink-0"
+                          title="Select for bulk apply" />
+                      )}
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
                           <p className="text-sm font-semibold text-gray-800">{titleCase(it.item_name)}</p>
