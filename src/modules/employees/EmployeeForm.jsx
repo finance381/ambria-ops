@@ -158,28 +158,12 @@ function EmployeeForm({ employee, profile, jobDepartments, managers, canSeeSalar
 
   function validate() {
     if (!fullName.trim()) return { tab: 'personal', msg: 'Full Name is required' }
-    if (!dob) return { tab: 'personal', msg: 'Date of Birth is required' }
-    if (!gender) return { tab: 'personal', msg: 'Gender is required' }
-    if (!fatherName.trim()) return { tab: 'personal', msg: 'Father\'s Name is required' }
-    if (!maritalStatus) return { tab: 'personal', msg: 'Marital Status is required' }
-    if (!contactNumber.trim()) return { tab: 'personal', msg: 'Contact Number is required' }
-    if (!personalEmail.trim()) return { tab: 'personal', msg: 'Personal Email is required' }
-    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(personalEmail.trim())) return { tab: 'personal', msg: 'Personal Email format invalid' }
-    if (!emergencyContact.trim()) return { tab: 'personal', msg: 'Emergency Contact is required' }
-    if (!presentAddress.trim()) return { tab: 'personal', msg: 'Present Address is required' }
-    if (!permanentAddress.trim()) return { tab: 'personal', msg: 'Permanent Address is required' }
 
-    if (!doj) return { tab: 'employment', msg: 'Date of Joining is required' }
-    if (!designation.trim()) return { tab: 'employment', msg: 'Designation is required' }
-
+    if (personalEmail && personalEmail.trim() && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(personalEmail.trim())) return { tab: 'personal', msg: 'Personal Email format invalid' }
     if (aadhaar && !/^[0-9]{12}$/.test(aadhaar.trim())) return { tab: 'statutory', msg: 'Aadhaar must be 12 digits' }
     if (pan && !/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(pan.trim().toUpperCase())) return { tab: 'statutory', msg: 'PAN format invalid (AAAAA9999A)' }
     if (ifsc && !/^[A-Z]{4}0[A-Z0-9]{6}$/.test(ifsc.trim().toUpperCase())) return { tab: 'bank', msg: 'IFSC format invalid' }
     if (ctcRupees && Number(ctcRupees) < 0) return { tab: 'bank', msg: 'CTC cannot be negative' }
-
-    if (status === 'terminated' || status === 'resigned') {
-      if (!terminationReason.trim()) return { tab: 'employment', msg: 'Termination reason required for terminated/resigned status' }
-    }
 
     return null
   }
