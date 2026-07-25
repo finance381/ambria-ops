@@ -17,6 +17,8 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
   var [allocations, setAllocations] = useState([])
   var [allocVenues, setAllocVenues] = useState({})
   var [imgFullscreen, setImgFullscreen] = useState('')
+  var [reviewerName, setReviewerName] = useState('')
+  var [penalizerName, setPenalizerName] = useState('')
 
   useEffect(function () {
     supabase.from('expenses').select('deduction_type').not('deduction_type', 'is', null).neq('deduction_type', '')
@@ -31,6 +33,19 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
         setDeductionTypes(unique)
       })
   }, [])
+
+  useEffect(function () {
+    var ids = []
+    if (exp.reviewed_by) ids.push(exp.reviewed_by)
+    if (exp.penalized_by && ids.indexOf(exp.penalized_by) === -1) ids.push(exp.penalized_by)
+    if (ids.length === 0) { setReviewerName(''); setPenalizerName(''); return }
+    supabase.from('profiles').select('id, name').in('id', ids).then(function (res) {
+      var map = {}
+      ;(res.data || []).forEach(function (p) { map[p.id] = p.name || '' })
+      setReviewerName(exp.reviewed_by ? (map[exp.reviewed_by] || '—') : '')
+      setPenalizerName(exp.penalized_by ? (map[exp.penalized_by] || '—') : '')
+    })
+  }, [exp.id, exp.reviewed_by, exp.penalized_by])
 
   useEffect(function () {
     supabase.from('expense_allocations')
@@ -276,6 +291,16 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
           )}
           {exp.penalty_paise > 0 && (
             <p className="text-sm font-bold text-red-700 mt-1">Deduction: {formatPoints(exp.penalty_paise)}</p>
+          )}
+          {exp.status === 'deducted' && penalizerName && (
+            <p className="text-[11px] text-red-500 mt-1">
+              By <span className="font-semibold">{penalizerName}</span>{exp.penalized_at ? ' · ' + formatDate(exp.penalized_at) : ''}
+            </p>
+          )}
+          {exp.status === 'flagged' && reviewerName && (
+            <p className="text-[11px] text-amber-600 mt-1">
+              By <span className="font-semibold">{reviewerName}</span>{exp.reviewed_at ? ' · ' + formatDate(exp.reviewed_at) : ''}
+            </p>
           )}
           {exp.status === 'flagged' && (
             <p className="text-[11px] text-amber-500 mt-1">Wallet refunded. Edit and resubmit, or delete this expense.</p>
