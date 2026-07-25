@@ -24,7 +24,9 @@ function makeEntry() {
     recording: false,
     isItemPurchase: false,
     items: [makeItem()],
-    paymentCreditRupees: ''  // vendor-credit portion (rupees). Cash = amount - credit.
+    paymentCreditRupees: '',  // vendor-credit portion (rupees). Cash = amount - credit.
+    paymentCreditMode: '',    // 'cash' | 'bank' — required when creditRupees > 0
+    paymentDueDate: ''        // ISO date — required when creditRupees > 0
   }
 }
 
@@ -145,7 +147,9 @@ function hydrateEntry(exp) {
     recording: false,
     isItemPurchase: isItemP,
     items: isItemP && itemsFromMeta.length > 0 ? itemsFromMeta : [makeItem()],
-    paymentCreditRupees: exp.payment_credit_paise ? String(exp.payment_credit_paise / 100) : ''
+    paymentCreditRupees: exp.payment_credit_paise ? String(exp.payment_credit_paise / 100) : '',
+    paymentCreditMode: exp.payment_credit_mode || '',
+    paymentDueDate: exp.due_date || ''
   }
 }
 
@@ -787,6 +791,11 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
       }
       var hasExistingReceipt = isEditing && existingReceipts.some(function (p) { return removedReceipts.indexOf(p) === -1 })
       if (e.receiptFiles.length === 0 && !e.audioBlob && !hasExistingReceipt) return 'Entry ' + (i + 1) + ': Receipt image or voice note is required'
+      var _entrySplit = getEntrySplit(e)
+      if (_entrySplit.creditPaise > 0) {
+        if (!e.paymentCreditMode) return 'Entry ' + (i + 1) + ': Select cash or bank for credit payment'
+        if (!e.paymentDueDate) return 'Entry ' + (i + 1) + ': Payment due date is required for credit'
+      }
     }
     // Hard block: total WALLET SPEND across all entries must not exceed wallet balance.
     // Credit-mode entries only spend cash + tax from wallet; the credit portion is owed
@@ -1011,6 +1020,8 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
             tax_paise: e.taxAmount ? Math.round(Number(e.taxAmount) * 100) : 0,
             payment_cash_paise: _split.cashPaise,
             payment_credit_paise: _split.creditPaise,
+            payment_credit_mode: _split.creditPaise > 0 ? (e.paymentCreditMode || null) : null,
+            due_date: _split.creditPaise > 0 ? (e.paymentDueDate || null) : null,
             description: e.description.trim(),
             expense_date: e.expenseDate,
             status: 'recorded',
@@ -1627,6 +1638,47 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                         )}
                       </div>
                     </div>
+                    {split.creditPaise > 0 && (
+                      <div className="pt-2 border-t border-indigo-200 space-y-2">
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">Pay Credit By <span className="text-red-500">*</span></label>
+                          <div className="flex gap-2">
+                            {[{ v: 'cash', label: '💵 Cash' }, { v: 'bank', label: '🏦 Bank' }].map(function (opt) {
+                              var active = entry.paymentCreditMode === opt.v
+                              return (
+                                <button key={opt.v} type="button"
+                                  onClick={function () {
+                                    setEntries(function (prev) {
+                                      return prev.map(function (en, ei) {
+                                        return ei === idx ? Object.assign({}, en, { paymentCreditMode: opt.v }) : en
+                                      })
+                                    })
+                                  }}
+                                  className={"flex-1 px-3 py-2 rounded-lg text-sm font-semibold border transition-colors " + (active ? "bg-indigo-600 text-white border-indigo-600" : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50")}>
+                                  {opt.label}
+                                </button>
+                              )
+                            })}
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">Payment Due Date <span className="text-red-500">*</span></label>
+                          <input type="date"
+                            value={entry.paymentDueDate}
+                            min={entry.expenseDate}
+                            onChange={function (ev) {
+                              var v = ev.target.value
+                              setEntries(function (prev) {
+                                return prev.map(function (en, ei) {
+                                  return ei === idx ? Object.assign({}, en, { paymentDueDate: v }) : en
+                                })
+                              })
+                            }}
+                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-indigo-300"
+                            style={{ fontSize: '16px' }} />
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )
               })()}

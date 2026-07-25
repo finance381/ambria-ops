@@ -75,14 +75,12 @@ function VendorLedger({ profile }) {
   var [payDate, setPayDate] = useState(new Date().toISOString().split('T')[0])
   var [paySaving, setPaySaving] = useState(false)
   var [payError, setPayError] = useState('')
+  var [payMode, setPayMode] = useState('')
 
   function payVendor() {
     if (!selectedVendor) return
-    var running = 0
-    entries.forEach(function (e) {
-      if (!e.deleted_at) running += (e.credit_paise || 0) - (e.debit_paise || 0)
-    })
-    setPayAmount(running > 0 ? String(running / 100) : '')
+    setPayAmount('')
+    setPayMode('')
     setPayDescription('Payment to ' + (selectedVendor.vendor_name || ''))
     setPayDate(new Date().toISOString().split('T')[0])
     setPayError('')
@@ -91,6 +89,7 @@ function VendorLedger({ profile }) {
 
   async function submitPayment() {
     if (paySaving) return
+    if (!payMode) { setPayError('Select cash or bank'); return }
     var amtR = Number(payAmount || 0)
     if (!isFinite(amtR) || amtR <= 0) { setPayError('Enter a valid amount'); return }
     setPaySaving(true)
@@ -99,7 +98,8 @@ function VendorLedger({ profile }) {
       p_vendor_id: selectedVendor.vendor_id,
       p_amount_paise: Math.round(amtR * 100),
       p_description: (payDescription || '').trim() || null,
-      p_entry_date: payDate
+      p_entry_date: payDate,
+      p_mode: payMode
     })
     if (error) {
       setPayError(error.message || 'Payment failed')
@@ -142,16 +142,37 @@ function VendorLedger({ profile }) {
     var totalOutstanding = vendors
       .filter(function (v) { return v.vendor_active })
       .reduce(function (s, v) { return s + (v.balance_paise || 0) }, 0)
+    var totalCash = vendors
+      .filter(function (v) { return v.vendor_active })
+      .reduce(function (s, v) { return s + (v.cash_balance_paise || 0) }, 0)
+    var totalBank = vendors
+      .filter(function (v) { return v.vendor_active })
+      .reduce(function (s, v) { return s + (v.bank_balance_paise || 0) }, 0)
     var vendorsWithBalance = vendors.filter(function (v) { return v.vendor_active && (v.balance_paise || 0) !== 0 }).length
+    var overdueVendors = vendors.filter(function (v) { return v.vendor_active && (v.overdue_count || 0) > 0 })
 
     return (
       <div className="space-y-4">
+        {/* Overdue banner */}
+        {overdueVendors.length > 0 && (
+          <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-center gap-2">
+            <span className="text-lg">⚠</span>
+            <p className="text-sm text-red-700 font-medium">
+              {overdueVendors.length} vendor{overdueVendors.length !== 1 ? 's' : ''} with overdue payments
+            </p>
+          </div>
+        )}
+
         {/* Summary card */}
         <div className="bg-white border border-gray-200 rounded-xl p-4">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-[11px] font-bold uppercase tracking-wider text-gray-500 mb-0.5">Total Outstanding</p>
               <p className="text-2xl font-bold text-amber-800">{formatPoints(totalOutstanding)}</p>
+              <div className="flex gap-3 mt-1.5 text-[11px]">
+                <span className="text-gray-600">💵 Cash: <span className="font-semibold text-gray-900">{formatPoints(totalCash)}</span></span>
+                <span className="text-gray-600">🏦 Bank: <span className="font-semibold text-gray-900">{formatPoints(totalBank)}</span></span>
+              </div>
             </div>
             <div className="text-right">
               <p className="text-[11px] text-gray-500">Vendors with balance</p>
@@ -196,20 +217,35 @@ function VendorLedger({ profile }) {
               var bal = v.balance_paise || 0
               var balColor = bal > 0 ? 'text-amber-800' : bal < 0 ? 'text-red-700' : 'text-gray-500'
               var balBg = bal > 0 ? 'bg-amber-50 border-amber-200' : bal < 0 ? 'bg-red-50 border-red-200' : 'bg-gray-50 border-gray-200'
+              var cashBal = v.cash_balance_paise || 0
+              var bankBal = v.bank_balance_paise || 0
+              var isOverdue = (v.overdue_count || 0) > 0
               return (
                 <button key={v.vendor_id} onClick={function () { openVendor(v) }}
-                  className={"text-left border rounded-xl p-3 hover:shadow-sm active:scale-[0.99] transition-all " + balBg}>
+                  className={"text-left border rounded-xl p-3 hover:shadow-sm active:scale-[0.99] transition-all " + balBg + (isOverdue ? " ring-2 ring-red-300" : "")}>
                   <div className="flex items-start justify-between gap-2 mb-2">
                     <p className="text-sm font-bold text-gray-900 truncate flex-1">{v.vendor_name || '—'}</p>
-                    {v.vendor_status === 'incomplete' && (
-                      <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded flex-shrink-0">Incomplete</span>
-                    )}
+                    <div className="flex gap-1 flex-shrink-0">
+                      {isOverdue && (
+                        <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 bg-red-100 text-red-700 rounded">⚠ Overdue</span>
+                      )}
+                      {v.vendor_status === 'incomplete' && (
+                        <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded">Incomplete</span>
+                      )}
+                    </div>
                   </div>
                   <p className={"text-lg font-bold " + balColor}>{formatPoints(bal)}</p>
+                  {(cashBal !== 0 || bankBal !== 0) && (
+                    <div className="flex gap-2 mt-1 text-[10px] text-gray-600">
+                      {cashBal !== 0 && <span>💵 {formatPoints(cashBal)}</span>}
+                      {bankBal !== 0 && <span>🏦 {formatPoints(bankBal)}</span>}
+                    </div>
+                  )}
                   <p className="text-[11px] text-gray-500 mt-1">
                     {(v.entry_count || 0) > 0
                       ? (v.entry_count + ' entries · last ' + (v.last_entry_date || '—'))
                       : 'No activity'}
+                    {v.earliest_due_date && ' · earliest due ' + v.earliest_due_date}
                   </p>
                 </button>
               )
@@ -262,6 +298,17 @@ function VendorLedger({ profile }) {
         <div className="border-t border-gray-100 pt-3">
           <p className="text-[11px] font-bold uppercase tracking-wider text-gray-500 mb-0.5">Outstanding Balance</p>
           <p className={"text-3xl font-bold " + balColor}>{formatPoints(currentBalance)}</p>
+          {((vs.cash_balance_paise || 0) !== 0 || (vs.bank_balance_paise || 0) !== 0) && (
+            <div className="flex gap-3 mt-2 text-xs">
+              <span className="text-gray-600">💵 Cash: <span className="font-semibold text-gray-900">{formatPoints(vs.cash_balance_paise || 0)}</span></span>
+              <span className="text-gray-600">🏦 Bank: <span className="font-semibold text-gray-900">{formatPoints(vs.bank_balance_paise || 0)}</span></span>
+            </div>
+          )}
+          {(vs.overdue_count || 0) > 0 && (
+            <div className="mt-2 inline-flex items-center gap-1.5 px-2 py-1 bg-red-50 border border-red-200 rounded text-[11px] text-red-700 font-medium">
+              ⚠ {vs.overdue_count} overdue · earliest {vs.earliest_due_date}
+            </div>
+          )}
         </div>
       </div>
 
@@ -290,6 +337,28 @@ function VendorLedger({ profile }) {
             {payError && (
               <div className="p-2 rounded-lg bg-red-50 border border-red-200 text-red-700 text-xs">{payError}</div>
             )}
+
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Pay Via <span className="text-red-500">*</span></label>
+              <div className="flex gap-2">
+                {[{ v: 'cash', label: '💵 Cash', bal: selectedVendor.cash_balance_paise || 0 }, { v: 'bank', label: '🏦 Bank', bal: selectedVendor.bank_balance_paise || 0 }].map(function (opt) {
+                  var active = payMode === opt.v
+                  return (
+                    <button key={opt.v} type="button"
+                      onClick={function () {
+                        setPayMode(opt.v)
+                        if (opt.bal > 0) setPayAmount(String(opt.bal / 100))
+                      }}
+                      className={"flex-1 px-3 py-2 rounded-lg text-sm font-semibold border transition-colors " + (active ? "bg-indigo-600 text-white border-indigo-600" : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50")}>
+                      <div>{opt.label}</div>
+                      <div className={"text-[10px] font-normal mt-0.5 " + (active ? "text-indigo-100" : "text-gray-500")}>
+                        Owed: {(opt.bal / 100).toLocaleString('en-IN', { maximumFractionDigits: 2 })} pts
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
 
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Amount (pts) *</label>
@@ -360,6 +429,27 @@ function VendorLedger({ profile }) {
                     {e.entry_date} · {kind} #{e.ref_id}
                     {isDeleted && ' · deleted'}
                   </p>
+                  {(function () {
+                    var meta = e.metadata || {}
+                    var m = meta.mode
+                    var due = meta.due_date
+                    var isOverdueRow = kind === 'purchase' && due && due < new Date().toISOString().split('T')[0]
+                    if (!m && !due) return null
+                    return (
+                      <div className="flex gap-1.5 mt-1 flex-wrap">
+                        {m && (
+                          <span className="text-[10px] font-semibold px-1.5 py-0.5 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded">
+                            {m === 'cash' ? '💵 Cash' : '🏦 Bank'}
+                          </span>
+                        )}
+                        {due && (
+                          <span className={"text-[10px] font-semibold px-1.5 py-0.5 border rounded " + (isOverdueRow ? "bg-red-50 text-red-700 border-red-200" : "bg-gray-50 text-gray-700 border-gray-200")}>
+                            {isOverdueRow ? '⚠ Due ' : 'Due '}{due}
+                          </span>
+                        )}
+                      </div>
+                    )
+                  })()}
                 </div>
                 <div className="text-right flex-shrink-0">
                   <p className={"text-sm font-bold " + (isCredit ? "text-amber-800" : "text-green-700")}>

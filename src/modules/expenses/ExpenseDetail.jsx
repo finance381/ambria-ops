@@ -164,17 +164,6 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
       penalized_at: new Date().toISOString(),
     }).eq('id', exp.id)
     if (error) { alert('Deduction failed: ' + error.message); setSaving(false); return }
-    if (exp.status === 'recorded') {
-      try {
-        await supabase.rpc('wallet_admin_credit', {
-          p_user_id: exp.user_id,
-          p_amount_paise: exp.amount_paise,
-          p_description: 'Refund: deducted expense #' + exp.id,
-          p_ref_type: 'expense_refund',
-          p_ref_id: String(exp.id),
-        })
-      } catch (_) {}
-    }
     var { error: debitErr } = await supabase.rpc('wallet_admin_debit', {
       p_user_id: exp.user_id,
       p_amount_paise: deductionPaise,
@@ -183,7 +172,7 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
       p_ref_id: String(exp.id),
     })
     if (debitErr) alert('Deduction failed: ' + debitErr.message)
-    try { await logActivity('EXPENSE_DEDUCT', (exp.description || 'Expense') + ' | Refund ' + formatPoints(exp.amount_paise) + ' | Deduction ' + formatPoints(deductionPaise) + ' | ' + rejectReason.trim()) } catch (_) {}
+    try { await logActivity('EXPENSE_DEDUCT', (exp.description || 'Expense') + ' | Deduction ' + formatPoints(deductionPaise) + ' | ' + rejectReason.trim()) } catch (_) {}
     setSaving(false)
     onUpdated()
   }
