@@ -23,7 +23,8 @@ function makeEntry() {
     audioUrl: '',
     recording: false,
     isItemPurchase: false,
-    items: [makeItem()]
+    items: [makeItem()],
+    paymentCreditRupees: ''  // vendor-credit portion (rupees). Cash = amount - credit.
   }
 }
 
@@ -143,7 +144,8 @@ function hydrateEntry(exp) {
     audioUrl: '',
     recording: false,
     isItemPurchase: isItemP,
-    items: isItemP && itemsFromMeta.length > 0 ? itemsFromMeta : [makeItem()]
+    items: isItemP && itemsFromMeta.length > 0 ? itemsFromMeta : [makeItem()],
+    paymentCreditRupees: exp.payment_credit_paise ? String(exp.payment_credit_paise / 100) : ''
   }
 }
 
@@ -232,7 +234,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
     if (source === 'vendors') {
       // Store raw rows — filtered by parent sub-type at render time.
       var { data } = await supabase.from('vendors')
-        .select('id, name, contact, phone, expense_type_ids, expense_sub_type_ids').eq('active', true).order('name')
+        .select('id, name, contact, phone, status, expense_type_ids, expense_sub_type_ids').eq('active', true).order('name')
       items = data || []
     } else if (source === 'job_departments') {
       // Store raw rows — filtered by field.allowed_dept_ids at render time.
@@ -560,6 +562,102 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
     setEntries(updated)
   }
 
+  // Payment split model:
+  //   amount_paise = payment_cash_paise + payment_credit_paise   (invariant)
+  //   Ledger L1 credit = amount_paise (only when credit > 0 AND vendor picked)
+  //   Ledger L2 debit  = payment_cash_paise
+  //   Wallet debit for credit-mode = cash + tax; for all-cash = amount (legacy)
+  function getEntrySplit(e) {
+    var grossPaise = e.isItemPurchase
+      ? Math.round(computeItemsTotal(e) * 100)
+      : Math.round(Number(e.amount || 0) * 100)
+    var taxPaise = e.taxAmount ? Math.round(Number(e.taxAmount) * 100) : 0
+    var st = expenseSubTypes.find(function (s) { return s.id === Number(e.expenseSubTypeId) })
+    var vf = (st && st.extra_fields)
+      ? st.extra_fields.find(function (f) { return f.type === 'lookup' && f.source === 'vendors' })
+      : null
+    var vendorPicked = !!(vf && e.fieldValues[vf.key])
+    var creditPaise = 0
+    if (vendorPicked) {
+      var rawCredit = Math.round(Number(e.paymentCreditRupees || 0) * 100)
+      creditPaise = Math.max(0, Math.min(grossPaise, rawCredit))
+    }
+    var cashPaise = grossPaise - creditPaise
+    var walletSpendPaise = creditPaise > 0 ? (cashPaise + taxPaise) : (grossPaise + taxPaise)
+    return {
+      grossPaise: grossPaise,
+      taxPaise: taxPaise,
+      cashPaise: cashPaise,
+      creditPaise: creditPaise,
+      walletSpendPaise: walletSpendPaise,
+      vendorPicked: vendorPicked,
+      vendorFieldKey: vf ? vf.key : null
+    }
+  }
+
+  function setPaymentCredit(idx, valRupees) {
+    var updated = entries.map(function (e, i) {
+      if (i !== idx) return e
+      return Object.assign({}, e, { paymentCreditRupees: valRupees })
+    })
+    setEntries(updated)
+  }
+
+  function setPaymentCash(idx, valRupees) {
+    // Editing cash → credit = amount - cash
+    var e = entries[idx]
+    if (!e) return
+    var amtRupees = e.isItemPurchase ? computeItemsTotal(e) : Number(e.amount || 0)
+    var cashN = Number(valRupees || 0)
+    if (!isFinite(cashN) || cashN < 0) cashN = 0
+    if (cashN > amtRupees) cashN = amtRupees
+    var creditN = Math.max(0, amtRupees - cashN)
+    var updated = entries.map(function (en, i) {
+      if (i !== idx) return en
+      return Object.assign({}, en, { paymentCreditRupees: creditN ? String(creditN) : '' })
+    })
+    setEntries(updated)
+  }
+
+  // Vendor stub auto-create: insert a minimal 'incomplete' vendor row and
+  // wire its ID into the lookup cache + calling field. Fuzzy-match skipped
+  // for now (v65 decision — start simple, upgrade if false positives seen).
+  async function addVendorStub(typedRaw, entry, onChange) {
+    var typed = (typedRaw || '').trim()
+    if (!typed) return
+    var normalized = typed.toLowerCase().replace(/\s+/g, ' ').replace(/s$/, '')
+    var cached = lookupCache.vendors || []
+    // Exact-normalized match against active vendors → silently reuse
+    var hit = cached.find(function (v) {
+      var vn = (v.name || '').toLowerCase().replace(/\s+/g, ' ').replace(/s$/, '')
+      return vn === normalized
+    })
+    if (hit) { onChange(String(hit.id)); return }
+    // Tag stub to current sub-type so it appears in future picks for this sub-type
+    var subTypeIdNum = entry ? Number(entry.expenseSubTypeId) : 0
+    var payload = {
+      name: typed,
+      status: 'incomplete',
+      active: true,
+      created_by: profile.id,
+      expense_sub_type_ids: subTypeIdNum ? [subTypeIdNum] : []
+    }
+    var { data, error } = await supabase.from('vendors').insert(payload)
+      .select('id, name, contact, phone, status, expense_type_ids, expense_sub_type_ids').single()
+    if (error || !data) {
+      try { logActivity('VENDOR_STUB_FAIL', typed + ' | ' + (error && error.message || '')) } catch (_) {}
+      alert('Could not add vendor: ' + (error && error.message || 'unknown error'))
+      return
+    }
+    setLookupCache(function (prev) {
+      var next = Object.assign({}, prev)
+      next.vendors = (prev.vendors || []).concat([data])
+      return next
+    })
+    onChange(String(data.id))
+    try { logActivity('VENDOR_STUB_CREATE', data.name + ' (id ' + data.id + ')') } catch (_) {}
+  }
+
   function renderDynamicField(field, value, onChange, entry) {
     var cls = 'w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-300 focus:border-amber-400'
     var sty = { fontSize: '16px' }
@@ -578,8 +676,8 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
           var tIds = v.expense_type_ids || []
           return stIds.indexOf(subTypeIdNum) !== -1 || (parentTypeId && tIds.indexOf(parentTypeId) !== -1)
         }).map(function (v) {
-          var label = v.contact ? v.name + ' — ' + v.contact : v.name
-          return { label: label, value: v.name }
+          var suffix = v.status === 'incomplete' ? ' · incomplete' : (v.contact ? ' — ' + v.contact : '')
+          return { label: v.name + suffix, value: String(v.id) }
         })
       } else if (field.source === 'job_departments') {
         // Filter to admin-configured allowed depts (empty list ⇒ show all).
@@ -592,6 +690,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
       } else {
         items = lookupCache[field.source] || []
       }
+      var isVendors = field.source === 'vendors'
       return (
         <SearchDropdown
           key={field.key}
@@ -600,6 +699,8 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
           value={value || ''}
           onChange={onChange}
           placeholder={'Select ' + field.label + '...'}
+          allowAdd={isVendors}
+          onAdd={isVendors ? function (typed) { return addVendorStub(typed, entry, onChange) } : undefined}
         />
       )
     }
@@ -687,20 +788,25 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
       var hasExistingReceipt = isEditing && existingReceipts.some(function (p) { return removedReceipts.indexOf(p) === -1 })
       if (e.receiptFiles.length === 0 && !e.audioBlob && !hasExistingReceipt) return 'Entry ' + (i + 1) + ': Receipt image or voice note is required'
     }
-    // Hard block: total across all entries must not exceed wallet balance
+    // Hard block: total WALLET SPEND across all entries must not exceed wallet balance.
+    // Credit-mode entries only spend cash + tax from wallet; the credit portion is owed
+    // to the vendor and does not touch the wallet.
     if (walletBalance != null) {
-      var totalPaise = 0
+      var totalWalletSpend = 0
       for (var k = 0; k < entries.length; k++) {
-        var en = entries[k]
-        var enPaise = en.isItemPurchase
-          ? Math.round(computeItemsTotal(en) * 100)
-          : Math.round(Number(en.amount || 0) * 100)
-        var enTax = en.taxAmount ? Math.round(Number(en.taxAmount) * 100) : 0
-        totalPaise += enPaise + enTax
+        totalWalletSpend += getEntrySplit(entries[k]).walletSpendPaise
       }
-      var effAvail = walletBalance + (editExp ? (editExp.amount_paise || 0) : 0)
-      if (totalPaise > effAvail) {
-        var shortfallPts = ((totalPaise - effAvail) / 100).toLocaleString('en-IN', { maximumFractionDigits: 2 })
+      // On edit, refund what the original expense actually debited so the user
+      // can save any valid new split (all-cash, all-credit, or a different mix).
+      var oldSpend = 0
+      if (editExp) {
+        oldSpend = (editExp.payment_credit_paise || 0) > 0
+          ? (editExp.payment_cash_paise || 0) + (editExp.tax_paise || 0)
+          : (editExp.amount_paise || 0)
+      }
+      var effAvail = walletBalance + oldSpend
+      if (totalWalletSpend > effAvail) {
+        var shortfallPts = ((totalWalletSpend - effAvail) / 100).toLocaleString('en-IN', { maximumFractionDigits: 2 })
         var balancePts = (effAvail / 100).toLocaleString('en-IN', { maximumFractionDigits: 2 })
         return 'Insufficient wallet balance. Available: ' + balancePts + ' pts. Short by ' + shortfallPts + ' pts.'
       }
@@ -878,6 +984,24 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
               }
             })
           }
+          // Resolve legacy vendor_name column from the selected vendor ID
+          // (metadata[<vendor field key>] now stores the ID string, not the name).
+          var vendorLegacyName = null
+          var subTypeRow = expenseSubTypes.find(function (s) { return s.id === Number(e.expenseSubTypeId) })
+          if (subTypeRow && subTypeRow.extra_fields) {
+            var vendorField = subTypeRow.extra_fields.find(function (f) {
+              return f.type === 'lookup' && f.source === 'vendors'
+            })
+            if (vendorField) {
+              var vId = e.fieldValues[vendorField.key]
+              if (vId) {
+                var vRow = (lookupCache.vendors || []).find(function (v) { return String(v.id) === String(vId) })
+                if (vRow) vendorLegacyName = vRow.name
+              }
+            }
+          }
+          // Payment split: cash + credit = amount (invariant, in paise)
+          var _split = getEntrySplit(e)
           var payload = {
             user_id: profile.id,
             batch_id: batchId,
@@ -885,12 +1009,14 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
             expense_sub_type_id: Number(e.expenseSubTypeId),
             amount_paise: paise,
             tax_paise: e.taxAmount ? Math.round(Number(e.taxAmount) * 100) : 0,
+            payment_cash_paise: _split.cashPaise,
+            payment_credit_paise: _split.creditPaise,
             description: e.description.trim(),
             expense_date: e.expenseDate,
             status: 'recorded',
             event_id: eventId ? Number(eventId) : null,
             metadata: meta,
-            vendor_name: e.fieldValues.vendor_name || null,
+            vendor_name: vendorLegacyName,
             travel_from: e.fieldValues.travel_from || null,
             travel_to: e.fieldValues.travel_to || null,
             travel_mode: e.fieldValues.travel_mode || null,
@@ -963,12 +1089,20 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
           if (allocRows.length > 0) await supabase.from('expense_allocations').insert(allocRows)
 
           try {
-            await supabase.rpc('wallet_self_debit', {
-              p_amount_paise: paise,
-              p_description: 'Expense: ' + e.description.trim().slice(0, 50),
-              p_ref_type: 'expense',
-              p_ref_id: String(exp.id),
-            })
+            // Credit-mode: wallet only debits cash + tax (credit portion is owed to vendor,
+            // tracked in ledger_entries by the DB trigger).
+            // All-cash mode: preserve legacy behaviour (amount only, tax not debited — pre-existing).
+            var walletDebitPaise = _split.creditPaise > 0
+              ? _split.cashPaise + _split.taxPaise
+              : paise
+            if (walletDebitPaise > 0) {
+              await supabase.rpc('wallet_self_debit', {
+                p_amount_paise: walletDebitPaise,
+                p_description: 'Expense: ' + e.description.trim().slice(0, 50),
+                p_ref_type: 'expense',
+                p_ref_id: String(exp.id),
+              })
+            }
           } catch (_) {}
 
           try { await logActivity('EXPENSE_SUBMIT', (paise / 100) + ' pts | ' + e.description.trim().slice(0, 50)) } catch (_) {}
@@ -1446,6 +1580,57 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                 })()}
               </div>
 
+              {/* Payment Method — only when vendor lookup field exists AND a vendor is picked */}
+              {(function () {
+                var split = getEntrySplit(entry)
+                if (!split.vendorPicked) return null
+                var amtRupees = entry.isItemPurchase ? computeItemsTotal(entry) : Number(entry.amount || 0)
+                if (amtRupees <= 0) return null
+                var cashRupees = (split.cashPaise / 100)
+                var creditRupees = (split.creditPaise / 100)
+                var vendorRow = (lookupCache.vendors || []).find(function (v) {
+                  return String(v.id) === String(entry.fieldValues[split.vendorFieldKey])
+                })
+                var vendorLabel = vendorRow ? vendorRow.name : ''
+                var wOver = walletBalance != null && (split.cashPaise + split.taxPaise) > walletBalance
+                return (
+                  <div className="border border-indigo-200 rounded-lg bg-indigo-50/40 p-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-semibold text-indigo-700">Payment Method</span>
+                      <span className="text-[11px] text-gray-500">Total: {amtRupees.toLocaleString('en-IN', { maximumFractionDigits: 2 })} pts</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">Cash from Wallet</label>
+                        <input type="number" inputMode="decimal"
+                          value={cashRupees ? String(cashRupees) : (split.creditPaise === 0 ? String(amtRupees) : '0')}
+                          onChange={function (ev) { setPaymentCash(idx, ev.target.value) }}
+                          min="0" step="any"
+                          className={"w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-indigo-300 bg-white " + (wOver ? "border-red-300" : "border-gray-200")}
+                          style={{ fontSize: '16px' }} />
+                        {walletBalance != null && (
+                          <p className={"text-[11px] mt-1 " + (wOver ? "text-red-600 font-medium" : "text-gray-500")}>
+                            Wallet: {(walletBalance / 100).toLocaleString('en-IN', { maximumFractionDigits: 2 })} pts
+                          </p>
+                        )}
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">Credit to Vendor</label>
+                        <input type="number" inputMode="decimal"
+                          value={entry.paymentCreditRupees}
+                          onChange={function (ev) { setPaymentCredit(idx, ev.target.value) }}
+                          min="0" step="any" placeholder="0"
+                          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-indigo-300"
+                          style={{ fontSize: '16px' }} />
+                        {vendorLabel && (
+                          <p className="text-[11px] text-indigo-600 mt-1 truncate">→ {vendorLabel}</p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )
+              })()}
+
               {/* Receipt */}
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Receipt <span className="text-red-500">*</span></label>
@@ -1566,18 +1751,19 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
       {(function () {
         if (walletBalance == null) return null
         if (isAdminEdit) return null
-        var totalPaise = 0
+        var totalWalletSpend = 0
         for (var i = 0; i < entries.length; i++) {
-          var e = entries[i]
-          var paise = e.isItemPurchase
-            ? Math.round(computeItemsTotal(e) * 100)
-            : Math.round(Number(e.amount || 0) * 100)
-          var taxP = e.taxAmount ? Math.round(Number(e.taxAmount) * 100) : 0
-          totalPaise += paise + taxP
+          totalWalletSpend += getEntrySplit(entries[i]).walletSpendPaise
         }
-        var effAvail = walletBalance + (editExp ? (editExp.amount_paise || 0) : 0)
-        if (totalPaise <= effAvail) return null
-        var shortPts = ((totalPaise - effAvail) / 100).toLocaleString('en-IN', { maximumFractionDigits: 2 })
+        var oldSpend = 0
+        if (editExp) {
+          oldSpend = (editExp.payment_credit_paise || 0) > 0
+            ? (editExp.payment_cash_paise || 0) + (editExp.tax_paise || 0)
+            : (editExp.amount_paise || 0)
+        }
+        var effAvail = walletBalance + oldSpend
+        if (totalWalletSpend <= effAvail) return null
+        var shortPts = ((totalWalletSpend - effAvail) / 100).toLocaleString('en-IN', { maximumFractionDigits: 2 })
         var availPts = (effAvail / 100).toLocaleString('en-IN', { maximumFractionDigits: 2 })
         return (
           <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">

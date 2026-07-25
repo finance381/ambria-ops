@@ -12,6 +12,7 @@ import Requisitions from '../../modules/requisitions/Requisitions'
 import Purchase from '../../modules/purchase/Purchase'
 import Expenses from '../../modules/expenses/Expenses'
 import Ledgers from '../../modules/expenses/Ledgers'
+import VendorLedger from '../../modules/expenses/VendorLedger'
 import Wallet from '../../modules/expenses/Wallet'
 import ProductionOrders from '../../modules/production/ProductionOrders'
 import Boxes from '../../modules/boxes/Boxes'
@@ -67,6 +68,7 @@ var GROUPS = [
       { key: 'feature_wallet', label: 'Wallet', icon: '👛', tab: 'wallet' },
       { key: 'feature_expenses', label: 'PC & Direct Expenses', icon: '💰', tab: 'expenses' },
       { key: 'feature_ledger_view', label: 'Expense Ledger', icon: '📒', tab: 'ledgers' },
+      { key: 'feature_vendor_ledger', label: 'Vendor Ledger', icon: '🏭', tab: 'vendor_ledger' },
     ]
   },
   {
@@ -521,6 +523,9 @@ function Shell({ profile, onSignOut }) {
         )}
         {tab === 'ledgers' && (
           <Ledgers profile={profile} />
+        )}
+        {tab === 'vendor_ledger' && (
+          <VendorLedger profile={profile} />
         )}
         {tab === 'purchase' && (
           <Purchase profile={profile} mode="purchase" />

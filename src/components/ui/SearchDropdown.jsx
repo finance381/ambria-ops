@@ -51,9 +51,14 @@ function SearchDropdown({ items, value, onChange, onAdd, onInputChange, placehol
     setHlIdx(-1)
   }
 
-  function handleAdd() {
-    if (onAdd && query.trim()) {
-      onAdd(query.trim())
+  async function handleAdd() {
+    if (!onAdd || !query.trim()) return
+    var result = onAdd(query.trim())
+    // Async onAdd (e.g. DB insert): wait then close so parent-driven value sync fires
+    if (result && typeof result.then === 'function') {
+      try { await result } catch (_) {}
+      isFocused.current = false
+      setOpen(false)
     }
   }
 

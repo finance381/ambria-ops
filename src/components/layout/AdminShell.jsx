@@ -10,6 +10,7 @@ var Users = lazy(function () { return import('../../modules/users/Users') })
 var ActivityLogs = lazy(function () { return import('../../modules/logs/ActivityLogs') })
 var Expenses = lazy(function () { return import('../../modules/expenses/Expenses') })
 var Ledgers = lazy(function () { return import('../../modules/expenses/Ledgers') })
+var VendorLedger = lazy(function () { return import('../../modules/expenses/VendorLedger') })
 var Wallet = lazy(function () { return import('../../modules/expenses/Wallet') })
 var Dashboard = lazy(function () { return import('../../modules/dashboard/Dashboard') })
 var Boxes = lazy(function () { return import('../../modules/boxes/Boxes') })
@@ -75,6 +76,7 @@ var SUB_TAB_CONFIG = {
     { key: 'wallet', label: 'Wallet', component: Wallet },
     { key: 'expenses', label: 'Expenses', component: Expenses },
     { key: 'ledgers', label: 'Expense Ledger', component: Ledgers },
+    { key: 'vendor_ledger', label: 'Vendor Ledger', component: VendorLedger },
   ],
 }
 
