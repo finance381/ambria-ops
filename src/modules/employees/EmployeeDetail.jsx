@@ -27,7 +27,37 @@ function EmployeeDetail({ employeeId, jobDepartments, managers, profile, onEdit,
   var [docLoading, setDocLoading] = useState(null) // 'aadhaar' | 'pan'
   var [photoUrl, setPhotoUrl] = useState('')
 
+  // Self-service salary state (loaded only when viewer === owner)
+  var [mySalaryRollup, setMySalaryRollup] = useState(null)
+  var [mySalaryEntries, setMySalaryEntries] = useState([])
+  var [salaryLoading, setSalaryLoading] = useState(false)
+
   useEffect(function () { loadRow() }, [employeeId])
+
+  var isSelfView = !!(profile && row && row.profile_id === profile.id)
+
+  useEffect(function () {
+    if (!isSelfView) return
+    loadMySalary()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSelfView])
+
+  async function loadMySalary() {
+    setSalaryLoading(true)
+    var [rollupRes, entriesRes] = await Promise.all([
+      supabase.from('v_employee_ledger').select('*').eq('employee_id', employeeId).maybeSingle(),
+      supabase.from('ledger_entries').select('*')
+        .eq('ledger_type', 'user_salary')
+        .eq('party_uuid', employeeId)
+        .is('deleted_at', null)
+        .order('entry_date', { ascending: false })
+        .order('id', { ascending: false })
+        .limit(50)
+    ])
+    if (!rollupRes.error) setMySalaryRollup(rollupRes.data)
+    if (!entriesRes.error) setMySalaryEntries(entriesRes.data || [])
+    setSalaryLoading(false)
+  }
 
   async function loadRow() {
     setLoading(true); setError('')
@@ -167,6 +197,80 @@ function EmployeeDetail({ employeeId, jobDepartments, managers, profile, onEdit,
             })}
           </div>
         </Section>
+      )}
+
+      {/* Self-service Salary Ledger — only visible to the employee themselves */}
+      {isSelfView && (
+        <div className="border border-indigo-200 bg-indigo-50/40 rounded-lg p-3 space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-[11px] font-bold text-indigo-700 uppercase tracking-wider">My Salary</div>
+              <p className="text-[10px] text-gray-500 mt-0.5">Visible only to you.</p>
+            </div>
+            {salaryLoading && <span className="text-[10px] text-gray-400">Loading…</span>}
+          </div>
+
+          {mySalaryRollup && (
+            <div className="bg-white border border-indigo-100 rounded-md p-3">
+              <div className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold">Outstanding to you</div>
+              <div className={"text-2xl font-bold mt-0.5 " +
+                ((mySalaryRollup.balance_paise || 0) > 0 ? "text-amber-800"
+                 : (mySalaryRollup.balance_paise || 0) < 0 ? "text-red-700" : "text-gray-500")}>
+                {rupees(mySalaryRollup.balance_paise) || '₹ 0'}
+              </div>
+              {((mySalaryRollup.cash_balance_paise || 0) !== 0 || (mySalaryRollup.bank_balance_paise || 0) !== 0) && (
+                <div className="flex gap-3 mt-1.5 text-[11px] flex-wrap">
+                  <span className="text-gray-600">💵 Cash: <span className="font-semibold text-gray-900">{rupees(mySalaryRollup.cash_balance_paise) || '₹ 0'}</span></span>
+                  <span className="text-gray-600">🏦 Bank: <span className="font-semibold text-gray-900">{rupees(mySalaryRollup.bank_balance_paise) || '₹ 0'}</span></span>
+                </div>
+              )}
+              {(mySalaryRollup.unpaid_since_days || 0) >= 30 && (
+                <div className="mt-2 inline-flex items-center gap-1.5 px-2 py-0.5 bg-amber-50 border border-amber-200 rounded text-[10px] text-amber-700 font-medium">
+                  ⏳ Unpaid for {mySalaryRollup.unpaid_since_days} days
+                </div>
+              )}
+            </div>
+          )}
+
+          {mySalaryEntries.length === 0 && !salaryLoading ? (
+            <p className="text-[11px] text-gray-500 text-center py-3">No salary entries yet.</p>
+          ) : (
+            <div className="bg-white border border-indigo-100 rounded-md overflow-hidden">
+              {mySalaryEntries.map(function (e, idx) {
+                var isCredit = (e.credit_paise || 0) > 0
+                var amt = isCredit ? (e.credit_paise || 0) : (e.debit_paise || 0)
+                var meta = e.metadata || {}
+                var kind = meta.kind || e.ref_type
+                return (
+                  <div key={e.id}
+                    className={"flex items-start gap-2 px-2.5 py-2 " +
+                      (idx < mySalaryEntries.length - 1 ? "border-b border-gray-100" : "")}>
+                    <div className={"w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0 " +
+                      (isCredit ? "bg-amber-500" : "bg-green-500")}></div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium text-gray-800 truncate">
+                        {e.description || (isCredit ? 'Salary credit' : 'Salary payment')}
+                      </p>
+                      <p className="text-[10px] text-gray-500 mt-0.5">
+                        {e.entry_date} · {kind}
+                        {meta.salary_month ? ' · ' + meta.salary_month : ''}
+                        {meta.reason ? ' · ' + meta.reason : ''}
+                      </p>
+                      {meta.mode && (
+                        <span className="inline-block mt-1 text-[9px] font-semibold px-1.5 py-0.5 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded">
+                          {meta.mode === 'cash' ? '💵 Cash' : '🏦 Bank'}
+                        </span>
+                      )}
+                    </div>
+                    <p className={"text-xs font-bold flex-shrink-0 " + (isCredit ? "text-amber-800" : "text-green-700")}>
+                      {isCredit ? '+' : '−'}{rupees(amt)}
+                    </p>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
       )}
 
       {/* Sensitive gate */}

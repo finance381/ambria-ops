@@ -26,6 +26,8 @@ var Analytics = lazy(function () { return import('../../modules/analytics/Analyt
 var Overview = lazy(function () { return import('../../modules/overview/Overview') })
 var JobDepartments = lazy(function () { return import('../../modules/employees/JobDepartments') })
 var Employees = lazy(function () { return import('../../modules/employees/Employees') })
+var SalaryLedger = lazy(function () { return import('../../modules/employees/SalaryLedger') })
+var SalaryPayouts = lazy(function () { return import('../../modules/expenses/SalaryPayouts') })
 
 function ExpenseTypesMaster(props) {
   return <Expenses profile={props.profile} masterMode={true} />
@@ -66,6 +68,7 @@ var SUB_TAB_CONFIG = {
   users: [
     { key: 'users', label: 'Users', component: Users },
     { key: 'employees', label: 'Employees', component: Employees },
+    { key: 'salary_ledger', label: 'Salary Ledger', component: SalaryLedger },
     { key: 'logs', label: 'Activity Logs', component: ActivityLogs },
   ],
   procurement: [
@@ -78,6 +81,7 @@ var SUB_TAB_CONFIG = {
     { key: 'expenses', label: 'Expenses', component: Expenses },
     { key: 'ledgers', label: 'Expense Ledger', component: Ledgers },
     { key: 'payments', label: 'Payments', component: Payments },
+    { key: 'salary_payouts', label: 'Salary Payouts', component: SalaryPayouts },
     { key: 'vendor_ledger', label: 'Vendor Ledger', component: VendorLedger },
   ],
 }

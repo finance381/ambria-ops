@@ -29,6 +29,7 @@ var PERM_GROUPS = [
     { key: 'feature_ledger_view', label: 'Expense Ledger', grants: ['feature_ledger_view'] },
     { key: 'feature_payments', label: 'Payments', grants: ['feature_payments'] },
     { key: 'feature_vendor_ledger', label: 'Vendor Ledger', grants: ['feature_vendor_ledger'] },
+    { key: 'feature_salary_pay', label: 'Salary Payouts', grants: ['feature_salary_pay'], note: 'Also grant "See salaries" in HR → Employees' },
   ]},
   { group: 'Operations', icon: '🚚', children: [
     { key: 'feature_purchase', label: 'Purchase Orders', grants: ['feature_purchase'] },
@@ -39,6 +40,7 @@ var PERM_GROUPS = [
   ]},
   { group: 'HR', icon: '👔', children: [
     { key: 'feature_employees', label: 'Employees', grants: ['feature_employees'], optional: [{ key: 'feature_employees_salary', label: 'See salaries' }] },
+    { key: 'feature_salary_ledger', label: 'Salary Ledger', grants: ['feature_salary_ledger'], note: 'Requires "See salaries" toggle above' },
   ]},
   { group: 'Admin', icon: '⚙️', children: [
     { key: 'feature_admin', label: 'Admin Panel', grants: ['feature_admin'], optional: [{ key: 'admin_masters', label: 'Manage masters' }, { key: 'admin_users', label: 'Manage users' }, { key: 'admin_approve', label: 'Approve items' }] },
@@ -1098,7 +1100,12 @@ function Users() {
                                     })
                                   }
                                 }} className="w-full flex items-center justify-between py-2 px-2 rounded-lg hover:bg-gray-50">
-                                  <span className={"text-[13px] font-medium " + (isOn ? "text-indigo-700" : "text-gray-500")}>{feat.label}</span>
+                                  <div className="flex-1 text-left">
+                                    <div className={"text-[13px] font-medium " + (isOn ? "text-indigo-700" : "text-gray-500")}>{feat.label}</div>
+                                    {feat.note && (
+                                      <div className="text-[10px] text-amber-600 mt-0.5">ℹ️ {feat.note}</div>
+                                    )}
+                                  </div>
                                   <div className={"w-8 h-5 rounded-full transition-colors relative " + (isOn ? "bg-indigo-500" : "bg-gray-300")}>
                                     <div className={"absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform " + (isOn ? "translate-x-3" : "translate-x-0.5")} />
                                   </div>

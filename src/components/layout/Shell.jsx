@@ -14,6 +14,8 @@ import Expenses from '../../modules/expenses/Expenses'
 import Ledgers from '../../modules/expenses/Ledgers'
 import VendorLedger from '../../modules/expenses/VendorLedger'
 import Payments from '../../modules/expenses/Payments'
+import SalaryPayouts from '../../modules/expenses/SalaryPayouts'
+import SalaryLedger from '../../modules/employees/SalaryLedger'
 import Wallet from '../../modules/expenses/Wallet'
 import ProductionOrders from '../../modules/production/ProductionOrders'
 import Boxes from '../../modules/boxes/Boxes'
@@ -70,12 +72,14 @@ var GROUPS = [
       { key: 'feature_expenses', label: 'PC & Direct Expenses', icon: '💰', tab: 'expenses' },
       { key: 'feature_ledger_view', label: 'Expense Ledger', icon: '📒', tab: 'ledgers' },
       { key: 'feature_payments', label: 'Payments', icon: '💳', tab: 'payments' },
+      { key: 'feature_salary_pay', label: 'Salary Payouts', icon: '💵', tab: 'salary_payouts' },
       { key: 'feature_vendor_ledger', label: 'Vendor Ledger', icon: '🏭', tab: 'vendor_ledger' },
     ]
   },
   {
     key: 'hr', label: 'HR', icon: '👔', items: [
       { key: 'feature_employees', label: 'Employees', icon: '👤', tab: 'employees' },
+      { key: 'feature_salary_ledger', label: 'Salary Ledger', icon: '📒', tab: 'salary_ledger' },
     ]
   },
   {
@@ -321,7 +325,17 @@ function Shell({ profile, onSignOut }) {
           .then(function (res) { counts.feature_payments = res.count || 0 })
       )
     }
-    
+
+    // Salary Payouts badge (employees unpaid ≥ 30 days)
+    // Extra gate: feature_employees_salary required alongside feature_salary_pay
+    if (perms.indexOf('feature_salary_pay') !== -1 && perms.indexOf('feature_employees_salary') !== -1) {
+      promises.push(
+        supabase.from('v_employee_ledger')
+          .select('employee_id', { count: 'exact', head: true })
+          .gte('unpaid_since_days', 30)
+          .then(function (res) { counts.feature_salary_pay = res.count || 0 })
+      )
+    }
 
     await Promise.allSettled(promises)
     if (isStale && isStale()) return
@@ -541,6 +555,12 @@ function Shell({ profile, onSignOut }) {
         )}
         {tab === 'payments' && (
           <Payments profile={profile} />
+        )}
+        {tab === 'salary_payouts' && (
+          <SalaryPayouts profile={profile} />
+        )}
+        {tab === 'salary_ledger' && (
+          <SalaryLedger profile={profile} />
         )}
         {tab === 'purchase' && (
           <Purchase profile={profile} mode="purchase" />
