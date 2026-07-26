@@ -210,12 +210,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
         .select('id, name, contact, phone, status, expense_type_ids, expense_sub_type_ids').eq('active', true).order('name')
       items = data || []
     } else if (source === 'job_departments') {
-      // Store raw rows — filtered by field.allowed_dept_ids at render time.
-      var { data: jdData } = await supabase.from('job_departments')
-        .select('id, name').eq('active', true).order('name')
-      items = jdData || []
-    } else if (source === 'employees') {
-      // Store raw rows — filtered by field.allowed_dept_ids at render time (dept overlap).
+      // Fetches employees, not departments — filtered by field.allowed_dept_ids at render time (dept overlap).
       var { data: empData } = await supabase.from('employees')
         .select('id, full_name, employee_code, job_department_ids')
         .in('status', ['probation', 'active', 'on_leave'])
@@ -660,16 +655,8 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
           return { label: v.name + suffix, value: String(v.id) }
         })
       } else if (field.source === 'job_departments') {
-        // Filter to admin-configured allowed depts (empty list ⇒ show all).
-        var rawDepts = lookupCache.job_departments || []
-        var allowedIds = field.allowed_dept_ids || []
-        items = rawDepts.filter(function (d) {
-          if (allowedIds.length === 0) return true
-          return allowedIds.indexOf(d.id) !== -1
-        }).map(function (d) { return { label: d.name, value: String(d.id) } })
-      } else if (field.source === 'employees') {
-        // Filter employees whose job_department_ids overlap admin-configured allowed depts (empty list ⇒ show all).
-        var rawEmps = lookupCache.employees || []
+        // Employees whose job_department_ids overlap admin-configured allowed depts (empty list ⇒ show all).
+        var rawEmps = lookupCache.job_departments || []
         var allowedEmpDepts = field.allowed_dept_ids || []
         items = rawEmps.filter(function (emp) {
           if (allowedEmpDepts.length === 0) return true
@@ -764,9 +751,9 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
       if (e.expenseDate < _minStr) return 'Entry ' + (i + 1) + ': Date is more than 3 days old — contact admin or raise a requisition'
       var fields = getSubTypeFields(e.expenseSubTypeId)
       for (var f = 0; f < fields.length; f++) {
-        // Employees-lookup is always required — the salary-ledger trigger silently no-ops without it,
-        // which would look like a successful save with no salary record created.
-        var isEmpLookup = fields[f].type === 'lookup' && fields[f].source === 'employees'
+        // Employees-lookup (source='job_departments') is always required — the salary-ledger trigger
+        // silently no-ops without it, which would look like a successful save with no salary record.
+        var isEmpLookup = fields[f].type === 'lookup' && fields[f].source === 'job_departments'
         if ((fields[f].required || isEmpLookup) && !(e.fieldValues[fields[f].key] || '').toString().trim()) {
           return 'Entry ' + (i + 1) + ': ' + fields[f].label + ' is required'
         }
