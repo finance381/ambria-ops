@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { logActivity } from '../../lib/logger'
 import { formatPoints } from '../../lib/format'
 import PayVendorModal from './PayVendorModal'
+import PaymentProofThumbs from '../../components/ledger/PaymentProofThumbs'
 
 function VendorLedger({ profile }) {
   var perms = (profile && profile.permissions) || []
@@ -298,6 +299,7 @@ function VendorLedger({ profile }) {
       {showPayModal && selectedVendor && (
         <PayVendorModal
           vendor={selectedVendor}
+          profile={profile}
           onClose={function () { setShowPayModal(false) }}
           onSuccess={onPaymentSuccess}
         />
@@ -351,6 +353,7 @@ function VendorLedger({ profile }) {
                       </div>
                     )
                   })()}
+                  <PaymentProofThumbs meta={e.metadata} />
                 </div>
                 <div className="text-right flex-shrink-0">
                   <p className={"text-sm font-bold " + (isCredit ? "text-amber-800" : "text-green-700")}>

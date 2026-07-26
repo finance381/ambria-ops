@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { logActivity } from '../../lib/logger'
 import { formatPoints } from '../../lib/format'
+import { compressImage } from '../../lib/imageCompress'
 
 var REASON_PRESETS = [
   'LOP (Leave Without Pay)',
@@ -34,6 +35,10 @@ function PaySalaryModal(props) {
   // Wallet balance for cash-mode UX (does not affect server-side guard)
   var [walletBalancePaise, setWalletBalancePaise] = useState(null)
 
+  // Payment proof images
+  var [payImages, setPayImages] = useState([])
+  var [payImgBusy, setPayImgBusy] = useState(false)
+
   useEffect(function () {
     if (!profile || !profile.id) return
     supabase.from('wallets').select('balance_paise').eq('user_id', profile.id).maybeSingle()
@@ -41,6 +46,28 @@ function PaySalaryModal(props) {
         setWalletBalancePaise(res.data && typeof res.data.balance_paise === 'number' ? res.data.balance_paise : 0)
       })
   }, [profile && profile.id])
+
+  async function handleImgAdd(ev) {
+    if (saving) return
+    var raw = Array.from(ev.target.files || [])
+    ev.target.value = ''
+    if (raw.length === 0) return
+    setPayImgBusy(true)
+    var out = []
+    for (var i = 0; i < raw.length; i++) {
+      try {
+        var f = await compressImage(raw[i], 100)
+        out.push(f)
+      } catch (_) { /* skip corrupted */ }
+    }
+    setPayImages(function (prev) { return prev.concat(out) })
+    setPayImgBusy(false)
+  }
+
+  function removeImg(idx) {
+    if (saving) return
+    setPayImages(function (prev) { return prev.filter(function (_, i) { return i !== idx }) })
+  }
 
   var cashBalPaise = (employee && employee.cash_balance_paise) || 0
   var bankBalPaise = (employee && employee.bank_balance_paise) || 0
@@ -51,7 +78,7 @@ function PaySalaryModal(props) {
   var totalSettlePaise = amtPaise + adjPaise
   var adjReasonFinal = adjReasonPreset === 'Other' ? adjReasonOther.trim() : adjReasonPreset
 
-  function submit() {
+  async function submit() {
     if (saving) return
     setError('')
 
@@ -69,30 +96,59 @@ function PaySalaryModal(props) {
       setError('Your wallet cash is insufficient — you have ' + formatPoints(walletBalancePaise) + ' pts')
       return
     }
+    if (!payImages || payImages.length === 0) {
+      setError('At least one payment proof image is required')
+      return
+    }
+    if (!profile || !profile.id) {
+      setError('Session error — please refresh')
+      return
+    }
 
     setSaving(true)
-    supabase.rpc('pay_employee', {
+
+    // Upload proofs → collect paths. First segment must be profile.id for storage RLS.
+    var clientUuid = (window.crypto && window.crypto.randomUUID) ? window.crypto.randomUUID() : (Date.now() + '_' + Math.random().toString(36).slice(2, 10))
+    var uploadedPaths = []
+    for (var i = 0; i < payImages.length; i++) {
+      var f = payImages[i]
+      var path = profile.id + '/paypf_' + clientUuid + '_' + i + '.jpg'
+      var up = await supabase.storage.from('receipts').upload(path, f, { upsert: true, contentType: 'image/jpeg' })
+      if (up.error) {
+        setError('Image ' + (i + 1) + ' upload failed: ' + (up.error.message || 'unknown'))
+        setSaving(false)
+        if (uploadedPaths.length > 0) {
+          try { await supabase.storage.from('receipts').remove(uploadedPaths) } catch (_) {}
+        }
+        return
+      }
+      uploadedPaths.push(path)
+    }
+
+    var res = await supabase.rpc('pay_employee', {
       p_employee_id: employee.employee_id,
       p_amount_paise: amtPaise,
       p_mode: mode,
       p_date: payDate,
       p_adjustment_paise: adjPaise,
-      p_adjustment_reason: adjPaise > 0 ? adjReasonFinal : null
-    }).then(function (res) {
-      if (res.error) {
-        setError(res.error.message || 'Payment failed')
-        setSaving(false)
-        return
-      }
-      try {
-        logActivity('SALARY_PAY',
-          employee.employee_name + ' | ' + mode + ' | pay ' +
-          (amtPaise / 100) + ' pts' +
-          (adjPaise > 0 ? ' + adj ' + (adjPaise / 100) + ' (' + adjReasonFinal + ')' : ''))
-      } catch (_) {}
-      setSaving(false)
-      onSuccess && onSuccess(res.data)
+      p_adjustment_reason: adjPaise > 0 ? adjReasonFinal : null,
+      p_image_paths: uploadedPaths
     })
+    if (res.error) {
+      setError(res.error.message || 'Payment failed')
+      setSaving(false)
+      try { await supabase.storage.from('receipts').remove(uploadedPaths) } catch (_) {}
+      return
+    }
+    try {
+      logActivity('SALARY_PAY',
+        employee.employee_name + ' | ' + mode + ' | pay ' +
+        (amtPaise / 100) + ' pts' +
+        (adjPaise > 0 ? ' + adj ' + (adjPaise / 100) + ' (' + adjReasonFinal + ')' : '') +
+        ' | ' + uploadedPaths.length + ' img')
+    } catch (_) {}
+    setSaving(false)
+    onSuccess && onSuccess(res.data)
   }
 
   var modeOptions = [
@@ -232,6 +288,39 @@ function PaySalaryModal(props) {
                 Adjustment reduces the balance owed. Does NOT touch wallet.
               </p>
             </div>
+          )}
+        </div>
+
+        {/* Payment proof images */}
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">
+            Payment Proof <span className="text-red-500">*</span>
+            <span className="text-[10px] font-normal text-gray-400 ml-1">(auto-compressed to &lt;100KB)</span>
+          </label>
+          <label className={"flex items-center justify-center gap-2 py-2.5 px-3 border-2 border-dashed rounded-lg text-sm font-medium cursor-pointer transition-colors " + (saving || payImgBusy ? "border-gray-200 text-gray-400 cursor-not-allowed" : "border-indigo-300 text-indigo-700 hover:bg-indigo-50")}>
+            <input type="file" accept="image/*" capture="environment" multiple
+              disabled={saving || payImgBusy}
+              onChange={handleImgAdd}
+              className="hidden" />
+            {payImgBusy ? 'Compressing...' : ('📷 ' + (payImages.length === 0 ? 'Capture / choose images' : 'Add more'))}
+          </label>
+          {payImages.length > 0 && (
+            <div className="grid grid-cols-3 gap-2 mt-2">
+              {payImages.map(function (f, i) {
+                var url = URL.createObjectURL(f)
+                return (
+                  <div key={i} className="relative">
+                    <img src={url} alt={'proof ' + (i + 1)} className="w-full h-20 object-cover rounded border border-gray-200" />
+                    <button type="button" onClick={function () { removeImg(i) }} disabled={saving}
+                      className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white rounded-full text-xs font-bold flex items-center justify-center disabled:opacity-50">×</button>
+                    <div className="text-[10px] text-gray-500 text-center mt-0.5">{Math.round(f.size / 1024)}KB</div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+          {payImages.length === 0 && (
+            <p className="text-[11px] text-amber-700 mt-1">At least one image required to pay.</p>
           )}
         </div>
 

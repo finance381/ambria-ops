@@ -163,7 +163,8 @@ function EmployeeForm({ employee, profile, jobDepartments, managers, canSeeSalar
     if (aadhaar && !/^[0-9]{12}$/.test(aadhaar.trim())) return { tab: 'statutory', msg: 'Aadhaar must be 12 digits' }
     if (pan && !/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(pan.trim().toUpperCase())) return { tab: 'statutory', msg: 'PAN format invalid (AAAAA9999A)' }
     if (ifsc && !/^[A-Z]{4}0[A-Z0-9]{6}$/.test(ifsc.trim().toUpperCase())) return { tab: 'bank', msg: 'IFSC format invalid' }
-    if (ctcRupees && Number(ctcRupees) < 0) return { tab: 'bank', msg: 'CTC cannot be negative' }
+    if (monthlyCashRupees && Number(monthlyCashRupees) < 0) return { tab: 'bank', msg: 'Monthly Cash cannot be negative' }
+    if (monthlyBankRupees && Number(monthlyBankRupees) < 0) return { tab: 'bank', msg: 'Monthly Bank cannot be negative' }
 
     return null
   }

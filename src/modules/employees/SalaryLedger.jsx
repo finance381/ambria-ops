@@ -5,6 +5,7 @@ import { formatPoints } from '../../lib/format'
 import PaySalaryModal from './PaySalaryModal'
 import AccrueSalariesModal from './AccrueSalariesModal'
 import AdjustSalaryModal from './AdjustSalaryModal'
+import PaymentProofThumbs from '../../components/ledger/PaymentProofThumbs'
 
 function SalaryLedger({ profile }) {
   var perms = (profile && profile.permissions) || []
@@ -387,6 +388,7 @@ function SalaryLedger({ profile }) {
                       )}
                     </div>
                   )}
+                  <PaymentProofThumbs meta={meta} />
                 </div>
                 <div className="text-right flex-shrink-0">
                   <p className={"text-sm font-bold " + (isCredit ? "text-amber-800" : "text-green-700")}>
