@@ -6,25 +6,32 @@ import FilterDropdown from '../../components/ui/FilterDropdown'
 
 var PAGE_SIZE = 20
 
+// Filter state cache — survives mount/unmount within a tab session.
+// Cleared on hard refresh. Not persisted to storage on purpose.
+var _savedFilters = {
+  status: '', from: '', to: '', search: '', filtersOpen: false,
+  dept: '', expType: '', expSubType: '', venue: '', user: '', amountMin: '', amountMax: ''
+}
+
 function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds }) {
   var [allExps, setAllExps] = useState([])
   var [allExpHasMore, setAllExpHasMore] = useState(false)
-  var [allExpStatus, setAllExpStatus] = useState('')
-  var [allExpFrom, setAllExpFrom] = useState('')
-  var [allExpTo, setAllExpTo] = useState('')
-  var [allExpSearch, setAllExpSearch] = useState('')
-  var [allExpSearchD, setAllExpSearchD] = useState('')
+  var [allExpStatus, setAllExpStatus] = useState(function () { return _savedFilters.status })
+  var [allExpFrom, setAllExpFrom] = useState(function () { return _savedFilters.from })
+  var [allExpTo, setAllExpTo] = useState(function () { return _savedFilters.to })
+  var [allExpSearch, setAllExpSearch] = useState(function () { return _savedFilters.search })
+  var [allExpSearchD, setAllExpSearchD] = useState(function () { return _savedFilters.search })
   var [allExpLoading, setAllExpLoading] = useState(false)
   var [allExpLoadingMore, setAllExpLoadingMore] = useState(false)
   // Filter panel state
-  var [filtersOpen, setFiltersOpen] = useState(false)
-  var [deptFilter, setDeptFilter] = useState('')
-  var [expTypeFilter, setExpTypeFilter] = useState('')
-  var [expSubTypeFilter, setExpSubTypeFilter] = useState('')
-  var [venueFilter, setVenueFilter] = useState('')
-  var [userFilter, setUserFilter] = useState('')
-  var [amountMin, setAmountMin] = useState('')
-  var [amountMax, setAmountMax] = useState('')
+  var [filtersOpen, setFiltersOpen] = useState(function () { return _savedFilters.filtersOpen })
+  var [deptFilter, setDeptFilter] = useState(function () { return _savedFilters.dept })
+  var [expTypeFilter, setExpTypeFilter] = useState(function () { return _savedFilters.expType })
+  var [expSubTypeFilter, setExpSubTypeFilter] = useState(function () { return _savedFilters.expSubType })
+  var [venueFilter, setVenueFilter] = useState(function () { return _savedFilters.venue })
+  var [userFilter, setUserFilter] = useState(function () { return _savedFilters.user })
+  var [amountMin, setAmountMin] = useState(function () { return _savedFilters.amountMin })
+  var [amountMax, setAmountMax] = useState(function () { return _savedFilters.amountMax })
 
   // Filter lookups
   var [deptOptions, setDeptOptions] = useState([])
@@ -39,6 +46,15 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds }) {
     var timer = setTimeout(function () { setAllExpSearchD(allExpSearch) }, 400)
     return function () { clearTimeout(timer) }
   }, [allExpSearch])
+
+  // Persist every filter change to the module-level cache so re-mount (after opening a detail) restores state.
+  useEffect(function () {
+    _savedFilters = {
+      status: allExpStatus, from: allExpFrom, to: allExpTo, search: allExpSearch, filtersOpen: filtersOpen,
+      dept: deptFilter, expType: expTypeFilter, expSubType: expSubTypeFilter, venue: venueFilter,
+      user: userFilter, amountMin: amountMin, amountMax: amountMax
+    }
+  }, [allExpStatus, allExpFrom, allExpTo, allExpSearch, filtersOpen, deptFilter, expTypeFilter, expSubTypeFilter, venueFilter, userFilter, amountMin, amountMax])
 
   useEffect(function () {
     Promise.all([

@@ -13,6 +13,8 @@ function PayVendorModal({ vendor, profile, onClose, onSuccess }) {
   var [deductionReason, setDeductionReason] = useState('')
   var [payImages, setPayImages] = useState([])
   var [payImgBusy, setPayImgBusy] = useState(false)
+  var [dedImage, setDedImage] = useState(null)
+  var [dedImgBusy, setDedImgBusy] = useState(false)
   var [paySaving, setPaySaving] = useState(false)
   var [payError, setPayError] = useState('')
 
@@ -41,6 +43,24 @@ function PayVendorModal({ vendor, profile, onClose, onSuccess }) {
   function removePayImg(idx) {
     if (paySaving) return
     setPayImages(function (prev) { return prev.filter(function (_, i) { return i !== idx }) })
+  }
+
+  async function handleDedImgAdd(ev) {
+    if (paySaving) return
+    var raw = ev.target.files && ev.target.files[0]
+    ev.target.value = ''
+    if (!raw) return
+    setDedImgBusy(true)
+    try {
+      var f = await compressImage(raw, 100)
+      setDedImage(f)
+    } catch (_) { /* skip corrupted */ }
+    setDedImgBusy(false)
+  }
+
+  function removeDedImg() {
+    if (paySaving) return
+    setDedImage(null)
   }
 
   async function submitPayment() {
@@ -81,17 +101,33 @@ function PayVendorModal({ vendor, profile, onClose, onSuccess }) {
       uploadedPaths.push(path)
     }
 
+    // Optional deduction image — upload after payment proofs so it can piggyback the cleanup list
+    var dedUploadedPath = null
+    if (useDeduction && dedR > 0 && dedImage) {
+      var dedPath = profile.id + '/paydeduct_' + clientUuid + '.jpg'
+      var dedUp = await supabase.storage.from('receipts').upload(dedPath, dedImage, { upsert: true, contentType: 'image/jpeg' })
+      if (dedUp.error) {
+        setPayError('Deduction image upload failed: ' + (dedUp.error.message || 'unknown'))
+        setPaySaving(false)
+        try { await supabase.storage.from('receipts').remove(uploadedPaths) } catch (_) {}
+        return
+      }
+      dedUploadedPath = dedPath
+      uploadedPaths.push(dedPath)
+    }
+
     var rpcArgs = {
       p_vendor_id: vendor.vendor_id,
       p_amount_paise: Math.round(amtR * 100),
       p_description: (payDescription || '').trim() || null,
       p_entry_date: payDate,
       p_mode: payMode,
-      p_image_paths: uploadedPaths
+      p_image_paths: uploadedPaths.filter(function (p) { return p !== dedUploadedPath })
     }
     if (useDeduction && dedR > 0) {
       rpcArgs.p_deduction_paise = Math.round(dedR * 100)
       rpcArgs.p_deduction_reason = dedReason
+      if (dedUploadedPath) rpcArgs.p_deduction_image_path = dedUploadedPath
     }
 
     var { error } = await supabase.rpc('pay_vendor', rpcArgs)
@@ -102,7 +138,7 @@ function PayVendorModal({ vendor, profile, onClose, onSuccess }) {
       return
     }
 
-    try { logActivity('VENDOR_PAY', (vendor.vendor_name || '') + ' | ' + amtR + ' pts | ' + uploadedPaths.length + ' img') } catch (_) {}
+    try { logActivity('VENDOR_PAY', (vendor.vendor_name || '') + ' | ' + amtR + ' pts | ' + uploadedPaths.length + ' img' + (dedUploadedPath ? ' (incl. dedn)' : '')) } catch (_) {}
     setPaySaving(false)
     if (onSuccess) onSuccess()
   }
@@ -173,7 +209,7 @@ function PayVendorModal({ vendor, profile, onClose, onSuccess }) {
         <div>
           <label className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer">
             <input type="checkbox" checked={useDeduction}
-              onChange={function (ev) { setUseDeduction(ev.target.checked); if (!ev.target.checked) { setDeductionAmount(''); setDeductionReason('') } }} />
+              onChange={function (ev) { setUseDeduction(ev.target.checked); if (!ev.target.checked) { setDeductionAmount(''); setDeductionReason(''); setDedImage(null) } }} />
             Deduct from bill (discount / quality issue)
           </label>
           {useDeduction && (
@@ -188,6 +224,28 @@ function PayVendorModal({ vendor, profile, onClose, onSuccess }) {
                 placeholder="Reason (required)"
                 className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm bg-amber-50 focus:ring-2 focus:ring-amber-300"
                 style={{ fontSize: '16px' }} />
+              <div>
+                <label className="block text-[11px] font-medium text-amber-800 mb-1">
+                  Updated Bill / Deduction Proof
+                  <span className="text-[10px] font-normal text-amber-600 ml-1">(optional)</span>
+                </label>
+                {dedImage ? (
+                  <div className="relative inline-block">
+                    <img src={URL.createObjectURL(dedImage)} alt="deduction proof" className="w-24 h-24 object-cover rounded border border-amber-300" />
+                    <button type="button" onClick={removeDedImg} disabled={paySaving}
+                      className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white rounded-full text-xs font-bold flex items-center justify-center disabled:opacity-50">×</button>
+                    <div className="text-[10px] text-amber-700 text-center mt-0.5">{Math.round(dedImage.size / 1024)}KB</div>
+                  </div>
+                ) : (
+                  <label className={"flex items-center justify-center gap-2 py-2 px-3 border-2 border-dashed rounded-lg text-xs font-medium cursor-pointer transition-colors " + (paySaving || dedImgBusy ? "border-gray-200 text-gray-400 cursor-not-allowed" : "border-amber-300 text-amber-700 hover:bg-amber-100")}>
+                    <input type="file" accept="image/*" capture="environment"
+                      disabled={paySaving || dedImgBusy}
+                      onChange={handleDedImgAdd}
+                      className="hidden" />
+                    {dedImgBusy ? 'Compressing...' : '📷 Attach updated bill'}
+                  </label>
+                )}
+              </div>
             </div>
           )}
         </div>
