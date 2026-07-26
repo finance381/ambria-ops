@@ -47,7 +47,41 @@ function VendorLedger({ profile }) {
       .limit(1000)
     if (!withDeleted) q = q.is('deleted_at', null)
     var { data, error } = await q
-    if (!error) setEntries(data || [])
+    if (error) { setEntries([]); setEntriesLoading(false); return }
+
+    var rows = data || []
+
+    // Batch-fetch source expense receipts for expense-type rows (bill/voice note attached to the source expense)
+    var expIds = []
+    rows.forEach(function (r) {
+      if (r.ref_type === 'expense' && r.ref_id && /^[0-9]+$/.test(String(r.ref_id))) {
+        var id = Number(r.ref_id)
+        if (expIds.indexOf(id) === -1) expIds.push(id)
+      }
+    })
+
+    var receiptsByExpId = {}
+    if (expIds.length > 0) {
+      var { data: exps } = await supabase.from('expenses')
+        .select('id, receipt_paths, receipt_path')
+        .in('id', expIds)
+      ;(exps || []).forEach(function (ex) {
+        var paths = Array.isArray(ex.receipt_paths) && ex.receipt_paths.length > 0
+          ? ex.receipt_paths
+          : (ex.receipt_path ? [ex.receipt_path] : [])
+        if (paths.length > 0) receiptsByExpId[ex.id] = paths
+      })
+    }
+
+    var merged = rows.map(function (r) {
+      if (r.ref_type === 'expense' && r.ref_id) {
+        var id = Number(r.ref_id)
+        if (receiptsByExpId[id]) return Object.assign({}, r, { _sourceReceipts: receiptsByExpId[id] })
+      }
+      return r
+    })
+
+    setEntries(merged)
     setEntriesLoading(false)
   }
 

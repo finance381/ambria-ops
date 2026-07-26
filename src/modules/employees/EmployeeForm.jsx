@@ -204,7 +204,7 @@ function EmployeeForm({ employee, profile, jobDepartments, managers, canSeeSalar
 
     var payload = {
       full_name: fullName.trim(),
-      dob: dob,
+      dob: dob || null,
       gender: gender,
       father_name: fatherName.trim(),
       blood_group: bloodGroup || null,
@@ -214,7 +214,7 @@ function EmployeeForm({ employee, profile, jobDepartments, managers, canSeeSalar
       emergency_contact: emergencyContact.trim(),
       present_address: presentAddress.trim(),
       permanent_address: permanentAddress.trim(),
-      doj: doj,
+      doj: doj || null,
       probation_end_date: probationEnd || null,
       confirmation_date: confirmationDate || null,
       designation: designation.trim(),
