@@ -4,6 +4,7 @@ import { logActivity } from '../../lib/logger'
 import { formatPoints } from '../../lib/format'
 import PayVendorModal from './PayVendorModal'
 import PaymentProofThumbs from '../../components/ledger/PaymentProofThumbs'
+import LedgerSourceMedia from '../../components/ledger/LedgerSourceMedia'
 
 function VendorLedger({ profile }) {
   var perms = (profile && profile.permissions) || []
@@ -388,6 +389,9 @@ function VendorLedger({ profile }) {
                     )
                   })()}
                   <PaymentProofThumbs meta={e.metadata} />
+                  {e._sourceReceipts && e._sourceReceipts.length > 0 && (
+                    <LedgerSourceMedia paths={e._sourceReceipts} />
+                  )}
                 </div>
                 <div className="text-right flex-shrink-0">
                   <p className={"text-sm font-bold " + (isCredit ? "text-amber-800" : "text-green-700")}>
