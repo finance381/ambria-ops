@@ -13,6 +13,7 @@ var FIELD_TYPES = [
 var LOOKUP_SOURCES = [
   { value: 'vendors', label: 'Vendors' },
   { value: 'job_departments', label: 'Job Departments' },
+  { value: 'employees', label: 'Employees (filtered by dept)' },
   { value: 'venues', label: 'Venues' },
 ]
 
@@ -211,13 +212,19 @@ function FieldEditor({ subType, typeName, onBack, onSaved }) {
             </div>
           )}
 
-          {form.type === 'lookup' && form.source === 'job_departments' && (
+          {form.type === 'lookup' && (form.source === 'job_departments' || form.source === 'employees') && (
             <div>
               <div className="flex items-center justify-between mb-1">
-                <label className="block text-xs font-medium text-gray-600">Departments to show</label>
+                <label className="block text-xs font-medium text-gray-600">
+                  {form.source === 'employees' ? 'Filter employees by department' : 'Departments to show'}
+                </label>
                 <span className="text-[11px] text-gray-500">{(form.allowed_dept_ids || []).length} of {departments.length}</span>
               </div>
-              <p className="text-[11px] text-gray-400 mb-2">Leave empty to show all. Otherwise only ticked departments appear in the dropdown.</p>
+              <p className="text-[11px] text-gray-400 mb-2">
+                {form.source === 'employees'
+                  ? 'Leave empty to show all employees. Otherwise only employees in ticked departments appear.'
+                  : 'Leave empty to show all. Otherwise only ticked departments appear in the dropdown.'}
+              </p>
               <div className="bg-gray-50 rounded-lg p-2 max-h-48 overflow-y-auto">
                 <div className="grid grid-cols-2 gap-1.5">
                   {departments.map(function (d) {

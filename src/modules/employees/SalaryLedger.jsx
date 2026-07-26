@@ -6,6 +6,7 @@ import PaySalaryModal from './PaySalaryModal'
 import AccrueSalariesModal from './AccrueSalariesModal'
 import AdjustSalaryModal from './AdjustSalaryModal'
 import PaymentProofThumbs from '../../components/ledger/PaymentProofThumbs'
+import LedgerSourceMedia from '../../components/ledger/LedgerSourceMedia'
 
 function SalaryLedger({ profile }) {
   var perms = (profile && profile.permissions) || []
@@ -54,7 +55,41 @@ function SalaryLedger({ profile }) {
       .limit(1000)
     if (!withDeleted) q = q.is('deleted_at', null)
     var { data, error } = await q
-    if (!error) setEntries(data || [])
+    if (error) { setEntries([]); setEntriesLoading(false); return }
+
+    var rows = data || []
+
+    // Batch-fetch source expense receipts for expense-type rows (bill/voice note on source expense)
+    var expIds = []
+    rows.forEach(function (r) {
+      if (r.ref_type === 'expense' && r.ref_id && /^[0-9]+$/.test(String(r.ref_id))) {
+        var id = Number(r.ref_id)
+        if (expIds.indexOf(id) === -1) expIds.push(id)
+      }
+    })
+
+    var receiptsByExpId = {}
+    if (expIds.length > 0) {
+      var { data: exps } = await supabase.from('expenses')
+        .select('id, receipt_paths, receipt_path')
+        .in('id', expIds)
+      ;(exps || []).forEach(function (ex) {
+        var paths = Array.isArray(ex.receipt_paths) && ex.receipt_paths.length > 0
+          ? ex.receipt_paths
+          : (ex.receipt_path ? [ex.receipt_path] : [])
+        if (paths.length > 0) receiptsByExpId[ex.id] = paths
+      })
+    }
+
+    var merged = rows.map(function (r) {
+      if (r.ref_type === 'expense' && r.ref_id) {
+        var id = Number(r.ref_id)
+        if (receiptsByExpId[id]) return Object.assign({}, r, { _sourceReceipts: receiptsByExpId[id] })
+      }
+      return r
+    })
+
+    setEntries(merged)
     setEntriesLoading(false)
   }
 
@@ -389,6 +424,9 @@ function SalaryLedger({ profile }) {
                     </div>
                   )}
                   <PaymentProofThumbs meta={meta} />
+                  {e._sourceReceipts && e._sourceReceipts.length > 0 && (
+                    <LedgerSourceMedia paths={e._sourceReceipts} />
+                  )}
                 </div>
                 <div className="text-right flex-shrink-0">
                   <p className={"text-sm font-bold " + (isCredit ? "text-amber-800" : "text-green-700")}>
