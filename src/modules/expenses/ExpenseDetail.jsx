@@ -17,6 +17,7 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
   var [allocations, setAllocations] = useState([])
   var [allocVenues, setAllocVenues] = useState({})
   var [imgFullscreen, setImgFullscreen] = useState('')
+  var [lookupLabels, setLookupLabels] = useState({})
   var [reviewerName, setReviewerName] = useState('')
   var [penalizerName, setPenalizerName] = useState('')
 
@@ -46,6 +47,51 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
       setPenalizerName(exp.penalized_by ? (map[exp.penalized_by] || '—') : '')
     })
   }, [exp.id, exp.reviewed_by, exp.penalized_by])
+
+  useEffect(function () {
+    var fields = (exp.expense_sub_types && exp.expense_sub_types.extra_fields) || []
+    var meta = exp.metadata || {}
+    var bySource = {}
+    fields.forEach(function (f) {
+      if (f.type !== 'lookup' || !f.source) return
+      var v = meta[f.key]
+      if (!v) return
+      if (!bySource[f.source]) bySource[f.source] = []
+      if (bySource[f.source].indexOf(v) === -1) bySource[f.source].push(v)
+    })
+    var sources = Object.keys(bySource)
+    if (sources.length === 0) return
+    Promise.all(sources.map(function (src) {
+      var ids = bySource[src]
+      if (src === 'job_departments') {
+        return supabase.from('employees').select('id, full_name, employee_code').in('id', ids)
+          .then(function (r) { return { src: src, rows: (r.data || []).map(function (e) { return { id: String(e.id), label: e.full_name + ' (' + e.employee_code + ')' } }) } })
+      }
+      if (src === 'vendors') {
+        return supabase.from('vendors').select('id, name').in('id', ids)
+          .then(function (r) { return { src: src, rows: (r.data || []).map(function (v) { return { id: String(v.id), label: v.name } }) } })
+      }
+      if (src === 'staff') {
+        return supabase.from('profiles').select('id, name').in('id', ids)
+          .then(function (r) { return { src: src, rows: (r.data || []).map(function (p) { return { id: String(p.id), label: p.name || '—' } }) } })
+      }
+      if (src === 'categories') {
+        return supabase.from('categories').select('id, name').in('id', ids)
+          .then(function (r) { return { src: src, rows: (r.data || []).map(function (c) { return { id: String(c.id), label: c.name } }) } })
+      }
+      if (src === 'venues') {
+        return supabase.from('venues').select('id, code, name').in('id', ids)
+          .then(function (r) { return { src: src, rows: (r.data || []).map(function (v) { return { id: String(v.id), label: v.code + ' — ' + v.name } }) } })
+      }
+      return Promise.resolve({ src: src, rows: [] })
+    })).then(function (results) {
+      var next = {}
+      results.forEach(function (res) {
+        res.rows.forEach(function (row) { next[res.src + ':' + row.id] = row.label })
+      })
+      setLookupLabels(next)
+    }).catch(function () {})
+  }, [exp.id])
 
   useEffect(function () {
     supabase.from('expense_allocations')
@@ -396,10 +442,14 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
         {exp.expense_sub_types?.extra_fields && exp.expense_sub_types.extra_fields.map(function (field) {
           var val = (exp.metadata && exp.metadata[field.key]) || exp[field.key] || null
           if (!val) return null
+          var display = val
+          if (field.type === 'lookup' && field.source) {
+            display = lookupLabels[field.source + ':' + String(val)] || val
+          }
           return (
             <div key={field.key} className="flex justify-between">
               <span className="text-sm text-gray-500">{field.label}</span>
-              <span className="text-sm text-gray-800">{val}</span>
+              <span className="text-sm text-gray-800">{display}</span>
             </div>
           )
         })}
