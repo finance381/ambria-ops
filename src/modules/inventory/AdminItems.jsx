@@ -767,14 +767,7 @@ function AdminItems({ profile }) {
  }
 
   var searchLower = search.toLowerCase()
-  // TEMP DIAGNOSTIC — remove after debugging sub-dept filter mismatch
-  if (subDeptFilter.length > 0 && items.length > 0) {
-    var _dbg_sdCatIds = categories.filter(function (c) { return subDeptFilter.indexOf(String(c.sub_department_id)) !== -1 }).map(function (c) { return c.id })
-    console.log('[SUBDEPT_DIAG] subDeptFilter=', subDeptFilter, 'resolved sub_dept names=',
-      subDepartments.filter(function (s) { return subDeptFilter.indexOf(String(s.id)) !== -1 }).map(function (s) { return s.name }),
-      'sdCatIds=', _dbg_sdCatIds,
-      'items.length=', items.length, 'first item cat_id=', items[0] && items[0].category_id)
-  }
+  var _dbg_passing = []
   var filtered = items.filter(function (item) {
     var matchSearch = !search ||
       item.name.toLowerCase().includes(searchLower) ||
@@ -803,8 +796,20 @@ function AdminItems({ profile }) {
     var matchSubVenue = subVenueFilter.length === 0 || (item.venue_allocations || []).some(function (va) { return subVenueFilter.indexOf(String(va.sub_venue_id)) !== -1 })
     var matchCat = catFilter.length === 0 || catFilter.indexOf(String(item.category_id)) !== -1
     var matchSubCat = subCatFilter.length === 0 || subCatFilter.indexOf(String(item.sub_category_id)) !== -1
-    return matchSearch && matchMasterDept && matchDept && matchSubDept && matchStatus && matchVenue && matchCat && matchSubCat && matchSubVenue
+    var overall = matchSearch && matchMasterDept && matchDept && matchSubDept && matchStatus && matchVenue && matchCat && matchSubCat && matchSubVenue
+    if (overall && subDeptFilter.length > 0 && _dbg_passing.length < 5) {
+      _dbg_passing.push({
+        id: item.id, name: item.name, inv_id: item.inventory_id, cat_id: item.category_id, cat_name: item.categories?.name,
+        cat_sub_dept_id: item.categories?.sub_department_id,
+        matchSearch: matchSearch, matchMasterDept: matchMasterDept, matchDept: matchDept, matchSubDept: matchSubDept,
+        matchStatus: matchStatus, matchVenue: matchVenue, matchCat: matchCat, matchSubCat: matchSubCat, matchSubVenue: matchSubVenue,
+      })
+    }
+    return overall
   })
+  if (subDeptFilter.length > 0 && _dbg_passing.length > 0) {
+    console.log('[FILTER_DIAG] subDeptFilter=', subDeptFilter, 'search=', JSON.stringify(search), 'passing sample:', _dbg_passing)
+  }
 
   function handleSort(key) {
     if (sortKey === key) { setSortDir(sortDir === 'asc' ? 'desc' : 'asc') }
