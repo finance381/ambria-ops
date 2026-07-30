@@ -767,6 +767,14 @@ function AdminItems({ profile }) {
  }
 
   var searchLower = search.toLowerCase()
+  // TEMP DIAGNOSTIC — remove after debugging sub-dept filter mismatch
+  if (subDeptFilter.length > 0 && items.length > 0) {
+    var _dbg_sdCatIds = categories.filter(function (c) { return subDeptFilter.indexOf(String(c.sub_department_id)) !== -1 }).map(function (c) { return c.id })
+    console.log('[SUBDEPT_DIAG] subDeptFilter=', subDeptFilter, 'resolved sub_dept names=',
+      subDepartments.filter(function (s) { return subDeptFilter.indexOf(String(s.id)) !== -1 }).map(function (s) { return s.name }),
+      'sdCatIds=', _dbg_sdCatIds,
+      'items.length=', items.length, 'first item cat_id=', items[0] && items[0].category_id)
+  }
   var filtered = items.filter(function (item) {
     var matchSearch = !search ||
       item.name.toLowerCase().includes(searchLower) ||
