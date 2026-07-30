@@ -1,5 +1,5 @@
 import { supabase, getImageUrl, fetchAll } from '../../lib/supabase'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { formatDate, titleCase } from '../../lib/format'
 import Modal from '../../components/ui/Modal'
 import InventoryForm from './InventoryForm'
@@ -10,9 +10,15 @@ function Inventory({ profile }) {
 
   var [items, setItems] = useState([])
   var [loading, setLoading] = useState(true)
-  var [editItem, setEditItem] = useState(null)
   var [enlargedImg, setEnlargedImg] = useState(null)
-  useRealtime(['inventory_items', 'catering_store_items', 'venue_allocations', 'cs_venue_allocations'], function () { loadItems() })
+  var [editItem, setEditItem] = useState(null)
+
+  // Realtime handler: stable identity, dereferences latest loadItems (which reads current filter state).
+  // Without this, useRealtime captures the mount-time loadItems whose closure has empty filters —
+  // a save-triggered UPDATE event would refetch unfiltered and blow away the visible list.
+  var loadItemsRef = useRef(null)
+  var realtimeHandlerRef = useRef(function () { if (loadItemsRef.current) loadItemsRef.current(false) })
+  useRealtime(['inventory_items', 'catering_store_items', 'venue_allocations', 'cs_venue_allocations'], realtimeHandlerRef.current)
   var [search, setSearch] = useState('')
   var [catFilter, setCatFilter] = useState('')
   var [subCatFilter, setSubCatFilter] = useState('')
@@ -37,6 +43,9 @@ function Inventory({ profile }) {
   useEffect(function () {
     if (metaReady) loadItems(false)
   }, [tab, venueFilter, subVenueFilter, catFilter, subCatFilter, searchDebounced, metaReady])
+
+  // Sync ref every render so realtime callback always sees the fresh closure.
+  loadItemsRef.current = loadItems
 
   async function loadMeta() {
     setLoading(true)
