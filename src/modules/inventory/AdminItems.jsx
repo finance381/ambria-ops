@@ -13,7 +13,16 @@ function FilterDropdown({ value, onChange, options, placeholder, multi }) {
   var vals = multi ? (value || []) : []
   var selected = multi ? null : options.find(function (o) { return o.value === value })
   var displayLabel = multi
-    ? (vals.length === 0 ? placeholder : vals.length === 1 ? (options.find(function (o) { return o.value === vals[0] }) || {}).label || vals[0] : vals.length + ' selected')
+    ? (function () {
+        if (vals.length === 0) return placeholder
+        if (vals.length <= 2) {
+          return vals.map(function (v) {
+            var o = options.find(function (x) { return x.value === v })
+            return (o && o.label) || v
+          }).join(', ')
+        }
+        return vals.length + ' selected'
+      })()
     : (selected ? selected.label : placeholder)
   var hasValue = multi ? vals.length > 0 : !!value
   function toggle(v) {
@@ -767,7 +776,6 @@ function AdminItems({ profile }) {
  }
 
   var searchLower = search.toLowerCase()
-  var _dbg_passing = []
   var filtered = items.filter(function (item) {
     var matchSearch = !search ||
       item.name.toLowerCase().includes(searchLower) ||
@@ -796,20 +804,8 @@ function AdminItems({ profile }) {
     var matchSubVenue = subVenueFilter.length === 0 || (item.venue_allocations || []).some(function (va) { return subVenueFilter.indexOf(String(va.sub_venue_id)) !== -1 })
     var matchCat = catFilter.length === 0 || catFilter.indexOf(String(item.category_id)) !== -1
     var matchSubCat = subCatFilter.length === 0 || subCatFilter.indexOf(String(item.sub_category_id)) !== -1
-    var overall = matchSearch && matchMasterDept && matchDept && matchSubDept && matchStatus && matchVenue && matchCat && matchSubCat && matchSubVenue
-    if (overall && subDeptFilter.length > 0 && _dbg_passing.length < 5) {
-      _dbg_passing.push({
-        id: item.id, name: item.name, inv_id: item.inventory_id, cat_id: item.category_id, cat_name: item.categories?.name,
-        cat_sub_dept_id: item.categories?.sub_department_id,
-        matchSearch: matchSearch, matchMasterDept: matchMasterDept, matchDept: matchDept, matchSubDept: matchSubDept,
-        matchStatus: matchStatus, matchVenue: matchVenue, matchCat: matchCat, matchSubCat: matchSubCat, matchSubVenue: matchSubVenue,
-      })
-    }
-    return overall
+    return matchSearch && matchMasterDept && matchDept && matchSubDept && matchStatus && matchVenue && matchCat && matchSubCat && matchSubVenue
   })
-  if (subDeptFilter.length > 0 && _dbg_passing.length > 0) {
-    console.log('[FILTER_DIAG] subDeptFilter=', subDeptFilter, 'search=', JSON.stringify(search), 'passing sample:', _dbg_passing)
-  }
 
   function handleSort(key) {
     if (sortKey === key) { setSortDir(sortDir === 'asc' ? 'desc' : 'asc') }
@@ -953,6 +949,7 @@ function AdminItems({ profile }) {
             </tr>
           </thead>
           <tbody>
+            {(function () { console.log('[RENDER_DIAG] items=', items.length, 'filtered=', filtered.length, 'sorted=', sorted.length, 'page=', page, 'perPage=', perPage, 'slice=', sorted.slice((page - 1) * perPage, page * perPage).length, 'subDeptFilter=', subDeptFilter, 'search=', JSON.stringify(search)); return null })()}
             {sorted.slice((page - 1) * perPage, page * perPage).map(function (item) {
               var venueAllocs = item.venue_allocations || []
               var imgUrl = getImageUrl(item.image_path)
