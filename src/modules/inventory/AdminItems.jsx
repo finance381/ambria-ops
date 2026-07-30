@@ -949,7 +949,6 @@ function AdminItems({ profile }) {
             </tr>
           </thead>
           <tbody>
-            {(function () { console.log('[RENDER_DIAG] items=', items.length, 'filtered=', filtered.length, 'sorted=', sorted.length, 'page=', page, 'perPage=', perPage, 'slice=', sorted.slice((page - 1) * perPage, page * perPage).length, 'subDeptFilter=', subDeptFilter, 'search=', JSON.stringify(search)); return null })()}
             {sorted.slice((page - 1) * perPage, page * perPage).map(function (item) {
               var venueAllocs = item.venue_allocations || []
               var imgUrl = getImageUrl(item.image_path)
@@ -959,7 +958,7 @@ function AdminItems({ profile }) {
                 pending_dept: 'bg-blue-100 text-blue-700',
               }
               return (
-                <tr key={item.id} className="border-b border-gray-100 hover:bg-gray-50">
+                <tr key={(item._source || 'i') + ':' + item.id} className="border-b border-gray-100 hover:bg-gray-50">
                   <td className="px-3 py-2" style={{ minWidth: 100, width: 100 }}>
                         {imgUrl ? (
                           <img src={imgUrl} alt="" onClick={function () { setEnlargedImg(imgUrl) }}
