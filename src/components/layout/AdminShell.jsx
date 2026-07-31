@@ -13,6 +13,7 @@ var Ledgers = lazy(function () { return import('../../modules/expenses/Ledgers')
 var VendorLedger = lazy(function () { return import('../../modules/expenses/VendorLedger') })
 var Payments = lazy(function () { return import('../../modules/expenses/Payments') })
 var Wallet = lazy(function () { return import('../../modules/expenses/Wallet') })
+var GVLog = lazy(function () { return import('../../modules/expenses/GVLog') })
 var Dashboard = lazy(function () { return import('../../modules/dashboard/Dashboard') })
 var Boxes = lazy(function () { return import('../../modules/boxes/Boxes') })
 var ProductionOrders = lazy(function () { return import('../../modules/production/ProductionOrders') })
@@ -83,6 +84,7 @@ var SUB_TAB_CONFIG = {
     { key: 'payments', label: 'Payments', component: Payments },
     { key: 'salary_payouts', label: 'Salary Payouts', component: SalaryPayouts },
     { key: 'vendor_ledger', label: 'Vendor Ledger', component: VendorLedger },
+    { key: 'gv_log', label: 'GV Log', component: GVLog },
   ],
 }
 

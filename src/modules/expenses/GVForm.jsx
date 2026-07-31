@@ -49,8 +49,13 @@ function GVForm({ exp, profile, onCancel, onSaved }) {
         }
       })
       if (prefill.length === 0) {
-        // Legacy expense with no allocations — seed one row with the full expense amount
+        // Legacy expense with no allocations — seed one row from the parent expense's type/sub-type
         var seed = makeAlloc()
+        var parentTypeId = exp.expense_type_id ? Number(exp.expense_type_id) : null
+        var parentType = parentTypeId ? (res[2].data || []).find(function (t) { return t.id === parentTypeId }) : null
+        seed.departmentId = parentType && parentType.department_id ? String(parentType.department_id) : ''
+        seed.expenseTypeId = parentTypeId ? String(parentTypeId) : ''
+        seed.expenseSubTypeId = exp.expense_sub_type_id ? String(exp.expense_sub_type_id) : ''
         seed.amountPaise = exp.amount_paise ? String(exp.amount_paise) : ''
         prefill = [seed]
       }
