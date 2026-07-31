@@ -332,7 +332,7 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds }) {
           {allExps.map(function (exp) {
             return (
               <div key={exp.id}
-                onClick={function () { onOpenDetail(Object.assign({}, exp, { _fromApprove: true })) }}
+                onClick={function () { onOpenDetail(exp) }}
                 className="bg-white border border-gray-200 rounded-xl p-4 hover:shadow-md active:bg-gray-50 cursor-pointer transition-all">
                 <div className="flex items-start justify-between mb-1">
                   <div className="flex-1 min-w-0">

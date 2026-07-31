@@ -561,14 +561,38 @@ function AdminItems({ profile }) {
     var allocTable = isCatStore ? 'cs_venue_allocations' : 'venue_allocations'
 
     var existing = null
-    var rowId = findCol(r, ['id'])
-    if (importMode === 'update' && rowId) {
-      var { data: idMatch } = await supabase.from('inventory_items').select('id, qty').eq('id', Number(rowId)).limit(1).maybeSingle()
-      if (idMatch) {
-        existing = idMatch; tableName = 'inventory_items'; allocTable = 'venue_allocations'; isCatStore = false
+    var invIdVal = findCol(r, ['inventory id', 'inventory_id']).trim()
+    var sourceVal = findCol(r, ['source']).trim().toLowerCase()
+    var rowId = findCol(r, ['id']).toString().trim()
+
+    // Explicit Source column takes precedence over category-based inference.
+    // Prevents id-collision writes to the wrong table (2026-07-30 incident root cause).
+    if (sourceVal === 'catering_store' || sourceVal === 'cs' || sourceVal === 'catering store') {
+      isCatStore = true; tableName = 'catering_store_items'; allocTable = 'cs_venue_allocations'
+    } else if (sourceVal === 'inventory' || sourceVal === 'inventory_items' || sourceVal === 'main') {
+      isCatStore = false; tableName = 'inventory_items'; allocTable = 'venue_allocations'
+    }
+
+    if (importMode === 'update') {
+      // Primary match: inventory_id (globally unique via prefix e.g. CS-*, FLO-*, PRBR-*, GLWA-*).
+      // Never falls back to numeric id without an explicit Source — id alone is ambiguous across tables.
+      if (invIdVal) {
+        var { data: invIdMatch } = await supabase.from(tableName).select('id, qty').eq('inventory_id', invIdVal).limit(1).maybeSingle()
+        if (invIdMatch) {
+          existing = invIdMatch
+        } else {
+          var otherTable = isCatStore ? 'inventory_items' : 'catering_store_items'
+          var { data: wrongTableMatch } = await supabase.from(otherTable).select('id').eq('inventory_id', invIdVal).limit(1).maybeSingle()
+          if (wrongTableMatch) return 'inventory_id "' + invIdVal + '" belongs to ' + otherTable + ', not ' + tableName + '. Fix Source column or use correct sheet.'
+          return 'inventory_id "' + invIdVal + '" not found in ' + tableName
+        }
+      } else if (rowId) {
+        if (!sourceVal) return 'Numeric id present but no inventory_id and no Source column. Add "inventory_id" (preferred) or a "Source" column (catering_store / inventory).'
+        var { data: idMatch } = await supabase.from(tableName).select('id, qty').eq('id', Number(rowId)).limit(1).maybeSingle()
+        if (idMatch) existing = idMatch
+        else return 'id "' + rowId + '" not found in ' + tableName + ' (per Source)'
       } else {
-        var { data: csMatch } = await supabase.from('catering_store_items').select('id, qty').eq('id', Number(rowId)).limit(1).maybeSingle()
-        if (csMatch) { existing = csMatch; tableName = 'catering_store_items'; allocTable = 'cs_venue_allocations'; isCatStore = true }
+        return 'Update mode requires "inventory_id" (recommended) or "id" + "Source" column'
       }
     } else {
       var matchQuery = supabase.from(tableName).select('id, qty').ilike('name', itemName.replace(/%/g, '\\%').replace(/_/g, '\\_'))
