@@ -25,27 +25,6 @@ var STATUSES = [
 ]
 var ALLOWED_MIME = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp']
 var MAX_FILE_BYTES = 10 * 1024 * 1024
-var DOC_TYPES = [
-  { key: 'aadhaar', label: 'Aadhaar Card', mandatory: true, hasExpiry: false },
-  { key: 'pan', label: 'PAN Card', mandatory: true, hasExpiry: false },
-  { key: 'passport', label: 'Passport', mandatory: false, hasExpiry: true },
-  { key: 'driving_license', label: 'Driving License', mandatory: false, hasExpiry: true },
-  { key: 'voter_id', label: 'Voter ID', mandatory: false, hasExpiry: false },
-  { key: 'bank_proof', label: 'Bank Passbook / Cheque', mandatory: false, hasExpiry: false },
-  { key: 'education', label: 'Educational Certificate', mandatory: false, hasExpiry: false },
-  { key: 'previous_employment', label: 'Previous Employment', mandatory: false, hasExpiry: false },
-  { key: 'address_proof', label: 'Address Proof', mandatory: false, hasExpiry: true },
-  { key: 'medical_fitness', label: 'Medical Fitness Certificate', mandatory: false, hasExpiry: true },
-  { key: 'police_verification', label: 'Police Verification', mandatory: false, hasExpiry: true },
-]
-
-function initDocs() {
-  var init = {}
-  DOC_TYPES.forEach(function (d) {
-    init[d.key] = { file: null, existingPath: '', expiry: '', enabled: d.mandatory }
-  })
-  return init
-}
 
 function fileExt(f) {
   var parts = (f.name || '').split('.')
@@ -107,8 +86,9 @@ function EmployeeForm({ employee, profile, jobDepartments, managers, canSeeSalar
   var [photoPath, setPhotoPath] = useState('')
   var [photoSignedUrl, setPhotoSignedUrl] = useState('')
 
-  // Docs — unified state, one entry per doc type
-  var [docs, setDocs] = useState(initDocs())
+  // Docs — catalog loaded from employee_document_types master
+  var [docTypes, setDocTypes] = useState([])
+  var [docs, setDocs] = useState({})
 
   useEffect(function () {
     if (!isEdit) return
@@ -157,27 +137,47 @@ function EmployeeForm({ employee, profile, jobDepartments, managers, canSeeSalar
     setPhotoPath(e.photo_file_path || '')
   }, [employee])
 
-  // Load existing docs from employee_documents on edit
+  // Load doc types catalog + existing employee docs
   useEffect(function () {
-    if (!isEdit || !employee?.id) return
-    supabase.from('employee_documents')
-      .select('doc_type, file_path, expiry_date')
-      .eq('employee_id', employee.id)
+    supabase.from('employee_document_types')
+      .select('key, label, mandatory, has_expiry')
+      .eq('active', true)
+      .order('sort_order', { ascending: true }).order('label')
       .then(function (res) {
-        var rows = res.data || []
-        setDocs(function (prev) {
-          var next = Object.assign({}, prev)
-          rows.forEach(function (r) {
-            if (next[r.doc_type]) {
-              next[r.doc_type] = Object.assign({}, next[r.doc_type], {
-                existingPath: r.file_path || '',
-                expiry: r.expiry_date || '',
-                enabled: true,
-              })
-            }
-          })
-          return next
+        var types = (res.data || []).map(function (d) {
+          return { key: d.key, label: d.label, mandatory: !!d.mandatory, hasExpiry: !!d.has_expiry }
         })
+        setDocTypes(types)
+        var initial = {}
+        types.forEach(function (d) {
+          initial[d.key] = { file: null, existingPath: '', expiry: '', enabled: d.mandatory }
+        })
+        if (isEdit && employee?.id) {
+          supabase.from('employee_documents')
+            .select('doc_type, file_path, expiry_date')
+            .eq('employee_id', employee.id)
+            .then(function (res2) {
+              var rows = res2.data || []
+              rows.forEach(function (r) {
+                if (initial[r.doc_type]) {
+                  initial[r.doc_type] = Object.assign({}, initial[r.doc_type], {
+                    existingPath: r.file_path || '',
+                    expiry: r.expiry_date || '',
+                    enabled: true,
+                  })
+                } else {
+                  // Doc type deactivated in catalog but employee still has it — show as legacy
+                  initial[r.doc_type] = {
+                    file: null, existingPath: r.file_path || '',
+                    expiry: r.expiry_date || '', enabled: true,
+                  }
+                }
+              })
+              setDocs(initial)
+            })
+        } else {
+          setDocs(initial)
+        }
       })
   }, [employee?.id])
 
@@ -235,8 +235,9 @@ function EmployeeForm({ employee, profile, jobDepartments, managers, canSeeSalar
 
     var fileErr = checkFile(photoFile)
     if (!fileErr) {
-      for (var _k = 0; _k < DOC_TYPES.length; _k++) {
-        var _dk = DOC_TYPES[_k].key
+      var _dkeys = Object.keys(docs)
+      for (var _k = 0; _k < _dkeys.length; _k++) {
+        var _dk = _dkeys[_k]
         if (docs[_dk] && docs[_dk].enabled && docs[_dk].file) {
           fileErr = checkFile(docs[_dk].file)
           if (fileErr) break
@@ -318,8 +319,14 @@ function EmployeeForm({ employee, profile, jobDepartments, managers, canSeeSalar
 
     // Upload files + sync employee_documents rows
     var fileErrors = []
-    for (var _di = 0; _di < DOC_TYPES.length; _di++) {
-      var _dt = DOC_TYPES[_di]
+    var _allDocTypes = docTypes.slice()
+    Object.keys(docs).forEach(function (k) {
+      if (!_allDocTypes.find(function (t) { return t.key === k })) {
+        _allDocTypes.push({ key: k, label: k, hasExpiry: !!(docs[k] && docs[k].expiry) })
+      }
+    })
+    for (var _di = 0; _di < _allDocTypes.length; _di++) {
+      var _dt = _allDocTypes[_di]
       var _state = docs[_dt.key]
       if (!_state) continue
 
@@ -717,7 +724,18 @@ function EmployeeForm({ employee, profile, jobDepartments, managers, canSeeSalar
             Tick the docs on file. Upload PDF or image (JPEG/PNG/WEBP). Max 10 MB per file. Only admin and Finance/HR can access.
           </div>
 
-          {DOC_TYPES.map(function (dt) {
+          {docTypes.length === 0 && (
+            <p className="text-xs text-gray-400 text-center py-4">Loading doc catalog…</p>
+          )}
+          {(function () {
+            var render = docTypes.slice()
+            Object.keys(docs).forEach(function (k) {
+              if (!render.find(function (t) { return t.key === k }) && docs[k] && docs[k].existingPath) {
+                render.push({ key: k, label: k + ' (legacy)', mandatory: false, hasExpiry: !!docs[k].expiry })
+              }
+            })
+            return render
+          })().map(function (dt) {
             var state = docs[dt.key] || { file: null, existingPath: '', expiry: '', enabled: false }
             return (
               <div key={dt.key} className={"border rounded-md " + (state.enabled ? "border-indigo-200 bg-indigo-50/30" : "border-gray-200 bg-white")}>
