@@ -4,7 +4,7 @@ import { logActivity } from '../../lib/logger'
 import { formatPoints } from '../../lib/format'
 
 function makeAlloc() {
-  return { _key: Date.now() + '_' + Math.random().toString(36).slice(2, 8), departmentId: '', expenseTypeId: '', expenseSubTypeId: '', venueId: '', subVenueId: '', amountPaise: '', remarks: '' }
+  return { _key: Date.now() + '_' + Math.random().toString(36).slice(2, 8), departmentId: '', expenseTypeId: '', expenseSubTypeId: '', venueId: '', subVenueId: '', amountPts: '', remarks: '' }
 }
 
 function GVForm({ exp, profile, onCancel, onSaved }) {
@@ -43,7 +43,7 @@ function GVForm({ exp, profile, onCancel, onSaved }) {
           expenseSubTypeId: a.expense_sub_type_id ? String(a.expense_sub_type_id) : '',
           venueId: a.venue_id ? String(a.venue_id) : '',
           subVenueId: a.sub_venue_id ? String(a.sub_venue_id) : '',
-          amountPaise: a.amount_paise != null ? String(a.amount_paise) : '',
+          amountPts: a.amount_paise != null ? String(a.amount_paise / 100) : '',
           remarks: a.remarks || '',
           _departmentText: a.department || '',
         }
@@ -56,7 +56,7 @@ function GVForm({ exp, profile, onCancel, onSaved }) {
         seed.departmentId = parentType && parentType.department_id ? String(parentType.department_id) : ''
         seed.expenseTypeId = parentTypeId ? String(parentTypeId) : ''
         seed.expenseSubTypeId = exp.expense_sub_type_id ? String(exp.expense_sub_type_id) : ''
-        seed.amountPaise = exp.amount_paise ? String(exp.amount_paise) : ''
+        seed.amountPts = exp.amount_paise ? String(exp.amount_paise / 100) : ''
         prefill = [seed]
       }
       setAllocations(prefill)
@@ -81,7 +81,7 @@ function GVForm({ exp, profile, onCancel, onSaved }) {
     })
   }
 
-  var totalPaise = allocations.reduce(function (sum, a) { return sum + (Number(a.amountPaise) || 0) }, 0)
+  var totalPaise = allocations.reduce(function (sum, a) { return sum + Math.round((Number(a.amountPts) || 0) * 100) }, 0)
   var expectedPaise = exp.amount_paise || 0
   var diff = totalPaise - expectedPaise
   var sumOk = diff === 0
@@ -95,7 +95,7 @@ function GVForm({ exp, profile, onCancel, onSaved }) {
     for (var i = 0; i < allocations.length; i++) {
       var a = allocations[i]
       if (!a.departmentId) { setError('Row ' + (i + 1) + ': department required'); return }
-      if (!Number(a.amountPaise)) { setError('Row ' + (i + 1) + ': amount required'); return }
+      if (!Number(a.amountPts)) { setError('Row ' + (i + 1) + ': amount required'); return }
     }
     setSaving(true)
 
@@ -108,7 +108,7 @@ function GVForm({ exp, profile, onCancel, onSaved }) {
         expense_sub_type_id: a.expenseSubTypeId ? Number(a.expenseSubTypeId) : null,
         venue_id: a.venueId ? Number(a.venueId) : null,
         sub_venue_id: a.subVenueId ? Number(a.subVenueId) : null,
-        amount_paise: Number(a.amountPaise),
+        amount_paise: Math.round(Number(a.amountPts) * 100),
         remarks: (a.remarks || '').trim() || null,
       }
     })
@@ -211,9 +211,9 @@ function GVForm({ exp, profile, onCancel, onSaved }) {
                     </select>
                   </div>
                   <div className="grid grid-cols-2 gap-2">
-                    <input type="number" inputMode="numeric" value={alloc.amountPaise}
-                      onChange={function (e) { updateAlloc(aIdx, 'amountPaise', e.target.value) }}
-                      placeholder="Amount (paise) *" className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs focus:ring-2 focus:ring-indigo-300" style={{ fontSize: '16px' }} />
+                    <input type="number" inputMode="decimal" step="0.01" value={alloc.amountPts}
+                      onChange={function (e) { updateAlloc(aIdx, 'amountPts', e.target.value) }}
+                      placeholder="Amount (pts) *" className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs focus:ring-2 focus:ring-indigo-300" style={{ fontSize: '16px' }} />
                     <input type="text" value={alloc.remarks}
                       onChange={function (e) { updateAlloc(aIdx, 'remarks', e.target.value) }}
                       placeholder="Remarks" maxLength={200}
