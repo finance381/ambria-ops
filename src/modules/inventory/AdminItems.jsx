@@ -118,7 +118,7 @@ function AdminItems({ profile }) {
           .select('id, name, name_hindi, inventory_id, qty, blocked, unit, type, status, department, category_id, sub_category_id, rate_paise, min_order_qty, reorder_qty, is_asset, image_path, submitted_by, entry_date, description, dimensions, categories(name, sub_department_id), sub_categories(name), venue_allocations(qty, venues(code, name), sub_venue_id, sub_department_id)')
           .order('created_at', { ascending: false })),
         fetchAll(supabase.from('catering_store_items')
-          .select('id, name, name_hindi, inventory_id, qty, unit, type, status, department, category_id, sub_category_id, rate_paise, is_asset, image_path, submitted_by, entry_date, description, brand, pack_size_qty, pack_size_unit, season_reorder_qty, off_season_reorder_qty, categories(name, sub_department_id), sub_categories(name), cs_venue_allocations(qty, venues(code, name), sub_venue_id, sub_department_id)')
+          .select('id, name, name_hindi, inventory_id, qty, unit, type, status, department, category_id, sub_category_id, rate_paise, is_asset, image_path, submitted_by, entry_date, description, dimensions, brand, pack_size_qty, pack_size_unit, season_reorder_qty, off_season_reorder_qty, categories(name, sub_department_id), sub_categories(name), cs_venue_allocations(qty, venues(code, name), sub_venue_id, sub_department_id)')
           .order('created_at', { ascending: false })),
         supabase.from('departments').select('id, name, category_ids, is_inventory_default').eq('active', true).order('name'),
         supabase.from('venues').select('id, code, name').eq('active', true).order('code'),
