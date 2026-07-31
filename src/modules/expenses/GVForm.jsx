@@ -1,0 +1,238 @@
+import { useState, useEffect } from 'react'
+import { supabase } from '../../lib/supabase'
+import { logActivity } from '../../lib/logger'
+import { formatPoints } from '../../lib/format'
+
+function makeAlloc() {
+  return { _key: Date.now() + '_' + Math.random().toString(36).slice(2, 8), departmentId: '', expenseTypeId: '', expenseSubTypeId: '', venueId: '', subVenueId: '', amountPaise: '', remarks: '' }
+}
+
+function GVForm({ exp, profile, onCancel, onSaved }) {
+  var [reason, setReason] = useState('')
+  var [allocations, setAllocations] = useState([])
+  var [departments, setDepartments] = useState([])
+  var [venues, setVenues] = useState([])
+  var [expenseTypes, setExpenseTypes] = useState([])
+  var [expenseSubTypes, setExpenseSubTypes] = useState([])
+  var [loading, setLoading] = useState(true)
+  var [saving, setSaving] = useState(false)
+  var [error, setError] = useState('')
+
+  useEffect(function () {
+    Promise.all([
+      supabase.from('departments').select('id, name').eq('active', true).order('name'),
+      supabase.from('venues').select('id, code, name').eq('active', true).order('name'),
+      supabase.from('expense_types').select('id, name, department_id').eq('active', true).order('name'),
+      supabase.from('expense_sub_types').select('id, expense_type_id, name').eq('active', true).order('name'),
+    ]).then(function (res) {
+      setDepartments(res[0].data || [])
+      setVenues(res[1].data || [])
+      setExpenseTypes(res[2].data || [])
+      setExpenseSubTypes(res[3].data || [])
+      // Prefill allocations from existing rows
+      var prefill = (exp.expense_allocations || []).map(function (a) {
+        return {
+          _key: Date.now() + '_' + Math.random().toString(36).slice(2, 8),
+          departmentId: a.department_id ? String(a.department_id) : '',
+          expenseTypeId: a.expense_type_id ? String(a.expense_type_id) : '',
+          expenseSubTypeId: a.expense_sub_type_id ? String(a.expense_sub_type_id) : '',
+          venueId: a.venue_id ? String(a.venue_id) : '',
+          subVenueId: a.sub_venue_id ? String(a.sub_venue_id) : '',
+          amountPaise: a.amount_paise ? String(a.amount_paise) : '',
+          remarks: a.remarks || '',
+          _departmentText: a.department || '',
+        }
+      })
+      if (prefill.length === 0) prefill = [makeAlloc()]
+      setAllocations(prefill)
+      setLoading(false)
+    })
+  }, [exp.id])
+
+  function updateAlloc(idx, field, val) {
+    setAllocations(function (prev) {
+      return prev.map(function (a, i) { return i === idx ? Object.assign({}, a, (function () { var o = {}; o[field] = val; return o })()) : a })
+    })
+  }
+
+  function addAlloc() {
+    setAllocations(function (prev) { return prev.concat([makeAlloc()]) })
+  }
+
+  function removeAlloc(idx) {
+    setAllocations(function (prev) {
+      if (prev.length <= 1) return prev
+      return prev.filter(function (_, i) { return i !== idx })
+    })
+  }
+
+  var totalPaise = allocations.reduce(function (sum, a) { return sum + (Number(a.amountPaise) || 0) }, 0)
+  var expectedPaise = exp.amount_paise || 0
+  var diff = totalPaise - expectedPaise
+  var sumOk = diff === 0
+  var reasonOk = reason.trim().length >= 3
+
+  async function submit() {
+    if (saving) return
+    setError('')
+    if (!reasonOk) { setError('Reason must be at least 3 characters'); return }
+    if (!sumOk) { setError('Allocation total must equal expense amount'); return }
+    for (var i = 0; i < allocations.length; i++) {
+      var a = allocations[i]
+      if (!a.departmentId) { setError('Row ' + (i + 1) + ': department required'); return }
+      if (!Number(a.amountPaise)) { setError('Row ' + (i + 1) + ': amount required'); return }
+    }
+    setSaving(true)
+
+    var payload = allocations.map(function (a) {
+      var deptName = (departments.find(function (d) { return String(d.id) === String(a.departmentId) }) || {}).name || a._departmentText || ''
+      return {
+        department: deptName,
+        department_id: a.departmentId ? Number(a.departmentId) : null,
+        expense_type_id: a.expenseTypeId ? Number(a.expenseTypeId) : null,
+        expense_sub_type_id: a.expenseSubTypeId ? Number(a.expenseSubTypeId) : null,
+        venue_id: a.venueId ? Number(a.venueId) : null,
+        sub_venue_id: a.subVenueId ? Number(a.subVenueId) : null,
+        amount_paise: Number(a.amountPaise),
+        remarks: (a.remarks || '').trim() || null,
+      }
+    })
+
+    var { data, error: rpcErr } = await supabase.rpc('fn_create_gv', {
+      p_expense_id: exp.id,
+      p_reason: reason.trim(),
+      p_allocations: payload,
+    })
+
+    if (rpcErr) {
+      setError(rpcErr.message || 'Failed to raise GV')
+      setSaving(false)
+      return
+    }
+
+    try { await logActivity({ action: 'gv_create', entity: 'expense', entity_id: exp.id, meta: { gv_number: data?.gv_number } }) } catch (e) {}
+
+    setSaving(false)
+    if (onSaved) onSaved(data)
+  }
+
+  if (loading) {
+    return <p className="text-gray-400 text-sm text-center py-8">Loading...</p>
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="flex items-start justify-between">
+        <div>
+          <button onClick={onCancel} className="text-sm text-indigo-600 font-medium hover:text-indigo-800 mb-2">← Cancel</button>
+          <h2 className="text-lg font-bold text-gray-900">Raise General Voucher</h2>
+          <p className="text-xs text-gray-500">Reallocate expense #{exp.id} · {formatPoints(exp.amount_paise)}</p>
+          {exp.description && <p className="text-xs text-gray-400 mt-0.5 truncate max-w-md">{exp.description}</p>}
+        </div>
+      </div>
+
+      {/* Reason */}
+      <div className="bg-white border border-gray-200 rounded-xl p-4">
+        <label className="block text-[11px] font-bold text-gray-500 uppercase mb-1.5">Reason <span className="text-red-500">*</span></label>
+        <textarea value={reason} onChange={function (e) { setReason(e.target.value) }}
+          placeholder="Why is this expense being reallocated?"
+          rows={2} maxLength={500}
+          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          style={{ fontSize: '16px' }} />
+      </div>
+
+      {/* Allocations */}
+      <div className="bg-white border border-gray-200 rounded-xl p-4">
+        <div className="flex items-center justify-between mb-3">
+          <label className="text-[11px] font-bold text-gray-500 uppercase">New Allocations</label>
+          <button onClick={addAlloc} className="text-xs font-bold text-indigo-600 hover:text-indigo-800">+ Add Row</button>
+        </div>
+        <div className="space-y-3">
+          {allocations.map(function (alloc, aIdx) {
+            var allocDeptId = alloc.departmentId ? Number(alloc.departmentId) : null
+            var scopedTypes = allocDeptId ? expenseTypes.filter(function (t) { return t.department_id === allocDeptId }) : []
+            var genericTypes = expenseTypes.filter(function (t) { return !t.department_id })
+            var subOpts = alloc.expenseTypeId ? expenseSubTypes.filter(function (s) { return s.expense_type_id === Number(alloc.expenseTypeId) }) : []
+            return (
+              <div key={alloc._key} className="flex gap-2 items-start border-t border-gray-100 pt-3 first:border-0 first:pt-0">
+                <div className="flex-1 space-y-1.5">
+                  <div className="grid grid-cols-2 gap-2">
+                    <select value={alloc.departmentId}
+                      onChange={function (e) { updateAlloc(aIdx, 'departmentId', e.target.value); updateAlloc(aIdx, 'expenseTypeId', ''); updateAlloc(aIdx, 'expenseSubTypeId', '') }}
+                      className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs bg-white focus:ring-2 focus:ring-indigo-300" style={{ fontSize: '16px' }}>
+                      <option value="">Dept *</option>
+                      {departments.map(function (d) { return <option key={d.id} value={String(d.id)}>{d.name}</option> })}
+                    </select>
+                    <select value={alloc.venueId}
+                      onChange={function (e) { updateAlloc(aIdx, 'venueId', e.target.value) }}
+                      className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs bg-white focus:ring-2 focus:ring-indigo-300" style={{ fontSize: '16px' }}>
+                      <option value="">Venue</option>
+                      {venues.map(function (v) { return <option key={v.id} value={String(v.id)}>{v.code}</option> })}
+                    </select>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <select value={alloc.expenseTypeId}
+                      onChange={function (e) { updateAlloc(aIdx, 'expenseTypeId', e.target.value); updateAlloc(aIdx, 'expenseSubTypeId', '') }}
+                      className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs bg-white focus:ring-2 focus:ring-indigo-300" style={{ fontSize: '16px' }}>
+                      <option value="">Type</option>
+                      {scopedTypes.length > 0 && (
+                        <optgroup label="Dept-specific">
+                          {scopedTypes.map(function (t) { return <option key={t.id} value={String(t.id)}>{t.name}</option> })}
+                        </optgroup>
+                      )}
+                      {genericTypes.length > 0 && (
+                        <optgroup label="Generic">
+                          {genericTypes.map(function (t) { return <option key={t.id} value={String(t.id)}>{t.name}</option> })}
+                        </optgroup>
+                      )}
+                    </select>
+                    <select value={alloc.expenseSubTypeId}
+                      onChange={function (e) { updateAlloc(aIdx, 'expenseSubTypeId', e.target.value) }}
+                      disabled={!alloc.expenseTypeId}
+                      className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs bg-white focus:ring-2 focus:ring-indigo-300 disabled:bg-gray-100 disabled:text-gray-400" style={{ fontSize: '16px' }}>
+                      <option value="">Sub-type</option>
+                      {subOpts.map(function (s) { return <option key={s.id} value={String(s.id)}>{s.name}</option> })}
+                    </select>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <input type="number" inputMode="numeric" value={alloc.amountPaise}
+                      onChange={function (e) { updateAlloc(aIdx, 'amountPaise', e.target.value) }}
+                      placeholder="Amount (paise) *" className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs focus:ring-2 focus:ring-indigo-300" style={{ fontSize: '16px' }} />
+                    <input type="text" value={alloc.remarks}
+                      onChange={function (e) { updateAlloc(aIdx, 'remarks', e.target.value) }}
+                      placeholder="Remarks" maxLength={200}
+                      className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs focus:ring-2 focus:ring-indigo-300" style={{ fontSize: '16px' }} />
+                  </div>
+                </div>
+                {allocations.length > 1 && (
+                  <button type="button" onClick={function () { removeAlloc(aIdx) }}
+                    className="text-red-400 hover:text-red-600 text-xs mt-1">✕</button>
+                )}
+              </div>
+            )
+          })}
+        </div>
+
+        {/* Running total */}
+        <div className={"mt-3 pt-3 border-t border-gray-100 flex items-center justify-between text-xs font-bold " + (sumOk ? 'text-green-700' : 'text-red-600')}>
+          <span>Total: {formatPoints(totalPaise)}</span>
+          <span>Expected: {formatPoints(expectedPaise)}{!sumOk ? ' · Off by ' + formatPoints(Math.abs(diff)) : ' ✓'}</span>
+        </div>
+      </div>
+
+      {/* Error */}
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-xs text-red-700 font-medium">{error}</div>
+      )}
+
+      {/* Submit */}
+      <button onClick={submit} disabled={saving || !sumOk || !reasonOk}
+        className="w-full py-3 text-sm font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm">
+        {saving ? 'Raising GV...' : 'Raise General Voucher'}
+      </button>
+    </div>
+  )
+}
+
+export default GVForm

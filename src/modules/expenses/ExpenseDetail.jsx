@@ -4,7 +4,7 @@ import { formatDate, formatPoints } from '../../lib/format'
 import { logActivity } from '../../lib/logger'
 import { APPROVAL_STATUS_COLORS, APPROVAL_STATUS_LABELS } from '../../lib/constants'
 
-function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdated, onEdit }) {
+function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdated, onEdit, onRaiseGV }) {
   var [saving, setSaving] = useState(false)
   var [rejectMode, setRejectMode] = useState(false)
   var [rejectReason, setRejectReason] = useState('')
@@ -20,6 +20,10 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
   var [lookupLabels, setLookupLabels] = useState({})
   var [reviewerName, setReviewerName] = useState('')
   var [penalizerName, setPenalizerName] = useState('')
+  var [gvs, setGvs] = useState([])
+  var [expandedGvId, setExpandedGvId] = useState('')
+  var [reversing, setReversing] = useState(false)
+  var [gvCreators, setGvCreators] = useState({})
 
   useEffect(function () {
     supabase.from('expenses').select('deduction_type').not('deduction_type', 'is', null).neq('deduction_type', '')
@@ -47,6 +51,28 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
       setPenalizerName(exp.penalized_by ? (map[exp.penalized_by] || '—') : '')
     })
   }, [exp.id, exp.reviewed_by, exp.penalized_by])
+
+  useEffect(function () {
+    supabase.from('general_vouchers')
+      .select('id, gv_number, expense_id, created_by, created_at, reason, before_allocations, after_allocations, is_reversal, reverses_gv_id, reversed_by_gv_id')
+      .eq('expense_id', exp.id)
+      .order('created_at', { ascending: false })
+      .then(function (res) {
+        var rows = res.data || []
+        setGvs(rows)
+        var creatorIds = []
+        rows.forEach(function (g) { if (g.created_by && creatorIds.indexOf(g.created_by) === -1) creatorIds.push(g.created_by) })
+        if (creatorIds.length > 0) {
+          supabase.from('profiles').select('id, name').in('id', creatorIds).then(function (r2) {
+            var map = {}
+            ;(r2.data || []).forEach(function (p) { map[p.id] = p.name || '' })
+            setGvCreators(map)
+          })
+        } else {
+          setGvCreators({})
+        }
+      })
+  }, [exp.id])
 
   useEffect(function () {
     var fields = (exp.expense_sub_types && exp.expense_sub_types.extra_fields) || []
@@ -130,6 +156,7 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
   var canDelete = !isDeleted && ((exp.user_id === profile?.id && (exp.status === 'recorded' || exp.status === 'flagged')) || isAdmin)
   var canEdit = !isDeleted && (exp.user_id === profile?.id || isAdmin) && (exp.status === 'recorded' || exp.status === 'flagged')
   var canResubmit = !isDeleted && exp.user_id === profile?.id && exp.status === 'flagged'
+  var canRaiseGV = !isDeleted && (isAdmin || (profile?.permissions || []).indexOf('finance_gv') !== -1) && (exp.status === 'recorded' || exp.status === 'flagged' || exp.status === 'deducted' || exp.status === 'acknowledged')
 
   var receiptPaths = (exp.receipt_paths && exp.receipt_paths.length > 0)
     ? exp.receipt_paths
@@ -142,6 +169,18 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
       isImage: /\.(jpg|jpeg|png|gif|webp)$/i.test(path)
     }
   })
+
+  async function reverseGv(gv) {
+    if (reversing) return
+    var reason = window.prompt('Reason for reversing ' + gv.gv_number + '?')
+    if (!reason || reason.trim().length < 3) return
+    setReversing(true)
+    var { data, error } = await supabase.rpc('fn_reverse_gv', { p_gv_id: gv.id, p_reason: reason.trim() })
+    setReversing(false)
+    if (error) { alert('Failed: ' + error.message); return }
+    try { await logActivity({ action: 'gv_reverse', entity: 'expense', entity_id: exp.id, meta: { gv_number: data?.gv_number, reverses: gv.gv_number } }) } catch (e) {}
+    if (onUpdated) onUpdated()
+  }
 
   async function acknowledge() {
     if (saving) return
@@ -503,6 +542,86 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
             })}
           </div>
         </div>
+      )}
+
+      {gvs.length > 0 && (
+        <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+          <div className="px-4 py-2 bg-purple-50 border-b border-purple-100">
+            <p className="text-xs font-bold text-purple-700 uppercase tracking-wider">General Vouchers ({gvs.length})</p>
+          </div>
+          <div className="divide-y divide-gray-100">
+            {gvs.map(function (gv, gvIdx) {
+              var isNewest = gvIdx === 0
+              var canReverse = canRaiseGV && isNewest && !gv.is_reversal && !gv.reversed_by_gv_id
+              var creator = gvCreators[gv.created_by] || '—'
+              var isExpanded = expandedGvId === gv.id
+              return (
+                <div key={gv.id} className="px-4 py-2.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <button onClick={function () { setExpandedGvId(isExpanded ? '' : gv.id) }} className="flex-1 text-left">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-xs">{isExpanded ? '▼' : '▶'}</span>
+                        <span className="text-sm font-bold text-purple-800">{gv.gv_number}</span>
+                        {gv.is_reversal && (
+                          <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-gray-200 text-gray-700">Reversal</span>
+                        )}
+                        {gv.reversed_by_gv_id && (
+                          <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-red-100 text-red-700">Reversed</span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-gray-500 mt-0.5">{creator} · {formatDate(gv.created_at)}</p>
+                      <p className="text-[11px] text-gray-600 mt-0.5 line-clamp-2">{gv.reason}</p>
+                    </button>
+                    {canReverse && (
+                      <button onClick={function () { reverseGv(gv) }} disabled={reversing}
+                        className="text-[11px] font-bold text-red-600 bg-red-50 border border-red-200 rounded px-2 py-1 hover:bg-red-100 disabled:opacity-50 flex-shrink-0">
+                        ↺ Reverse
+                      </button>
+                    )}
+                  </div>
+                  {isExpanded && (
+                    <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {[{ label: 'Before', arr: gv.before_allocations }, { label: 'After', arr: gv.after_allocations }].map(function (side) {
+                        var rows = Array.isArray(side.arr) ? side.arr : []
+                        return (
+                          <div key={side.label} className="bg-gray-50 border border-gray-200 rounded-lg overflow-hidden">
+                            <div className="px-2 py-1 bg-gray-100 border-b border-gray-200">
+                              <span className="text-[10px] font-bold text-gray-600 uppercase">{side.label}</span>
+                            </div>
+                            <div className="divide-y divide-gray-100">
+                              {rows.length === 0 && <p className="p-2 text-[11px] text-gray-400 italic">—</p>}
+                              {rows.map(function (r, ri) {
+                                return (
+                                  <div key={ri} className="px-2 py-1.5">
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-[12px] font-medium text-gray-800">{r.department || ('Dept #' + (r.department_id || '?'))}</span>
+                                      <span className="text-[12px] font-bold text-gray-900">{formatPoints(r.amount_paise || 0)}</span>
+                                    </div>
+                                    {r.venue_id && (
+                                      <p className="text-[10px] text-gray-500">Venue #{r.venue_id}{r.sub_venue_id ? ' › SV#' + r.sub_venue_id : ''}</p>
+                                    )}
+                                    {r.remarks && <p className="text-[10px] text-gray-500 italic">"{r.remarks}"</p>}
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {canRaiseGV && (
+        <button onClick={onRaiseGV} disabled={saving}
+          className="w-full py-3 text-sm font-bold text-purple-700 bg-purple-50 border border-purple-200 rounded-lg hover:bg-purple-100 disabled:opacity-50 transition-colors">
+          📋 Raise General Voucher
+        </button>
       )}
 
       {canEdit && (

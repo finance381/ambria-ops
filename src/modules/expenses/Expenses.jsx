@@ -7,6 +7,7 @@ import ExpenseTypeMaster from './ExpenseTypeMaster'
 import FilterDropdown from '../../components/ui/FilterDropdown'
 import AllExpenses from './AllExpenses'
 import ExpenseDetail from './ExpenseDetail'
+import GVForm from './GVForm'
 import { useRealtime } from '../../lib/useRealtime'
 import ExpenseReport from './ExpenseReport'
 import { pushBack, goBack as navBack } from '../../lib/backNav'
@@ -31,6 +32,7 @@ function Expenses({ profile, masterMode }) {
   var [reportView, setReportView] = useState(false)
   var [editExp, setEditExp] = useState(null)
   var [walletBalance, setWalletBalance] = useState(0)
+  var [detailRefresh, setDetailRefresh] = useState(0)
   var [subDeptMap, setSubDeptMap] = useState({})
   var [typesModal, setTypesModal] = useState(false)
 
@@ -288,6 +290,7 @@ function Expenses({ profile, masterMode }) {
   if (view === 'detail' && detailExp) {
     return (
       <ExpenseDetail
+        key={detailExp.id + ':' + detailRefresh}
         exp={detailExp}
         profile={profile}
         isAdmin={isAdmin}
@@ -295,6 +298,23 @@ function Expenses({ profile, masterMode }) {
         onBack={function () { navBack() }}
         onUpdated={function () { loadMyExpenses(false); loadApprovalExpenses(false); setView(detailExp._fromApprove ? 'approve' : detailExp._fromAll ? 'all' : 'list'); setDetailExp(null) }}
         onEdit={function () { setEditExp(detailExp); setView('form') }}
+        onRaiseGV={function () { setView('gv') }}
+      />
+    )
+  }
+
+  if (view === 'gv' && detailExp) {
+    return (
+      <GVForm
+        exp={detailExp}
+        profile={profile}
+        onCancel={function () { setView('detail') }}
+        onSaved={function () {
+          setDetailRefresh(function (n) { return n + 1 })
+          setView('detail')
+          loadMyExpenses(false)
+          loadApprovalExpenses(false)
+        }}
       />
     )
   }
