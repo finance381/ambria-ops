@@ -24,26 +24,36 @@ function GVForm({ exp, profile, onCancel, onSaved }) {
       supabase.from('venues').select('id, code, name').eq('active', true).order('name'),
       supabase.from('expense_types').select('id, name, department_id').eq('active', true).order('name'),
       supabase.from('expense_sub_types').select('id, expense_type_id, name').eq('active', true).order('name'),
+      supabase.from('expense_allocations')
+        .select('id, department, department_id, expense_type_id, expense_sub_type_id, venue_id, sub_venue_id, amount_paise, remarks')
+        .eq('expense_id', exp.id)
+        .order('id'),
     ]).then(function (res) {
       setDepartments(res[0].data || [])
       setVenues(res[1].data || [])
       setExpenseTypes(res[2].data || [])
       setExpenseSubTypes(res[3].data || [])
-      // Prefill allocations from existing rows
-      var prefill = (exp.expense_allocations || []).map(function (a) {
+      // Prefill from freshly-fetched allocation rows
+      var allocRows = res[4].data || []
+      var prefill = allocRows.map(function (a) {
         return {
-          _key: Date.now() + '_' + Math.random().toString(36).slice(2, 8),
+          _key: Date.now() + '_' + Math.random().toString(36).slice(2, 8) + '_' + a.id,
           departmentId: a.department_id ? String(a.department_id) : '',
           expenseTypeId: a.expense_type_id ? String(a.expense_type_id) : '',
           expenseSubTypeId: a.expense_sub_type_id ? String(a.expense_sub_type_id) : '',
           venueId: a.venue_id ? String(a.venue_id) : '',
           subVenueId: a.sub_venue_id ? String(a.sub_venue_id) : '',
-          amountPaise: a.amount_paise ? String(a.amount_paise) : '',
+          amountPaise: a.amount_paise != null ? String(a.amount_paise) : '',
           remarks: a.remarks || '',
           _departmentText: a.department || '',
         }
       })
-      if (prefill.length === 0) prefill = [makeAlloc()]
+      if (prefill.length === 0) {
+        // Legacy expense with no allocations — seed one row with the full expense amount
+        var seed = makeAlloc()
+        seed.amountPaise = exp.amount_paise ? String(exp.amount_paise) : ''
+        prefill = [seed]
+      }
       setAllocations(prefill)
       setLoading(false)
     })
