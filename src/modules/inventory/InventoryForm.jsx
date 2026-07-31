@@ -32,7 +32,7 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved }) {
   var [description, setDescription] = useState(seed?.description || '')
   var [nameHindi, setNameHindi] = useState(seed?.name_hindi || '')
   var [hiEdited, setHiEdited] = useState(false)
-  var nameManual = useRef(!!item)
+  var nameManual = useRef(!!(seed?.name && String(seed.name).trim()))
   var [qty, setQty] = useState(seed?.qty ?? '')
   var [unit, setUnit] = useState(seed?.unit || 'Pieces')
   var [minOrderQty, setMinOrderQty] = useState(seed?.min_order_qty ?? seed?.season_reorder_qty ?? '')
