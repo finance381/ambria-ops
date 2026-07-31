@@ -188,15 +188,13 @@ function Employees({ profile }) {
       'employee_code', 'doj', 'probation_end_date', 'confirmation_date', 'designation',
       'job_departments', 'work_location', 'status',
       'aadhaar_number', 'pan_number', 'uan', 'esic', 'pt_state',
-      'bank_account_number', 'ifsc_code', 'bank_name', 'ctc_annual_rupees',
-      'aadhaar_expiry_date', 'pan_expiry_date']
+      'bank_account_number', 'ifsc_code', 'bank_name', 'ctc_annual_rupees']
     var sample = ['John Doe', '1995-04-15', 'male', 'Robert Doe', 'O+', 'single',
       '+919999999999', 'john@example.com', '+919888888888', 'Delhi, India', 'Delhi, India',
       '', '2024-01-15', '', '', 'Coordinator',
       'Kitchen; F&B Service', 'Pushpanjali', 'probation',
       '', '', '', '', 'Delhi',
-      '', '', '', '',
-      '', '']
+      '', '', '', '']
     var csv = headers.join(',') + '\n' + sample.map(function (v) {
       var s = String(v || '')
       if (s.indexOf(',') !== -1 || s.indexOf('"') !== -1 || s.indexOf('\n') !== -1) return '"' + s.replace(/"/g, '""') + '"'
@@ -300,8 +298,6 @@ function Employees({ profile }) {
         ifsc_code: (row.ifsc_code || '').toUpperCase() || null,
         bank_name: row.bank_name || null,
         ctc_annual_paise: row.ctc_annual_rupees ? Math.round(Number(row.ctc_annual_rupees) * 100) : null,
-        aadhaar_expiry_date: row.aadhaar_expiry_date || null,
-        pan_expiry_date: row.pan_expiry_date || null,
         created_by: profile?.id || null,
       }
       if (row.employee_code) payload.employee_code = row.employee_code

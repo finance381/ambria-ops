@@ -25,6 +25,27 @@ var STATUSES = [
 ]
 var ALLOWED_MIME = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp']
 var MAX_FILE_BYTES = 10 * 1024 * 1024
+var DOC_TYPES = [
+  { key: 'aadhaar', label: 'Aadhaar Card', mandatory: true, hasExpiry: false },
+  { key: 'pan', label: 'PAN Card', mandatory: true, hasExpiry: false },
+  { key: 'passport', label: 'Passport', mandatory: false, hasExpiry: true },
+  { key: 'driving_license', label: 'Driving License', mandatory: false, hasExpiry: true },
+  { key: 'voter_id', label: 'Voter ID', mandatory: false, hasExpiry: false },
+  { key: 'bank_proof', label: 'Bank Passbook / Cheque', mandatory: false, hasExpiry: false },
+  { key: 'education', label: 'Educational Certificate', mandatory: false, hasExpiry: false },
+  { key: 'previous_employment', label: 'Previous Employment', mandatory: false, hasExpiry: false },
+  { key: 'address_proof', label: 'Address Proof', mandatory: false, hasExpiry: true },
+  { key: 'medical_fitness', label: 'Medical Fitness Certificate', mandatory: false, hasExpiry: true },
+  { key: 'police_verification', label: 'Police Verification', mandatory: false, hasExpiry: true },
+]
+
+function initDocs() {
+  var init = {}
+  DOC_TYPES.forEach(function (d) {
+    init[d.key] = { file: null, existingPath: '', expiry: '', enabled: d.mandatory }
+  })
+  return init
+}
 
 function fileExt(f) {
   var parts = (f.name || '').split('.')
@@ -86,13 +107,8 @@ function EmployeeForm({ employee, profile, jobDepartments, managers, canSeeSalar
   var [photoPath, setPhotoPath] = useState('')
   var [photoSignedUrl, setPhotoSignedUrl] = useState('')
 
-  // Docs
-  var [aadhaarFile, setAadhaarFile] = useState(null)
-  var [panFile, setPanFile] = useState(null)
-  var [aadhaarPath, setAadhaarPath] = useState('')
-  var [panPath, setPanPath] = useState('')
-  var [aadhaarExpiry, setAadhaarExpiry] = useState('')
-  var [panExpiry, setPanExpiry] = useState('')
+  // Docs — unified state, one entry per doc type
+  var [docs, setDocs] = useState(initDocs())
 
   useEffect(function () {
     if (!isEdit) return
@@ -139,11 +155,31 @@ function EmployeeForm({ employee, profile, jobDepartments, managers, canSeeSalar
     setShiftTo(e.shift_end ? e.shift_end.slice(0, 5) : '')
 
     setPhotoPath(e.photo_file_path || '')
-    setAadhaarPath(e.aadhaar_file_path || '')
-    setPanPath(e.pan_file_path || '')
-    setAadhaarExpiry(e.aadhaar_expiry_date || '')
-    setPanExpiry(e.pan_expiry_date || '')
   }, [employee])
+
+  // Load existing docs from employee_documents on edit
+  useEffect(function () {
+    if (!isEdit || !employee?.id) return
+    supabase.from('employee_documents')
+      .select('doc_type, file_path, expiry_date')
+      .eq('employee_id', employee.id)
+      .then(function (res) {
+        var rows = res.data || []
+        setDocs(function (prev) {
+          var next = Object.assign({}, prev)
+          rows.forEach(function (r) {
+            if (next[r.doc_type]) {
+              next[r.doc_type] = Object.assign({}, next[r.doc_type], {
+                existingPath: r.file_path || '',
+                expiry: r.expiry_date || '',
+                enabled: true,
+              })
+            }
+          })
+          return next
+        })
+      })
+  }, [employee?.id])
 
   // Fetch signed URL for existing photo
   useEffect(function () {
@@ -197,7 +233,16 @@ function EmployeeForm({ employee, profile, jobDepartments, managers, canSeeSalar
     var v = validate()
     if (v) { setTab(v.tab); setError(v.msg); return }
 
-    var fileErr = checkFile(aadhaarFile) || checkFile(panFile) || checkFile(photoFile)
+    var fileErr = checkFile(photoFile)
+    if (!fileErr) {
+      for (var _k = 0; _k < DOC_TYPES.length; _k++) {
+        var _dk = DOC_TYPES[_k].key
+        if (docs[_dk] && docs[_dk].enabled && docs[_dk].file) {
+          fileErr = checkFile(docs[_dk].file)
+          if (fileErr) break
+        }
+      }
+    }
     if (fileErr) { setError(fileErr); return }
 
     setSaving(true)
@@ -231,8 +276,6 @@ function EmployeeForm({ employee, profile, jobDepartments, managers, canSeeSalar
       bank_account_number: bankAccount.trim() || null,
       ifsc_code: ifsc.trim().toUpperCase() || null,
       bank_name: bankName.trim() || null,
-      aadhaar_expiry_date: aadhaarExpiry || null,
-      pan_expiry_date: panExpiry || null,
       shift_start: shiftFrom || null,
       shift_end: shiftTo || null,
     }
@@ -273,24 +316,47 @@ function EmployeeForm({ employee, profile, jobDepartments, managers, canSeeSalar
       return
     }
 
-    // Upload files if selected
+    // Upload files + sync employee_documents rows
     var fileErrors = []
-    if (aadhaarFile) {
-      try {
-        var newAadhaarPath = await uploadDoc(savedRow.id, 'aadhaar', aadhaarFile, aadhaarPath)
-        setAadhaarPath(newAadhaarPath)
-        await supabase.from('employees').update({ aadhaar_file_path: newAadhaarPath }).eq('id', savedRow.id)
-      } catch (err) {
-        fileErrors.push('Aadhaar upload failed: ' + (err.message || err))
-      }
-    }
-    if (panFile) {
-      try {
-        var newPanPath = await uploadDoc(savedRow.id, 'pan', panFile, panPath)
-        setPanPath(newPanPath)
-        await supabase.from('employees').update({ pan_file_path: newPanPath }).eq('id', savedRow.id)
-      } catch (err) {
-        fileErrors.push('PAN upload failed: ' + (err.message || err))
+    for (var _di = 0; _di < DOC_TYPES.length; _di++) {
+      var _dt = DOC_TYPES[_di]
+      var _state = docs[_dt.key]
+      if (!_state) continue
+
+      if (_state.enabled && _state.file) {
+        // New file → upload + upsert row
+        try {
+          var _newPath = await uploadDoc(savedRow.id, _dt.key, _state.file, _state.existingPath)
+          var upErr = (await supabase.from('employee_documents')
+            .upsert({
+              employee_id: savedRow.id,
+              doc_type: _dt.key,
+              file_path: _newPath,
+              expiry_date: _dt.hasExpiry ? (_state.expiry || null) : null,
+              uploaded_by: profile?.id || null,
+            }, { onConflict: 'employee_id,doc_type' })).error
+          if (upErr) throw upErr
+        } catch (err) {
+          fileErrors.push(_dt.label + ' upload failed: ' + (err.message || err))
+        }
+      } else if (_state.enabled && _state.existingPath && _dt.hasExpiry) {
+        // No new file but expiry may have changed
+        try {
+          await supabase.from('employee_documents')
+            .update({ expiry_date: _state.expiry || null })
+            .eq('employee_id', savedRow.id).eq('doc_type', _dt.key)
+        } catch (err) {
+          fileErrors.push(_dt.label + ' expiry update failed: ' + (err.message || err))
+        }
+      } else if (!_state.enabled && _state.existingPath) {
+        // User un-checked → remove doc row + storage file
+        try {
+          await supabase.from('employee_documents')
+            .delete().eq('employee_id', savedRow.id).eq('doc_type', _dt.key)
+          try { await supabase.storage.from('employee-docs').remove([_state.existingPath]) } catch (_) {}
+        } catch (err) {
+          fileErrors.push(_dt.label + ' removal failed: ' + (err.message || err))
+        }
       }
     }
     if (photoFile) {
@@ -646,20 +712,59 @@ function EmployeeForm({ employee, profile, jobDepartments, managers, canSeeSalar
 
       {/* ═══ DOCUMENTS ═══ */}
       {tab === 'documents' && (
-        <div className="space-y-4">
+        <div className="space-y-3">
           <div className="bg-gray-50 border border-gray-200 rounded-md px-3 py-2 text-xs text-gray-600">
-            Upload PDF or image (JPEG/PNG/WEBP). Max 10 MB per file. Documents stored securely — only admin, Finance/HR, and the employee can access.
+            Tick the docs on file. Upload PDF or image (JPEG/PNG/WEBP). Max 10 MB per file. Only admin and Finance/HR can access.
           </div>
 
-          <DocSlot label="Aadhaar Card" existingPath={aadhaarPath}
-            selectedFile={aadhaarFile} onSelect={setAadhaarFile}
-            employeeId={employee?.id} docType="aadhaar"
-            expiryDate={aadhaarExpiry} onExpiryChange={setAadhaarExpiry} />
-
-          <DocSlot label="PAN Card" existingPath={panPath}
-            selectedFile={panFile} onSelect={setPanFile}
-            employeeId={employee?.id} docType="pan"
-            expiryDate={panExpiry} onExpiryChange={setPanExpiry} />
+          {DOC_TYPES.map(function (dt) {
+            var state = docs[dt.key] || { file: null, existingPath: '', expiry: '', enabled: false }
+            return (
+              <div key={dt.key} className={"border rounded-md " + (state.enabled ? "border-indigo-200 bg-indigo-50/30" : "border-gray-200 bg-white")}>
+                <label className="flex items-center gap-2 px-3 py-2 cursor-pointer">
+                  <input type="checkbox"
+                    checked={!!state.enabled}
+                    disabled={dt.mandatory}
+                    onChange={function (e) {
+                      var checked = e.target.checked
+                      setDocs(function (prev) {
+                        var n = Object.assign({}, prev)
+                        n[dt.key] = Object.assign({}, prev[dt.key], { enabled: checked })
+                        return n
+                      })
+                    }}
+                    className="h-4 w-4 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500" />
+                  <span className="text-sm font-medium text-gray-700">{dt.label}</span>
+                  {dt.mandatory && <span className="text-[10px] font-bold uppercase text-red-500 ml-1">Required</span>}
+                  {state.existingPath && <span className="text-[10px] text-green-600 ml-1">✓ On file</span>}
+                </label>
+                {state.enabled && (
+                  <div className="px-3 pb-3">
+                    <DocSlot label=""
+                      existingPath={state.existingPath}
+                      selectedFile={state.file}
+                      onSelect={function (f) {
+                        setDocs(function (prev) {
+                          var n = Object.assign({}, prev)
+                          n[dt.key] = Object.assign({}, prev[dt.key], { file: f })
+                          return n
+                        })
+                      }}
+                      employeeId={employee?.id}
+                      docType={dt.key}
+                      expiryDate={dt.hasExpiry ? state.expiry : undefined}
+                      onExpiryChange={dt.hasExpiry ? function (v) {
+                        setDocs(function (prev) {
+                          var n = Object.assign({}, prev)
+                          n[dt.key] = Object.assign({}, prev[dt.key], { expiry: v })
+                          return n
+                        })
+                      } : undefined} />
+                  </div>
+                )}
+              </div>
+            )
+          })}
         </div>
       )}
 
