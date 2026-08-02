@@ -551,6 +551,10 @@ function Employees({ profile }) {
                         <button onClick={function () { setEditRow(r) }}
                           className="text-xs px-2 py-1 rounded text-indigo-600 hover:bg-indigo-50">Edit</button>
                       )}
+                      {isAdminOrHR && (
+                        <button onClick={function () { setDeleteRow(r) }}
+                          className="text-xs px-2 py-1 rounded text-red-600 hover:bg-red-50 ml-1">Delete</button>
+                      )}
                     </td>
                   </tr>
                 )

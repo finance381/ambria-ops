@@ -249,14 +249,7 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
       penalized_at: new Date().toISOString(),
     }).eq('id', exp.id)
     if (error) { alert('Deduction failed: ' + error.message); setSaving(false); return }
-    var { error: debitErr } = await supabase.rpc('wallet_admin_debit', {
-      p_user_id: exp.user_id,
-      p_amount_paise: deductionPaise,
-      p_description: 'Deduction: ' + rejectReason.trim().slice(0, 80),
-      p_ref_type: 'expense_deduction',
-      p_ref_id: String(exp.id),
-    })
-    if (debitErr) alert('Deduction failed: ' + debitErr.message)
+    // Salary ledger debit is written automatically by trg_expense_deduction_to_salary_ledger
     try { await logActivity('EXPENSE_DEDUCT', (exp.description || 'Expense') + ' | Deduction ' + formatPoints(deductionPaise) + ' | ' + rejectReason.trim()) } catch (_) {}
     setSaving(false)
     onUpdated()
