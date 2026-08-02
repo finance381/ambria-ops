@@ -15,7 +15,23 @@ var MANDATORY_DOC_KEYS = ["aadhaar", "pan"]
 var GENDER_VALUES = ["Male", "Female", "Other"]
 var MAX_FIELD_LEN = 500
 var MAX_ADDRESS_LEN = 1000
-var MAX_DOCS = 8
+var BUCKET = "employee-public-submissions"
+var MAX_FILE_BYTES = 10 * 1024 * 1024
+var ALLOWED_MIME = ["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif", "application/pdf"]
+
+function fileExt(name) {
+  if (!name) return "bin"
+  var i = name.lastIndexOf(".")
+  return i > 0 ? name.substring(i + 1).toLowerCase().replace(/[^a-z0-9]/g, "") : "bin"
+}
+
+function validFile(f) {
+  if (!f || typeof f.size !== "number") return "not_a_file"
+  if (f.size === 0) return "empty"
+  if (f.size > MAX_FILE_BYTES) return "too_large"
+  if (ALLOWED_MIME.indexOf(f.type) < 0) return "invalid_mime"
+  return null
+}
 
 function bad(status, code, msg) {
   return new Response(
@@ -46,14 +62,6 @@ function clean(v, max) {
   return s
 }
 
-function validPath(p) {
-  if (!p || typeof p !== "string") return false
-  if (p.indexOf("submissions/") !== 0) return false
-  if (p.indexOf("..") >= 0) return false
-  if (p.length > 500) return false
-  return true
-}
-
 serve(async function (req) {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders })
   if (req.method !== "POST") return bad(405, "method_not_allowed", "POST only")
@@ -71,9 +79,24 @@ serve(async function (req) {
   ip = ip.split(",")[0].trim()
   var ipHash = await sha256Hex(ip + "|" + IP_SALT)
 
+  var formData
+  try { formData = await req.formData() }
+  catch (e) { return bad(400, "invalid_form", "Body must be multipart/form-data") }
+
+  var payloadStr = formData.get("payload")
+  if (!payloadStr || typeof payloadStr !== "string") return bad(400, "missing_payload", "payload field required")
   var body
-  try { body = await req.json() }
-  catch (e) { return bad(400, "invalid_json", "Body must be JSON") }
+  try { body = JSON.parse(payloadStr) }
+  catch (e) { return bad(400, "invalid_payload_json", "payload not valid JSON") }
+
+  var photoFile = formData.get("photo")
+  if (photoFile && typeof photoFile.size !== "number") photoFile = null
+  var docFilesMap = {}
+  for (var dkIdx = 0; dkIdx < ALLOWED_DOC_KEYS.length; dkIdx++) {
+    var dkFf = ALLOWED_DOC_KEYS[dkIdx]
+    var dkFile = formData.get("doc_" + dkFf)
+    if (dkFile && typeof dkFile.size === "number") docFilesMap[dkFf] = dkFile
+  }
 
   // Honeypot: silent fake-success on bot
   if (clean(body.honey_field, 100)) {
@@ -164,33 +187,60 @@ serve(async function (req) {
   var nightWageP = toPaise(body.night_wage_rupees)
   var prevSalP = toPaise(body.prev_drawn_salary_rupees)
 
-  // Photo
-  var photoPath = clean(body.photo_file_path, 500)
-  if (photoPath && !validPath(photoPath)) return bad(400, "invalid_photo_path", "Photo path invalid")
-
-  // Docs
-  var docs = Array.isArray(body.docs) ? body.docs : []
-  if (docs.length > MAX_DOCS) return bad(400, "too_many_docs", "Too many documents")
-  var seenKeys = {}
-  var cleanDocs = []
-  for (var i = 0; i < docs.length; i++) {
-    var d = docs[i] || {}
-    var k = clean(d.doc_key, 50)
-    var p = clean(d.file_path, 500)
-    var ex = clean(d.expiry_date, 20)
-    if (!k || ALLOWED_DOC_KEYS.indexOf(k) < 0) return bad(400, "invalid_doc_key", "Doc key invalid: " + k)
-    if (seenKeys[k]) return bad(400, "duplicate_doc", "Duplicate doc: " + k)
-    seenKeys[k] = 1
-    if (!validPath(p)) return bad(400, "invalid_doc_path", "Doc path invalid for " + k)
-    if (ex && !/^\d{4}-\d{2}-\d{2}$/.test(ex)) return bad(400, "invalid_expiry", "Expiry invalid for " + k)
-    cleanDocs.push({ key: k, path: p, expiry: ex })
+  // Files: validate presence, MIME, size (paths generated server-side, never trusted from client)
+  if (photoFile) {
+    var pfe = validFile(photoFile)
+    if (pfe) return bad(400, "invalid_photo", "Photo invalid: " + pfe)
   }
-  for (var i2 = 0; i2 < MANDATORY_DOC_KEYS.length; i2++) {
-    if (!seenKeys[MANDATORY_DOC_KEYS[i2]]) return bad(400, "missing_mandatory_doc", "Missing: " + MANDATORY_DOC_KEYS[i2])
+  for (var mIdx = 0; mIdx < MANDATORY_DOC_KEYS.length; mIdx++) {
+    if (!docFilesMap[MANDATORY_DOC_KEYS[mIdx]]) return bad(400, "missing_mandatory_doc", "Missing: " + MANDATORY_DOC_KEYS[mIdx])
+  }
+  for (var vkKey in docFilesMap) {
+    var vfe = validFile(docFilesMap[vkKey])
+    if (vfe) return bad(400, "invalid_doc_file", "Doc invalid (" + vkKey + "): " + vfe)
   }
 
   // Declaration
   if (!body.declaration_accepted) return bad(400, "declaration_required", "Declaration must be accepted")
+
+  // Upload via service_role (bypasses RLS)
+  var submissionUuid = crypto.randomUUID()
+  var basePath = "submissions/" + submissionUuid
+  var uploadedPaths = []
+  var photoPath = null
+  var cleanDocs = []
+
+  async function cleanupUploads() {
+    if (uploadedPaths.length === 0) return
+    try { await supa.storage.from(BUCKET).remove(uploadedPaths) } catch (e) {}
+  }
+
+  try {
+    if (photoFile) {
+      var pp = basePath + "/photo." + fileExt(photoFile.name)
+      var upP = await supa.storage.from(BUCKET).upload(pp, photoFile, {
+        contentType: photoFile.type || "application/octet-stream", upsert: false
+      })
+      if (upP.error) throw new Error("photo: " + upP.error.message)
+      uploadedPaths.push(pp)
+      photoPath = pp
+    }
+    for (var dIdx = 0; dIdx < ALLOWED_DOC_KEYS.length; dIdx++) {
+      var dKey = ALLOWED_DOC_KEYS[dIdx]
+      var dFile = docFilesMap[dKey]
+      if (!dFile) continue
+      var dp = basePath + "/docs/" + dKey + "." + fileExt(dFile.name)
+      var upD = await supa.storage.from(BUCKET).upload(dp, dFile, {
+        contentType: dFile.type || "application/octet-stream", upsert: false
+      })
+      if (upD.error) throw new Error(dKey + ": " + upD.error.message)
+      uploadedPaths.push(dp)
+      cleanDocs.push({ key: dKey, path: dp, expiry: null })
+    }
+  } catch (upErr) {
+    await cleanupUploads()
+    return bad(500, "upload_failed", upErr.message || String(upErr))
+  }
 
   // Resolve doc_type_id from key catalog
   var typesRes = await supa.from("employee_document_types").select("id, key").eq("active", true)
@@ -230,6 +280,7 @@ serve(async function (req) {
 
   var insEmp = await supa.from("employees").insert(empPayload).select("id").single()
   if (insEmp.error) {
+    await cleanupUploads()
     var msg = insEmp.error.message || ""
     if (msg.indexOf("check_aadhaar_format") >= 0) return bad(400, "aadhaar_dup_or_bad", "Aadhaar failed check")
     if (msg.indexOf("check_pan_format") >= 0) return bad(400, "pan_bad", "PAN failed check")
@@ -245,7 +296,8 @@ serve(async function (req) {
     })
     var insDocs = await supa.from("employee_documents").insert(docRows)
     if (insDocs.error) {
-      // Best-effort rollback: delete the employee row so submission can be retried
+      // Best-effort rollback: delete uploaded files + employee row so submission can be retried
+      await cleanupUploads()
       await supa.from("employees").delete().eq("id", newEmpId)
       return bad(500, "doc_insert_failed", insDocs.error.message)
     }

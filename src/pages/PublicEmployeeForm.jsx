@@ -1,7 +1,6 @@
 import { useState, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 
-var BUCKET = 'employee-public-submissions'
 var DOC_TYPES = [
   { key: 'aadhaar', label: 'Aadhaar Card', required: true },
   { key: 'pan', label: 'PAN Card', required: true },
@@ -132,7 +131,6 @@ function DocUpload(props) {
 }
 
 function PublicEmployeeForm() {
-  var [submissionId] = useState(function () { return crypto.randomUUID() })
   var [saving, setSaving] = useState(false)
   var [done, setDone] = useState(null)
   var [error, setError] = useState('')
@@ -178,12 +176,6 @@ function PublicEmployeeForm() {
     setDocFiles(next)
   }
 
-  async function uploadTo(path, file) {
-    var r = await supabase.storage.from(BUCKET).upload(path, file, { upsert: true, cacheControl: '3600' })
-    if (r.error) throw new Error('Upload failed for ' + path + ': ' + r.error.message)
-    return path
-  }
-
   async function handleSubmit(e) {
     if (e && e.preventDefault) e.preventDefault()
     if (saving) return
@@ -202,26 +194,7 @@ function PublicEmployeeForm() {
 
     setSaving(true)
     try {
-      var basePath = 'submissions/' + submissionId
-
-      var photoPath = null
-      if (photoFile) {
-        setUploadProgress('Uploading photo...')
-        photoPath = await uploadTo(basePath + '/photo.' + fileExt(photoFile.name), photoFile)
-      }
-
-      var docList = []
-      for (var i = 0; i < DOC_TYPES.length; i++) {
-        var dt = DOC_TYPES[i]
-        var f = docFiles[dt.key]
-        if (!f) continue
-        setUploadProgress('Uploading ' + dt.label + '...')
-        var p = basePath + '/docs/' + dt.key + '.' + fileExt(f.name)
-        await uploadTo(p, f)
-        docList.push({ doc_key: dt.key, file_path: p })
-      }
-
-      setUploadProgress('Submitting form...')
+      setUploadProgress('Preparing submission...')
       var payload = {
         source_reference: sourceRef.trim() || null,
         full_name: fullName.trim(),
@@ -246,13 +219,22 @@ function PublicEmployeeForm() {
         ifsc_code: ifsc.trim().toUpperCase() || null,
         night_wage_rupees: nightWage ? Number(nightWage) : null,
         prev_drawn_salary_rupees: prevSalary ? Number(prevSalary) : null,
-        photo_file_path: photoPath,
-        docs: docList,
         declaration_accepted: true,
         honey_field: honeyRef.current ? honeyRef.current.value : ''
       }
 
-      var res = await supabase.functions.invoke('submit-employee', { body: payload })
+      var fd = new FormData()
+      fd.append('payload', JSON.stringify(payload))
+      if (photoFile) fd.append('photo', photoFile, 'photo.' + fileExt(photoFile.name))
+      for (var i = 0; i < DOC_TYPES.length; i++) {
+        var dt = DOC_TYPES[i]
+        var f = docFiles[dt.key]
+        if (!f) continue
+        fd.append('doc_' + dt.key, f, dt.key + '.' + fileExt(f.name))
+      }
+
+      setUploadProgress('Uploading...')
+      var res = await supabase.functions.invoke('submit-employee', { body: fd })
       if (res.error) {
         var msg = res.error.message || 'Submission failed'
         try {
