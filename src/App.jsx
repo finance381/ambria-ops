@@ -2,9 +2,15 @@ import { useAuth } from './hooks/useAuth'
 import Login from './pages/Login'
 import Shell from './components/layout/Shell'
 import AdminShell from './components/layout/AdminShell'
+import PublicEmployeeForm from './pages/PublicEmployeeForm'
 import { LangProvider } from './lib/i18n.jsx'
 
 function App() {
+  var params = new URLSearchParams(window.location.search)
+  if (params.get('form') === 'employee') {
+    return <PublicEmployeeForm />
+  }
+
   var { user, profile, loading, signIn, signOut } = useAuth()
 
   if (loading) {
@@ -19,7 +25,6 @@ function App() {
     return <Login />
   }
 
-  var params = new URLSearchParams(window.location.search)
   if (params.get('view') === 'admin' && (profile.role === 'admin' || profile.role === 'auditor')) {
     return <LangProvider><AdminShell profile={profile} onSignOut={signOut} /></LangProvider>
   }
