@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react'
 import { supabase } from '../lib/supabase'
+import { prepUpload } from '../lib/uploadHelper'
 
 var DOC_TYPES = [
   { key: 'aadhaar', label: 'Aadhaar Card', required: true },
@@ -225,12 +226,18 @@ function PublicEmployeeForm() {
 
       var fd = new FormData()
       fd.append('payload', JSON.stringify(payload))
-      if (photoFile) fd.append('photo', photoFile, 'photo.' + fileExt(photoFile.name))
+      if (photoFile) {
+        setUploadProgress('Compressing photo...')
+        var photoF = await prepUpload(photoFile, 100)
+        fd.append('photo', photoF, 'photo.' + fileExt(photoF.name))
+      }
       for (var i = 0; i < DOC_TYPES.length; i++) {
         var dt = DOC_TYPES[i]
         var f = docFiles[dt.key]
         if (!f) continue
-        fd.append('doc_' + dt.key, f, dt.key + '.' + fileExt(f.name))
+        setUploadProgress('Compressing ' + dt.label + '...')
+        var prepped = await prepUpload(f, 200)
+        fd.append('doc_' + dt.key, prepped, dt.key + '.' + fileExt(prepped.name))
       }
 
       setUploadProgress('Uploading...')

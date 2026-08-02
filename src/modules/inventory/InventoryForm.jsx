@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase, getImageUrl } from '../../lib/supabase'
+import { prepUpload } from '../../lib/uploadHelper'
 import SearchDropdown from '../../components/ui/SearchDropdown'
 import ImageCrop from '../../components/ImageCrop'
 import { translateToHindi } from '../../lib/translate'
@@ -60,21 +61,6 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved }) {
   var [packSizeBrand, setPackSizeBrand] = useState(seed?.brand || '')
   var [brandList, setBrandList] = useState([])
   var isEdit = !!item
-
-  function compressImage(dataUrl, maxBytes, callback) {
-    var img = new Image()
-    img.onload = function () {
-      var canvas = document.createElement('canvas')
-      var maxDim = 1200; var w = img.width; var h = img.height
-      if (w > maxDim || h > maxDim) { if (w > h) { h = Math.round(h * maxDim / w); w = maxDim } else { w = Math.round(w * maxDim / h); h = maxDim } }
-      canvas.width = w; canvas.height = h
-      var ctx = canvas.getContext('2d'); ctx.drawImage(img, 0, 0, w, h)
-      var quality = 0.8; var result = canvas.toDataURL('image/jpeg', quality)
-      while (result.length * 0.75 > maxBytes && quality > 0.1) { quality -= 0.1; result = canvas.toDataURL('image/jpeg', quality) }
-      if (result.length * 0.75 > maxBytes) { w = Math.round(w * 0.7); h = Math.round(h * 0.7); canvas.width = w; canvas.height = h; ctx.drawImage(img, 0, 0, w, h); result = canvas.toDataURL('image/jpeg', 0.6) }
-      callback(result)
-    }; img.src = dataUrl
-  }
 
   function deriveSource(itm, cats, csSubDeptId) {
     if (itm?._source) return itm._source
@@ -241,7 +227,15 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved }) {
     setErrors(function (prev) { var n = { ...prev }; delete n.img; return n })
     var reader = new FileReader(); reader.onload = function (ev) { setCropSrc(ev.target.result) }; reader.readAsDataURL(file); e.target.value = ''
   }
-  function handleCropped(dataUrl) { compressImage(dataUrl, 100 * 1024, function (compressed) { setImagePreview(compressed); setCropSrc(null); fetch(compressed).then(function (res) { return res.blob() }).then(function (blob) { setImageFile(new File([blob], 'photo.jpg', { type: 'image/jpeg' })) }) }) }
+  async function handleCropped(dataUrl) {
+    var res = await fetch(dataUrl)
+    var blob = await res.blob()
+    var origFile = new File([blob], 'photo.jpg', { type: 'image/jpeg' })
+    var compressed = await prepUpload(origFile, 100)
+    setImageFile(compressed)
+    setImagePreview(URL.createObjectURL(compressed))
+    setCropSrc(null)
+  }
   function handleUseFull(dataUrl) { handleCropped(dataUrl) }
   function handleCropCancel() { setCropSrc(null) }
   function removeImage() { setImageFile(null); setImagePreview('') }

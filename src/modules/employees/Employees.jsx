@@ -10,6 +10,7 @@ import EmployeeDetail from './EmployeeDetail'
 var STATUS_STYLES = {
   active:      { label: 'Active',      cls: 'bg-green-100 text-green-700' },
   probation:   { label: 'Probation',   cls: 'bg-amber-100 text-amber-700' },
+  pending:     { label: 'Pending',     cls: 'bg-purple-100 text-purple-700' },
   on_leave:    { label: 'On Leave',    cls: 'bg-blue-100 text-blue-700' },
   terminated:  { label: 'Terminated',  cls: 'bg-red-100 text-red-600' },
   resigned:    { label: 'Resigned',    cls: 'bg-gray-200 text-gray-600' },
@@ -35,6 +36,8 @@ function Employees({ profile }) {
   var [editRow, setEditRow] = useState(null)
   var [viewRow, setViewRow] = useState(null)
   var [showCreate, setShowCreate] = useState(false)
+  var [deleteRow, setDeleteRow] = useState(null)
+  var [copiedLink, setCopiedLink] = useState(false)
 
   // CSV import
   var [importModal, setImportModal] = useState(null)  // { rows, header, fileName }
@@ -81,6 +84,42 @@ function Employees({ profile }) {
   function toggleFilter(arr, val, setter) {
     if (arr.indexOf(val) === -1) { setter(arr.concat([val])) }
     else { setter(arr.filter(function (x) { return x !== val })) }
+  }
+
+  async function handleDelete() {
+    if (!deleteRow || saving) return
+    setSaving(true)
+    try {
+      // Collect storage paths first (photo + docs)
+      var pathsPublic = []
+      var pathsEmpDocs = []
+      var empRes = await supabase.from('employees').select('photo_file_path').eq('id', deleteRow.id).single()
+      var photoPath = empRes.data && empRes.data.photo_file_path
+      if (photoPath) {
+        if (photoPath.indexOf('submissions/') === 0) pathsPublic.push(photoPath)
+        else pathsEmpDocs.push(photoPath)
+      }
+      var docRes = await supabase.from('employee_documents').select('file_path').eq('employee_id', deleteRow.id)
+      ;(docRes.data || []).forEach(function (d) {
+        if (!d.file_path) return
+        if (d.file_path.indexOf('submissions/') === 0) pathsPublic.push(d.file_path)
+        else pathsEmpDocs.push(d.file_path)
+      })
+      // Best-effort storage cleanup
+      if (pathsPublic.length) { try { await supabase.storage.from('employee-public-submissions').remove(pathsPublic) } catch (_) {} }
+      if (pathsEmpDocs.length) { try { await supabase.storage.from('employee-docs').remove(pathsEmpDocs) } catch (_) {} }
+      // Delete FK rows then employee
+      await supabase.from('employee_documents').delete().eq('employee_id', deleteRow.id)
+      var delRes = await supabase.from('employees').delete().eq('id', deleteRow.id)
+      if (delRes.error) throw new Error(delRes.error.message)
+      try { await logActivity('EMPLOYEE_DELETE', (deleteRow.employee_code || 'no-code') + ' | ' + deleteRow.full_name) } catch (_) {}
+      setDeleteRow(null)
+      await loadAll()
+    } catch (err) {
+      alert('Delete failed: ' + (err.message || err) + '\nEmployee may have linked records (expenses, wallet, salary). Change status to Terminated / Resigned instead.')
+    } finally {
+      setSaving(false)
+    }
   }
 
   // Filter + sort
@@ -340,12 +379,40 @@ function Employees({ profile }) {
     URL.revokeObjectURL(url)
   }
 
+  var publicFormUrl = window.location.origin + (import.meta.env.BASE_URL || '/') + '?form=employee'
+  async function copyPublicFormLink() {
+    try {
+      await navigator.clipboard.writeText(publicFormUrl)
+      setCopiedLink(true)
+      setTimeout(function () { setCopiedLink(false) }, 2000)
+    } catch (e) {
+      alert('Copy failed. Link: ' + publicFormUrl)
+    }
+  }
+
   if (loading) {
     return <p className="text-sm text-gray-400 text-center py-8">Loading...</p>
   }
 
   return (
     <div className="space-y-4">
+      {/* Public form link */}
+      <div className="flex items-center gap-3 px-4 py-2.5 bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-200 rounded-lg">
+        <div className="text-lg shrink-0">🔗</div>
+        <div className="flex-1 min-w-0">
+          <div className="text-[11px] font-semibold text-indigo-700 uppercase tracking-wide">Public Joining Form</div>
+          <div className="text-xs text-gray-700 font-mono truncate select-all">{publicFormUrl}</div>
+        </div>
+        <button onClick={copyPublicFormLink}
+          className={"shrink-0 px-3 py-1.5 text-xs font-medium rounded-md transition-colors " + (copiedLink ? "text-white bg-green-600" : "text-white bg-indigo-600 hover:bg-indigo-700")}>
+          {copiedLink ? '✓ Copied' : 'Copy link'}
+        </button>
+        <a href={publicFormUrl} target="_blank" rel="noopener noreferrer"
+          className="shrink-0 px-3 py-1.5 text-xs font-medium text-indigo-600 bg-white border border-indigo-200 rounded-md hover:bg-indigo-50 transition-colors">
+          Open
+        </a>
+      </div>
+
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-2">
         <input type="text" value={search}
@@ -424,6 +491,7 @@ function Employees({ profile }) {
         <span>Shown: <b className="text-gray-700">{filtered.length}</b></span>
         <span>Active: <b className="text-green-600">{rows.filter(function (r) { return r.status === 'active' }).length}</b></span>
         <span>Probation: <b className="text-amber-600">{rows.filter(function (r) { return r.status === 'probation' }).length}</b></span>
+        <span>Pending: <b className="text-purple-600">{rows.filter(function (r) { return r.status === 'pending' }).length}</b></span>
         <span>On Leave: <b className="text-blue-600">{rows.filter(function (r) { return r.status === 'on_leave' }).length}</b></span>
         <span>Exited: <b className="text-gray-500">{rows.filter(function (r) { return r.status === 'terminated' || r.status === 'resigned' }).length}</b></span>
       </div>
@@ -442,7 +510,7 @@ function Employees({ profile }) {
                 <th className="px-3 py-2 text-left text-[11px] font-bold text-gray-500 uppercase tracking-wider">Contact</th>
                 <th className="px-3 py-2 text-left"><SortHeader label="DOJ" k="doj" /></th>
                 <th className="px-3 py-2 text-center text-[11px] font-bold text-gray-500 uppercase tracking-wider">App</th>
-                <th className="px-3 py-2 text-right text-[11px] font-bold text-gray-500 uppercase tracking-wider w-24">Actions</th>
+                <th className="px-3 py-2 text-right text-[11px] font-bold text-gray-500 uppercase tracking-wider w-32">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -495,6 +563,33 @@ function Employees({ profile }) {
       <p className="text-[11px] text-gray-400">
         🔒 Bank details, salary, Aadhaar, PAN, and documents are only visible inside the edit form and detail view.
       </p>
+
+      {/* Delete confirmation */}
+      <Modal open={!!deleteRow} onClose={function () { if (!saving) setDeleteRow(null) }} title="Delete Employee">
+        {deleteRow && (
+          <div className="space-y-4">
+            <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700">
+              <div className="font-semibold mb-1">Permanent delete — cannot be undone.</div>
+              <div>Employee record, all documents, and uploaded files will be removed.</div>
+              <div className="mt-2 text-xs">If this person has expenses, wallet entries, or salary history, delete will fail. Change status to Terminated / Resigned instead to preserve history.</div>
+            </div>
+            <div className="text-sm text-gray-700">
+              <div><b>{deleteRow.full_name}</b></div>
+              <div className="text-xs text-gray-500">{deleteRow.employee_code || 'no code'} · {(STATUS_STYLES[deleteRow.status] || {}).label || deleteRow.status}</div>
+            </div>
+            <div className="flex gap-3 justify-end pt-2 border-t border-gray-100">
+              <button onClick={function () { setDeleteRow(null) }} disabled={saving}
+                className="px-4 py-2 text-sm text-gray-600 bg-gray-100 rounded-md hover:bg-gray-200 disabled:opacity-50">
+                Cancel
+              </button>
+              <button onClick={handleDelete} disabled={saving}
+                className="px-4 py-2 text-sm text-white bg-red-600 rounded-md hover:bg-red-700 disabled:opacity-50 font-medium">
+                {saving ? 'Deleting...' : 'Delete Permanently'}
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
 
       {/* Create modal */}
       <Modal open={showCreate} onClose={function () { if (!saving) setShowCreate(false) }} title="Add Employee" wide>

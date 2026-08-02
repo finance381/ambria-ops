@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { logActivity } from '../../lib/logger'
+import { prepUpload } from '../../lib/uploadHelper'
 import SearchDropdown from '../../components/ui/SearchDropdown'
 
 var BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-']
@@ -213,10 +214,12 @@ function EmployeeForm({ employee, profile, jobDepartments, managers, canSeeSalar
   }
 
   async function uploadDoc(employeeId, docType, file, oldPath) {
-    var ext = fileExt(file)
+    var kb = docType === 'photo' ? 100 : 200
+    var prepped = await prepUpload(file, kb)
+    var ext = fileExt(prepped)
     var newPath = employeeId + '/' + docType + '.' + ext
     var { error: upErr } = await supabase.storage.from('employee-docs')
-      .upload(newPath, file, { upsert: true, contentType: file.type })
+      .upload(newPath, prepped, { upsert: true, contentType: prepped.type })
     if (upErr) throw upErr
     // Delete old if extension differed (upsert overwrites same key only)
     if (oldPath && oldPath !== newPath) {

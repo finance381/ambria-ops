@@ -8,6 +8,7 @@ import ItemReceipts from './ItemReceipts'
 import { Badge } from '../../components/ui/Badge'
 import { APPROVAL_STATUS_COLORS, APPROVAL_STATUS_LABELS } from '../../lib/constants'
 import EventDatePicker from '../../components/ui/EventDatePicker'
+import { prepUpload } from '../../lib/uploadHelper'
 import { filterUserCategories } from '../../lib/categories'
 import { pushBack, goBack as navBack } from '../../lib/backNav'
 
@@ -975,9 +976,10 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
         var amtPaise = Math.round(Number(expAmount) * 100)
         var receiptPath = null
         if (expReceipt) {
-          var ext = expReceipt.name.split('.').pop()
+          var eF = await prepUpload(expReceipt, 100)
+          var ext = eF.name.split('.').pop()
           var path = 'requisitions/expense/' + profile.id + '_' + Date.now() + '.' + ext
-          var { error: upErr } = await supabase.storage.from('receipts').upload(path, expReceipt, { upsert: true })
+          var { error: upErr } = await supabase.storage.from('receipts').upload(path, eF, { upsert: true })
           if (upErr) { alert('Image upload failed: ' + upErr.message); setSaving(false); return }
           receiptPath = path
         }

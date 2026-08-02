@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { formatDate, formatPoints } from '../../lib/format'
 import { logActivity } from '../../lib/logger'
+import { prepUpload } from '../../lib/uploadHelper'
 import SearchDropdown from '../../components/ui/SearchDropdown'
 import BottomSheet from '../../components/ui/BottomSheet'
 
@@ -220,9 +221,10 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     var defaultDesc = issueType === 'debit' ? 'Points deducted by admin' : 'Points issued by admin'
     var imagePath = null
     if (issueImage) {
-      var ext = issueImage.name.split('.').pop()
+      var iF = await prepUpload(issueImage, 100)
+      var ext = iF.name.split('.').pop()
       var path = 'wallet/issued/' + issueModal.user_id + '_' + Date.now() + '.' + ext
-      var { error: upErr } = await supabase.storage.from('receipts').upload(path, issueImage, { upsert: true })
+      var { error: upErr } = await supabase.storage.from('receipts').upload(path, iF, { upsert: true })
       if (upErr) { alert('Image upload failed: ' + upErr.message); setIssueSaving(false); return }
       imagePath = path
     }
@@ -260,9 +262,10 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     setReceiveSaving(true)
     var imagePath = null
     if (receiveImage) {
-      var ext = receiveImage.name.split('.').pop()
+      var rF = await prepUpload(receiveImage, 100)
+      var ext = rF.name.split('.').pop()
       var path = 'wallet/received/' + profile.id + '_' + Date.now() + '.' + ext
-      var { error: upErr } = await supabase.storage.from('receipts').upload(path, receiveImage, { upsert: true })
+      var { error: upErr } = await supabase.storage.from('receipts').upload(path, rF, { upsert: true })
       if (upErr) { alert('Image upload failed: ' + upErr.message); setReceiveSaving(false); return }
       imagePath = path
     }
@@ -324,9 +327,10 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     var amountPaise = Math.round(Number(transferAmount) * 100)
     var imagePath = null
     if (transferImage) {
-      var ext = transferImage.name.split('.').pop()
+      var tF = await prepUpload(transferImage, 100)
+      var ext = tF.name.split('.').pop()
       var path = 'wallet/transfer/' + profile.id + '_' + Date.now() + '.' + ext
-      var { error: upErr } = await supabase.storage.from('receipts').upload(path, transferImage, { upsert: true })
+      var { error: upErr } = await supabase.storage.from('receipts').upload(path, tF, { upsert: true })
       if (upErr) { alert('Image upload failed: ' + upErr.message); setTransferSaving(false); return }
       imagePath = path
     }
@@ -351,9 +355,10 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     setTransferConfirmSaving(true)
     var imagePath = null
     if (transferConfirmImage) {
-      var ext = transferConfirmImage.name.split('.').pop()
+      var tcF = await prepUpload(transferConfirmImage, 100)
+      var ext = tcF.name.split('.').pop()
       var path = 'wallet/transfer/' + profile.id + '_recv_' + Date.now() + '.' + ext
-      var { error: upErr } = await supabase.storage.from('receipts').upload(path, transferConfirmImage, { upsert: true })
+      var { error: upErr } = await supabase.storage.from('receipts').upload(path, tcF, { upsert: true })
       if (upErr) { alert('Image upload failed: ' + upErr.message); setTransferConfirmSaving(false); return }
       imagePath = path
     }
@@ -401,9 +406,10 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     var amountPaise = Math.round(Number(collectAmount) * 100)
     var imagePath = null
     if (collectImage) {
-      var ext = collectImage.name.split('.').pop()
+      var cF = await prepUpload(collectImage, 100)
+      var ext = cF.name.split('.').pop()
       var path = 'wallet/collection/' + profile.id + '_' + Date.now() + '.' + ext
-      var { error: upErr } = await supabase.storage.from('receipts').upload(path, collectImage, { upsert: true })
+      var { error: upErr } = await supabase.storage.from('receipts').upload(path, cF, { upsert: true })
       if (upErr) { alert('Image upload failed: ' + upErr.message); setCollectSaving(false); return }
       imagePath = path
     }

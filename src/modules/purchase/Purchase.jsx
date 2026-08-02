@@ -8,6 +8,7 @@ import SearchDropdown from '../../components/ui/SearchDropdown'
 import InventoryForm from '../inventory/InventoryForm'
 import BottomSheet from '../../components/ui/BottomSheet'
 import { pushBack, goBack as navBack } from '../../lib/backNav'
+import { prepUpload } from '../../lib/uploadHelper'
 
 var PO_STATUS_LABELS = {
   draft: 'Draft',
@@ -589,9 +590,10 @@ function Purchase({ profile, mode }) {
     // Upload receipt first (storage upload is not txn-safe; keep it client-side)
     var receiptPath = null
     if (receiptFile) {
-      var ext = receiptFile.name.split('.').pop()
+      var rF = await prepUpload(receiptFile, 100)
+      var ext = rF.name.split('.').pop()
       var fileName = profile.id + '/po-' + Date.now() + '.' + ext
-      var { error: upErr } = await supabase.storage.from('receipts').upload(fileName, receiptFile)
+      var { error: upErr } = await supabase.storage.from('receipts').upload(fileName, rF)
       if (!upErr) receiptPath = fileName
     }
 
@@ -1562,9 +1564,10 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, ve
     // Upload receipt ONCE
     var receiptPath = null
     if (multiForm.receipt) {
-      var ext = multiForm.receipt.name.split('.').pop()
+      var mF = await prepUpload(multiForm.receipt, 100)
+      var ext = mF.name.split('.').pop()
       var fileName = profile.id + '/po-multi-' + Date.now() + '.' + ext
-      var { error: upErr } = await supabase.storage.from('receipts').upload(fileName, multiForm.receipt)
+      var { error: upErr } = await supabase.storage.from('receipts').upload(fileName, mF)
       if (upErr) { alert('Receipt upload failed: ' + upErr.message); setMultiProcessing(false); return }
       receiptPath = fileName
     }

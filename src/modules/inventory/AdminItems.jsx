@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { prepUpload } from '../../lib/uploadHelper'
 import { supabase, getImageUrl, fetchAll } from '../../lib/supabase'
 import { formatDate, titleCase } from '../../lib/format'
 import { logActivity } from '../../lib/logger'
@@ -412,26 +413,6 @@ function AdminItems({ profile }) {
   }
 
   // ─── BULK IMAGE IMPORT ─────────────────────────────────────
-  function compressImageBlob(blob, maxBytes, callback) {
-    var reader = new FileReader()
-    reader.onload = function (ev) {
-      var img = new Image()
-      img.onload = function () {
-        var canvas = document.createElement('canvas')
-        var maxDim = 1200; var w = img.width; var h = img.height
-        if (w > maxDim || h > maxDim) { if (w > h) { h = Math.round(h * maxDim / w); w = maxDim } else { w = Math.round(w * maxDim / h); h = maxDim } }
-        canvas.width = w; canvas.height = h
-        canvas.getContext('2d').drawImage(img, 0, 0, w, h)
-        var q = 0.8; var dataUrl = canvas.toDataURL('image/jpeg', q)
-        while (dataUrl.length * 0.75 > maxBytes && q > 0.1) { q -= 0.1; dataUrl = canvas.toDataURL('image/jpeg', q) }
-        fetch(dataUrl).then(function (res) { return res.blob() }).then(callback).catch(function () { callback(blob) })
-      }
-      img.onerror = function () { callback(blob) }
-      img.src = ev.target.result
-    }
-    reader.readAsDataURL(blob)
-  }
-
   async function parseBulkImageZip(e) {
     var file = e.target.files?.[0]
     if (!file) return
@@ -488,7 +469,8 @@ function AdminItems({ profile }) {
       var results = await Promise.all(batch.map(async function (m) {
         try {
           var rawBlob = await m.entry.async('blob')
-          var compressed = await new Promise(function (resolve) { compressImageBlob(rawBlob, 100 * 1024, resolve) })
+          var rawFile = new File([rawBlob], m.basename, { type: 'image/jpeg' })
+          var compressed = await prepUpload(rawFile, 100)
           var prefix = m.item._source === 'catering_store' ? 'catering' : 'inventory'
           var tableName = m.item._source === 'catering_store' ? 'catering_store_items' : 'inventory_items'
           var path = prefix + '/' + m.item.id + '_' + Date.now() + '.jpg'
