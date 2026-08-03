@@ -20,6 +20,7 @@ export default defineConfig({
             "background_color": "#f5f6f8",
             "theme_color": "#1a1a2e",
             "orientation": "portrait",
+            "handle_links": "not-preferred",
             "icons": [
               {
                 "src": "icon-192.png",

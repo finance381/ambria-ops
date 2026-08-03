@@ -156,6 +156,33 @@ function DocUpload(props) {
 }
 
 function PublicEmployeeForm() {
+  // Bail out if opened inside installed PWA — form is for external users, needs browser.
+  var isStandalone = typeof window !== 'undefined' && (
+    window.matchMedia('(display-mode: standalone)').matches ||
+    window.navigator.standalone === true
+  )
+  if (isStandalone) {
+    var browserUrl = window.location.href
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-indigo-50 to-purple-50 flex items-center justify-center p-4">
+        <div className="bg-white rounded-2xl shadow-xl p-6 max-w-md w-full text-center">
+          <div className="text-3xl mb-3">🌐</div>
+          <h2 className="text-lg font-bold text-gray-900 mb-2">Open in Browser</h2>
+          <p className="text-sm text-gray-600 mb-4">This joining form is meant for a web browser, not the Ambria Ops app. Please copy the link and paste it into Chrome / Safari.</p>
+          <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-xs text-gray-700 break-all mb-3">{browserUrl}</div>
+          <button type="button"
+            onClick={function () {
+              try { navigator.clipboard.writeText(browserUrl) } catch (_) {}
+              alert('Link copied. Now paste into your browser.')
+            }}
+            className="px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700">
+            Copy Link
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   var [saving, setSaving] = useState(false)
   var [done, setDone] = useState(null)
   var [error, setError] = useState('')
