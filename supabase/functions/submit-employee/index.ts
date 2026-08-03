@@ -242,13 +242,13 @@ serve(async function (req) {
     return bad(500, "upload_failed", upErr.message || String(upErr))
   }
 
-  // Resolve doc_type_id from key catalog
-  var typesRes = await supa.from("employee_document_types").select("id, key").eq("active", true)
+  // Validate doc keys against active catalog (rejects unknown/deactivated types)
+  var typesRes = await supa.from("employee_document_types").select("key").eq("active", true)
   if (typesRes.error) return bad(500, "type_lookup_failed", typesRes.error.message)
-  var keyToId = {}
-  ;(typesRes.data || []).forEach(function (r) { keyToId[r.key] = r.id })
+  var validKeys = {}
+  ;(typesRes.data || []).forEach(function (r) { validKeys[r.key] = true })
   for (var j = 0; j < cleanDocs.length; j++) {
-    if (!keyToId[cleanDocs[j].key]) return bad(400, "unknown_doc_type", "Unknown: " + cleanDocs[j].key)
+    if (!validKeys[cleanDocs[j].key]) return bad(400, "unknown_doc_type", "Unknown: " + cleanDocs[j].key)
   }
 
   // Insert employee (pending)
@@ -273,6 +273,7 @@ serve(async function (req) {
     source_reference: srcRef,
     status: "pending",
     submitted_via: "public_form",
+    submission_uuid: submissionUuid,
     job_department_ids: [],
     monthly_cash_paise: 0,
     monthly_bank_paise: 0,

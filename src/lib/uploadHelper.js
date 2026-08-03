@@ -14,3 +14,11 @@ export async function prepUpload(file, targetKB) {
     return file
   }
 }
+
+// Route employee file paths to the correct storage bucket.
+// Public-form submissions land under `submissions/` prefix (public bucket).
+// All other paths (including approved/admin-added docs) → employee-docs.
+export function bucketForEmployeeFile(path) {
+  if (path && path.indexOf('submissions/') === 0) return 'employee-public-submissions'
+  return 'employee-docs'
+}

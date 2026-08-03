@@ -37,6 +37,7 @@ function Employees({ profile }) {
   var [viewRow, setViewRow] = useState(null)
   var [showCreate, setShowCreate] = useState(false)
   var [deleteRow, setDeleteRow] = useState(null)
+  var [approveRow, setApproveRow] = useState(null)
   var [copiedLink, setCopiedLink] = useState(false)
 
   // CSV import
@@ -93,8 +94,9 @@ function Employees({ profile }) {
       // Collect storage paths first (photo + docs)
       var pathsPublic = []
       var pathsEmpDocs = []
-      var empRes = await supabase.from('employees').select('photo_file_path').eq('id', deleteRow.id).single()
+      var empRes = await supabase.from('employees').select('photo_file_path, submission_uuid').eq('id', deleteRow.id).single()
       var photoPath = empRes.data && empRes.data.photo_file_path
+      var submissionUuid = empRes.data && empRes.data.submission_uuid
       if (photoPath) {
         if (photoPath.indexOf('submissions/') === 0) pathsPublic.push(photoPath)
         else pathsEmpDocs.push(photoPath)
@@ -105,6 +107,25 @@ function Employees({ profile }) {
         if (d.file_path.indexOf('submissions/') === 0) pathsPublic.push(d.file_path)
         else pathsEmpDocs.push(d.file_path)
       })
+      // Also sweep any leftover files under submissions/<uuid>/ prefix (belt & braces)
+      if (submissionUuid) {
+        try {
+          var listRes = await supabase.storage.from('employee-public-submissions').list('submissions/' + submissionUuid, { limit: 100 })
+          ;(listRes.data || []).forEach(function (o) {
+            if (o && o.name) {
+              var p = 'submissions/' + submissionUuid + '/' + o.name
+              if (pathsPublic.indexOf(p) === -1) pathsPublic.push(p)
+            }
+          })
+          var listDocsRes = await supabase.storage.from('employee-public-submissions').list('submissions/' + submissionUuid + '/docs', { limit: 100 })
+          ;(listDocsRes.data || []).forEach(function (o) {
+            if (o && o.name) {
+              var p2 = 'submissions/' + submissionUuid + '/docs/' + o.name
+              if (pathsPublic.indexOf(p2) === -1) pathsPublic.push(p2)
+            }
+          })
+        } catch (_) {}
+      }
       // Best-effort storage cleanup
       if (pathsPublic.length) { try { await supabase.storage.from('employee-public-submissions').remove(pathsPublic) } catch (_) {} }
       if (pathsEmpDocs.length) { try { await supabase.storage.from('employee-docs').remove(pathsEmpDocs) } catch (_) {} }
@@ -117,6 +138,26 @@ function Employees({ profile }) {
       await loadAll()
     } catch (err) {
       alert('Delete failed: ' + (err.message || err) + '\nEmployee may have linked records (expenses, wallet, salary). Change status to Terminated / Resigned instead.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleApprove() {
+    if (!approveRow || saving) return
+    if (approveRow.status !== 'pending') { setApproveRow(null); return }
+    setSaving(true)
+    try {
+      var upd = await supabase.from('employees')
+        .update({ status: 'probation' })
+        .eq('id', approveRow.id)
+        .eq('status', 'pending')
+      if (upd.error) throw new Error(upd.error.message)
+      try { await logActivity('EMPLOYEE_APPROVE', (approveRow.employee_code || 'pending') + ' | ' + approveRow.full_name) } catch (_) {}
+      setApproveRow(null)
+      await loadAll()
+    } catch (err) {
+      alert('Approve failed: ' + (err.message || err))
     } finally {
       setSaving(false)
     }
@@ -551,9 +592,13 @@ function Employees({ profile }) {
                         <button onClick={function () { setEditRow(r) }}
                           className="text-xs px-2 py-1 rounded text-indigo-600 hover:bg-indigo-50">Edit</button>
                       )}
+                      {r.status === 'pending' && isAdminOrHR && (
+                        <button onClick={function () { setApproveRow(r) }}
+                          className="text-xs px-2 py-1 rounded text-green-600 hover:bg-green-50 ml-1">Approve</button>
+                      )}
                       {isAdminOrHR && (
                         <button onClick={function () { setDeleteRow(r) }}
-                          className="text-xs px-2 py-1 rounded text-red-600 hover:bg-red-50 ml-1">Delete</button>
+                          className={"text-xs px-2 py-1 rounded ml-1 " + (r.status === 'pending' ? 'text-orange-600 hover:bg-orange-50' : 'text-red-600 hover:bg-red-50')}>{r.status === 'pending' ? 'Reject' : 'Delete'}</button>
                       )}
                     </td>
                   </tr>
@@ -568,14 +613,16 @@ function Employees({ profile }) {
         🔒 Bank details, salary, Aadhaar, PAN, and documents are only visible inside the edit form and detail view.
       </p>
 
-      {/* Delete confirmation */}
-      <Modal open={!!deleteRow} onClose={function () { if (!saving) setDeleteRow(null) }} title="Delete Employee">
+      {/* Delete / Reject confirmation */}
+      <Modal open={!!deleteRow} onClose={function () { if (!saving) setDeleteRow(null) }} title={deleteRow && deleteRow.status === 'pending' ? 'Reject Submission' : 'Delete Employee'}>
         {deleteRow && (
           <div className="space-y-4">
             <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700">
-              <div className="font-semibold mb-1">Permanent delete — cannot be undone.</div>
+              <div className="font-semibold mb-1">{deleteRow.status === 'pending' ? 'Reject and delete this pending submission?' : 'Permanent delete — cannot be undone.'}</div>
               <div>Employee record, all documents, and uploaded files will be removed.</div>
-              <div className="mt-2 text-xs">If this person has expenses, wallet entries, or salary history, delete will fail. Change status to Terminated / Resigned instead to preserve history.</div>
+              {deleteRow.status !== 'pending' && (
+                <div className="mt-2 text-xs">If this person has expenses, wallet entries, or salary history, delete will fail. Change status to Terminated / Resigned instead to preserve history.</div>
+              )}
             </div>
             <div className="text-sm text-gray-700">
               <div><b>{deleteRow.full_name}</b></div>
@@ -588,7 +635,34 @@ function Employees({ profile }) {
               </button>
               <button onClick={handleDelete} disabled={saving}
                 className="px-4 py-2 text-sm text-white bg-red-600 rounded-md hover:bg-red-700 disabled:opacity-50 font-medium">
-                {saving ? 'Deleting...' : 'Delete Permanently'}
+                {saving ? (deleteRow && deleteRow.status === 'pending' ? 'Rejecting...' : 'Deleting...') : (deleteRow && deleteRow.status === 'pending' ? 'Reject & Delete' : 'Delete Permanently')}
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Approve confirmation */}
+      <Modal open={!!approveRow} onClose={function () { if (!saving) setApproveRow(null) }} title="Approve Submission">
+        {approveRow && (
+          <div className="space-y-4">
+            <div className="p-3 rounded-lg bg-green-50 border border-green-200 text-sm text-green-700">
+              <div className="font-semibold mb-1">Approve this submission?</div>
+              <div>Status will change to Probation. Employee code will be generated automatically.</div>
+              <div className="mt-2 text-xs">Review documents and details first via View. You can fill missing fields (departments, salary, DOJ) via Edit after approval.</div>
+            </div>
+            <div className="text-sm text-gray-700">
+              <div><b>{approveRow.full_name}</b></div>
+              <div className="text-xs text-gray-500">{approveRow.contact_number || '—'} · {approveRow.personal_email || ''}</div>
+            </div>
+            <div className="flex gap-3 justify-end pt-2 border-t border-gray-100">
+              <button onClick={function () { setApproveRow(null) }} disabled={saving}
+                className="px-4 py-2 text-sm text-gray-600 bg-gray-100 rounded-md hover:bg-gray-200 disabled:opacity-50">
+                Cancel
+              </button>
+              <button onClick={handleApprove} disabled={saving}
+                className="px-4 py-2 text-sm text-white bg-green-600 rounded-md hover:bg-green-700 disabled:opacity-50 font-medium">
+                {saving ? 'Approving...' : 'Approve'}
               </button>
             </div>
           </div>

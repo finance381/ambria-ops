@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { logActivity } from '../../lib/logger'
-import { prepUpload } from '../../lib/uploadHelper'
+import { prepUpload, bucketForEmployeeFile } from '../../lib/uploadHelper'
 import SearchDropdown from '../../components/ui/SearchDropdown'
 
 var BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-']
@@ -185,7 +185,7 @@ function EmployeeForm({ employee, profile, jobDepartments, managers, canSeeSalar
   // Fetch signed URL for existing photo
   useEffect(function () {
     if (!photoPath) { setPhotoSignedUrl(''); return }
-    supabase.storage.from('employee-docs').createSignedUrl(photoPath, 600)
+    supabase.storage.from(bucketForEmployeeFile(photoPath)).createSignedUrl(photoPath, 600)
       .then(function (res) { if (res.data) setPhotoSignedUrl(res.data.signedUrl) })
   }, [photoPath])
 
@@ -828,7 +828,7 @@ function DocSlot({ label, existingPath, selectedFile, onSelect, employeeId, docT
   async function openPreview() {
     if (!employeeId || !existingPath) return
     setLoadingPreview(true)
-    var { data, error } = await supabase.storage.from('employee-docs')
+    var { data, error } = await supabase.storage.from(bucketForEmployeeFile(existingPath))
       .createSignedUrl(existingPath, 60)
     setLoadingPreview(false)
     if (error) { alert('Preview failed: ' + error.message); return }

@@ -4,6 +4,7 @@ import { logActivity } from '../../lib/logger'
 import { formatPoints } from '../../lib/format'
 import { compressImage } from '../../lib/imageCompress'
 
+
 var REASON_PRESETS = [
   'LOP (Leave Without Pay)',
   'Advance recovery',
@@ -350,9 +351,9 @@ function PaySalaryModal(props) {
             className="flex-1 py-2.5 text-sm font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 disabled:opacity-50">
             Cancel
           </button>
-          <button onClick={submit} disabled={saving}
+          <button onClick={submit} disabled={saving || payImgBusy}
             className="flex-1 py-2.5 text-sm font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50">
-            {saving ? 'Paying...' : 'Pay Salary'}
+            {saving ? 'Paying...' : (payImgBusy ? 'Compressing...' : 'Pay Salary')}
           </button>
         </div>
       </div>
