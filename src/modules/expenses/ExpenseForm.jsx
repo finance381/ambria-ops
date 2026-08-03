@@ -25,9 +25,13 @@ function makeEntry() {
     recording: false,
     isItemPurchase: false,
     items: [makeItem()],
-    paymentCreditRupees: '',  // vendor-credit portion (rupees). Cash = amount - credit.
-    paymentCreditMode: '',    // 'cash' | 'bank' — required when creditRupees > 0
-    paymentDueDate: ''        // ISO date — required when creditRupees > 0
+    paymentCreditRupees: '',  // vendor-credit total (rupees). Cash = amount - credit.
+    payWithCash: false,       // cash leg toggle (only when credit > 0)
+    payWithBank: false,       // bank leg toggle (only when credit > 0)
+    paymentCreditCashRupees: '', // cash portion of credit total
+    paymentCreditBankRupees: '', // bank portion of credit total
+    cashDueDate: '',          // required when payWithCash + cash portion > 0
+    bankDueDate: ''           // required when payWithBank + bank portion > 0
   }
 }
 
@@ -117,8 +121,12 @@ function hydrateEntry(exp) {
     isItemPurchase: isItemP,
     items: isItemP && itemsFromMeta.length > 0 ? itemsFromMeta : [makeItem()],
     paymentCreditRupees: exp.payment_credit_paise ? String(exp.payment_credit_paise / 100) : '',
-    paymentCreditMode: exp.payment_credit_mode || '',
-    paymentDueDate: exp.due_date || ''
+    payWithCash: (exp.payment_credit_cash_paise || 0) > 0,
+    payWithBank: (exp.payment_credit_bank_paise || 0) > 0,
+    paymentCreditCashRupees: exp.payment_credit_cash_paise ? String(exp.payment_credit_cash_paise / 100) : '',
+    paymentCreditBankRupees: exp.payment_credit_bank_paise ? String(exp.payment_credit_bank_paise / 100) : '',
+    cashDueDate: exp.cash_due_date || '',
+    bankDueDate: exp.bank_due_date || ''
   }
 }
 
@@ -538,7 +546,8 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
   }
 
   // Payment split model:
-  //   amount_paise = payment_cash_paise + payment_credit_paise   (invariant)
+  //   amount_paise = payment_cash_paise + payment_credit_paise                 (invariant)
+  //   payment_credit_paise = payment_credit_cash_paise + payment_credit_bank_paise  (invariant)
   //   Ledger L1 credit = amount_paise (only when credit > 0 AND vendor picked)
   //   Ledger L2 debit  = payment_cash_paise
   //   Wallet debit for credit-mode = cash + tax; for all-cash = amount (legacy)
@@ -559,11 +568,29 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
     }
     var cashPaise = grossPaise - creditPaise
     var walletSpendPaise = creditPaise > 0 ? (cashPaise + taxPaise) : (grossPaise + taxPaise)
+    // Leg-level distribution of credit
+    var cashLegPaise = 0
+    var bankLegPaise = 0
+    if (creditPaise > 0) {
+      var cashLegRaw = Math.round(Number(e.paymentCreditCashRupees || 0) * 100)
+      var bankLegRaw = Math.round(Number(e.paymentCreditBankRupees || 0) * 100)
+      var onlyCash = e.payWithCash && !e.payWithBank
+      var onlyBank = e.payWithBank && !e.payWithCash
+      var both = e.payWithCash && e.payWithBank
+      if (onlyCash) { cashLegPaise = creditPaise; bankLegPaise = 0 }
+      else if (onlyBank) { cashLegPaise = 0; bankLegPaise = creditPaise }
+      else if (both) {
+        cashLegPaise = Math.max(0, Math.min(creditPaise, cashLegRaw))
+        bankLegPaise = Math.max(0, creditPaise - cashLegPaise)
+      }
+    }
     return {
       grossPaise: grossPaise,
       taxPaise: taxPaise,
       cashPaise: cashPaise,
       creditPaise: creditPaise,
+      cashLegPaise: cashLegPaise,
+      bankLegPaise: bankLegPaise,
       walletSpendPaise: walletSpendPaise,
       vendorPicked: vendorPicked,
       vendorFieldKey: vf ? vf.key : null
@@ -573,7 +600,17 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
   function setPaymentCredit(idx, valRupees) {
     var updated = entries.map(function (e, i) {
       if (i !== idx) return e
-      return Object.assign({}, e, { paymentCreditRupees: valRupees })
+      var patch = { paymentCreditRupees: valRupees }
+      // Reset leg splits — user must re-pick after changing total
+      patch.paymentCreditCashRupees = ''
+      patch.paymentCreditBankRupees = ''
+      if (!Number(valRupees || 0)) {
+        patch.payWithCash = false
+        patch.payWithBank = false
+        patch.cashDueDate = ''
+        patch.bankDueDate = ''
+      }
+      return Object.assign({}, e, patch)
     })
     setEntries(updated)
   }
@@ -774,8 +811,21 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
       if (e.receiptFiles.length === 0 && !e.audioBlob && !hasExistingReceipt) return 'Entry ' + (i + 1) + ': Receipt image or voice note is required'
       var _entrySplit = getEntrySplit(e)
       if (_entrySplit.creditPaise > 0) {
-        if (!e.paymentCreditMode) return 'Entry ' + (i + 1) + ': Select cash or bank for credit payment'
-        if (!e.paymentDueDate) return 'Entry ' + (i + 1) + ': Payment due date is required for credit'
+        if (!e.payWithCash && !e.payWithBank) return 'Entry ' + (i + 1) + ': Select Cash and/or Bank for credit payment'
+        if (e.payWithCash && e.payWithBank) {
+          if (_entrySplit.cashLegPaise + _entrySplit.bankLegPaise !== _entrySplit.creditPaise) {
+            return 'Entry ' + (i + 1) + ': Cash + Bank portions must equal credit total'
+          }
+          if (_entrySplit.cashLegPaise === 0 || _entrySplit.bankLegPaise === 0) {
+            return 'Entry ' + (i + 1) + ': Both Cash and Bank portions must be > 0 (or uncheck one)'
+          }
+        }
+        if (e.payWithCash && _entrySplit.cashLegPaise > 0 && !e.cashDueDate) {
+          return 'Entry ' + (i + 1) + ': Cash payment due date is required'
+        }
+        if (e.payWithBank && _entrySplit.bankLegPaise > 0 && !e.bankDueDate) {
+          return 'Entry ' + (i + 1) + ': Bank payment due date is required'
+        }
       }
     }
     // Hard block: total WALLET SPEND across all entries must not exceed wallet balance.
@@ -1001,8 +1051,12 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
             tax_paise: e.taxAmount ? Math.round(Number(e.taxAmount) * 100) : 0,
             payment_cash_paise: _split.cashPaise,
             payment_credit_paise: _split.creditPaise,
-            payment_credit_mode: _split.creditPaise > 0 ? (e.paymentCreditMode || null) : null,
-            due_date: _split.creditPaise > 0 ? (e.paymentDueDate || null) : null,
+            payment_credit_cash_paise: _split.cashLegPaise,
+            payment_credit_bank_paise: _split.bankLegPaise,
+            payment_credit_mode: null,
+            due_date: null,
+            cash_due_date: _split.cashLegPaise > 0 ? (e.cashDueDate || null) : null,
+            bank_due_date: _split.bankLegPaise > 0 ? (e.bankDueDate || null) : null,
             description: e.description.trim(),
             expense_date: e.expenseDate,
             status: 'recorded',
@@ -1619,47 +1673,165 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                         )}
                       </div>
                     </div>
-                    {split.creditPaise > 0 && (
-                      <div className="pt-2 border-t border-indigo-200 space-y-2">
-                        <div>
-                          <label className="block text-xs font-medium text-gray-600 mb-1">Pay Credit By <span className="text-red-500">*</span></label>
-                          <div className="flex gap-2">
-                            {[{ v: 'cash', label: '💵 Cash' }, { v: 'bank', label: '🏦 Bank' }].map(function (opt) {
-                              var active = entry.paymentCreditMode === opt.v
-                              return (
-                                <button key={opt.v} type="button"
-                                  onClick={function () {
-                                    setEntries(function (prev) {
-                                      return prev.map(function (en, ei) {
-                                        return ei === idx ? Object.assign({}, en, { paymentCreditMode: opt.v }) : en
-                                      })
-                                    })
-                                  }}
-                                  className={"flex-1 px-3 py-2 rounded-lg text-sm font-semibold border transition-colors " + (active ? "bg-indigo-600 text-white border-indigo-600" : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50")}>
-                                  {opt.label}
-                                </button>
-                              )
-                            })}
+                    {split.creditPaise > 0 && (function () {
+                      var creditRupees = split.creditPaise / 100
+                      var cashChecked = !!entry.payWithCash
+                      var bankChecked = !!entry.payWithBank
+                      var bothChecked = cashChecked && bankChecked
+                      function togglePay(kind) {
+                        setEntries(function (prev) {
+                          return prev.map(function (en, ei) {
+                            if (ei !== idx) return en
+                            var patch = {}
+                            if (kind === 'cash') {
+                              patch.payWithCash = !en.payWithCash
+                              if (!patch.payWithCash) { patch.paymentCreditCashRupees = ''; patch.cashDueDate = '' }
+                              else if (!en.payWithBank) { patch.paymentCreditCashRupees = String(creditRupees) }
+                            } else {
+                              patch.payWithBank = !en.payWithBank
+                              if (!patch.payWithBank) { patch.paymentCreditBankRupees = ''; patch.bankDueDate = '' }
+                              else if (!en.payWithCash) { patch.paymentCreditBankRupees = String(creditRupees) }
+                            }
+                            // If both now checked and only one has a value, set the other to remainder
+                            var nowCash = patch.payWithCash !== undefined ? patch.payWithCash : en.payWithCash
+                            var nowBank = patch.payWithBank !== undefined ? patch.payWithBank : en.payWithBank
+                            if (nowCash && nowBank) {
+                              var cv = Number((patch.paymentCreditCashRupees !== undefined ? patch.paymentCreditCashRupees : en.paymentCreditCashRupees) || 0)
+                              var bv = Number((patch.paymentCreditBankRupees !== undefined ? patch.paymentCreditBankRupees : en.paymentCreditBankRupees) || 0)
+                              if (cv > 0 && bv === 0) patch.paymentCreditBankRupees = String(Math.max(0, creditRupees - cv))
+                              else if (bv > 0 && cv === 0) patch.paymentCreditCashRupees = String(Math.max(0, creditRupees - bv))
+                            }
+                            return Object.assign({}, en, patch)
+                          })
+                        })
+                      }
+                      function setCashPortion(v) {
+                        setEntries(function (prev) {
+                          return prev.map(function (en, ei) {
+                            if (ei !== idx) return en
+                            var patch = { paymentCreditCashRupees: v }
+                            if (en.payWithBank) {
+                              var cv = Number(v || 0)
+                              patch.paymentCreditBankRupees = String(Math.max(0, creditRupees - cv))
+                            }
+                            return Object.assign({}, en, patch)
+                          })
+                        })
+                      }
+                      function setBankPortion(v) {
+                        setEntries(function (prev) {
+                          return prev.map(function (en, ei) {
+                            if (ei !== idx) return en
+                            var patch = { paymentCreditBankRupees: v }
+                            if (en.payWithCash) {
+                              var bv = Number(v || 0)
+                              patch.paymentCreditCashRupees = String(Math.max(0, creditRupees - bv))
+                            }
+                            return Object.assign({}, en, patch)
+                          })
+                        })
+                      }
+                      function setDate(field, v) {
+                        setEntries(function (prev) {
+                          return prev.map(function (en, ei) {
+                            var o = {}; o[field] = v
+                            return ei === idx ? Object.assign({}, en, o) : en
+                          })
+                        })
+                      }
+                      function setBankGst(v) {
+                        setEntries(function (prev) {
+                          return prev.map(function (en, ei) {
+                            return ei === idx ? Object.assign({}, en, { taxAmount: v }) : en
+                          })
+                        })
+                      }
+                      var portionSum = (Number(entry.paymentCreditCashRupees || 0) + Number(entry.paymentCreditBankRupees || 0))
+                      var mismatched = bothChecked && Math.abs(portionSum - creditRupees) > 0.001
+                      return (
+                        <div className="pt-2 border-t border-indigo-200 space-y-3">
+                          <div>
+                            <label className="block text-xs font-medium text-gray-600 mb-2">Pay Credit By <span className="text-red-500">*</span></label>
+                            <div className="flex gap-2">
+                              <label className={"flex-1 flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold border cursor-pointer transition-colors " + (cashChecked ? "bg-indigo-600 text-white border-indigo-600" : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50")}>
+                                <input type="checkbox" checked={cashChecked} onChange={function () { togglePay('cash') }} className="w-4 h-4" />
+                                <span>💵 Cash</span>
+                              </label>
+                              <label className={"flex-1 flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold border cursor-pointer transition-colors " + (bankChecked ? "bg-indigo-600 text-white border-indigo-600" : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50")}>
+                                <input type="checkbox" checked={bankChecked} onChange={function () { togglePay('bank') }} className="w-4 h-4" />
+                                <span>🏦 Bank</span>
+                              </label>
+                            </div>
                           </div>
+
+                          {cashChecked && (
+                            <div className="bg-white/70 border border-indigo-100 rounded-lg p-2 space-y-2">
+                              <div className="text-[11px] font-bold text-indigo-700 uppercase tracking-wider">💵 Cash Leg</div>
+                              <div>
+                                <label className="block text-xs font-medium text-gray-600 mb-1">Cash Portion (pts) <span className="text-red-500">*</span></label>
+                                <input type="number" inputMode="decimal"
+                                  value={entry.paymentCreditCashRupees}
+                                  onChange={function (ev) { setCashPortion(ev.target.value) }}
+                                  min="0" step="any" placeholder="0"
+                                  disabled={!bothChecked}
+                                  className={"w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-indigo-300 " + (bothChecked ? "border-gray-200 bg-white" : "border-gray-100 bg-gray-50 text-gray-500")}
+                                  style={{ fontSize: '16px' }} />
+                              </div>
+                              <div>
+                                <label className="block text-xs font-medium text-gray-600 mb-1">Cash Due Date <span className="text-red-500">*</span></label>
+                                <input type="date"
+                                  value={entry.cashDueDate}
+                                  min={entry.expenseDate}
+                                  onChange={function (ev) { setDate('cashDueDate', ev.target.value) }}
+                                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-indigo-300"
+                                  style={{ fontSize: '16px' }} />
+                              </div>
+                            </div>
+                          )}
+
+                          {bankChecked && (
+                            <div className="bg-white/70 border border-indigo-100 rounded-lg p-2 space-y-2">
+                              <div className="text-[11px] font-bold text-indigo-700 uppercase tracking-wider">🏦 Bank Leg</div>
+                              <div>
+                                <label className="block text-xs font-medium text-gray-600 mb-1">Bank Portion (pts) <span className="text-red-500">*</span></label>
+                                <input type="number" inputMode="decimal"
+                                  value={entry.paymentCreditBankRupees}
+                                  onChange={function (ev) { setBankPortion(ev.target.value) }}
+                                  min="0" step="any" placeholder="0"
+                                  disabled={!bothChecked}
+                                  className={"w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-indigo-300 " + (bothChecked ? "border-gray-200 bg-white" : "border-gray-100 bg-gray-50 text-gray-500")}
+                                  style={{ fontSize: '16px' }} />
+                              </div>
+                              <div>
+                                <label className="block text-xs font-medium text-gray-600 mb-1">GST Amount (pts)</label>
+                                <input type="number" inputMode="decimal"
+                                  value={entry.taxAmount}
+                                  onChange={function (ev) { setBankGst(ev.target.value) }}
+                                  min="0" step="any" placeholder="0"
+                                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-indigo-300"
+                                  style={{ fontSize: '16px' }} />
+                                <p className="text-[10px] text-gray-500 mt-0.5">Mirrors the GST Amount field above</p>
+                              </div>
+                              <div>
+                                <label className="block text-xs font-medium text-gray-600 mb-1">Bank Due Date <span className="text-red-500">*</span></label>
+                                <input type="date"
+                                  value={entry.bankDueDate}
+                                  min={entry.expenseDate}
+                                  onChange={function (ev) { setDate('bankDueDate', ev.target.value) }}
+                                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-indigo-300"
+                                  style={{ fontSize: '16px' }} />
+                              </div>
+                            </div>
+                          )}
+
+                          {mismatched && (
+                            <p className="text-[11px] text-red-600 font-medium">
+                              Cash + Bank = {portionSum.toLocaleString('en-IN')} pts · must equal {creditRupees.toLocaleString('en-IN')} pts
+                            </p>
+                          )}
                         </div>
-                        <div>
-                          <label className="block text-xs font-medium text-gray-600 mb-1">Payment Due Date <span className="text-red-500">*</span></label>
-                          <input type="date"
-                            value={entry.paymentDueDate}
-                            min={entry.expenseDate}
-                            onChange={function (ev) {
-                              var v = ev.target.value
-                              setEntries(function (prev) {
-                                return prev.map(function (en, ei) {
-                                  return ei === idx ? Object.assign({}, en, { paymentDueDate: v }) : en
-                                })
-                              })
-                            }}
-                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-indigo-300"
-                            style={{ fontSize: '16px' }} />
-                        </div>
-                      </div>
-                    )}
+                      )
+                    })()}
                   </div>
                 )
               })()}
