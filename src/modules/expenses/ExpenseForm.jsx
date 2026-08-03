@@ -1764,62 +1764,69 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                             </div>
                           </div>
 
-                          {cashChecked && (
-                            <div className="bg-white/70 border border-indigo-100 rounded-lg p-2 space-y-2">
-                              <div className="text-[11px] font-bold text-indigo-700 uppercase tracking-wider">💵 Cash Leg</div>
-                              <div>
-                                <label className="block text-xs font-medium text-gray-600 mb-1">Cash Portion (pts) <span className="text-red-500">*</span></label>
-                                <input type="number" inputMode="decimal"
-                                  value={entry.paymentCreditCashRupees}
-                                  onChange={function (ev) { setCashPortion(ev.target.value) }}
-                                  min="0" step="any" placeholder="0"
-                                  disabled={!bothChecked}
-                                  className={"w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-indigo-300 " + (bothChecked ? "border-gray-200 bg-white" : "border-gray-100 bg-gray-50 text-gray-500")}
-                                  style={{ fontSize: '16px' }} />
+                          {(cashChecked || bankChecked) && (
+                            <div className="grid grid-cols-2 gap-2">
+                              {/* Cash column */}
+                              <div className="space-y-2">
+                                {cashChecked ? (
+                                  <>
+                                    <div>
+                                      <label className="block text-xs font-medium text-gray-600 mb-1">Cash Portion (pts) <span className="text-red-500">*</span></label>
+                                      <input type="number" inputMode="decimal"
+                                        value={entry.paymentCreditCashRupees}
+                                        onChange={function (ev) { setCashPortion(ev.target.value) }}
+                                        min="0" step="any" placeholder="0"
+                                        disabled={!bothChecked}
+                                        className={"w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-indigo-300 " + (bothChecked ? "border-gray-200 bg-white" : "border-gray-100 bg-gray-50 text-gray-500")}
+                                        style={{ fontSize: '16px' }} />
+                                    </div>
+                                    <div>
+                                      <label className="block text-xs font-medium text-gray-600 mb-1">Cash Due Date <span className="text-red-500">*</span></label>
+                                      <input type="date"
+                                        value={entry.cashDueDate}
+                                        min={entry.expenseDate}
+                                        onChange={function (ev) { setDate('cashDueDate', ev.target.value) }}
+                                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-indigo-300"
+                                        style={{ fontSize: '16px' }} />
+                                    </div>
+                                  </>
+                                ) : null}
                               </div>
-                              <div>
-                                <label className="block text-xs font-medium text-gray-600 mb-1">Cash Due Date <span className="text-red-500">*</span></label>
-                                <input type="date"
-                                  value={entry.cashDueDate}
-                                  min={entry.expenseDate}
-                                  onChange={function (ev) { setDate('cashDueDate', ev.target.value) }}
-                                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-indigo-300"
-                                  style={{ fontSize: '16px' }} />
-                              </div>
-                            </div>
-                          )}
-
-                          {bankChecked && (
-                            <div className="bg-white/70 border border-indigo-100 rounded-lg p-2 space-y-2">
-                              <div className="text-[11px] font-bold text-indigo-700 uppercase tracking-wider">🏦 Bank Leg</div>
-                              <div>
-                                <label className="block text-xs font-medium text-gray-600 mb-1">Bank Portion (pts) <span className="text-red-500">*</span></label>
-                                <input type="number" inputMode="decimal"
-                                  value={entry.paymentCreditBankRupees}
-                                  onChange={function (ev) { setBankPortion(ev.target.value) }}
-                                  min="0" step="any" placeholder="0"
-                                  disabled={!bothChecked}
-                                  className={"w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-indigo-300 " + (bothChecked ? "border-gray-200 bg-white" : "border-gray-100 bg-gray-50 text-gray-500")}
-                                  style={{ fontSize: '16px' }} />
-                              </div>
-                              <div>
-                                <label className="block text-xs font-medium text-gray-600 mb-1">GST Amount (pts)</label>
-                                <input type="number" inputMode="decimal"
-                                  value={entry.taxAmount}
-                                  onChange={function (ev) { setBankGst(ev.target.value) }}
-                                  min="0" step="any" placeholder="0"
-                                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-indigo-300"
-                                  style={{ fontSize: '16px' }} />
-                                <p className="text-[10px] text-gray-500 mt-0.5">Mirrors the GST Amount field above</p>
-                              </div>
-                              <div>
-                                <label className="block text-xs font-medium text-gray-600 mb-1">Bank Due Date <span className="text-red-500">*</span></label>
-                                <input type="date"
-                                  value={entry.bankDueDate}
-                                  min={entry.expenseDate}
-                                  onChange={function (ev) { setDate('bankDueDate', ev.target.value) }}
-                                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-indigo-300"
-                                  style={{ fontSize: '16px' }} />
+                              {/* Bank column */}
+                              <div className="space-y-2">
+                                {bankChecked ? (
+                                  <>
+                                    <div>
+                                      <label className="block text-xs font-medium text-gray-600 mb-1">Bank Portion (pts) <span className="text-red-500">*</span></label>
+                                      <input type="number" inputMode="decimal"
+                                        value={entry.paymentCreditBankRupees}
+                                        onChange={function (ev) { setBankPortion(ev.target.value) }}
+                                        min="0" step="any" placeholder="0"
+                                        disabled={!bothChecked}
+                                        className={"w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-indigo-300 " + (bothChecked ? "border-gray-200 bg-white" : "border-gray-100 bg-gray-50 text-gray-500")}
+                                        style={{ fontSize: '16px' }} />
+                                    </div>
+                                    <div>
+                                      <label className="block text-xs font-medium text-gray-600 mb-1">Bank Due Date <span className="text-red-500">*</span></label>
+                                      <input type="date"
+                                        value={entry.bankDueDate}
+                                        min={entry.expenseDate}
+                                        onChange={function (ev) { setDate('bankDueDate', ev.target.value) }}
+                                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-indigo-300"
+                                        style={{ fontSize: '16px' }} />
+                                    </div>
+                                    <div>
+                                      <label className="block text-xs font-medium text-gray-600 mb-1">GST Amount (pts)</label>
+                                      <input type="number" inputMode="decimal"
+                                        value={entry.taxAmount}
+                                        onChange={function (ev) { setBankGst(ev.target.value) }}
+                                        min="0" step="any" placeholder="0"
+                                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-indigo-300"
+                                        style={{ fontSize: '16px' }} />
+                                      <p className="text-[10px] text-gray-500 mt-0.5">Mirrors the GST field above</p>
+                                    </div>
+                                  </>
+                                ) : null}
                               </div>
                             </div>
                           )}
