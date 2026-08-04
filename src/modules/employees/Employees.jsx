@@ -24,7 +24,7 @@ function Employees({ profile }) {
 
   // Filters
   var [search, setSearch] = useState('')
-  var [statusFilter, setStatusFilter] = useState([]) // multi
+  var [statusFilter, setStatusFilter] = useState(['pending']) // default: show pending on load
   var [deptFilter, setDeptFilter] = useState([])     // multi
   var [showExited, setShowExited] = useState(false)
 

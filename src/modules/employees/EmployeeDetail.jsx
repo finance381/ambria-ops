@@ -112,7 +112,7 @@ function EmployeeDetail({ employeeId, jobDepartments, managers, profile, onEdit,
   }
 
   var hasSensitive = row.aadhaar_number || row.pan_number || row.bank_account_number ||
-                     row.ifsc_code || row.bank_name ||
+                     row.ifsc_code || row.bank_name || row.bank_account_holder_name ||
                      (canSeeSalary && (row.ctc_annual_paise || row.monthly_cash_paise || row.monthly_bank_paise)) ||
                      row.uan || row.esic || row.aadhaar_file_path || row.pan_file_path
 
@@ -298,6 +298,7 @@ function EmployeeDetail({ employeeId, jobDepartments, managers, profile, onEdit,
           </Section>
 
           <Section title="Bank & Salary">
+            <Row label="Account Holder Name" value={row.bank_account_holder_name} />
             <Row label="Bank Name" value={row.bank_name} />
             <Row label="Account Number" value={row.bank_account_number} mono />
             <Row label="IFSC" value={row.ifsc_code} mono />

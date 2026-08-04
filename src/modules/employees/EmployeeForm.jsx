@@ -80,6 +80,7 @@ function EmployeeForm({ employee, profile, jobDepartments, managers, canSeeSalar
   var [ptState, setPtState] = useState('')
 
   // Bank & salary
+  var [bankHolderName, setBankHolderName] = useState('')
   var [bankAccount, setBankAccount] = useState('')
   var [ifsc, setIfsc] = useState('')
   var [bankName, setBankName] = useState('')
@@ -137,6 +138,7 @@ function EmployeeForm({ employee, profile, jobDepartments, managers, canSeeSalar
     setEsic(e.esic || '')
     setPtState(e.pt_state || '')
 
+    setBankHolderName(e.bank_account_holder_name || '')
     setBankAccount(e.bank_account_number || '')
     setIfsc(e.ifsc_code || '')
     setBankName(e.bank_name || '')
@@ -295,6 +297,7 @@ function EmployeeForm({ employee, profile, jobDepartments, managers, canSeeSalar
       uan: uan.trim() || null,
       esic: esic.trim() || null,
       pt_state: ptState.trim() || null,
+      bank_account_holder_name: bankHolderName.trim() || null,
       bank_account_number: bankAccount.trim() || null,
       ifsc_code: ifsc.trim().toUpperCase() || null,
       bank_name: bankName.trim() || null,
@@ -704,6 +707,11 @@ function EmployeeForm({ employee, profile, jobDepartments, managers, canSeeSalar
             🔒 Bank details and salary visible only to admin, Finance/Accounts, Management/HR, and the employee themselves.
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <Field label="Account Holder Name">
+              <input type="text" value={bankHolderName}
+                onChange={function (e) { setBankHolderName(e.target.value) }}
+                style={{ fontSize: '16px' }} className={inp} />
+            </Field>
             <Field label="Bank Account Number">
               <input type="text" value={bankAccount}
                 onChange={function (e) { setBankAccount(e.target.value.replace(/\s/g, '')) }}

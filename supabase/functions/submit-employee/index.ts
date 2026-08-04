@@ -168,6 +168,7 @@ serve(async function (req) {
   var emergencyText = emgName + " (" + emgRel + ") - " + emgMob
 
   // Bank (optional)
+  var bankHolderName = clean(body.bank_account_holder_name, MAX_FIELD_LEN)
   var bankName = clean(body.bank_name, MAX_FIELD_LEN)
   var branchName = clean(body.branch_name, MAX_FIELD_LEN)
   var acctNum = clean(body.bank_account_number, 30)
@@ -280,6 +281,7 @@ serve(async function (req) {
     present_address: presentFull,
     permanent_address: permFull,
     emergency_contact: emergencyText,
+    bank_account_holder_name: bankHolderName || null,
     bank_name: bankNameFull,
     bank_account_number: acctNum,
     ifsc_code: ifsc,
