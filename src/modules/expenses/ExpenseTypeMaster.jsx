@@ -287,6 +287,8 @@ function SubTypeList({ expenseType, onBack }) {
   var [saving, setSaving] = useState(false)
   var [fieldView, setFieldView] = useState(null)
 
+  var [expenseCounts, setExpenseCounts] = useState({})
+
   useEffect(function () { load() }, [])
 
   async function load() {
@@ -295,8 +297,30 @@ function SubTypeList({ expenseType, onBack }) {
       .eq('expense_type_id', expenseType.id)
       .order('sort_order')
       .order('name')
-    setSubTypes(data || [])
+    var list = data || []
+    setSubTypes(list)
     setLoading(false)
+    // Compute live-expense count per sub-type (excludes soft-deleted parents)
+    if (list.length > 0) {
+      var ids = list.map(function (r) { return r.id })
+      try {
+        var { data: allocs } = await supabase.from('expense_allocations')
+          .select('expense_sub_type_id, expenses!inner(id,deleted_at)')
+          .in('expense_sub_type_id', ids)
+          .is('expenses.deleted_at', null)
+        var perType = {}
+        ;(allocs || []).forEach(function (row) {
+          var k = row.expense_sub_type_id
+          if (!perType[k]) perType[k] = new Set()
+          perType[k].add(row.expenses.id)
+        })
+        var counts = {}
+        Object.keys(perType).forEach(function (k) { counts[k] = perType[k].size })
+        setExpenseCounts(counts)
+      } catch (_) { setExpenseCounts({}) }
+    } else {
+      setExpenseCounts({})
+    }
   }
 
   function openAdd() {
@@ -338,6 +362,16 @@ function SubTypeList({ expenseType, onBack }) {
   }
 
   async function deleteSubType(st) {
+    var count = expenseCounts[st.id] || 0
+    if (count > 0) {
+      var hide = confirm('Cannot delete "' + st.name + '" — ' + count + ' expense' + (count !== 1 ? 's' : '') + ' still use' + (count === 1 ? 's' : '') + ' it.\n\nHide it instead? (removed from new-expense dropdown, history preserved)')
+      if (hide && st.active) {
+        var { error: hErr } = await supabase.from('expense_sub_types').update({ active: false }).eq('id', st.id)
+        if (hErr) { alert('Hide failed: ' + hErr.message); return }
+        load()
+      }
+      return
+    }
     if (!confirm('Delete "' + st.name + '"? This cannot be undone.')) return
     var { error } = await supabase.from('expense_sub_types').delete().eq('id', st.id)
     if (error) { alert('Delete failed: ' + error.message); return }
@@ -388,11 +422,16 @@ function SubTypeList({ expenseType, onBack }) {
           <div key={st.id} className={"bg-white border rounded-xl p-4 " + (st.active ? "border-gray-200" : "border-gray-100 opacity-60")}>
             <div className="flex items-center justify-between">
               <div className="flex-1 cursor-pointer" onClick={function () { setFieldView(st) }}>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-sm font-semibold text-gray-900">{st.name}</span>
                   {fieldCount > 0 && (
                     <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600 font-bold">
                       {fieldCount} field{fieldCount !== 1 ? 's' : ''}
+                    </span>
+                  )}
+                  {(expenseCounts[st.id] || 0) > 0 && (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-bold">
+                      {expenseCounts[st.id]} expense{expenseCounts[st.id] !== 1 ? 's' : ''}
                     </span>
                   )}
                   {!st.active && (

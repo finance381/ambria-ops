@@ -420,7 +420,7 @@ function Employees({ profile }) {
     URL.revokeObjectURL(url)
   }
 
-  var publicFormUrl = window.location.origin + (import.meta.env.BASE_URL || '/') + '?form=employee'
+  var publicFormUrl = 'https://finance381.github.io/employee-form/'
   async function copyPublicFormLink() {
     try {
       await navigator.clipboard.writeText(publicFormUrl)

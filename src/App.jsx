@@ -8,7 +8,9 @@ import { LangProvider } from './lib/i18n.jsx'
 function App() {
   var params = new URLSearchParams(window.location.search)
   if (params.get('form') === 'employee') {
-    return <PublicEmployeeForm />
+    // Legacy URL — form now lives outside PWA scope. Delete this block in v78.
+    window.location.replace('https://finance381.github.io/employee-form/')
+    return null
   }
 
   var { user, profile, loading, signIn, signOut } = useAuth()
