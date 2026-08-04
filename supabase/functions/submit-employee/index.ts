@@ -200,6 +200,9 @@ serve(async function (req) {
   var hiringPerson = clean(body.hiring_person, MAX_FIELD_LEN)
   var hireDepartment = clean(body.hire_department, MAX_FIELD_LEN)
 
+  var doj = clean(body.doj, 20)
+  if (doj && !/^\d{4}-\d{2}-\d{2}$/.test(doj)) return bad(400, "invalid_doj", "Joining Date must be YYYY-MM-DD")
+
   // Files: validate presence, MIME, size (paths generated server-side, never trusted from client)
   if (photoFile) {
     var pfe = validFile(photoFile)
@@ -287,6 +290,7 @@ serve(async function (req) {
     previous_state: prevState || null,
     hiring_person: hiringPerson || null,
     hire_department: hireDepartment || null,
+    doj: doj || null,
     photo_file_path: photoPath,
     source_reference: srcRef,
     status: "pending",
