@@ -65,6 +65,11 @@ function EmployeeForm({ employee, profile, jobDepartments, managers, canSeeSalar
   var [status, setStatus] = useState('probation')
   var [terminationReason, setTerminationReason] = useState('')
 
+  // Previous employment (HR context)
+  var [prevCompanyName, setPrevCompanyName] = useState('')
+  var [prevCity, setPrevCity] = useState('')
+  var [prevState, setPrevState] = useState('')
+
   // Statutory
   var [aadhaar, setAadhaar] = useState('')
   var [pan, setPan] = useState('')
@@ -79,6 +84,7 @@ function EmployeeForm({ employee, profile, jobDepartments, managers, canSeeSalar
   var [monthlyCashRupees, setMonthlyCashRupees] = useState('')
   var [monthlyBankRupees, setMonthlyBankRupees] = useState('')
   var [nightWageRupees, setNightWageRupees] = useState('')
+  var [prevDrawnSalaryRupees, setPrevDrawnSalaryRupees] = useState('')
   var [shiftFrom, setShiftFrom] = useState('')
   var [shiftTo, setShiftTo] = useState('')
 
@@ -117,6 +123,10 @@ function EmployeeForm({ employee, profile, jobDepartments, managers, canSeeSalar
     setStatus(e.status || 'probation')
     setTerminationReason(e.termination_reason || '')
 
+    setPrevCompanyName(e.previous_company_name || '')
+    setPrevCity(e.previous_city || '')
+    setPrevState(e.previous_state || '')
+
     setAadhaar(e.aadhaar_number || '')
     setPan(e.pan_number || '')
     setUan(e.uan || '')
@@ -132,6 +142,8 @@ function EmployeeForm({ employee, profile, jobDepartments, managers, canSeeSalar
       ? String(Math.round(e.monthly_bank_paise / 100)) : '')
     setNightWageRupees(canSeeSalary && e.night_wage_paise
       ? String(Math.round(e.night_wage_paise / 100)) : '')
+    setPrevDrawnSalaryRupees(canSeeSalary && e.prev_drawn_salary_paise
+      ? String(Math.round(e.prev_drawn_salary_paise / 100)) : '')
     setShiftFrom(e.shift_start ? e.shift_start.slice(0, 5) : '')
     setShiftTo(e.shift_end ? e.shift_end.slice(0, 5) : '')
 
@@ -282,6 +294,9 @@ function EmployeeForm({ employee, profile, jobDepartments, managers, canSeeSalar
       bank_name: bankName.trim() || null,
       shift_start: shiftFrom || null,
       shift_end: shiftTo || null,
+      previous_company_name: prevCompanyName.trim() || null,
+      previous_city: prevCity.trim() || null,
+      previous_state: prevState.trim() || null,
     }
     if (canSeeSalary) {
       var cashP = monthlyCashRupees ? Math.round(Number(monthlyCashRupees) * 100) : 0
@@ -291,6 +306,8 @@ function EmployeeForm({ employee, profile, jobDepartments, managers, canSeeSalar
       payload.monthly_bank_paise = bankP
       payload.night_wage_paise = nightP > 0 ? nightP : null
       payload.ctc_annual_paise = (cashP + bankP) > 0 ? (cashP + bankP) * 12 : null
+      var prevSalP = prevDrawnSalaryRupees ? Math.round(Number(prevDrawnSalaryRupees) * 100) : 0
+      payload.prev_drawn_salary_paise = prevSalP > 0 ? prevSalP : null
     }
 
     // Employee code: only send on insert if user overrode. Blank → let trigger generate.
@@ -610,6 +627,25 @@ function EmployeeForm({ employee, profile, jobDepartments, managers, canSeeSalar
               </Field>
             </div>
           )}
+
+          <div className="md:col-span-2 pt-3 mt-2 border-t border-gray-200">
+            <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Previous Employment</div>
+          </div>
+          <Field label="Previous Company Name">
+            <input type="text" value={prevCompanyName}
+              onChange={function (e) { setPrevCompanyName(e.target.value) }}
+              style={{ fontSize: '16px' }} className={inp} />
+          </Field>
+          <Field label="Previous City">
+            <input type="text" value={prevCity}
+              onChange={function (e) { setPrevCity(e.target.value) }}
+              style={{ fontSize: '16px' }} className={inp} />
+          </Field>
+          <Field label="Previous State">
+            <input type="text" value={prevState}
+              onChange={function (e) { setPrevState(e.target.value) }}
+              style={{ fontSize: '16px' }} className={inp} />
+          </Field>
         </div>
       )}
 
@@ -689,6 +725,14 @@ function EmployeeForm({ employee, profile, jobDepartments, managers, canSeeSalar
                 <input type="number" value={nightWageRupees}
                   onChange={function (e) { setNightWageRupees(e.target.value) }}
                   placeholder="e.g. 500" min="0" step="1"
+                  style={{ fontSize: '16px' }} className={inp} />
+              </Field>
+            )}
+            {canSeeSalary && (
+              <Field label="Previous Drawn Salary (₹)">
+                <input type="number" value={prevDrawnSalaryRupees}
+                  onChange={function (e) { setPrevDrawnSalaryRupees(e.target.value) }}
+                  placeholder="From previous employer" min="0" step="1"
                   style={{ fontSize: '16px' }} className={inp} />
               </Field>
             )}

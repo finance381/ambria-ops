@@ -10,8 +10,8 @@ var corsHeaders = {
 
 var RATE_LIMIT_MAX = 5
 var RATE_LIMIT_WINDOW_MIN = 60
-var ALLOWED_DOC_KEYS = ["aadhaar", "pan", "bank_proof", "passport", "driving_license"]
-var MANDATORY_DOC_KEYS = ["aadhaar", "pan"]
+var ALLOWED_DOC_KEYS = ["aadhaar", "pan", "passport", "resume", "driving_license", "voter_id", "bank_proof", "education", "previous_employment", "address_proof", "medical_fitness", "police_verification"]
+var MANDATORY_DOC_KEYS = []
 var GENDER_VALUES = ["Male", "Female", "Other"]
 var MAX_FIELD_LEN = 500
 var MAX_ADDRESS_LEN = 1000
@@ -187,6 +187,10 @@ serve(async function (req) {
   var nightWageP = toPaise(body.night_wage_rupees)
   var prevSalP = toPaise(body.prev_drawn_salary_rupees)
 
+  var prevCompany = clean(body.previous_company_name, MAX_FIELD_LEN)
+  var prevCity = clean(body.previous_city, MAX_FIELD_LEN)
+  var prevState = clean(body.previous_state, MAX_FIELD_LEN)
+
   // Files: validate presence, MIME, size (paths generated server-side, never trusted from client)
   if (photoFile) {
     var pfe = validFile(photoFile)
@@ -269,6 +273,9 @@ serve(async function (req) {
     ifsc_code: ifsc,
     night_wage_paise: nightWageP,
     prev_drawn_salary_paise: prevSalP,
+    previous_company_name: prevCompany || null,
+    previous_city: prevCity || null,
+    previous_state: prevState || null,
     photo_file_path: photoPath,
     source_reference: srcRef,
     status: "pending",
