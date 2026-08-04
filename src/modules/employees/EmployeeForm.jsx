@@ -62,6 +62,8 @@ function EmployeeForm({ employee, profile, jobDepartments, managers, canSeeSalar
   var [jobDeptIds, setJobDeptIds] = useState([])
   var [reportingManagerId, setReportingManagerId] = useState('')
   var [workLocation, setWorkLocation] = useState('')
+  var [hiringPerson, setHiringPerson] = useState('')
+  var [hireDepartment, setHireDepartment] = useState('')
   var [status, setStatus] = useState('probation')
   var [terminationReason, setTerminationReason] = useState('')
 
@@ -120,6 +122,8 @@ function EmployeeForm({ employee, profile, jobDepartments, managers, canSeeSalar
     setJobDeptIds(e.job_department_ids || [])
     setReportingManagerId(e.reporting_manager_id || '')
     setWorkLocation(e.work_location || '')
+    setHiringPerson(e.hiring_person || '')
+    setHireDepartment(e.hire_department || '')
     setStatus(e.status || 'probation')
     setTerminationReason(e.termination_reason || '')
 
@@ -282,6 +286,8 @@ function EmployeeForm({ employee, profile, jobDepartments, managers, canSeeSalar
       job_department_ids: jobDeptIds,
       reporting_manager_id: reportingManagerId || null,
       work_location: workLocation.trim() || null,
+      hiring_person: hiringPerson.trim() || null,
+      hire_department: hireDepartment.trim() || null,
       status: status || 'probation',
       termination_reason: (status === 'terminated' || status === 'resigned') ? (terminationReason.trim() || null) : null,
       aadhaar_number: aadhaar.trim() || null,
@@ -578,6 +584,16 @@ function EmployeeForm({ employee, profile, jobDepartments, managers, canSeeSalar
           <Field label="Work Location">
             <input type="text" value={workLocation} onChange={function (e) { setWorkLocation(e.target.value) }}
               placeholder="e.g. Pushpanjali, Exotica..."
+              style={{ fontSize: '16px' }} className={inp} />
+          </Field>
+          <Field label="Hiring Person">
+            <input type="text" value={hiringPerson} onChange={function (e) { setHiringPerson(e.target.value) }}
+              placeholder="Name of person who hired"
+              style={{ fontSize: '16px' }} className={inp} />
+          </Field>
+          <Field label="Job Department (as declared)">
+            <input type="text" value={hireDepartment} onChange={function (e) { setHireDepartment(e.target.value) }}
+              placeholder="e.g. Housekeeping, Kitchen"
               style={{ fontSize: '16px' }} className={inp} />
           </Field>
 

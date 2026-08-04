@@ -197,6 +197,9 @@ serve(async function (req) {
   var prevState = clean(body.previous_state, MAX_FIELD_LEN)
   if (!prevState) return bad(400, "missing_prev_state", "Previous State required")
 
+  var hiringPerson = clean(body.hiring_person, MAX_FIELD_LEN)
+  var hireDepartment = clean(body.hire_department, MAX_FIELD_LEN)
+
   // Files: validate presence, MIME, size (paths generated server-side, never trusted from client)
   if (photoFile) {
     var pfe = validFile(photoFile)
@@ -282,6 +285,8 @@ serve(async function (req) {
     previous_company_name: prevCompany || null,
     previous_city: prevCity || null,
     previous_state: prevState || null,
+    hiring_person: hiringPerson || null,
+    hire_department: hireDepartment || null,
     photo_file_path: photoPath,
     source_reference: srcRef,
     status: "pending",
