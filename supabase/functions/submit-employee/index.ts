@@ -138,11 +138,11 @@ serve(async function (req) {
 
   var aadhaar = clean(body.aadhaar_number, 20)
   if (aadhaar) aadhaar = aadhaar.replace(/\s/g, "")
-  if (!aadhaar || !/^[0-9]{12}$/.test(aadhaar)) return bad(400, "invalid_aadhaar", "Aadhaar must be 12 digits")
+  if (aadhaar && !/^[0-9]{12}$/.test(aadhaar)) return bad(400, "invalid_aadhaar", "Aadhaar must be 12 digits")
 
   var pan = clean(body.pan_number, 20)
   if (pan) pan = pan.toUpperCase()
-  if (!pan || !/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(pan)) return bad(400, "invalid_pan", "PAN format invalid")
+  if (pan && !/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(pan)) return bad(400, "invalid_pan", "PAN format invalid")
 
   var srcRef = clean(body.source_reference, MAX_FIELD_LEN)
 
@@ -186,11 +186,16 @@ serve(async function (req) {
   }
   var nightWageP = toPaise(body.night_wage_rupees)
   var prevSalP = toPaise(body.prev_drawn_salary_rupees)
+  if (!prevSalP || prevSalP <= 0) return bad(400, "invalid_prev_salary", "Previous Drawn Salary required")
   var newSalP = toPaise(body.new_salary_rupees)
+  if (!newSalP || newSalP <= 0) return bad(400, "invalid_new_salary", "New Salary required")
 
   var prevCompany = clean(body.previous_company_name, MAX_FIELD_LEN)
+  if (!prevCompany) return bad(400, "missing_prev_company", "Previous Company Name required")
   var prevCity = clean(body.previous_city, MAX_FIELD_LEN)
+  if (!prevCity) return bad(400, "missing_prev_city", "Previous City required")
   var prevState = clean(body.previous_state, MAX_FIELD_LEN)
+  if (!prevState) return bad(400, "missing_prev_state", "Previous State required")
 
   // Files: validate presence, MIME, size (paths generated server-side, never trusted from client)
   if (photoFile) {
@@ -264,8 +269,8 @@ serve(async function (req) {
     gender: gender,
     contact_number: mobile,
     personal_email: email,
-    aadhaar_number: aadhaar,
-    pan_number: pan,
+    aadhaar_number: aadhaar || null,
+    pan_number: pan || null,
     present_address: presentFull,
     permanent_address: permFull,
     emergency_contact: emergencyText,
