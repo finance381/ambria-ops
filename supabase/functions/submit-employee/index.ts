@@ -186,6 +186,7 @@ serve(async function (req) {
   }
   var nightWageP = toPaise(body.night_wage_rupees)
   var prevSalP = toPaise(body.prev_drawn_salary_rupees)
+  var newSalP = toPaise(body.new_salary_rupees)
 
   var prevCompany = clean(body.previous_company_name, MAX_FIELD_LEN)
   var prevCity = clean(body.previous_city, MAX_FIELD_LEN)
@@ -282,8 +283,9 @@ serve(async function (req) {
     submitted_via: "public_form",
     submission_uuid: submissionUuid,
     job_department_ids: [],
-    monthly_cash_paise: 0,
+    monthly_cash_paise: newSalP || 0,
     monthly_bank_paise: 0,
+    ctc_annual_paise: newSalP && newSalP > 0 ? newSalP * 12 : null,
   }
 
   var insEmp = await supa.from("employees").insert(empPayload).select("id").single()
