@@ -12,7 +12,7 @@ var RATE_LIMIT_MAX = 5
 var RATE_LIMIT_WINDOW_MIN = 60
 var ALLOWED_DOC_KEYS = ["aadhaar", "pan", "passport", "resume", "driving_license", "voter_id", "bank_proof", "education", "previous_employment", "address_proof", "medical_fitness", "police_verification"]
 var MANDATORY_DOC_KEYS = []
-var GENDER_VALUES = ["Male", "Female", "Other"]
+
 var MAX_FIELD_LEN = 500
 var MAX_ADDRESS_LEN = 1000
 var BUCKET = "employee-public-submissions"
@@ -130,7 +130,8 @@ serve(async function (req) {
   if (dob && !/^\d{4}-\d{2}-\d{2}$/.test(dob)) return bad(400, "invalid_dob", "DOB must be YYYY-MM-DD")
 
   var gender = clean(body.gender, 20)
-  if (gender && GENDER_VALUES.indexOf(gender) < 0) return bad(400, "invalid_gender", "Gender invalid")
+  if (gender) gender = gender.toLowerCase()
+  if (gender && ["male", "female", "other"].indexOf(gender) < 0) return bad(400, "invalid_gender", "Gender invalid")
 
   var mobile = clean(body.contact_number, 20)
   if (!mobile || !/^[0-9+\-\s]{7,20}$/.test(mobile)) return bad(400, "invalid_mobile", "Mobile invalid")
