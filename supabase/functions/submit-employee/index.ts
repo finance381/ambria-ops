@@ -34,6 +34,7 @@ function validFile(f) {
 }
 
 function bad(status, code, msg) {
+  if (status >= 500) console.error("submit-employee bad " + status + " " + code + ": " + msg)
   return new Response(
     JSON.stringify({ ok: false, code: code, error: msg }),
     { status: status, headers: Object.assign({ "Content-Type": "application/json" }, corsHeaders) }
@@ -63,6 +64,7 @@ function clean(v, max) {
 }
 
 serve(async function (req) {
+  try {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders })
   if (req.method !== "POST") return bad(405, "method_not_allowed", "POST only")
 
@@ -338,4 +340,8 @@ serve(async function (req) {
 
   var refCode = "SUB-" + String(newEmpId).substring(0, 8).toUpperCase()
   return ok({ reference_code: refCode })
+  } catch (uncaught) {
+    console.error("submit-employee uncaught: " + (uncaught && uncaught.stack ? uncaught.stack : String(uncaught)))
+    return bad(500, "uncaught_exception", (uncaught && uncaught.message) || String(uncaught))
+  }
 })
