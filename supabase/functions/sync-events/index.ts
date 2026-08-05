@@ -150,6 +150,10 @@ function mapRow(e: any, dep: typeof DEPARTMENTS[0]): any {
     balance_received: safePaise(e[h + "advance_cash"] || 0) + safePaise(e[h + "advance_chq"] || 0),
     balance_bank: 0,
     balance_amount: safePaise(e[h + "balance"] || 0),
+    agreed_cash_paise: safePaise(e[h + "cash_part"] || 0),
+    agreed_bank_paise: safePaise(e[h + "cheque"] || 0),
+    lms_advance_cash_paise: safePaise(e[h + "advance_cash"] || 0),
+    lms_advance_bank_paise: safePaise(e[h + "advance_chq"] || 0),
     created_user_name: e.username || null,
     synced_at: new Date().toISOString(),
     // New fields
