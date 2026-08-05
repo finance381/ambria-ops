@@ -828,29 +828,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
         }
       }
     }
-    // Hard block: total WALLET SPEND across all entries must not exceed wallet balance.
-    // Credit-mode entries only spend cash + tax from wallet; the credit portion is owed
-    // to the vendor and does not touch the wallet.
-    if (walletBalance != null) {
-      var totalWalletSpend = 0
-      for (var k = 0; k < entries.length; k++) {
-        totalWalletSpend += getEntrySplit(entries[k]).walletSpendPaise
-      }
-      // On edit, refund what the original expense actually debited so the user
-      // can save any valid new split (all-cash, all-credit, or a different mix).
-      var oldSpend = 0
-      if (editExp) {
-        oldSpend = (editExp.payment_credit_paise || 0) > 0
-          ? (editExp.payment_cash_paise || 0) + (editExp.tax_paise || 0)
-          : (editExp.amount_paise || 0)
-      }
-      var effAvail = walletBalance + oldSpend
-      if (totalWalletSpend > effAvail) {
-        var shortfallPts = ((totalWalletSpend - effAvail) / 100).toLocaleString('en-IN', { maximumFractionDigits: 2 })
-        var balancePts = (effAvail / 100).toLocaleString('en-IN', { maximumFractionDigits: 2 })
-        return 'Insufficient wallet balance. Available: ' + balancePts + ' pts. Short by ' + shortfallPts + ' pts.'
-      }
-    }
+    // Wallet negative allowed — inline warning shown near the submit bar, no hard block here.
     return null
   }
 
@@ -1978,8 +1956,8 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
         var shortPts = ((totalWalletSpend - effAvail) / 100).toLocaleString('en-IN', { maximumFractionDigits: 2 })
         var availPts = (effAvail / 100).toLocaleString('en-IN', { maximumFractionDigits: 2 })
         return (
-          <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
-            Insufficient wallet balance. Available: {availPts} pts. Short by {shortPts} pts.
+          <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-sm">
+            ⚠ Wallet will go negative. Available: {availPts} pts. Short by {shortPts} pts. Submit will proceed anyway.
           </div>
         )
       })()}

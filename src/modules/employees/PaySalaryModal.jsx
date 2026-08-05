@@ -93,10 +93,7 @@ function PaySalaryModal(props) {
       setError('Total (payment + adjustment) exceeds ' + mode + ' balance owed')
       return
     }
-    if (mode === 'cash' && walletBalancePaise !== null && amtPaise > walletBalancePaise) {
-      setError('Your wallet cash is insufficient — you have ' + formatPoints(walletBalancePaise) + ' pts')
-      return
-    }
+    // Wallet cash insufficiency allowed — inline amber warning shown in the modal, no hard block.
     if (!payImages || payImages.length === 0) {
       setError('At least one payment proof image is required')
       return
@@ -221,6 +218,11 @@ function PaySalaryModal(props) {
         {mode === 'cash' && walletBalancePaise !== null && (
           <div className="text-[11px] text-gray-500">
             Your wallet cash: <span className="font-semibold text-gray-800">{formatPoints(walletBalancePaise)} pts</span>
+          </div>
+        )}
+        {mode === 'cash' && walletBalancePaise !== null && amtPaise > walletBalancePaise && (
+          <div className="p-2 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-xs">
+            ⚠ Wallet will go negative by {formatPoints(amtPaise - walletBalancePaise)} pts. Submit will proceed.
           </div>
         )}
 

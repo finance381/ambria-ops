@@ -785,8 +785,8 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
               onChange={function (e) { setTransferAmount(e.target.value) }}
               placeholder="0" className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
               style={{ fontSize: '16px' }} />
-            {transferAmount && Number(transferAmount) > 0 && walletBalance > 0 && Math.round(Number(transferAmount) * 100) > walletBalance && (
-              <p className="text-xs text-red-500 mt-1">Exceeds balance ({formatPoints(walletBalance)})</p>
+            {transferAmount && Number(transferAmount) > 0 && Math.round(Number(transferAmount) * 100) > walletBalance && (
+              <p className="text-xs text-amber-700 mt-1">⚠ Wallet will go negative. Balance: {formatPoints(walletBalance)}</p>
             )}
           </div>
           <div>
