@@ -37,12 +37,12 @@ function ExpenseTypesMaster(props) {
 // ── Sub-tab switcher ──
 function SubTabs({ tabs, active, onChange }) {
   return (
-    <div className="flex gap-1 mb-5 bg-gray-100 rounded-lg p-0.5 w-fit">
+    <div className="flex gap-6 mb-6 border-b border-gray-200">
       {tabs.map(function (t) {
         return (
           <button key={t.key} onClick={function () { onChange(t.key) }}
-            className={"px-4 py-2 text-sm font-semibold rounded-md transition-colors " +
-              (active === t.key ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700")}>
+            className={"px-1 pb-2.5 text-[13px] font-semibold border-b-2 -mb-px transition-colors " +
+              (active === t.key ? "text-gray-900 border-gray-900" : "text-gray-400 border-transparent hover:text-gray-600")}>
             {t.label}
           </button>
         )
@@ -106,14 +106,14 @@ function TabbedSection({ config, profile, onNavigate, activeSubTab }) {
 }
 
 var ADMIN_TABS = [
-  { key: 'overview', label: 'Overview', icon: '🏠' },
-  { key: 'analytics', label: 'Analytics', icon: '📊' },
-  { key: 'inventory', label: 'Inventory', icon: '📦' },
-  { key: 'events', label: 'Events', icon: '📅' },
-  { key: 'masters', label: 'Masters', icon: '⚙️' },
-  { key: 'users', label: 'Users', icon: '👥' },
-  { key: 'expenses', label: 'Finance', icon: '💰' },
-  { key: 'procurement', label: 'Procurement', icon: '🛒' },
+  { key: 'overview', label: 'Overview', icon: 'ti-home' },
+  { key: 'analytics', label: 'Analytics', icon: 'ti-chart-line' },
+  { key: 'inventory', label: 'Inventory', icon: 'ti-package' },
+  { key: 'events', label: 'Events', icon: 'ti-calendar-event' },
+  { key: 'masters', label: 'Masters', icon: 'ti-adjustments' },
+  { key: 'users', label: 'Users', icon: 'ti-users' },
+  { key: 'expenses', label: 'Finance', icon: 'ti-wallet' },
+  { key: 'procurement', label: 'Procurement', icon: 'ti-shopping-cart' },
 ]
 
 function makeTabbedModule(configKey) {
@@ -141,53 +141,44 @@ function AdminShell({ profile, onSignOut }) {
   var activeLabel = ADMIN_TABS.find(function (t) { return t.key === active })?.label || ''
 
   return (
-    <div className="min-h-screen bg-gray-100">
-      {/* Top bar */}
-      <header className="sticky top-0 z-50 bg-gray-900 text-white">
-        <div className="max-w-[1200px] mx-auto flex items-center justify-between px-6 py-3">
-          <div className="flex items-center gap-3">
-            <h1 className="text-base font-bold tracking-tight">Ambria Ops</h1>
-            <span className="text-[11px] px-2 py-0.5 rounded bg-white/10 font-medium uppercase tracking-wider">
-              Admin Dashboard
-            </span>
-          </div>
-          <div className="flex items-center gap-4">
-            <span className="text-sm text-gray-300">{profile.name}</span>
-            <button
-              onClick={onSignOut}
-              className="text-xs px-3 py-1 border border-white/20 rounded text-gray-300 hover:text-white hover:border-white/40 transition-colors"
-            >
-              Sign out
-            </button>
-          </div>
+    <div className="flex min-h-screen bg-gray-100">
+      {/* Sidebar */}
+      <aside className="w-56 shrink-0 bg-slate-900 flex flex-col sticky top-0 h-screen z-40">
+        <div className="px-4 py-4 border-b border-white/10">
+          <h1 className="text-white text-sm font-bold tracking-tight">Ambria Ops</h1>
+          <p className="text-[10px] uppercase tracking-[0.12em] text-slate-400 mt-0.5 font-medium">Admin</p>
         </div>
-      </header>
-
-      {/* Tab nav */}
-      <nav className="bg-white border-b border-gray-200 sticky top-[52px] z-40">
-        <div className="max-w-[1200px] mx-auto flex overflow-x-auto px-6">
+        <nav className="flex-1 px-2 py-3 space-y-0.5 overflow-y-auto">
           {ADMIN_TABS.map(function (tab) {
             var isActive = active === tab.key
             return (
               <button
                 key={tab.key}
                 onClick={function () { setActive(tab.key); setSubTab(null) }}
-                className={
-                  "px-4 py-3 text-[13px] font-semibold whitespace-nowrap border-b-[2.5px] transition-colors " +
+                className={"w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-[13px] text-left transition-colors " +
                   (isActive
-                    ? "text-gray-900 border-amber-500"
-                    : "text-gray-400 border-transparent hover:text-gray-600")
-                }
+                    ? "bg-amber-500/15 text-white font-semibold"
+                    : "text-slate-300 hover:bg-white/5")}
               >
-                {tab.label}
+                <i className={"ti " + tab.icon + " text-[16px] leading-none " + (isActive ? "text-amber-400" : "text-slate-400")} aria-hidden="true" />
+                <span>{tab.label}</span>
               </button>
             )
           })}
+        </nav>
+        <div className="px-4 py-3 border-t border-white/10">
+          <div className="text-[13px] text-slate-200 truncate">{profile.name}</div>
+          <button
+            onClick={onSignOut}
+            className="mt-1 text-[11px] text-slate-400 hover:text-white transition-colors"
+          >
+            Sign out
+          </button>
         </div>
-      </nav>
+      </aside>
 
       {/* Content */}
-      <main className="max-w-[1200px] mx-auto px-6 py-6">
+      <main className="flex-1 min-w-0 px-8 py-6">
         {active !== 'overview' && <h2 className="text-xl font-bold text-gray-800 mb-5">{activeLabel}</h2>}
         {ActiveModule && (
           <Suspense fallback={<div className="text-center py-8 text-sm text-gray-400">Loading...</div>}>
