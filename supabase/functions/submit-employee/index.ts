@@ -162,13 +162,16 @@ serve(async function (req) {
   if (permPin && !/^[0-9]{4,10}$/.test(permPin)) return bad(400, "invalid_perm_pincode", "Permanent pincode invalid")
   var permFull = permAddr ? (permAddr + (permPin ? " - " + permPin : "")) : null
 
-  // Emergency contact — mandatory
+  // Emergency contact — optional
   var emgName = clean(body.emergency_contact_name, MAX_FIELD_LEN)
   var emgRel = clean(body.emergency_contact_relationship, MAX_FIELD_LEN)
   var emgMob = clean(body.emergency_contact_number, 20)
-  if (!emgName || !emgRel || !emgMob) return bad(400, "invalid_emergency", "Emergency contact fields required")
-  if (!/^[0-9+\-\s]{7,20}$/.test(emgMob)) return bad(400, "invalid_emergency_mobile", "Emergency mobile invalid")
-  var emergencyText = emgName + " (" + emgRel + ") - " + emgMob
+  if (emgMob && !/^[0-9+\-\s]{7,20}$/.test(emgMob)) return bad(400, "invalid_emergency_mobile", "Emergency mobile invalid")
+  var emergencyText = null
+  if (emgName || emgRel || emgMob) {
+    emergencyText = ((emgName || '') + (emgRel ? ' (' + emgRel + ')' : '') + (emgMob ? ' - ' + emgMob : '')).trim()
+    if (!emergencyText) emergencyText = null
+  }
 
   // Bank (optional)
   var bankHolderName = clean(body.bank_account_holder_name, MAX_FIELD_LEN)
@@ -190,16 +193,12 @@ serve(async function (req) {
   }
   var nightWageP = toPaise(body.night_wage_rupees)
   var prevSalP = toPaise(body.prev_drawn_salary_rupees)
-  if (!prevSalP || prevSalP <= 0) return bad(400, "invalid_prev_salary", "Previous Drawn Salary required")
   var newSalP = toPaise(body.new_salary_rupees)
   if (!newSalP || newSalP <= 0) return bad(400, "invalid_new_salary", "New Salary required")
 
   var prevCompany = clean(body.previous_company_name, MAX_FIELD_LEN)
-  if (!prevCompany) return bad(400, "missing_prev_company", "Previous Company Name required")
   var prevCity = clean(body.previous_city, MAX_FIELD_LEN)
-  if (!prevCity) return bad(400, "missing_prev_city", "Previous City required")
   var prevState = clean(body.previous_state, MAX_FIELD_LEN)
-  if (!prevState) return bad(400, "missing_prev_state", "Previous State required")
 
   var hiringPerson = clean(body.hiring_person, MAX_FIELD_LEN)
   var hireDepartment = clean(body.hire_department, MAX_FIELD_LEN)

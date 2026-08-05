@@ -6,6 +6,20 @@ import FilterDropdown from '../../components/ui/FilterDropdown'
 
 var PAGE_SIZE = 20
 
+function extraFieldChips(exp) {
+  var meta = exp.metadata || {}
+  var typeFields = (exp.expense_types && exp.expense_types.extra_fields) || []
+  var subFields = (exp.expense_sub_types && exp.expense_sub_types.extra_fields) || []
+  var chips = []
+  typeFields.concat(subFields).forEach(function (f) {
+    if (!f || !f.key || f.type === 'lookup') return
+    var v = meta[f.key]
+    if (v == null || v === '') return
+    chips.push({ label: f.label || f.key, value: String(v) })
+  })
+  return chips
+}
+
 // Filter state cache — survives mount/unmount within a tab session.
 // Cleared on hard refresh. Not persisted to storage on purpose.
 var _savedFilters = {
@@ -23,6 +37,8 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds }) {
   var [allExpSearchD, setAllExpSearchD] = useState(function () { return _savedFilters.search })
   var [allExpLoading, setAllExpLoading] = useState(false)
   var [allExpLoadingMore, setAllExpLoadingMore] = useState(false)
+  var [allExpFullTotal, setAllExpFullTotal] = useState(0)
+  var [allExpFullCount, setAllExpFullCount] = useState(0)
   // Filter panel state
   var [filtersOpen, setFiltersOpen] = useState(function () { return _savedFilters.filtersOpen })
   var [deptFilter, setDeptFilter] = useState(function () { return _savedFilters.dept })
@@ -140,6 +156,31 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds }) {
     setAllExpHasMore(hasMore)
     setAllExpLoading(false)
     setAllExpLoadingMore(false)
+
+    // Full-match total across all filters (ignores pagination). Only on fresh loads.
+    if (!append) {
+      var totalQuery = supabase.from('expenses')
+        .select('amount_paise' + (hasAllocFilter ? ', expense_allocations!inner(id)' : ''), { count: 'exact' })
+      if (allExpStatus === 'deleted') totalQuery = totalQuery.not('deleted_at', 'is', null)
+      else if (allExpStatus) totalQuery = totalQuery.eq('status', allExpStatus).is('deleted_at', null)
+      if (allExpFrom) totalQuery = totalQuery.gte('expense_date', allExpFrom)
+      if (allExpTo) totalQuery = totalQuery.lte('expense_date', allExpTo)
+      if (allExpSearchD) totalQuery = totalQuery.ilike('description', '%' + allExpSearchD + '%')
+      if (userFilter) totalQuery = totalQuery.eq('user_id', userFilter)
+      if (deptFilter) totalQuery = totalQuery.eq('expense_allocations.department_id', Number(deptFilter))
+      if (expTypeFilter) totalQuery = totalQuery.eq('expense_allocations.expense_type_id', Number(expTypeFilter))
+      if (expSubTypeFilter) totalQuery = totalQuery.eq('expense_allocations.expense_sub_type_id', Number(expSubTypeFilter))
+      if (venueFilter) totalQuery = totalQuery.eq('expense_allocations.venue_id', Number(venueFilter))
+      if (hasScope) totalQuery = totalQuery.in('expense_allocations.department_id', scopeDeptIds)
+      if (amountMin) totalQuery = totalQuery.gte('amount_paise', Math.round(Number(amountMin) * 100))
+      if (amountMax) totalQuery = totalQuery.lte('amount_paise', Math.round(Number(amountMax) * 100))
+      var totalRes = await totalQuery
+      if (!totalRes.error) {
+        var full = (totalRes.data || []).reduce(function (s, r) { return s + (r.amount_paise || 0) }, 0)
+        setAllExpFullTotal(full)
+        setAllExpFullCount(totalRes.count || 0)
+      }
+    }
   }
 
   function exportAllExpCSV() {
@@ -178,7 +219,9 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds }) {
         <div className="flex items-center justify-between">
           <div>
             {!embedded && <h2 className="text-lg font-bold text-gray-900">All Expenses</h2>}
-            <p className="text-xs text-gray-400">{allExps.length} shown · {formatPoints(allExpTotal)} total</p>
+            <p className="text-xs text-gray-500 mt-1">
+              <span className="font-semibold">{allExps.length}{allExpFullCount > allExps.length ? ' of ' + allExpFullCount : ''}</span> shown · Total: <span className="text-base font-bold text-indigo-700">{formatPoints(allExpFullTotal)}</span>
+            </p>
           </div>
           {allExps.length > 0 && (
             <button onClick={exportAllExpCSV}
@@ -347,6 +390,22 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds }) {
                     {exp.description && (
                       <p className="text-xs text-gray-600 mt-0.5 truncate">{exp.description}</p>
                     )}
+                    {(function () {
+                      var chips = extraFieldChips(exp)
+                      if (chips.length === 0) return null
+                      return (
+                        <div className="flex flex-wrap gap-1 mt-1.5">
+                          {chips.map(function (c, i) {
+                            return (
+                              <span key={i} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-gray-100 text-[10px]">
+                                <span className="text-gray-500">{c.label}:</span>
+                                <span className="text-gray-800 font-medium">{c.value}</span>
+                              </span>
+                            )
+                          })}
+                        </div>
+                      )
+                    })()}
                     <p className="text-[11px] text-gray-400 mt-0.5">
                       {(exp.profiles?.name || '—') + ' · '}
                       {(function () {
