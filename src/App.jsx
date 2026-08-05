@@ -4,6 +4,18 @@ import Shell from './components/layout/Shell'
 import AdminShell from './components/layout/AdminShell'
 import PublicEmployeeForm from './pages/PublicEmployeeForm'
 import { LangProvider } from './lib/i18n.jsx'
+import UpdateBanner from './components/UpdateBanner'
+
+// Safety net: if a lazy chunk 404s (stale bundle after deploy), reload once.
+// Guarded to prevent an infinite reload loop if the failure is not deploy-related.
+if (typeof window !== 'undefined' && !window.__ambriaChunkReloadTried) {
+  window.addEventListener('vite:preloadError', function (e) {
+    if (window.__ambriaChunkReloadTried) return
+    window.__ambriaChunkReloadTried = true
+    e.preventDefault()
+    window.location.reload()
+  })
+}
 
 function App() {
   var params = new URLSearchParams(window.location.search)
@@ -28,10 +40,10 @@ function App() {
   }
 
   if (params.get('view') === 'admin' && (profile.role === 'admin' || profile.role === 'auditor')) {
-    return <LangProvider><AdminShell profile={profile} onSignOut={signOut} /></LangProvider>
+    return <LangProvider><AdminShell profile={profile} onSignOut={signOut} /><UpdateBanner /></LangProvider>
   }
 
-  return <LangProvider><Shell profile={profile} onSignOut={signOut} /></LangProvider>
+  return <LangProvider><Shell profile={profile} onSignOut={signOut} /><UpdateBanner /></LangProvider>
 }
 
 export default App
