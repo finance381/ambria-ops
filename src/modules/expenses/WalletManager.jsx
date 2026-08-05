@@ -5,6 +5,8 @@ import { logActivity } from '../../lib/logger'
 import { prepUpload } from '../../lib/uploadHelper'
 import SearchDropdown from '../../components/ui/SearchDropdown'
 import BottomSheet from '../../components/ui/BottomSheet'
+import EventDatePicker from '../../components/ui/EventDatePicker'
+import { useVoice } from '../../hooks/useVoice'
 
 var REF_TYPE_LABELS = {
   expense: 'Expense',
@@ -56,12 +58,18 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   var [transferParties, setTransferParties] = useState({})
   var [expenseRefs, setExpenseRefs] = useState({})
   var [collectModal, setCollectModal] = useState(false)
+  var [collectDate, setCollectDate] = useState('')
   var [collectEvents, setCollectEvents] = useState([])
+  var [collectFunctionsLoading, setCollectFunctionsLoading] = useState(false)
   var [collectEventId, setCollectEventId] = useState('')
+  var [collectMode, setCollectMode] = useState('')
+  var [collectBalance, setCollectBalance] = useState(null)
+  var [collectBalanceLoading, setCollectBalanceLoading] = useState(false)
   var [collectAmount, setCollectAmount] = useState('')
   var [collectDesc, setCollectDesc] = useState('')
   var [collectImage, setCollectImage] = useState(null)
   var [collectSaving, setCollectSaving] = useState(false)
+  var collectVoice = useVoice()
 
   useEffect(function () {
     if (isAdmin || isAuditor) {
@@ -387,53 +395,69 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
 
   async function openCollectModal() {
     setCollectModal(true)
+    setCollectDate('')
+    setCollectEvents([])
     setCollectEventId('')
+    setCollectMode('')
+    setCollectBalance(null)
     setCollectAmount('')
     setCollectDesc('')
     setCollectImage(null)
-    if (collectEvents.length === 0) {
-      var { data } = await supabase.from('events')
-        .select('id, event_name, function_date, venue_name')
-        .order('function_date', { ascending: false })
-        .limit(200)
-      setCollectEvents(data || [])
-    }
+  }
+
+  async function loadFunctionsForDate(dateStr) {
+    setCollectDate(dateStr)
+    setCollectEventId('')
+    setCollectBalance(null)
+    if (!dateStr) { setCollectEvents([]); return }
+    setCollectFunctionsLoading(true)
+    var { data } = await supabase.from('events')
+      .select('id, event_name, function_date, venue_name, client_name, session')
+      .eq('function_date', dateStr)
+      .order('event_name')
+    setCollectEvents(data || [])
+    setCollectFunctionsLoading(false)
+    if (data && data.length === 1) { selectCollectFunction(String(data[0].id)) }
+  }
+
+  async function selectCollectFunction(fid) {
+    setCollectEventId(fid)
+    setCollectBalance(null)
+    if (!fid) return
+    setCollectBalanceLoading(true)
+    var { data, error } = await supabase.rpc('fn_event_balance', { p_event_id: Number(fid) })
+    if (!error && data && data.length > 0) { setCollectBalance(data[0]) }
+    setCollectBalanceLoading(false)
   }
 
   async function submitCollection() {
-    if (collectSaving || !collectEventId || !collectAmount || Number(collectAmount) <= 0) return
+    if (collectSaving) return
+    if (!collectEventId) { alert('Select a function'); return }
+    if (!collectMode) { alert('Select Cash or Bank'); return }
+    if (!collectAmount || Number(collectAmount) <= 0) { alert('Enter amount'); return }
+    if (!collectImage) { alert('Receipt photo is required'); return }
     setCollectSaving(true)
     var amountPaise = Math.round(Number(collectAmount) * 100)
-    var imagePath = null
-    if (collectImage) {
-      var cF = await prepUpload(collectImage, 100)
-      var ext = cF.name.split('.').pop()
-      var path = 'wallet/collection/' + profile.id + '_' + Date.now() + '.' + ext
-      var { error: upErr } = await supabase.storage.from('receipts').upload(path, cF, { upsert: true })
-      if (upErr) { alert('Image upload failed: ' + upErr.message); setCollectSaving(false); return }
-      imagePath = path
-    }
+    // Upload receipt first — DB write is source of truth
+    var cF = await prepUpload(collectImage, 100)
+    var ext = cF.name.split('.').pop()
+    var imagePath = 'wallet/collection/' + profile.id + '_' + Date.now() + '.' + ext
+    var { error: upErr } = await supabase.storage.from('receipts').upload(imagePath, cF, { upsert: true })
+    if (upErr) { alert('Receipt upload failed: ' + upErr.message); setCollectSaving(false); return }
     var evtName = (collectEvents.find(function (e) { return String(e.id) === collectEventId }) || {}).event_name || ''
     var desc = (collectDesc.trim() || 'Collection') + ' — ' + evtName
-    var { error } = await supabase.rpc('wallet_self_credit', {
+    var { data, error } = await supabase.rpc('fn_wallet_collect', {
+      p_event_id: Number(collectEventId),
+      p_payment_mode: collectMode,
       p_amount_paise: amountPaise,
       p_description: desc,
-      p_ref_type: 'collection',
-      p_ref_id: collectEventId,
+      p_receipt_path: imagePath
     })
     if (error) { alert('Collection failed: ' + error.message); setCollectSaving(false); return }
-    if (imagePath) {
-      var { data: latestTxn } = await supabase.from('wallet_transactions')
-        .select('id')
-        .eq('wallet_id', (myWallet || {}).id)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .single()
-      if (latestTxn) {
-        await supabase.from('wallet_transactions').update({ received_image_path: imagePath }).eq('id', latestTxn.id)
-      }
+    if (data && data.over_agreed) {
+      alert('Warning: this collection exceeds the agreed ' + collectMode + ' amount for the event. Recorded anyway.')
     }
-    try { await logActivity('WALLET_COLLECTION', evtName + ' | ' + formatPoints(amountPaise)) } catch (_) {}
+    try { await logActivity('WALLET_COLLECTION', evtName + ' | ' + collectMode + ' | ' + formatPoints(amountPaise)) } catch (_) {}
     setCollectModal(false)
     setCollectSaving(false)
     refreshBalance()
@@ -591,48 +615,151 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
 
   function renderCollectModal() {
     if (!collectModal) return null
+    var pendCashP = collectBalance ? Number(collectBalance.pending_cash_paise || 0) : 0
+    var pendBankP = collectBalance ? Number(collectBalance.pending_bank_paise || 0) : 0
+    var agrCashP = collectBalance ? Number(collectBalance.agreed_cash_paise || 0) : 0
+    var agrBankP = collectBalance ? Number(collectBalance.agreed_bank_paise || 0) : 0
+    var colCashP = collectBalance ? Number(collectBalance.collected_cash_paise || 0) : 0
+    var colBankP = collectBalance ? Number(collectBalance.collected_bank_paise || 0) : 0
+    var canSubmit = collectEventId && collectMode && collectAmount && Number(collectAmount) > 0 && collectImage && !collectSaving
     return (
       <BottomSheet open={true} onClose={function () { setCollectModal(false) }} title="Collect Payment">
         <div className="space-y-4">
-          <SearchDropdown label="Event" required
-            items={collectEvents.map(function (e) { return { label: e.event_name + (e.function_date ? ' · ' + e.function_date : '') + (e.venue_name ? ' · ' + e.venue_name : ''), value: String(e.id) } })}
-            value={collectEventId}
-            onChange={function (val) { setCollectEventId(val) }}
-            placeholder="Search event..." />
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Amount (Points)</label>
-            <input type="number" min="1" step="any" inputMode="decimal" value={collectAmount}
-              onChange={function (e) { setCollectAmount(e.target.value) }}
-              placeholder="0" className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              style={{ fontSize: '16px' }} />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-            <input type="text" value={collectDesc} onChange={function (e) { setCollectDesc(e.target.value) }}
-              placeholder="e.g. Advance payment, Final settlement..."
-              maxLength="300" className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              style={{ fontSize: '16px' }} />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">📷 Receipt Photo</label>
-            {collectImage ? (
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-green-600 font-medium truncate flex-1">✓ {collectImage.name}</span>
-                <button onClick={function () { setCollectImage(null) }} className="text-xs text-red-500 font-bold hover:text-red-700">✕</button>
+          <EventDatePicker label="1. Event Date" value={collectDate}
+            onChange={function (dateStr) { loadFunctionsForDate(dateStr) }} />
+
+          {collectDate && (
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">2. Select Function</label>
+              {collectFunctionsLoading && <p className="text-xs text-gray-400">Loading...</p>}
+              {!collectFunctionsLoading && collectEvents.length === 0 && (
+                <p className="text-xs text-gray-400">No functions on this date</p>
+              )}
+              {collectEvents.length > 0 && (
+                <div className="space-y-1.5">
+                  {collectEvents.map(function (ev) {
+                    var selected = String(ev.id) === collectEventId
+                    return (
+                      <button key={ev.id} type="button" onClick={function () { selectCollectFunction(String(ev.id)) }}
+                        className={"w-full text-left px-3 py-2 rounded-lg border transition-colors " +
+                          (selected ? "border-blue-600 bg-blue-50 border-2" : "border-gray-200 hover:border-gray-300 bg-white")}>
+                        <div className={"text-sm font-medium " + (selected ? "text-blue-900" : "text-gray-900")}>
+                          {ev.event_name + (ev.client_name ? ' — ' + ev.client_name : '')}
+                        </div>
+                        <div className={"text-xs " + (selected ? "text-blue-700" : "text-gray-500")}>
+                          {(ev.venue_name || '') + (ev.session ? ' · ' + ev.session : '')}
+                        </div>
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {collectEventId && (
+            <div className="bg-gray-50 rounded-lg px-3 py-2.5">
+              {collectBalanceLoading ? (
+                <p className="text-xs text-gray-400">Loading balance...</p>
+              ) : (
+                <>
+                  <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Pending Balance</div>
+                  <div className="flex gap-4">
+                    <div className="flex-1">
+                      <div className="text-xs text-gray-500">💵 Cash</div>
+                      <div className={"text-base font-semibold " + (pendCashP > 0 ? "text-red-600" : "text-green-600")}>
+                        {agrCashP > 0 ? formatPoints(pendCashP) : formatPoints(colCashP) + ' collected'}
+                      </div>
+                    </div>
+                    <div className="flex-1">
+                      <div className="text-xs text-gray-500">🏦 Bank</div>
+                      <div className={"text-base font-semibold " + (pendBankP > 0 ? "text-red-600" : "text-green-600")}>
+                        {agrBankP > 0 ? formatPoints(pendBankP) : formatPoints(colBankP) + ' collected'}
+                      </div>
+                    </div>
+                  </div>
+                  {agrCashP === 0 && agrBankP === 0 && (
+                    <div className="text-xs text-gray-400 mt-1.5">No agreed split set from LMS</div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
+          {collectEventId && (
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">3. Payment Mode</label>
+              <div className="grid grid-cols-2 gap-2">
+                <button type="button" onClick={function () { setCollectMode('cash') }}
+                  className={"py-2.5 rounded-lg border-2 text-sm font-semibold transition-colors " +
+                    (collectMode === 'cash' ? "border-blue-600 bg-blue-50 text-blue-900" : "border-gray-200 bg-white text-gray-600")}>
+                  💵 Cash
+                </button>
+                <button type="button" onClick={function () { setCollectMode('bank') }}
+                  className={"py-2.5 rounded-lg border-2 text-sm font-semibold transition-colors " +
+                    (collectMode === 'bank' ? "border-blue-600 bg-blue-50 text-blue-900" : "border-gray-200 bg-white text-gray-600")}>
+                  🏦 Bank
+                </button>
               </div>
-            ) : (
-              <label className="block w-full py-2.5 text-center text-sm text-blue-600 border border-dashed border-blue-300 rounded-lg cursor-pointer hover:bg-blue-50 transition-colors">
-                Tap to attach photo
-                <input type="file" accept="image/*" capture="environment" className="sr-only"
-                  onChange={function (e) { if (e.target.files?.[0]) setCollectImage(e.target.files[0]); e.target.value = '' }} />
-              </label>
-            )}
-          </div>
+            </div>
+          )}
+
+          {collectEventId && (
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">4. Amount Received</label>
+              <input type="number" min="1" step="any" inputMode="decimal" value={collectAmount}
+                onChange={function (e) { setCollectAmount(e.target.value) }}
+                placeholder="0" className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                style={{ fontSize: '16px' }} />
+            </div>
+          )}
+
+          {collectEventId && (
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">5. Description</label>
+              <div className="relative">
+                <input type="text" value={collectDesc} onChange={function (e) { setCollectDesc(e.target.value) }}
+                  placeholder="e.g. Advance payment, Final settlement..."
+                  maxLength="300" className="w-full px-3 py-2.5 pr-10 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  style={{ fontSize: '16px' }} />
+                <button type="button"
+                  onClick={function () { collectVoice.start(function (text) { setCollectDesc(function (prev) { return (prev ? prev + ' ' : '') + text }) }) }}
+                  className={"absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded " + (collectVoice.listening ? "text-red-500 animate-pulse" : "text-blue-600 hover:bg-blue-50")}
+                  aria-label="Voice input">🎤</button>
+              </div>
+            </div>
+          )}
+
+          {collectEventId && (
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">6. Receipt Photo <span className="text-red-500">*</span></label>
+              {collectImage ? (
+                <div className="flex items-center gap-2 px-3 py-2.5 border border-green-300 bg-green-50 rounded-lg">
+                  <span className="text-xs text-green-700 font-medium truncate flex-1">✓ {collectImage.name}</span>
+                  <button onClick={function () { setCollectImage(null) }} className="text-xs text-red-500 font-bold hover:text-red-700">✕</button>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="py-3 text-center text-sm text-gray-700 border border-dashed border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
+                    📷 Camera
+                    <input type="file" accept="image/*" capture="environment" className="sr-only"
+                      onChange={function (e) { if (e.target.files?.[0]) setCollectImage(e.target.files[0]); e.target.value = '' }} />
+                  </label>
+                  <label className="py-3 text-center text-sm text-gray-700 border border-dashed border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
+                    🖼️ Gallery
+                    <input type="file" accept="image/*" className="sr-only"
+                      onChange={function (e) { if (e.target.files?.[0]) setCollectImage(e.target.files[0]); e.target.value = '' }} />
+                  </label>
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="flex gap-3 pt-2">
             <button onClick={function () { setCollectModal(false) }}
               className="flex-1 py-3 text-sm text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors font-semibold">Cancel</button>
             <button onClick={submitCollection}
-              disabled={collectSaving || !collectEventId || !collectAmount || Number(collectAmount) <= 0}
+              disabled={!canSubmit}
               className="flex-1 py-3 text-sm text-white bg-blue-600 rounded-xl hover:bg-blue-700 disabled:opacity-50 transition-colors font-semibold">
               {collectSaving ? 'Saving...' : 'Collect ' + (collectAmount && Number(collectAmount) > 0 ? Number(collectAmount).toLocaleString('en-IN') + ' pts' : '')}
             </button>

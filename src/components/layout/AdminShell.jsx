@@ -30,6 +30,7 @@ var Employees = lazy(function () { return import('../../modules/employees/Employ
 var EmployeeDocTypes = lazy(function () { return import('../../modules/employees/EmployeeDocTypes') })
 var SalaryLedger = lazy(function () { return import('../../modules/employees/SalaryLedger') })
 var SalaryPayouts = lazy(function () { return import('../../modules/expenses/SalaryPayouts') })
+var EventLedger = lazy(function () { return import('../../modules/expenses/EventLedger') })
 
 function ExpenseTypesMaster(props) {
   return <Expenses profile={props.profile} masterMode={true} />
@@ -83,6 +84,7 @@ var SUB_TAB_CONFIG = {
     { key: 'wallet', label: 'Wallet', component: Wallet },
     { key: 'expenses', label: 'Expenses', component: Expenses },
     { key: 'ledgers', label: 'Expense Ledger', component: Ledgers },
+    { key: 'event_ledger', label: 'Event Ledger', component: EventLedger },
     { key: 'payments', label: 'Payments', component: Payments },
     { key: 'salary_payouts', label: 'Salary Payouts', component: SalaryPayouts },
     { key: 'vendor_ledger', label: 'Vendor Ledger', component: VendorLedger },
