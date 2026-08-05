@@ -86,8 +86,6 @@ function EventLedger() {
 
   return (
     <div>
-      <h1 className="text-xl font-bold mb-4">Event Ledger</h1>
-
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
         <EventDatePicker label="Event Date" value={date} onChange={loadFunctions} />
         {date && (

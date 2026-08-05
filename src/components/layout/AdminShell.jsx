@@ -9,8 +9,6 @@ var Categories = lazy(function () { return import('../../modules/categories/Cate
 var Users = lazy(function () { return import('../../modules/users/Users') })
 var ActivityLogs = lazy(function () { return import('../../modules/logs/ActivityLogs') })
 var Expenses = lazy(function () { return import('../../modules/expenses/Expenses') })
-var Ledgers = lazy(function () { return import('../../modules/expenses/Ledgers') })
-var VendorLedger = lazy(function () { return import('../../modules/expenses/VendorLedger') })
 var Payments = lazy(function () { return import('../../modules/expenses/Payments') })
 var Wallet = lazy(function () { return import('../../modules/expenses/Wallet') })
 var GVLog = lazy(function () { return import('../../modules/expenses/GVLog') })
@@ -30,7 +28,7 @@ var Employees = lazy(function () { return import('../../modules/employees/Employ
 var EmployeeDocTypes = lazy(function () { return import('../../modules/employees/EmployeeDocTypes') })
 var SalaryLedger = lazy(function () { return import('../../modules/employees/SalaryLedger') })
 var SalaryPayouts = lazy(function () { return import('../../modules/expenses/SalaryPayouts') })
-var EventLedger = lazy(function () { return import('../../modules/expenses/EventLedger') })
+var LedgersHub = lazy(function () { return import('../../modules/expenses/LedgersHub') })
 
 function ExpenseTypesMaster(props) {
   return <Expenses profile={props.profile} masterMode={true} />
@@ -72,7 +70,6 @@ var SUB_TAB_CONFIG = {
   users: [
     { key: 'users', label: 'Users', component: Users },
     { key: 'employees', label: 'Employees', component: Employees },
-    { key: 'salary_ledger', label: 'Salary Ledger', component: SalaryLedger },
     { key: 'logs', label: 'Activity Logs', component: ActivityLogs },
   ],
   procurement: [
@@ -83,12 +80,9 @@ var SUB_TAB_CONFIG = {
   expenses: [
     { key: 'wallet', label: 'Wallet', component: Wallet },
     { key: 'expenses', label: 'Expenses', component: Expenses },
-    { key: 'ledgers', label: 'Expense Ledger', component: Ledgers },
-    { key: 'event_ledger', label: 'Event Ledger', component: EventLedger },
     { key: 'payments', label: 'Payments', component: Payments },
     { key: 'salary_payouts', label: 'Salary Payouts', component: SalaryPayouts },
-    { key: 'vendor_ledger', label: 'Vendor Ledger', component: VendorLedger },
-    { key: 'gv_log', label: 'GV Log', component: GVLog },
+    { key: 'ledgers', label: 'Ledgers', component: LedgersHub },
   ],
 }
 
