@@ -217,7 +217,7 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved }) {
     setAllocations(function (prev) { return prev.map(function (row, i) { if (i !== index) return row; var updated = { ...row, [field]: value }; if (field === 'venue_id') updated.sub_venue_id = ''; if (field === 'department') updated.sub_department_id = ''; return updated }) })
   }
   function addAllocationRow() {
-    setAllocations(function (prev) { return [...prev, { department: '', sub_department_id: '', venue_id: '', sub_venue_id: '', qty: '' }] })
+    setAllocations(function (prev) { return [{ department: '', sub_department_id: '', venue_id: '', sub_venue_id: '', qty: '' }, ...prev] })
   }
   function removeAllocationRow(index) { setAllocations(function (prev) { if (prev.length <= 1) return prev; return prev.filter(function (_, i) { return i !== index }) }) }
 
