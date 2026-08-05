@@ -30,6 +30,7 @@ var PERM_GROUPS = [
     { key: 'feature_payments', label: 'Payments', grants: ['feature_payments'] },
     { key: 'feature_vendor_ledger', label: 'Vendor Ledger', grants: ['feature_vendor_ledger'] },
     { key: 'feature_salary_pay', label: 'Salary Payouts', grants: ['feature_salary_pay'], note: 'Also grant "See salaries" in HR → Employees' },
+    { key: 'finance_cost_transfer', label: 'Cost Transfers', grants: ['finance_cost_transfer'] },
   ]},
   { group: 'Operations', icon: '🚚', children: [
     { key: 'feature_purchase', label: 'Purchase Orders', grants: ['feature_purchase'] },

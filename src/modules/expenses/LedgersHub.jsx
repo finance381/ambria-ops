@@ -6,23 +6,29 @@ var EventLedger = lazy(function () { return import('./EventLedger') })
 var VendorLedger = lazy(function () { return import('./VendorLedger') })
 var SalaryLedger = lazy(function () { return import('../employees/SalaryLedger') })
 var GVLog = lazy(function () { return import('./GVLog') })
+var CostTransfers = lazy(function () { return import('./CostTransfers') })
 
 var LEDGERS = [
   { key: 'expense', label: 'Expense', icon: 'ti-receipt', component: Ledgers, countTable: 'expenses', countFilter: function (q) { return q.is('deleted_at', null) } },
   { key: 'event', label: 'Event', icon: 'ti-calendar-event', component: EventLedger, countTable: 'event_ledger' },
   { key: 'vendor', label: 'Vendor', icon: 'ti-building-store', component: VendorLedger, countTable: 'ledger_entries' },
   { key: 'salary', label: 'Salary', icon: 'ti-cash', component: SalaryLedger, countTable: null },
+  { key: 'cost_transfer', label: 'Cost Transfers', icon: 'ti-arrows-right-left', component: CostTransfers, countTable: 'cost_transfers', countFilter: function (q) { return q.is('reversal_of', null).is('reversed_by_id', null) }, perm: 'finance_cost_transfer' },
   { key: 'gv', label: 'GV Log', icon: 'ti-history', component: GVLog, countTable: null },
 ]
 
 function LedgersHub(props) {
-  var [active, setActive] = useState(props.activeSubTab && LEDGERS.some(function (l) { return l.key === props.activeSubTab }) ? props.activeSubTab : 'expense')
+  var perms = (props.profile && props.profile.permissions) || []
+  var isAdmin = props.profile && (props.profile.role === 'admin' || props.profile.role === 'auditor')
+  var visible = LEDGERS.filter(function (l) { return !l.perm || isAdmin || perms.indexOf(l.perm) !== -1 })
+  var defaultKey = visible.length > 0 ? visible[0].key : 'expense'
+  var [active, setActive] = useState(props.activeSubTab && visible.some(function (l) { return l.key === props.activeSubTab }) ? props.activeSubTab : defaultKey)
   var [counts, setCounts] = useState({})
 
   useEffect(function () {
     var alive = true
     async function loadCounts() {
-      var results = await Promise.all(LEDGERS.map(async function (l) {
+      var results = await Promise.all(visible.map(async function (l) {
         if (!l.countTable) return { key: l.key, count: null }
         try {
           var q = supabase.from(l.countTable).select('*', { count: 'exact', head: true })
@@ -40,13 +46,13 @@ function LedgersHub(props) {
     return function () { alive = false }
   }, [])
 
-  var activeLedger = LEDGERS.find(function (l) { return l.key === active }) || LEDGERS[0]
+  var activeLedger = visible.find(function (l) { return l.key === active }) || visible[0] || LEDGERS[0]
   var Cmp = activeLedger.component
 
   return (
     <div>
       <div className="flex flex-wrap gap-1.5 mb-5">
-        {LEDGERS.map(function (l) {
+        {visible.map(function (l) {
           var isActive = l.key === active
           var c = counts[l.key]
           return (
