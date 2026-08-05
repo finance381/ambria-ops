@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import Modal from '../../components/ui/Modal'
+import SearchDropdown from '../../components/ui/SearchDropdown'
 import { logActivity } from '../../lib/logger'
 
 var PARTY_TYPES = [
@@ -293,59 +294,49 @@ function PartySection({ side, form, updForm, expTypes, expSubTypes, events, vend
   if (t === 'expense') {
     var etId = Number(form[fld('expense_type_id')]) || 0
     var subs = expSubTypes.filter(function (s) { return s.expense_type_id === etId })
+    var etItems = expTypes.map(function (x) { return { value: String(x.id), label: x.name } })
+    var subItems = subs.map(function (x) { return { value: String(x.id), label: x.name } })
     picker = (
       <div className="grid grid-cols-2 gap-2">
-        <select value={form[fld('expense_type_id')]}
-          onChange={function (e) {
-            var patch = {}; patch[fld('expense_type_id')] = e.target.value; patch[fld('expense_sub_type_id')] = ''
+        <SearchDropdown items={etItems}
+          value={form[fld('expense_type_id')]}
+          onChange={function (v) {
+            var patch = {}; patch[fld('expense_type_id')] = v; patch[fld('expense_sub_type_id')] = ''
             updForm(patch)
           }}
-          style={{ fontSize: '16px' }}
-          className="px-2 py-1.5 border border-gray-300 rounded">
-          <option value="">— Expense Type —</option>
-          {expTypes.map(function (x) { return <option key={x.id} value={x.id}>{x.name}</option> })}
-        </select>
-        <select value={form[fld('expense_sub_type_id')]} disabled={!etId || subs.length === 0}
-          onChange={function (e) { var patch = {}; patch[fld('expense_sub_type_id')] = e.target.value; updForm(patch) }}
-          style={{ fontSize: '16px' }}
-          className="px-2 py-1.5 border border-gray-300 rounded disabled:bg-gray-50">
-          <option value="">— Sub-type (optional) —</option>
-          {subs.map(function (x) { return <option key={x.id} value={x.id}>{x.name}</option> })}
-        </select>
+          placeholder="Search expense type" />
+        <SearchDropdown items={subItems}
+          value={form[fld('expense_sub_type_id')]}
+          onChange={function (v) { var patch = {}; patch[fld('expense_sub_type_id')] = v; updForm(patch) }}
+          placeholder={!etId ? 'Pick a type first' : (subs.length === 0 ? 'No sub-types' : 'Sub-type (optional)')} />
       </div>
     )
   } else if (t === 'event') {
+    var evItems = events.map(function (x) {
+      var lbl = (x.event_name || x.client_name || ('Event #' + x.id)) + ' — ' + (x.function_date || '')
+      return { value: String(x.id), label: lbl }
+    })
     picker = (
-      <select value={form[fld('event_id')]}
-        onChange={function (e) { var patch = {}; patch[fld('event_id')] = e.target.value; updForm(patch) }}
-        style={{ fontSize: '16px' }}
-        className="w-full px-2 py-1.5 border border-gray-300 rounded">
-        <option value="">— Event —</option>
-        {events.map(function (x) {
-          var lbl = (x.event_name || x.client_name || ('Event #' + x.id)) + ' — ' + (x.function_date || '')
-          return <option key={x.id} value={x.id}>{lbl}</option>
-        })}
-      </select>
+      <SearchDropdown items={evItems}
+        value={form[fld('event_id')]}
+        onChange={function (v) { var patch = {}; patch[fld('event_id')] = v; updForm(patch) }}
+        placeholder="Search event by name or date" />
     )
   } else if (t === 'vendor') {
+    var vdItems = vendors.map(function (x) { return { value: String(x.id), label: x.name } })
     picker = (
-      <select value={form[fld('vendor_id')]}
-        onChange={function (e) { var patch = {}; patch[fld('vendor_id')] = e.target.value; updForm(patch) }}
-        style={{ fontSize: '16px' }}
-        className="w-full px-2 py-1.5 border border-gray-300 rounded">
-        <option value="">— Vendor —</option>
-        {vendors.map(function (x) { return <option key={x.id} value={x.id}>{x.name}</option> })}
-      </select>
+      <SearchDropdown items={vdItems}
+        value={form[fld('vendor_id')]}
+        onChange={function (v) { var patch = {}; patch[fld('vendor_id')] = v; updForm(patch) }}
+        placeholder="Search vendor" />
     )
   } else if (t === 'employee') {
+    var emItems = employees.map(function (x) { return { value: String(x.id), label: x.full_name } })
     picker = (
-      <select value={form[fld('employee_id')]}
-        onChange={function (e) { var patch = {}; patch[fld('employee_id')] = e.target.value; updForm(patch) }}
-        style={{ fontSize: '16px' }}
-        className="w-full px-2 py-1.5 border border-gray-300 rounded">
-        <option value="">— Employee —</option>
-        {employees.map(function (x) { return <option key={x.id} value={x.id}>{x.full_name}</option> })}
-      </select>
+      <SearchDropdown items={emItems}
+        value={form[fld('employee_id')]}
+        onChange={function (v) { var patch = {}; patch[fld('employee_id')] = v; updForm(patch) }}
+        placeholder="Search employee" />
     )
   }
 
