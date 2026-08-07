@@ -617,12 +617,12 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     if (!collectModal) return null
     var pendCashP = collectBalance ? Number(collectBalance.pending_cash_paise || 0) : 0
     var pendBankP = collectBalance ? Number(collectBalance.pending_bank_paise || 0) : 0
+    var pendTaxP = collectBalance ? Number(collectBalance.pending_tax_paise || 0) : 0
     var agrCashP = collectBalance ? Number(collectBalance.agreed_cash_paise || 0) : 0
     var agrBankP = collectBalance ? Number(collectBalance.agreed_bank_paise || 0) : 0
     var colCashP = collectBalance ? Number(collectBalance.collected_cash_paise || 0) : 0
     var colBankP = collectBalance ? Number(collectBalance.collected_bank_paise || 0) : 0
     var taxP = collectBalance ? Number(collectBalance.tax_amount_paise || 0) : 0
-    var totalBankAgreedP = agrBankP + taxP
     var canSubmit = collectEventId && collectMode && collectAmount && Number(collectAmount) > 0 && collectImage && !collectSaving
     return (
       <BottomSheet open={true} onClose={function () { setCollectModal(false) }} title="Collect Payment">
@@ -689,7 +689,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
               ) : (
                 <>
                   <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Pending Balance</div>
-                  <div className="flex gap-4">
+                  <div className="flex gap-3">
                     <div className="flex-1">
                       <div className="text-xs text-gray-500">💵 Cash</div>
                       <div className={"text-base font-semibold " + (pendCashP > 0 ? "text-red-600" : "text-green-600")}>
@@ -699,16 +699,17 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                     <div className="flex-1">
                       <div className="text-xs text-gray-500">🏦 Bank</div>
                       <div className={"text-base font-semibold " + (pendBankP > 0 ? "text-red-600" : "text-green-600")}>
-                        {totalBankAgreedP > 0 ? formatPoints(pendBankP) : formatPoints(colBankP) + ' collected'}
+                        {agrBankP > 0 ? formatPoints(pendBankP) : (colBankP > 0 ? formatPoints(colBankP) + ' collected' : '—')}
                       </div>
-                      {taxP > 0 && (
-                        <div className="text-[10px] text-gray-400 mt-0.5">
-                          Bank: {formatPoints(agrBankP)} + Tax: {formatPoints(taxP)}
-                        </div>
-                      )}
+                    </div>
+                    <div className="flex-1">
+                      <div className="text-xs text-gray-500">🧾 Tax</div>
+                      <div className={"text-base font-semibold " + (pendTaxP > 0 ? "text-red-600" : "text-green-600")}>
+                        {taxP > 0 ? formatPoints(pendTaxP) : '—'}
+                      </div>
                     </div>
                   </div>
-                  {agrCashP === 0 && totalBankAgreedP === 0 && (
+                  {agrCashP === 0 && agrBankP === 0 && taxP === 0 && (
                     <div className="text-xs text-gray-400 mt-1.5">No agreed split set from LMS</div>
                   )}
                 </>
