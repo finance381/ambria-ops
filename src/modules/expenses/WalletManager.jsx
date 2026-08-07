@@ -65,6 +65,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   var [collectMode, setCollectMode] = useState('')
   var [collectBalance, setCollectBalance] = useState(null)
   var [collectBalanceLoading, setCollectBalanceLoading] = useState(false)
+  var [showActualCash, setShowActualCash] = useState(false)
   var [collectAmount, setCollectAmount] = useState('')
   var [collectDesc, setCollectDesc] = useState('')
   var [collectImage, setCollectImage] = useState(null)
@@ -688,12 +689,18 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                 <p className="text-xs text-gray-400">Loading balance...</p>
               ) : (
                 <>
-                  <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Pending Balance</div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Pending Balance</div>
+                    <button type="button" onClick={function () { setShowActualCash(!showActualCash) }}
+                      className="text-[10px] text-indigo-600 hover:text-indigo-800 underline">
+                      {showActualCash ? 'LMS scale' : 'Actual ×10'}
+                    </button>
+                  </div>
                   <div className="flex gap-3">
                     <div className="flex-1">
-                      <div className="text-xs text-gray-500">💵 Cash</div>
+                      <div className="text-xs text-gray-500">💵 Cash{showActualCash && agrCashP > 0 ? ' (actual)' : ''}</div>
                       <div className={"text-base font-semibold " + (pendCashP > 0 ? "text-red-600" : "text-green-600")}>
-                        {agrCashP > 0 ? formatPoints(pendCashP) : formatPoints(colCashP) + ' collected'}
+                        {agrCashP > 0 ? formatPoints(pendCashP * (showActualCash ? 10 : 1)) : formatPoints(colCashP * (showActualCash ? 10 : 1)) + ' collected'}
                       </div>
                     </div>
                     <div className="flex-1">
