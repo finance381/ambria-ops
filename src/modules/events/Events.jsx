@@ -3,7 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { Badge } from '../../components/ui/Badge'
 import { formatDate, formatPaise, titleCase } from '../../lib/format'
 import Modal from '../../components/ui/Modal'
-import EventLedger from './EventLedger'
+import EventLedger from '../expenses/EventLedger'
 
 var lastSyncTime = 0
 var SYNC_COOLDOWN = 5 * 60 * 1000
