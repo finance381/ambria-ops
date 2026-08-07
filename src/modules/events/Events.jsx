@@ -3,12 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { Badge } from '../../components/ui/Badge'
 import { formatDate, formatPaise, titleCase } from '../../lib/format'
 import Modal from '../../components/ui/Modal'
-import BlockInventory from './BlockInventory'
-import EventTasks from './EventTasks'
-import EventManpower from './EventManpower'
-import EventPnL from './EventPnL'
-import BriefUpload from './BriefUpload'
-import { logActivity } from '../../lib/logger'
+import EventLedger from './EventLedger'
 
 var lastSyncTime = 0
 var SYNC_COOLDOWN = 5 * 60 * 1000
@@ -20,12 +15,10 @@ function daysBetween(a, b) {
 }
 
 function groupEvents(events) {
-  // Sort by date ascending for grouping
   var sorted = events.slice().sort(function (a, b) {
     return new Date(a.function_date || a.contract_date || 0) - new Date(b.function_date || b.contract_date || 0)
   })
 
-  // Bucket by client key (client_name + contact_number)
   var buckets = {}
   sorted.forEach(function (e) {
     var key = ((e.client_name || '').toLowerCase().trim()) + '||' + ((e.contact_number || '').trim())
@@ -33,7 +26,6 @@ function groupEvents(events) {
     buckets[key].push(e)
   })
 
-  // Within each bucket, cluster by date proximity (3 day gap)
   var groups = []
   Object.keys(buckets).forEach(function (key) {
     var list = buckets[key]
@@ -51,7 +43,6 @@ function groupEvents(events) {
     groups.push(cluster)
   })
 
-  // Sort groups: past (asc) then upcoming (asc)
   var todayStart = new Date(); todayStart.setHours(0, 0, 0, 0); var todayMs = todayStart.getTime()
   groups.sort(function (a, b) {
     var aMax = Math.max.apply(null, a.map(function (e) { return new Date(e.function_date || e.contract_date || 0).getTime() }))
@@ -65,7 +56,6 @@ function groupEvents(events) {
 
   return groups.map(function (functions) {
     var dates = functions.map(function (f) { return f.function_date || f.contract_date }).filter(Boolean).sort()
-    var totalItems = functions.reduce(function (sum, f) { return sum + (f.item_count || 0) }, 0)
     var totalPlates = functions.reduce(function (sum, f) { return sum + (f.total_plates || 0) }, 0)
     return {
       isUpcoming: Math.max.apply(null, functions.map(function (f) { return new Date(f.function_date || f.contract_date || 0).getTime() })) >= todayMs,
@@ -78,7 +68,6 @@ function groupEvents(events) {
       venues: [...new Set(functions.map(function (f) { return f.venue_name }).filter(Boolean))],
       location: functions[0].location || '',
       function_count: functions.length,
-      total_items: totalItems,
       total_plates: totalPlates,
       functions: functions,
     }
@@ -92,25 +81,12 @@ function Events({ profile }) {
   var [syncMsg, setSyncMsg] = useState('')
   var [selectedGroup, setSelectedGroup] = useState(null)
   var [selectedFunction, setSelectedFunction] = useState(null)
-  var [eventItems, setEventItems] = useState([])
-  var [blockingFunc, setBlockingFunc] = useState(null)
-  var [briefFunc, setBriefFunc] = useState(null)
-  var [editingBuffer, setEditingBuffer] = useState(null) // { id, setup_days, teardown_days }
-  var [savingBuffer, setSavingBuffer] = useState(false)
   var [search, setSearch] = useState('')
   var [venueFilter, setVenueFilter] = useState('')
   var [deptFilter, setDeptFilter] = useState('')
   var [departments, setDepartments] = useState([])
   var [page, setPage] = useState(1)
   var [perPage, setPerPage] = useState(24)
-  var [releasing, setReleasing] = useState({}) // { eventItemId: true } while releasing
-  var [togglingStatus, setTogglingStatus] = useState({}) // { eventItemId: true }
-  var [freedAlert, setFreedAlert] = useState(null)
-  var [taskSummary, setTaskSummary] = useState(null)
-  var [manpowerSummary, setManpowerSummary] = useState(null)
-  var [pnlSummary, setPnlSummary] = useState(null)
-  var [detailTab, setDetailTab] = useState(null)
-  
 
   var isAdmin = profile?.role === 'admin' || profile?.role === 'auditor'
   var userEventDeptNames = (profile?.event_dept_ids || []).map(function (id) {
@@ -118,11 +94,8 @@ function Events({ profile }) {
     return dept ? dept.name : null
   }).filter(Boolean)
   var hasEventDeptFilter = !isAdmin && userEventDeptNames.length > 0
-  var perms = profile?.permissions || []
-  var canEditBuffer = isAdmin || perms.includes('event_buffer')
 
   useEffect(function () {
-    supabase.rpc('cleanup_expired_tentative').then(function () {})
     loadEvents().then(function () {
       if (Date.now() - lastSyncTime > SYNC_COOLDOWN) {
         syncFromLMS(true)
@@ -136,20 +109,15 @@ function Events({ profile }) {
     var dateFloorStr = dateFloor.toISOString().split('T')[0]
     var [eventsRes, deptRes] = await Promise.all([
       supabase
-      .from('events_safe')
-      .select('id, lms_event_id, contract_no, contract_date, function_date, department, contract_type, venue_name, location, contact_person, contact_number, event_name, client_name, session, catering, total_plates, complementary_plates, extra_plates_charge, balance_received, balance_bank, balance_amount, status, setup_days, teardown_days, blocked_count, synced_at, created_user_name')
-      .gte('function_date', dateFloorStr)
-      .order('function_date', { ascending: false })
-      .limit(2000),
+        .from('events_safe')
+        .select('id, lms_event_id, contract_no, contract_date, function_date, department, contract_type, venue_name, location, contact_person, contact_number, event_name, client_name, session, catering, total_plates, complementary_plates, extra_plates_charge, balance_received, balance_bank, balance_amount, status, synced_at, created_user_name')
+        .gte('function_date', dateFloorStr)
+        .order('function_date', { ascending: false })
+        .limit(2000),
       supabase.from('departments').select('id, name').eq('active', true).eq('hide_from_lists', false),
     ])
-    var data = eventsRes.data || []
     setDepartments(deptRes.data || [])
-    // Use blocked_count from events_safe view instead of pulling all event_items
-    var enriched = data.map(function (e) {
-      return Object.assign({}, e, { item_count: e.blocked_count || 0, event_items: [] })
-    })
-    setEvents(enriched)
+    setEvents(eventsRes.data || [])
     setLoading(false)
   }
 
@@ -180,201 +148,13 @@ function Events({ profile }) {
     setSyncing(false)
   }
 
-  async function openFunctionDetail(func) {
-    setSelectedFunction(func)
-    setTaskSummary(null)
-    setManpowerSummary(null)
-    setPnlSummary(null)
-    setDetailTab(null)
-    var [{ data }, { data: taskData }, { data: mpReqs }] = await Promise.all([
-      supabase.from('event_items').select('*').eq('event_id', func.id),
-      supabase.from('event_tasks').select('status, due_date').eq('event_id', func.id),
-      supabase.from('event_manpower').select('id, qty_required').eq('event_id', func.id),
-    ])
-    var today = new Date().toISOString().split('T')[0]
-    var ts = { overdue: 0, pending: 0, in_progress: 0, done: 0 }
-    ;(taskData || []).forEach(function (t) {
-      if (t.status === 'done') { ts.done++ }
-      else if (t.status === 'cancelled') { /* skip */ }
-      else if (t.due_date && t.due_date < today) { ts.overdue++ }
-      else if (t.status === 'in_progress') { ts.in_progress++ }
-      else { ts.pending++ }
-    })
-    setTaskSummary(ts)
-
-    // Manpower summary
-    var totalReq = (mpReqs || []).reduce(function (s, r) { return s + r.qty_required }, 0)
-    var totalAssigned = 0
-    if (mpReqs && mpReqs.length > 0) {
-      var reqIds = mpReqs.map(function (r) { return r.id })
-      var { count } = await supabase.from('manpower_assignments').select('id', { count: 'exact', head: true }).in('event_manpower_id', reqIds)
-      totalAssigned = count || 0
-    }
-    setManpowerSummary({ required: totalReq, assigned: totalAssigned })
-
-    // P&L summary (admin only)
-    if (profile?.role === 'admin' || profile?.role === 'auditor') {
-      var { data: pnl } = await supabase.rpc('event_pnl', { p_event_id: func.id })
-      setPnlSummary(pnl || null)
-    }
-    var rows = data || []
-    var itemIds = [...new Set(rows.map(function (r) { return r.item_id }).filter(Boolean))]
-    if (itemIds.length > 0) {
-      var [invRes, csRes] = await Promise.all([
-        supabase.from('inventory_items').select('id, name, type, unit, blocked').in('id', itemIds),
-        supabase.from('catering_store_items').select('id, name, type, unit').in('id', itemIds),
-      ])
-      var itemMap = {}
-      ;(invRes.data || []).forEach(function (i) { itemMap[i.id] = i })
-      ;(csRes.data || []).forEach(function (i) { if (!itemMap[i.id]) itemMap[i.id] = Object.assign({}, i, { blocked: 0 }) })
-      rows = rows.map(function (ei) {
-        return Object.assign({}, ei, { inventory_items: itemMap[ei.item_id] || null })
-      })
-    }
-    setEventItems(rows)
-  }
-
-  async function saveBuffer() {
-    if (!editingBuffer) return
-    setSavingBuffer(true)
-    // Capture old values for rollback
-    var oldSetup = selectedFunction?.setup_days ?? 1
-    var oldTeardown = selectedFunction?.teardown_days ?? 1
-    try {
-      // Update event
-      var { error: bufErr } = await supabase.from('events').update({
-        setup_days: editingBuffer.setup_days,
-        teardown_days: editingBuffer.teardown_days,
-      }).eq('id', editingBuffer.id)
-      if (bufErr) throw bufErr
-
-      // Recalculate block_from/block_to for all event_items of this event
-      var { data: evt } = await supabase.from('events').select('function_date, contract_date').eq('id', editingBuffer.id).maybeSingle()
-      var bufferDate = evt?.function_date || evt?.contract_date
-      if (bufferDate) {
-        var d = new Date(bufferDate)
-        var from = new Date(d); from.setDate(from.getDate() - editingBuffer.setup_days)
-        var to = new Date(d); to.setDate(to.getDate() + editingBuffer.teardown_days)
-        var fromStr = from.toISOString().split('T')[0]
-        var toStr = to.toISOString().split('T')[0]
-        var { error: itemErr } = await supabase.from('event_items').update({ block_from: fromStr, block_to: toStr }).eq('event_id', editingBuffer.id)
-        if (itemErr) {
-          // Rollback event buffer days
-          await supabase.from('events').update({ setup_days: oldSetup, teardown_days: oldTeardown }).eq('id', editingBuffer.id)
-          throw new Error('Block dates update failed, buffer reverted: ' + itemErr.message)
-        }
-      }
-
-      try { await logActivity('UPDATE_BUFFER', (selectedFunction?.event_name || '') + ' | setup=' + editingBuffer.setup_days + ' teardown=' + editingBuffer.teardown_days) } catch (_) {}
-      setEditingBuffer(null)
-      if (selectedFunction) openFunctionDetail(selectedFunction)
-      loadEvents()
-    } catch (err) {
-      alert('Save failed: ' + (err.message || 'Unknown error'))
-    }
-    setSavingBuffer(false)
-  }
-
-  function canRelease(ei) {
-    return isAdmin || ei.blocked_by === profile?.id
-  }
-
- async function releaseItem(ei) {
-    if (releasing[ei.id]) return
-    if (!confirm('Release ' + ei.qty + ' × ' + titleCase(ei.inventory_items?.name) + '?')) return
-    setReleasing(function (p) { return Object.assign({}, p, { [ei.id]: true }) })
-    try {
-      var itemId = ei.item_id
-      var { error: relErr } = await supabase.from('event_items').delete().eq('id', ei.id)
-      if (relErr) throw new Error('Release failed: ' + relErr.message)
-      try { await logActivity('RELEASE_ITEMS', (selectedFunction?.event_name || '') + ' | ' + titleCase(ei.inventory_items?.name) + ' × ' + ei.qty) } catch (_) {}
-      setEventItems(function (prev) { return prev.filter(function (x) { return x.id !== ei.id }) })
-      // Check cascade
-      var { data } = await supabase.rpc('check_freed_inventory', { p_item_ids: [itemId] })
-      var affected = (data || []).filter(function (e) { return e.event_id !== selectedFunction?.id })
-      if (affected.length > 0) setFreedAlert(affected)
-    } catch (err) {
-      alert('Release failed: ' + err.message)
-    }
-    setReleasing(function (p) { var c = Object.assign({}, p); delete c[ei.id]; return c })
-  }
-
-  async function releaseAll() {
-    var releasable = eventItems.filter(canRelease)
-    if (releasable.length === 0) return
-    if (!confirm('Release all ' + releasable.length + ' items from this function?')) return
-    setReleasing(function () {
-      var r = {}; releasable.forEach(function (ei) { r[ei.id] = true }); return r
-    })
-    try {
-      var ids = releasable.map(function (ei) { return ei.id })
-      var itemIds = [...new Set(releasable.map(function (ei) { return ei.item_id }))]
-      var { error: relErr } = await supabase.from('event_items').delete().in('id', ids)
-      if (relErr) throw new Error('Release failed: ' + relErr.message)
-      try { await logActivity('RELEASE_ITEMS', (selectedFunction?.event_name || '') + ' | ALL ' + releasable.length + ' items') } catch (_) {}
-      setEventItems(function (prev) { return prev.filter(function (x) { return !ids.includes(x.id) }) })
-      // Check cascade
-      var { data } = await supabase.rpc('check_freed_inventory', { p_item_ids: itemIds })
-      var affected = (data || []).filter(function (e) { return e.event_id !== selectedFunction?.id })
-      if (affected.length > 0) setFreedAlert(affected)
-    } catch (err) {
-      alert('Release failed: ' + err.message)
-    }
-    setReleasing({})
-  }
-
-  async function toggleBlockStatus(ei) {
-    if (togglingStatus[ei.id]) return
-    var newStatus = ei.block_status === 'confirmed' ? 'tentative' : 'confirmed'
-    setTogglingStatus(function (p) { return Object.assign({}, p, { [ei.id]: true }) })
-    try {
-      var { error: togErr } = await supabase.from('event_items').update({ block_status: newStatus }).eq('id', ei.id)
-      if (togErr) throw new Error(togErr.message)
-      try { await logActivity('BLOCK_STATUS', titleCase(ei.inventory_items?.name) + ' → ' + newStatus) } catch (_) {}
-      setEventItems(function (prev) {
-        return prev.map(function (x) { return x.id === ei.id ? Object.assign({}, x, { block_status: newStatus }) : x })
-      })
-    } catch (err) {
-      alert('Failed: ' + err.message)
-    }
-    setTogglingStatus(function (p) { var c = Object.assign({}, p); delete c[ei.id]; return c })
-  }
-
-  async function confirmAllTentative() {
-    var tentatives = eventItems.filter(function (ei) { return ei.block_status === 'tentative' })
-    if (tentatives.length === 0) return
-    if (!confirm('Confirm all ' + tentatives.length + ' tentative blocks?')) return
-    var ids = tentatives.map(function (ei) { return ei.id })
-    var { error: confErr } = await supabase.from('event_items').update({ block_status: 'confirmed' }).in('id', ids)
-    if (confErr) { alert('Confirm failed: ' + confErr.message); return }
-    try { await logActivity('BLOCK_STATUS', (selectedFunction?.event_name || '') + ' | Confirmed ALL ' + tentatives.length + ' tentative') } catch (_) {}
-    setEventItems(function (prev) {
-      return prev.map(function (x) { return x.block_status === 'tentative' ? Object.assign({}, x, { block_status: 'confirmed' }) : x })
-    })
-  }
-
-  
-
-  function groupByDept(items) {
-    var groups = {}
-    items.forEach(function (ei) {
-      var dept = ei.department || 'Other'
-      if (!groups[dept]) groups[dept] = []
-      groups[dept].push(ei)
-    })
-    return groups
-  }
-
-  // Grouping
   var visibleEvents = hasEventDeptFilter
     ? events.filter(function (e) { return userEventDeptNames.includes(e.department) })
     : events
   var allGroups = useMemo(function () { return groupEvents(visibleEvents) }, [visibleEvents])
 
-  // Unique venues across all events
   var venueNames = [...new Set(events.map(function (e) { return e.venue_name }).filter(Boolean))]
 
-  // Filter groups
   var searchLower = search.toLowerCase()
   var filtered = allGroups.filter(function (g) {
     var matchSearch = !search ||
@@ -446,7 +226,6 @@ function Events({ profile }) {
         </div>
       </div>
 
-      {/* Guest Cards */}
       {filtered.length === 0 && (
         <p className="text-gray-400 text-sm text-center py-8">No events found</p>
       )}
@@ -463,11 +242,10 @@ function Events({ profile }) {
           var dateRange = group.date_start === group.date_end
             ? formatDate(group.date_start)
             : formatDate(group.date_start) + ' – ' + formatDate(group.date_end)
-          return (
+          elements.push(
             <div key={group.id}
               onClick={function () { setSelectedGroup(group) }}
               className="bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md cursor-pointer transition-shadow">
-              {/* Client header */}
               <div className="flex items-start justify-between mb-2">
                 <div className="flex-1 min-w-0">
                   <h3 className="font-semibold text-gray-800 truncate">{titleCase(group.client_name)}</h3>
@@ -478,14 +256,12 @@ function Events({ profile }) {
                 </span>
               </div>
 
-              {/* Date + meta */}
               <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-500 mb-3">
                 <span>📅 {dateRange}</span>
                 {group.venues.map(function (v) { return <span key={v}>🏛️ {v}</span> })}
                 {group.location && !group.venues.some(function (v) { return v.toLowerCase().indexOf(group.location.toLowerCase()) !== -1 || group.location.toLowerCase().indexOf(v.toLowerCase()) !== -1 }) && <span>📍 {group.location}</span>}
               </div>
 
-              {/* Functions list */}
               <div className="space-y-1 mb-3">
                 {group.functions.map(function (f) {
                   return (
@@ -498,25 +274,16 @@ function Events({ profile }) {
                          f.department === 'Entertainment' ? "bg-pink-100 text-pink-700" :
                          "bg-gray-100 text-gray-600")}>{f.department}</span>}
                       <span className="text-gray-400">{formatDate(f.function_date || f.contract_date)}</span>
-                      {f.contract_no && <span className="font-mono text-gray-400">#{f.contract_no}</span>}
                     </div>
                   )
                 })}
               </div>
 
-              {/* Stats */}
-              <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-500">
-                {group.total_plates > 0 && <span>🍽️ {group.total_plates} plates</span>}
-                {group.total_items > 0 && <span>📦 {group.total_items} blocked</span>}
-                {group.contact_number && <span>📞 {group.contact_number}</span>}
-              </div>
-
-              {/* Financial — admin only */}
               {isAdmin && (function () {
-                var totalBalance = group.functions.reduce(function (sum, f) { return sum + (f.balance_amount || 0) }, 0)
+                var totalBalance = group.functions.reduce(function (s, f) { return s + (f.balance_amount || 0) }, 0)
                 if (!totalBalance) return null
                 return (
-                  <div className="mt-2 pt-2 border-t border-gray-100">
+                  <div className="pt-2 border-t border-gray-100">
                     <span className={"text-xs font-medium " + (totalBalance < 0 ? "text-red-600" : "text-green-600")}>
                       Balance: {formatPaise(Math.abs(totalBalance))} {totalBalance < 0 ? 'due' : 'advance'}
                     </span>
@@ -562,7 +329,6 @@ function Events({ profile }) {
         title={selectedGroup ? titleCase(selectedGroup.client_name) : ''} wide>
         {selectedGroup && (
           <div className="space-y-5">
-            {/* Client info */}
             <div className="bg-gray-50 rounded-lg p-4">
               <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-600">
                 {selectedGroup.contact_person && <span><strong>Contact:</strong> {selectedGroup.contact_person}</span>}
@@ -571,36 +337,6 @@ function Events({ profile }) {
               </div>
             </div>
 
-            {/* Financial summary — admin only */}
-            {isAdmin && (function () {
-              var totalReceived = selectedGroup.functions.reduce(function (s, f) { return s + (f.balance_received || 0) }, 0)
-              var totalBank = selectedGroup.functions.reduce(function (s, f) { return s + (f.balance_bank || 0) }, 0)
-              var totalBalance = selectedGroup.functions.reduce(function (s, f) { return s + (f.balance_amount || 0) }, 0)
-              if (!totalReceived && !totalBank && !totalBalance) return null
-              return (
-                <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
-                  <h4 className="text-xs font-bold text-amber-700 uppercase tracking-wider mb-2">Financial Summary (All Functions)</h4>
-                  <div className="grid grid-cols-3 gap-3 text-sm">
-                    <div>
-                      <p className="text-xs text-gray-500">Received</p>
-                      <p className="font-medium text-gray-800">{formatPaise(Math.abs(totalReceived))}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-gray-500">Bank</p>
-                      <p className="font-medium text-gray-800">{formatPaise(totalBank)}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-gray-500">Balance</p>
-                      <p className={"font-medium " + (totalBalance < 0 ? "text-red-600" : "text-green-600")}>
-                        {formatPaise(Math.abs(totalBalance))} {totalBalance < 0 ? 'due' : 'advance'}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )
-            })()}
-
-            {/* Functions list */}
             <div>
               <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">
                 Functions ({selectedGroup.function_count})
@@ -608,7 +344,7 @@ function Events({ profile }) {
               <div className="space-y-2">
                 {selectedGroup.functions.map(function (f) {
                   return (
-                    <div key={f.id} onClick={function () { openFunctionDetail(f) }}
+                    <div key={f.id} onClick={function () { setSelectedFunction(f) }}
                       className="bg-white border border-gray-200 rounded-lg p-3 hover:bg-indigo-50 cursor-pointer transition-colors active:bg-indigo-100">
                       <div className="flex items-center justify-between">
                         <div className="flex-1 min-w-0">
@@ -620,16 +356,10 @@ function Events({ profile }) {
                             <span>{formatDate(f.function_date || f.contract_date)}</span>
                             {f.venue_name && <span>· {f.venue_name}</span>}
                             {f.session && <span>· {f.session}</span>}
-                            {f.blocked_count > 0 && <span>· 📦 {f.blocked_count}</span>}
                           </div>
                         </div>
                         <span className="text-gray-300 ml-2 flex-shrink-0">›</span>
                       </div>
-                      {isAdmin && f.balance_amount !== null && f.balance_amount !== 0 && (
-                        <p className={"text-[11px] font-medium mt-1 " + (f.balance_amount < 0 ? "text-red-600" : "text-green-600")}>
-                          {formatPaise(Math.abs(f.balance_amount))} {f.balance_amount < 0 ? 'due' : 'advance'}
-                        </p>
-                      )}
                     </div>
                   )
                 })}
@@ -640,10 +370,10 @@ function Events({ profile }) {
       </Modal>
 
       {/* ═══ FUNCTION DETAIL MODAL ═══ */}
-      <Modal open={!!selectedFunction} onClose={function () { setSelectedFunction(null); setEventItems([]); setTaskSummary(null); setManpowerSummary(null); setPnlSummary(null); setDetailTab(null) }}
+      <Modal open={!!selectedFunction} onClose={function () { setSelectedFunction(null) }}
         title={selectedFunction?.event_name || selectedFunction?.contract_type || ''} wide>
         {selectedFunction && (
-          <div className="space-y-6">
+          <div className="space-y-5">
             <div className="bg-gray-50 rounded-lg p-4 space-y-2">
               <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-600">
                 {selectedFunction.contract_no && <span><strong>Contract:</strong> #{selectedFunction.contract_no}</span>}
@@ -664,392 +394,22 @@ function Events({ profile }) {
               {selectedFunction.created_user_name && (
                 <p className="text-xs text-gray-400">Created by: {selectedFunction.created_user_name}</p>
               )}
-              {/* Buffer days */}
-              <div className="flex items-center gap-3 pt-2 border-t border-gray-200 mt-2">
-                <span className="text-xs text-gray-500">🔒 Block range:</span>
-                {(selectedFunction.function_date || selectedFunction.contract_date) && (
-                  <span className="text-xs font-medium text-indigo-600">
-                    {new Date(new Date(selectedFunction.function_date || selectedFunction.contract_date).getTime() - (selectedFunction.setup_days || 1) * 86400000).toLocaleDateString('en-IN', {day:'numeric',month:'short'})}
-                    {' → '}
-                    {new Date(new Date(selectedFunction.function_date || selectedFunction.contract_date).getTime() + (selectedFunction.teardown_days || 1) * 86400000).toLocaleDateString('en-IN', {day:'numeric',month:'short',year:'numeric'})}
-                  </span>
-                )}
-                <span className="text-[11px] text-gray-400">({selectedFunction.setup_days ?? 1}d setup + {selectedFunction.teardown_days ?? 1}d teardown)</span>
-                {canEditBuffer && !editingBuffer && (
-                  <button onClick={function () { setEditingBuffer({ id: selectedFunction.id, setup_days: selectedFunction.setup_days ?? 1, teardown_days: selectedFunction.teardown_days ?? 1 }) }}
-                    className="text-[11px] text-indigo-600 font-medium hover:text-indigo-800 ml-auto">✎ Edit</button>
-                )}
-              </div>
-
-              {/* Buffer edit inline */}
-              {editingBuffer && editingBuffer.id === selectedFunction.id && (
-                <div className="flex items-center gap-2 pt-2">
-                  <label className="text-xs text-gray-500">Setup:</label>
-                  <input type="number" min="0" max="7"
-                    value={editingBuffer.setup_days}
-                    onChange={function (e) { setEditingBuffer(Object.assign({}, editingBuffer, { setup_days: Math.max(0, Number(e.target.value) || 0) })) }}
-                    className="w-14 px-2 py-1 border border-gray-300 rounded text-sm text-center focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    style={{ fontSize: '16px' }} />
-                  <label className="text-xs text-gray-500">Teardown:</label>
-                  <input type="number" min="0" max="7"
-                    value={editingBuffer.teardown_days}
-                    onChange={function (e) { setEditingBuffer(Object.assign({}, editingBuffer, { teardown_days: Math.max(0, Number(e.target.value) || 0) })) }}
-                    className="w-14 px-2 py-1 border border-gray-300 rounded text-sm text-center focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    style={{ fontSize: '16px' }} />
-                  <button onClick={saveBuffer} disabled={savingBuffer}
-                    className="px-3 py-1 text-xs font-bold text-white bg-indigo-600 rounded hover:bg-indigo-700 disabled:opacity-50 transition-colors">
-                    {savingBuffer ? '...' : 'Save'}</button>
-                  <button onClick={function () { setEditingBuffer(null) }}
-                    className="px-2 py-1 text-xs text-gray-500 hover:text-gray-700">Cancel</button>
-                </div>
-              )}
             </div>
 
-            {/* Financial — admin only */}
-            {isAdmin && (selectedFunction.balance_received != null || selectedFunction.balance_bank != null || selectedFunction.balance_amount != null) && (
-              <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
-                <h4 className="text-xs font-bold text-amber-700 uppercase tracking-wider mb-2">Financial Summary</h4>
-                <div className="grid grid-cols-3 gap-3 text-sm">
-                  <div>
-                    <p className="text-xs text-gray-500">Received</p>
-                    <p className="font-medium text-gray-800">{formatPaise(Math.abs(selectedFunction.balance_received || 0))}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-500">Bank</p>
-                    <p className="font-medium text-gray-800">{formatPaise(selectedFunction.balance_bank || 0)}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-500">Balance</p>
-                    <p className={"font-medium " + ((selectedFunction.balance_amount || 0) < 0 ? "text-red-600" : "text-green-600")}>
-                      {formatPaise(Math.abs(selectedFunction.balance_amount || 0))} {(selectedFunction.balance_amount || 0) < 0 ? 'due' : 'advance'}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
-              {/* ═══ DASHBOARD VIEW ═══ */}
-            {!detailTab && (function () {
-              var invConfirmed = eventItems.filter(function (ei) { return ei.block_status === 'confirmed' }).length
-              var invTentative = eventItems.filter(function (ei) { return ei.block_status === 'tentative' }).length
-              var invTotal = eventItems.length
-              var mpReq = manpowerSummary ? manpowerSummary.required : 0
-              var mpAsgn = manpowerSummary ? manpowerSummary.assigned : 0
-              var mpUnfilled = mpReq - mpAsgn
-              var tsTotal = taskSummary ? taskSummary.overdue + taskSummary.pending + taskSummary.in_progress + taskSummary.done : 0
-              var pnlProfit = pnlSummary ? pnlSummary.profit_paise : 0
-              var pnlRevenue = pnlSummary ? pnlSummary.revenue_paise : 0
-              var pnlMargin = pnlRevenue > 0 ? Math.round((pnlProfit / pnlRevenue) * 100) : 0
-              return (
-                <div className="space-y-3">
-                  <div className="grid grid-cols-2 gap-3">
-                    {/* Inventory card */}
-                    <div onClick={function () { setDetailTab('inventory') }}
-                      className={"rounded-xl border p-4 cursor-pointer hover:shadow-sm transition-shadow " +
-                        (invTentative > 0 ? "border-amber-200 bg-amber-50" : "border-gray-200 bg-white")}>
-                      <div className="flex items-center gap-2 mb-2">
-                        <span className="w-7 h-7 rounded-lg bg-indigo-100 flex items-center justify-center text-sm">📦</span>
-                        <span className="text-xs font-bold text-gray-500 uppercase">Inventory</span>
-                      </div>
-                      <p className="text-2xl font-bold text-gray-800">{invTotal}</p>
-                      {invTotal > 0 ? (
-                        <p className="text-[11px] text-gray-500 mt-1">
-                          <span className="text-green-600 font-medium">{invConfirmed} confirmed</span>
-                          {invTentative > 0 && <span className="text-amber-600 font-medium"> · {invTentative} tentative</span>}
-                        </p>
-                      ) : (
-                        <p className="text-[11px] text-gray-400 mt-1">No items blocked</p>
-                      )}
-                    </div>
-
-                    {/* Manpower card */}
-                    <div onClick={function () { setDetailTab('manpower') }}
-                      className={"rounded-xl border p-4 cursor-pointer hover:shadow-sm transition-shadow " +
-                        (mpUnfilled > 0 ? "border-red-200 bg-red-50" : "border-gray-200 bg-white")}>
-                      <div className="flex items-center gap-2 mb-2">
-                        <span className="w-7 h-7 rounded-lg bg-blue-100 flex items-center justify-center text-sm">👷</span>
-                        <span className="text-xs font-bold text-gray-500 uppercase">Manpower</span>
-                      </div>
-                      <p className="text-2xl font-bold text-gray-800">{mpAsgn}<span className="text-base text-gray-400">/{mpReq}</span></p>
-                      {mpUnfilled > 0 ? (
-                        <p className="text-[11px] text-red-600 font-medium mt-1">{mpUnfilled} unfilled</p>
-                      ) : mpReq > 0 ? (
-                        <p className="text-[11px] text-green-600 font-medium mt-1">All filled</p>
-                      ) : (
-                        <p className="text-[11px] text-gray-400 mt-1">Not planned</p>
-                      )}
-                    </div>
-
-                    {/* Tasks card */}
-                    <div onClick={function () { setDetailTab('tasks') }}
-                      className={"rounded-xl border p-4 cursor-pointer hover:shadow-sm transition-shadow " +
-                        (taskSummary && taskSummary.overdue > 0 ? "border-red-200 bg-red-50" : "border-gray-200 bg-white")}>
-                      <div className="flex items-center gap-2 mb-2">
-                        <span className={"w-7 h-7 rounded-lg flex items-center justify-center text-sm " +
-                          (taskSummary && taskSummary.overdue > 0 ? "bg-red-100" : "bg-green-100")}>✓</span>
-                        <span className="text-xs font-bold text-gray-500 uppercase">Tasks</span>
-                      </div>
-                      {taskSummary && taskSummary.overdue > 0 ? (
-                        <p className="text-2xl font-bold text-red-600">{taskSummary.overdue}</p>
-                      ) : (
-                        <p className="text-2xl font-bold text-gray-800">{tsTotal}</p>
-                      )}
-                      {taskSummary && taskSummary.overdue > 0 ? (
-                        <p className="text-[11px] text-red-600 font-medium mt-1">{taskSummary.overdue} overdue · {taskSummary.pending} pending</p>
-                      ) : tsTotal > 0 ? (
-                        <p className="text-[11px] text-gray-500 mt-1">{taskSummary ? taskSummary.pending + ' pending · ' + taskSummary.done + ' done' : ''}</p>
-                      ) : (
-                        <p className="text-[11px] text-gray-400 mt-1">No tasks yet</p>
-                      )}
-                    </div>
-
-                    {/* P&L card — admin only */}
-                    {isAdmin ? (
-                      <div onClick={function () { setDetailTab('pnl') }}
-                        className={"rounded-xl border p-4 cursor-pointer hover:shadow-sm transition-shadow " +
-                          (pnlSummary && pnlProfit < 0 ? "border-red-200 bg-red-50" : "border-gray-200 bg-white")}>
-                        <div className="flex items-center gap-2 mb-2">
-                          <span className="w-7 h-7 rounded-lg bg-green-100 flex items-center justify-center text-sm">📊</span>
-                          <span className="text-xs font-bold text-gray-500 uppercase">P&L</span>
-                        </div>
-                        {pnlSummary && pnlRevenue > 0 ? (
-                          <>
-                            <p className={"text-2xl font-bold " + (pnlProfit >= 0 ? "text-green-600" : "text-red-600")}>{pnlMargin}%</p>
-                            <p className="text-[11px] text-gray-500 mt-1">{formatPaise(Math.abs(pnlProfit))} {pnlProfit >= 0 ? 'profit' : 'loss'}</p>
-                          </>
-                        ) : (
-                          <>
-                            <p className="text-2xl font-bold text-gray-300">—</p>
-                            <p className="text-[11px] text-gray-400 mt-1">No financial data</p>
-                          </>
-                        )}
-                      </div>
-                    ) : (
-                      <div className="rounded-xl border border-gray-200 bg-white p-4">
-                        <div className="flex items-center gap-2 mb-2">
-                          <span className="w-7 h-7 rounded-lg bg-gray-100 flex items-center justify-center text-sm">📋</span>
-                          <span className="text-xs font-bold text-gray-500 uppercase">Brief</span>
-                        </div>
-                        <button onClick={function () { setBriefFunc(selectedFunction); setSelectedFunction(null) }}
-                          className="text-sm text-amber-600 font-medium">Upload brief →</button>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Quick actions */}
-                  <div className="flex gap-2">
-                    <button onClick={function () { setBlockingFunc(selectedFunction); setSelectedFunction(null); setSelectedGroup(null) }}
-                      className="flex-1 py-2.5 text-xs font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors">
-                      + Block Items</button>
-                    <button onClick={function () { setDetailTab('tasks') }}
-                      className="flex-1 py-2.5 text-xs font-bold text-indigo-600 border border-indigo-200 rounded-lg hover:bg-indigo-50 transition-colors">
-                      + Add Task</button>
-                    <button onClick={function () { setDetailTab('manpower') }}
-                      className="flex-1 py-2.5 text-xs font-bold text-indigo-600 border border-indigo-200 rounded-lg hover:bg-indigo-50 transition-colors">
-                      + Add Staff</button>
-                  </div>
-                </div>
-              )
-            })()}
-
-            {/* ═══ TAB VIEW ═══ */}
-            {detailTab && (
-              <div className="space-y-4">
-                {/* Tab bar */}
-                <div className="flex border-b border-gray-200">
-                  <button onClick={function () { setDetailTab(null) }}
-                    className="px-3 py-2.5 text-xs font-medium text-indigo-600 hover:bg-indigo-50 transition-colors">← Overview</button>
-                  {['inventory', 'manpower', 'tasks', 'pnl'].filter(function (t) { return t !== 'pnl' || isAdmin }).map(function (tab) {
-                    var labels = { inventory: 'Inventory', manpower: 'Manpower', tasks: 'Tasks', pnl: 'P&L' }
-                    return (
-                      <button key={tab} onClick={function () { setDetailTab(tab) }}
-                        className={"flex-1 py-2.5 text-xs font-bold transition-colors " +
-                          (detailTab === tab ? "text-indigo-600 border-b-2 border-indigo-600" : "text-gray-400 hover:text-gray-600")}>
-                        {labels[tab]}
-                      </button>
-                    )
-                  })}
-                </div>
-
-                {/* Inventory tab */}
-                {detailTab === 'inventory' && (
-                  <div className="space-y-4">
-                    {freedAlert && (
-                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                        <div className="flex items-center justify-between mb-2">
-                          <h4 className="text-xs font-bold text-blue-700 uppercase tracking-wider">📢 Freed Inventory — {freedAlert.length} future event{freedAlert.length !== 1 ? 's' : ''}</h4>
-                          <button onClick={function () { setFreedAlert(null) }}
-                            className="text-xs text-blue-400 hover:text-blue-600 font-semibold">Dismiss</button>
-                        </div>
-                        <div className="space-y-1.5">
-                          {freedAlert.map(function (evt) {
-                            return (
-                              <div key={evt.event_id} className="flex items-center justify-between bg-white rounded px-2.5 py-1.5 border border-blue-100">
-                                <div>
-                                  <p className="text-sm font-medium text-gray-800">{evt.event_name || '—'}</p>
-                                  <p className="text-[11px] text-gray-400">{evt.venue_name} · {formatDate(evt.function_date || evt.contract_date)}</p>
-                                </div>
-                                <div className="text-right">
-                                  {(evt.items || []).map(function (it, ii) {
-                                    return <p key={ii} className="text-[11px] text-blue-600 font-medium">{it.item_name}: {it.blocked_qty}</p>
-                                  })}
-                                </div>
-                              </div>
-                            )
-                          })}
-                        </div>
-                      </div>
-                    )}
-
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <h4 className="text-sm font-semibold text-gray-700">Blocked Items ({eventItems.length})</h4>
-                        {(function () {
-                          var confirmed = eventItems.filter(function (ei) { return ei.block_status === 'confirmed' }).length
-                          var tentative = eventItems.filter(function (ei) { return ei.block_status === 'tentative' }).length
-                          if (tentative === 0) return null
-                          return (
-                            <span className="text-[11px] text-gray-400">
-                              <span className="text-green-600 font-medium">{confirmed} confirmed</span>
-                              <span className="mx-1">·</span>
-                              <span className="text-amber-600 font-medium">{tentative} tentative</span>
-                            </span>
-                          )
-                        })()}
-                      </div>
-                      <div className="flex gap-2">
-                        {isAdmin && eventItems.some(function (ei) { return ei.block_status === 'tentative' }) && (
-                          <button onClick={confirmAllTentative}
-                            className="px-3 py-1.5 text-xs font-bold text-green-600 bg-green-50 border border-green-200 rounded-lg hover:bg-green-100 active:bg-green-200 transition-colors">
-                            ✓ Confirm All
-                          </button>
-                        )}
-                        {eventItems.some(canRelease) && (
-                          <button onClick={releaseAll}
-                            className="px-3 py-1.5 text-xs font-bold text-red-600 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 active:bg-red-200 transition-colors">
-                            Release All ({eventItems.filter(canRelease).length})
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                    {Object.entries(groupByDept(eventItems)).map(function (entry) {
-                      var dept = entry[0]; var items = entry[1]
-                      return (
-                        <div key={dept} className="mb-4">
-                          <div className="flex items-center gap-2 mb-2">
-                            <Badge color="indigo">{dept}</Badge>
-                            <span className="text-xs text-gray-400">{items.length} items</span>
-                          </div>
-                          <div className="bg-gray-50 rounded-lg overflow-x-auto">
-                            <table className="w-full text-sm">
-                              <thead>
-                                <tr className="border-b border-gray-200">
-                                  <th className="text-left px-3 py-2 font-medium text-gray-600">Item</th>
-                                  <th className="text-right px-3 py-2 font-medium text-gray-600">Qty</th>
-                                  <th className="text-center px-3 py-2 font-medium text-gray-600">Status</th>
-                                  <th className="text-center px-3 py-2 font-medium text-gray-600 w-20"></th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {items.map(function (ei) {
-                                  return (
-                                    <tr key={ei.id} className="border-b border-gray-100">
-                                      <td className="px-3 py-2 text-gray-800">{titleCase(ei.inventory_items?.name)}</td>
-                                      <td className="px-3 py-2 text-right">{ei.qty} {ei.inventory_items?.unit}</td>
-                                      <td className="px-3 py-2 text-center">
-                                        {isAdmin ? (
-                                          <button onClick={function () { toggleBlockStatus(ei) }}
-                                            disabled={togglingStatus[ei.id]}
-                                            className={"text-[11px] font-bold uppercase px-2 py-0.5 rounded-full cursor-pointer transition-colors " +
-                                              (ei.block_status === 'confirmed'
-                                                ? "bg-green-100 text-green-700 hover:bg-green-200"
-                                                : "bg-amber-100 text-amber-700 hover:bg-amber-200")}>
-                                            {togglingStatus[ei.id] ? '...' : ei.block_status === 'confirmed' ? 'Confirmed' : 'Tentative'}
-                                          </button>
-                                        ) : (
-                                          <span className={"text-[11px] font-bold uppercase px-2 py-0.5 rounded-full " +
-                                            (ei.block_status === 'confirmed' ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700")}>
-                                            {ei.block_status === 'confirmed' ? 'Confirmed' : 'Tentative'}
-                                          </span>
-                                        )}
-                                      </td>
-                                      <td className="px-3 py-2 text-center">
-                                        {canRelease(ei) && (
-                                          <button onClick={function () { releaseItem(ei) }}
-                                            disabled={releasing[ei.id]}
-                                            className="px-2 py-1 text-[11px] font-bold text-red-600 bg-red-50 border border-red-200 rounded hover:bg-red-100 disabled:opacity-50 transition-colors">
-                                            {releasing[ei.id] ? '...' : '✕'}
-                                          </button>
-                                        )}
-                                      </td>
-                                    </tr>
-                                  )
-                                })}
-                              </tbody>
-                            </table>
-                          </div>
-                        </div>
-                      )
-                    })}
-                    {eventItems.length === 0 && (
-                      <p className="text-sm text-gray-400">No items blocked yet</p>
-                    )}
-                    <button onClick={function () { setBlockingFunc(selectedFunction); setSelectedFunction(null); setSelectedGroup(null) }}
-                      className="w-full py-2.5 text-sm font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors">
-                      + Block Items</button>
-                  </div>
-                )}
-
-                {/* Tasks tab */}
-                {detailTab === 'tasks' && (
-                  <EventTasks eventId={selectedFunction.id} profile={profile} departments={departments} />
-                )}
-
-                {/* Manpower tab */}
-                {detailTab === 'manpower' && (
-                  <EventManpower eventId={selectedFunction.id} profile={profile} departments={departments} />
-                )}
-
-                {/* P&L tab */}
-                {detailTab === 'pnl' && isAdmin && (
-                  <EventPnL eventId={selectedFunction.id} profile={profile} cachedData={pnlSummary} />
-                )}
-              </div>
-            )}
+            {/* Full event ledger */}
+            <EventLedger eventId={selectedFunction.id} />
 
             {selectedFunction.synced_at && (
               <p className="text-xs text-gray-400 text-right">Last synced: {formatDate(selectedFunction.synced_at)}</p>
             )}
 
-            {/* Back to group */}
-            <button onClick={function () { setSelectedFunction(null); setEventItems([]); setFreedAlert(null); setTaskSummary(null); setManpowerSummary(null); setPnlSummary(null); setDetailTab(null) }} 
+            <button onClick={function () { setSelectedFunction(null) }}
               className="text-sm text-indigo-600 font-medium hover:text-indigo-800 transition-colors">
               ← Back to functions
             </button>
           </div>
         )}
       </Modal>
-      {/* ═══ BLOCKING VIEW ═══ */}
-      <Modal open={!!blockingFunc} onClose={function () { setBlockingFunc(null) }} title="Block Inventory" wide>
-        {blockingFunc && (
-          <BlockInventory
-            func={blockingFunc}
-            profile={profile}
-            onDone={function () { setBlockingFunc(null); loadEvents() }}
-          />
-        )}
-      </Modal>
-
-      {/* ═══ BRIEF UPLOAD VIEW ═══ */}
-      <Modal open={!!briefFunc} onClose={function () { setBriefFunc(null) }} title="Decor Briefs" wide>
-        {briefFunc && (
-          <BriefUpload
-            func={briefFunc}
-            profile={profile}
-            onDone={function () { setBriefFunc(null) }}
-          />
-        )}
-      </Modal>
-      
     </div>
   )
 }

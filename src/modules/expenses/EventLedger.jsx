@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { formatPoints, formatDate } from '../../lib/format'
 import EventDatePicker from '../../components/ui/EventDatePicker'
@@ -10,11 +10,12 @@ var ENTRY_TYPES = [
   { key: 'expense', label: 'Expenses' },
 ]
 
-function EventLedger() {
+function EventLedger(props) {
+  var propEventId = props && props.eventId ? String(props.eventId) : null
   var [date, setDate] = useState('')
   var [functions, setFunctions] = useState([])
   var [functionsLoading, setFunctionsLoading] = useState(false)
-  var [eventId, setEventId] = useState('')
+  var [eventId, setEventId] = useState(propEventId || '')
   var [eventDetail, setEventDetail] = useState(null)
   var [balance, setBalance] = useState(null)
   var [balanceLoading, setBalanceLoading] = useState(false)
@@ -47,6 +48,16 @@ function EventLedger() {
     loadBalance(fid)
     loadEntries(fid)
   }
+
+  useEffect(function () {
+    if (!propEventId) return
+    supabase.from('events')
+      .select('id, event_name, function_date, venue_name, client_name, session, agreed_cash_paise, agreed_bank_paise')
+      .eq('id', Number(propEventId)).maybeSingle()
+      .then(function (r) { setEventDetail(r.data || null) })
+    loadBalance(propEventId)
+    loadEntries(propEventId)
+  }, [propEventId])
 
   async function loadBalance(fid) {
     setBalanceLoading(true)
@@ -86,6 +97,7 @@ function EventLedger() {
 
   return (
     <div>
+      {!propEventId && (
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
         <EventDatePicker label="Event Date" value={date} onChange={loadFunctions} />
         {date && (
@@ -104,6 +116,7 @@ function EventLedger() {
           </div>
         )}
       </div>
+      )}
 
       {eventDetail && (
         <div className="bg-white border border-gray-200 rounded-lg p-4 mb-4">
