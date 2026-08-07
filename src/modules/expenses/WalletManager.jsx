@@ -621,6 +621,8 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     var agrBankP = collectBalance ? Number(collectBalance.agreed_bank_paise || 0) : 0
     var colCashP = collectBalance ? Number(collectBalance.collected_cash_paise || 0) : 0
     var colBankP = collectBalance ? Number(collectBalance.collected_bank_paise || 0) : 0
+    var taxP = collectBalance ? Number(collectBalance.tax_amount_paise || 0) : 0
+    var totalBankAgreedP = agrBankP + taxP
     var canSubmit = collectEventId && collectMode && collectAmount && Number(collectAmount) > 0 && collectImage && !collectSaving
     return (
       <BottomSheet open={true} onClose={function () { setCollectModal(false) }} title="Collect Payment">
@@ -697,11 +699,16 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                     <div className="flex-1">
                       <div className="text-xs text-gray-500">🏦 Bank</div>
                       <div className={"text-base font-semibold " + (pendBankP > 0 ? "text-red-600" : "text-green-600")}>
-                        {agrBankP > 0 ? formatPoints(pendBankP) : formatPoints(colBankP) + ' collected'}
+                        {totalBankAgreedP > 0 ? formatPoints(pendBankP) : formatPoints(colBankP) + ' collected'}
                       </div>
+                      {taxP > 0 && (
+                        <div className="text-[10px] text-gray-400 mt-0.5">
+                          Bank: {formatPoints(agrBankP)} + Tax: {formatPoints(taxP)}
+                        </div>
+                      )}
                     </div>
                   </div>
-                  {agrCashP === 0 && agrBankP === 0 && (
+                  {agrCashP === 0 && totalBankAgreedP === 0 && (
                     <div className="text-xs text-gray-400 mt-1.5">No agreed split set from LMS</div>
                   )}
                 </>
