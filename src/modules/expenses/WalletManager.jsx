@@ -412,7 +412,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     if (!dateStr) { setCollectEvents([]); return }
     setCollectFunctionsLoading(true)
     var { data } = await supabase.from('events')
-      .select('id, event_name, function_date, venue_name, client_name, session')
+      .select('id, event_name, function_date, venue_name, client_name, session, contact_person, contact_number, secondary_contact')
       .eq('function_date', dateStr)
       .order('event_name')
     setCollectEvents(data || [])
@@ -640,8 +640,10 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                   {collectEvents.map(function (ev) {
                     var selected = String(ev.id) === collectEventId
                     return (
-                      <button key={ev.id} type="button" onClick={function () { selectCollectFunction(String(ev.id)) }}
-                        className={"w-full text-left px-3 py-2 rounded-lg border transition-colors " +
+                      <div key={ev.id} role="button" tabIndex={0}
+                        onClick={function () { selectCollectFunction(String(ev.id)) }}
+                        onKeyDown={function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectCollectFunction(String(ev.id)) } }}
+                        className={"w-full text-left px-3 py-2 rounded-lg border transition-colors cursor-pointer " +
                           (selected ? "border-blue-600 bg-blue-50 border-2" : "border-gray-200 hover:border-gray-300 bg-white")}>
                         <div className={"text-sm font-medium " + (selected ? "text-blue-900" : "text-gray-900")}>
                           {ev.event_name + (ev.client_name ? ' — ' + ev.client_name : '')}
@@ -649,7 +651,28 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                         <div className={"text-xs " + (selected ? "text-blue-700" : "text-gray-500")}>
                           {(ev.venue_name || '') + (ev.session ? ' · ' + ev.session : '')}
                         </div>
-                      </button>
+                        {(ev.contact_number || ev.secondary_contact) && (
+                          <div className="flex flex-wrap items-center gap-2 mt-1.5 text-xs">
+                            {ev.contact_person && <span className="text-gray-500">{ev.contact_person}:</span>}
+                            {ev.contact_number && (
+                              <a href={"tel:" + String(ev.contact_number).replace(/[^0-9+]/g, '')}
+                                onClick={function (e) { e.stopPropagation() }}
+                                className="inline-flex items-center gap-1 text-indigo-600 hover:text-indigo-800 font-medium">
+                                <i className="ti ti-phone" style={{ fontSize: '13px' }} aria-hidden="true"></i>
+                                {ev.contact_number}
+                              </a>
+                            )}
+                            {ev.secondary_contact && (
+                              <a href={"tel:" + String(ev.secondary_contact).replace(/[^0-9+]/g, '')}
+                                onClick={function (e) { e.stopPropagation() }}
+                                className="inline-flex items-center gap-1 text-indigo-600 hover:text-indigo-800">
+                                <i className="ti ti-phone" style={{ fontSize: '13px' }} aria-hidden="true"></i>
+                                {ev.secondary_contact}
+                              </a>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     )
                   })}
                 </div>
