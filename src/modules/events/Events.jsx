@@ -401,12 +401,8 @@ function Events({ profile }) {
             <div>
               <button type="button"
                 onClick={function () { setShowLedger(!showLedger) }}
-                className="w-full flex items-center justify-between px-4 py-2.5 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 transition-colors">
-                <span>
-                  <i className={"ti " + (showLedger ? "ti-eye-off" : "ti-eye")} style={{ fontSize: '14px', marginRight: '6px' }} aria-hidden="true"></i>
-                  {showLedger ? 'Hide financial details' : 'Show financial details'}
-                </span>
-                <i className={"ti " + (showLedger ? "ti-chevron-up" : "ti-chevron-down")} style={{ fontSize: '14px' }} aria-hidden="true"></i>
+                className="text-xs text-gray-400 hover:text-gray-600 transition-colors">
+                {showLedger ? '− Hide financials' : '+ Show financials'}
               </button>
               {showLedger && (
                 <div className="mt-3">
