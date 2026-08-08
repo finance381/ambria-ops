@@ -87,6 +87,7 @@ function Events({ profile }) {
   var [departments, setDepartments] = useState([])
   var [page, setPage] = useState(1)
   var [perPage, setPerPage] = useState(24)
+  var [showLedger, setShowLedger] = useState(false)
 
   var isAdmin = profile?.role === 'admin' || profile?.role === 'auditor'
   var userEventDeptNames = (profile?.event_dept_ids || []).map(function (id) {
@@ -344,7 +345,7 @@ function Events({ profile }) {
               <div className="space-y-2">
                 {selectedGroup.functions.map(function (f) {
                   return (
-                    <div key={f.id} onClick={function () { setSelectedFunction(f) }}
+                    <div key={f.id} onClick={function () { setSelectedFunction(f); setShowLedger(false) }}
                       className="bg-white border border-gray-200 rounded-lg p-3 hover:bg-indigo-50 cursor-pointer transition-colors active:bg-indigo-100">
                       <div className="flex items-center justify-between">
                         <div className="flex-1 min-w-0">
@@ -370,7 +371,7 @@ function Events({ profile }) {
       </Modal>
 
       {/* ═══ FUNCTION DETAIL MODAL ═══ */}
-      <Modal open={!!selectedFunction} onClose={function () { setSelectedFunction(null) }}
+      <Modal open={!!selectedFunction} onClose={function () { setSelectedFunction(null); setShowLedger(false) }}
         title={selectedFunction?.event_name || selectedFunction?.contract_type || ''} wide>
         {selectedFunction && (
           <div className="space-y-5">
@@ -396,8 +397,23 @@ function Events({ profile }) {
               )}
             </div>
 
-            {/* Full event ledger */}
-            <EventLedger eventId={selectedFunction.id} />
+            {/* Financial details — hidden by default */}
+            <div>
+              <button type="button"
+                onClick={function () { setShowLedger(!showLedger) }}
+                className="w-full flex items-center justify-between px-4 py-2.5 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 transition-colors">
+                <span>
+                  <i className={"ti " + (showLedger ? "ti-eye-off" : "ti-eye")} style={{ fontSize: '14px', marginRight: '6px' }} aria-hidden="true"></i>
+                  {showLedger ? 'Hide financial details' : 'Show financial details'}
+                </span>
+                <i className={"ti " + (showLedger ? "ti-chevron-up" : "ti-chevron-down")} style={{ fontSize: '14px' }} aria-hidden="true"></i>
+              </button>
+              {showLedger && (
+                <div className="mt-3">
+                  <EventLedger eventId={selectedFunction.id} />
+                </div>
+              )}
+            </div>
 
             {selectedFunction.synced_at && (
               <p className="text-xs text-gray-400 text-right">Last synced: {formatDate(selectedFunction.synced_at)}</p>
