@@ -705,9 +705,12 @@ function DJEditor({ config, onSave, saving }) {
 // ══════════════════════════════════════
 
 function TTDEditor({ config, onSave, saving }) {
-  var raw = config.ttd || { labels: ['12+ months', '6 months', '3 months', '2 months'], discounts: [0, 0.15, 0.20, 0.375] }
+  var DEFAULT_TTD = { labels: ['12+ months', '6 months', '3 months', '2 months'], discounts: [0, 0.15, 0.20, 0.375] }
+  var [subTab, setSubTab] = useState(0)
+  var key = subTab === 0 ? 'ttd' : 'ttd_restro'
+  var raw = config[key] || DEFAULT_TTD
   var [draft, setDraft] = useState(clone(raw))
-  useEffect(function () { setDraft(clone(config.ttd || raw)) }, [config.ttd])
+  useEffect(function () { setDraft(clone(config[key] || DEFAULT_TTD)) }, [config[key], subTab])
 
   function updateLabel(idx, val) { var d = clone(draft); d.labels[idx] = val; setDraft(d) }
   function updateDiscount(idx, pctVal) { var d = clone(draft); d.discounts[idx] = pctVal / 100; setDraft(d) }
@@ -726,9 +729,21 @@ function TTDEditor({ config, onSave, saving }) {
     setDraft(d)
   }
 
+  var tabs = [{ k: 'ttd', l: 'Default' }, { k: 'ttd_restro', l: 'Restro' }]
+
   return (
     <Card title="Time-to-Date Discounts">
-      <div style={{ fontSize: 11, color: C.muted, marginBottom: 10 }}>Applied to rental only. Enter discount as percentage.</div>
+      <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+        {tabs.map(function (t, i) {
+          var on = subTab === i
+          return (<button key={t.k} onClick={function () { setSubTab(i) }} style={{
+            flex: 1, padding: '8px 12px', borderRadius: 8, fontSize: 12, fontWeight: 700,
+            border: '2px solid ' + (on ? C.gold : C.border),
+            background: on ? '#FFF8F0' : '#fff', color: on ? C.maroon : C.muted, cursor: 'pointer',
+          }}>{t.l}</button>)
+        })}
+      </div>
+      <div style={{ fontSize: 11, color: C.muted, marginBottom: 10 }}>Applied to rental only. {subTab === 0 ? 'Non-Restro venues.' : 'Restro venues only.'} Enter discount as percentage.</div>
       {(draft.labels || []).map(function (label, idx) {
         var pct = Math.round((draft.discounts[idx] || 0) * 10000) / 100
         return (
@@ -752,7 +767,7 @@ function TTDEditor({ config, onSave, saving }) {
         )
       })}
       <AddRow label="Add TTD Tier" onClick={addTier} />
-      <Btn label="Save TTD" variant="primary" onClick={function () { onSave('ttd', draft) }} disabled={saving} style={{ width: '100%', marginTop: 12 }} />
+      <Btn label={'Save ' + (subTab === 0 ? 'Default' : 'Restro') + ' TTD'} variant="primary" onClick={function () { onSave(key, draft) }} disabled={saving} style={{ width: '100%', marginTop: 12 }} />
     </Card>
   )
 }
@@ -770,11 +785,24 @@ var FORMULA_FIELDS = [
 var FORMULA_DEFAULTS = { start_rate: 1450, start_pax: 300, step: 50, step_pax: 100, floor_rate: 800, reset_pax: 800, reset_rate: 1350, reset_floor: 400 }
 
 function MenuEditor({ config, onSave, saving }) {
-  var MENU_DEFAULTS = { labels: ['Magnum', 'Double Magnum', 'Multi Cuisine', 'Luxury'], base_rate: [1250, 1350, 0, 0], nv_upgrade: 300, flat_add: [0, 0, 0, 3], max_pax: [250, 300, 0, 0], is_sliding: [false, false, true, true] }
-  var [menu, setMenu] = useState(clone(config.menu || MENU_DEFAULTS))
+  var MENU_DEFAULTS = { labels: ['Magnum', 'Double Magnum', 'Multi Cuisine', 'Luxury'], base_rate: [1250, 1350, 0, 0], nv_upgrade: 300, flat_add: [0, 0, 0, 3], max_pax: [250, 300, 0, 0], is_sliding: [false, false, true, true], restro_only: [false, false, false, false], also_available_on: [[], [], [], []] }
+
+  function normalizeMenu(m) {
+    var out = clone(m || MENU_DEFAULTS)
+    var n = (out.labels || []).length
+    if (!Array.isArray(out.restro_only)) out.restro_only = []
+    if (!Array.isArray(out.also_available_on)) out.also_available_on = []
+    while (out.restro_only.length < n) out.restro_only.push(false)
+    while (out.also_available_on.length < n) out.also_available_on.push([])
+    return out
+  }
+
+  var nonRestroParents = ((config.venues || []).filter(function (p) { return p.id !== 'restro' }).map(function (p) { return { id: p.id, name: p.name } }))
+
+  var [menu, setMenu] = useState(normalizeMenu(config.menu))
   var [formula, setFormula] = useState(clone(config.menu_formula || FORMULA_DEFAULTS))
 
-  useEffect(function () { setMenu(clone(config.menu || MENU_DEFAULTS)) }, [config.menu])
+  useEffect(function () { setMenu(normalizeMenu(config.menu)) }, [config.menu])
   useEffect(function () { setFormula(clone(config.menu_formula || FORMULA_DEFAULTS)) }, [config.menu_formula])
 
   function updArr(field, idx, val) { var d = clone(menu); d[field][idx] = val; setMenu(d) }
@@ -786,6 +814,8 @@ function MenuEditor({ config, onSave, saving }) {
     d.flat_add.push(0)
     d.max_pax.push(0)
     d.is_sliding.push(false)
+    d.restro_only.push(false)
+    d.also_available_on.push([])
     setMenu(d)
   }
 
@@ -796,6 +826,24 @@ function MenuEditor({ config, onSave, saving }) {
     d.flat_add.splice(idx, 1)
     d.max_pax.splice(idx, 1)
     d.is_sliding.splice(idx, 1)
+    d.restro_only.splice(idx, 1)
+    d.also_available_on.splice(idx, 1)
+    setMenu(d)
+  }
+
+  function toggleRestroOnly(idx) {
+    var d = clone(menu)
+    d.restro_only[idx] = !d.restro_only[idx]
+    if (!d.restro_only[idx]) d.also_available_on[idx] = []
+    setMenu(d)
+  }
+
+  function toggleOverride(idx, parentId) {
+    var d = clone(menu)
+    var arr = (d.also_available_on[idx] || []).slice()
+    var i = arr.indexOf(parentId)
+    if (i >= 0) arr.splice(i, 1); else arr.push(parentId)
+    d.also_available_on[idx] = arr
     setMenu(d)
   }
 
@@ -823,13 +871,38 @@ function MenuEditor({ config, onSave, saving }) {
                 <div><div style={fl}>Flat Add (₹L)</div><Num value={menu.flat_add[idx]} onChange={function (v) { updArr('flat_add', idx, v) }} /></div>
                 <div><div style={fl}>Max Pax (0=∞)</div><Num value={menu.max_pax[idx]} onChange={function (v) { updArr('max_pax', idx, v) }} /></div>
               </div>
-              <button onClick={function () { updArr('is_sliding', idx, !menu.is_sliding[idx]) }}
-                style={{
-                  padding: '5px 12px', borderRadius: 7, fontSize: 11, fontWeight: 700, cursor: 'pointer',
-                  border: '2px solid ' + (menu.is_sliding[idx] ? C.gold : C.border),
-                  background: menu.is_sliding[idx] ? '#FFF8F0' : '#fff',
-                  color: menu.is_sliding[idx] ? C.gold : C.muted,
-                }}>{menu.is_sliding[idx] ? 'Sliding: ON' : 'Sliding: OFF'}</button>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <button onClick={function () { updArr('is_sliding', idx, !menu.is_sliding[idx]) }}
+                  style={{
+                    padding: '5px 12px', borderRadius: 7, fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                    border: '2px solid ' + (menu.is_sliding[idx] ? C.gold : C.border),
+                    background: menu.is_sliding[idx] ? '#FFF8F0' : '#fff',
+                    color: menu.is_sliding[idx] ? C.gold : C.muted,
+                  }}>{menu.is_sliding[idx] ? 'Sliding: ON' : 'Sliding: OFF'}</button>
+                <button onClick={function () { toggleRestroOnly(idx) }}
+                  style={{
+                    padding: '5px 12px', borderRadius: 7, fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                    border: '2px solid ' + (menu.restro_only[idx] ? C.maroon : C.border),
+                    background: menu.restro_only[idx] ? '#FBECEC' : '#fff',
+                    color: menu.restro_only[idx] ? C.maroon : C.muted,
+                  }}>{menu.restro_only[idx] ? '🍽️ Restro Only: YES' : 'Restro Only: NO'}</button>
+              </div>
+              {menu.restro_only[idx] && nonRestroParents.length > 0 && (
+                <div style={{ marginTop: 10, padding: 8, borderRadius: 7, background: C.bg, border: '1px dashed ' + C.border }}>
+                  <div style={{ fontSize: 10, color: C.muted, marginBottom: 6, fontWeight: 600 }}>Also available on (overrides):</div>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    {nonRestroParents.map(function (p) {
+                      var on = (menu.also_available_on[idx] || []).indexOf(p.id) >= 0
+                      return (<button key={p.id} onClick={function () { toggleOverride(idx, p.id) }} style={{
+                        padding: '4px 10px', borderRadius: 6, fontSize: 10, fontWeight: 700, cursor: 'pointer',
+                        border: '2px solid ' + (on ? C.gold : C.border),
+                        background: on ? '#FFF8F0' : '#fff',
+                        color: on ? C.maroon : C.muted,
+                      }}>{on ? '✓ ' : ''}{p.name}</button>)
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           )
         })}
