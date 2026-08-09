@@ -380,6 +380,18 @@ function QuoteCalculator({ profile }) {
   var availMenus = r.available_menus || []
   var allMenus = r.all_menus || []
   var activeMenu = r.active_menu != null ? r.active_menu : menuIdx
+
+  // Auto-shift menuIdx to first available when current selection becomes unavailable (venue change / new session)
+  useEffect(function () {
+    if (allMenus.length === 0) return
+    var current = null
+    for (var i = 0; i < allMenus.length; i++) { if (allMenus[i].idx === menuIdx) { current = allMenus[i]; break } }
+    if (!current || current.available === false) {
+      var firstAvail = null
+      for (var j = 0; j < allMenus.length; j++) { if (allMenus[j].available !== false) { firstAvail = allMenus[j]; break } }
+      if (firstAvail && firstAvail.idx !== menuIdx) setMenuIdx(firstAvail.idx)
+    }
+  }, [allMenus.length, venueId])
   var perHead = r.per_head || 0
   var menuCost = r.menu_cost || 0
   var ttdData = r.ttd || []
@@ -1187,15 +1199,20 @@ function QuoteCalculator({ profile }) {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 12 }}>
             {allMenus.map(function (m) {
               var midx = m.idx; var on = activeMenu === midx
-              return (<button key={midx} onClick={function () { setMenuIdx(midx) }} style={{
+              var unavail = m.available === false
+              return (<button key={midx} onClick={function () { if (!unavail) setMenuIdx(midx) }} style={{
                 textAlign: 'center', width: '100%', padding: '10px 8px', borderRadius: 9,
-                border: '2px solid ' + (on ? C.maroon2 : C.border), background: on ? C.cream : '#fff',
-                color: on ? C.maroon : C.muted, fontSize: 12, fontWeight: on ? 700 : 600,
-                cursor: 'pointer',
+                border: '2px solid ' + (on && !unavail ? C.maroon2 : C.border),
+                background: on && !unavail ? C.cream : '#fff',
+                color: unavail ? '#ccc' : on ? C.maroon : C.muted,
+                fontSize: 12, fontWeight: on ? 700 : 600,
+                cursor: unavail ? 'not-allowed' : 'pointer',
+                opacity: unavail ? 0.5 : 1,
               }}>
                 {m.label}<br />
                 <span style={{ fontSize: 10, opacity: 0.6 }}>Rs.{m.per_head}{m.flat_add ? ' +' + m.flat_add + 'L' : ''}</span>
-                {m.max_pax > 0 && pax > m.max_pax && <><br /><span style={{ fontSize: 9, color: '#B45309' }}>{'⚠ Max ' + m.max_pax + ' pax'}</span></>}
+                {unavail && m.reason && <><br /><span style={{ fontSize: 9, color: '#B45309' }}>{'🚫 ' + m.reason}</span></>}
+                {!unavail && m.max_pax > 0 && pax > m.max_pax && <><br /><span style={{ fontSize: 9, color: '#B45309' }}>{'⚠ Max ' + m.max_pax + ' pax'}</span></>}
               </button>)
             })}
           </div>
