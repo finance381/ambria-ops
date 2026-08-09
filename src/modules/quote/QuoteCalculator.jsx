@@ -193,6 +193,7 @@ function QuoteCalculator({ profile }) {
   var [etSearch, setEtSearch] = useState('')
   var [eventTypeIdx, setEventTypeIdx] = useState(0)
   var [venueId, setVenueId] = useState('')
+  var [parentId, setParentId] = useState('')
   var [foodPref, setFoodPref] = useState(0)
   var [pax, setPax] = useState(400)
   var [slot, setSlot] = useState(0)
@@ -278,10 +279,16 @@ function QuoteCalculator({ profile }) {
   var firstCall = useRef(true)
   var calcSeq = useRef(0)
 
-  // Venues — flatten nested schema (parents + sub_venues) to leaf list
+  // Venues — build parents + flat leaves side-by-side
   var venues = []
+  var parents = []
   ;(venueList || []).forEach(function (p) {
     var hasSubs = Array.isArray(p.sub_venues) && p.sub_venues.length > 0
+    var liveSubs = hasSubs ? p.sub_venues.filter(function (s) { return s.status !== 'placeholder' }) : []
+    parents.push({
+      id: p.id, name: p.name, location: p.location, status: p.status,
+      lms_venue_id: p.lms_venue_id, has_subs: hasSubs, live_subs: liveSubs
+    })
     if (hasSubs) {
       p.sub_venues.forEach(function (s) {
         venues.push({
@@ -298,6 +305,8 @@ function QuoteCalculator({ profile }) {
       })
     }
   })
+  var currentParent = null
+  for (var _pi = 0; _pi < parents.length; _pi++) { if (parents[_pi].id === parentId) { currentParent = parents[_pi]; break } }
 
   // Derived
   var currentET = eventTypes[eventTypeIdx] || eventTypes[0] || { label: 'Wedding', wedding: true }
@@ -327,14 +336,28 @@ function QuoteCalculator({ profile }) {
     setCalcLoading(false)
   }
 
-  // Auto-select first live leaf once venues load
+  // Auto-select first live parent once venues load; venueId stays empty until user picks a sub (or parent has none)
   useEffect(function () {
-    if (!venueId && venues.length > 0) {
+    if (!parentId && parents.length > 0) {
       var firstLive = null
-      for (var i = 0; i < venues.length; i++) { if (venues[i].status === 'live') { firstLive = venues[i]; break } }
-      if (firstLive) setVenueId(firstLive.id)
+      for (var i = 0; i < parents.length; i++) { if (parents[i].status === 'live') { firstLive = parents[i]; break } }
+      if (firstLive) {
+        setParentId(firstLive.id)
+        if (!firstLive.has_subs) setVenueId(firstLive.id)
+      }
     }
-  }, [venues.length])
+  }, [parents.length])
+
+  // Keep parentId synced when venueId is set externally (loadQuote / legacy paths)
+  useEffect(function () {
+    if (!venueId || venues.length === 0) return
+    for (var i = 0; i < venues.length; i++) {
+      if (venues[i].id === venueId && venues[i].parent_id !== parentId) {
+        setParentId(venues[i].parent_id)
+        break
+      }
+    }
+  }, [venueId, venues.length])
 
   useEffect(function () {
     if (firstCall.current) {
@@ -634,6 +657,22 @@ function QuoteCalculator({ profile }) {
       var LEGACY_IDX_TO_ID = { 0: 'pushpanjali', 1: 'emerald_green', 3: 'aura', 4: 'valencia' }
       vid = LEGACY_IDX_TO_ID[q.venue_idx] || ''
     }
+    // Derive parentId from resolved leaf id for parent+sub selector
+    var pidFromVid = ''
+    if (vid) {
+      for (var _lq = 0; _lq < (venueList || []).length; _lq++) {
+        var _lqp = venueList[_lq]
+        if (_lqp.id === vid) { pidFromVid = _lqp.id; break }
+        if (Array.isArray(_lqp.sub_venues)) {
+          var _hit = false
+          for (var _sq = 0; _sq < _lqp.sub_venues.length; _sq++) {
+            if (_lqp.sub_venues[_sq].id === vid) { pidFromVid = _lqp.id; _hit = true; break }
+          }
+          if (_hit) break
+        }
+      }
+    }
+    setParentId(pidFromVid || '')
     setVenueId(vid || '')
     setFoodPref(q.food_pref || 0); setPax(q.pax || 400); setSlot(q.slot || 0)
     setCatOverride(q.date_category || 2); setMenuIdx(q.menu_idx != null ? q.menu_idx : 3)
@@ -652,7 +691,12 @@ function QuoteCalculator({ profile }) {
 
   function newQuote() {
     setGuestName(''); setGuestPhone(''); setGuestAddress(''); setEventDate(''); setInquiryMode(''); setPriority(''); setEventTypeIdx(0)
-    setVenueId(''); setFoodPref(0); setPax(400); setSlot(0); setCatOverride(2); setMenuIdx(3)
+    var _npFirst = ''; var _npIsLeaf = false
+    for (var _npi = 0; _npi < parents.length; _npi++) {
+      if (parents[_npi].status === 'live') { _npFirst = parents[_npi].id; _npIsLeaf = !parents[_npi].has_subs; break }
+    }
+    setParentId(_npFirst); setVenueId(_npIsLeaf ? _npFirst : '')
+    setFoodPref(0); setPax(400); setSlot(0); setCatOverride(2); setMenuIdx(3)
     setDecorIdx(0); setDjIdx(1); setTtdIdx(0); setDealVal(14); setTaxMode(0); setSplit5(50)
     setQuoteStatus('draft'); setSavedId(null); setNotes(''); setLmsRef(null)
     setLocationId(''); setLocationName('')
@@ -928,17 +972,38 @@ function QuoteCalculator({ profile }) {
 
           <div style={{ fontSize: 12, color: C.muted, marginBottom: 5, fontWeight: 600 }}>Venue</div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
-            {venues.map(function (v) {
-              var on = venueId === v.id
-              var isPh = v.status === 'placeholder'
-              return (<button key={v.id} onClick={function () { if (!isPh) { setVenueId(v.id); setLocationId(''); setLocationName('') } }} style={{
+            {parents.map(function (p) {
+              var on = parentId === p.id
+              var isPh = p.status === 'placeholder'
+              return (<button key={p.id} onClick={function () {
+                if (isPh) return
+                setParentId(p.id)
+                setVenueId(p.has_subs ? '' : p.id)
+                setLocationId(''); setLocationName('')
+              }} style={{
                 textAlign: 'left', width: '100%', padding: 11, borderRadius: 10,
                 border: '2px solid ' + (on && !isPh ? C.gold : C.border), background: on && !isPh ? '#FFF8F0' : '#fff',
                 color: isPh ? '#ccc' : on ? C.maroon : C.muted, fontSize: 12, fontWeight: on ? 700 : 600,
                 cursor: isPh ? 'not-allowed' : 'pointer', opacity: isPh ? 0.5 : 1,
-              }}><div>{isPh ? '🚧 ' : ''}{v.name}</div><div style={{ fontSize: 10, opacity: 0.6, marginTop: 2 }}>{isPh ? 'Coming soon' : v.location}</div></button>)
+              }}><div>{isPh ? '🚧 ' : ''}{p.name}</div><div style={{ fontSize: 10, opacity: 0.6, marginTop: 2 }}>{isPh ? 'Coming soon' : p.location}</div></button>)
             })}
           </div>
+
+          {currentParent && currentParent.has_subs && currentParent.live_subs.length > 0 && (<>
+            <div style={{ fontSize: 12, color: C.muted, marginBottom: 5, fontWeight: 600 }}>Sub-venue</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
+              {currentParent.live_subs.map(function (s) {
+                var on = venueId === s.id
+                return (<button key={s.id} onClick={function () {
+                  setVenueId(s.id); setLocationId(''); setLocationName('')
+                }} style={{
+                  textAlign: 'left', width: '100%', padding: 11, borderRadius: 10,
+                  border: '2px solid ' + (on ? C.gold : C.border), background: on ? '#FFF8F0' : '#fff',
+                  color: on ? C.maroon : C.muted, fontSize: 12, fontWeight: on ? 700 : 600, cursor: 'pointer',
+                }}>{s.name}</button>)
+              })}
+            </div>
+          </>)}
 
           {(function () {
             var locs = null
@@ -1023,19 +1088,38 @@ function QuoteCalculator({ profile }) {
           )
         })()}
 
-        {/* Venue selector (synced) */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, marginBottom: 12 }}>
-          {venues.map(function (v) {
-            var on = venueId === v.id
-            var isPh = v.status === 'placeholder'
-            return (<button key={v.id} onClick={function () { if (!isPh) { setVenueId(v.id); setDecorIdx(0); setLocationId(''); setLocationName('') } }} style={{
+        {/* Venue selector (synced) — parent row + conditional sub row */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(' + Math.max(parents.length, 1) + ', 1fr)', gap: 6, marginBottom: currentParent && currentParent.has_subs && currentParent.live_subs.length > 0 ? 6 : 12 }}>
+          {parents.map(function (p) {
+            var on = parentId === p.id
+            var isPh = p.status === 'placeholder'
+            return (<button key={p.id} onClick={function () {
+              if (isPh) return
+              setParentId(p.id)
+              setVenueId(p.has_subs ? '' : p.id)
+              setDecorIdx(0); setLocationId(''); setLocationName('')
+            }} style={{
               padding: '8px 4px', borderRadius: 9, border: '2px solid ' + (on && !isPh ? C.gold : C.border),
               background: on && !isPh ? '#FFF8F0' : '#fff', color: isPh ? '#ccc' : on ? C.maroon : C.muted,
               fontSize: 11, fontWeight: on ? 700 : 600, cursor: isPh ? 'not-allowed' : 'pointer',
               opacity: isPh ? 0.5 : 1, textAlign: 'center',
-            }}>{isPh ? '🚧' : (v.name || '').replace('Ambria ', '')}</button>)
+            }}>{isPh ? '🚧' : (p.name || '').replace('Ambria ', '')}</button>)
           })}
         </div>
+        {currentParent && currentParent.has_subs && currentParent.live_subs.length > 0 && (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(' + currentParent.live_subs.length + ', 1fr)', gap: 6, marginBottom: 12 }}>
+            {currentParent.live_subs.map(function (s) {
+              var on = venueId === s.id
+              return (<button key={s.id} onClick={function () {
+                setVenueId(s.id); setDecorIdx(0); setLocationId(''); setLocationName('')
+              }} style={{
+                padding: '7px 4px', borderRadius: 8, border: '2px solid ' + (on ? C.gold : C.border),
+                background: on ? '#FFF8F0' : '#fff', color: on ? C.maroon : C.muted,
+                fontSize: 11, fontWeight: on ? 700 : 600, cursor: 'pointer', textAlign: 'center',
+              }}>{s.name}</button>)
+            })}
+          </div>
+        )}
 
         {isSummer && (<div style={{ padding: '7px 11px', borderRadius: 7, fontSize: 11, fontWeight: 600, marginBottom: 12, background: '#FFFBEB', color: '#B45309', border: '1px solid #FDE68A' }}>
           ☀️ Summer – Consider Banquet
