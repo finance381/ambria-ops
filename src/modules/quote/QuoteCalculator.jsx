@@ -206,6 +206,7 @@ function QuoteCalculator({ profile }) {
   var [dealVm, setDealVm] = useState('')
   var [dealDecor, setDealDecor] = useState('')
   var [dealEnt, setDealEnt] = useState('')
+  var [dealDiscount, setDealDiscount] = useState('')
   var [analysis, setAnalysis] = useState(null)
   var [analyzing, setAnalyzing] = useState(false)
   var [showAnalysis, setShowAnalysis] = useState(false)
@@ -413,9 +414,19 @@ function QuoteCalculator({ profile }) {
     f: (adjVm.f || 0) + (adjDecor.f || 0) + (adjDj.f || 0)
   }
 
-  // Negotiated deal total
+  // Negotiated deal — raw sum of typed components
   var dealTotal = (+dealVm || 0) + (+dealDecor || 0) + (+dealEnt || 0)
-  var hasDeal = dealVm !== '' || dealDecor !== '' || dealEnt !== ''
+  var hasDealComponent = dealVm !== '' || dealDecor !== '' || dealEnt !== ''
+  var hasDiscount = dealDiscount !== '' && (+dealDiscount || 0) > 0
+  var hasDeal = hasDealComponent || hasDiscount
+
+  // Effective per-line values (fallback to system-suggested when component blank)
+  var effVm = hasDealComponent ? (dealVm !== '' ? (+dealVm || 0) : (adjVm.q || 0)) : (adjVm.q || 0)
+  var effDecor = hasDealComponent ? (dealDecor !== '' ? (+dealDecor || 0) : (adjDecor.q || 0)) : (adjDecor.q || 0)
+  var effEnt = hasDealComponent ? (dealEnt !== '' ? (+dealEnt || 0) : (adjDj.q || 0)) : (adjDj.q || 0)
+  var discountAmt = +dealDiscount || 0
+  var effSubtotal = (includeMenu ? effVm : (rental.q || 0)) + (includeDecor ? effDecor : 0) + (includeDj ? effEnt : 0)
+  var effTotal = Math.max(0, effSubtotal - discountAmt)
 
   // Tax calc (client-side)
   var a5 = rd(dealVal * split5 / 100), a18 = rd(dealVal * (1 - split5 / 100))
@@ -424,14 +435,14 @@ function QuoteCalculator({ profile }) {
   var guestPays = taxMode ? dealVal : rd(dealVal + ttx)
   var netToYou = taxMode ? rd(dealVal - ttx) : dealVal
 
-  // Sync deal slider to negotiated total or quote total
+  // Sync tax slider to effective total (post-discount) or quote total
   useEffect(function () {
-    var val = hasDeal && dealTotal > 0 ? dealTotal : adjTotal.q
+    var val = effTotal > 0 ? effTotal : adjTotal.q
     if (val) {
       var rounded = Math.round(val * 2) / 2
       setDealVal(Math.max(5, Math.min(60, rounded)))
     }
-  }, [adjTotal.q, dealTotal])
+  }, [adjTotal.q, effTotal])
 
   // Handlers
   function handleEventType(idx) {
@@ -479,10 +490,13 @@ function QuoteCalculator({ profile }) {
   proposalLines.push('FLOOR: ' + fmtRound(adjTotal.f || 0))
   if (hasDeal) {
     proposalLines.push('========================')
-    proposalLines.push('NEGOTIATED: ' + fmtRound(dealTotal))
-    if (dealVm) proposalLines.push('  V+M: ₹' + dealVm + 'L')
-    if (dealDecor) proposalLines.push('  Décor: ₹' + dealDecor + 'L')
-    if (dealEnt) proposalLines.push('  Ent: ₹' + dealEnt + 'L')
+    if (hasDealComponent) {
+      if (dealVm) proposalLines.push('  V+M: ₹' + dealVm + 'L')
+      if (dealDecor) proposalLines.push('  Décor: ₹' + dealDecor + 'L')
+      if (dealEnt) proposalLines.push('  Ent: ₹' + dealEnt + 'L')
+    }
+    if (discountAmt > 0) proposalLines.push('  Discount: -₹' + discountAmt + 'L')
+    proposalLines.push('NEGOTIATED: ' + fmtRound(effTotal))
   }
   proposalLines.push('========================')
   var proposalText = proposalLines.join('\n')
@@ -500,11 +514,12 @@ function QuoteCalculator({ profile }) {
     function fmtAmt(n) { var rounded = n >= 1 ? Math.ceil(n * 2) / 2 : n; var rupees = Math.round(rounded * 100000); return '\u20B9' + rupees.toLocaleString('en-IN') }
 
     var rows = []
-    if (includeMenu) rows.push([1, 'Venue + Menu (' + ml + ' ' + fp + ', ' + pax + ' pax)', fmtAmt(adjVm.q || 0)])
+    if (includeMenu) rows.push([1, 'Venue + Menu (' + ml + ' ' + fp + ', ' + pax + ' pax)', fmtAmt(effVm)])
     else if (rental.q) rows.push([1, 'Venue Rental', fmtAmt(rental.q || 0)])
-    if (includeDecor) rows.push([1, 'Decoration - ' + DECOR_LABELS[decorIdx], fmtAmt(adjDecor.q || 0)])
-    if (includeDj) rows.push([1, DJ_LABELS[djIdx] || 'DJ / Entertainment', fmtAmt(adjDj.q || 0)])
-    var totalAmt = (includeMenu ? (adjVm.q || 0) : (rental.q || 0)) + (includeDecor ? (adjDecor.q || 0) : 0) + (includeDj ? (adjDj.q || 0) : 0)
+    if (includeDecor) rows.push([1, 'Decoration - ' + DECOR_LABELS[decorIdx], fmtAmt(effDecor)])
+    if (includeDj) rows.push([1, DJ_LABELS[djIdx] || 'DJ / Entertainment', fmtAmt(effEnt)])
+    var subAmt = effSubtotal
+    var totalAmt = effTotal
 
     var html = '<!DOCTYPE html><html><head><title>Quote - ' + (guestName || 'Guest') + '</title>'
       + '<style>'
@@ -568,7 +583,8 @@ function QuoteCalculator({ profile }) {
 
     html += '</tbody></table>'
       + '<table class="totals">'
-      + '<tr><td>Subtotal</td><td>' + fmtAmt(totalAmt) + '</td></tr>'
+      + '<tr><td>Subtotal</td><td>' + fmtAmt(subAmt) + '</td></tr>'
+      + (discountAmt > 0 ? '<tr><td>Discount</td><td>-' + fmtAmt(discountAmt) + '</td></tr>' : '')
       + '<tr><td>GST</td><td>As applicable</td></tr>'
       + '<tr class="grand"><td>Total</td><td>' + fmtAmt(totalAmt) + '</td></tr>'
       + '</table>'
@@ -625,10 +641,11 @@ function QuoteCalculator({ profile }) {
       include_menu: includeMenu,
       include_decor: includeDecor,
       include_dj: includeDj,
-      deal_value_paise: hasDeal ? toPaise(dealTotal) : null,
+      deal_value_paise: hasDeal ? toPaise(effTotal) : null,
       deal_vm_paise: dealVm ? toPaise(+dealVm) : null,
       deal_decor_paise: dealDecor ? toPaise(+dealDecor) : null,
       deal_ent_paise: dealEnt ? toPaise(+dealEnt) : null,
+      deal_discount_paise: hasDiscount ? toPaise(discountAmt) : null,
       location_id: locationId || null,
       location_name: locationName || null,
     }
@@ -652,7 +669,7 @@ function QuoteCalculator({ profile }) {
 
   async function loadQuotes() {
     setLoadingQuotes(true)
-    var cols = 'id,guest_name,guest_phone,guest_address,event_date,inquiry_mode,priority,event_type,venue_id,venue_idx,venue_name,food_pref,pax,slot,date_category,menu_idx,decor_idx,dj_idx,ttd_idx,total_q_paise,deal_vm_paise,deal_decor_paise,deal_ent_paise,deal_value_paise,tax_mode,split_5_pct,status,revision,notes,lms_ref,location_id,location_name,include_menu,include_decor,include_dj,updated_at'
+    var cols = 'id,guest_name,guest_phone,guest_address,event_date,inquiry_mode,priority,event_type,venue_id,venue_idx,venue_name,food_pref,pax,slot,date_category,menu_idx,decor_idx,dj_idx,ttd_idx,total_q_paise,deal_vm_paise,deal_decor_paise,deal_ent_paise,deal_discount_paise,deal_value_paise,tax_mode,split_5_pct,status,revision,notes,lms_ref,location_id,location_name,include_menu,include_decor,include_dj,updated_at'
     var { data } = await supabase.from('quotes').select(cols).order('updated_at', { ascending: false }).limit(50)
     setQuotes(data || []); setLoadingQuotes(false)
   }
@@ -688,10 +705,11 @@ function QuoteCalculator({ profile }) {
     setVenueId(vid || '')
     setFoodPref(q.food_pref || 0); setPax(q.pax || 400); setSlot(q.slot || 0)
     setCatOverride(q.date_category || 2); setMenuIdx(q.menu_idx != null ? q.menu_idx : 3)
-    setDecorIdx(q.decor_idx != null ? q.decor_idx : 0); setDjIdx(q.dj_idx != null ? q.dj_idx : 1); setTtdIdx(q.ttd_idx != null ? q.ttd_idx : autoTtdIdx(q.event_date)); setDealVm(''); setDealDecor(''); setDealEnt(''); setDealVal(14); setTaxMode(0); setSplit5(50)
+    setDecorIdx(q.decor_idx != null ? q.decor_idx : 0); setDjIdx(q.dj_idx != null ? q.dj_idx : 1); setTtdIdx(q.ttd_idx != null ? q.ttd_idx : autoTtdIdx(q.event_date)); setDealVm(''); setDealDecor(''); setDealEnt(''); setDealDiscount(''); setDealVal(14); setTaxMode(0); setSplit5(50)
     if (q.deal_vm_paise != null) setDealVm(String(fromPaise(q.deal_vm_paise)))
     if (q.deal_decor_paise != null) setDealDecor(String(fromPaise(q.deal_decor_paise)))
     if (q.deal_ent_paise != null) setDealEnt(String(fromPaise(q.deal_ent_paise)))
+    if (q.deal_discount_paise != null) setDealDiscount(String(fromPaise(q.deal_discount_paise)))
     if (q.deal_value_paise != null && !q.deal_vm_paise) { setDealVm(String(fromPaise(q.deal_value_paise))) }
     if (q.tax_mode != null) { setTaxMode(q.tax_mode); setSplit5(q.split_5_pct || 50) }
     setSavedId(q.id); setQuoteStatus(q.status || 'draft'); setNotes(q.notes || '')
@@ -714,7 +732,7 @@ function QuoteCalculator({ profile }) {
     setLocationId(''); setLocationName('')
     setShowQuotes(false); setShowProposal(false); setPage(0)
     setIncludeMenu(true); setIncludeDecor(true); setIncludeDj(true)
-    setDealVm(''); setDealDecor(''); setDealEnt('')
+    setDealVm(''); setDealDecor(''); setDealEnt(''); setDealDiscount('')
   }
 
   async function updateStatus(s) {
@@ -1393,7 +1411,7 @@ function QuoteCalculator({ profile }) {
 
         {/* DEAL VALUE */}
         <SectionCard title="Deal Value">
-          <div style={{ fontSize: 11, color: C.muted, marginBottom: 10 }}>Enter negotiated amounts per component (₹L)</div>
+          <div style={{ fontSize: 11, color: C.muted, marginBottom: 10 }}>Enter negotiated amounts per component (₹L). Blank fields fall back to the system-suggested value on print.</div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 10 }}>
             {[
               { label: 'V+M', val: dealVm, set: setDealVm, ph: adjVm.q },
@@ -1411,10 +1429,22 @@ function QuoteCalculator({ profile }) {
               )
             })}
           </div>
+          <div style={{ marginBottom: 10 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: C.muted, marginBottom: 4 }}>Discount on whole package (₹L)</div>
+            <input type="number" inputMode="decimal" step="any" value={dealDiscount}
+              placeholder="0"
+              onInput={function (e) { setDealDiscount(e.target.value) }}
+              style={{ width: '100%', padding: '9px 6px', borderRadius: 9, border: '2px solid ' + C.border, fontSize: 14, fontWeight: 700, color: '#991B1B', textAlign: 'center', boxSizing: 'border-box' }} />
+          </div>
           {hasDeal && (
             <div style={{ background: 'linear-gradient(135deg,#4A1111,#8B2D2D)', borderRadius: 10, padding: '10px 14px', color: '#fff', textAlign: 'center', marginBottom: 10 }}>
+              {discountAmt > 0 && (
+                <div style={{ fontSize: 11, opacity: 0.75, marginBottom: 4 }}>
+                  Subtotal ₹{rd(effSubtotal)}L − Discount ₹{rd(discountAmt)}L
+                </div>
+              )}
               <div style={{ fontSize: 10, fontWeight: 700, opacity: 0.5, letterSpacing: 1, marginBottom: 2 }}>NEGOTIATED TOTAL</div>
-              <div style={{ fontSize: 22, fontWeight: 800 }}>{fmtRound(dealTotal)}</div>
+              <div style={{ fontSize: 22, fontWeight: 800 }}>{fmtRound(effTotal)}</div>
             </div>
           )}
           {hasDeal && adjTotal.q > 0 && (<div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 10 }}>
@@ -1423,8 +1453,8 @@ function QuoteCalculator({ profile }) {
               { label: 'vs TARGET', val: adjTotal.t, color: '#0369A1', bg: '#E0F2FE' },
               { label: 'vs FLOOR', val: adjTotal.f, color: '#991B1B', bg: '#FEE2E2' },
             ].map(function (x) {
-              var diff = rd(dealTotal - x.val)
-              var pct = rd((diff / x.val) * 100)
+              var diff = rd(effTotal - x.val)
+              var pct = x.val > 0 ? rd((diff / x.val) * 100) : 0
               return (<div key={x.label} style={{ background: x.bg, borderRadius: 10, padding: '8px 6px', textAlign: 'center' }}>
                 <div style={{ fontSize: 9, fontWeight: 700, color: x.color, marginBottom: 2 }}>{x.label}</div>
                 <div style={{ fontSize: 14, fontWeight: 800, color: diff >= 0 ? '#166534' : '#DC2626' }}>{diff >= 0 ? '+' : ''}{rd(diff)}L</div>
@@ -1433,12 +1463,14 @@ function QuoteCalculator({ profile }) {
             })}
           </div>)}
           {hasDeal && (<button onClick={function () {
-            var txt = 'AMBRIA DEAL\n' + venName + ' | ' + (guestName || 'Guest') + '\n' +
-              currentET.label + ' | ' + fmtDate(eventDate) + ' | ' + pax + 'pax\n' +
-              '========================\n' +
-              'V+M: ₹' + (dealVm || 0) + 'L | Décor: ₹' + (dealDecor || 0) + 'L | Ent: ₹' + (dealEnt || 0) + 'L\n' +
-              'TOTAL: ₹' + rd(dealTotal) + 'L\n========================'
-            copyText(txt)
+            var lines = ['AMBRIA DEAL', venName + ' | ' + (guestName || 'Guest'),
+              currentET.label + ' | ' + fmtDate(eventDate) + ' | ' + pax + 'pax',
+              '========================',
+              'V+M: ₹' + rd(effVm) + 'L | Décor: ₹' + rd(effDecor) + 'L | Ent: ₹' + rd(effEnt) + 'L']
+            if (discountAmt > 0) lines.push('Discount: -₹' + rd(discountAmt) + 'L')
+            lines.push('TOTAL: ₹' + rd(effTotal) + 'L')
+            lines.push('========================')
+            copyText(lines.join('\n'))
           }} style={{
             width: '100%', marginTop: 4, padding: 12, borderRadius: 10, border: 'none',
             background: 'linear-gradient(135deg,#4A1111,#8B2D2D)', color: '#fff',
