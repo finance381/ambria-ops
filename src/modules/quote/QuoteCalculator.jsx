@@ -192,7 +192,7 @@ function QuoteCalculator({ profile }) {
   var [priority, setPriority] = useState('')
   var [etSearch, setEtSearch] = useState('')
   var [eventTypeIdx, setEventTypeIdx] = useState(0)
-  var [venueIdx, setVenueIdx] = useState(0)
+  var [venueId, setVenueId] = useState('')
   var [foodPref, setFoodPref] = useState(0)
   var [pax, setPax] = useState(400)
   var [slot, setSlot] = useState(0)
@@ -278,8 +278,26 @@ function QuoteCalculator({ profile }) {
   var firstCall = useRef(true)
   var calcSeq = useRef(0)
 
-  // Venues — config-driven with hardcoded fallback
-  var venues = venueList ? venueList.map(function (v) { return [v.name, v.location, v.status || 'live'] }) : VENUE_NAMES
+  // Venues — flatten nested schema (parents + sub_venues) to leaf list
+  var venues = []
+  ;(venueList || []).forEach(function (p) {
+    var hasSubs = Array.isArray(p.sub_venues) && p.sub_venues.length > 0
+    if (hasSubs) {
+      p.sub_venues.forEach(function (s) {
+        venues.push({
+          id: s.id, name: s.name, location: p.location, status: s.status,
+          parent_id: p.id, parent_name: p.name, lms_venue_id: p.lms_venue_id,
+          decor_mode: s.decor_mode
+        })
+      })
+    } else {
+      venues.push({
+        id: p.id, name: p.name, location: p.location, status: p.status,
+        parent_id: p.id, parent_name: p.name, lms_venue_id: p.lms_venue_id,
+        decor_mode: p.decor_mode
+      })
+    }
+  })
 
   // Derived
   var currentET = eventTypes[eventTypeIdx] || eventTypes[0] || { label: 'Wedding', wedding: true }
@@ -289,10 +307,11 @@ function QuoteCalculator({ profile }) {
 
   // ── RPC call ──
   async function fetchCalc() {
+    if (!venueId) return
     var seq = ++calcSeq.current
     setCalcLoading(true)
     var { data, error } = await supabase.rpc('calculate_quote', {
-      p_venue_idx: venueIdx,
+      p_venue_id: venueId,
       p_pax: pax,
       p_slot: slot,
       p_date_category: ct,
@@ -308,6 +327,15 @@ function QuoteCalculator({ profile }) {
     setCalcLoading(false)
   }
 
+  // Auto-select first live leaf once venues load
+  useEffect(function () {
+    if (!venueId && venues.length > 0) {
+      var firstLive = null
+      for (var i = 0; i < venues.length; i++) { if (venues[i].status === 'live') { firstLive = venues[i]; break } }
+      if (firstLive) setVenueId(firstLive.id)
+    }
+  }, [venues.length])
+
   useEffect(function () {
     if (firstCall.current) {
       firstCall.current = false
@@ -317,7 +345,7 @@ function QuoteCalculator({ profile }) {
     if (debounceRef.current) clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(fetchCalc, 300)
     return function () { if (debounceRef.current) clearTimeout(debounceRef.current) }
-  }, [venueIdx, pax, slot, ct, menuIdx, decorIdx, djIdx, ttdIdx, foodPref, isWedding])
+  }, [venueId, pax, slot, ct, menuIdx, decorIdx, djIdx, ttdIdx, foodPref, isWedding])
 
   // Safe accessors
   var r = calcResult || {}
@@ -333,7 +361,9 @@ function QuoteCalculator({ profile }) {
   var menuCost = r.menu_cost || 0
   var ttdData = r.ttd || []
   var decorRel = r.decor_relevance || []
-  var venName = r.venue_name || (venues[venueIdx] || venues[0])[0]
+  var currentLeaf = null
+  for (var _vi = 0; _vi < venues.length; _vi++) { if (venues[_vi].id === venueId) { currentLeaf = venues[_vi]; break } }
+  var venName = r.venue_name || (currentLeaf ? currentLeaf.name : '')
   var isPlaceholder = r.is_placeholder || false
   var venDecorMode = r.venue_decor_mode || 'p'
   var isSummer = eventDate ? (function () { var m = new Date(eventDate + 'T00:00:00').getMonth(); return m >= 3 && m <= 7 })() : false
@@ -544,7 +574,7 @@ function QuoteCalculator({ profile }) {
       inquiry_mode: inquiryMode,
       priority: priority || null,
       event_type: currentET.label, event_date: eventDate || null,
-      venue_idx: venueIdx, venue_name: venName, food_pref: foodPref, pax: pax,
+      venue_id: venueId, venue_name: venName, food_pref: foodPref, pax: pax,
       slot: slot, date_category: ct, is_wedding: isWedding,
       menu_idx: activeMenu, menu_label: r.menu_label || MENU_LABELS[activeMenu],
       decor_idx: decorIdx, dj_idx: djIdx, ttd_idx: ttdIdx,
@@ -587,7 +617,7 @@ function QuoteCalculator({ profile }) {
 
   async function loadQuotes() {
     setLoadingQuotes(true)
-    var cols = 'id,guest_name,guest_phone,guest_address,event_date,inquiry_mode,priority,event_type,venue_idx,venue_name,food_pref,pax,slot,date_category,menu_idx,decor_idx,dj_idx,ttd_idx,total_q_paise,deal_vm_paise,deal_decor_paise,deal_ent_paise,deal_value_paise,tax_mode,split_5_pct,status,revision,notes,lms_ref,location_id,location_name,include_menu,include_decor,include_dj,updated_at'
+    var cols = 'id,guest_name,guest_phone,guest_address,event_date,inquiry_mode,priority,event_type,venue_id,venue_idx,venue_name,food_pref,pax,slot,date_category,menu_idx,decor_idx,dj_idx,ttd_idx,total_q_paise,deal_vm_paise,deal_decor_paise,deal_ent_paise,deal_value_paise,tax_mode,split_5_pct,status,revision,notes,lms_ref,location_id,location_name,include_menu,include_decor,include_dj,updated_at'
     var { data } = await supabase.from('quotes').select(cols).order('updated_at', { ascending: false }).limit(50)
     setQuotes(data || []); setLoadingQuotes(false)
   }
@@ -598,7 +628,13 @@ function QuoteCalculator({ profile }) {
     setPriority(q.priority || '')
     var etIdx = 0
     for (var i = 0; i < eventTypes.length; i++) { if (eventTypes[i].label === q.event_type) { etIdx = i; break } }
-    setEventTypeIdx(etIdx); setVenueIdx(q.venue_idx || 0)
+    setEventTypeIdx(etIdx)
+    var vid = q.venue_id
+    if (!vid && q.venue_idx != null) {
+      var LEGACY_IDX_TO_ID = { 0: 'pushpanjali', 1: 'emerald_green', 3: 'aura', 4: 'valencia' }
+      vid = LEGACY_IDX_TO_ID[q.venue_idx] || ''
+    }
+    setVenueId(vid || '')
     setFoodPref(q.food_pref || 0); setPax(q.pax || 400); setSlot(q.slot || 0)
     setCatOverride(q.date_category || 2); setMenuIdx(q.menu_idx != null ? q.menu_idx : 3)
     setDecorIdx(q.decor_idx != null ? q.decor_idx : 0); setDjIdx(q.dj_idx != null ? q.dj_idx : 1); setTtdIdx(q.ttd_idx != null ? q.ttd_idx : autoTtdIdx(q.event_date)); setDealVm(''); setDealDecor(''); setDealEnt(''); setDealVal(14); setTaxMode(0); setSplit5(50)
@@ -616,7 +652,7 @@ function QuoteCalculator({ profile }) {
 
   function newQuote() {
     setGuestName(''); setGuestPhone(''); setGuestAddress(''); setEventDate(''); setInquiryMode(''); setPriority(''); setEventTypeIdx(0)
-    setVenueIdx(0); setFoodPref(0); setPax(400); setSlot(0); setCatOverride(2); setMenuIdx(3)
+    setVenueId(''); setFoodPref(0); setPax(400); setSlot(0); setCatOverride(2); setMenuIdx(3)
     setDecorIdx(0); setDjIdx(1); setTtdIdx(0); setDealVal(14); setTaxMode(0); setSplit5(50)
     setQuoteStatus('draft'); setSavedId(null); setNotes(''); setLmsRef(null)
     setLocationId(''); setLocationName('')
@@ -665,7 +701,7 @@ function QuoteCalculator({ profile }) {
       var weekEnd = new Date(new Date(eventDate + 'T00:00:00').getTime() + 6*86400000).toISOString().split('T')[0]
       var { data: weekData } = await supabase
           .from('quotes')
-          .select('id, venue_idx, event_date')
+          .select('id, venue_id, event_date')
           .gte('event_date', eventDate)
           .lte('event_date', weekEnd)
       var sameDate = (weekData || []).filter(function(q) { return q.event_date === eventDate })
@@ -680,7 +716,7 @@ function QuoteCalculator({ profile }) {
         package_breakdown: hasDeal ? { vm: +dealVm || 0, decor: +dealDecor || 0, ent: +dealEnt || 0 } : null,
         demand: {
           same_date: sameDate.length,
-          same_date_same_venue: sameDate.filter(function(q) { return q.venue_idx === venueIdx }).length,
+          same_date_same_venue: sameDate.filter(function(q) { return q.venue_id === venueId }).length,
           same_week: (weekData || []).length,
         },
         notes: notes.trim() || null,
@@ -892,20 +928,23 @@ function QuoteCalculator({ profile }) {
 
           <div style={{ fontSize: 12, color: C.muted, marginBottom: 5, fontWeight: 600 }}>Venue</div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
-            {venues.map(function (v, idx) {
-              var on = venueIdx === idx
-              var isPh = v[2] === 'placeholder'
-              return (<button key={idx} onClick={function () { if (!isPh) { setVenueIdx(idx); setLocationId(''); setLocationName('') } }} style={{
+            {venues.map(function (v) {
+              var on = venueId === v.id
+              var isPh = v.status === 'placeholder'
+              return (<button key={v.id} onClick={function () { if (!isPh) { setVenueId(v.id); setLocationId(''); setLocationName('') } }} style={{
                 textAlign: 'left', width: '100%', padding: 11, borderRadius: 10,
                 border: '2px solid ' + (on && !isPh ? C.gold : C.border), background: on && !isPh ? '#FFF8F0' : '#fff',
                 color: isPh ? '#ccc' : on ? C.maroon : C.muted, fontSize: 12, fontWeight: on ? 700 : 600,
                 cursor: isPh ? 'not-allowed' : 'pointer', opacity: isPh ? 0.5 : 1,
-              }}><div>{isPh ? '🚧 ' : ''}{v[0]}</div><div style={{ fontSize: 10, opacity: 0.6, marginTop: 2 }}>{isPh ? 'Coming soon' : v[1]}</div></button>)
+              }}><div>{isPh ? '🚧 ' : ''}{v.name}</div><div style={{ fontSize: 10, opacity: 0.6, marginTop: 2 }}>{isPh ? 'Coming soon' : v.location}</div></button>)
             })}
           </div>
 
           {(function () {
-            var locs = lmsLocations ? lmsLocations[String(venueIdx)] : null
+            var locs = null
+            if (lmsLocations && currentLeaf) {
+              locs = lmsLocations[currentLeaf.parent_id] || lmsLocations[currentLeaf.id] || null
+            }
             if (!locs || locs.length === 0) return null
             return (<>
               <div style={{ fontSize: 12, color: C.muted, marginBottom: 5, fontWeight: 600 }}>Location / Hall</div>
@@ -986,15 +1025,15 @@ function QuoteCalculator({ profile }) {
 
         {/* Venue selector (synced) */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, marginBottom: 12 }}>
-          {venues.map(function (v, idx) {
-            var on = venueIdx === idx
-            var isPh = v[2] === 'placeholder'
-            return (<button key={idx} onClick={function () { if (!isPh) { setVenueIdx(idx); setDecorIdx(0); setLocationId(''); setLocationName('') } }} style={{
+          {venues.map(function (v) {
+            var on = venueId === v.id
+            var isPh = v.status === 'placeholder'
+            return (<button key={v.id} onClick={function () { if (!isPh) { setVenueId(v.id); setDecorIdx(0); setLocationId(''); setLocationName('') } }} style={{
               padding: '8px 4px', borderRadius: 9, border: '2px solid ' + (on && !isPh ? C.gold : C.border),
               background: on && !isPh ? '#FFF8F0' : '#fff', color: isPh ? '#ccc' : on ? C.maroon : C.muted,
               fontSize: 11, fontWeight: on ? 700 : 600, cursor: isPh ? 'not-allowed' : 'pointer',
               opacity: isPh ? 0.5 : 1, textAlign: 'center',
-            }}>{isPh ? '🚧' : v[0].replace('Ambria ', '')}</button>)
+            }}>{isPh ? '🚧' : (v.name || '').replace('Ambria ', '')}</button>)
           })}
         </div>
 

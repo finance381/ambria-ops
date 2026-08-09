@@ -281,7 +281,7 @@ function InquiryModesEditor({ config, onSave, saving }) {
 }
 
 // ══════════════════════════════════════
-//  VENUES EDITOR
+//  VENUES EDITOR (parent + sub-venues)
 // ══════════════════════════════════════
 
 function VenuesEditor({ config, onSave, saving }) {
@@ -289,47 +289,163 @@ function VenuesEditor({ config, onSave, saving }) {
   var [draft, setDraft] = useState(clone(raw))
   useEffect(function () { setDraft(clone(config.venues || [])) }, [config.venues])
 
-  function upd(idx, field, val) { var d = clone(draft); d[idx][field] = val; setDraft(d) }
-  function addVenue() { setDraft(draft.concat([{ name: '', location: '', decor_mode: null, status: 'placeholder' }])) }
-  function rmVenue(idx) {
-    if (!window.confirm('Delete this venue? Rentals, decor, menu rates and saved quotes reference venues by index. Deleting shifts indexes and can mis-map existing data.')) return
-    var d = clone(draft); d.splice(idx, 1); setDraft(d)
+  function slugify(name) {
+    if (!name) return ''
+    var s = name.toLowerCase().trim()
+    s = s.replace(/^the\s+/, '')
+    s = s.replace(/[^a-z0-9]+/g, '_')
+    s = s.replace(/^_+|_+$/g, '')
+    return s
+  }
+
+  function updParent(pIdx, field, val) {
+    var d = clone(draft); d[pIdx][field] = val; setDraft(d)
+  }
+  function updSub(pIdx, sIdx, field, val) {
+    var d = clone(draft); d[pIdx].sub_venues[sIdx][field] = val; setDraft(d)
+  }
+  function addParent() {
+    setDraft(draft.concat([{
+      id: '', name: '', location: '', lms_venue_id: '', status: 'placeholder',
+      decor_mode: null, sub_venues: []
+    }]))
+  }
+  function rmParent(pIdx) {
+    if (!window.confirm('Remove parent "' + (draft[pIdx].name || 'unnamed') + '"? Its rate cards will be orphaned.')) return
+    var d = clone(draft); d.splice(pIdx, 1); setDraft(d)
+  }
+  function addSub(pIdx) {
+    var d = clone(draft)
+    if (!Array.isArray(d[pIdx].sub_venues)) d[pIdx].sub_venues = []
+    if (d[pIdx].sub_venues.length === 0 && d[pIdx].id) {
+      if (!window.confirm('Adding a sub-venue converts "' + d[pIdx].name + '" to a grouped parent. Its own rate cards will become orphaned. Continue?')) return
+      d[pIdx].decor_mode = null
+    }
+    d[pIdx].sub_venues.push({
+      id: '', parent_id: d[pIdx].id, name: '', status: 'placeholder', decor_mode: null
+    })
+    setDraft(d)
+  }
+  function rmSub(pIdx, sIdx) {
+    if (!window.confirm('Remove sub "' + (draft[pIdx].sub_venues[sIdx].name || 'unnamed') + '"? Its rate cards will be orphaned.')) return
+    var d = clone(draft); d[pIdx].sub_venues.splice(sIdx, 1); setDraft(d)
+  }
+
+  function handleSave() {
+    if (saving) return
+    var out = clone(draft)
+    var ids = []
+    var err = null
+    out.forEach(function (p) {
+      if (!p.id) p.id = slugify(p.name)
+      if (!p.id) { err = 'Parent name missing'; return }
+      if (ids.indexOf(p.id) !== -1) { err = 'Duplicate id: ' + p.id; return }
+      ids.push(p.id)
+      if (!Array.isArray(p.sub_venues)) p.sub_venues = []
+      p.sub_venues.forEach(function (s) {
+        if (!s.id) s.id = slugify(s.name)
+        if (!s.id) { err = 'Sub name missing under ' + p.name; return }
+        if (ids.indexOf(s.id) !== -1) { err = 'Duplicate id: ' + s.id; return }
+        ids.push(s.id)
+        s.parent_id = p.id
+      })
+    })
+    if (err) { window.alert('Cannot save: ' + err); return }
+    onSave('venues', out)
   }
 
   return (
     <Card title="Venues">
-      {draft.map(function (v, idx) {
+      {draft.map(function (p, pIdx) {
+        var hasSubs = Array.isArray(p.sub_venues) && p.sub_venues.length > 0
         return (
-          <div key={idx} style={{
+          <div key={pIdx} style={{
             marginBottom: 10, padding: 12, borderRadius: 10,
-            border: '1px solid ' + C.border, background: v.status === 'placeholder' ? '#F9F5F0' : '#fff',
+            border: '1px solid ' + (hasSubs ? C.maroon : C.border),
+            background: p.status === 'placeholder' ? '#F9F5F0' : '#fff',
           }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: C.muted }}>IDX {idx}</div>
-              {draft.length > 1 && <RemoveBtn onClick={function () { rmVenue(idx) }} />}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, gap: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, flexWrap: 'wrap' }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: C.muted, letterSpacing: 1 }}>PARENT</div>
+                {p.id && <div style={{ fontSize: 10, fontWeight: 600, color: C.maroon, background: '#FFF8F0', padding: '2px 6px', borderRadius: 4 }}>{p.id}</div>}
+                <div style={{ fontSize: 10, color: hasSubs ? C.maroon : '#5F5E5A' }}>
+                  {hasSubs ? p.sub_venues.length + ' sub-venues · prices per sub' : 'no subs · prices here'}
+                </div>
+              </div>
+              {draft.length > 1 && <RemoveBtn onClick={function () { rmParent(pIdx) }} />}
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
-              <TextIn value={v.name} onChange={function (val) { upd(idx, 'name', val) }} placeholder="Venue name" />
-              <TextIn value={v.location} onChange={function (val) { upd(idx, 'location', val) }} placeholder="Location" />
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 8 }}>
+              <TextIn value={p.name} onChange={function (v) { updParent(pIdx, 'name', v) }} placeholder="Parent name" />
+              <TextIn value={p.location} onChange={function (v) { updParent(pIdx, 'location', v) }} placeholder="Location" />
+              <TextIn value={p.lms_venue_id || ''} onChange={function (v) { updParent(pIdx, 'lms_venue_id', v) }} placeholder="LMS venue ID" />
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-              <select value={v.decor_mode || ''}
-                onChange={function (e) { upd(idx, 'decor_mode', e.target.value || null) }}
-                style={{ padding: 8, borderRadius: 7, border: '1px solid ' + C.border, fontSize: 12, color: C.muted, background: '#fff', fontFamily: 'inherit' }}>
-                {DECOR_OPTS.map(function (o) { return <option key={o.val} value={o.val}>{o.label}</option> })}
-              </select>
-              <select value={v.status || 'live'}
-                onChange={function (e) { upd(idx, 'status', e.target.value) }}
-                style={{ padding: 8, borderRadius: 7, border: '1px solid ' + C.border, fontSize: 12, color: v.status === 'placeholder' ? '#D97706' : C.green, background: '#fff', fontFamily: 'inherit' }}>
-                <option value="live">Live</option>
-                <option value="placeholder">Placeholder</option>
-              </select>
-            </div>
+
+            {!hasSubs && (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
+                <select value={p.decor_mode || ''}
+                  onChange={function (e) { updParent(pIdx, 'decor_mode', e.target.value || null) }}
+                  style={{ padding: 8, borderRadius: 7, border: '1px solid ' + C.border, fontSize: 16, color: C.muted, background: '#fff', fontFamily: 'inherit' }}>
+                  {DECOR_OPTS.map(function (o) { return <option key={o.val} value={o.val}>{o.label}</option> })}
+                </select>
+                <select value={p.status || 'live'}
+                  onChange={function (e) { updParent(pIdx, 'status', e.target.value) }}
+                  style={{ padding: 8, borderRadius: 7, border: '1px solid ' + C.border, fontSize: 16, color: p.status === 'placeholder' ? '#D97706' : C.green, background: '#fff', fontFamily: 'inherit' }}>
+                  <option value="live">Live</option>
+                  <option value="placeholder">Placeholder</option>
+                </select>
+              </div>
+            )}
+
+            {hasSubs && (
+              <div style={{ background: '#FAF7F5', borderRadius: 8, padding: 10, marginTop: 4 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: C.maroon, letterSpacing: 1, marginBottom: 8 }}>SUB-VENUES</div>
+                {p.sub_venues.map(function (s, sIdx) {
+                  return (
+                    <div key={sIdx} style={{
+                      background: s.status === 'placeholder' ? '#F9F5F0' : '#fff',
+                      border: '1px solid ' + C.border, borderRadius: 8, padding: 10, marginBottom: 6,
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                        <div style={{ fontSize: 10, fontWeight: 600, color: s.id ? C.muted : '#B45309', background: s.id ? '#fff' : '#FEF3C7', padding: '2px 6px', borderRadius: 4, flex: 1 }}>
+                          {s.id || '(id from name)'}
+                        </div>
+                        <RemoveBtn onClick={function () { rmSub(pIdx, sIdx) }} />
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 1fr', gap: 6 }}>
+                        <TextIn value={s.name} onChange={function (v) { updSub(pIdx, sIdx, 'name', v) }} placeholder="Sub-venue name" />
+                        <select value={s.decor_mode || ''}
+                          onChange={function (e) { updSub(pIdx, sIdx, 'decor_mode', e.target.value || null) }}
+                          style={{ padding: 7, borderRadius: 6, border: '1px solid ' + C.border, fontSize: 16, color: C.muted, background: '#fff', fontFamily: 'inherit' }}>
+                          {DECOR_OPTS.map(function (o) { return <option key={o.val} value={o.val}>{o.label}</option> })}
+                        </select>
+                        <select value={s.status || 'live'}
+                          onChange={function (e) { updSub(pIdx, sIdx, 'status', e.target.value) }}
+                          style={{ padding: 7, borderRadius: 6, border: '1px solid ' + C.border, fontSize: 16, color: s.status === 'placeholder' ? '#D97706' : C.green, background: '#fff', fontFamily: 'inherit' }}>
+                          <option value="live">Live</option>
+                          <option value="placeholder">Placeholder</option>
+                        </select>
+                      </div>
+                    </div>
+                  )
+                })}
+                <AddRow label="Add sub-venue" onClick={function () { addSub(pIdx) }} />
+              </div>
+            )}
+
+            {!hasSubs && (
+              <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px dashed ' + C.border }}>
+                <button onClick={function () { addSub(pIdx) }} style={{
+                  width: '100%', padding: 6, borderRadius: 6, border: '1px dashed #D4872C',
+                  background: 'transparent', color: '#D4872C', fontSize: 11, fontFamily: 'inherit', cursor: 'pointer',
+                }}>+ Add sub-venue (converts to grouped)</button>
+              </div>
+            )}
           </div>
         )
       })}
-      <AddRow label="Add Venue" onClick={addVenue} />
-      <Btn label="Save Venues" variant="primary" onClick={function () { onSave('venues', draft) }} disabled={saving} style={{ width: '100%', marginTop: 12 }} />
+      <AddRow label="Add Parent Venue" onClick={addParent} />
+      <Btn label="Save Venues" variant="primary" onClick={handleSave} disabled={saving} style={{ width: '100%', marginTop: 12 }} />
     </Card>
   )
 }
@@ -344,15 +460,28 @@ function RentalsEditor({ config, onSave, saving }) {
   var cats = config.categories || DEFAULT_CATS
   var slots = config.slots || DEFAULT_SLOTS
   var [draft, setDraft] = useState(clone(rentals))
-  var [selV, setSelV] = useState(-1)
+  var [selV, setSelV] = useState('')
 
   useEffect(function () { setDraft(clone(config.rentals || {})) }, [config.rentals])
 
-  var liveIdxs = []
-  venues.forEach(function (v, i) { if (v.status === 'live') liveIdxs.push(i) })
+  // Group venues by parent; each group holds one or more leaf items
+  var groups = venues.map(function (p) {
+    var hasSubs = Array.isArray(p.sub_venues) && p.sub_venues.length > 0
+    if (hasSubs) {
+      return { parent: p.name, items: p.sub_venues.map(function (s) { return { id: s.id, name: s.name, status: s.status } }) }
+    }
+    return { parent: p.name, items: [{ id: p.id, name: p.name, status: p.status }] }
+  })
+  var leaves = []
+  groups.forEach(function (g) { g.items.forEach(function (it) { leaves.push(it) }) })
+
   useEffect(function () {
-    if (selV === -1 && liveIdxs.length > 0) setSelV(liveIdxs[0])
-  }, [liveIdxs.length])
+    if (!selV && leaves.length > 0) {
+      var firstLive = null
+      for (var i = 0; i < leaves.length; i++) { if (leaves[i].status === 'live') { firstLive = leaves[i]; break } }
+      if (firstLive) setSelV(firstLive.id)
+    }
+  }, [leaves.length])
 
   function emptyRental() {
     var r = {}
@@ -384,27 +513,36 @@ function RentalsEditor({ config, onSave, saving }) {
   }
 
   function updateCell(tier, catIdx, slotIdx, val) {
+    if (!selV) return
     var d = clone(draft)
-    var key = selV + ''
-    if (!d[key]) d[key] = emptyRental()
-    d[key] = padRental(d[key])
-    d[key][tier][catIdx][slotIdx] = val
+    if (!d[selV]) d[selV] = emptyRental()
+    d[selV] = padRental(d[selV])
+    d[selV][tier][catIdx][slotIdx] = val
     setDraft(d)
   }
 
-  var vd = padRental(draft[selV + ''] || emptyRental())
+  var vd = padRental(draft[selV] || emptyRental())
 
   return (
     <Card title="Rental Rates (₹L)">
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 16 }}>
-        {liveIdxs.map(function (idx) {
-          var on = selV === idx
+      <div style={{ marginBottom: 16, padding: 10, background: C.bg, borderRadius: 8 }}>
+        {groups.map(function (g, gi) {
           return (
-            <button key={idx} onClick={function () { setSelV(idx) }} style={{
-              padding: '7px 12px', borderRadius: 9, border: '2px solid ' + (on ? C.maroon2 : C.border),
-              background: on ? C.cream : '#fff', color: on ? C.maroon : C.muted,
-              fontSize: 12, fontWeight: on ? 700 : 600, cursor: 'pointer',
-            }}>{venues[idx].name}</button>
+            <div key={gi} style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap', marginBottom: gi === groups.length - 1 ? 0 : 8 }}>
+              <span style={{ fontSize: 10, fontWeight: 700, color: C.muted, letterSpacing: 1, marginRight: 4, minWidth: 90 }}>{(g.parent || '').toUpperCase()}</span>
+              {g.items.map(function (it) {
+                var on = selV === it.id
+                var isPh = it.status === 'placeholder'
+                return (
+                  <button key={it.id} onClick={function () { setSelV(it.id) }} style={{
+                    padding: '6px 11px', borderRadius: 8, border: '2px solid ' + (on ? C.maroon2 : C.border),
+                    background: on ? C.cream : (isPh ? '#F9F5F0' : '#fff'),
+                    color: on ? C.maroon : (isPh ? '#888' : C.muted),
+                    fontSize: 11, fontWeight: on ? 700 : 600, cursor: 'pointer', opacity: isPh ? 0.7 : 1,
+                  }}>{it.name}{isPh ? ' · placeholder' : ''}</button>
+                )
+              })}
+            </div>
           )
         })}
       </div>
@@ -442,21 +580,25 @@ function RentalsEditor({ config, onSave, saving }) {
 //  DJ EDITOR
 // ══════════════════════════════════════
 
-var DJ_SECTIONS = [
-  { key: 'dj', label: 'Pushpanjali' },
-  { key: 'dj_eg', label: 'EG / Aura' },
-  { key: 'dj_valencia', label: 'Valencia' },
-]
-
 function DJEditor({ config, onSave, saving }) {
   var cats = config.categories || DEFAULT_CATS
+  var venues = config.venues || []
+
+  // DJ is per-parent (shared across sub-venues under each parent)
+  var DJ_SECTIONS = venues.map(function (p) { return { key: p.id, label: p.name, status: p.status } })
+
   var [subTab, setSubTab] = useState(0)
-  var sec = DJ_SECTIONS[subTab]
+  var sec = DJ_SECTIONS[subTab] || DJ_SECTIONS[0] || { key: '', label: '', status: 'placeholder' }
   var [draft, setDraft] = useState({ labels: [], q: [], t: [], f: [] })
 
   useEffect(function () {
-    var s = DJ_SECTIONS[subTab]
-    var d = clone(config[s.key] || { labels: ['Std DJ - No LED', 'DJ + LED'], q: [], t: [], f: [] })
+    if (subTab >= DJ_SECTIONS.length && DJ_SECTIONS.length > 0) setSubTab(0)
+  }, [DJ_SECTIONS.length])
+
+  useEffect(function () {
+    var s = DJ_SECTIONS[subTab] || DJ_SECTIONS[0]
+    if (!s || !s.key) return
+    var d = clone((config.dj || {})[s.key] || { labels: ['Std DJ - No LED', 'DJ + LED'], q: [], t: [], f: [] })
     if (d.labels && d.labels.length > 0) {
       TIERS.forEach(function (tier) {
         if (!Array.isArray(d[tier])) d[tier] = []
@@ -502,12 +644,14 @@ function DJEditor({ config, onSave, saving }) {
       <div style={{ display: 'flex', gap: 6, marginBottom: 14, flexWrap: 'wrap' }}>
         {DJ_SECTIONS.map(function (s, idx) {
           var on = subTab === idx
+          var isPh = s.status === 'placeholder'
           return (
             <button key={idx} onClick={function () { setSubTab(idx) }} style={{
               padding: '7px 12px', borderRadius: 9, border: '2px solid ' + (on ? C.gold : C.border),
-              background: on ? '#FFF8F0' : '#fff', color: on ? C.gold : C.muted,
-              fontSize: 12, fontWeight: 700, cursor: 'pointer',
-            }}>{s.label}</button>
+              background: on ? '#FFF8F0' : (isPh ? '#F9F5F0' : '#fff'),
+              color: on ? C.gold : (isPh ? '#888' : C.muted),
+              fontSize: 12, fontWeight: 700, cursor: 'pointer', opacity: isPh ? 0.7 : 1,
+            }}>{s.label}{isPh ? ' · placeholder' : ''}</button>
           )
         })}
       </div>
@@ -545,7 +689,12 @@ function DJEditor({ config, onSave, saving }) {
           )
         })}
 
-        <Btn label={'Save ' + sec.label + ' DJ'} variant="primary" onClick={function () { onSave(sec.key, draft) }} disabled={saving} style={{ width: '100%', marginTop: 8 }} />
+        <Btn label={'Save ' + sec.label + ' DJ'} variant="primary" onClick={function () {
+          if (!sec.key) return
+          var merged = Object.assign({}, config.dj || {})
+          merged[sec.key] = draft
+          onSave('dj', merged)
+        }} disabled={saving} style={{ width: '100%', marginTop: 8 }} />
       </Card>
     </>
   )
@@ -710,22 +859,34 @@ function MenuEditor({ config, onSave, saving }) {
 //  DÉCOR EDITOR
 // ══════════════════════════════════════
 
-var DECOR_SECTIONS = [
-  { key: 'decor', label: 'Pushpanjali' },
-  { key: 'decor_eg', label: 'EG / Aura' },
-  { key: 'decor_valencia', label: 'Valencia' },
-]
-
 function DecorEditor({ config, onSave, saving }) {
   var cats = config.categories || DEFAULT_CATS
+  var venues = config.venues || []
+
+  // Per-leaf: parents-without-subs are leaves, sub_venues are leaves
+  var DECOR_SECTIONS = []
+  venues.forEach(function (p) {
+    var hasSubs = Array.isArray(p.sub_venues) && p.sub_venues.length > 0
+    if (hasSubs) {
+      p.sub_venues.forEach(function (s) { DECOR_SECTIONS.push({ key: s.id, label: p.name + ' › ' + s.name, status: s.status }) })
+    } else {
+      DECOR_SECTIONS.push({ key: p.id, label: p.name, status: p.status })
+    }
+  })
+
   var [subTab, setSubTab] = useState(0)
-  var sec = DECOR_SECTIONS[subTab]
-  var raw = config[sec.key] || { labels: [], nw_offset: -0.5, q: [], t: [], f: [] }
+  var sec = DECOR_SECTIONS[subTab] || DECOR_SECTIONS[0] || { key: '', label: '', status: 'placeholder' }
+  var raw = (config.decor || {})[sec.key] || { labels: [], nw_offset: -0.5, q: [], t: [], f: [] }
   var [draft, setDraft] = useState(clone(raw))
 
   useEffect(function () {
-    var s = DECOR_SECTIONS[subTab]
-    var d = clone(config[s.key] || { labels: [], nw_offset: -0.5, q: [], t: [], f: [] })
+    if (subTab >= DECOR_SECTIONS.length && DECOR_SECTIONS.length > 0) setSubTab(0)
+  }, [DECOR_SECTIONS.length])
+
+  useEffect(function () {
+    var s = DECOR_SECTIONS[subTab] || DECOR_SECTIONS[0]
+    if (!s || !s.key) return
+    var d = clone((config.decor || {})[s.key] || { labels: [], nw_offset: -0.5, q: [], t: [], f: [] })
     // Pad each tier's category arrays
     if (d.labels && d.labels.length > 0) {
       var clean = {}
@@ -781,12 +942,14 @@ function DecorEditor({ config, onSave, saving }) {
       <div style={{ display: 'flex', gap: 6, marginBottom: 14, flexWrap: 'wrap' }}>
         {DECOR_SECTIONS.map(function (s, idx) {
           var on = subTab === idx
+          var isPh = s.status === 'placeholder'
           return (
             <button key={idx} onClick={function () { setSubTab(idx) }} style={{
               padding: '7px 12px', borderRadius: 9, border: '2px solid ' + (on ? C.gold : C.border),
-              background: on ? '#FFF8F0' : '#fff', color: on ? C.gold : C.muted,
-              fontSize: 12, fontWeight: 700, cursor: 'pointer',
-            }}>{s.label}</button>
+              background: on ? '#FFF8F0' : (isPh ? '#F9F5F0' : '#fff'),
+              color: on ? C.gold : (isPh ? '#888' : C.muted),
+              fontSize: 12, fontWeight: 700, cursor: 'pointer', opacity: isPh ? 0.7 : 1,
+            }}>{s.label}{isPh ? ' · placeholder' : ''}</button>
           )
         })}
       </div>
@@ -852,7 +1015,15 @@ function DecorEditor({ config, onSave, saving }) {
           </div>
         )}
 
-        <Btn label={'Save ' + sec.label} variant="primary" onClick={function () { onSave(sec.key, draft) }} disabled={saving} style={{ width: '100%', marginTop: 8 }} />
+        <Btn label={'Save ' + sec.label} variant="primary" onClick={function () {
+          if (!sec.key) return
+          var merged = Object.assign({}, config.decor || {})
+          var existing = merged[sec.key] || {}
+          var out = Object.assign({}, draft)
+          if (existing.lunch_override) out.lunch_override = existing.lunch_override
+          merged[sec.key] = out
+          onSave('decor', merged)
+        }} disabled={saving} style={{ width: '100%', marginTop: 8 }} />
       </Card>
     </>
   )
@@ -862,22 +1033,34 @@ function DecorEditor({ config, onSave, saving }) {
 //  LUNCH RATES EDITOR
 // ══════════════════════════════════════
 
-var LUNCH_SECTIONS = [
-  { key: 'lunch_decor', label: 'Pushpanjali' },
-  { key: 'lunch_decor_eg', label: 'EG / Aura' },
-  { key: 'lunch_decor_valencia', label: 'Valencia' },
-]
-
 function LunchRatesEditor({ config, onSave, saving }) {
   var cats = config.categories || DEFAULT_CATS
+  var venues = config.venues || []
+
+  // Same leaf sections as Decor; lunch_override lives nested inside decor[leaf].lunch_override
+  var LUNCH_SECTIONS = []
+  venues.forEach(function (p) {
+    var hasSubs = Array.isArray(p.sub_venues) && p.sub_venues.length > 0
+    if (hasSubs) {
+      p.sub_venues.forEach(function (s) { LUNCH_SECTIONS.push({ key: s.id, label: p.name + ' › ' + s.name, status: s.status }) })
+    } else {
+      LUNCH_SECTIONS.push({ key: p.id, label: p.name, status: p.status })
+    }
+  })
+
   var [subTab, setSubTab] = useState(0)
-  var sec = LUNCH_SECTIONS[subTab]
-  var raw = config[sec.key] || { labels: [], nw_offset: -0.5, q: [], t: [], f: [] }
+  var sec = LUNCH_SECTIONS[subTab] || LUNCH_SECTIONS[0] || { key: '', label: '', status: 'placeholder' }
+  var raw = (((config.decor || {})[sec.key] || {}).lunch_override) || { labels: [], nw_offset: -0.5, q: [], t: [], f: [] }
   var [draft, setDraft] = useState(clone(raw))
 
   useEffect(function () {
-    var s = LUNCH_SECTIONS[subTab]
-    var d = clone(config[s.key] || { labels: [], nw_offset: -0.5, q: [], t: [], f: [] })
+    if (subTab >= LUNCH_SECTIONS.length && LUNCH_SECTIONS.length > 0) setSubTab(0)
+  }, [LUNCH_SECTIONS.length])
+
+  useEffect(function () {
+    var s = LUNCH_SECTIONS[subTab] || LUNCH_SECTIONS[0]
+    if (!s || !s.key) return
+    var d = clone((((config.decor || {})[s.key] || {}).lunch_override) || { labels: [], nw_offset: -0.5, q: [], t: [], f: [] })
     if (d.labels && d.labels.length > 0) {
       var clean = {}
       TIERS.forEach(function (tier) { clean[tier] = [] })
@@ -931,12 +1114,14 @@ function LunchRatesEditor({ config, onSave, saving }) {
       <div style={{ display: 'flex', gap: 6, marginBottom: 14, flexWrap: 'wrap' }}>
         {LUNCH_SECTIONS.map(function (s, idx) {
           var on = subTab === idx
+          var isPh = s.status === 'placeholder'
           return (
             <button key={idx} onClick={function () { setSubTab(idx) }} style={{
               padding: '7px 12px', borderRadius: 9, border: '2px solid ' + (on ? C.gold : C.border),
-              background: on ? '#FFF8F0' : '#fff', color: on ? C.gold : C.muted,
-              fontSize: 12, fontWeight: 700, cursor: 'pointer',
-            }}>{s.label}</button>
+              background: on ? '#FFF8F0' : (isPh ? '#F9F5F0' : '#fff'),
+              color: on ? C.gold : (isPh ? '#888' : C.muted),
+              fontSize: 12, fontWeight: 700, cursor: 'pointer', opacity: isPh ? 0.7 : 1,
+            }}>{s.label}{isPh ? ' · placeholder' : ''}</button>
           )
         })}
       </div>
@@ -1001,7 +1186,13 @@ function LunchRatesEditor({ config, onSave, saving }) {
           </div>
         )}
 
-        <Btn label={'Save ' + sec.label + ' Lunch'} variant="primary" onClick={function () { onSave(sec.key, draft) }} disabled={saving} style={{ width: '100%', marginTop: 8 }} />
+        <Btn label={'Save ' + sec.label + ' Lunch'} variant="primary" onClick={function () {
+          if (!sec.key) return
+          var merged = Object.assign({}, config.decor || {})
+          var existing = merged[sec.key] || {}
+          merged[sec.key] = Object.assign({}, existing, { lunch_override: draft })
+          onSave('decor', merged)
+        }} disabled={saving} style={{ width: '100%', marginTop: 8 }} />
       </Card>
     </>
   )

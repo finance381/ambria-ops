@@ -8,13 +8,42 @@ const corsHeaders = {
 
 // ═══ Static maps ═══
 
-const VENUE_ID_MAP: Record<number, string> = {
-  0: "3", 1: "6", 2: "6", 3: "19", 4: "19",
+// LMS venue names keyed by LMS venue ID string (parent's lms_venue_id in venues config)
+const VENUE_NAME_MAP: Record<string, string> = {
+  "3": "Ambria Pushpanjali",
+  "6": "Manaktala Farm",
+  "16": "Ambria Restro",
+  "19": "Ambria Exotica",
 }
 
-const VENUE_NAME_MAP: Record<number, string> = {
-  0: "Ambria Pushpanjali", 1: "Manaktala Farm", 2: "Manaktala Farm",
-  3: "Ambria Exotica", 4: "Ambria Exotica",
+// Legacy idx → leaf id (only for quotes saved before venue_id column existed)
+const LEGACY_IDX_TO_ID: Record<number, string> = {
+  0: "pushpanjali", 1: "emerald_green", 3: "aura", 4: "valencia",
+}
+
+// Walks nested venues config; returns parent's LMS venue id + name for the given leaf
+function resolveVenue(venuesConfig: any[] | null, q: any): { lmsVenueId: string; lmsVenueName: string } {
+  const fallback = { lmsVenueId: "3", lmsVenueName: "Ambria Pushpanjali" }
+  let venueId: string | null = q.venue_id || null
+  if (!venueId && q.venue_idx != null) venueId = LEGACY_IDX_TO_ID[q.venue_idx] || null
+  if (!venueId || !Array.isArray(venuesConfig)) return fallback
+
+  for (const p of venuesConfig) {
+    const hasSubs = Array.isArray(p.sub_venues) && p.sub_venues.length > 0
+    if (!hasSubs && p.id === venueId) {
+      const id = String(p.lms_venue_id || "3")
+      return { lmsVenueId: id, lmsVenueName: VENUE_NAME_MAP[id] || p.name || fallback.lmsVenueName }
+    }
+    if (hasSubs) {
+      for (const s of p.sub_venues) {
+        if (s.id === venueId) {
+          const id = String(p.lms_venue_id || "3")
+          return { lmsVenueId: id, lmsVenueName: VENUE_NAME_MAP[id] || p.name || fallback.lmsVenueName }
+        }
+      }
+    }
+  }
+  return fallback
 }
 
 const MENU_ID_MAP: Record<string, string> = {
@@ -114,13 +143,19 @@ serve(async (req) => {
     const phone = (q.guest_phone || "").replace(/\D/g, "").slice(-10)
     if (!phone || phone.length < 10) throw new Error("Valid 10-digit phone required")
 
+    // Load venues config to resolve leaf → parent LMS venue id/name
+    const { data: cfgRow } = await db
+      .from("quote_config")
+      .select("value")
+      .eq("key", "venues")
+      .single()
+    const venuesConfig = (cfgRow?.value as any[]) || null
+
     // Build LMS payload
-    const venueIdx = q.venue_idx ?? 0
     const menuKey = (q.menu_idx ?? 3) + "-" + (q.food_pref ?? 0)
     const funcType = FUNC_TYPE_MAP[q.event_type] || "3"
     const slotTiming = SLOT_TIMING[q.slot ?? 0] || "18:00"
-    const venueId = VENUE_ID_MAP[venueIdx] || "3"
-    const venueName = VENUE_NAME_MAP[venueIdx] || "Ambria Pushpanjali"
+    const { lmsVenueId: venueId, lmsVenueName: venueName } = resolveVenue(venuesConfig, q)
 
     // Use deal breakdowns when negotiated, else quote tier
     const hasDeal = q.deal_value_paise != null && q.deal_value_paise > 0
