@@ -1008,7 +1008,13 @@ function QuoteCalculator({ profile }) {
           {(function () {
             var locs = null
             if (lmsLocations && currentLeaf) {
+              // Try new keying (parent_id, leaf id) then legacy numeric-idx keys
               locs = lmsLocations[currentLeaf.parent_id] || lmsLocations[currentLeaf.id] || null
+              if (!locs) {
+                var LEG_ID_TO_IDX = { pushpanjali: '0', manaktala: '1', emerald_green: '1', alstonia: '1', exotica: '3', aura: '3', valencia: '3', restro: '16', restro_lawn: '16', restro_banquet: '16' }
+                var legKey = LEG_ID_TO_IDX[currentLeaf.parent_id] || LEG_ID_TO_IDX[currentLeaf.id]
+                if (legKey) locs = lmsLocations[legKey] || null
+              }
             }
             if (!locs || locs.length === 0) return null
             return (<>
