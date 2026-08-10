@@ -801,9 +801,11 @@ function QuoteCalculator({ profile }) {
         },
         notes: notes.trim() || null,
       }
+      var sess = await supabase.auth.getSession()
+      var token = sess.data.session ? sess.data.session.access_token : import.meta.env.VITE_SUPABASE_ANON_KEY
       var res = await fetch(
         import.meta.env.VITE_SUPABASE_URL + '/functions/v1/quote-assist',
-        { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + import.meta.env.VITE_SUPABASE_ANON_KEY }, body: JSON.stringify({ quote: quoteData }) }
+        { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }, body: JSON.stringify({ quote: quoteData }) }
       )
       var data = await res.json()
       if (data.error) throw new Error(data.error)
