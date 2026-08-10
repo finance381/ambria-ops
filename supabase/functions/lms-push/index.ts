@@ -81,14 +81,17 @@ const DJ_LABELS: Record<number, string> = {
 // Converts paise to half-rupees for LMS (stores half the real figure).
 // Amounts ≥1L: ceil to nearest 0.5L first (matches UI fmtRound), then halve.
 // Amounts <1L: exact halve (matches UI fmtK display in K).
-function paiseToRupees(p: number | null): string {
-  if (p == null) return "0"
+function paiseToHalfRupees(p: number | null): number {
+  if (p == null) return 0
   const lakhs = p / 10000000
   if (lakhs >= 1) {
     const rounded = Math.ceil(lakhs * 2) / 2
-    return String(Math.round(rounded * 50000))
+    return Math.round(rounded * 50000)
   }
-  return String(Math.round(p / 200))
+  return Math.round(p / 200)
+}
+function paiseToRupees(p: number | null): string {
+  return String(paiseToHalfRupees(p))
 }
 
 serve(async (req) => {
@@ -162,8 +165,23 @@ serve(async (req) => {
     const vmPaise = Math.max(0, hasDeal && q.deal_vm_paise != null ? q.deal_vm_paise : (q.vm_q_paise || 0))
     const decorPaise = Math.max(0, hasDeal && q.deal_decor_paise != null ? q.deal_decor_paise : (q.decor_q_paise || 0))
     const djPaise = Math.max(0, hasDeal && q.deal_ent_paise != null ? q.deal_ent_paise : (q.dj_q_paise || 0))
-    const menuValueRupees = paiseToRupees(vmPaise)
-    const extraPlateRupees = (vmPaise && q.pax) ? String(Math.round(vmPaise / q.pax / 200)) : "0"
+
+    // Split V+M into per-person menu rate + venue rental lumpsum when possible.
+    // Menu rate feeds fisd_menu_rate (LMS multiplies by pax); leftover goes to fisd_venue_value.
+    const includeMenu = q.include_menu !== false
+    const pax = q.pax || 0
+    const perHeadPaise = q.per_head_rate || 0
+    const vmHalfRupees = paiseToHalfRupees(vmPaise)
+    const menuRateHalfRupees = (includeMenu && perHeadPaise > 0) ? Math.round(perHeadPaise / 200) : 0
+    const projMenuValue = menuRateHalfRupees * pax
+    const canSplit = includeMenu && projMenuValue > 0 && projMenuValue <= vmHalfRupees
+
+    const menuType = canSplit ? "Per Person" : "Lumpsum"
+    const menuRateStr = canSplit ? String(menuRateHalfRupees) : "0"
+    const menuValueStr = canSplit ? String(projMenuValue) : String(vmHalfRupees)
+    const venueValueStr = canSplit ? String(vmHalfRupees - projMenuValue) : "0"
+    const extraPlateStr = canSplit ? String(menuRateHalfRupees) : "0"
+
     const decorRupees = paiseToRupees(decorPaise)
     const djRupees = paiseToRupees(djPaise)
     const totalRupees = paiseToRupees(q.deal_value_paise || (vmPaise + (q.include_decor !== false ? decorPaise : 0) + (q.include_dj !== false ? djPaise : 0)) || q.total_q_paise)
@@ -181,12 +199,12 @@ serve(async (req) => {
       fisd_menu: MENU_ID_MAP[menuKey] || "8",
       fisd_pax_no: String(q.pax || 0),
       fisd_free_pax_no: "1",
-      fisd_menu_type: "Lumpsum",
-      fisd_menu_rate: "0",
-      fisd_extra_plate_charge: extraPlateRupees,
-      fisd_menu_value: menuValueRupees,
+      fisd_menu_type: menuType,
+      fisd_menu_rate: menuRateStr,
+      fisd_extra_plate_charge: extraPlateStr,
+      fisd_menu_value: menuValueStr,
       fisd_session: ["Dinner", "Sundowner", "Lunch"][q.slot ?? 0] || "Dinner",
-      fisd_venue_value: "0",
+      fisd_venue_value: venueValueStr,
       fisd_decoration_lumpsum: decorRupees,
       fisd_decor_type: "Enpaneled",
       fisd_decoration_remarks: DECOR_LABELS[q.decor_idx ?? 0] || "Premium",
