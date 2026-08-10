@@ -228,6 +228,12 @@ function QuoteCalculator({ profile }) {
   var [saving, setSaving] = useState(false)
   var [loadingQuotes, setLoadingQuotes] = useState(false)
   var [saveMsg, setSaveMsg] = useState('')
+  var [isDesktop, setIsDesktop] = useState(typeof window !== 'undefined' ? window.innerWidth >= 1024 : false)
+  useEffect(function () {
+    function onResize() { setIsDesktop(window.innerWidth >= 1024) }
+    window.addEventListener('resize', onResize)
+    return function () { window.removeEventListener('resize', onResize) }
+  }, [])
   var [quoteStatus, setQuoteStatus] = useState('draft')
   var [seasonDates, setSeasonDates] = useState(null)
   var [notes, setNotes] = useState('')
@@ -820,6 +826,14 @@ function QuoteCalculator({ profile }) {
     <div style={{ fontFamily: 'Segoe UI, sans-serif', color: '#3D2B2B' }}>
       <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}`}</style>
       {loadingDot}
+      {saveMsg && (<div style={{
+        position: 'fixed', top: 16, right: 16, zIndex: 200,
+        padding: '11px 18px', borderRadius: 10,
+        background: saveMsg.indexOf('Error') === 0 || saveMsg.indexOf('failed') !== -1 || saveMsg.indexOf('Allow') === 0 ? '#7F1D1D' : '#166534',
+        color: '#fff', fontSize: 13, fontWeight: 700,
+        boxShadow: '0 6px 20px rgba(0,0,0,.2)',
+        maxWidth: 360, lineHeight: 1.4,
+      }}>{saveMsg}</div>)}
 
       {/* Tab bar */}
       <div style={{ display: 'flex', marginBottom: 12, borderRadius: 12, overflow: 'hidden', border: '1px solid ' + C.border }}>
@@ -1165,7 +1179,12 @@ function QuoteCalculator({ profile }) {
           🚧 Pricing coming soon for {venName}
         </div>)}
 
-        {!isPlaceholder && <>
+        {!isPlaceholder && (<div style={{
+          display: isDesktop ? 'grid' : 'block',
+          gridTemplateColumns: isDesktop ? '1fr 380px' : undefined,
+          gap: isDesktop ? 16 : 0,
+          alignItems: isDesktop ? 'start' : undefined,
+        }}>
         {/* Wedding toggle */}
         <div style={{ display: 'flex', marginBottom: 12, borderRadius: 12, overflow: 'hidden', border: '2px solid ' + C.border }}>
           {['Wedding', 'Non-Wedding'].map(function (label, idx) {
@@ -1328,7 +1347,7 @@ function QuoteCalculator({ profile }) {
         </SectionCard>
 
         {/* GRAND TOTAL */}
-        <div style={{ background: 'linear-gradient(135deg,#4A1111,#8B2D2D)', borderRadius: 14, padding: 18, marginBottom: 12, color: '#fff' }}>
+        <div style={Object.assign({ background: 'linear-gradient(135deg,#4A1111,#8B2D2D)', borderRadius: 14, padding: 18, marginBottom: 12, color: '#fff' }, isDesktop ? { gridColumn: '2', gridRow: '1 / span 100', position: 'sticky', top: 12, alignSelf: 'start' } : {})}>
           <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1.5, textTransform: 'uppercase', opacity: 0.5, marginBottom: 12 }}>Grand Total</div>
           <RateRow showAll={true} q={fmtRound(adjTotal.q || 0)} t={fmtRound(adjTotal.t || 0)} f={fmtRound(adjTotal.f || 0)} />
           {(<div style={{ fontSize: 10, color: 'rgba(255,255,255,.35)', textAlign: 'center', marginTop: 8 }}>
@@ -1361,7 +1380,7 @@ function QuoteCalculator({ profile }) {
             opacity: (analyzing || !calcResult) ? 0.5 : 1,
           }}>{analyzing ? 'Analyzing...' : '✨ AI Analysis'}</button>
 
-          {saveMsg && (<div style={{ textAlign: 'center', marginTop: 6, fontSize: 12, color: saveMsg.startsWith('Error') ? '#FCA5A5' : '#86EFAC' }}>{saveMsg}</div>)}
+          
 
           {savedId && <StatusBar quoteStatus={quoteStatus} onUpdate={updateStatus} />}
           {savedId && lmsRef && (
@@ -1564,7 +1583,7 @@ function QuoteCalculator({ profile }) {
           </div>
         </SectionCard>}
 
-        </>}
+        </div>)}
         <button onClick={function () { setPage(0) }} style={{
           width: '100%', padding: 12, borderRadius: 10, border: '2px solid ' + C.border,
           background: '#fff', color: C.muted, fontSize: 14, fontWeight: 600, cursor: 'pointer', marginBottom: 10,

@@ -431,7 +431,7 @@ function Shell({ profile, onSignOut }) {
       )}
 
       {/* Content */}
-      <main className="max-w-[540px] mx-auto px-4 py-4 pb-8">
+      <main className={(tab === 'quote' ? "max-w-[1280px]" : "max-w-[540px]") + " mx-auto px-4 py-4 pb-8"}>
 
         {/* Level 0: Group Cards */}
         {!activeGroup && !tab && (
