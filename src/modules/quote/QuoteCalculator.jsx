@@ -178,6 +178,265 @@ function StatusBar({ quoteStatus, onUpdate }) {
   )
 }
 
+function Sidebar({ page, setPage, quotes, savedId, onLoadQuote, loadingQuotes, profile }) {
+  var steps = [{ key: 0, label: 'Guest Info' }, { key: 1, label: 'Calculator' }]
+  var initial = ((profile && profile.name) || '?').charAt(0).toUpperCase()
+  return (
+    <aside style={{
+      position: 'sticky', top: 12, alignSelf: 'start',
+      background: '#4A1111', color: '#fff', borderRadius: 14,
+      padding: 16, display: 'flex', flexDirection: 'column', gap: 16,
+      maxHeight: 'calc(100vh - 40px)',
+    }}>
+      <div>
+        <div style={{ fontSize: 15, fontWeight: 800, letterSpacing: 0.5 }}>
+          AMBRIA<span style={{ color: '#D4872C' }}> ●</span>
+        </div>
+        <div style={{ fontSize: 11, opacity: 0.6, marginTop: 2, letterSpacing: 0.5 }}>Quote calc</div>
+      </div>
+
+      <div>
+        <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1.5, textTransform: 'uppercase', opacity: 0.5, marginBottom: 8 }}>Workflow</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {steps.map(function (s) {
+            var active = page === s.key
+            return (
+              <button key={s.key} onClick={function () { setPage(s.key) }} style={{
+                display: 'flex', alignItems: 'center', gap: 10,
+                padding: '9px 10px', borderRadius: 9,
+                background: active ? '#6B1F1F' : 'transparent',
+                border: 'none', color: active ? '#fff' : 'rgba(255,255,255,.55)',
+                cursor: 'pointer', textAlign: 'left', width: '100%',
+                fontSize: 13, fontWeight: active ? 700 : 600, fontFamily: 'inherit',
+              }}>
+                <span style={{
+                  width: 22, height: 22, borderRadius: '50%',
+                  background: active ? '#D4872C' : 'rgba(255,255,255,.1)',
+                  color: active ? '#4A1111' : 'rgba(255,255,255,.5)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: 11, fontWeight: 800, flexShrink: 0,
+                }}>{s.key + 1}</span>
+                {s.label}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+        <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1.5, textTransform: 'uppercase', opacity: 0.5, marginBottom: 8 }}>Recent</div>
+        <div style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {loadingQuotes ? (
+            <div style={{ fontSize: 11, opacity: 0.5, padding: '6px 4px' }}>Loading...</div>
+          ) : quotes.length === 0 ? (
+            <div style={{ fontSize: 11, opacity: 0.5, padding: '6px 4px' }}>No saved quotes</div>
+          ) : quotes.slice(0, 10).map(function (q) {
+            var isActive = savedId === q.id
+            return (
+              <button key={q.id} onClick={function () { onLoadQuote(q) }} style={{
+                textAlign: 'left', padding: '8px 10px', borderRadius: 8,
+                background: isActive ? 'rgba(212,135,44,.15)' : 'transparent',
+                border: '1px solid ' + (isActive ? 'rgba(212,135,44,.4)' : 'transparent'),
+                color: '#fff', cursor: 'pointer', fontFamily: 'inherit',
+              }}>
+                <div style={{ fontSize: 12, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{q.guest_name || 'Untitled'}</div>
+                <div style={{ fontSize: 10, opacity: 0.55, marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{q.venue_name} · {q.pax}pax</div>
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, paddingTop: 12, borderTop: '1px solid rgba(255,255,255,.1)' }}>
+        <div style={{
+          width: 32, height: 32, borderRadius: '50%',
+          background: '#D4872C', color: '#4A1111',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: 13, fontWeight: 800, flexShrink: 0,
+        }}>{initial}</div>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{(profile && profile.name) || 'User'}</div>
+          <div style={{ fontSize: 10, opacity: 0.55, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{(profile && profile.role) || ''}</div>
+        </div>
+      </div>
+    </aside>
+  )
+}
+
+function LivePreview({ page, guestName, venName, etLabel, pax, slotLabel, effVm, effDecor, effEnt, effTotal, adjTotalQ, adjTotalT, adjTotalF, hasDeal, savedId, lmsRef, discountAmt, isDesktop }) {
+  var isP0 = page === 0
+  function lineVal(v) { return isP0 ? '\u2014\u00B7\u2014' : ('\u20B9' + (Math.round(v * 10) / 10) + 'L') }
+  var lineRow = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,.08)' }
+  var valStyle = { fontSize: 13, fontWeight: 700, color: isP0 ? 'rgba(255,255,255,.4)' : '#fff' }
+  var labelStyle = { fontSize: 12, color: isP0 ? 'rgba(255,255,255,.4)' : 'rgba(255,255,255,.7)' }
+  return (
+    <div style={Object.assign(
+      { display: 'flex', flexDirection: 'column', gap: 12 },
+      isDesktop ? { position: 'sticky', top: 12, alignSelf: 'start' } : { marginTop: 12 }
+    )}>
+      <div style={{ background: '#4A1111', color: '#fff', borderRadius: 14, padding: 16 }}>
+        <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1.5, textTransform: 'uppercase', color: '#D4872C', marginBottom: 10 }}>Live Preview</div>
+        <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{guestName || 'Guest'}</div>
+        <div style={{ fontSize: 11, opacity: 0.55, marginBottom: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {[venName, etLabel, pax + 'pax', slotLabel].filter(function (x) { return x }).join(' \u00B7 ')}
+        </div>
+        <div style={lineRow}>
+          <span style={labelStyle}>Venue + Menu</span>
+          <span style={valStyle}>{lineVal(effVm)}</span>
+        </div>
+        <div style={lineRow}>
+          <span style={labelStyle}>D&eacute;cor</span>
+          <span style={valStyle}>{lineVal(effDecor)}</span>
+        </div>
+        <div style={Object.assign({}, lineRow, { borderBottom: 'none' })}>
+          <span style={labelStyle}>Entertainment</span>
+          <span style={valStyle}>{lineVal(effEnt)}</span>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, marginTop: 12 }}>
+          {[
+            { label: 'Q', val: isP0 ? '\u2014' : ('\u20B9' + (Math.ceil(adjTotalQ * 2) / 2) + 'L'), color: '#4ADE80', bg: 'rgba(74,222,128,.12)' },
+            { label: 'T', val: isP0 ? '\u2014' : ('\u20B9' + (Math.ceil(adjTotalT * 2) / 2) + 'L'), color: '#60A5FA', bg: 'rgba(96,165,250,.12)' },
+            { label: 'F', val: isP0 ? '\u2014' : ('\u20B9' + (Math.ceil(adjTotalF * 2) / 2) + 'L'), color: '#F87171', bg: 'rgba(248,113,113,.12)' },
+          ].map(function (t) {
+            return (
+              <div key={t.label} style={{ background: t.bg, borderRadius: 8, padding: '8px 4px', textAlign: 'center' }}>
+                <div style={{ fontSize: 9, fontWeight: 700, color: t.color, letterSpacing: 0.5, marginBottom: 3 }}>{t.label}</div>
+                <div style={{ fontSize: 12, fontWeight: 800, color: t.color }}>{t.val}</div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      {isP0 ? (
+        <div style={{ background: '#fff', borderRadius: 12, padding: 14, border: '1px solid #E8D8C8', fontSize: 11, color: '#8B7B6B', lineHeight: 1.5 }}>
+          Fill guest info, then continue to the calculator to see live pricing.
+        </div>
+      ) : (
+        <div style={{ background: '#fff', borderRadius: 12, padding: 14, border: '1px solid #E8D8C8' }}>
+          {hasDeal && (
+            <div style={{ marginBottom: 10 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', color: '#8B7B6B', marginBottom: 4 }}>Negotiated total</div>
+              <div style={{ fontSize: 18, fontWeight: 800, color: '#4A1111' }}>{'\u20B9' + (Math.ceil(effTotal * 2) / 2) + 'L'}</div>
+              {discountAmt > 0 && (
+                <div style={{ fontSize: 10, color: '#8B7B6B', marginTop: 2 }}>Discount: -\u20B9{discountAmt}L</div>
+              )}
+            </div>
+          )}
+          <div style={{ fontSize: 11, color: '#8B7B6B', display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: lmsRef ? '#22C55E' : savedId ? '#D4872C' : '#9CA3AF' }}></span>
+            {lmsRef ? 'Sent \u00B7 LMS #' + lmsRef : savedId ? 'Saved \u00B7 not pushed' : 'Draft \u00B7 not saved'}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function StepCard({ step, title, subtitle, children }) {
+  return (
+    <div style={{
+      background: '#fff', borderRadius: 14, padding: 16,
+      border: '1px solid #E8D8C8', marginBottom: 12,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+        <span style={{
+          width: 24, height: 24, borderRadius: '50%',
+          background: '#6B1F1F', color: '#D4872C',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: 11, fontWeight: 800, flexShrink: 0,
+        }}>{step}</span>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#4A1111', letterSpacing: 0.5 }}>{title}</div>
+          {subtitle && (
+            <div style={{ fontSize: 11, color: '#8B7B6B', marginTop: 2 }}>{subtitle}</div>
+          )}
+        </div>
+      </div>
+      {children}
+    </div>
+  )
+}
+
+function ActionBar({ page, savedId, lmsRef, pushing, saving, analyzing, calcResult, showProposal, showAnalysis, onSaveQuote, onPrint, onPushLms, onToggleProposal, onToggleAI, onContinue, onBack, onNewQuote }) {
+  var isP0 = page === 0
+  var btnSec = {
+    padding: '9px 12px', borderRadius: 9, border: '1px solid #E8D8C8',
+    background: '#fff', color: '#8B7B6B', fontSize: 12, fontWeight: 600,
+    cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
+  }
+  return (
+    <div style={{
+      position: 'sticky', bottom: 0, zIndex: 90,
+      background: '#fff', borderTop: '1px solid #E8D8C8',
+      padding: '10px 16px', marginTop: 12,
+      display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
+      boxShadow: '0 -4px 16px rgba(0,0,0,0.04)',
+    }}>
+      {!isP0 && (
+        <button onClick={onBack} style={btnSec}>{'\u2190 Back'}</button>
+      )}
+
+      <div style={{ flex: 1 }} />
+
+      {isP0 && savedId && (
+        <button onClick={onNewQuote} style={btnSec}>+ New</button>
+      )}
+
+      {!isP0 && (
+        <button onClick={onToggleProposal} style={Object.assign({}, btnSec, showProposal ? { background: '#FFF8F0', color: '#4A1111' } : {})}>
+          {showProposal ? 'Hide proposal' : 'Proposal'}
+        </button>
+      )}
+
+      {!isP0 && (
+        <button onClick={onPrint} disabled={!calcResult}
+          style={Object.assign({}, btnSec, { opacity: !calcResult ? 0.5 : 1, cursor: !calcResult ? 'not-allowed' : 'pointer' })}>
+          🖨️ Print
+        </button>
+      )}
+
+      {!isP0 && (
+        <button onClick={onToggleAI} disabled={analyzing || !calcResult}
+          style={Object.assign({}, btnSec,
+            showAnalysis ? { background: '#EFF6FF', color: '#1D4ED8' } : {},
+            { opacity: (analyzing || !calcResult) ? 0.5 : 1, cursor: (analyzing || !calcResult) ? 'not-allowed' : 'pointer' })}>
+          {analyzing ? 'Analyzing...' : '\u2728 AI'}
+        </button>
+      )}
+
+      {!isP0 && (
+        <button onClick={onSaveQuote} disabled={saving || pushing || !calcResult} style={{
+          padding: '10px 18px', borderRadius: 9, border: 'none',
+          background: '#D4872C', color: '#fff', fontSize: 13, fontWeight: 700,
+          cursor: (saving || pushing || !calcResult) ? 'not-allowed' : 'pointer',
+          fontFamily: 'inherit', whiteSpace: 'nowrap',
+          opacity: (saving || pushing || !calcResult) ? 0.5 : 1,
+        }}>{saving ? 'Saving...' : savedId ? 'Update quote' : 'Save quote'}</button>
+      )}
+
+      {!isP0 && savedId && !lmsRef && (
+        <button onClick={onPushLms} disabled={pushing} style={{
+          padding: '10px 18px', borderRadius: 9, border: 'none',
+          background: 'linear-gradient(135deg,#1D4ED8,#2563EB)', color: '#fff',
+          fontSize: 13, fontWeight: 700,
+          cursor: pushing ? 'not-allowed' : 'pointer', fontFamily: 'inherit',
+          whiteSpace: 'nowrap', opacity: pushing ? 0.5 : 1,
+        }}>{pushing ? 'Pushing...' : 'Push to LMS'}</button>
+      )}
+
+      {isP0 && (
+        <button onClick={onContinue} style={{
+          padding: '10px 20px', borderRadius: 9, border: 'none',
+          background: 'linear-gradient(135deg,#4A1111,#8B2D2D)', color: '#fff',
+          fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
+          whiteSpace: 'nowrap',
+        }}>{'Continue \u2192'}</button>
+      )}
+    </div>
+  )
+}
+
 // ═══ COMPONENT ═══
 
 function QuoteCalculator({ profile }) {
@@ -234,6 +493,9 @@ function QuoteCalculator({ profile }) {
     window.addEventListener('resize', onResize)
     return function () { window.removeEventListener('resize', onResize) }
   }, [])
+  useEffect(function () {
+    if (isDesktop) loadQuotes()
+  }, [isDesktop])
   var [quoteStatus, setQuoteStatus] = useState('draft')
   var [seasonDates, setSeasonDates] = useState(null)
   var [notes, setNotes] = useState('')
@@ -825,7 +1087,7 @@ function QuoteCalculator({ profile }) {
   ) : null
 
   return (
-    <div style={{ fontFamily: 'Segoe UI, sans-serif', color: '#3D2B2B' }}>
+    <div style={{ fontFamily: 'Segoe UI, sans-serif', color: '#3D2B2B', background: '#F7F1EA', minHeight: '100%' }}>
       <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}`}</style>
       {loadingDot}
       {saveMsg && (<div style={{
@@ -837,14 +1099,27 @@ function QuoteCalculator({ profile }) {
         maxWidth: 360, lineHeight: 1.4,
       }}>{saveMsg}</div>)}
 
-      {/* Tab bar */}
+      <div style={Object.assign(
+        { padding: isDesktop ? '0 20px' : '0 16px' },
+        isDesktop ? { display: 'grid', gridTemplateColumns: '220px 1fr 320px', gap: 20, alignItems: 'start' } : {}
+      )}>
+        {isDesktop && (
+          <Sidebar page={page} setPage={setPage} quotes={quotes} savedId={savedId}
+            onLoadQuote={loadQuote} loadingQuotes={loadingQuotes} profile={profile} />
+        )}
+        <div>
+
+      {/* Tab bar — mobile only */}
+      {!isDesktop && (
       <div style={{ display: 'flex', marginBottom: 12, borderRadius: 12, overflow: 'hidden', border: '1px solid ' + C.border }}>
         {['Guest Info', 'Calculator'].map(function (label, idx) {
           return <SlotButton key={idx} label={label} on={page === idx} onClick={function () { setPage(idx) }} />
         })}
       </div>
+      )}
 
-      {/* Quotes toolbar */}
+      {/* Quotes toolbar — mobile only (desktop uses sidebar) */}
+      {!isDesktop && (
       <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
         <button onClick={function () { if (!showQuotes) loadQuotes(); setShowQuotes(!showQuotes) }} style={{
           flex: 1, padding: '9px 12px', borderRadius: 9, border: '2px solid ' + (showQuotes ? C.gold : C.border),
@@ -856,6 +1131,7 @@ function QuoteCalculator({ profile }) {
           background: '#fff', color: C.muted, fontSize: 13, fontWeight: 600, cursor: 'pointer',
         }}>+ New</button>)}
       </div>
+      )}
 
       {/* Quotes list */}
       {showQuotes && (
@@ -899,214 +1175,230 @@ function QuoteCalculator({ profile }) {
 
       {/* ═══ PAGE 0: GUEST INFO ═══ */}
       {page === 0 && (<>
-        <SectionCard title="Guest / Lead Info">
-          <div style={{ fontSize: 12, color: C.muted, marginBottom: 5, fontWeight: 600 }}>Guest Name</div>
-          <input type="text" value={guestName} placeholder="Full name"
-            onChange={function (e) { setGuestName(e.target.value) }}
-            style={{ width: '100%', padding: 11, borderRadius: 9, border: '2px solid ' + C.border, fontSize: 14, marginBottom: 10 }} />
-
-          <div style={{ fontSize: 12, color: C.muted, marginBottom: 5, fontWeight: 600 }}>Address</div>
-          <input type="text" value={guestAddress} placeholder="Locality / Area"
-            onChange={function (e) { setGuestAddress(e.target.value) }}
-            style={{ width: '100%', padding: 11, borderRadius: 9, border: '2px solid ' + C.border, fontSize: 14, marginBottom: 10 }} />
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+        <StepCard step={1} title="Guest / lead" subtitle="Contact and event date">
+          <div style={{ display: 'grid', gridTemplateColumns: isDesktop ? '2fr 1fr' : '1fr', gap: 10, marginBottom: 10 }}>
+            <div>
+              <div style={{ fontSize: 12, color: C.muted, marginBottom: 5, fontWeight: 600 }}>Guest Name</div>
+              <input type="text" value={guestName} placeholder="Full name"
+                onChange={function (e) { setGuestName(e.target.value) }}
+                style={{ width: '100%', padding: 11, borderRadius: 9, border: '2px solid ' + C.border, fontSize: 14, boxSizing: 'border-box', fontFamily: 'inherit' }} />
+            </div>
             <div>
               <div style={{ fontSize: 12, color: C.muted, marginBottom: 5, fontWeight: 600 }}>Phone</div>
               <input type="tel" value={guestPhone} placeholder="+91 98765 43210"
                 onChange={function (e) { setGuestPhone(e.target.value.replace(/[^0-9+\- ]/g, '').slice(0, 16)) }}
-                style={{ width: '100%', padding: 11, borderRadius: 9, border: '2px solid ' + C.border, fontSize: 14, marginBottom: 10 }} />
+                style={{ width: '100%', padding: 11, borderRadius: 9, border: '2px solid ' + C.border, fontSize: 14, boxSizing: 'border-box', fontFamily: 'inherit' }} />
             </div>
+          </div>
+
+          <div style={{ fontSize: 12, color: C.muted, marginBottom: 5, fontWeight: 600 }}>Address</div>
+          <input type="text" value={guestAddress} placeholder="Locality / Area"
+            onChange={function (e) { setGuestAddress(e.target.value) }}
+            style={{ width: '100%', padding: 11, borderRadius: 9, border: '2px solid ' + C.border, fontSize: 14, marginBottom: 10, boxSizing: 'border-box', fontFamily: 'inherit' }} />
+
+          <div style={{ display: 'grid', gridTemplateColumns: isDesktop ? '1fr 1fr 1fr' : '1fr', gap: 10 }}>
             <div>
               <div style={{ fontSize: 12, color: C.muted, marginBottom: 5, fontWeight: 600 }}>Event Date</div>
               <EventDatePicker value={eventDate} onChange={handleDateChange} label="" collapsible />
-              {dc >= 0 && (<div style={{ padding: '6px 10px', borderRadius: 7, fontSize: 11, fontWeight: 600, background: CAT_BG[dc], color: CAT_COLORS[dc], border: '1px solid ' + C.border }}>
+              {dc >= 0 && (<div style={{ padding: '6px 10px', borderRadius: 7, fontSize: 11, fontWeight: 600, marginTop: 4, background: CAT_BG[dc], color: CAT_COLORS[dc], border: '1px solid ' + C.border }}>
                 {fmtDate(eventDate)} – {CAT_LABELS[dc]}
               </div>)}
               {isSummer && (<div style={{ padding: '6px 10px', borderRadius: 7, fontSize: 11, fontWeight: 600, marginTop: 4, background: '#FFFBEB', color: '#B45309', border: '1px solid #FDE68A' }}>
                 ☀️ Summer – Consider Banquet
               </div>)}
             </div>
-          </div>
-
-          <div style={{ fontSize: 12, color: C.muted, marginBottom: 5, fontWeight: 600 }}>Slot</div>
-          <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
-            {SLOTS.map(function (s, idx) {
-              return <SlotButton key={idx} label={s} on={slot === idx} onClick={function () { setSlot(idx) }} />
-            })}
-          </div>
-
-          <div style={{ fontSize: 12, color: C.muted, marginBottom: 5, fontWeight: 600 }}>Mode of Inquiry</div>
-            <select value={inquiryMode} onChange={function (e) { setInquiryMode(e.target.value) }}
-              style={{
-                width: '100%', padding: 11, borderRadius: 9, border: '2px solid ' + C.border,
-                fontSize: 14, marginBottom: 10, background: '#fff', color: inquiryMode ? C.maroon : C.muted,
-              }}>
-              <option value="">Select mode...</option>
-              {inquiryModes.map(function (m) { return <option key={m} value={m}>{m}</option> })}
-            </select>
-
-          <div style={{ fontSize: 12, color: C.muted, marginBottom: 5, fontWeight: 600 }}>Priority</div>
-            <select value={priority} onChange={function (e) { setPriority(e.target.value) }}
-              style={{
-                width: '100%', padding: 11, borderRadius: 9, border: '2px solid ' + C.border,
-                fontSize: 14, marginBottom: 10, background: '#fff', color: priority ? C.maroon : C.muted,
-              }}>
-              <option value="">Select priority...</option>
-              <option value="Silver">Silver</option>
-              <option value="Gold">Gold</option>
-              <option value="Platinum">Platinum</option>
-              <option value="Diamond">Diamond</option>
-            </select>
-
-          <div style={{ fontSize: 12, color: C.muted, marginBottom: 5, fontWeight: 600 }}>Event Type</div>
-            <div style={{ position: 'relative', marginBottom: 6 }}>
-              <input value={etSearch} placeholder={currentET.icon + ' ' + currentET.label}
-                onChange={function (e) { setEtSearch(e.target.value) }}
-                onFocus={function () { setEtSearch('') }}
-                onBlur={function () { setTimeout(function () { setEtSearch('') }, 200) }}
+            <div>
+              <div style={{ fontSize: 12, color: C.muted, marginBottom: 5, fontWeight: 600 }}>Mode of Inquiry</div>
+              <select value={inquiryMode} onChange={function (e) { setInquiryMode(e.target.value) }}
                 style={{
                   width: '100%', padding: 11, borderRadius: 9, border: '2px solid ' + C.border,
-                  fontSize: 14, background: '#fff', color: etSearch ? C.maroon : C.muted,
-                  fontFamily: 'inherit', boxSizing: 'border-box',
-                }} />
-              {etSearch !== '' && (function () {
-                var filtered = []
-                for (var i = 0; i < eventTypes.length; i++) {
-                  if (eventTypes[i].label.toLowerCase().indexOf(etSearch.toLowerCase()) >= 0) filtered.push({ et: eventTypes[i], idx: i })
+                  fontSize: 14, background: '#fff', color: inquiryMode ? C.maroon : C.muted, boxSizing: 'border-box', fontFamily: 'inherit',
+                }}>
+                <option value="">Select mode...</option>
+                {inquiryModes.map(function (m) { return <option key={m} value={m}>{m}</option> })}
+              </select>
+            </div>
+            <div>
+              <div style={{ fontSize: 12, color: C.muted, marginBottom: 5, fontWeight: 600 }}>Priority</div>
+              <select value={priority} onChange={function (e) { setPriority(e.target.value) }}
+                style={{
+                  width: '100%', padding: 11, borderRadius: 9, border: '2px solid ' + C.border,
+                  fontSize: 14, background: '#fff', color: priority ? C.maroon : C.muted, boxSizing: 'border-box', fontFamily: 'inherit',
+                }}>
+                <option value="">Select priority...</option>
+                <option value="Silver">Silver</option>
+                <option value="Gold">Gold</option>
+                <option value="Platinum">Platinum</option>
+                <option value="Diamond">Diamond</option>
+              </select>
+            </div>
+          </div>
+        </StepCard>
+
+        <StepCard step={2} title="Event details" subtitle="Type, slot, venue and pax">
+          <div style={{ display: 'grid', gridTemplateColumns: isDesktop ? '1fr 1fr' : '1fr', gap: 16 }}>
+
+            {/* Left column */}
+            <div>
+              <div style={{ fontSize: 12, color: C.muted, marginBottom: 5, fontWeight: 600 }}>Event Type</div>
+              <div style={{ position: 'relative', marginBottom: 6 }}>
+                <input value={etSearch} placeholder={currentET.icon + ' ' + currentET.label}
+                  onChange={function (e) { setEtSearch(e.target.value) }}
+                  onFocus={function () { setEtSearch('') }}
+                  onBlur={function () { setTimeout(function () { setEtSearch('') }, 200) }}
+                  style={{
+                    width: '100%', padding: 11, borderRadius: 9, border: '2px solid ' + C.border,
+                    fontSize: 14, background: '#fff', color: etSearch ? C.maroon : C.muted,
+                    fontFamily: 'inherit', boxSizing: 'border-box',
+                  }} />
+                {etSearch !== '' && (function () {
+                  var filtered = []
+                  for (var i = 0; i < eventTypes.length; i++) {
+                    if (eventTypes[i].label.toLowerCase().indexOf(etSearch.toLowerCase()) >= 0) filtered.push({ et: eventTypes[i], idx: i })
+                  }
+                  if (filtered.length === 0) return null
+                  return (
+                    <div style={{
+                      position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50,
+                      background: '#fff', border: '2px solid ' + C.border, borderRadius: 9,
+                      maxHeight: 200, overflowY: 'auto', marginTop: 2,
+                      boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+                    }}>
+                      {filtered.map(function (f) {
+                        return (
+                          <button key={f.idx} onMouseDown={function () { handleEventType(f.idx); setEtSearch('') }}
+                            style={{
+                              width: '100%', padding: '10px 12px', border: 'none', background: eventTypeIdx === f.idx ? '#FFF8F0' : '#fff',
+                              color: C.maroon, fontSize: 13, fontWeight: eventTypeIdx === f.idx ? 700 : 500,
+                              cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit',
+                              borderBottom: '1px solid ' + C.border, display: 'flex', alignItems: 'center', gap: 6,
+                            }}>{f.et.icon} {f.et.label} {f.et.wedding ? '💒' : ''}</button>
+                        )
+                      })}
+                    </div>
+                  )
+                })()}
+              </div>
+              <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
+                {eventTypes.map(function (et, idx) {
+                  if (!et.pinned) return null
+                  var on = eventTypeIdx === idx
+                  return (
+                    <button key={idx} onClick={function () { handleEventType(idx) }} style={{
+                      padding: '5px 12px', borderRadius: 20, border: '2px solid ' + (on ? C.gold : C.border),
+                      background: on ? '#FFF8F0' : '#fff', color: on ? C.maroon : C.muted,
+                      fontSize: 12, fontWeight: on ? 700 : 600, cursor: 'pointer',
+                      display: 'flex', alignItems: 'center', gap: 5, fontFamily: 'inherit',
+                    }}>
+                      <span style={{ fontSize: 14 }}>{et.icon}</span>
+                      {et.label}
+                    </button>
+                  )
+                })}
+              </div>
+
+              <div style={{ fontSize: 12, color: C.muted, marginBottom: 5, fontWeight: 600 }}>Slot</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6 }}>
+                {SLOTS.map(function (s, idx) {
+                  return <SlotButton key={idx} label={s} on={slot === idx} onClick={function () { setSlot(idx) }} />
+                })}
+              </div>
+            </div>
+
+            {/* Right column */}
+            <div>
+              <div style={{ fontSize: 12, color: C.muted, marginBottom: 5, fontWeight: 600 }}>Venue</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
+                {parents.map(function (p) {
+                  var on = parentId === p.id
+                  var isPh = p.status === 'placeholder'
+                  return (<button key={p.id} onClick={function () {
+                    if (isPh) return
+                    setParentId(p.id)
+                    setVenueId(p.has_subs ? '' : p.id)
+                    setLocationId(''); setLocationName('')
+                  }} style={{
+                    textAlign: 'left', width: '100%', padding: 10, borderRadius: 10,
+                    border: '2px solid ' + (on && !isPh ? C.gold : C.border), background: on && !isPh ? '#FFF8F0' : '#fff',
+                    color: isPh ? '#ccc' : on ? C.maroon : C.muted, fontSize: 12, fontWeight: on ? 700 : 600,
+                    cursor: isPh ? 'not-allowed' : 'pointer', opacity: isPh ? 0.5 : 1,
+                    fontFamily: 'inherit',
+                  }}><div>{isPh ? '🚧 ' : ''}{p.name}</div><div style={{ fontSize: 10, opacity: 0.6, marginTop: 2, fontWeight: 500 }}>{isPh ? 'Coming soon' : p.location}</div></button>)
+                })}
+              </div>
+
+              {currentParent && currentParent.has_subs && currentParent.live_subs.length > 0 && (<>
+                <div style={{ fontSize: 12, color: C.muted, marginBottom: 5, fontWeight: 600 }}>Sub-venue</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
+                  {currentParent.live_subs.map(function (s) {
+                    var on = venueId === s.id
+                    return (<button key={s.id} onClick={function () {
+                      setVenueId(s.id); setLocationId(''); setLocationName('')
+                    }} style={{
+                      textAlign: 'left', width: '100%', padding: 10, borderRadius: 10,
+                      border: '2px solid ' + (on ? C.gold : C.border), background: on ? '#FFF8F0' : '#fff',
+                      color: on ? C.maroon : C.muted, fontSize: 12, fontWeight: on ? 700 : 600, cursor: 'pointer',
+                      fontFamily: 'inherit',
+                    }}>{s.name}</button>)
+                  })}
+                </div>
+              </>)}
+
+              {(function () {
+                var locs = null
+                if (lmsLocations && currentLeaf) {
+                  locs = lmsLocations[currentLeaf.parent_id] || lmsLocations[currentLeaf.id] || null
+                  if (!locs) {
+                    var LEG_ID_TO_IDX = { pushpanjali: '0', manaktala: '1', emerald_green: '1', alstonia: '1', exotica: '3', aura: '3', valencia: '3', restro: '16', restro_lawn: '16', restro_banquet: '16' }
+                    var legKey = LEG_ID_TO_IDX[currentLeaf.parent_id] || LEG_ID_TO_IDX[currentLeaf.id]
+                    if (legKey) locs = lmsLocations[legKey] || null
+                  }
                 }
-                if (filtered.length === 0) return null
-                return (
-                  <div style={{
-                    position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50,
-                    background: '#fff', border: '2px solid ' + C.border, borderRadius: 9,
-                    maxHeight: 200, overflowY: 'auto', marginTop: 2,
-                    boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+                if (!locs || locs.length === 0) return null
+                return (<>
+                  <div style={{ fontSize: 12, color: C.muted, marginBottom: 5, fontWeight: 600 }}>Location / Hall</div>
+                  <select value={locationId} onChange={function (e) {
+                    var sel = locs.find(function (l) { return l.id === e.target.value })
+                    setLocationId(e.target.value)
+                    setLocationName(sel ? sel.name : '')
+                  }} style={{
+                    width: '100%', padding: 11, borderRadius: 9, border: '2px solid ' + (locationId ? C.gold : C.border),
+                    fontSize: 14, marginBottom: 10, background: '#fff', color: locationId ? C.maroon : C.muted, boxSizing: 'border-box', fontFamily: 'inherit',
                   }}>
-                    {filtered.map(function (f) {
-                      return (
-                        <button key={f.idx} onMouseDown={function () { handleEventType(f.idx); setEtSearch('') }}
-                          style={{
-                            width: '100%', padding: '10px 12px', border: 'none', background: eventTypeIdx === f.idx ? '#FFF8F0' : '#fff',
-                            color: C.maroon, fontSize: 13, fontWeight: eventTypeIdx === f.idx ? 700 : 500,
-                            cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit',
-                            borderBottom: '1px solid ' + C.border, display: 'flex', alignItems: 'center', gap: 6,
-                          }}>{f.et.icon} {f.et.label} {f.et.wedding ? '💒' : ''}</button>
-                      )
+                    <option value="">Select location...</option>
+                    {locs.map(function (l) { return <option key={l.id} value={l.id}>{l.name}</option> })}
+                  </select>
+                </>)
+              })()}
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+                <div>
+                  <div style={{ fontSize: 12, color: C.muted, marginBottom: 5, fontWeight: 600 }}>Food</div>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    {[['Veg', '#2D6A2E', '#E8F5E9'], ['Non-Veg', '#991B1B', '#FEF2F2']].map(function (f, idx) {
+                      var on = foodPref === idx
+                      return (<button key={idx} onClick={function () { handleFoodPref(idx) }} style={{
+                        flex: 1, padding: 10, borderRadius: 9, border: '2px solid ' + (on ? f[1] : C.border),
+                        background: on ? f[2] : '#fff', color: on ? f[1] : C.muted,
+                        fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
+                      }}>{f[0]}</button>)
                     })}
                   </div>
-                )
-              })()}
+                </div>
+                <div>
+                  <div style={{ fontSize: 12, color: C.muted, marginBottom: 5, fontWeight: 600 }}>Pax</div>
+                  <input type="number" inputMode="numeric" min={50} max={2000} value={pax}
+                    onChange={function (e) { var v = +e.target.value; if (v >= 0 && v <= 2000) setPax(v) }}
+                    onBlur={function (e) { var v = +e.target.value; if (v < 50) setPax(50); else if (v > 2000) setPax(2000) }}
+                    style={{ width: '100%', padding: 10, borderRadius: 9, border: '2px solid ' + C.border, fontSize: 14, fontWeight: 700, textAlign: 'center', color: C.maroon, background: '#fff', fontFamily: 'inherit', boxSizing: 'border-box' }} />
+                </div>
+              </div>
+              <input type="range" min={50} max={2000} step={5} value={pax}
+                onInput={function (e) { setPax(+e.target.value) }} style={{ width: '100%', accentColor: C.maroon2 }} />
             </div>
-            <div style={{ display: 'flex', gap: 6, marginBottom: 10, flexWrap: 'wrap' }}>
-              {eventTypes.map(function (et, idx) {
-                if (!et.pinned) return null
-                var on = eventTypeIdx === idx
-                return (
-                  <button key={idx} onClick={function () { handleEventType(idx) }} style={{
-                    padding: '6px 14px', borderRadius: 20, border: '2px solid ' + (on ? C.gold : C.border),
-                    background: on ? '#FFF8F0' : '#fff', color: on ? C.maroon : C.muted,
-                    fontSize: 12, fontWeight: on ? 700 : 600, cursor: 'pointer',
-                    display: 'flex', alignItems: 'center', gap: 5,
-                  }}>
-                    <span style={{ fontSize: 15 }}>{et.icon}</span>
-                    {et.label}
-                  </button>
-                )
-              })}
-            </div>
-
-          <div style={{ fontSize: 12, color: C.muted, marginBottom: 5, fontWeight: 600 }}>Venue</div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
-            {parents.map(function (p) {
-              var on = parentId === p.id
-              var isPh = p.status === 'placeholder'
-              return (<button key={p.id} onClick={function () {
-                if (isPh) return
-                setParentId(p.id)
-                setVenueId(p.has_subs ? '' : p.id)
-                setLocationId(''); setLocationName('')
-              }} style={{
-                textAlign: 'left', width: '100%', padding: 11, borderRadius: 10,
-                border: '2px solid ' + (on && !isPh ? C.gold : C.border), background: on && !isPh ? '#FFF8F0' : '#fff',
-                color: isPh ? '#ccc' : on ? C.maroon : C.muted, fontSize: 12, fontWeight: on ? 700 : 600,
-                cursor: isPh ? 'not-allowed' : 'pointer', opacity: isPh ? 0.5 : 1,
-              }}><div>{isPh ? '🚧 ' : ''}{p.name}</div><div style={{ fontSize: 10, opacity: 0.6, marginTop: 2 }}>{isPh ? 'Coming soon' : p.location}</div></button>)
-            })}
           </div>
+        </StepCard>
 
-          {currentParent && currentParent.has_subs && currentParent.live_subs.length > 0 && (<>
-            <div style={{ fontSize: 12, color: C.muted, marginBottom: 5, fontWeight: 600 }}>Sub-venue</div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
-              {currentParent.live_subs.map(function (s) {
-                var on = venueId === s.id
-                return (<button key={s.id} onClick={function () {
-                  setVenueId(s.id); setLocationId(''); setLocationName('')
-                }} style={{
-                  textAlign: 'left', width: '100%', padding: 11, borderRadius: 10,
-                  border: '2px solid ' + (on ? C.gold : C.border), background: on ? '#FFF8F0' : '#fff',
-                  color: on ? C.maroon : C.muted, fontSize: 12, fontWeight: on ? 700 : 600, cursor: 'pointer',
-                }}>{s.name}</button>)
-              })}
-            </div>
-          </>)}
-
-          {(function () {
-            var locs = null
-            if (lmsLocations && currentLeaf) {
-              // Try new keying (parent_id, leaf id) then legacy numeric-idx keys
-              locs = lmsLocations[currentLeaf.parent_id] || lmsLocations[currentLeaf.id] || null
-              if (!locs) {
-                var LEG_ID_TO_IDX = { pushpanjali: '0', manaktala: '1', emerald_green: '1', alstonia: '1', exotica: '3', aura: '3', valencia: '3', restro: '16', restro_lawn: '16', restro_banquet: '16' }
-                var legKey = LEG_ID_TO_IDX[currentLeaf.parent_id] || LEG_ID_TO_IDX[currentLeaf.id]
-                if (legKey) locs = lmsLocations[legKey] || null
-              }
-            }
-            if (!locs || locs.length === 0) return null
-            return (<>
-              <div style={{ fontSize: 12, color: C.muted, marginBottom: 5, fontWeight: 600 }}>Location / Hall</div>
-              <select value={locationId} onChange={function (e) {
-                var sel = locs.find(function (l) { return l.id === e.target.value })
-                setLocationId(e.target.value)
-                setLocationName(sel ? sel.name : '')
-              }} style={{
-                width: '100%', padding: 11, borderRadius: 9, border: '2px solid ' + (locationId ? C.gold : C.border),
-                fontSize: 14, marginBottom: 10, background: '#fff', color: locationId ? C.maroon : C.muted,
-              }}>
-                <option value="">Select location...</option>
-                {locs.map(function (l) { return <option key={l.id} value={l.id}>{l.name}</option> })}
-              </select>
-            </>)
-          })()}
-
-          <div style={{ fontSize: 12, color: C.muted, marginBottom: 5, fontWeight: 600 }}>Food</div>
-          <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
-            {[['Veg', '#2D6A2E', '#E8F5E9'], ['Non-Veg', '#991B1B', '#FEF2F2']].map(function (f, idx) {
-              var on = foodPref === idx
-              return (<button key={idx} onClick={function () { handleFoodPref(idx) }} style={{
-                flex: 1, padding: 11, borderRadius: 9, border: '2px solid ' + (on ? f[1] : C.border),
-                background: on ? f[2] : '#fff', color: on ? f[1] : C.muted,
-                fontSize: 14, fontWeight: 700, cursor: 'pointer',
-              }}>{f[0]}</button>)
-            })}
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
-            <div style={{ fontSize: 12, color: C.muted, fontWeight: 600 }}>Pax:</div>
-            <input type="number" inputMode="numeric" min={50} max={2000} value={pax}
-              onChange={function (e) { var v = +e.target.value; if (v >= 0 && v <= 2000) setPax(v) }}
-              onBlur={function (e) { var v = +e.target.value; if (v < 50) setPax(50); else if (v > 2000) setPax(2000) }}
-              style={{ width: 64, padding: '4px 6px', borderRadius: 7, border: '1px solid ' + C.border, fontSize: 14, fontWeight: 700, textAlign: 'center', color: C.maroon, background: C.bg, fontFamily: 'inherit' }} />
-          </div>
-          <input type="range" min={50} max={2000} step={5} value={pax}
-            onInput={function (e) { setPax(+e.target.value) }} style={{ width: '100%', accentColor: C.maroon2 }} />
-        </SectionCard>
-
-        <button onClick={function () { setTtdIdx(autoTtdIdx(eventDate)); setPage(1) }} style={{
-          width: '100%', padding: 14, borderRadius: 12, border: 'none',
-          background: 'linear-gradient(135deg,#4A1111,#8B2D2D)', color: '#fff',
-          fontSize: 15, fontWeight: 700, cursor: 'pointer', marginBottom: 10,
-        }}>Continue to Calculator</button>
       </>)}
 
       {/* ═══ PAGE 1: CALCULATOR ═══ */}
@@ -1181,12 +1473,7 @@ function QuoteCalculator({ profile }) {
           🚧 Pricing coming soon for {venName}
         </div>)}
 
-        {!isPlaceholder && (<div style={{
-          display: isDesktop ? 'grid' : 'block',
-          gridTemplateColumns: isDesktop ? '1fr 380px' : undefined,
-          gap: isDesktop ? 16 : 0,
-          alignItems: isDesktop ? 'start' : undefined,
-        }}>
+        {!isPlaceholder && (<>
         {/* Wedding toggle */}
         <div style={{ display: 'flex', marginBottom: 12, borderRadius: 12, overflow: 'hidden', border: '2px solid ' + C.border }}>
           {['Wedding', 'Non-Wedding'].map(function (label, idx) {
@@ -1196,7 +1483,7 @@ function QuoteCalculator({ profile }) {
         </div>
 
         {/* VENUE + MENU */}
-        <SectionCard title={'Venue + Menu \u00B7 ' + venName}>
+        <StepCard step={1} title="Venue + Menu" subtitle={venName}>
           <div style={{ fontSize: 12, color: C.muted, marginBottom: 5, fontWeight: 600 }}>Date Category</div>
           {eventDate && (<div style={{
             padding: '7px 11px', borderRadius: 7, fontSize: 12, fontWeight: 600, marginBottom: 7,
@@ -1282,10 +1569,10 @@ function QuoteCalculator({ profile }) {
               </div>
             </div>
           )}
-        </SectionCard>
+        </StepCard>
 
         {/* DÉCOR */}
-        <SectionCard title="Décor">
+        <StepCard step={2} title="Décor">
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', marginTop: -8, marginBottom: 8 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <span style={{ fontSize: 11, fontWeight: 700, color: includeDecor ? '#166534' : C.muted }}>{includeDecor ? 'Included' : 'Off'}</span>
@@ -1323,10 +1610,10 @@ function QuoteCalculator({ profile }) {
           )}
           </div>
           <RateRow showAll={true} q={fmtRound(adjDecor.q || 0)} t={fmtRound(adjDecor.t || 0)} f={fmtRound(adjDecor.f || 0)} />
-        </SectionCard>
+        </StepCard>
 
         {/* DJ */}
-        <SectionCard title="DJ">
+        <StepCard step={3} title="DJ">
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', marginTop: -8, marginBottom: 8 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <span style={{ fontSize: 11, fontWeight: 700, color: includeDj ? '#166534' : C.muted }}>{includeDj ? 'Included' : 'Off'}</span>
@@ -1346,43 +1633,15 @@ function QuoteCalculator({ profile }) {
           </div>
           </div>
           <RateRow showAll={true} q={fmtK(adjDj.q || 0)} t={fmtK(adjDj.t || 0)} f={fmtK(adjDj.f || 0)} />
-        </SectionCard>
+        </StepCard>
 
         {/* GRAND TOTAL */}
-        <div style={Object.assign({ background: 'linear-gradient(135deg,#4A1111,#8B2D2D)', borderRadius: 14, padding: 18, marginBottom: 12, color: '#fff' }, isDesktop ? { gridColumn: '2', gridRow: '1 / span 100', position: 'sticky', top: 12, alignSelf: 'start' } : {})}>
+        <div style={{ background: 'linear-gradient(135deg,#4A1111,#8B2D2D)', borderRadius: 14, padding: 18, marginBottom: 12, color: '#fff' }}>
           <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1.5, textTransform: 'uppercase', opacity: 0.5, marginBottom: 12 }}>Grand Total</div>
           <RateRow showAll={true} q={fmtRound(adjTotal.q || 0)} t={fmtRound(adjTotal.t || 0)} f={fmtRound(adjTotal.f || 0)} />
           {(<div style={{ fontSize: 10, color: 'rgba(255,255,255,.35)', textAlign: 'center', marginTop: 8 }}>
             Exact: {fmtL(adjTotal.q || 0)} / {fmtL(adjTotal.t || 0)} / {fmtL(adjTotal.f || 0)}
           </div>)}
-
-          <button onClick={function () { setShowProposal(!showProposal) }} style={{
-            width: '100%', marginTop: 12, padding: 13, borderRadius: 10,
-            border: '2px solid rgba(255,255,255,.2)', background: 'rgba(255,255,255,.08)',
-            color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer',
-          }}>{showProposal ? 'Hide' : 'Proposal'}</button>
-
-          <button onClick={printQuote} disabled={!calcResult} style={{
-            width: '100%', marginTop: 8, padding: 13, borderRadius: 10,
-            border: '2px solid rgba(255,255,255,.2)', background: 'rgba(255,255,255,.08)',
-            color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer',
-            opacity: !calcResult ? 0.5 : 1,
-          }}>🖨️ Print Quote</button>
-
-          <button onClick={saveQuote} disabled={saving || pushing || !calcResult} style={{
-            width: '100%', marginTop: 8, padding: 13, borderRadius: 10,
-            border: '2px solid rgba(212,135,44,.4)', background: 'rgba(212,135,44,.15)',
-            color: '#FBBF24', fontSize: 14, fontWeight: 700, cursor: 'pointer',
-            opacity: (saving || pushing || !calcResult) ? 0.5 : 1,
-          }}>{saving ? 'Saving...' : savedId ? 'Update Quote' : 'Save Quote'}</button>
-          <button onClick={askAI} disabled={analyzing || !calcResult} style={{
-            width: '100%', marginTop: 8, padding: 13, borderRadius: 10,
-            border: '2px solid rgba(99,202,253,.4)', background: 'rgba(99,202,253,.12)',
-            color: '#7DD3FC', fontSize: 14, fontWeight: 700, cursor: 'pointer',
-            opacity: (analyzing || !calcResult) ? 0.5 : 1,
-          }}>{analyzing ? 'Analyzing...' : '✨ AI Analysis'}</button>
-
-          
 
           {savedId && <StatusBar quoteStatus={quoteStatus} onUpdate={updateStatus} />}
           {savedId && lmsRef && (
@@ -1423,15 +1682,15 @@ function QuoteCalculator({ profile }) {
         )}
 
         {/* NOTES */}
-        <SectionCard title="Notes">
+        <StepCard step={4} title="Notes">
           <textarea value={notes} onChange={function(e){ setNotes(e.target.value) }}
             rows="3" maxLength="1000" placeholder="Remarks, special requests, negotiation context..."
             style={{ width: '100%', padding: 11, borderRadius: 9, border: '2px solid ' + C.border, fontSize: 14, fontFamily: 'inherit', color: '#3D2B2B', background: C.bg, resize: 'vertical', outline: 'none' }} />
           {notes.length > 0 && <div style={{ fontSize: 10, color: C.muted, textAlign: 'right', marginTop: 4 }}>{notes.length}/1000</div>}
-        </SectionCard>
+        </StepCard>
 
         {/* DEAL VALUE */}
-        <SectionCard title="Deal Value">
+        <StepCard step={5} title="Deal Value" subtitle="Negotiated pricing">
           <div style={{ fontSize: 11, color: C.muted, marginBottom: 10 }}>Enter negotiated amounts per component (₹L). Blank fields fall back to the system-suggested value on print.</div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 10 }}>
             {[
@@ -1497,9 +1756,9 @@ function QuoteCalculator({ profile }) {
             background: 'linear-gradient(135deg,#4A1111,#8B2D2D)', color: '#fff',
             fontSize: 14, fontWeight: 700, cursor: 'pointer',
           }}>Copy Deal Summary</button>)}
-        </SectionCard>
+        </StepCard>
         {showAnalysis && (
-          <SectionCard title="AI Analysis">
+          <StepCard step={6} title="AI Analysis">
             {analyzing && <div style={{ textAlign: 'center', padding: 20, color: C.muted, fontSize: 13 }}>Analyzing quote...</div>}
             {analysis && analysis.error && <div style={{ color: '#DC2626', fontSize: 12, padding: 10 }}>{analysis.error}</div>}
             {analysis && !analysis.error && (<div style={{ fontSize: 12, lineHeight: 1.8, color: '#333' }}>
@@ -1524,7 +1783,7 @@ function QuoteCalculator({ profile }) {
               width: '100%', marginTop: 10, padding: 10, borderRadius: 8, border: '1px solid ' + C.border,
               background: '#fff', color: C.muted, fontSize: 12, cursor: 'pointer',
             }}>Close</button>
-          </SectionCard>
+          </StepCard>
         )}
 
         {/* PROPOSAL */}
@@ -1540,7 +1799,7 @@ function QuoteCalculator({ profile }) {
         )}
 
         {/* TAX CALCULATOR (admin only, client-side GST math) */}
-        {<SectionCard title="Tax Calculator">
+        {<StepCard step={7} title="Tax Calculator" subtitle="GST breakdown">
           <div style={{ fontSize: 12, color: C.muted, marginBottom: 5, fontWeight: 600 }}>Deal: Rs.{dealVal}L</div>
           <input type="range" min={5} max={60} step={0.5} value={dealVal}
             onInput={function (e) { setDealVal(+e.target.value) }} style={{ width: '100%', accentColor: C.maroon2, marginBottom: 10 }} />
@@ -1583,14 +1842,52 @@ function QuoteCalculator({ profile }) {
               </div>)
             })}
           </div>
-        </SectionCard>}
+        </StepCard>}
 
-        </div>)}
-        <button onClick={function () { setPage(0) }} style={{
-          width: '100%', padding: 12, borderRadius: 10, border: '2px solid ' + C.border,
-          background: '#fff', color: C.muted, fontSize: 14, fontWeight: 600, cursor: 'pointer', marginBottom: 10,
-        }}>Back to Guest Info</button>
+        </>)}
       </>)}
+        </div>
+        <LivePreview
+          page={page}
+          guestName={guestName}
+          venName={venName}
+          etLabel={(currentET && currentET.label) || ''}
+          pax={pax}
+          slotLabel={SLOTS[slot] || ''}
+          effVm={effVm}
+          effDecor={effDecor}
+          effEnt={effEnt}
+          effTotal={effTotal}
+          adjTotalQ={adjTotal.q || 0}
+          adjTotalT={adjTotal.t || 0}
+          adjTotalF={adjTotal.f || 0}
+          hasDeal={hasDeal}
+          savedId={savedId}
+          lmsRef={lmsRef}
+          discountAmt={discountAmt}
+          isDesktop={isDesktop}
+        />
+      </div>
+
+      <ActionBar
+        page={page}
+        savedId={savedId}
+        lmsRef={lmsRef}
+        pushing={pushing}
+        saving={saving}
+        analyzing={analyzing}
+        calcResult={calcResult}
+        showProposal={showProposal}
+        showAnalysis={showAnalysis}
+        onSaveQuote={saveQuote}
+        onPrint={printQuote}
+        onPushLms={function () { updateStatus('sent') }}
+        onToggleProposal={function () { setShowProposal(!showProposal) }}
+        onToggleAI={function () { if (showAnalysis) { setShowAnalysis(false) } else { askAI() } }}
+        onContinue={function () { setTtdIdx(autoTtdIdx(eventDate)); setPage(1) }}
+        onBack={function () { setPage(0) }}
+        onNewQuote={newQuote}
+      />
     </div>
   )
 }
