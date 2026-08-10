@@ -1,0 +1,45 @@
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
+
+const CORS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+}
+function json(b: unknown, s = 200) {
+  return new Response(JSON.stringify(b), { status: s, headers: { ...CORS, "Content-Type": "application/json" } })
+}
+function authOk(req: Request): boolean {
+  const expected = Deno.env.get("FNB_TO_OPS_SECRET") || ""
+  return !!expected && (req.headers.get("Authorization") || "") === "Bearer " + expected
+}
+
+serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response("ok", { headers: CORS })
+  if (req.method !== "POST")    return json({ error: "method_not_allowed" }, 405)
+  if (!authOk(req))             return json({ error: "unauthorized" }, 401)
+
+  let payload: any
+  try { payload = await req.json() } catch { return json({ error: "bad_json" }, 400) }
+
+  if (!payload?.req_id || !payload?.cancelled_by) {
+    return json({ error: "req_id, cancelled_by required" }, 400)
+  }
+
+  const supa = createClient(
+    Deno.env.get("SUPABASE_URL")!,
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+  )
+
+  const { data, error } = await supa.rpc("catering_requisition_transition", {
+    p_req_id: payload.req_id,
+    p_new_status: "cancelled",
+    p_actor: payload.cancelled_by,
+    p_notes: payload.cancelled_reason || null,
+  })
+  if (error) {
+    const status = error.code === "P0002" ? 404 : error.code === "P0001" ? 409 : 500
+    return json({ error: error.message, code: error.code }, status)
+  }
+  return json({ requisition: data }, 200)
+})
