@@ -166,12 +166,24 @@ serve(async (req) => {
     const decorPaise = Math.max(0, hasDeal && q.deal_decor_paise != null ? q.deal_decor_paise : (q.decor_q_paise || 0))
     const djPaise = Math.max(0, hasDeal && q.deal_ent_paise != null ? q.deal_ent_paise : (q.dj_q_paise || 0))
 
+    // Aggregate rounding: mirror the print's Subtotal cell (ceil to nearest 0.5L when ≥1L, exact when <1L).
+    // Push Décor + Ent exact; V+M absorbs the rounding delta so components sum to the printed subtotal.
+    const includeMenu = q.include_menu !== false
+    const includeDecor = q.include_decor !== false
+    const includeDj = q.include_dj !== false
+    const targetAggPaise = q.deal_value_paise || (vmPaise + (includeDecor ? decorPaise : 0) + (includeDj ? djPaise : 0)) || q.total_q_paise || 0
+    const targetLakhs = targetAggPaise / 10000000
+    const roundedAggPaise = targetLakhs >= 1 ? Math.round((Math.ceil(targetLakhs * 2) / 2) * 10000000) : targetAggPaise
+    const roundedAggHR = paiseToHalfRupees(roundedAggPaise)
+
+    const decorHR = paiseToHalfRupees(decorPaise)
+    const djHR = paiseToHalfRupees(djPaise)
+    const vmHalfRupees = Math.max(0, roundedAggHR - (includeDecor ? decorHR : 0) - (includeDj ? djHR : 0))
+
     // Split V+M into per-person menu rate + venue rental lumpsum when possible.
     // Menu rate feeds fisd_menu_rate (LMS multiplies by pax); leftover goes to fisd_venue_value.
-    const includeMenu = q.include_menu !== false
     const pax = q.pax || 0
     const perHeadPaise = q.per_head_rate || 0
-    const vmHalfRupees = paiseToHalfRupees(vmPaise)
     const menuRateHalfRupees = (includeMenu && perHeadPaise > 0) ? Math.round(perHeadPaise / 200) : 0
     const projMenuValue = menuRateHalfRupees * pax
     const canSplit = includeMenu && projMenuValue > 0 && projMenuValue <= vmHalfRupees
@@ -182,9 +194,9 @@ serve(async (req) => {
     const venueValueStr = canSplit ? String(vmHalfRupees - projMenuValue) : "0"
     const extraPlateStr = canSplit ? String(menuRateHalfRupees) : "0"
 
-    const decorRupees = paiseToRupees(decorPaise)
-    const djRupees = paiseToRupees(djPaise)
-    const totalRupees = paiseToRupees(q.deal_value_paise || (vmPaise + (q.include_decor !== false ? decorPaise : 0) + (q.include_dj !== false ? djPaise : 0)) || q.total_q_paise)
+    const decorRupees = String(decorHR)
+    const djRupees = String(djHR)
+    const totalRupees = String(roundedAggHR)
 
     const body: Record<string, string | number> = {
       loggeduserid: String(profile.lms_user_id),
