@@ -20,6 +20,7 @@ var Purchase = lazy(function () { return import('../../modules/purchase/Purchase
 var Calendar = lazy(function () { return import('../../modules/calendar/Calendar') })
 var Vendors = lazy(function () { return import('../../modules/vendors/Vendors') })
 var Requisitions = lazy(function () { return import('../../modules/requisitions/Requisitions') })
+var FnbCateringRequests = lazy(function () { return import('../../modules/requisitions/FnbCateringRequests') })
 var StaffRoles = lazy(function () { return import('../../modules/manpower/StaffRoles') })
 var Analytics = lazy(function () { return import('../../modules/analytics/Analytics') })
 var Overview = lazy(function () { return import('../../modules/overview/Overview') })
@@ -74,6 +75,7 @@ var SUB_TAB_CONFIG = {
   ],
   procurement: [
     { key: 'requisitions', label: 'Requisitions', component: Requisitions },
+    { key: 'fnb_catering', label: 'FnB Catering', component: FnbCateringRequests },
     { key: 'purchase', label: 'Purchase Orders', component: Purchase },
     { key: 'vendors', label: 'Vendors', component: Vendors },
   ],
