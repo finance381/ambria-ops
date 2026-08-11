@@ -397,3 +397,17 @@ entrypoint = "./functions/sync-events/index.ts"
 # Specifies static files to be bundled with the function. Supports glob patterns.
 # For example, if you want to serve static HTML pages in your function:
 # static_files = [ "./functions/sync-events/*.html" ]
+
+# Cross-project catering integration — shared-secret auth (FNB_TO_OPS_SECRET),
+# not JWT. Gateway JWT check MUST be off; secret is validated inside the function.
+[functions.catering-requisition-create]
+enabled = true
+verify_jwt = false
+
+[functions.catering-requisition-cancel]
+enabled = true
+verify_jwt = false
+
+[functions.catering-inventory-decrement]
+enabled = true
+verify_jwt = false
