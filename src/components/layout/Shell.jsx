@@ -9,6 +9,7 @@ import DeptReview from '../../modules/categories/DeptReview'
 import { useLang } from '../../lib/i18n.jsx'
 import QuoteCalculator from '../../modules/quote/QuoteCalculator'
 import Requisitions from '../../modules/requisitions/Requisitions'
+import FnbCateringRequests from '../../modules/requisitions/FnbCateringRequests.jsx'
 import Purchase from '../../modules/purchase/Purchase'
 import Expenses from '../../modules/expenses/Expenses'
 import Ledgers from '../../modules/expenses/Ledgers'
@@ -56,6 +57,7 @@ var GROUPS = [
   {
     key: 'procurement', label: 'Procurement', icon: '🛒', items: [
       { key: 'feature_requisitions', label: 'Requisitions', icon: '📋', tab: 'requisitions' },
+      { key: 'feature_fnb_catering', label: 'FnB Catering', icon: '🍽️', tab: 'fnb_catering' },
       { key: 'feature_purchase', label: 'Purchase Orders', icon: '🛒', tab: 'purchase' },
       { key: 'feature_vendors', label: 'Vendors', icon: '🏭', tab: 'vendors' },
     ]
@@ -316,6 +318,16 @@ function Shell({ profile, onSignOut }) {
       )
     }
 
+    // FnB Catering badge (pending requisitions awaiting approval)
+    if (perms.indexOf('feature_fnb_catering') !== -1) {
+      promises.push(
+        supabase.from('catering_requisitions')
+          .select('id', { count: 'exact', head: true })
+          .eq('status', 'pending')
+          .then(function (res) { counts.feature_fnb_catering = res.count || 0 })
+      )
+    }
+
     // Payments badge (vendors with any overdue purchase)
     if (perms.indexOf('feature_payments') !== -1) {
       promises.push(
@@ -542,6 +554,9 @@ function Shell({ profile, onSignOut }) {
         )}
         {tab === 'requisitions' && (
           <Requisitions profile={profile} onBack={goBack} />
+        )}
+        {tab === 'fnb_catering' && (
+          <FnbCateringRequests profile={profile} />
         )}
         {tab === 'wallet' && (
           <Wallet profile={profile} />
