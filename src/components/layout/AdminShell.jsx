@@ -4,6 +4,7 @@ import { ROLE_COLORS } from '../../lib/constants'
 var RateCardEditor = lazy(function () { return import('../../modules/quote/RateCardEditor') })
 var PendingReview = lazy(function () { return import('../../modules/categories/PendingReview') })
 var Events = lazy(function () { return import('../../modules/events/Events') })
+var ExtraPlateCollect = lazy(function () { return import('../../modules/events/ExtraPlateCollect') })
 var AdminItems = lazy(function () { return import('../../modules/inventory/AdminItems') })
 var Categories = lazy(function () { return import('../../modules/categories/Categories') })
 var Users = lazy(function () { return import('../../modules/users/Users') })
@@ -53,6 +54,10 @@ function SubTabs({ tabs, active, onChange }) {
 }
 
 var SUB_TAB_CONFIG = {
+  events: [
+    { key: 'events', label: 'Events', component: Events },
+    { key: 'extra_plates', label: 'Extra Plates', component: ExtraPlateCollect },
+  ],
   inventory: [
     { key: 'pending', label: 'Pending Review', component: PendingReview },
     { key: 'items', label: 'All Items', component: AdminItems },
@@ -128,7 +133,7 @@ var MODULES = {
   overview: Overview,
   analytics: Analytics,
   inventory: makeTabbedModule('inventory'),
-  events: Events,
+  events: makeTabbedModule('events'),
   masters: makeTabbedModule('masters'),
   users: makeTabbedModule('users'),
   expenses: makeTabbedModule('expenses'),

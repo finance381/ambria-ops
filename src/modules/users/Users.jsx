@@ -17,6 +17,7 @@ var PERM_GROUPS = [
   ]},
   { group: 'Events', icon: '📅', children: [
     { key: 'feature_events', label: 'Events', grants: ['feature_events'], optional: [{ key: 'event_buffer', label: 'Set setup/teardown days' }] },
+    { key: 'feature_extra_plate_collect', label: 'Extra Plate Collection', grants: ['feature_extra_plate_collect'], note: 'F&B floor staff collecting extra plate revenue on event day' },
     { key: 'feature_requisitions', label: 'Requisitions', grants: ['feature_requisitions'], optional: [{ key: 'req_dept_approve', label: 'Dept-tier approve' }, { key: 'req_admin_approve', label: 'Admin-tier approve' }] },
     { key: 'feature_fnb_catering', label: 'FnB Catering Requests', grants: ['feature_fnb_catering'], note: 'Approve/spawn PO from FnB shortfall requests' },
     { key: 'feature_production', label: 'Production Orders', grants: ['feature_production'] },

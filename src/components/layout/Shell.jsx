@@ -4,6 +4,7 @@ import { ROLE_COLORS } from '../../lib/constants'
 import Inventory from '../../modules/inventory/Inventory'
 import InventoryForm from '../../modules/inventory/InventoryForm'
 import Events from '../../modules/events/Events'
+import ExtraPlateCollect from '../../modules/events/ExtraPlateCollect'
 import AdminReview from '../../modules/categories/AdminReview'
 import DeptReview from '../../modules/categories/DeptReview'
 import { useLang } from '../../lib/i18n.jsx'
@@ -52,6 +53,7 @@ var GROUPS = [
       { key: 'feature_events', label: 'Events', icon: '📅', tab: 'events' },
       { key: 'feature_quote', label: 'Quote Calc', icon: '🧮', tab: 'quote' },
       { key: 'feature_ratecard', label: 'Rate Card', icon: '💲', tab: 'ratecard' },
+      { key: 'feature_extra_plate_collect', label: 'Extra Plates', icon: '🍽️', tab: 'extra_plates' },
     ]
   },
   {
@@ -542,6 +544,9 @@ function Shell({ profile, onSignOut }) {
         )}
         {tab === 'events' && (
           <Events profile={profile} />
+        )}
+        {tab === 'extra_plates' && (
+          <ExtraPlateCollect profile={profile} onBalanceChange={refreshBadges} />
         )}
         {tab === 'quote' && (
           <QuoteCalculator profile={profile} />
