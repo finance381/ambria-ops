@@ -400,14 +400,3 @@ entrypoint = "./functions/sync-events/index.ts"
 
 # Cross-project catering integration — shared-secret auth (FNB_TO_OPS_SECRET),
 # not JWT. Gateway JWT check MUST be off; secret is validated inside the function.
-[functions.catering-requisition-create]
-enabled = true
-verify_jwt = false
-
-[functions.catering-requisition-cancel]
-enabled = true
-verify_jwt = false
-
-[functions.catering-inventory-decrement]
-enabled = true
-verify_jwt = false
