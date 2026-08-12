@@ -546,7 +546,7 @@ function Shell({ profile, onSignOut }) {
           <Events profile={profile} />
         )}
         {tab === 'extra_plates' && (
-          <ExtraPlateCollect profile={profile} onBalanceChange={refreshBadges} />
+          <ExtraPlateCollect profile={profile} />
         )}
         {tab === 'quote' && (
           <QuoteCalculator profile={profile} />
