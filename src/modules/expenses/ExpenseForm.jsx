@@ -871,11 +871,19 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
       try {
         var editMeta = Object.assign({}, e0.fieldValues)
         var keepPaths = existingReceipts.filter(function (p) { return removedReceipts.indexOf(p) === -1 })
+        var _editSplit = getEntrySplit(e0)
         var editPayload = {
           expense_type_id: Number(e0.expenseTypeId),
           expense_sub_type_id: Number(e0.expenseSubTypeId),
           amount_paise: newPaise,
           tax_paise: e0.taxAmount ? Math.round(Number(e0.taxAmount) * 100) : 0,
+          payment_cash_paise: _editSplit.cashPaise,
+          payment_credit_paise: _editSplit.creditPaise,
+          payment_credit_cash_paise: _editSplit.cashLegPaise,
+          payment_credit_bank_paise: _editSplit.bankLegPaise,
+          payment_credit_mode: null,
+          cash_due_date: _editSplit.cashLegPaise > 0 ? (e0.cashDueDate || null) : null,
+          bank_due_date: _editSplit.bankLegPaise > 0 ? (e0.bankDueDate || null) : null,
           description: e0.description.trim(),
           expense_date: e0.expenseDate,
           event_id: eventId ? Number(eventId) : null,
@@ -942,14 +950,17 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
           })
         if (editAllocRows.length > 0) await supabase.from('expense_allocations').insert(editAllocRows)
 
-        // Wallet diff
-        var oldPaise = editExp.amount_paise || 0
-        var diffPaise = newPaise - oldPaise
-        if (diffPaise !== 0) {
-          var wRpc = diffPaise > 0 ? 'wallet_self_debit' : 'wallet_self_credit'
-          var wAmt = Math.abs(diffPaise)
-          var wRef = diffPaise > 0 ? 'expense' : 'expense_refund'
-          var wDesc = 'Expense edited: ' + (diffPaise > 0 ? '+' : '-') + (wAmt / 100).toLocaleString('en-IN', { maximumFractionDigits: 2 }) + ' pts'
+        // Wallet diff — use actual wallet exposure (cash portion + tax if credit), not gross amount
+        var newWalletSpend = _editSplit.walletSpendPaise
+        var oldWalletSpend = (editExp.payment_credit_paise || 0) > 0
+          ? (editExp.payment_cash_paise || 0) + (editExp.tax_paise || 0)
+          : (editExp.amount_paise || 0)
+        var walletDiff = newWalletSpend - oldWalletSpend
+        if (walletDiff !== 0) {
+          var wRpc = walletDiff > 0 ? 'wallet_self_debit' : 'wallet_self_credit'
+          var wAmt = Math.abs(walletDiff)
+          var wRef = walletDiff > 0 ? 'expense' : 'expense_refund'
+          var wDesc = 'Expense edited: ' + (walletDiff > 0 ? '+' : '-') + (wAmt / 100).toLocaleString('en-IN', { maximumFractionDigits: 2 }) + ' pts'
           try {
             await supabase.rpc(wRpc, { p_amount_paise: wAmt, p_description: wDesc, p_ref_type: wRef, p_ref_id: String(editExp.id) })
           } catch (_) {}
