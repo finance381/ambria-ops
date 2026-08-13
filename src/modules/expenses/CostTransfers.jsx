@@ -38,27 +38,86 @@ function CostTransfers({ profile }) {
 
   var [form, setForm] = useState(EMPTY_FORM)
 
-  useEffect(function () { loadAll() }, [])
+  // Filters
+  var [fromPartyFilter, setFromPartyFilter] = useState('')
+  var [toPartyFilter, setToPartyFilter] = useState('')
+  var [statusFilter, setStatusFilter] = useState('active') // 'all' | 'active' | 'reversed' | 'reversal'
+  var [dateFrom, setDateFrom] = useState('')
+  var [dateTo, setDateTo] = useState('')
+  var [searchRaw, setSearchRaw] = useState('')
+  var [searchD, setSearchD] = useState('')
+  var [filtersOpen, setFiltersOpen] = useState(false)
 
-  async function loadAll() {
-    setLoading(true)
+  useEffect(function () {
+    var t = setTimeout(function () { setSearchD(searchRaw) }, 400)
+    return function () { clearTimeout(t) }
+  }, [searchRaw])
+
+  useEffect(function () { loadLookups() }, [])
+
+  useEffect(function () { loadTransfers() }, [fromPartyFilter, toPartyFilter, statusFilter, dateFrom, dateTo, searchD])
+
+  // Realtime: refresh list on any cost_transfers change
+  useEffect(function () {
+    var channel = supabase.channel('cost_transfers_rt')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'cost_transfers' }, function () { loadTransfers() })
+      .subscribe()
+    return function () { supabase.removeChannel(channel) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fromPartyFilter, toPartyFilter, statusFilter, dateFrom, dateTo, searchD])
+
+  async function loadLookups() {
     try {
       var results = await Promise.all([
-        supabase.from('cost_transfers').select('*').order('created_at', { ascending: false }).limit(500),
         supabase.from('expense_types').select('id, name').eq('active', true).order('name'),
         supabase.from('expense_sub_types').select('id, name, expense_type_id').eq('active', true).order('name'),
         supabase.from('events').select('id, function_date, event_name, client_name').order('function_date', { ascending: false }).limit(500),
         supabase.from('vendors').select('id, name').eq('active', true).order('name'),
         supabase.from('employees').select('id, full_name').order('full_name').limit(1000),
       ])
-      setTransfers(results[0].data || [])
-      setExpTypes(results[1].data || [])
-      setExpSubTypes(results[2].data || [])
-      setEvents(results[3].data || [])
-      setVendors(results[4].data || [])
-      setEmployees(results[5].data || [])
-    } catch (_) { setError('Load failed') }
+      setExpTypes(results[0].data || [])
+      setExpSubTypes(results[1].data || [])
+      setEvents(results[2].data || [])
+      setVendors(results[3].data || [])
+      setEmployees(results[4].data || [])
+    } catch (_) { setError('Lookup load failed') }
+  }
+
+  async function loadTransfers() {
+    setLoading(true)
+    try {
+      var q = supabase.from('cost_transfers').select('*').order('created_at', { ascending: false }).limit(500)
+      if (fromPartyFilter) q = q.eq('from_party_type', fromPartyFilter)
+      if (toPartyFilter) q = q.eq('to_party_type', toPartyFilter)
+      if (dateFrom) q = q.gte('effective_date', dateFrom)
+      if (dateTo) q = q.lte('effective_date', dateTo)
+      if (searchD) q = q.ilike('description', '%' + searchD + '%')
+      if (statusFilter === 'active') q = q.is('reversal_of', null).is('reversed_by_id', null)
+      else if (statusFilter === 'reversed') q = q.not('reversed_by_id', 'is', null)
+      else if (statusFilter === 'reversal') q = q.not('reversal_of', 'is', null)
+      var res = await q
+      if (res.error) throw res.error
+      setTransfers(res.data || [])
+    } catch (err) { setError(err.message || 'Load failed') }
     setLoading(false)
+  }
+
+  function resetFilters() {
+    setFromPartyFilter(''); setToPartyFilter('')
+    setStatusFilter('active')
+    setDateFrom(''); setDateTo('')
+    setSearchRaw('')
+  }
+
+  function activeFilterCount() {
+    var n = 0
+    if (fromPartyFilter) n++
+    if (toPartyFilter) n++
+    if (statusFilter !== 'active') n++
+    if (dateFrom) n++
+    if (dateTo) n++
+    if (searchRaw) n++
+    return n
   }
 
   function partyLabel(row, side) {
@@ -142,7 +201,7 @@ function CostTransfers({ profile }) {
       try { logActivity('COST_TRANSFER_CREATE', '#' + res.data + ' Rs ' + amt.toFixed(2)) } catch (_) {}
       setShowForm(false)
       setForm(EMPTY_FORM)
-      loadAll()
+      loadTransfers()
     } catch (err) {
       setError(err.message || 'Save failed')
     }
@@ -158,7 +217,7 @@ function CostTransfers({ profile }) {
       var res = await supabase.rpc('fn_reverse_cost_transfer', { p_id: id })
       if (res.error) throw res.error
       try { logActivity('COST_TRANSFER_REVERSE', '#' + id) } catch (_) {}
-      loadAll()
+      loadTransfers()
     } catch (err) { setError(err.message || 'Reverse failed') }
     setReversing(null)
   }
@@ -178,10 +237,86 @@ function CostTransfers({ profile }) {
         <div className="mb-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">{error}</div>
       )}
 
+      {/* ─── FILTERS ─────────────────────────────────── */}
+      <div className="mb-3 space-y-2">
+        <input type="text" value={searchRaw} onChange={function (e) { setSearchRaw(e.target.value) }}
+          placeholder="Search description..."
+          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          style={{ fontSize: '16px' }} />
+        <div className="flex gap-2">
+          <button onClick={function () { setFiltersOpen(!filtersOpen) }}
+            className={"flex-1 py-2 text-xs font-bold rounded-lg border transition-colors " + (filtersOpen ? "bg-indigo-50 border-indigo-300 text-indigo-700" : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50")}>
+            {filtersOpen ? '▲' : '▼'} Filters{activeFilterCount() > 0 ? ' · ' + activeFilterCount() : ''}
+          </button>
+          {activeFilterCount() > 0 && (
+            <button onClick={resetFilters}
+              className="px-3 py-2 text-xs font-bold text-red-600 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100">
+              Reset
+            </button>
+          )}
+        </div>
+        {filtersOpen && (
+          <div className="bg-white border border-gray-200 rounded-lg p-3 space-y-3">
+            <div>
+              <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Status</label>
+              <div className="flex gap-1.5 flex-wrap">
+                {['all', 'active', 'reversed', 'reversal'].map(function (s) {
+                  var lbl = s === 'all' ? 'All' : (s === 'active' ? 'Active' : (s === 'reversed' ? 'Reversed' : 'Reversal'))
+                  return (
+                    <button key={s} onClick={function () { setStatusFilter(s) }}
+                      className={"px-3 py-1.5 text-[11px] font-bold rounded-full border " +
+                        (statusFilter === s ? "bg-gray-900 text-white border-gray-900" : "bg-white text-gray-500 border-gray-200 hover:bg-gray-50")}>
+                      {lbl}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">From (party)</label>
+                <select value={fromPartyFilter} onChange={function (e) { setFromPartyFilter(e.target.value) }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
+                  style={{ fontSize: '16px' }}>
+                  <option value="">All</option>
+                  {PARTY_TYPES.map(function (p) { return <option key={p.key} value={p.key}>{p.label}</option> })}
+                </select>
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">To (party)</label>
+                <select value={toPartyFilter} onChange={function (e) { setToPartyFilter(e.target.value) }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
+                  style={{ fontSize: '16px' }}>
+                  <option value="">All</option>
+                  {PARTY_TYPES.map(function (p) { return <option key={p.key} value={p.key}>{p.label}</option> })}
+                </select>
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">From date</label>
+                <input type="date" value={dateFrom} onChange={function (e) { setDateFrom(e.target.value) }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                  style={{ fontSize: '16px' }} />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">To date</label>
+                <input type="date" value={dateTo} onChange={function (e) { setDateTo(e.target.value) }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                  style={{ fontSize: '16px' }} />
+              </div>
+            </div>
+          </div>
+        )}
+        {!loading && transfers.length > 0 && (
+          <div className="px-1 text-xs text-gray-600">
+            <span className="font-semibold text-gray-900">{transfers.length}</span> shown
+          </div>
+        )}
+      </div>
+
       {loading ? (
         <p className="text-center text-sm text-gray-400 py-8">Loading...</p>
       ) : transfers.length === 0 ? (
-        <p className="text-center text-sm text-gray-400 py-8">No cost transfers yet.</p>
+        <p className="text-center text-sm text-gray-400 py-8">{activeFilterCount() > 0 ? 'No transfers match filters.' : 'No cost transfers yet.'}</p>
       ) : (
         <div className="bg-white border border-gray-200 rounded-lg overflow-x-auto">
           <table className="w-full text-sm">

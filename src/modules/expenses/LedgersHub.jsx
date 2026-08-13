@@ -11,10 +11,10 @@ var CostTransfers = lazy(function () { return import('./CostTransfers') })
 var LEDGERS = [
   { key: 'expense', label: 'Expense', icon: 'ti-receipt', component: Ledgers, countTable: 'expenses', countFilter: function (q) { return q.is('deleted_at', null) } },
   { key: 'event', label: 'Event', icon: 'ti-calendar-event', component: EventLedger, countTable: 'event_ledger' },
-  { key: 'vendor', label: 'Vendor', icon: 'ti-building-store', component: VendorLedger, countTable: 'ledger_entries' },
-  { key: 'salary', label: 'Salary', icon: 'ti-cash', component: SalaryLedger, countTable: null },
+  { key: 'vendor', label: 'Vendor', icon: 'ti-building-store', component: VendorLedger, countTable: 'ledger_entries', countFilter: function (q) { return q.eq('ledger_type', 'vendor').is('deleted_at', null) } },
+  { key: 'salary', label: 'Salary', icon: 'ti-cash', component: SalaryLedger, countTable: 'ledger_entries', countFilter: function (q) { return q.eq('ledger_type', 'user_salary').is('deleted_at', null) } },
   { key: 'cost_transfer', label: 'Cost Transfers', icon: 'ti-arrows-right-left', component: CostTransfers, countTable: 'cost_transfers', countFilter: function (q) { return q.is('reversal_of', null).is('reversed_by_id', null) }, perm: 'finance_cost_transfer' },
-  { key: 'gv', label: 'GV Log', icon: 'ti-history', component: GVLog, countTable: null },
+  { key: 'gv', label: 'GV Log', icon: 'ti-history', component: GVLog, countTable: 'general_vouchers', countFilter: function (q) { return q.eq('is_reversal', false).is('reversed_by_gv_id', null) } },
 ]
 
 function LedgersHub(props) {
@@ -51,19 +51,19 @@ function LedgersHub(props) {
 
   return (
     <div>
-      <div className="flex flex-wrap gap-1.5 mb-5">
+      <div className="flex overflow-x-auto mb-5 bg-gray-100 rounded-lg p-1 gap-0.5 no-scrollbar">
         {visible.map(function (l) {
           var isActive = l.key === active
           var c = counts[l.key]
           return (
             <button key={l.key} onClick={function () { setActive(l.key) }}
-              className={"inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-colors " +
-                (isActive ? "bg-indigo-600 text-white" : "bg-white border border-gray-200 text-gray-600 hover:border-gray-300")}>
+              className={"inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold whitespace-nowrap transition-all flex-1 justify-center " +
+                (isActive ? "bg-white text-indigo-700 shadow-sm" : "text-gray-600 hover:text-gray-900")}>
               <i className={"ti " + l.icon} style={{ fontSize: '14px' }} aria-hidden="true"></i>
               <span>{l.label}</span>
               {c != null && c > 0 && (
                 <span className={"px-1.5 py-0.5 rounded-full text-[10px] leading-none " +
-                  (isActive ? "bg-white/25 text-white" : "bg-gray-100 text-gray-600")}>
+                  (isActive ? "bg-indigo-100 text-indigo-700" : "bg-gray-200 text-gray-600")}>
                   {c > 999 ? Math.floor(c / 1000) + 'k' : c}
                 </span>
               )}
