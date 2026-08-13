@@ -7,144 +7,233 @@ import EventDatePicker from '../../components/ui/EventDatePicker'
 
 function ExtraPlateCollect({ profile, onBalanceChange }) {
   var isAdmin = profile?.role === 'admin' || profile?.role === 'auditor'
+  var [view, setView] = useState('manage')
 
-  // View toggle
-  var [view, setView] = useState('collect') // 'collect' | 'recent'
-
-  // ─── Collect form state ───────────────────────────────────
+  // Event selection
   var [date, setDate] = useState('')
   var [events, setEvents] = useState([])
   var [eventsLoading, setEventsLoading] = useState(false)
   var [eventId, setEventId] = useState('')
   var [eventDetail, setEventDetail] = useState(null)
-  var [plates, setPlates] = useState('')
-  var [mode, setMode] = useState('')
-  var [image, setImage] = useState(null)
-  var [notes, setNotes] = useState('')
-  var [saving, setSaving] = useState(false)
-  var [okMsg, setOkMsg] = useState('')
+  var [issues, setIssues] = useState([])
+  var [collections, setCollections] = useState([])
+  var [stateLoading, setStateLoading] = useState(false)
 
-  // ─── Recent list state ────────────────────────────────────
-  var [list, setList] = useState([])
+  // Issue form
+  var [issuePlates, setIssuePlates] = useState('')
+  var [issueImage, setIssueImage] = useState(null)
+  var [issueNotes, setIssueNotes] = useState('')
+  var [issueSaving, setIssueSaving] = useState(false)
+  var [issueMsg, setIssueMsg] = useState('')
+
+  // Collect form
+  var [collectPlates, setCollectPlates] = useState('')
+  var [collectMode, setCollectMode] = useState('')
+  var [collectImage, setCollectImage] = useState(null)
+  var [collectNotes, setCollectNotes] = useState('')
+  var [collectSaving, setCollectSaving] = useState(false)
+  var [collectMsg, setCollectMsg] = useState('')
+
+  // Recent
+  var [recentGroups, setRecentGroups] = useState([])
   var [listLoading, setListLoading] = useState(false)
   var [showAll, setShowAll] = useState(false)
 
-  // ─── Cancel modal state ───────────────────────────────────
-  var [cancelRow, setCancelRow] = useState(null)
+  // Cancel modal (unified for issue + collection)
+  var [cancelTarget, setCancelTarget] = useState(null) // { type, row }
   var [cancelReason, setCancelReason] = useState('')
   var [cancelSaving, setCancelSaving] = useState(false)
 
-  // ─── Edit modal state ─────────────────────────────────────
-  var [editRow, setEditRow] = useState(null)
-  var [editNotes, setEditNotes] = useState('')
-  var [editImage, setEditImage] = useState(null)
-  var [editSaving, setEditSaving] = useState(false)
+  useEffect(function () { if (view === 'recent') loadRecent() }, [view, showAll])
 
-  useEffect(function () { loadRecent() }, [showAll])
+  // ─── LOADERS ─────────────────────────────────────
 
-  // ─────────────────────────────────────────────────────────
-  //  DATA LOADERS
-  // ─────────────────────────────────────────────────────────
-
-  async function loadFunctionsForDate(dateStr) {
-    setDate(dateStr)
+  async function loadFunctionsForDate(d) {
+    setDate(d)
     setEventId('')
     setEventDetail(null)
-    if (!dateStr) { setEvents([]); return }
+    setIssues([])
+    setCollections([])
+    setIssueMsg('')
+    setCollectMsg('')
+    setCollectPlates('')
+    setCollectMode('')
+    if (!d) { setEvents([]); return }
     setEventsLoading(true)
     var { data } = await supabase.from('events')
-      .select('id, event_name, function_date, venue_name, client_name, session, extra_plates_charge')
-      .eq('function_date', dateStr)
+      .select('id, event_name, function_date, venue_name, client_name, session, extra_plates_charge, total_plates, complementary_plates')
+      .eq('function_date', d)
       .order('event_name')
     setEvents(data || [])
     setEventsLoading(false)
-    if (data && data.length === 1) { selectFunction(String(data[0].id)) }
+    if (data && data.length === 1) selectFunction(String(data[0].id), data[0])
   }
 
-  function selectFunction(fid) {
+  async function selectFunction(fid, rowMaybe) {
     setEventId(fid)
-    var row = events.find(function (e) { return String(e.id) === String(fid) })
+    var row = rowMaybe || events.find(function (e) { return String(e.id) === String(fid) })
     setEventDetail(row || null)
-    setOkMsg('')
+    setIssueMsg('')
+    setCollectMsg('')
+    setCollectPlates('')
+    setCollectMode('')
+    if (row) await loadEventState(Number(fid), row)
+  }
+
+  async function loadEventState(eid, evRow) {
+    setStateLoading(true)
+    var iRes = await supabase.from('extra_plate_issues')
+      .select('id, plates_count, receipt_path, notes, status, cancelled_reason, cancelled_at, created_at, issued_by')
+      .eq('event_id', eid)
+      .order('created_at', { ascending: false })
+    var cRes = await supabase.from('extra_plate_collections')
+      .select('id, extras_charged, rate_paise, total_paise, payment_mode, receipt_path, notes, status, cancelled_reason, cancelled_at, created_at, collected_by')
+      .eq('event_id', eid)
+      .order('created_at', { ascending: false })
+    var iData = iRes.data || []
+    var cData = cRes.data || []
+    setIssues(iData)
+    setCollections(cData)
+
+    // Auto-fill collect input with remaining extras
+    var tIssued = 0
+    for (var i = 0; i < iData.length; i++) if (iData[i].status === 'active') tIssued += iData[i].plates_count
+    var tColl = 0
+    for (var j = 0; j < cData.length; j++) if (cData[j].status === 'active') tColl += cData[j].extras_charged
+    var q = evRow ? (evRow.total_plates || 0) : 0
+    var ext = Math.max(0, tIssued - q)
+    var rem = Math.max(0, ext - tColl)
+    if (rem > 0) setCollectPlates(String(rem))
+
+    setStateLoading(false)
   }
 
   async function loadRecent() {
     setListLoading(true)
     var since = new Date()
     since.setDate(since.getDate() - 30)
-    var query = supabase.from('extra_plate_collections')
-      .select('id, event_id, plates_issued, rate_paise, total_paise, payment_mode, receipt_path, notes, status, cancelled_reason, created_at, collected_by, cancelled_at, events(event_name, venue_name, client_name, function_date)')
-      .gte('created_at', since.toISOString())
+    var sinceISO = since.toISOString()
+
+    var iQ = supabase.from('extra_plate_issues')
+      .select('id, event_id, plates_count, receipt_path, notes, status, cancelled_reason, cancelled_at, created_at, issued_by, events(event_name, venue_name, client_name, function_date, total_plates, complementary_plates, extra_plates_charge)')
+      .gte('created_at', sinceISO)
       .order('created_at', { ascending: false })
       .limit(200)
-    if (!isAdmin || !showAll) query = query.eq('collected_by', profile.id)
-    var { data } = await query
-    setList(data || [])
+    var cQ = supabase.from('extra_plate_collections')
+      .select('id, event_id, extras_charged, rate_paise, total_paise, payment_mode, receipt_path, notes, status, cancelled_reason, cancelled_at, created_at, collected_by, events(event_name, venue_name, client_name, function_date, total_plates, complementary_plates, extra_plates_charge)')
+      .gte('created_at', sinceISO)
+      .order('created_at', { ascending: false })
+      .limit(200)
+    if (!isAdmin || !showAll) {
+      iQ = iQ.eq('issued_by', profile.id)
+      cQ = cQ.eq('collected_by', profile.id)
+    }
+    var iRes = await iQ
+    var cRes = await cQ
+    var iRows = (iRes.data || []).map(function (r) { return Object.assign({}, r, { _kind: 'issue' }) })
+    var cRows = (cRes.data || []).map(function (r) { return Object.assign({}, r, { _kind: 'collection' }) })
+    var all = iRows.concat(cRows)
+
+    var byEvent = {}
+    for (var k = 0; k < all.length; k++) {
+      var r = all[k]
+      var key = String(r.event_id)
+      if (!byEvent[key]) byEvent[key] = { event_id: r.event_id, event: r.events, items: [] }
+      byEvent[key].items.push(r)
+    }
+    var groups = Object.keys(byEvent).map(function (kk) { return byEvent[kk] })
+    for (var g = 0; g < groups.length; g++) {
+      groups[g].items.sort(function (a, b) { return b.created_at.localeCompare(a.created_at) })
+    }
+    groups.sort(function (a, b) { return b.items[0].created_at.localeCompare(a.items[0].created_at) })
+
+    setRecentGroups(groups)
     setListLoading(false)
   }
 
-  // ─────────────────────────────────────────────────────────
-  //  SUBMIT NEW COLLECTION
-  // ─────────────────────────────────────────────────────────
+  // ─── SUBMIT HANDLERS ─────────────────────────────
 
-  async function submitCollection() {
-    if (saving) return
-    if (!eventId) { alert('Select a function'); return }
-    if (!eventDetail || !eventDetail.extra_plates_charge || eventDetail.extra_plates_charge <= 0) {
-      alert('This event has no extra plate rate on the contract')
+  async function submitIssue() {
+    if (issueSaving) return
+    var n = Number(issuePlates)
+    if (!n || Math.floor(n) !== n) { alert('Enter a whole non-zero number'); return }
+    if (!issueImage) { alert('Photo required'); return }
+    setIssueSaving(true)
+    setIssueMsg('')
+
+    var cF
+    try { cF = await prepUpload(issueImage, 100) } catch (e) { alert('Image prep failed'); setIssueSaving(false); return }
+    var ext = (cF.name && cF.name.indexOf('.') !== -1) ? cF.name.split('.').pop() : 'jpg'
+    var path = profile.id + '/extra_plate_issue_' + Date.now() + '.' + ext
+    var { error: upErr } = await supabase.storage.from('receipts').upload(path, cF, { upsert: true })
+    if (upErr) { alert('Upload failed: ' + upErr.message); setIssueSaving(false); return }
+
+    var { error } = await supabase.rpc('fn_extra_plate_issue_create', {
+      p_event_id: Number(eventId),
+      p_plates: n,
+      p_receipt_path: path,
+      p_notes: issueNotes.trim() || null
+    })
+    if (error) {
+      alert('Issue failed: ' + error.message)
+      try { await supabase.storage.from('receipts').remove([path]) } catch (_) {}
+      setIssueSaving(false)
       return
     }
-    var n = Number(plates)
-    if (!n || n <= 0 || Math.floor(n) !== n) { alert('Enter a whole number of plates > 0'); return }
-    if (!mode) { alert('Select Cash or Bank'); return }
-    if (!image) { alert('Receipt photo is required'); return }
+    try { await logActivity('EXTRA_PLATE_ISSUE', (eventDetail.event_name || '') + ' | ' + n + ' plates') } catch (_) {}
+    setIssueMsg('Logged ' + n + ' plates')
+    setIssuePlates('')
+    setIssueImage(null)
+    setIssueNotes('')
+    setIssueSaving(false)
+    loadEventState(Number(eventId), eventDetail)
+  }
 
-    setSaving(true)
-    setOkMsg('')
+  async function submitCollect() {
+    if (collectSaving) return
+    if (!collectMode) { alert('Select Cash or Bank'); return }
+    var n = Number(collectPlates)
+    if (!n || n <= 0 || Math.floor(n) !== n) { alert('Enter a whole number > 0'); return }
+    if (!collectImage) { alert('Payment photo required'); return }
+    setCollectSaving(true)
+    setCollectMsg('')
 
-    // Upload receipt first
     var cF
-    try { cF = await prepUpload(image, 100) } catch (e) { alert('Image prep failed'); setSaving(false); return }
+    try { cF = await prepUpload(collectImage, 100) } catch (e) { alert('Image prep failed'); setCollectSaving(false); return }
     var ext = (cF.name && cF.name.indexOf('.') !== -1) ? cF.name.split('.').pop() : 'jpg'
-    var imagePath = profile.id + '/extra_plate_' + Date.now() + '.' + ext
-    var { error: upErr } = await supabase.storage.from('receipts').upload(imagePath, cF, { upsert: true })
-    if (upErr) { alert('Receipt upload failed: ' + upErr.message); setSaving(false); return }
+    var path = profile.id + '/extra_plate_collect_' + Date.now() + '.' + ext
+    var { error: upErr } = await supabase.storage.from('receipts').upload(path, cF, { upsert: true })
+    if (upErr) { alert('Upload failed: ' + upErr.message); setCollectSaving(false); return }
 
     var { data, error } = await supabase.rpc('fn_extra_plate_collect', {
       p_event_id: Number(eventId),
       p_plates: n,
-      p_payment_mode: mode,
-      p_receipt_path: imagePath,
-      p_notes: notes.trim() || null
+      p_payment_mode: collectMode,
+      p_receipt_path: path,
+      p_notes: collectNotes.trim() || null
     })
     if (error) {
       alert('Collection failed: ' + error.message)
-      try { await supabase.storage.from('receipts').remove([imagePath]) } catch (_) {}
-      setSaving(false)
+      try { await supabase.storage.from('receipts').remove([path]) } catch (_) {}
+      setCollectSaving(false)
       return
     }
-
     try {
       await logActivity('EXTRA_PLATE_COLLECT',
-        (eventDetail.event_name || '') + ' | ' + n + ' plates | ' + mode + ' | ' + formatPoints(data.total_paise))
+        (eventDetail.event_name || '') + ' | ' + n + ' extras | ' + collectMode + ' | ' + formatPoints(data.total_paise))
     } catch (_) {}
-
-    setOkMsg('Collected ' + formatPoints(data.total_paise) + ' — ' + n + ' plates')
-    setPlates('')
-    setMode('')
-    setImage(null)
-    setNotes('')
-    setSaving(false)
+    setCollectMsg('Collected ' + formatPoints(data.total_paise) + ' for ' + n + ' extras')
+    setCollectPlates('')
+    setCollectMode('')
+    setCollectImage(null)
+    setCollectNotes('')
+    setCollectSaving(false)
     if (onBalanceChange) onBalanceChange()
-    loadRecent()
+    loadEventState(Number(eventId), eventDetail)
   }
 
-  // ─────────────────────────────────────────────────────────
-  //  CANCEL
-  // ─────────────────────────────────────────────────────────
-
-  function openCancel(row) {
-    setCancelRow(row)
+  function openCancel(type, row) {
+    setCancelTarget({ type: type, row: row })
     setCancelReason('')
   }
 
@@ -152,78 +241,54 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
     if (cancelSaving) return
     if (!cancelReason.trim()) { alert('Reason required'); return }
     setCancelSaving(true)
-    var { error } = await supabase.rpc('fn_extra_plate_cancel', {
-      p_collection_id: cancelRow.id,
-      p_reason: cancelReason.trim()
-    })
+    var rpc = cancelTarget.type === 'issue' ? 'fn_extra_plate_issue_cancel' : 'fn_extra_plate_cancel'
+    var params = cancelTarget.type === 'issue'
+      ? { p_issue_id: cancelTarget.row.id, p_reason: cancelReason.trim() }
+      : { p_collection_id: cancelTarget.row.id, p_reason: cancelReason.trim() }
+    var { error } = await supabase.rpc(rpc, params)
     if (error) { alert('Cancel failed: ' + error.message); setCancelSaving(false); return }
     try {
-      await logActivity('EXTRA_PLATE_CANCEL',
-        (cancelRow.events?.event_name || '') + ' | ' + cancelRow.plates_issued + ' plates | ' + formatPoints(cancelRow.total_paise) + ' | ' + cancelReason.trim())
+      var actName = cancelTarget.type === 'issue' ? 'EXTRA_PLATE_ISSUE_CANCEL' : 'EXTRA_PLATE_CANCEL'
+      var lbl = cancelTarget.type === 'issue'
+        ? cancelTarget.row.plates_count + ' plates'
+        : cancelTarget.row.extras_charged + ' extras | ' + formatPoints(cancelTarget.row.total_paise)
+      var evName = cancelTarget.row.events?.event_name || (eventDetail?.event_name) || ('event ' + cancelTarget.row.event_id)
+      await logActivity(actName, evName + ' | ' + lbl + ' | ' + cancelReason.trim())
     } catch (_) {}
-    setCancelRow(null)
+    setCancelTarget(null)
     setCancelSaving(false)
     if (onBalanceChange) onBalanceChange()
-    loadRecent()
+    if (view === 'manage' && eventId) loadEventState(Number(eventId), eventDetail)
+    if (view === 'recent') loadRecent()
   }
 
-  // ─────────────────────────────────────────────────────────
-  //  EDIT (notes + optional new receipt image)
-  // ─────────────────────────────────────────────────────────
+  // ─── DERIVED ─────────────────────────────────────
 
-  function openEdit(row) {
-    setEditRow(row)
-    setEditNotes(row.notes || '')
-    setEditImage(null)
-  }
+  var totalIssued = 0
+  for (var ii = 0; ii < issues.length; ii++) if (issues[ii].status === 'active') totalIssued += issues[ii].plates_count
+  var totalCollectedExtras = 0
+  for (var ci = 0; ci < collections.length; ci++) if (collections[ci].status === 'active') totalCollectedExtras += collections[ci].extras_charged
 
-  async function saveEdit() {
-    if (editSaving) return
-    setEditSaving(true)
-    var newPath = null
-    if (editImage) {
-      var eF
-      try { eF = await prepUpload(editImage, 100) } catch (e) { alert('Image prep failed'); setEditSaving(false); return }
-      var ext = (eF.name && eF.name.indexOf('.') !== -1) ? eF.name.split('.').pop() : 'jpg'
-      newPath = profile.id + '/extra_plate_' + Date.now() + '_edit.' + ext
-      var { error: upErr } = await supabase.storage.from('receipts').upload(newPath, eF, { upsert: true })
-      if (upErr) { alert('Receipt upload failed: ' + upErr.message); setEditSaving(false); return }
-    }
-    var { error } = await supabase.rpc('fn_extra_plate_edit_notes', {
-      p_collection_id: editRow.id,
-      p_notes: editNotes.trim() || null,
-      p_receipt_path: newPath
-    })
-    if (error) { alert('Edit failed: ' + error.message); setEditSaving(false); return }
-    try {
-      await logActivity('EXTRA_PLATE_EDIT',
-        (editRow.events?.event_name || '') + ' | notes' + (newPath ? ' + receipt' : ''))
-    } catch (_) {}
-    setEditRow(null)
-    setEditSaving(false)
-    loadRecent()
-  }
-
-  // ─────────────────────────────────────────────────────────
-  //  DERIVED
-  // ─────────────────────────────────────────────────────────
-
+  var quota = eventDetail ? (eventDetail.total_plates || 0) : 0
+  var complementary = eventDetail ? (eventDetail.complementary_plates || 0) : 0
+  var paidPax = quota - complementary
   var ratePaise = eventDetail ? Number(eventDetail.extra_plates_charge || 0) * 2 : 0
-  var previewTotal = ratePaise > 0 && Number(plates) > 0 ? ratePaise * Math.floor(Number(plates)) : 0
-  var canSubmit = eventId && Number(plates) > 0 && mode && image && ratePaise > 0 && !saving
+  var extras = Math.max(0, totalIssued - quota)
+  var remaining = Math.max(0, extras - totalCollectedExtras)
 
-  // ─────────────────────────────────────────────────────────
-  //  RENDER
-  // ─────────────────────────────────────────────────────────
+  var canIssue = eventDetail && Number(issuePlates) !== 0 && !isNaN(Number(issuePlates)) && Math.floor(Number(issuePlates)) === Number(issuePlates) && issueImage && !issueSaving
+  var canCollect = eventDetail && ratePaise > 0 && Number(collectPlates) > 0 && collectMode && collectImage && !collectSaving && remaining > 0
+  var collectPreviewTotal = ratePaise * Math.max(0, Math.floor(Number(collectPlates) || 0))
+
+  // ─── RENDER ──────────────────────────────────────
 
   return (
     <div className="p-4 max-w-2xl mx-auto">
-      {/* View toggle */}
       <div className="flex gap-2 mb-4 border-b border-gray-200">
-        <button type="button" onClick={function () { setView('collect'); setOkMsg('') }}
+        <button type="button" onClick={function () { setView('manage') }}
           className={"px-4 py-2 text-sm font-semibold border-b-2 -mb-px " +
-            (view === 'collect' ? "border-blue-600 text-blue-700" : "border-transparent text-gray-500")}>
-          Collect
+            (view === 'manage' ? "border-blue-600 text-blue-700" : "border-transparent text-gray-500")}>
+          Manage
         </button>
         <button type="button" onClick={function () { setView('recent') }}
           className={"px-4 py-2 text-sm font-semibold border-b-2 -mb-px " +
@@ -232,8 +297,8 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
         </button>
       </div>
 
-      {/* ─── COLLECT VIEW ─────────────────────────────────── */}
-      {view === 'collect' && (
+      {/* ─── MANAGE VIEW ───────────────────────────── */}
+      {view === 'manage' && (
         <div className="space-y-4">
           <EventDatePicker label="1. Event Date" value={date}
             onChange={function (d) { loadFunctionsForDate(d) }} />
@@ -250,7 +315,7 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
                   {events.map(function (ev) {
                     var selected = String(ev.id) === eventId
                     return (
-                      <button key={ev.id} type="button" onClick={function () { selectFunction(String(ev.id)) }}
+                      <button key={ev.id} type="button" onClick={function () { selectFunction(String(ev.id), ev) }}
                         className={"w-full text-left px-3 py-2 rounded-lg border transition-colors " +
                           (selected ? "border-blue-600 bg-blue-50 border-2" : "border-gray-200 bg-white hover:border-gray-300")}>
                         <div className={"text-sm font-medium " + (selected ? "text-blue-900" : "text-gray-900")}>
@@ -268,182 +333,256 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
           )}
 
           {eventDetail && (
-            <div className={"rounded-lg p-4 border-2 " +
-              (ratePaise > 0 ? "border-amber-300 bg-amber-50" : "border-red-300 bg-red-50")}>
-              {ratePaise > 0 ? (
-                <>
-                  <div className="text-xs font-semibold text-amber-800 uppercase tracking-wide">Extra Plate Rate</div>
-                  <div className="text-2xl font-bold text-amber-900 mt-0.5">₹{(ratePaise / 100).toLocaleString('en-IN')} <span className="text-sm font-medium text-amber-700">per plate</span></div>
-                </>
-              ) : (
-                <div className="text-sm font-semibold text-red-800">⚠ No extra plate rate set on this contract. Cannot collect.</div>
-              )}
-            </div>
-          )}
-
-          {eventDetail && ratePaise > 0 && (
-            <div>
-              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">3. Plates Issued</label>
-              <input type="number" min="1" step="1" inputMode="numeric" value={plates}
-                onChange={function (e) { setPlates(e.target.value) }}
-                placeholder="e.g. 25"
-                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                style={{ fontSize: '16px' }} />
-              {previewTotal > 0 && (
-                <div className="mt-2 text-sm text-gray-700">
-                  {Math.floor(Number(plates))} × ₹{(ratePaise / 100).toLocaleString('en-IN')} = <span className="font-bold text-blue-700">₹{(previewTotal / 100).toLocaleString('en-IN')}</span>
+            <div className="rounded-lg p-4 border-2 border-amber-300 bg-amber-50 space-y-3">
+              <div>
+                <div className="text-[10px] font-semibold text-amber-800 uppercase tracking-wide">Quota</div>
+                <div className="text-base font-bold text-amber-900">
+                  {paidPax} pax + {complementary} complementary = {quota} plates
                 </div>
-              )}
-            </div>
-          )}
-
-          {eventDetail && ratePaise > 0 && (
-            <div>
-              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">4. Payment Mode</label>
-              <div className="grid grid-cols-2 gap-2">
-                <button type="button" onClick={function () { setMode('cash') }}
-                  className={"py-2.5 rounded-lg border-2 text-sm font-semibold transition-colors " +
-                    (mode === 'cash' ? "border-blue-600 bg-blue-50 text-blue-900" : "border-gray-200 bg-white text-gray-600")}>
-                  💵 Cash
-                </button>
-                <button type="button" onClick={function () { setMode('bank') }}
-                  className={"py-2.5 rounded-lg border-2 text-sm font-semibold transition-colors " +
-                    (mode === 'bank' ? "border-blue-600 bg-blue-50 text-blue-900" : "border-gray-200 bg-white text-gray-600")}>
-                  🏦 Bank
-                </button>
+              </div>
+              <div className="border-t border-amber-200 pt-2">
+                <div className="text-[10px] font-semibold text-amber-800 uppercase tracking-wide">Rate</div>
+                <div className="text-base font-bold text-amber-900">
+                  {ratePaise > 0
+                    ? '₹' + (ratePaise / 100).toLocaleString('en-IN') + ' per plate'
+                    : <span className="text-red-700">No rate on contract</span>}
+                </div>
+              </div>
+              <div className="border-t border-amber-200 pt-2 grid grid-cols-4 gap-2 text-center">
+                <div>
+                  <div className="text-[10px] font-semibold text-amber-700 uppercase">Issued</div>
+                  <div className="text-base font-bold text-amber-900">{stateLoading ? '…' : totalIssued}</div>
+                </div>
+                <div>
+                  <div className="text-[10px] font-semibold text-amber-700 uppercase">Extras</div>
+                  <div className="text-base font-bold text-amber-900">{stateLoading ? '…' : extras}</div>
+                </div>
+                <div>
+                  <div className="text-[10px] font-semibold text-amber-700 uppercase">Collected</div>
+                  <div className="text-base font-bold text-amber-900">{stateLoading ? '…' : totalCollectedExtras}</div>
+                </div>
+                <div>
+                  <div className="text-[10px] font-semibold text-amber-700 uppercase">Due</div>
+                  <div className={"text-base font-bold " + (remaining > 0 ? "text-red-700" : "text-green-700")}>
+                    {stateLoading ? '…' : (remaining > 0 ? remaining : '✓')}
+                  </div>
+                </div>
               </div>
             </div>
           )}
 
-          {eventDetail && ratePaise > 0 && (
-            <div>
-              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">5. Payment Proof</label>
-              {image ? (
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-green-600 font-medium truncate flex-1">✓ {image.name}</span>
-                  <button type="button" onClick={function () { setImage(null) }}
-                    className="text-xs text-red-500 font-bold hover:text-red-700">✕</button>
-                </div>
-              ) : (
-                <label className="block w-full py-3 text-center text-sm text-blue-700 border-2 border-dashed border-blue-300 rounded-lg cursor-pointer hover:bg-blue-50 transition-colors font-medium">
-                  📷 Take photo of money received
-                  <input type="file" accept="image/*" capture="environment" className="sr-only"
-                    onChange={function (e) { if (e.target.files?.[0]) setImage(e.target.files[0]); e.target.value = '' }} />
-                </label>
+          {/* Issue section */}
+          {eventDetail && (
+            <div className="rounded-lg border border-gray-200 bg-white p-4 space-y-3">
+              <div className="text-sm font-bold text-gray-900">📥 Issue Plates</div>
+              <div className="text-xs text-gray-500">
+                Log plates handed out. Use negative for corrections.
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Plates to Issue</label>
+                <input type="number" step="1" inputMode="numeric" value={issuePlates}
+                  onChange={function (e) { setIssuePlates(e.target.value) }}
+                  placeholder={quota > 0 && totalIssued === 0 ? 'e.g. ' + quota : 'e.g. 50'}
+                  className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm"
+                  style={{ fontSize: '16px' }} />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Photo Proof</label>
+                {issueImage ? (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-green-600 font-medium truncate flex-1">✓ {issueImage.name}</span>
+                    <button type="button" onClick={function () { setIssueImage(null) }}
+                      className="text-xs text-red-500 font-bold">✕</button>
+                  </div>
+                ) : (
+                  <label className="block w-full py-2 text-center text-sm text-blue-700 border-2 border-dashed border-blue-300 rounded-lg cursor-pointer font-medium">
+                    📷 Take photo of plates
+                    <input type="file" accept="image/*" capture="environment" className="sr-only"
+                      onChange={function (e) { if (e.target.files?.[0]) setIssueImage(e.target.files[0]); e.target.value = '' }} />
+                  </label>
+                )}
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Notes (optional)</label>
+                <input type="text" value={issueNotes} onChange={function (e) { setIssueNotes(e.target.value) }}
+                  placeholder="e.g. initial batch, top-up"
+                  className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm"
+                  style={{ fontSize: '16px' }} />
+              </div>
+              {issueMsg && (
+                <div className="rounded-lg p-2 border border-green-300 bg-green-50 text-xs text-green-800 font-semibold">✓ {issueMsg}</div>
               )}
+              <button type="button" onClick={submitIssue} disabled={!canIssue}
+                className="w-full py-3 rounded-lg bg-blue-600 text-white font-semibold text-sm disabled:opacity-40">
+                {issueSaving ? 'Saving...' : 'Log Issue'}
+              </button>
             </div>
           )}
 
-          {eventDetail && ratePaise > 0 && (
-            <div>
-              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">6. Notes (optional)</label>
-              <input type="text" value={notes} onChange={function (e) { setNotes(e.target.value) }}
-                placeholder="e.g. late guests, main course"
-                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                style={{ fontSize: '16px' }} />
+          {/* Collect section - only when there's something to collect */}
+          {eventDetail && ratePaise > 0 && remaining > 0 && (
+            <div className="rounded-lg border-2 border-red-300 bg-red-50 p-4 space-y-3">
+              <div className="text-sm font-bold text-red-900">💰 Collect Extras</div>
+              <div className="text-xs text-red-700">
+                {remaining} plate{remaining === 1 ? '' : 's'} due at ₹{(ratePaise / 100).toLocaleString('en-IN')} each
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-red-800 uppercase tracking-wide mb-2">Plates to Collect For</label>
+                <input type="number" min="1" step="1" inputMode="numeric" value={collectPlates}
+                  onChange={function (e) { setCollectPlates(e.target.value) }}
+                  className="w-full px-3 py-2.5 border border-red-300 rounded-lg text-sm bg-white"
+                  style={{ fontSize: '16px' }} />
+                {collectPreviewTotal > 0 && (
+                  <div className="mt-2 text-sm text-red-900 font-semibold">
+                    Amount: ₹{(collectPreviewTotal / 100).toLocaleString('en-IN')}
+                  </div>
+                )}
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-red-800 uppercase tracking-wide mb-2">Payment Mode</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button type="button" onClick={function () { setCollectMode('cash') }}
+                    className={"py-2.5 rounded-lg border-2 text-sm font-semibold " +
+                      (collectMode === 'cash' ? "border-red-600 bg-red-100 text-red-900" : "border-gray-200 bg-white text-gray-600")}>
+                    💵 Cash
+                  </button>
+                  <button type="button" onClick={function () { setCollectMode('bank') }}
+                    className={"py-2.5 rounded-lg border-2 text-sm font-semibold " +
+                      (collectMode === 'bank' ? "border-red-600 bg-red-100 text-red-900" : "border-gray-200 bg-white text-gray-600")}>
+                    🏦 Bank
+                  </button>
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-red-800 uppercase tracking-wide mb-2">Payment Proof</label>
+                {collectImage ? (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-green-600 font-medium truncate flex-1">✓ {collectImage.name}</span>
+                    <button type="button" onClick={function () { setCollectImage(null) }}
+                      className="text-xs text-red-500 font-bold">✕</button>
+                  </div>
+                ) : (
+                  <label className="block w-full py-2 text-center text-sm text-red-700 border-2 border-dashed border-red-300 rounded-lg cursor-pointer font-medium bg-white">
+                    📷 Photo of money received
+                    <input type="file" accept="image/*" capture="environment" className="sr-only"
+                      onChange={function (e) { if (e.target.files?.[0]) setCollectImage(e.target.files[0]); e.target.value = '' }} />
+                  </label>
+                )}
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-red-800 uppercase tracking-wide mb-2">Notes (optional)</label>
+                <input type="text" value={collectNotes} onChange={function (e) { setCollectNotes(e.target.value) }}
+                  className="w-full px-3 py-2.5 border border-red-300 rounded-lg text-sm bg-white"
+                  style={{ fontSize: '16px' }} />
+              </div>
+              {collectMsg && (
+                <div className="rounded-lg p-2 border border-green-300 bg-green-50 text-xs text-green-800 font-semibold">✓ {collectMsg}</div>
+              )}
+              <button type="button" onClick={submitCollect} disabled={!canCollect}
+                className="w-full py-3 rounded-lg bg-red-600 text-white font-semibold text-sm disabled:opacity-40">
+                {collectSaving ? 'Collecting...' : 'Collect ' + (collectPreviewTotal > 0 ? '₹' + (collectPreviewTotal / 100).toLocaleString('en-IN') : '')}
+              </button>
             </div>
           )}
 
-          {okMsg && (
-            <div className="rounded-lg p-3 border border-green-300 bg-green-50 text-sm text-green-800 font-semibold">✓ {okMsg}</div>
+          {eventDetail && ratePaise > 0 && remaining === 0 && totalIssued > quota && (
+            <div className="rounded-lg p-3 border border-green-300 bg-green-50 text-sm text-green-800 font-semibold">
+              ✓ All extras collected for this event
+            </div>
           )}
 
-          <button type="button" onClick={submitCollection} disabled={!canSubmit}
-            className="w-full py-3 rounded-lg bg-blue-600 text-white font-semibold text-sm disabled:opacity-40 hover:bg-blue-700 transition-colors">
-            {saving ? 'Saving...' : 'Collect ' + (previewTotal > 0 ? '₹' + (previewTotal / 100).toLocaleString('en-IN') : '')}
-          </button>
+          {/* Event history (this event only) */}
+          {eventDetail && (issues.length > 0 || collections.length > 0) && (
+            <div className="rounded-lg border border-gray-200 bg-white p-3 space-y-2">
+              <div className="text-xs font-bold text-gray-700 uppercase tracking-wide">Event History</div>
+              {[].concat(issues.map(function (r) { return Object.assign({}, r, { _kind: 'issue' }) }))
+                 .concat(collections.map(function (r) { return Object.assign({}, r, { _kind: 'collection' }) }))
+                 .sort(function (a, b) { return b.created_at.localeCompare(a.created_at) })
+                 .map(function (r) { return renderHistoryRow(r, profile, isAdmin, openCancel) })}
+            </div>
+          )}
         </div>
       )}
 
-      {/* ─── RECENT LIST VIEW ─────────────────────────────── */}
+      {/* ─── RECENT VIEW ───────────────────────────── */}
       {view === 'recent' && (
         <div className="space-y-3">
           {isAdmin && (
             <label className="flex items-center gap-2 text-xs text-gray-600">
               <input type="checkbox" checked={showAll} onChange={function (e) { setShowAll(e.target.checked) }} />
-              Show all users' collections (admin)
+              Show all users
             </label>
           )}
           {listLoading && <p className="text-xs text-gray-400">Loading...</p>}
-          {!listLoading && list.length === 0 && (
-            <p className="text-xs text-gray-400">No collections in the last 30 days</p>
+          {!listLoading && recentGroups.length === 0 && (
+            <p className="text-xs text-gray-400">No activity in the last 30 days</p>
           )}
-          {list.map(function (row) {
-            var isCancelled = row.status === 'cancelled'
-            var canCancel = !isCancelled && (isAdmin || (row.collected_by === profile.id && row.created_at.slice(0, 10) === new Date().toISOString().slice(0, 10)))
-            var canEdit = !isCancelled && (isAdmin || row.collected_by === profile.id)
-            var receiptUrl = row.receipt_path ? supabase.storage.from('receipts').getPublicUrl(row.receipt_path).data?.publicUrl : null
+          {recentGroups.map(function (g) {
+            var evQuota = g.event?.total_plates || 0
+            var evComp = g.event?.complementary_plates || 0
+            var evPaid = evQuota - evComp
+            var evIssuedTotal = 0, evCollectedTotal = 0
+            for (var x = 0; x < g.items.length; x++) {
+              var it = g.items[x]
+              if (it.status !== 'active') continue
+              if (it._kind === 'issue') evIssuedTotal += it.plates_count
+              else evCollectedTotal += it.extras_charged
+            }
+            var evExtras = Math.max(0, evIssuedTotal - evQuota)
+            var evDue = Math.max(0, evExtras - evCollectedTotal)
             return (
-              <div key={row.id} className={"rounded-lg border p-3 " + (isCancelled ? "border-gray-200 bg-gray-50 opacity-70" : "border-gray-200 bg-white")}>
-                <div className="flex justify-between items-start gap-2">
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-semibold text-gray-900 truncate">
-                      {row.events?.event_name || 'Event ' + row.event_id}
-                      {row.events?.client_name ? ' — ' + row.events.client_name : ''}
-                    </div>
-                    <div className="text-xs text-gray-500 mt-0.5">
-                      {(row.events?.venue_name || '') + ' · ' + formatDate(row.events?.function_date || row.created_at)}
-                    </div>
-                    <div className="text-sm mt-1">
-                      <span className="font-semibold">{row.plates_issued}</span> plates × ₹{(row.rate_paise / 100).toLocaleString('en-IN')} =
-                      <span className={"font-bold ml-1 " + (isCancelled ? "text-gray-500 line-through" : "text-blue-700")}>
-                        ₹{(row.total_paise / 100).toLocaleString('en-IN')}
-                      </span>
-                      <span className="ml-2 text-xs text-gray-500">
-                        {row.payment_mode === 'cash' ? '💵 Cash' : '🏦 Bank'}
-                      </span>
-                    </div>
-                    {row.notes && <div className="text-xs text-gray-600 mt-1 italic">"{row.notes}"</div>}
-                    {isCancelled && (
-                      <div className="text-xs text-red-600 mt-1 font-semibold">Cancelled: {row.cancelled_reason || '—'}</div>
-                    )}
-                    <div className="text-[10px] text-gray-400 mt-1">
-                      {formatDate(row.created_at)} · #{row.id.slice(0, 8)}
-                    </div>
+              <div key={g.event_id} className="rounded-lg border border-gray-200 bg-white p-3 space-y-2">
+                <div>
+                  <div className="text-sm font-semibold text-gray-900">
+                    {g.event?.event_name || 'Event ' + g.event_id}
+                    {g.event?.client_name ? ' — ' + g.event.client_name : ''}
                   </div>
-                  {receiptUrl && (
-                    <a href={receiptUrl} target="_blank" rel="noopener noreferrer"
-                      className="text-xs text-blue-600 font-medium flex-shrink-0">📷</a>
-                  )}
+                  <div className="text-xs text-gray-500">
+                    {(g.event?.venue_name || '') + ' · ' + formatDate(g.event?.function_date || g.items[0].created_at)}
+                  </div>
+                  <div className="text-[11px] text-gray-700 mt-1">
+                    Quota <span className="font-semibold">{evQuota}</span> ({evPaid}+{evComp}) ·
+                    Issued <span className="font-semibold">{evIssuedTotal}</span> ·
+                    Extras <span className="font-semibold">{evExtras}</span> ·
+                    Collected <span className="font-semibold">{evCollectedTotal}</span>
+                    {evDue > 0 && <span className="text-red-700 font-semibold"> · Due {evDue}</span>}
+                  </div>
                 </div>
-                {(canEdit || canCancel) && (
-                  <div className="flex gap-2 mt-2 pt-2 border-t border-gray-100">
-                    {canEdit && (
-                      <button type="button" onClick={function () { openEdit(row) }}
-                        className="text-xs px-2.5 py-1 rounded border border-gray-300 text-gray-700 hover:bg-gray-50 font-medium">Edit</button>
-                    )}
-                    {canCancel && (
-                      <button type="button" onClick={function () { openCancel(row) }}
-                        className="text-xs px-2.5 py-1 rounded border border-red-300 text-red-700 hover:bg-red-50 font-medium">Cancel</button>
-                    )}
-                  </div>
-                )}
+                <div className="space-y-1.5 border-t border-gray-100 pt-2">
+                  {g.items.map(function (r) { return renderHistoryRow(r, profile, isAdmin, openCancel) })}
+                </div>
               </div>
             )
           })}
         </div>
       )}
 
-      {/* ─── CANCEL MODAL ─────────────────────────────────── */}
-      {cancelRow && (
+      {/* ─── CANCEL MODAL ──────────────────────────── */}
+      {cancelTarget && (
         <div className="fixed inset-0 z-50 bg-black/60 flex items-end sm:items-center justify-center p-0 sm:p-4"
-          onClick={function () { if (!cancelSaving) setCancelRow(null) }}>
+          onClick={function () { if (!cancelSaving) setCancelTarget(null) }}>
           <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md p-5 space-y-3 max-h-[90vh] overflow-y-auto"
             onClick={function (ev) { ev.stopPropagation() }}>
-            <h3 className="text-base font-bold text-gray-900">Cancel Collection</h3>
+            <h3 className="text-base font-bold text-gray-900">
+              Cancel {cancelTarget.type === 'issue' ? 'Issue' : 'Collection'}
+            </h3>
             <div className="text-sm text-gray-600">
-              {cancelRow.plates_issued} plates · ₹{(cancelRow.total_paise / 100).toLocaleString('en-IN')} · {cancelRow.payment_mode}
+              {cancelTarget.type === 'issue'
+                ? cancelTarget.row.plates_count + ' plates'
+                : cancelTarget.row.extras_charged + ' extras · ₹' + (cancelTarget.row.total_paise / 100).toLocaleString('en-IN') + ' · ' + cancelTarget.row.payment_mode}
             </div>
             <div className="text-xs text-red-600 bg-red-50 border border-red-200 rounded p-2">
-              Wallet will be debited and event ledger reversed. This cannot be undone.
+              {cancelTarget.type === 'issue'
+                ? 'Marks issue cancelled. If a collection exists for this event, log a correction issue with negative plates instead.'
+                : 'Wallet debited and event ledger reversed. This cannot be undone.'}
             </div>
             <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide">Reason</label>
             <input type="text" value={cancelReason} onChange={function (e) { setCancelReason(e.target.value) }}
-              placeholder="Why is this being cancelled?"
+              placeholder="Why?"
               className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm"
               style={{ fontSize: '16px' }} />
             <div className="flex gap-3 pt-2">
-              <button type="button" onClick={function () { setCancelRow(null) }} disabled={cancelSaving}
+              <button type="button" onClick={function () { setCancelTarget(null) }} disabled={cancelSaving}
                 className="flex-1 py-3 text-sm text-gray-600 bg-gray-100 rounded-xl font-semibold">Keep</button>
               <button type="button" onClick={confirmCancel} disabled={cancelSaving || !cancelReason.trim()}
                 className="flex-1 py-3 text-sm text-white bg-red-600 rounded-xl disabled:opacity-40 font-semibold">
@@ -453,46 +592,45 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
           </div>
         </div>
       )}
+    </div>
+  )
+}
 
-      {/* ─── EDIT MODAL ───────────────────────────────────── */}
-      {editRow && (
-        <div className="fixed inset-0 z-50 bg-black/60 flex items-end sm:items-center justify-center p-0 sm:p-4"
-          onClick={function () { if (!editSaving) setEditRow(null) }}>
-          <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md p-5 space-y-3 max-h-[90vh] overflow-y-auto"
-            onClick={function (ev) { ev.stopPropagation() }}>
-            <h3 className="text-base font-bold text-gray-900">Edit Collection</h3>
-            <div className="text-xs text-gray-500">
-              Only notes and receipt can be edited. To change plates or amount, cancel and re-enter.
-            </div>
-            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide">Notes</label>
-            <input type="text" value={editNotes} onChange={function (e) { setEditNotes(e.target.value) }}
-              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm"
-              style={{ fontSize: '16px' }} />
-            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide">Replace Receipt (optional)</label>
-            {editImage ? (
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-green-600 font-medium truncate flex-1">✓ {editImage.name}</span>
-                <button type="button" onClick={function () { setEditImage(null) }}
-                  className="text-xs text-red-500 font-bold">✕</button>
-              </div>
-            ) : (
-              <label className="block w-full py-2 text-center text-xs text-blue-700 border-2 border-dashed border-blue-300 rounded-lg cursor-pointer font-medium">
-                📷 Choose new receipt
-                <input type="file" accept="image/*" capture="environment" className="sr-only"
-                  onChange={function (e) { if (e.target.files?.[0]) setEditImage(e.target.files[0]); e.target.value = '' }} />
-              </label>
-            )}
-            <div className="flex gap-3 pt-2">
-              <button type="button" onClick={function () { setEditRow(null) }} disabled={editSaving}
-                className="flex-1 py-3 text-sm text-gray-600 bg-gray-100 rounded-xl font-semibold">Cancel</button>
-              <button type="button" onClick={saveEdit} disabled={editSaving}
-                className="flex-1 py-3 text-sm text-white bg-blue-600 rounded-xl disabled:opacity-40 font-semibold">
-                {editSaving ? 'Saving...' : 'Save'}
-              </button>
-            </div>
-          </div>
+// Shared row renderer for both issue and collection history entries
+function renderHistoryRow(r, profile, isAdmin, openCancel) {
+  var isCancelled = r.status === 'cancelled'
+  var isIssue = r._kind === 'issue'
+  var ownerId = isIssue ? r.issued_by : r.collected_by
+  var canCancel = !isCancelled && (
+    isAdmin ||
+    (ownerId === profile.id && r.created_at.slice(0, 10) === new Date().toISOString().slice(0, 10))
+  )
+  var receiptUrl = r.receipt_path
+    ? supabase.storage.from('receipts').getPublicUrl(r.receipt_path).data?.publicUrl
+    : null
+  return (
+    <div key={r._kind + '_' + r.id}
+      className={"flex items-start justify-between gap-2 text-xs " + (isCancelled ? "opacity-50" : "")}>
+      <div className="flex-1 min-w-0">
+        <div className="font-medium text-gray-800">
+          {isIssue
+            ? '📥 ' + (r.plates_count > 0 ? '+' : '') + r.plates_count + ' plates'
+            : '💰 ' + r.extras_charged + ' × ₹' + (r.rate_paise / 100).toLocaleString('en-IN') + ' = ₹' + (r.total_paise / 100).toLocaleString('en-IN') + ' ' + (r.payment_mode === 'cash' ? '💵' : '🏦')}
+          {isCancelled && <span className="ml-2 text-red-600">— cancelled</span>}
         </div>
-      )}
+        {r.notes && <div className="text-gray-500 italic mt-0.5">"{r.notes}"</div>}
+        {isCancelled && r.cancelled_reason && <div className="text-red-600 mt-0.5">Reason: {r.cancelled_reason}</div>}
+        <div className="text-[10px] text-gray-400 mt-0.5">{formatDate(r.created_at)}</div>
+      </div>
+      <div className="flex items-center gap-2 flex-shrink-0">
+        {receiptUrl && (
+          <a href={receiptUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600">📷</a>
+        )}
+        {canCancel && (
+          <button type="button" onClick={function () { openCancel(isIssue ? 'issue' : 'collection', r) }}
+            className="text-xs px-2 py-0.5 rounded border border-red-300 text-red-700 font-medium">Cancel</button>
+        )}
+      </div>
     </div>
   )
 }
