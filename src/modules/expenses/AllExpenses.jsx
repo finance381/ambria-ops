@@ -39,6 +39,7 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds }) {
   var [allExpLoadingMore, setAllExpLoadingMore] = useState(false)
   var [allExpFullTotal, setAllExpFullTotal] = useState(0)
   var [allExpFullCount, setAllExpFullCount] = useState(0)
+  var [pdfBusy, setPdfBusy] = useState(false)
   // Filter panel state
   var [filtersOpen, setFiltersOpen] = useState(function () { return _savedFilters.filtersOpen })
   var [deptFilter, setDeptFilter] = useState(function () { return _savedFilters.dept })
@@ -207,6 +208,172 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds }) {
     var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'all_expenses_' + new Date().toISOString().split('T')[0] + '.csv'; a.click()
   }
 
+  async function exportAllExpPDF() {
+    if (pdfBusy) return
+    if (!allExps.length && !allExpFullCount) return
+    setPdfBusy(true)
+    try {
+      // ─ Fetch ALL matching rows across pagination ─
+      var hasScope = scopeDeptIds && scopeDeptIds.length > 0
+      var hasAllocFilter = !!(deptFilter || expTypeFilter || expSubTypeFilter || venueFilter) || hasScope
+      var allocEmbed = hasAllocFilter
+        ? 'expense_allocations!inner(expense_type_id, expense_sub_type_id)'
+        : 'expense_allocations(expense_type_id, expense_sub_type_id)'
+      var CHUNK = 1000
+      var fromIdx = 0
+      var fullRows = []
+      while (true) {
+        var q = supabase.from('expenses')
+          .select('id, user_id, amount_paise, description, status, expense_date, deleted_at, ' + allocEmbed)
+          .order('expense_date', { ascending: true, nullsFirst: false })
+          .order('id', { ascending: true })
+          .range(fromIdx, fromIdx + CHUNK - 1)
+        if (allExpStatus === 'deleted') q = q.not('deleted_at', 'is', null)
+        else if (allExpStatus) q = q.eq('status', allExpStatus).is('deleted_at', null)
+        if (allExpFrom) q = q.gte('expense_date', allExpFrom)
+        if (allExpTo) q = q.lte('expense_date', allExpTo)
+        if (allExpSearchD) q = q.ilike('description', '%' + allExpSearchD + '%')
+        if (userFilter) q = q.eq('user_id', userFilter)
+        if (deptFilter) q = q.eq('expense_allocations.department_id', Number(deptFilter))
+        if (expTypeFilter) q = q.eq('expense_allocations.expense_type_id', Number(expTypeFilter))
+        if (expSubTypeFilter) q = q.eq('expense_allocations.expense_sub_type_id', Number(expSubTypeFilter))
+        if (venueFilter) q = q.eq('expense_allocations.venue_id', Number(venueFilter))
+        if (hasScope) q = q.in('expense_allocations.department_id', scopeDeptIds)
+        if (amountMin) q = q.gte('amount_paise', Math.round(Number(amountMin) * 100))
+        if (amountMax) q = q.lte('amount_paise', Math.round(Number(amountMax) * 100))
+        var { data: chunk, error: chunkErr } = await q
+        if (chunkErr) throw new Error(chunkErr.message)
+        if (!chunk || chunk.length === 0) break
+        fullRows = fullRows.concat(chunk)
+        if (chunk.length < CHUNK) break
+        fromIdx += CHUNK
+      }
+
+      // ─ Fetch user names in one RPC ─
+      var uIds = []
+      fullRows.forEach(function (r) { if (r.user_id && uIds.indexOf(r.user_id) === -1) uIds.push(r.user_id) })
+      var nameMap = {}
+      if (uIds.length > 0) {
+        var { data: nm } = await supabase.rpc('get_profile_names', { p_ids: uIds })
+        ;(nm || []).forEach(function (x) { nameMap[x.id] = x.name })
+      }
+
+      // ─ Build PDF ─
+      var jsPDFmod = await import('jspdf')
+      var jsPDF = jsPDFmod.default || jsPDFmod.jsPDF
+      var autoTableMod = await import('jspdf-autotable')
+      var autoTable = autoTableMod.default || autoTableMod
+
+      var doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
+      var pageW = doc.internal.pageSize.getWidth()
+
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(14)
+      doc.text('Expense Statement', 14, 15)
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(9)
+      doc.text('Generated: ' + new Date().toLocaleString('en-IN'), pageW - 14, 15, { align: 'right' })
+
+      var fParts = []
+      if (allExpFrom || allExpTo) fParts.push('Period: ' + (allExpFrom || '…') + ' to ' + (allExpTo || '…'))
+      if (allExpStatus) fParts.push('Status: ' + allExpStatus)
+      if (userFilter) {
+        var u = userOptions.find(function (x) { return String(x.id) === String(userFilter) })
+        fParts.push('User: ' + (u ? u.name : userFilter))
+      }
+      if (deptFilter) {
+        var d = deptOptions.find(function (x) { return String(x.id) === String(deptFilter) })
+        fParts.push('Dept: ' + (d ? d.name : deptFilter))
+      }
+      if (expTypeFilter) fParts.push('Type: ' + (expTypeMap[expTypeFilter] || expTypeFilter))
+      if (expSubTypeFilter) fParts.push('Sub-Type: ' + (expSubTypeMap[expSubTypeFilter] || expSubTypeFilter))
+      if (venueFilter) {
+        var v = venueOptions.find(function (x) { return String(x.id) === String(venueFilter) })
+        fParts.push('Venue: ' + (v ? v.name : venueFilter))
+      }
+      if (amountMin) fParts.push('Min: ₹' + amountMin)
+      if (amountMax) fParts.push('Max: ₹' + amountMax)
+      if (allExpSearch) fParts.push('Search: "' + allExpSearch + '"')
+
+      doc.setFontSize(8); doc.setTextColor(80)
+      if (fParts.length) {
+        doc.text('Filters: ' + fParts.join('  ·  '), 14, 21, { maxWidth: pageW - 28 })
+      } else {
+        doc.text('Filters: none (all expenses)', 14, 21)
+      }
+      doc.setTextColor(0)
+
+      var body = []
+      var totalDebit = 0
+      var totalCredit = 0
+
+      fullRows.forEach(function (e) {
+        var isRefund = e.status === 'deleted' || e.status === 'rejected' || !!e.deleted_at
+        var amt = e.amount_paise || 0
+        var debit = isRefund ? 0 : amt
+        var credit = isRefund ? amt : 0
+        totalDebit += debit
+        totalCredit += credit
+
+        var firstAlloc = (e.expense_allocations && e.expense_allocations[0]) || {}
+        var typeName = firstAlloc.expense_type_id ? (expTypeMap[firstAlloc.expense_type_id] || '') : ''
+        var subTypeName = firstAlloc.expense_sub_type_id ? (expSubTypeMap[firstAlloc.expense_sub_type_id] || '') : ''
+        var particulars = (e.description || '').trim()
+        if (typeName || subTypeName) {
+          var tail = [typeName, subTypeName].filter(Boolean).join(' / ')
+          particulars = particulars ? particulars + '  [' + tail + ']' : tail
+        }
+        if (e.status && e.status !== 'recorded') particulars = particulars + '  (' + e.status + ')'
+
+        body.push([
+          e.expense_date || '',
+          '#' + e.id,
+          nameMap[e.user_id] || '—',
+          particulars,
+          debit ? (debit / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '',
+          credit ? (credit / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '',
+        ])
+      })
+
+      var net = totalDebit - totalCredit
+      body.push([
+        { content: 'GRAND TOTAL', colSpan: 4, styles: { halign: 'right', fontStyle: 'bold', fillColor: [230, 230, 230] } },
+        { content: (totalDebit / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }), styles: { halign: 'right', fontStyle: 'bold', fillColor: [230, 230, 230] } },
+        { content: (totalCredit / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }), styles: { halign: 'right', fontStyle: 'bold', fillColor: [230, 230, 230] } },
+      ])
+      body.push([
+        { content: 'NET (Debit − Credit)', colSpan: 5, styles: { halign: 'right', fontStyle: 'bold', fillColor: [245, 245, 245] } },
+        { content: '₹' + (net / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }), styles: { halign: 'right', fontStyle: 'bold', fillColor: [245, 245, 245] } },
+      ])
+
+      autoTable(doc, {
+        startY: fParts.length ? 27 : 25,
+        head: [['Date', 'Voucher', 'User', 'Particulars', 'Debit ₹', 'Credit ₹']],
+        body: body,
+        styles: { fontSize: 8, cellPadding: 1.5, overflow: 'linebreak' },
+        headStyles: { fillColor: [50, 50, 50], textColor: 255, fontStyle: 'bold', halign: 'center' },
+        columnStyles: {
+          0: { cellWidth: 22 },
+          1: { cellWidth: 18 },
+          2: { cellWidth: 35 },
+          3: { cellWidth: 'auto' },
+          4: { cellWidth: 30, halign: 'right' },
+          5: { cellWidth: 30, halign: 'right' },
+        },
+        margin: { left: 10, right: 10 },
+        didDrawPage: function (data) {
+          doc.setFontSize(7); doc.setTextColor(120)
+          doc.text('Page ' + doc.internal.getCurrentPageInfo().pageNumber, pageW - 14, doc.internal.pageSize.getHeight() - 6, { align: 'right' })
+          doc.setTextColor(0)
+        },
+      })
+
+      doc.save('expenses_' + new Date().toISOString().split('T')[0] + '.pdf')
+    } catch (err) {
+      alert('PDF export failed: ' + (err.message || err))
+    } finally {
+      setPdfBusy(false)
+    }
+  }
+
   var allExpTotal = allExps.reduce(function (s, e) { return s + (e.amount_paise || 0) }, 0)
 
   return (
@@ -219,15 +386,18 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds }) {
         <div className="flex items-center justify-between">
           <div>
             {!embedded && <h2 className="text-lg font-bold text-gray-900">All Expenses</h2>}
-            <p className="text-xs text-gray-500 mt-1">
-              <span className="font-semibold">{allExps.length}{allExpFullCount > allExps.length ? ' of ' + allExpFullCount : ''}</span> shown · Total: <span className="text-base font-bold text-indigo-700">{formatPoints(allExpFullTotal)}</span>
-            </p>
           </div>
           {allExps.length > 0 && (
-            <button onClick={exportAllExpCSV}
-              className="px-3 py-1.5 text-xs font-bold text-green-600 bg-green-50 border border-green-200 rounded-lg hover:bg-green-100 transition-colors">
-              📥 CSV
-            </button>
+            <div className="flex gap-2">
+              <button onClick={exportAllExpCSV}
+                className="px-3 py-1.5 text-xs font-bold text-green-600 bg-green-50 border border-green-200 rounded-lg hover:bg-green-100 transition-colors">
+                📥 CSV
+              </button>
+              <button onClick={exportAllExpPDF} disabled={pdfBusy}
+                className="px-3 py-1.5 text-xs font-bold text-red-600 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 transition-colors disabled:opacity-40">
+                {pdfBusy ? '⏳ Generating...' : '📄 PDF'}
+              </button>
+            </div>
           )}
         </div>
       </div>
@@ -367,6 +537,13 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds }) {
       {!allExpLoading && allExps.length === 0 && (
         <div className="bg-white border border-gray-200 rounded-xl p-8 text-center">
           <p className="text-gray-400 text-sm">No expenses found</p>
+        </div>
+      )}
+
+      {!allExpLoading && allExps.length > 0 && (
+        <div className="px-1 text-xs text-gray-600">
+          <span className="font-semibold text-gray-900">{allExps.length}{allExpFullCount > allExps.length ? ' of ' + allExpFullCount : ''}</span> shown ·
+          Total: <span className="text-base font-bold text-indigo-700">{formatPoints(allExpFullTotal)}</span>
         </div>
       )}
 
