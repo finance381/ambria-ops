@@ -31,6 +31,7 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
   var [collectMode, setCollectMode] = useState('')
   var [collectImage, setCollectImage] = useState(null)
   var [collectNotes, setCollectNotes] = useState('')
+  var [collectDiscount, setCollectDiscount] = useState('')
   var [collectSaving, setCollectSaving] = useState(false)
   var [collectMsg, setCollectMsg] = useState('')
 
@@ -58,6 +59,7 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
     setCollectMsg('')
     setCollectPlates('')
     setCollectMode('')
+    setCollectDiscount('')
     if (!d) { setEvents([]); return }
     setEventsLoading(true)
     var { data } = await supabase.from('events')
@@ -77,7 +79,9 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
     setCollectMsg('')
     setCollectPlates('')
     setCollectMode('')
+    setCollectDiscount('')
     if (row) await loadEventState(Number(fid), row)
+
   }
 
   async function loadEventState(eid, evRow) {
@@ -87,7 +91,7 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
       .eq('event_id', eid)
       .order('created_at', { ascending: false })
     var cRes = await supabase.from('extra_plate_collections')
-      .select('id, extras_charged, rate_paise, total_paise, payment_mode, receipt_path, notes, status, cancelled_reason, cancelled_at, created_at, collected_by')
+      .select('id, extras_charged, rate_paise, total_paise, discount_paise, payment_mode, receipt_path, notes, status, cancelled_reason, cancelled_at, created_at, collected_by')
       .eq('event_id', eid)
       .order('created_at', { ascending: false })
     var iData = iRes.data || []
@@ -120,7 +124,7 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
       .order('created_at', { ascending: false })
       .limit(200)
     var cQ = supabase.from('extra_plate_collections')
-      .select('id, event_id, extras_charged, rate_paise, total_paise, payment_mode, receipt_path, notes, status, cancelled_reason, cancelled_at, created_at, collected_by, events(event_name, venue_name, client_name, function_date, total_plates, complementary_plates, extra_plates_charge)')
+      .select('id, event_id, extras_charged, rate_paise, total_paise, discount_paise, payment_mode, receipt_path, notes, status, cancelled_reason, cancelled_at, created_at, collected_by, events(event_name, venue_name, client_name, function_date, total_plates, complementary_plates, extra_plates_charge)')
       .gte('created_at', sinceISO)
       .order('created_at', { ascending: false })
       .limit(200)
@@ -195,6 +199,13 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
     var n = Number(collectPlates)
     if (!n || n <= 0 || Math.floor(n) !== n) { alert('Enter a whole number > 0'); return }
     if (!collectImage) { alert('Payment photo required'); return }
+
+    var discRupees = Number(collectDiscount || 0)
+    if (isNaN(discRupees) || discRupees < 0) { alert('Discount must be zero or positive'); return }
+    var discPaise = Math.round(discRupees * 100)
+    var grossPaise = ratePaise * n
+    if (discPaise > grossPaise) { alert('Discount cannot exceed gross ₹' + (grossPaise / 100).toLocaleString('en-IN')); return }
+
     setCollectSaving(true)
     setCollectMsg('')
 
@@ -210,7 +221,8 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
       p_plates: n,
       p_payment_mode: collectMode,
       p_receipt_path: path,
-      p_notes: collectNotes.trim() || null
+      p_notes: collectNotes.trim() || null,
+      p_discount_paise: discPaise
     })
     if (error) {
       alert('Collection failed: ' + error.message)
@@ -219,14 +231,17 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
       return
     }
     try {
-      await logActivity('EXTRA_PLATE_COLLECT',
-        (eventDetail.event_name || '') + ' | ' + n + ' extras | ' + collectMode + ' | ' + formatPoints(data.total_paise))
+      var actMsg = (eventDetail.event_name || '') + ' | ' + n + ' extras | ' + collectMode
+        + (discPaise > 0 ? ' | disc ' + formatPoints(discPaise) : '')
+        + ' | net ' + formatPoints(data.net_paise)
+      await logActivity('EXTRA_PLATE_COLLECT', actMsg)
     } catch (_) {}
-    setCollectMsg('Collected ' + formatPoints(data.total_paise) + ' for ' + n + ' extras')
+    setCollectMsg('Collected ' + formatPoints(data.net_paise) + (discPaise > 0 ? ' (after ' + formatPoints(discPaise) + ' disc)' : '') + ' for ' + n + ' extras')
     setCollectPlates('')
     setCollectMode('')
     setCollectImage(null)
     setCollectNotes('')
+    setCollectDiscount('')
     setCollectSaving(false)
     if (onBalanceChange) onBalanceChange()
     loadEventState(Number(eventId), eventDetail)
@@ -277,8 +292,11 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
   var remaining = Math.max(0, extras - totalCollectedExtras)
 
   var canIssue = eventDetail && Number(issuePlates) !== 0 && !isNaN(Number(issuePlates)) && Math.floor(Number(issuePlates)) === Number(issuePlates) && issueImage && !issueSaving
-  var canCollect = eventDetail && ratePaise > 0 && Number(collectPlates) > 0 && collectMode && collectImage && !collectSaving && remaining > 0
   var collectPreviewTotal = ratePaise * Math.max(0, Math.floor(Number(collectPlates) || 0))
+  var collectDiscountPaise = Math.max(0, Math.round(Number(collectDiscount || 0) * 100))
+  var collectNetPreview = Math.max(0, collectPreviewTotal - collectDiscountPaise)
+  var discountValid = collectDiscountPaise <= collectPreviewTotal
+  var canCollect = eventDetail && ratePaise > 0 && Number(collectPlates) > 0 && collectMode && collectImage && !collectSaving && remaining > 0 && discountValid
 
   // ─── RENDER ──────────────────────────────────────
 
@@ -432,12 +450,33 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
                   onChange={function (e) { setCollectPlates(e.target.value) }}
                   className="w-full px-3 py-2.5 border border-red-300 rounded-lg text-sm bg-white"
                   style={{ fontSize: '16px' }} />
-                {collectPreviewTotal > 0 && (
-                  <div className="mt-2 text-sm text-red-900 font-semibold">
-                    Amount: ₹{(collectPreviewTotal / 100).toLocaleString('en-IN')}
-                  </div>
-                )}
               </div>
+              <div>
+                <label className="block text-xs font-semibold text-red-800 uppercase tracking-wide mb-2">Discount ₹ (optional)</label>
+                <input type="number" min="0" step="1" inputMode="numeric" value={collectDiscount}
+                  onChange={function (e) { setCollectDiscount(e.target.value) }}
+                  placeholder="0"
+                  className="w-full px-3 py-2.5 border border-red-300 rounded-lg text-sm bg-white"
+                  style={{ fontSize: '16px' }} />
+              </div>
+              {collectPreviewTotal > 0 && (
+                <div className="rounded-lg bg-white border border-red-200 p-2 text-xs space-y-0.5">
+                  <div className="flex justify-between text-red-800">
+                    <span>Gross</span>
+                    <span>₹{(collectPreviewTotal / 100).toLocaleString('en-IN')}</span>
+                  </div>
+                  {Number(collectDiscount) > 0 && (
+                    <div className="flex justify-between text-red-800">
+                      <span>Discount</span>
+                      <span>− ₹{Number(collectDiscount).toLocaleString('en-IN')}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between text-red-900 font-bold border-t border-red-100 pt-0.5 mt-0.5">
+                    <span>Net to collect</span>
+                    <span>₹{(collectNetPreview / 100).toLocaleString('en-IN')}</span>
+                  </div>
+                </div>
+              )}
               <div>
                 <label className="block text-xs font-semibold text-red-800 uppercase tracking-wide mb-2">Payment Mode</label>
                 <div className="grid grid-cols-2 gap-2">
@@ -480,7 +519,7 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
               )}
               <button type="button" onClick={submitCollect} disabled={!canCollect}
                 className="w-full py-3 rounded-lg bg-red-600 text-white font-semibold text-sm disabled:opacity-40">
-                {collectSaving ? 'Collecting...' : 'Collect ' + (collectPreviewTotal > 0 ? '₹' + (collectPreviewTotal / 100).toLocaleString('en-IN') : '')}
+                {collectSaving ? 'Collecting...' : 'Collect ' + (collectNetPreview > 0 ? '₹' + (collectNetPreview / 100).toLocaleString('en-IN') : '')}
               </button>
             </div>
           )}
@@ -615,7 +654,10 @@ function renderHistoryRow(r, profile, isAdmin, openCancel) {
         <div className="font-medium text-gray-800">
           {isIssue
             ? '📥 ' + (r.plates_count > 0 ? '+' : '') + r.plates_count + ' plates'
-            : '💰 ' + r.extras_charged + ' × ₹' + (r.rate_paise / 100).toLocaleString('en-IN') + ' = ₹' + (r.total_paise / 100).toLocaleString('en-IN') + ' ' + (r.payment_mode === 'cash' ? '💵' : '🏦')}
+            : '💰 ' + r.extras_charged + ' × ₹' + (r.rate_paise / 100).toLocaleString('en-IN')
+                + (r.discount_paise > 0 ? ' − ₹' + (r.discount_paise / 100).toLocaleString('en-IN') + ' disc' : '')
+                + ' = ₹' + ((r.total_paise - (r.discount_paise || 0)) / 100).toLocaleString('en-IN')
+                + ' ' + (r.payment_mode === 'cash' ? '💵' : '🏦')}
           {isCancelled && <span className="ml-2 text-red-600">— cancelled</span>}
         </div>
         {r.notes && <div className="text-gray-500 italic mt-0.5">"{r.notes}"</div>}
