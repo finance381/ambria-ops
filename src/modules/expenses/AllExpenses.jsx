@@ -180,13 +180,26 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds }) {
     if (hasMore) rows = rows.slice(0, PAGE_SIZE)
 
     var aUserIds = []
-    rows.forEach(function (r) { if (r.user_id && aUserIds.indexOf(r.user_id) === -1) aUserIds.push(r.user_id) })
+    function pushId(id) { if (id && aUserIds.indexOf(id) === -1) aUserIds.push(id) }
+    rows.forEach(function (r) {
+      pushId(r.user_id)
+      pushId(r.reviewed_by)
+      pushId(r.penalized_by)
+      pushId(r.deleted_by)
+    })
+    var aMap = {}
     if (aUserIds.length > 0) {
       var { data: aNames } = await supabase.rpc('get_profile_names', { p_ids: aUserIds })
-      var aMap = {}
       ;(aNames || []).forEach(function (n) { aMap[n.id] = n.name })
-      rows = rows.map(function (r) { return Object.assign({}, r, { profiles: { name: aMap[r.user_id] || null } }) })
     }
+    rows = rows.map(function (r) {
+      return Object.assign({}, r, {
+        profiles: { name: aMap[r.user_id] || null },
+        _reviewerName: aMap[r.reviewed_by] || null,
+        _penalizerName: aMap[r.penalized_by] || null,
+        _deleterName: aMap[r.deleted_by] || null,
+      })
+    })
     if (append) {
       setAllExps(function (prev) { return prev.concat(rows) })
     } else {
@@ -633,6 +646,21 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds }) {
                       })()}
                       {formatDate(exp.expense_date)}
                     </p>
+                    {(function () {
+                      if (exp.deleted_at && exp._deleterName) {
+                        return <p className="text-[11px] text-gray-500 mt-0.5">🗑 Deleted by <span className="font-semibold">{exp._deleterName}</span></p>
+                      }
+                      if (exp.status === 'penalized' && exp._penalizerName) {
+                        return <p className="text-[11px] text-orange-600 mt-0.5">⚠️ Deducted by <span className="font-semibold">{exp._penalizerName}</span></p>
+                      }
+                      if (exp.status === 'flagged' && exp._reviewerName) {
+                        return <p className="text-[11px] text-red-600 mt-0.5">🚩 Flagged by <span className="font-semibold">{exp._reviewerName}</span></p>
+                      }
+                      if (exp.status === 'acknowledged' && exp._reviewerName) {
+                        return <p className="text-[11px] text-green-700 mt-0.5">✓ Acknowledged by <span className="font-semibold">{exp._reviewerName}</span></p>
+                      }
+                      return null
+                    })()}
                   </div>
                   <div className="flex flex-col items-end gap-1 flex-shrink-0 ml-2">
                     <span className="text-sm font-bold text-gray-800">{formatPoints(exp.amount_paise)}</span>
