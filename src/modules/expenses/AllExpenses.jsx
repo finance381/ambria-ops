@@ -151,7 +151,7 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds }) {
       : 'expense_allocations(department, department_id, venue_id, amount_paise, expense_type_id, expense_sub_type_id, remarks)'
 
     var query = supabase.from('expenses')
-      .select('id, user_id, batch_id, expense_type_id, expense_sub_type_id, amount_paise, tax_paise, description, status, expense_date, receipt_path, receipt_paths, created_at, rejection_reason, flag_reason, penalty_paise, penalized_at, penalized_by, reviewed_at, reviewed_by, deduction_type, vendor_name, travel_from, travel_to, travel_mode, metadata, event_id, deleted_at, delete_reason, deleted_by, expense_types(name, extra_fields), expense_sub_types(name, extra_fields), events(event_name), ' + allocEmbed)
+      .select('id, user_id, batch_id, expense_type_id, expense_sub_type_id, amount_paise, tax_paise, description, status, expense_date, receipt_path, receipt_paths, created_at, rejection_reason, flag_reason, penalty_paise, penalized_at, penalized_by, reviewed_at, reviewed_by, acknowledged_at, acknowledged_by, deduction_type, vendor_name, travel_from, travel_to, travel_mode, metadata, event_id, deleted_at, delete_reason, deleted_by, expense_types(name, extra_fields), expense_sub_types(name, extra_fields), events(event_name), ' + allocEmbed)
       .order('created_at', { ascending: false })
       .range(offset, offset + PAGE_SIZE)
 
@@ -184,6 +184,7 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds }) {
     rows.forEach(function (r) {
       pushId(r.user_id)
       pushId(r.reviewed_by)
+      pushId(r.acknowledged_by)
       pushId(r.penalized_by)
       pushId(r.deleted_by)
     })
@@ -196,6 +197,7 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds }) {
       return Object.assign({}, r, {
         profiles: { name: aMap[r.user_id] || null },
         _reviewerName: aMap[r.reviewed_by] || null,
+        _acknowledgerName: aMap[r.acknowledged_by] || null,
         _penalizerName: aMap[r.penalized_by] || null,
         _deleterName: aMap[r.deleted_by] || null,
       })
@@ -656,8 +658,8 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds }) {
                       if (exp.status === 'flagged' && exp._reviewerName) {
                         return <p className="text-[11px] text-red-600 mt-0.5">🚩 Flagged by <span className="font-semibold">{exp._reviewerName}</span></p>
                       }
-                      if (exp.status === 'acknowledged' && exp._reviewerName) {
-                        return <p className="text-[11px] text-green-700 mt-0.5">✓ Acknowledged by <span className="font-semibold">{exp._reviewerName}</span></p>
+                      if (exp.status === 'acknowledged' && exp._acknowledgerName) {
+                        return <p className="text-[11px] text-green-700 mt-0.5">✓ Acknowledged by <span className="font-semibold">{exp._acknowledgerName}</span></p>
                       }
                       return null
                     })()}
