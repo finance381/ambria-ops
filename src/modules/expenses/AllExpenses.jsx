@@ -95,6 +95,7 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds }) {
   var [expTypeMap, setExpTypeMap] = useState({})
   var [expSubTypeMap, setExpSubTypeMap] = useState({})
   var [venueOptions, setVenueOptions] = useState([])
+  var [venueMap, setVenueMap] = useState({})
   var [userOptions, setUserOptions] = useState([])
 
   useEffect(function () {
@@ -125,7 +126,11 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds }) {
       setExpTypeMap(etMap)
       setExpTypeOptions(ets)
       setDeptOptions(res[1].data || [])
-      setVenueOptions(res[2].data || [])
+      var vs = res[2].data || []
+      setVenueOptions(vs)
+      var vMap = {}
+      vs.forEach(function (v) { vMap[v.id] = v.code || v.name })
+      setVenueMap(vMap)
       setUserOptions(res[3].data || [])
       var ests = res[4].data || []
       var estMap = {}
@@ -639,13 +644,32 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds }) {
                         </div>
                       )
                     })()}
-                    <p className="text-[11px] text-gray-400 mt-0.5">
+                    {(function () {
+                      var allocs = exp.expense_allocations || []
+                      if (allocs.length === 0) return null
+                      return (
+                        <div className="mt-1.5 border-t border-gray-100 pt-1.5 space-y-0.5">
+                          {allocs.map(function (a, i) {
+                            var venue = a.venue_id ? venueMap[a.venue_id] : ''
+                            var dept = a.department || ''
+                            var subType = a.expense_sub_type_id ? (expSubTypeMap[a.expense_sub_type_id] || '') : ''
+                            var parts = []
+                            if (venue) parts.push('[' + venue + ']')
+                            if (dept) parts.push(dept)
+                            if (subType) parts.push('› ' + subType)
+                            var label = parts.join(' ')
+                            return (
+                              <div key={i} className="flex items-center justify-between gap-2 text-[11px]">
+                                <span className="text-gray-500 truncate">{label || '—'}{a.remarks ? ' · ' + a.remarks : ''}</span>
+                                <span className="text-gray-700 font-semibold flex-shrink-0">{formatPoints(a.amount_paise || 0)}</span>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )
+                    })()}
+                    <p className="text-[11px] text-gray-400 mt-1">
                       {(exp.profiles?.name || '—') + ' · '}
-                      {(function () {
-                        var a = (exp.expense_allocations && exp.expense_allocations[0]) || null
-                        var d = a ? (a.department || '') : ''
-                        return d ? d + ' · ' : ''
-                      })()}
                       {formatDate(exp.expense_date)}
                     </p>
                     {(function () {
