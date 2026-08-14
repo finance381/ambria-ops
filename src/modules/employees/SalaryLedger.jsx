@@ -19,6 +19,9 @@ function SalaryLedger({ profile }) {
   var [loading, setLoading] = useState(true)
   var [search, setSearch] = useState('')
   var [statusFilter, setStatusFilter] = useState('all')  // 'all' | 'with_balance' | 'stale'
+  var [deptFilter, setDeptFilter] = useState('')  // job_department id or ''
+  var [jdMap, setJdMap] = useState({})
+  var [jdOptions, setJdOptions] = useState([])
 
   var [selectedEmp, setSelectedEmp] = useState(null)
   var [entries, setEntries] = useState([])
@@ -36,10 +39,28 @@ function SalaryLedger({ profile }) {
 
   async function loadEmployees() {
     setLoading(true)
-    var { data, error } = await supabase.from('v_employee_ledger')
-      .select('*')
-      .order('balance_paise', { ascending: false })
-    if (!error) setEmployees(data || [])
+    var res = await Promise.all([
+      supabase.from('v_employee_ledger').select('*').order('balance_paise', { ascending: false }),
+      supabase.from('employees').select('id, designation, job_department_ids'),
+      supabase.from('job_departments').select('id, name').order('sort_order').order('name')
+    ])
+    var ledger = (res[0].data) || []
+    var emps = (res[1].data) || []
+    var jds = (res[2].data) || []
+    var empMap = {}
+    emps.forEach(function (e) { empMap[e.id] = e })
+    var jdM = {}
+    jds.forEach(function (j) { jdM[j.id] = j.name })
+    setJdMap(jdM)
+    setJdOptions(jds)
+    var merged = ledger.map(function (r) {
+      var e = empMap[r.employee_id]
+      return Object.assign({}, r, {
+        designation: e ? (e.designation || '') : '',
+        job_department_ids: e ? (e.job_department_ids || []) : []
+      })
+    })
+    setEmployees(merged)
     setLoading(false)
   }
 
@@ -156,11 +177,15 @@ function SalaryLedger({ profile }) {
     var q = search.trim().toLowerCase()
     var filtered = employees.filter(function (e) {
       if (q) {
-        var hay = ((e.employee_name || '') + ' ' + (e.employee_code || '')).toLowerCase()
+        var hay = ((e.employee_name || '') + ' ' + (e.employee_code || '') + ' ' + (e.designation || '')).toLowerCase()
         if (hay.indexOf(q) === -1) return false
       }
       if (statusFilter === 'with_balance' && (e.balance_paise || 0) === 0) return false
       if (statusFilter === 'stale' && ((e.unpaid_since_days || 0) < 30)) return false
+      if (deptFilter) {
+        var ids = e.job_department_ids || []
+        if (ids.indexOf(Number(deptFilter)) === -1) return false
+      }
       return true
     })
 
@@ -209,9 +234,17 @@ function SalaryLedger({ profile }) {
         {/* Filter row */}
         <div className="flex flex-col sm:flex-row gap-2">
           <input type="text" value={search} onChange={function (e) { setSearch(e.target.value) }}
-            placeholder="Search employees..."
+            placeholder="Search name / code / designation..."
             className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-300 bg-white"
             style={{ fontSize: '16px' }} />
+          <select value={deptFilter} onChange={function (e) { setDeptFilter(e.target.value) }}
+            className="px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-indigo-300"
+            style={{ fontSize: '16px' }}>
+            <option value="">All Departments</option>
+            {jdOptions.map(function (j) {
+              return <option key={j.id} value={j.id}>{j.name}</option>
+            })}
+          </select>
           <div className="flex gap-1 bg-gray-100 rounded-lg p-0.5 self-start">
             {[
               { key: 'all', label: 'All' },
@@ -253,7 +286,20 @@ function SalaryLedger({ profile }) {
                   <div className="flex items-start justify-between gap-2 mb-2">
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-bold text-gray-900 truncate">{e.employee_name || '—'}</p>
-                      <p className="text-[10px] text-gray-500 truncate">{e.employee_code || '—'}</p>
+                      <p className="text-[10px] text-gray-500 truncate">{e.employee_code || '—'}{e.designation ? ' · ' + e.designation : ''}</p>
+                      {(e.job_department_ids || []).length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {(e.job_department_ids || []).map(function (id) {
+                            var name = jdMap[id]
+                            if (!name) return null
+                            return (
+                              <span key={id} className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-white/70 text-gray-700 border border-gray-200">
+                                {name}
+                              </span>
+                            )
+                          })}
+                        </div>
+                      )}
                     </div>
                     <div className="flex gap-1 flex-shrink-0">
                       {isStale && (
