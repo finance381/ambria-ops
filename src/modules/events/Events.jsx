@@ -88,8 +88,38 @@ function Events({ profile }) {
   var [page, setPage] = useState(1)
   var [perPage, setPerPage] = useState(24)
   var [showLedger, setShowLedger] = useState(false)
+  var [extraPlateSummary, setExtraPlateSummary] = useState(null)
 
   var isAdmin = profile?.role === 'admin' || profile?.role === 'auditor'
+  var perms = profile?.permissions || []
+
+  useEffect(function () {
+    if (!selectedFunction) { setExtraPlateSummary(null); return }
+    var fid = selectedFunction.id
+    Promise.all([
+      supabase.from('extra_plate_issues').select('plates_count, status').eq('event_id', fid),
+      supabase.from('extra_plate_collections').select('extras_charged, total_paise, discount_paise, status').eq('event_id', fid),
+    ]).then(function (res) {
+      var epIssues = res[0].data || []
+      var epColls = res[1].data || []
+      var eps = { issued_active: 0, issued_cancelled: 0, charged_active: 0, net_paise: 0, discount_paise: 0, collections_active: 0, collections_cancelled: 0 }
+      epIssues.forEach(function (r) {
+        if (r.status === 'active') { eps.issued_active += Number(r.plates_count || 0) }
+        else { eps.issued_cancelled += 1 }
+      })
+      epColls.forEach(function (r) {
+        if (r.status === 'active') {
+          eps.charged_active += Number(r.extras_charged || 0)
+          eps.net_paise += Number(r.total_paise || 0) - Number(r.discount_paise || 0)
+          eps.discount_paise += Number(r.discount_paise || 0)
+          eps.collections_active += 1
+        } else {
+          eps.collections_cancelled += 1
+        }
+      })
+      setExtraPlateSummary(eps)
+    })
+  }, [selectedFunction])
   var userEventDeptNames = (profile?.event_dept_ids || []).map(function (id) {
     var dept = departments.find(function (d) { return d.id === id })
     return dept ? dept.name : null
@@ -396,6 +426,46 @@ function Events({ profile }) {
                 <p className="text-xs text-gray-400">Created by: {selectedFunction.created_user_name}</p>
               )}
             </div>
+
+            {/* Extra Plate summary — visible when activity exists */}
+            {extraPlateSummary && (extraPlateSummary.issued_active !== 0 || extraPlateSummary.collections_active > 0 || extraPlateSummary.issued_cancelled > 0 || extraPlateSummary.collections_cancelled > 0) && (
+              <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="text-xs font-bold text-orange-700 uppercase tracking-wider">🍽 Extra Plates</h4>
+                  {(function () {
+                    var remaining = extraPlateSummary.issued_active - extraPlateSummary.charged_active
+                    if (remaining > 0) return <span className="text-[10px] font-bold text-red-600">{remaining} uncollected</span>
+                    if (remaining < 0) return <span className="text-[10px] font-bold text-amber-600">{Math.abs(remaining)} over-collected</span>
+                    if (extraPlateSummary.issued_active > 0) return <span className="text-[10px] font-bold text-green-600">✓ settled</span>
+                    return null
+                  })()}
+                </div>
+                <div className={"grid gap-3 text-sm " + (isAdmin || perms.indexOf('feature_extra_plate_collect') >= 0 ? "grid-cols-3" : "grid-cols-2")}>
+                  <div>
+                    <p className="text-[10px] text-gray-500 uppercase">Issued</p>
+                    <p className="font-medium text-gray-800">{extraPlateSummary.issued_active} plates</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] text-gray-500 uppercase">Charged</p>
+                    <p className="font-medium text-gray-800">{extraPlateSummary.charged_active} plates</p>
+                  </div>
+                  {(isAdmin || perms.indexOf('feature_extra_plate_collect') >= 0) && (
+                    <div>
+                      <p className="text-[10px] text-gray-500 uppercase">Collected</p>
+                      <p className="font-medium text-green-700">{formatPaise(extraPlateSummary.net_paise)}</p>
+                    </div>
+                  )}
+                </div>
+                {(isAdmin || perms.indexOf('feature_extra_plate_collect') >= 0) && extraPlateSummary.discount_paise > 0 && (
+                  <p className="text-[10px] text-gray-500 mt-2">Discount given: {formatPaise(extraPlateSummary.discount_paise)}</p>
+                )}
+                {(extraPlateSummary.issued_cancelled > 0 || extraPlateSummary.collections_cancelled > 0) && (
+                  <p className="text-[10px] text-gray-400 mt-1">
+                    Cancelled: {extraPlateSummary.issued_cancelled} issue{extraPlateSummary.issued_cancelled !== 1 ? 's' : ''} · {extraPlateSummary.collections_cancelled} collection{extraPlateSummary.collections_cancelled !== 1 ? 's' : ''}
+                  </p>
+                )}
+              </div>
+            )}
 
             {/* Financial details — hidden by default */}
             <div>

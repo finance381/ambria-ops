@@ -108,7 +108,7 @@ function hydrateEntry(exp) {
     expenseTypeId: exp.expense_type_id ? String(exp.expense_type_id) : '',
     expenseSubTypeId: exp.expense_sub_type_id ? String(exp.expense_sub_type_id) : '',
     description: exp.description || '',
-    amount: exp.amount_paise != null ? String(exp.amount_paise / 100) : '',
+    amount: exp.amount_paise != null ? String((exp.amount_paise - (exp.tax_paise || 0)) / 100) : '',
     taxAmount: exp.tax_paise ? String(exp.tax_paise / 100) : '',
     expenseDate: exp.expense_date || new Date().toISOString().split('T')[0],
     fieldValues: meta,
@@ -545,17 +545,19 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
     setEntries(updated)
   }
 
-  // Payment split model:
+  // Payment split model (v87+):
+  //   amount_paise = basePaise + taxPaise (PAYABLE / gross)
   //   amount_paise = payment_cash_paise + payment_credit_paise                 (invariant)
   //   payment_credit_paise = payment_credit_cash_paise + payment_credit_bank_paise  (invariant)
-  //   Ledger L1 credit = amount_paise (only when credit > 0 AND vendor picked)
+  //   Ledger L1 credit = amount_paise (gross, only when credit > 0 AND vendor picked)
   //   Ledger L2 debit  = payment_cash_paise
-  //   Wallet debit for credit-mode = cash + tax; for all-cash = amount (legacy)
+  //   Wallet debit = payment_cash_paise (tax already included since amount is gross)
   function getEntrySplit(e) {
-    var grossPaise = e.isItemPurchase
+    var basePaise = e.isItemPurchase
       ? Math.round(computeItemsTotal(e) * 100)
       : Math.round(Number(e.amount || 0) * 100)
     var taxPaise = e.taxAmount ? Math.round(Number(e.taxAmount) * 100) : 0
+    var payablePaise = basePaise + taxPaise
     var st = expenseSubTypes.find(function (s) { return s.id === Number(e.expenseSubTypeId) })
     var vf = (st && st.extra_fields)
       ? st.extra_fields.find(function (f) { return f.type === 'lookup' && f.source === 'vendors' })
@@ -564,10 +566,10 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
     var creditPaise = 0
     if (vendorPicked) {
       var rawCredit = Math.round(Number(e.paymentCreditRupees || 0) * 100)
-      creditPaise = Math.max(0, Math.min(grossPaise, rawCredit))
+      creditPaise = Math.max(0, Math.min(payablePaise, rawCredit))
     }
-    var cashPaise = grossPaise - creditPaise
-    var walletSpendPaise = creditPaise > 0 ? (cashPaise + taxPaise) : (grossPaise + taxPaise)
+    var cashPaise = payablePaise - creditPaise
+    var walletSpendPaise = cashPaise
     // Leg-level distribution of credit
     var cashLegPaise = 0
     var bankLegPaise = 0
@@ -585,7 +587,9 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
       }
     }
     return {
-      grossPaise: grossPaise,
+      grossPaise: payablePaise,     // legacy name — now equals payable (base + tax)
+      basePaise: basePaise,
+      payablePaise: payablePaise,
       taxPaise: taxPaise,
       cashPaise: cashPaise,
       creditPaise: creditPaise,
@@ -616,10 +620,12 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
   }
 
   function setPaymentCash(idx, valRupees) {
-    // Editing cash → credit = amount - cash
+    // Editing cash → credit = payable - cash
     var e = entries[idx]
     if (!e) return
-    var amtRupees = e.isItemPurchase ? computeItemsTotal(e) : Number(e.amount || 0)
+    var baseRupees = e.isItemPurchase ? computeItemsTotal(e) : Number(e.amount || 0)
+    var taxRupees = Number(e.taxAmount || 0)
+    var amtRupees = baseRupees + taxRupees  // payable
     var cashN = Number(valRupees || 0)
     if (!isFinite(cashN) || cashN < 0) cashN = 0
     if (cashN > amtRupees) cashN = amtRupees
@@ -865,9 +871,11 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
         return
       }
 
-      var newPaise = e0.isItemPurchase
+      var newBasePaise = e0.isItemPurchase
         ? Math.round(computeItemsTotal(e0) * 100)
         : Math.round(Number(e0.amount) * 100)
+      var newTaxPaise = e0.taxAmount ? Math.round(Number(e0.taxAmount) * 100) : 0
+      var newPaise = newBasePaise + newTaxPaise
       try {
         var editMeta = Object.assign({}, e0.fieldValues)
         var keepPaths = existingReceipts.filter(function (p) { return removedReceipts.indexOf(p) === -1 })
@@ -876,7 +884,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
           expense_type_id: Number(e0.expenseTypeId),
           expense_sub_type_id: Number(e0.expenseSubTypeId),
           amount_paise: newPaise,
-          tax_paise: e0.taxAmount ? Math.round(Number(e0.taxAmount) * 100) : 0,
+          tax_paise: newTaxPaise,
           payment_cash_paise: _editSplit.cashPaise,
           payment_credit_paise: _editSplit.creditPaise,
           payment_credit_cash_paise: _editSplit.cashLegPaise,
@@ -986,9 +994,11 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
     try {
       for (var i = 0; i < entries.length; i++) {
         var e = entries[i]
-        var paise = e.isItemPurchase
+        var basePaise = e.isItemPurchase
           ? Math.round(computeItemsTotal(e) * 100)
           : Math.round(Number(e.amount) * 100)
+        var taxPaise = e.taxAmount ? Math.round(Number(e.taxAmount) * 100) : 0
+        var paise = basePaise + taxPaise
 
         try {
           var meta = Object.assign({}, e.fieldValues)
@@ -1037,7 +1047,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
             expense_type_id: Number(e.expenseTypeId),
             expense_sub_type_id: Number(e.expenseSubTypeId),
             amount_paise: paise,
-            tax_paise: e.taxAmount ? Math.round(Number(e.taxAmount) * 100) : 0,
+            tax_paise: taxPaise,
             payment_cash_paise: _split.cashPaise,
             payment_credit_paise: _split.creditPaise,
             payment_credit_cash_paise: _split.cashLegPaise,
@@ -1619,7 +1629,9 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
               {(function () {
                 var split = getEntrySplit(entry)
                 if (!split.vendorPicked) return null
-                var amtRupees = entry.isItemPurchase ? computeItemsTotal(entry) : Number(entry.amount || 0)
+                var baseRupees = entry.isItemPurchase ? computeItemsTotal(entry) : Number(entry.amount || 0)
+                var taxRupees = Number(entry.taxAmount || 0)
+                var amtRupees = baseRupees + taxRupees  // payable = base + tax
                 if (amtRupees <= 0) return null
                 var cashRupees = (split.cashPaise / 100)
                 var creditRupees = (split.creditPaise / 100)
@@ -1627,7 +1639,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                   return String(v.id) === String(entry.fieldValues[split.vendorFieldKey])
                 })
                 var vendorLabel = vendorRow ? vendorRow.name : ''
-                var wOver = walletBalance != null && (split.cashPaise + split.taxPaise) > walletBalance
+                var wOver = walletBalance != null && split.cashPaise > walletBalance
                 return (
                   <div className="border border-indigo-200 rounded-lg bg-indigo-50/40 p-3 space-y-2">
                     <div className="flex items-center justify-between">
@@ -1958,8 +1970,9 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
         }
         var oldSpend = 0
         if (editExp) {
+          // v87+: amount_paise is gross → wallet debit = payment_cash_paise (tax already included)
           oldSpend = (editExp.payment_credit_paise || 0) > 0
-            ? (editExp.payment_cash_paise || 0) + (editExp.tax_paise || 0)
+            ? (editExp.payment_cash_paise || 0)
             : (editExp.amount_paise || 0)
         }
         var effAvail = walletBalance + oldSpend

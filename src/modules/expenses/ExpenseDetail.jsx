@@ -439,10 +439,27 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
         <div className="@3xl:col-span-6 space-y-4">
 
       <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-3">
-        <div className="flex justify-between">
-          <span className="text-sm text-gray-500">Amount</span>
-          <span className="text-sm font-bold text-gray-900">{formatPoints(exp.amount_paise)}</span>
-        </div>
+        {exp.tax_paise > 0 ? (
+          <>
+            <div className="flex justify-between">
+              <span className="text-sm text-gray-500">Base</span>
+              <span className="text-sm text-gray-800">{formatPoints((exp.amount_paise || 0) - (exp.tax_paise || 0))}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-sm text-gray-500">Tax</span>
+              <span className="text-sm text-gray-800">{formatPoints(exp.tax_paise)}</span>
+            </div>
+            <div className="flex justify-between border-t border-gray-100 pt-2">
+              <span className="text-sm font-semibold text-gray-700">Gross Total</span>
+              <span className="text-sm font-bold text-gray-900">{formatPoints(exp.amount_paise)}</span>
+            </div>
+          </>
+        ) : (
+          <div className="flex justify-between">
+            <span className="text-sm text-gray-500">Amount</span>
+            <span className="text-sm font-bold text-gray-900">{formatPoints(exp.amount_paise)}</span>
+          </div>
+        )}
         <div className="flex justify-between">
           <span className="text-sm text-gray-500">Date</span>
           <span className="text-sm text-gray-800">{formatDate(exp.expense_date)}</span>
@@ -485,12 +502,6 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
             </div>
           )
         })}
-        {exp.tax_paise > 0 && (
-          <div className="flex justify-between">
-            <span className="text-sm text-gray-500">Tax</span>
-            <span className="text-sm text-gray-800">{formatPoints(exp.tax_paise)}</span>
-          </div>
-        )}
         {exp.description && (
           <div className="border-t border-gray-100 pt-3">
             <span className="text-xs font-medium text-gray-500 uppercase tracking-wider">Description</span>
