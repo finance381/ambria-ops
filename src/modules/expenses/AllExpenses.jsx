@@ -275,14 +275,14 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds }) {
       var hasScope = scopeDeptIds && scopeDeptIds.length > 0
       var hasAllocFilter = !!(deptFilter || expTypeFilter || expSubTypeFilter || venueFilter) || hasScope
       var allocEmbed = hasAllocFilter
-        ? 'expense_allocations!inner(expense_type_id, expense_sub_type_id)'
-        : 'expense_allocations(expense_type_id, expense_sub_type_id)'
+        ? 'expense_allocations!inner(department, department_id, venue_id, amount_paise, expense_type_id, expense_sub_type_id, remarks)'
+        : 'expense_allocations(department, department_id, venue_id, amount_paise, expense_type_id, expense_sub_type_id, remarks)'
       var CHUNK = 1000
       var fromIdx = 0
       var fullRows = []
       while (true) {
         var q = supabase.from('expenses')
-          .select('id, user_id, amount_paise, description, status, expense_date, deleted_at, ' + allocEmbed)
+          .select('id, user_id, amount_paise, tax_paise, description, status, expense_date, deleted_at, vendor_name, metadata, expense_type_id, expense_sub_type_id, expense_types(name, extra_fields), expense_sub_types(name, extra_fields), ' + allocEmbed)
           .order('expense_date', { ascending: true, nullsFirst: false })
           .order('id', { ascending: true })
           .range(fromIdx, fromIdx + CHUNK - 1)
