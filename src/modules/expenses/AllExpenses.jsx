@@ -366,6 +366,10 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds }) {
       var totalDebit = 0
       var totalCredit = 0
 
+      function fmtAmt(paise) {
+        return (paise / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+      }
+
       fullRows.forEach(function (e) {
         var isRefund = e.status === 'deleted' || e.status === 'rejected' || !!e.deleted_at
         var amt = e.amount_paise || 0
@@ -374,23 +378,51 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds }) {
         totalDebit += debit
         totalCredit += credit
 
-        var firstAlloc = (e.expense_allocations && e.expense_allocations[0]) || {}
-        var typeName = firstAlloc.expense_type_id ? (expTypeMap[firstAlloc.expense_type_id] || '') : ''
-        var subTypeName = firstAlloc.expense_sub_type_id ? (expSubTypeMap[firstAlloc.expense_sub_type_id] || '') : ''
-        var particulars = (e.description || '').trim()
-        if (typeName || subTypeName) {
-          var tail = [typeName, subTypeName].filter(Boolean).join(' / ')
-          particulars = particulars ? particulars + '  [' + tail + ']' : tail
+        // Header: parent expense type › sub-type
+        var typeName = e.expense_types?.name || ''
+        var subTypeName = e.expense_sub_types?.name || ''
+        var head = typeName ? typeName + (subTypeName ? ' > ' + subTypeName : '') : 'Expense'
+
+        var lines = [head]
+        if (e.description) lines.push(e.description.trim())
+
+        // Vendor + extra_field chips
+        var chipParts = []
+        if (e.vendor_name) chipParts.push('Vendor: ' + e.vendor_name)
+        var chips = extraFieldChips(e)
+        chips.forEach(function (c) { chipParts.push(c.label + ': ' + c.value) })
+        if (chipParts.length) lines.push(chipParts.join('  |  '))
+
+        // Per-allocation split
+        var allocs = e.expense_allocations || []
+        allocs.forEach(function (a) {
+          var venue = a.venue_id ? venueMap[a.venue_id] : ''
+          var dept = a.department || ''
+          var aSubType = a.expense_sub_type_id ? (expSubTypeMap[a.expense_sub_type_id] || '') : ''
+          var parts = []
+          if (venue) parts.push('[' + venue + ']')
+          if (dept) parts.push(dept)
+          if (aSubType) parts.push('> ' + aSubType)
+          var label = parts.join(' ') || '—'
+          if (a.remarks) label = label + ' | ' + a.remarks
+          lines.push('  ' + label + ' — ' + fmtAmt(a.amount_paise || 0))
+        })
+
+        // Subtotal + GST
+        if ((e.tax_paise || 0) > 0) {
+          var subtotal = allocs.reduce(function (s, a) { return s + (a.amount_paise || 0) }, 0)
+          lines.push('  Subtotal: ' + fmtAmt(subtotal) + '   GST: ' + fmtAmt(e.tax_paise))
         }
-        if (e.status && e.status !== 'recorded') particulars = particulars + '  (' + e.status + ')'
+
+        if (e.status && e.status !== 'recorded') lines.push('(' + e.status + ')')
 
         body.push([
           e.expense_date || '',
           '#' + e.id,
           nameMap[e.user_id] || '—',
-          particulars,
-          debit ? (debit / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '',
-          credit ? (credit / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '',
+          lines.join('\n'),
+          debit ? fmtAmt(debit) : '',
+          credit ? fmtAmt(credit) : '',
         ])
       })
 
