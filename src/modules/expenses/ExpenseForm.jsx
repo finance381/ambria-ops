@@ -79,7 +79,7 @@ function hydrateEntry(exp) {
       venueId: a.venue_id ? String(a.venue_id) : '',
       expenseTypeId: a.expense_type_id ? String(a.expense_type_id) : '',
       expenseSubTypeId: a.expense_sub_type_id ? String(a.expense_sub_type_id) : '',
-      amountPaise: a.amount_paise != null ? String(a.amount_paise) : '',
+      amountPaise: a.amount_paise != null ? String(a.amount_paise / 100) : '',
       remarks: a.remarks || ''
     }
   })
