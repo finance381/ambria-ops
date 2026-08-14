@@ -619,9 +619,8 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds }) {
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold text-gray-900 truncate">
                       {(function () {
-                        var a = (exp.expense_allocations && exp.expense_allocations[0]) || null
-                        var typeName = a && a.expense_type_id ? (expTypeMap[a.expense_type_id] || '') : (exp.expense_types?.name || '')
-                        var subTypeName = a && a.expense_sub_type_id ? (expSubTypeMap[a.expense_sub_type_id] || '') : ''
+                        var typeName = exp.expense_types?.name || ''
+                        var subTypeName = exp.expense_sub_types?.name || ''
                         return typeName ? typeName + (subTypeName ? ' › ' + subTypeName : '') : 'Expense'
                       })()}
                     </p>
@@ -647,6 +646,8 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds }) {
                     {(function () {
                       var allocs = exp.expense_allocations || []
                       if (allocs.length === 0) return null
+                      var subtotal = allocs.reduce(function (s, a) { return s + (a.amount_paise || 0) }, 0)
+                      var tax = exp.tax_paise || 0
                       return (
                         <div className="mt-1.5 border-t border-gray-100 pt-1.5 space-y-0.5">
                           {allocs.map(function (a, i) {
@@ -665,6 +666,18 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds }) {
                               </div>
                             )
                           })}
+                          {tax > 0 && (
+                            <div className="flex items-center justify-between gap-2 text-[11px] border-t border-gray-100 pt-1 mt-1">
+                              <span className="text-gray-500">Subtotal</span>
+                              <span className="text-gray-700 font-semibold">{formatPoints(subtotal)}</span>
+                            </div>
+                          )}
+                          {tax > 0 && (
+                            <div className="flex items-center justify-between gap-2 text-[11px]">
+                              <span className="text-gray-500">GST</span>
+                              <span className="text-gray-700 font-semibold">{formatPoints(tax)}</span>
+                            </div>
+                          )}
                         </div>
                       )
                     })()}
