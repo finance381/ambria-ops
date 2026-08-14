@@ -629,9 +629,16 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds }) {
                     )}
                     {(function () {
                       var chips = extraFieldChips(exp)
-                      if (chips.length === 0) return null
+                      var hasVendor = !!exp.vendor_name
+                      if (chips.length === 0 && !hasVendor) return null
                       return (
                         <div className="flex flex-wrap gap-1 mt-1.5">
+                          {hasVendor && (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-indigo-50 text-[10px]">
+                              <span className="text-indigo-500">Vendor:</span>
+                              <span className="text-indigo-800 font-medium">{exp.vendor_name}</span>
+                            </span>
+                          )}
                           {chips.map(function (c, i) {
                             return (
                               <span key={i} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-gray-100 text-[10px]">
