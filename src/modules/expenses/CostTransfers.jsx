@@ -15,9 +15,11 @@ var EMPTY_FORM = {
   from_party_type: 'expense',
   from_expense_type_id: '', from_expense_sub_type_id: '',
   from_event_id: '', from_vendor_id: '', from_employee_id: '',
+  from_meta: {},
   to_party_type: 'expense',
   to_expense_type_id: '', to_expense_sub_type_id: '',
   to_event_id: '', to_vendor_id: '', to_employee_id: '',
+  to_meta: {},
   amount_pts: '', description: '', reason_note: '',
   effective_date: new Date().toISOString().substring(0, 10),
 }
@@ -35,6 +37,8 @@ function CostTransfers({ profile }) {
   var [events, setEvents] = useState([])
   var [vendors, setVendors] = useState([])
   var [employees, setEmployees] = useState([])
+  var [venues, setVenues] = useState([])
+  var [jobDepts, setJobDepts] = useState([])
 
   var [form, setForm] = useState(EMPTY_FORM)
 
@@ -70,16 +74,20 @@ function CostTransfers({ profile }) {
     try {
       var results = await Promise.all([
         supabase.from('expense_types').select('id, name').eq('active', true).order('name'),
-        supabase.from('expense_sub_types').select('id, name, expense_type_id').eq('active', true).order('name'),
+        supabase.from('expense_sub_types').select('id, name, expense_type_id, extra_fields').eq('active', true).order('name'),
         supabase.from('events').select('id, function_date, event_name, client_name').order('function_date', { ascending: false }).limit(500),
         supabase.from('vendors').select('id, name').eq('active', true).order('name'),
         supabase.from('employees').select('id, full_name').order('full_name').limit(1000),
+        supabase.from('venues').select('id, code, name').eq('active', true).order('name'),
+        supabase.from('job_departments').select('id, name').order('name'),
       ])
       setExpTypes(results[0].data || [])
       setExpSubTypes(results[1].data || [])
       setEvents(results[2].data || [])
       setVendors(results[3].data || [])
       setEmployees(results[4].data || [])
+      setVenues(results[5].data || [])
+      setJobDepts(results[6].data || [])
     } catch (_) { setError('Lookup load failed') }
   }
 
@@ -196,6 +204,8 @@ function CostTransfers({ profile }) {
         p_description: form.description.trim(),
         p_reason_note: form.reason_note.trim() || null,
         p_effective_date: form.effective_date,
+        p_from_meta: form.from_meta || {},
+        p_to_meta: form.to_meta || {},
       })
       if (res.error) throw res.error
       try { logActivity('COST_TRANSFER_CREATE', '#' + res.data + ' Rs ' + amt.toFixed(2)) } catch (_) {}
@@ -367,9 +377,11 @@ function CostTransfers({ profile }) {
       <Modal open={showForm} onClose={function () { setShowForm(false) }} title="New Cost Transfer">
         <div className="space-y-4">
           <PartySection side="from" form={form} updForm={updForm}
-            expTypes={expTypes} expSubTypes={expSubTypes} events={events} vendors={vendors} employees={employees} />
+            expTypes={expTypes} expSubTypes={expSubTypes} events={events} vendors={vendors} employees={employees}
+            venues={venues} jobDepts={jobDepts} />
           <PartySection side="to" form={form} updForm={updForm}
-            expTypes={expTypes} expSubTypes={expSubTypes} events={events} vendors={vendors} employees={employees} />
+            expTypes={expTypes} expSubTypes={expSubTypes} events={events} vendors={vendors} employees={employees}
+            venues={venues} jobDepts={jobDepts} />
 
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -421,11 +433,29 @@ function CostTransfers({ profile }) {
   )
 }
 
-function PartySection({ side, form, updForm, expTypes, expSubTypes, events, vendors, employees }) {
+function PartySection({ side, form, updForm, expTypes, expSubTypes, events, vendors, employees, venues, jobDepts }) {
   var t = form[side + '_party_type']
   function fld(name) { return side + '_' + name }
+  var metaKey = side + '_meta'
+
+  function lookupItems(source) {
+    if (source === 'vendors') return (vendors || []).map(function (x) { return { value: String(x.id), label: x.name } })
+    if (source === 'venues') return (venues || []).map(function (x) { return { value: String(x.id), label: (x.code ? x.code + ' — ' + x.name : x.name) } })
+    if (source === 'job_departments') return (jobDepts || []).map(function (x) { return { value: String(x.id), label: x.name } })
+    if (source === 'staff') return (employees || []).map(function (x) { return { value: String(x.id), label: x.full_name } })
+    return []
+  }
+
+  function updMeta(fieldKey, val) {
+    var currentMeta = form[metaKey] || {}
+    var nextMeta = Object.assign({}, currentMeta)
+    if (val === '' || val == null) { delete nextMeta[fieldKey] } else { nextMeta[fieldKey] = val }
+    var patch = {}; patch[metaKey] = nextMeta
+    updForm(patch)
+  }
 
   var picker = null
+  var lookupFields = null
   if (t === 'expense') {
     var etId = Number(form[fld('expense_type_id')]) || 0
     var subs = expSubTypes.filter(function (s) { return s.expense_type_id === etId })
@@ -436,16 +466,41 @@ function PartySection({ side, form, updForm, expTypes, expSubTypes, events, vend
         <SearchDropdown items={etItems}
           value={form[fld('expense_type_id')]}
           onChange={function (v) {
-            var patch = {}; patch[fld('expense_type_id')] = v; patch[fld('expense_sub_type_id')] = ''
+            var patch = {}; patch[fld('expense_type_id')] = v; patch[fld('expense_sub_type_id')] = ''; patch[metaKey] = {}
             updForm(patch)
           }}
           placeholder="Search expense type" />
         <SearchDropdown items={subItems}
           value={form[fld('expense_sub_type_id')]}
-          onChange={function (v) { var patch = {}; patch[fld('expense_sub_type_id')] = v; updForm(patch) }}
+          onChange={function (v) { var patch = {}; patch[fld('expense_sub_type_id')] = v; patch[metaKey] = {}; updForm(patch) }}
           placeholder={!etId ? 'Pick a type first' : (subs.length === 0 ? 'No sub-types' : 'Sub-type (optional)')} />
       </div>
     )
+
+    // Render lookup-type extra_fields for the picked sub-type
+    var subId = Number(form[fld('expense_sub_type_id')]) || 0
+    var picked = subId ? expSubTypes.find(function (s) { return s.id === subId }) : null
+    var lookupExtras = (picked && Array.isArray(picked.extra_fields))
+      ? picked.extra_fields.filter(function (f) { return f.type === 'lookup' && f.source })
+      : []
+    if (lookupExtras.length > 0) {
+      var meta = form[metaKey] || {}
+      lookupFields = (
+        <div className="mt-2 space-y-2 pl-2 border-l-2 border-indigo-100">
+          {lookupExtras.map(function (f) {
+            return (
+              <div key={f.key}>
+                <label className="block text-[10px] font-semibold text-gray-500 mb-1 uppercase tracking-wider">{f.label}{f.required ? ' *' : ''}</label>
+                <SearchDropdown items={lookupItems(f.source)}
+                  value={meta[f.key] || ''}
+                  onChange={function (v) { updMeta(f.key, v) }}
+                  placeholder={'Search ' + (f.source || '')} />
+              </div>
+            )
+          })}
+        </div>
+      )
+    }
   } else if (t === 'event') {
     var evItems = events.map(function (x) {
       var lbl = (x.event_name || x.client_name || ('Event #' + x.id)) + ' — ' + (x.function_date || '')
@@ -493,6 +548,7 @@ function PartySection({ side, form, updForm, expTypes, expSubTypes, events, vend
         })}
       </div>
       {picker}
+      {lookupFields}
     </div>
   )
 }
