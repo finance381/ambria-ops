@@ -39,6 +39,7 @@ function CostTransfers({ profile }) {
   var [employees, setEmployees] = useState([])
   var [venues, setVenues] = useState([])
   var [jobDepts, setJobDepts] = useState([])
+  var [categories, setCategories] = useState([])
 
   var [form, setForm] = useState(EMPTY_FORM)
 
@@ -73,13 +74,14 @@ function CostTransfers({ profile }) {
   async function loadLookups() {
     try {
       var results = await Promise.all([
-        supabase.from('expense_types').select('id, name').eq('active', true).order('name'),
+        supabase.from('expense_types').select('id, name, department_id, sub_department_id').eq('active', true).order('name'),
         supabase.from('expense_sub_types').select('id, name, expense_type_id, extra_fields').eq('active', true).order('name'),
         supabase.from('events').select('id, function_date, event_name, client_name').order('function_date', { ascending: false }).limit(500),
-        supabase.from('vendors').select('id, name').eq('active', true).order('name'),
-        supabase.from('employees').select('id, full_name').order('full_name').limit(1000),
+        supabase.from('vendors').select('id, name, category_ids').eq('active', true).order('name'),
+        supabase.from('employees').select('id, full_name, employee_code, job_department_ids').order('full_name').limit(1000),
         supabase.from('venues').select('id, code, name').eq('active', true).order('name'),
         supabase.from('job_departments').select('id, name').order('name'),
+        supabase.from('categories').select('id, sub_department_id').order('id'),
       ])
       setExpTypes(results[0].data || [])
       setExpSubTypes(results[1].data || [])
@@ -88,6 +90,7 @@ function CostTransfers({ profile }) {
       setEmployees(results[4].data || [])
       setVenues(results[5].data || [])
       setJobDepts(results[6].data || [])
+      setCategories(results[7].data || [])
     } catch (_) { setError('Lookup load failed') }
   }
 
@@ -378,10 +381,10 @@ function CostTransfers({ profile }) {
         <div className="space-y-4">
           <PartySection side="from" form={form} updForm={updForm}
             expTypes={expTypes} expSubTypes={expSubTypes} events={events} vendors={vendors} employees={employees}
-            venues={venues} jobDepts={jobDepts} />
+            venues={venues} jobDepts={jobDepts} categories={categories} />
           <PartySection side="to" form={form} updForm={updForm}
             expTypes={expTypes} expSubTypes={expSubTypes} events={events} vendors={vendors} employees={employees}
-            venues={venues} jobDepts={jobDepts} />
+            venues={venues} jobDepts={jobDepts} categories={categories} />
 
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -433,16 +436,53 @@ function CostTransfers({ profile }) {
   )
 }
 
-function PartySection({ side, form, updForm, expTypes, expSubTypes, events, vendors, employees, venues, jobDepts }) {
+function PartySection({ side, form, updForm, expTypes, expSubTypes, events, vendors, employees, venues, jobDepts, categories }) {
   var t = form[side + '_party_type']
   function fld(name) { return side + '_' + name }
   var metaKey = side + '_meta'
 
-  function lookupItems(source) {
-    if (source === 'vendors') return (vendors || []).map(function (x) { return { value: String(x.id), label: x.name } })
+  // Vendors filtered by currently-selected expense type's sub_department (or dept fallback)
+  function vendorPool() {
+    var etId = Number(form[fld('expense_type_id')]) || 0
+    if (!etId) return vendors || []
+    var et = (expTypes || []).find(function (x) { return x.id === etId })
+    if (!et) return vendors || []
+    var sdId = et.sub_department_id || null
+    var dId = et.department_id || null
+    var catList = categories || []
+    var relevantCatIds = catList.filter(function (c) {
+      if (sdId && c.sub_department_id === sdId) return true
+      if (!sdId && dId) { // fallback: any cat under any sub_dept of this dept — punt: use all cats without sub_dept filter
+        return true
+      }
+      return false
+    }).map(function (c) { return c.id })
+    if (relevantCatIds.length === 0) return vendors || []
+    return (vendors || []).filter(function (v) {
+      var vc = v.category_ids || []
+      for (var i = 0; i < vc.length; i++) { if (relevantCatIds.indexOf(vc[i]) !== -1) return true }
+      return false
+    })
+  }
+
+  function lookupItems(field) {
+    var source = field.source
+    if (source === 'vendors') {
+      return vendorPool().map(function (x) { return { value: String(x.id), label: x.name } })
+    }
     if (source === 'venues') return (venues || []).map(function (x) { return { value: String(x.id), label: (x.code ? x.code + ' — ' + x.name : x.name) } })
-    if (source === 'job_departments') return (jobDepts || []).map(function (x) { return { value: String(x.id), label: x.name } })
-    if (source === 'staff') return (employees || []).map(function (x) { return { value: String(x.id), label: x.full_name } })
+    if (source === 'job_departments') {
+      var allowed = Array.isArray(field.allowed_dept_ids) ? field.allowed_dept_ids : []
+      var pool = employees || []
+      if (allowed.length > 0) {
+        pool = pool.filter(function (e) {
+          var jd = e.job_department_ids || []
+          for (var i = 0; i < jd.length; i++) { if (allowed.indexOf(jd[i]) !== -1) return true }
+          return false
+        })
+      }
+      return pool.map(function (e) { return { value: String(e.id), label: e.full_name + (e.employee_code ? ' (' + e.employee_code + ')' : '') } })
+    }
     return []
   }
 
@@ -491,10 +531,10 @@ function PartySection({ side, form, updForm, expTypes, expSubTypes, events, vend
             return (
               <div key={f.key}>
                 <label className="block text-[10px] font-semibold text-gray-500 mb-1 uppercase tracking-wider">{f.label}{f.required ? ' *' : ''}</label>
-                <SearchDropdown items={lookupItems(f.source)}
+                <SearchDropdown items={lookupItems(f)}
                   value={meta[f.key] || ''}
                   onChange={function (v) { updMeta(f.key, v) }}
-                  placeholder={'Search ' + (f.source || '')} />
+                  placeholder={f.source === 'job_departments' ? 'Search employees' : ('Search ' + (f.source || ''))} />
               </div>
             )
           })}
