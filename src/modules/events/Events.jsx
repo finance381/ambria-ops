@@ -89,6 +89,7 @@ function Events({ profile }) {
   var [perPage, setPerPage] = useState(24)
   var [showLedger, setShowLedger] = useState(false)
   var [extraPlateSummary, setExtraPlateSummary] = useState(null)
+  var [venueMap, setVenueMap] = useState({})
 
   var isAdmin = profile?.role === 'admin' || profile?.role === 'auditor'
   var perms = profile?.permissions || []
@@ -138,7 +139,7 @@ function Events({ profile }) {
     var dateFloor = new Date()
     dateFloor.setDate(dateFloor.getDate() - 5)
     var dateFloorStr = dateFloor.toISOString().split('T')[0]
-    var [eventsRes, deptRes] = await Promise.all([
+    var [eventsRes, deptRes, venueRes] = await Promise.all([
       supabase
         .from('events_safe')
         .select('id, lms_event_id, contract_no, contract_date, function_date, department, contract_type, venue_name, location, contact_person, contact_number, event_name, client_name, session, catering, total_plates, complementary_plates, extra_plates_charge, balance_received, balance_bank, balance_amount, status, synced_at, created_user_name')
@@ -146,9 +147,13 @@ function Events({ profile }) {
         .order('function_date', { ascending: false })
         .limit(2000),
       supabase.from('departments').select('id, name').eq('active', true).eq('hide_from_lists', false),
+      supabase.from('venues').select('code, name').eq('active', true),
     ])
     setDepartments(deptRes.data || [])
     setEvents(eventsRes.data || [])
+    var vMap = {}
+    ;(venueRes.data || []).forEach(function (v) { if (v.name) vMap[v.name] = v.code })
+    setVenueMap(vMap)
     setLoading(false)
   }
 
@@ -225,7 +230,7 @@ function Events({ profile }) {
             onChange={function (e) { setVenueFilter(e.target.value); setPage(1) }}
             className="flex-1 min-w-[120px] px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
             <option value="">All Venues</option>
-            {venueNames.map(function (v) { return <option key={v} value={v}>{v}</option> })}
+            {venueNames.map(function (v) { return <option key={v} value={v}>{venueMap[v] ? (venueMap[v] + ' — ' + v) : v}</option> })}
           </select>
           <button onClick={function () { syncFromLMS(false) }} disabled={syncing}
             className="px-3 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-medium disabled:opacity-50 whitespace-nowrap">

@@ -347,7 +347,7 @@ function Ledgers({ profile }) {
             <select value={drillVenueFilter} onChange={function (e) { setDrillVenueFilter(e.target.value) }}
               className="px-2 py-1.5 text-xs border border-gray-200 rounded-md" style={{ fontSize: '16px' }}>
               <option value="">All Venues</option>
-              {venues.map(function (v) { return <option key={v.id} value={v.id}>{v.name || v.code}</option> })}
+              {venues.map(function (v) { return <option key={v.id} value={v.id}>{v.code ? (v.code + ' — ' + v.name) : v.name}</option> })}
             </select>
           </div>
         </div>
@@ -453,7 +453,7 @@ function Ledgers({ profile }) {
           <select value={venueFilter} onChange={function (e) { setVenueFilter(e.target.value) }}
             className="px-2 py-1 text-[11px] border border-gray-200 rounded-md flex-1 min-w-[100px]" style={{ fontSize: '16px' }}>
             <option value="">All venues</option>
-            {venues.map(function (v) { return <option key={v.id} value={v.id}>{v.name || v.code}</option> })}
+            {venues.map(function (v) { return <option key={v.id} value={v.id}>{v.code ? (v.code + ' — ' + v.name) : v.name}</option> })}
           </select>
           <select value={statusFilter} onChange={function (e) { setStatusFilter(e.target.value) }}
             className="px-2 py-1 text-[11px] border border-gray-200 rounded-md flex-1 min-w-[100px]" style={{ fontSize: '16px' }}>
