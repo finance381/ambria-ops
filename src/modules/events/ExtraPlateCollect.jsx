@@ -27,7 +27,7 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
   var [issueMsg, setIssueMsg] = useState('')
 
   // Collect form
-  var [collectPlates, setCollectPlates] = useState('')
+  var [collectReturned, setCollectReturned] = useState('')  // plates returned this round
   var [collectMode, setCollectMode] = useState('')
   var [collectImage, setCollectImage] = useState(null)
   var [collectNotes, setCollectNotes] = useState('')
@@ -57,7 +57,7 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
     setCollections([])
     setIssueMsg('')
     setCollectMsg('')
-    setCollectPlates('')
+    setCollectReturned('')
     setCollectMode('')
     setCollectDiscount('')
     if (!d) { setEvents([]); return }
@@ -77,7 +77,7 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
     setEventDetail(row || null)
     setIssueMsg('')
     setCollectMsg('')
-    setCollectPlates('')
+    setCollectReturned('')
     setCollectMode('')
     setCollectDiscount('')
     if (row) await loadEventState(Number(fid), row)
@@ -91,7 +91,7 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
       .eq('event_id', eid)
       .order('created_at', { ascending: false })
     var cRes = await supabase.from('extra_plate_collections')
-      .select('id, extras_charged, rate_paise, total_paise, discount_paise, payment_mode, receipt_path, notes, status, cancelled_reason, cancelled_at, created_at, collected_by')
+      .select('id, extras_charged, plates_returned, rate_paise, total_paise, discount_paise, payment_mode, receipt_path, notes, status, cancelled_reason, cancelled_at, created_at, collected_by')
       .eq('event_id', eid)
       .order('created_at', { ascending: false })
     var iData = iRes.data || []
@@ -99,16 +99,7 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
     setIssues(iData)
     setCollections(cData)
 
-    // Auto-fill collect input with remaining extras
-    var tIssued = 0
-    for (var i = 0; i < iData.length; i++) if (iData[i].status === 'active') tIssued += iData[i].plates_count
-    var tColl = 0
-    for (var j = 0; j < cData.length; j++) if (cData[j].status === 'active') tColl += cData[j].extras_charged
-    var q = evRow ? (evRow.total_plates || 0) : 0
-    var ext = Math.max(0, tIssued - q)
-    var rem = Math.max(0, ext - tColl)
-    if (rem > 0) setCollectPlates(String(rem))
-
+    // Chargeable is derived from live state — no autofill needed
     setStateLoading(false)
   }
 
@@ -124,7 +115,7 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
       .order('created_at', { ascending: false })
       .limit(200)
     var cQ = supabase.from('extra_plate_collections')
-      .select('id, event_id, extras_charged, rate_paise, total_paise, discount_paise, payment_mode, receipt_path, notes, status, cancelled_reason, cancelled_at, created_at, collected_by, events(event_name, venue_name, client_name, function_date, total_plates, complementary_plates, extra_plates_charge)')
+      .select('id, event_id, extras_charged, plates_returned, rate_paise, total_paise, discount_paise, payment_mode, receipt_path, notes, status, cancelled_reason, cancelled_at, created_at, collected_by, events(event_name, venue_name, client_name, function_date, total_plates, complementary_plates, extra_plates_charge)')
       .gte('created_at', sinceISO)
       .order('created_at', { ascending: false })
       .limit(200)
@@ -195,49 +186,63 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
 
   async function submitCollect() {
     if (collectSaving) return
-    if (!collectMode) { alert('Select Cash or Bank'); return }
-    var n = Number(collectPlates)
-    if (!n || n <= 0 || Math.floor(n) !== n) { alert('Enter a whole number > 0'); return }
-    if (!collectImage) { alert('Payment photo required'); return }
+    var n = thisChargeable  // derived, locked
+    var r = thisReturned    // derived from input
+    var wasteOnly = (n === 0)
+
+    if (wasteOnly) {
+      if (r <= 0) { alert('Nothing to log — enter returned plates'); return }
+    } else {
+      if (!collectMode) { alert('Select Cash or Bank'); return }
+      if (!collectImage) { alert('Payment photo required'); return }
+    }
 
     var discRupees = Number(collectDiscount || 0)
-    if (isNaN(discRupees) || discRupees < 0) { alert('Discount must be zero or positive'); return }
-    var discPaise = Math.round(discRupees * 100)
-    var grossPaise = ratePaise * n
-    if (discPaise > grossPaise) { alert('Discount cannot exceed gross ₹' + (grossPaise / 100).toLocaleString('en-IN')); return }
+    if (!wasteOnly) {
+      if (isNaN(discRupees) || discRupees < 0) { alert('Discount must be zero or positive'); return }
+    }
+    var discPaise = wasteOnly ? 0 : Math.round(discRupees * 100)
+    var grossPaise = wasteOnly ? 0 : (ratePaise * n)
+    if (!wasteOnly && discPaise > grossPaise) { alert('Discount cannot exceed gross ₹' + (grossPaise / 100).toLocaleString('en-IN')); return }
 
     setCollectSaving(true)
     setCollectMsg('')
 
-    var cF
-    try { cF = await prepUpload(collectImage, 100) } catch (e) { alert('Image prep failed'); setCollectSaving(false); return }
-    var ext = (cF.name && cF.name.indexOf('.') !== -1) ? cF.name.split('.').pop() : 'jpg'
-    var path = profile.id + '/extra_plate_collect_' + Date.now() + '.' + ext
-    var { error: upErr } = await supabase.storage.from('receipts').upload(path, cF, { upsert: true })
-    if (upErr) { alert('Upload failed: ' + upErr.message); setCollectSaving(false); return }
+    var path = null
+    if (!wasteOnly) {
+      var cF
+      try { cF = await prepUpload(collectImage, 100) } catch (e) { alert('Image prep failed'); setCollectSaving(false); return }
+      var ext = (cF.name && cF.name.indexOf('.') !== -1) ? cF.name.split('.').pop() : 'jpg'
+      path = profile.id + '/extra_plate_collect_' + Date.now() + '.' + ext
+      var { error: upErr } = await supabase.storage.from('receipts').upload(path, cF, { upsert: true })
+      if (upErr) { alert('Upload failed: ' + upErr.message); setCollectSaving(false); return }
+    }
 
     var { data, error } = await supabase.rpc('fn_extra_plate_collect', {
       p_event_id: Number(eventId),
       p_plates: n,
-      p_payment_mode: collectMode,
-      p_receipt_path: path,
+      p_payment_mode: wasteOnly ? null : collectMode,
+      p_receipt_path: wasteOnly ? null : path,
       p_notes: collectNotes.trim() || null,
-      p_discount_paise: discPaise
+      p_discount_paise: discPaise,
+      p_plates_returned: r
     })
     if (error) {
-      alert('Collection failed: ' + error.message)
-      try { await supabase.storage.from('receipts').remove([path]) } catch (_) {}
+      alert((wasteOnly ? 'Log returns' : 'Collection') + ' failed: ' + error.message)
+      if (path) { try { await supabase.storage.from('receipts').remove([path]) } catch (_) {} }
       setCollectSaving(false)
       return
     }
     try {
-      var actMsg = (eventDetail.event_name || '') + ' | ' + n + ' extras | ' + collectMode
+      var actMsg = (eventDetail.event_name || '') + ' | ' + n + ' extras | ' + r + ' returned' + (wasteOnly ? '' : ' | ' + collectMode)
         + (discPaise > 0 ? ' | disc ' + formatPoints(discPaise) : '')
         + ' | net ' + formatPoints(data.net_paise)
       await logActivity('EXTRA_PLATE_COLLECT', actMsg)
     } catch (_) {}
-    setCollectMsg('Collected ' + formatPoints(data.net_paise) + (discPaise > 0 ? ' (after ' + formatPoints(discPaise) + ' disc)' : '') + ' for ' + n + ' extras')
-    setCollectPlates('')
+    setCollectMsg(n === 0
+      ? 'Logged ' + r + ' returned plates (no charge)'
+      : 'Collected ' + formatPoints(data.net_paise) + (discPaise > 0 ? ' (after ' + formatPoints(discPaise) + ' disc)' : '') + ' for ' + n + ' extras')
+    setCollectReturned('')
     setCollectMode('')
     setCollectImage(null)
     setCollectNotes('')
@@ -282,21 +287,38 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
   var totalIssued = 0
   for (var ii = 0; ii < issues.length; ii++) if (issues[ii].status === 'active') totalIssued += issues[ii].plates_count
   var totalCollectedExtras = 0
-  for (var ci = 0; ci < collections.length; ci++) if (collections[ci].status === 'active') totalCollectedExtras += collections[ci].extras_charged
+  var priorReturned = 0
+  for (var ci = 0; ci < collections.length; ci++) {
+    if (collections[ci].status !== 'active') continue
+    totalCollectedExtras += collections[ci].extras_charged
+    priorReturned += (collections[ci].plates_returned || 0)
+  }
 
   var quota = eventDetail ? (eventDetail.total_plates || 0) : 0
   var complementary = eventDetail ? (eventDetail.complementary_plates || 0) : 0
   var paidPax = quota - complementary
   var ratePaise = eventDetail ? Number(eventDetail.extra_plates_charge || 0) * 2 : 0
-  var extras = Math.max(0, totalIssued - quota)
-  var remaining = Math.max(0, extras - totalCollectedExtras)
+
+  var thisReturned = Math.max(0, Math.floor(Number(collectReturned) || 0))
+  var combinedReturned = priorReturned + thisReturned
+  var consumed = Math.max(0, totalIssued - combinedReturned)
+  var totalChargeable = Math.max(0, consumed - quota)
+  var thisChargeable = Math.max(0, totalChargeable - totalCollectedExtras)
+  var waste = Math.max(0, quota - consumed)
+  var extras = totalChargeable          // for backward-compat with any downstream refs
+  var remaining = thisChargeable        // used by existing "all collected" banner
 
   var canIssue = eventDetail && Number(issuePlates) !== 0 && !isNaN(Number(issuePlates)) && Math.floor(Number(issuePlates)) === Number(issuePlates) && issueImage && !issueSaving
-  var collectPreviewTotal = ratePaise * Math.max(0, Math.floor(Number(collectPlates) || 0))
+  var collectPreviewTotal = ratePaise * thisChargeable
   var collectDiscountPaise = Math.max(0, Math.round(Number(collectDiscount || 0) * 100))
   var collectNetPreview = Math.max(0, collectPreviewTotal - collectDiscountPaise)
   var discountValid = collectDiscountPaise <= collectPreviewTotal
-  var canCollect = eventDetail && ratePaise > 0 && Number(collectPlates) > 0 && collectMode && collectImage && !collectSaving && remaining > 0 && discountValid
+  var isCollection = thisChargeable > 0
+  var isWasteOnly = thisChargeable === 0 && thisReturned > 0
+  var canCollect = eventDetail && !collectSaving && (
+    (isCollection && ratePaise > 0 && collectMode && collectImage && discountValid) ||
+    (isWasteOnly)
+  )
 
   // ─── RENDER ──────────────────────────────────────
 
@@ -437,32 +459,51 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
             </div>
           )}
 
-          {/* Collect section - only when there's something to collect */}
-          {eventDetail && ratePaise > 0 && remaining > 0 && (
-            <div className="rounded-lg border-2 border-red-300 bg-red-50 p-4 space-y-3">
-              <div className="text-sm font-bold text-red-900">💰 Collect Extras</div>
-              <div className="text-xs text-red-700">
-                {remaining} plate{remaining === 1 ? '' : 's'} due at ₹{(ratePaise / 100).toLocaleString('en-IN')} each
+          {/* Collect / Waste-log section — visible whenever any issues exist */}
+          {eventDetail && ratePaise > 0 && totalIssued > 0 && (
+            <div className={"rounded-lg border-2 p-4 space-y-3 " + (isWasteOnly ? "border-amber-300 bg-amber-50" : "border-red-300 bg-red-50")}>
+              <div className={"text-sm font-bold " + (isWasteOnly ? "text-amber-900" : "text-red-900")}>
+                {isWasteOnly ? '📋 Log Returned Plates' : '💰 Collect Extras'}
               </div>
-              <div>
-                <label className="block text-xs font-semibold text-red-800 uppercase tracking-wide mb-2">Plates to Collect For</label>
-                <input type="number" min="1" step="1" inputMode="numeric" value={collectPlates}
-                  onChange={function (e) { setCollectPlates(e.target.value) }}
-                  className="w-full px-3 py-2.5 border border-red-300 rounded-lg text-sm bg-white"
-                  style={{ fontSize: '16px' }} />
+
+              {/* Reconciliation panel */}
+              <div className="rounded-lg bg-white/70 p-2 text-[11px] space-y-0.5">
+                <div className="flex justify-between"><span className="text-gray-500">Quota</span><span className="font-semibold text-gray-800">{quota}</span></div>
+                <div className="flex justify-between"><span className="text-gray-500">Total Issued</span><span className="font-semibold text-gray-800">{totalIssued}</span></div>
+                {priorReturned > 0 && <div className="flex justify-between"><span className="text-gray-500">Already Returned</span><span className="font-semibold text-gray-800">{priorReturned}</span></div>}
+                {totalCollectedExtras > 0 && <div className="flex justify-between"><span className="text-gray-500">Already Charged</span><span className="font-semibold text-gray-800">{totalCollectedExtras}</span></div>}
+                <div className="flex justify-between"><span className="text-gray-500">Consumed</span><span className="font-semibold text-gray-800">{consumed}</span></div>
+                <div className="flex justify-between border-t border-gray-200 pt-0.5 mt-0.5">
+                  <span className="text-gray-600 font-medium">Chargeable now</span>
+                  <span className={"font-bold " + (thisChargeable > 0 ? "text-red-700" : "text-gray-500")}>{thisChargeable}</span>
+                </div>
+                {waste > 0 && <div className="flex justify-between"><span className="text-amber-700">Waste (quota unused)</span><span className="font-semibold text-amber-700">{waste}</span></div>}
               </div>
+
               <div>
-                <label className="block text-xs font-semibold text-red-800 uppercase tracking-wide mb-2">Discount ₹ (optional)</label>
-                <input type="number" min="0" step="1" inputMode="numeric" value={collectDiscount}
-                  onChange={function (e) { setCollectDiscount(e.target.value) }}
+                <label className={"block text-xs font-semibold uppercase tracking-wide mb-2 " + (isWasteOnly ? "text-amber-800" : "text-red-800")}>Plates Returned (unused)</label>
+                <input type="number" min="0" step="1" inputMode="numeric" value={collectReturned}
+                  onChange={function (e) { setCollectReturned(e.target.value) }}
                   placeholder="0"
-                  className="w-full px-3 py-2.5 border border-red-300 rounded-lg text-sm bg-white"
+                  className={"w-full px-3 py-2.5 border rounded-lg text-sm bg-white " + (isWasteOnly ? "border-amber-300" : "border-red-300")}
                   style={{ fontSize: '16px' }} />
+                <p className="text-[10px] text-gray-500 mt-1">Plates handed out but not consumed.</p>
               </div>
-              {collectPreviewTotal > 0 && (
+
+              {isCollection && (
+                <div>
+                  <label className="block text-xs font-semibold text-red-800 uppercase tracking-wide mb-2">Discount ₹ (optional)</label>
+                  <input type="number" min="0" step="1" inputMode="numeric" value={collectDiscount}
+                    onChange={function (e) { setCollectDiscount(e.target.value) }}
+                    placeholder="0"
+                    className="w-full px-3 py-2.5 border border-red-300 rounded-lg text-sm bg-white"
+                    style={{ fontSize: '16px' }} />
+                </div>
+              )}
+              {isCollection && collectPreviewTotal > 0 && (
                 <div className="rounded-lg bg-white border border-red-200 p-2 text-xs space-y-0.5">
                   <div className="flex justify-between text-red-800">
-                    <span>Gross</span>
+                    <span>Gross ({thisChargeable} × ₹{(ratePaise / 100).toLocaleString('en-IN')})</span>
                     <span>₹{(collectPreviewTotal / 100).toLocaleString('en-IN')}</span>
                   </div>
                   {Number(collectDiscount) > 0 && (
@@ -477,49 +518,56 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
                   </div>
                 </div>
               )}
-              <div>
-                <label className="block text-xs font-semibold text-red-800 uppercase tracking-wide mb-2">Payment Mode</label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button type="button" onClick={function () { setCollectMode('cash') }}
-                    className={"py-2.5 rounded-lg border-2 text-sm font-semibold " +
-                      (collectMode === 'cash' ? "border-red-600 bg-red-100 text-red-900" : "border-gray-200 bg-white text-gray-600")}>
-                    💵 Cash
-                  </button>
-                  <button type="button" onClick={function () { setCollectMode('bank') }}
-                    className={"py-2.5 rounded-lg border-2 text-sm font-semibold " +
-                      (collectMode === 'bank' ? "border-red-600 bg-red-100 text-red-900" : "border-gray-200 bg-white text-gray-600")}>
-                    🏦 Bank
-                  </button>
-                </div>
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-red-800 uppercase tracking-wide mb-2">Payment Proof</label>
-                {collectImage ? (
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-green-600 font-medium truncate flex-1">✓ {collectImage.name}</span>
-                    <button type="button" onClick={function () { setCollectImage(null) }}
-                      className="text-xs text-red-500 font-bold">✕</button>
+              {isCollection && (
+                <>
+                  <div>
+                    <label className="block text-xs font-semibold text-red-800 uppercase tracking-wide mb-2">Payment Mode</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button type="button" onClick={function () { setCollectMode('cash') }}
+                        className={"py-2.5 rounded-lg border-2 text-sm font-semibold " +
+                          (collectMode === 'cash' ? "border-red-600 bg-red-100 text-red-900" : "border-gray-200 bg-white text-gray-600")}>
+                        💵 Cash
+                      </button>
+                      <button type="button" onClick={function () { setCollectMode('bank') }}
+                        className={"py-2.5 rounded-lg border-2 text-sm font-semibold " +
+                          (collectMode === 'bank' ? "border-red-600 bg-red-100 text-red-900" : "border-gray-200 bg-white text-gray-600")}>
+                        🏦 Bank
+                      </button>
+                    </div>
                   </div>
-                ) : (
-                  <label className="block w-full py-2 text-center text-sm text-red-700 border-2 border-dashed border-red-300 rounded-lg cursor-pointer font-medium bg-white">
-                    📷 Photo of money received
-                    <input type="file" accept="image/*" capture="environment" className="sr-only"
-                      onChange={function (e) { if (e.target.files?.[0]) setCollectImage(e.target.files[0]); e.target.value = '' }} />
-                  </label>
-                )}
-              </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-red-800 uppercase tracking-wide mb-2">Payment Proof</label>
+                    {collectImage ? (
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-green-600 font-medium truncate flex-1">✓ {collectImage.name}</span>
+                        <button type="button" onClick={function () { setCollectImage(null) }}
+                          className="text-xs text-red-500 font-bold">✕</button>
+                      </div>
+                    ) : (
+                      <label className="block w-full py-2 text-center text-sm text-red-700 border-2 border-dashed border-red-300 rounded-lg cursor-pointer font-medium bg-white">
+                        📷 Photo of money received
+                        <input type="file" accept="image/*" capture="environment" className="sr-only"
+                          onChange={function (e) { if (e.target.files?.[0]) setCollectImage(e.target.files[0]); e.target.value = '' }} />
+                      </label>
+                    )}
+                  </div>
+                </>
+              )}
               <div>
-                <label className="block text-xs font-semibold text-red-800 uppercase tracking-wide mb-2">Notes (optional)</label>
+                <label className={"block text-xs font-semibold uppercase tracking-wide mb-2 " + (isWasteOnly ? "text-amber-800" : "text-red-800")}>Notes (optional)</label>
                 <input type="text" value={collectNotes} onChange={function (e) { setCollectNotes(e.target.value) }}
-                  className="w-full px-3 py-2.5 border border-red-300 rounded-lg text-sm bg-white"
+                  className={"w-full px-3 py-2.5 border rounded-lg text-sm bg-white " + (isWasteOnly ? "border-amber-300" : "border-red-300")}
                   style={{ fontSize: '16px' }} />
               </div>
               {collectMsg && (
                 <div className="rounded-lg p-2 border border-green-300 bg-green-50 text-xs text-green-800 font-semibold">✓ {collectMsg}</div>
               )}
               <button type="button" onClick={submitCollect} disabled={!canCollect}
-                className="w-full py-3 rounded-lg bg-red-600 text-white font-semibold text-sm disabled:opacity-40">
-                {collectSaving ? 'Collecting...' : 'Collect ' + (collectNetPreview > 0 ? '₹' + (collectNetPreview / 100).toLocaleString('en-IN') : '')}
+                className={"w-full py-3 rounded-lg text-white font-semibold text-sm disabled:opacity-40 " + (isWasteOnly ? "bg-amber-600" : "bg-red-600")}>
+                {collectSaving ? 'Saving...'
+                  : isWasteOnly ? 'Log ' + thisReturned + ' Returned Plates'
+                  : isCollection ? 'Collect ' + (collectNetPreview > 0 ? '₹' + (collectNetPreview / 100).toLocaleString('en-IN') : '')
+                  : 'Enter returned plates to continue'}
               </button>
             </div>
           )}
@@ -633,7 +681,8 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
       )}
     </div>
   )
-}
+}  
+
 
 // Shared row renderer for both issue and collection history entries
 function renderHistoryRow(r, profile, isAdmin, openCancel) {
@@ -654,10 +703,13 @@ function renderHistoryRow(r, profile, isAdmin, openCancel) {
         <div className="font-medium text-gray-800">
           {isIssue
             ? '📥 ' + (r.plates_count > 0 ? '+' : '') + r.plates_count + ' plates'
-            : '💰 ' + r.extras_charged + ' × ₹' + (r.rate_paise / 100).toLocaleString('en-IN')
-                + (r.discount_paise > 0 ? ' − ₹' + (r.discount_paise / 100).toLocaleString('en-IN') + ' disc' : '')
-                + ' = ₹' + ((r.total_paise - (r.discount_paise || 0)) / 100).toLocaleString('en-IN')
-                + ' ' + (r.payment_mode === 'cash' ? '💵' : '🏦')}
+            : (r.extras_charged === 0
+                ? '📋 ' + r.plates_returned + ' returned (waste)'
+                : '💰 ' + r.extras_charged + ' × ₹' + (r.rate_paise / 100).toLocaleString('en-IN')
+                    + (r.plates_returned > 0 ? ' · ' + r.plates_returned + ' returned' : '')
+                    + (r.discount_paise > 0 ? ' − ₹' + (r.discount_paise / 100).toLocaleString('en-IN') + ' disc' : '')
+                    + ' = ₹' + ((r.total_paise - (r.discount_paise || 0)) / 100).toLocaleString('en-IN')
+                    + ' ' + (r.payment_mode === 'cash' ? '💵' : '🏦'))}
           {isCancelled && <span className="ml-2 text-red-600">— cancelled</span>}
         </div>
         {r.notes && <div className="text-gray-500 italic mt-0.5">"{r.notes}"</div>}
