@@ -543,7 +543,7 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds }) {
                 <div>
                   <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Status</label>
                   <div className="flex gap-2 flex-wrap">
-                    {['', 'recorded', 'acknowledged', 'flagged', 'penalized', 'deleted'].map(function (s) {
+                    {['', 'recorded', 'acknowledged', 'flagged', 'deducted', 'deleted'].map(function (s) {
                       var label = s === 'deleted' ? 'Deleted' : (s ? APPROVAL_STATUS_LABELS[s] : 'All')
                       return (
                         <button key={s} onClick={function () { setAllExpStatus(s === allExpStatus ? '' : s) }}
@@ -728,7 +728,7 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds }) {
                       if (exp.deleted_at && exp._deleterName) {
                         return <p className="text-[11px] text-gray-500 mt-0.5">🗑 Deleted by <span className="font-semibold">{exp._deleterName}</span></p>
                       }
-                      if (exp.status === 'penalized' && exp._penalizerName) {
+                      if (exp.status === 'deducted' && exp._penalizerName) {
                         return <p className="text-[11px] text-orange-600 mt-0.5">⚠️ Deducted by <span className="font-semibold">{exp._penalizerName}</span></p>
                       }
                       if (exp.status === 'flagged' && exp._reviewerName) {
