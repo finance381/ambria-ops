@@ -5,7 +5,23 @@ import { logActivity } from '../../lib/logger'
 import { prepUpload } from '../../lib/uploadHelper'
 import EventDatePicker from '../../components/ui/EventDatePicker'
 
+var BANK_SUB_MODES = [
+  { value: 'upi', label: 'UPI' },
+  { value: 'bank_transfer', label: 'Bank Transfer' },
+  { value: 'cheque', label: 'Cheque' },
+  { value: 'paytm_card_machine', label: 'Paytm Card Machine' },
+  { value: 'hdfc_card_machine', label: 'HDFC Card Machine' }
+]
+var SUB_MODE_LABEL = {
+  upi: 'UPI',
+  bank_transfer: 'Bank Transfer',
+  cheque: 'Cheque',
+  paytm_card_machine: 'Paytm Card',
+  hdfc_card_machine: 'HDFC Card'
+}
+
 function ExtraPlateCollect({ profile, onBalanceChange }) {
+
   var isAdmin = profile?.role === 'admin' || profile?.role === 'auditor'
   var [view, setView] = useState('manage')
 
@@ -29,6 +45,7 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
   // Collect form
   var [collectReturned, setCollectReturned] = useState('')  // plates returned this round
   var [collectMode, setCollectMode] = useState('')
+  var [collectSubMode, setCollectSubMode] = useState('')
   var [collectImage, setCollectImage] = useState(null)
   var [collectNotes, setCollectNotes] = useState('')
   var [collectDiscount, setCollectDiscount] = useState('')
@@ -59,6 +76,7 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
     setCollectMsg('')
     setCollectReturned('')
     setCollectMode('')
+    setCollectSubMode('')
     setCollectDiscount('')
     if (!d) { setEvents([]); return }
     setEventsLoading(true)
@@ -79,6 +97,7 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
     setCollectMsg('')
     setCollectReturned('')
     setCollectMode('')
+    setCollectSubMode('')
     setCollectDiscount('')
     if (row) await loadEventState(Number(fid), row)
 
@@ -91,7 +110,7 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
       .eq('event_id', eid)
       .order('created_at', { ascending: false })
     var cRes = await supabase.from('extra_plate_collections')
-      .select('id, extras_charged, plates_returned, rate_paise, total_paise, discount_paise, payment_mode, receipt_path, notes, status, cancelled_reason, cancelled_at, created_at, collected_by')
+      .select('id, extras_charged, plates_returned, rate_paise, total_paise, discount_paise, payment_mode, payment_sub_mode, receipt_path, notes, status, cancelled_reason, cancelled_at, created_at, collected_by')
       .eq('event_id', eid)
       .order('created_at', { ascending: false })
     var iData = iRes.data || []
@@ -115,7 +134,7 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
       .order('created_at', { ascending: false })
       .limit(200)
     var cQ = supabase.from('extra_plate_collections')
-      .select('id, event_id, extras_charged, plates_returned, rate_paise, total_paise, discount_paise, payment_mode, receipt_path, notes, status, cancelled_reason, cancelled_at, created_at, collected_by, events(event_name, venue_name, client_name, function_date, total_plates, complementary_plates, extra_plates_charge)')
+      .select('id, event_id, extras_charged, plates_returned, rate_paise, total_paise, discount_paise, payment_mode, payment_sub_mode, receipt_path, notes, status, cancelled_reason, cancelled_at, created_at, collected_by, events(event_name, venue_name, client_name, function_date, total_plates, complementary_plates, extra_plates_charge)')
       .gte('created_at', sinceISO)
       .order('created_at', { ascending: false })
       .limit(200)
@@ -194,6 +213,7 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
       if (r <= 0) { alert('Nothing to log — enter returned plates'); return }
     } else {
       if (!collectMode) { alert('Select Cash or Bank'); return }
+      if (collectMode === 'bank' && !collectSubMode) { alert('Select the bank payment method'); return }
       if (!collectImage) { alert('Payment photo required'); return }
     }
 
@@ -225,7 +245,8 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
       p_receipt_path: wasteOnly ? null : path,
       p_notes: collectNotes.trim() || null,
       p_discount_paise: discPaise,
-      p_plates_returned: r
+      p_plates_returned: r,
+      p_payment_sub_mode: (wasteOnly || collectMode !== 'bank') ? null : collectSubMode
     })
     if (error) {
       alert((wasteOnly ? 'Log returns' : 'Collection') + ' failed: ' + error.message)
@@ -244,6 +265,7 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
       : 'Collected ' + formatPoints(data.net_paise) + (discPaise > 0 ? ' (after ' + formatPoints(discPaise) + ' disc)' : '') + ' for ' + n + ' extras')
     setCollectReturned('')
     setCollectMode('')
+    setCollectSubMode('')
     setCollectImage(null)
     setCollectNotes('')
     setCollectDiscount('')
@@ -315,8 +337,9 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
   var discountValid = collectDiscountPaise <= collectPreviewTotal
   var isCollection = thisChargeable > 0
   var isWasteOnly = thisChargeable === 0 && thisReturned > 0
+  var subModeOk = collectMode !== 'bank' || !!collectSubMode
   var canCollect = eventDetail && !collectSaving && (
-    (isCollection && ratePaise > 0 && collectMode && collectImage && discountValid) ||
+    (isCollection && ratePaise > 0 && collectMode && subModeOk && collectImage && discountValid) ||
     (isWasteOnly)
   )
 
@@ -523,7 +546,7 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
                   <div>
                     <label className="block text-xs font-semibold text-red-800 uppercase tracking-wide mb-2">Payment Mode</label>
                     <div className="grid grid-cols-2 gap-2">
-                      <button type="button" onClick={function () { setCollectMode('cash') }}
+                      <button type="button" onClick={function () { setCollectMode('cash'); setCollectSubMode('') }}
                         className={"py-2.5 rounded-lg border-2 text-sm font-semibold " +
                           (collectMode === 'cash' ? "border-red-600 bg-red-100 text-red-900" : "border-gray-200 bg-white text-gray-600")}>
                         💵 Cash
@@ -534,6 +557,19 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
                         🏦 Bank
                       </button>
                     </div>
+                    {collectMode === 'bank' && (
+                      <div className="mt-2">
+                        <label className="block text-xs font-semibold text-red-800 uppercase tracking-wide mb-2">Bank Method <span className="text-red-500">*</span></label>
+                        <select value={collectSubMode} onChange={function (e) { setCollectSubMode(e.target.value) }}
+                          className="w-full px-3 py-2.5 border border-red-300 rounded-lg text-sm bg-white"
+                          style={{ fontSize: '16px' }}>
+                          <option value="">Select…</option>
+                          {BANK_SUB_MODES.map(function (m) {
+                            return <option key={m.value} value={m.value}>{m.label}</option>
+                          })}
+                        </select>
+                      </div>
+                    )}
                   </div>
                   <div>
                     <label className="block text-xs font-semibold text-red-800 uppercase tracking-wide mb-2">Payment Proof</label>
@@ -709,7 +745,7 @@ function renderHistoryRow(r, profile, isAdmin, openCancel) {
                     + (r.plates_returned > 0 ? ' · ' + r.plates_returned + ' returned' : '')
                     + (r.discount_paise > 0 ? ' − ₹' + (r.discount_paise / 100).toLocaleString('en-IN') + ' disc' : '')
                     + ' = ₹' + ((r.total_paise - (r.discount_paise || 0)) / 100).toLocaleString('en-IN')
-                    + ' ' + (r.payment_mode === 'cash' ? '💵' : '🏦'))}
+                    + ' ' + (r.payment_mode === 'cash' ? '💵' : ('🏦 ' + (SUB_MODE_LABEL[r.payment_sub_mode] || ''))))}
           {isCancelled && <span className="ml-2 text-red-600">— cancelled</span>}
         </div>
         {r.notes && <div className="text-gray-500 italic mt-0.5">"{r.notes}"</div>}
