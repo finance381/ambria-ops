@@ -11,6 +11,7 @@ function Vendors({ profile }) {
   var [expenseSubTypes, setExpenseSubTypes] = useState([])
   var [expandedExpTypes, setExpandedExpTypes] = useState({})
   var [expandedCatDepts, setExpandedCatDepts] = useState({})
+  var [expandedExpDepts, setExpandedExpDepts] = useState({})
   var [loading, setLoading] = useState(true)
   var [saving, setSaving] = useState(false)
   var [search, setSearch] = useState('')
@@ -121,6 +122,10 @@ function Vendors({ profile }) {
 
   function toggleCatDeptExpand(deptKey) {
     setExpandedCatDepts(function (prev) { var n = Object.assign({}, prev); n[deptKey] = !prev[deptKey]; return n })
+  }
+
+  function toggleExpDeptExpand(deptKey) {
+    setExpandedExpDepts(function (prev) { var n = Object.assign({}, prev); n[deptKey] = !prev[deptKey]; return n })
   } 
 
   async function saveVendor() {
@@ -859,10 +864,24 @@ function Vendors({ profile }) {
                 if (groups.length === 0) return null
 
                 return groups.map(function (g) {
+                  var typeSelCount = g.types.filter(function (t) { return (form.expense_type_ids || []).indexOf(t.id) !== -1 }).length
+                  var subSelCount = g.types.reduce(function (sum, t) {
+                    var subs = expenseSubTypes.filter(function (s) { return s.expense_type_id === t.id })
+                    return sum + subs.filter(function (s) { return (form.expense_sub_type_ids || []).indexOf(s.id) !== -1 }).length
+                  }, 0)
+                  var isDeptExpanded = expandedExpDepts[g.key] != null ? expandedExpDepts[g.key] : (subSelCount > 0 || typeSelCount > 0)
                   return (
-                    <div key={g.key} className="space-y-1.5">
-                      <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1 mt-2 first:mt-0">{g.deptName}</p>
-                      {g.types.map(function (t) {
+                    <div key={g.key} className="border border-gray-100 rounded-lg overflow-hidden">
+                      <button type="button" onClick={function () { toggleExpDeptExpand(g.key) }}
+                        className="w-full flex items-center justify-between px-3 py-2 bg-gray-50 hover:bg-gray-100">
+                        <span className="text-[10px] font-bold text-gray-700 uppercase tracking-wider">{g.deptName}</span>
+                        <span className="text-[10px] text-gray-400 font-normal">
+                          {typeSelCount > 0 ? typeSelCount + ' / ' : ''}{g.types.length} type{g.types.length !== 1 ? 's' : ''} <span className="text-gray-500 ml-1">{isDeptExpanded ? '▼' : '▶'}</span>
+                        </span>
+                      </button>
+                      {isDeptExpanded && (
+                        <div className="space-y-1.5 p-2 bg-white">
+                          {g.types.map(function (t) {
                         var subs = expenseSubTypes.filter(function (s) { return s.expense_type_id === t.id })
                         var typeChecked = (form.expense_type_ids || []).indexOf(t.id) !== -1
                         var selSubCount = subs.filter(function (s) { return (form.expense_sub_type_ids || []).indexOf(s.id) !== -1 }).length
@@ -901,6 +920,8 @@ function Vendors({ profile }) {
                   </div>
                 )
               })}
+                        </div>
+                      )}
                     </div>
                   )
                 })
