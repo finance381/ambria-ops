@@ -1015,9 +1015,10 @@ function Vendors({ profile }) {
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
           {/* Header — desktop only */}
           <div className="hidden lg:grid grid-cols-12 gap-3 px-5 py-3 bg-gray-50 border-b border-gray-100 text-[11px] font-bold text-gray-400 uppercase tracking-wider">
-            <div className="col-span-3">Vendor</div>
+            <div className="col-span-2">Vendor</div>
             <div className="col-span-2">Contact</div>
-            <div className="col-span-4">Categories</div>
+            <div className="col-span-3">Categories</div>
+            <div className="col-span-2">Expense Types</div>
             <div className="col-span-1">Status</div>
             <div className="col-span-2 text-right">Actions</div>
           </div>
@@ -1025,13 +1026,18 @@ function Vendors({ profile }) {
           {/* Rows */}
           {filtered.map(function (v, vi) {
             var catNames = (v.category_ids || []).map(function (cid) { return catMap[cid] }).filter(Boolean)
+            // Expense types: direct tags from vendor.expense_type_ids
+            var etIdSet = {}
+            ;(v.expense_type_ids || []).forEach(function (id) { etIdSet[id] = true })
+            var etNames = expenseTypes.filter(function (et) { return etIdSet[et.id] })
+              .map(function (et) { return (et.icon ? et.icon + ' ' : '') + et.name })
             return (
               <div key={v.id}
                 className={"px-4 py-3 lg:px-5 lg:py-4 lg:grid lg:grid-cols-12 lg:gap-3 lg:items-center transition-colors " +
                   (vi < filtered.length - 1 ? "border-b border-gray-100 lg:border-gray-50 " : "") +
                   (v.active ? "hover:bg-gray-50" : "opacity-50 bg-gray-50/50")}>
                 {/* Name + notes */}
-                <div className="lg:col-span-3 min-w-0 flex items-start justify-between gap-2 lg:block">
+                <div className="lg:col-span-2 min-w-0 flex items-start justify-between gap-2 lg:block">
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-semibold text-gray-800 truncate">{v.name}</p>
                     <div className="flex items-center gap-2 mt-0.5 flex-wrap">
@@ -1057,7 +1063,7 @@ function Vendors({ profile }) {
                   {!v.contact && !v.phone && <span className="text-[11px] text-gray-300 hidden lg:inline">—</span>}
                 </div>
                 {/* Categories */}
-                <div className="lg:col-span-4 min-w-0 mt-1.5 lg:mt-0">
+                <div className="lg:col-span-3 min-w-0 mt-1.5 lg:mt-0">
                   {catNames.length > 0 ? (
                     <div className="flex flex-wrap gap-1">
                       {catNames.slice(0, 4).map(function (cn, ci) {
@@ -1067,6 +1073,20 @@ function Vendors({ profile }) {
                     </div>
                   ) : (
                     <span className="text-[11px] text-gray-300 italic">No categories</span>
+                  )}
+                </div>
+                {/* Expense Types (desktop-labelled; mobile shows inline block too) */}
+                <div className="lg:col-span-2 min-w-0 mt-1.5 lg:mt-0">
+                  <p className="lg:hidden text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Expense Types</p>
+                  {etNames.length > 0 ? (
+                    <div className="flex flex-wrap gap-1">
+                      {etNames.slice(0, 3).map(function (en, ei) {
+                        return <span key={ei} className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">{en}</span>
+                      })}
+                      {etNames.length > 3 && <span className="text-[10px] text-gray-400 font-medium">+{etNames.length - 3}</span>}
+                    </div>
+                  ) : (
+                    <span className="text-[11px] text-gray-300 italic">—</span>
                   )}
                 </div>
                 {/* Status (desktop only — mobile shows it inline with name) */}
