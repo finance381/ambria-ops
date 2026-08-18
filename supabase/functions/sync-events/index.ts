@@ -14,6 +14,7 @@ const DEPARTMENTS = [
     body: { loggeduserid: "", search_venue_contract: "", priority_search: "", venue_datetype: "", source_search: "", venue_search: "", balance_pending: "", contract_venue_search: "", contract_assginee_search: "", leadtype_search: "", report_fac: "", fromdate: "", uptodated: "" },
     h: "fisc_", d: "fiscd_",
     entryNo: "fisc_entryno",
+    entryBy: "fisc_entryby",
     contactNo: "fisc_client_mobile",
     functionDate: "fiscd_function_date",
     funcCode: "fiscd_function_type",
@@ -27,6 +28,7 @@ const DEPARTMENTS = [
     body: { loggeduserid: "", search_catering_contract: "", priority_search: "", cater_datetype: "", source_search: "", balance_pending: "", contract_catering_search: "", contract_assginee_search: "", leadtype_search: "", report_fac: "", fromdate: "", uptodated: "" },
     h: "chc_", d: "chcd_",
     entryNo: "chc_entry_no",
+    entryBy: "chc_cater_entryby",
     contactNo: "chc_contact_no",
     functionDate: "chcd_date",
     funcCode: "chcd_function",
@@ -40,6 +42,7 @@ const DEPARTMENTS = [
     body: { loggeduserid: "", decor_search: "", source_search: "", lead_type_search: "", decor_venue_search: "", priority_search: "", fromdate: "", uptodated: "", decor_assginee_search: "", decor_status_search: "", search_date_type: "", visited_search: "", follow_dated: "" },
     h: "dhc_", d: "dhcd_",
     entryNo: "dhc_entry_no",
+    entryBy: "dhc_decor_entryby",
     contactNo: "dhc_contact_no",
     functionDate: "dhcd_date",
     funcCode: "dhcd_function",
@@ -53,6 +56,7 @@ const DEPARTMENTS = [
     body: { loggeduserid: "", fromdate: "", uptodated: "", search_entertain_contract: "", source_search: "", contract_venue_searche: "", balance_pending: "", contract_assginee_search: "", entertain_datetype: "", leadtype_search: "", report_fac: "" },
     h: "ehc_", d: "ehcd_",
     entryNo: "ehc_entry_no",
+    entryBy: "ehc_entertain_entryby",
     contactNo: "ehc_contact_no",
     functionDate: "ehcd_date",
     funcCode: "ehcd_function",
@@ -122,12 +126,14 @@ async function fetchRetry(url: string, opts: RequestInit, retries = 1): Promise<
   throw new Error("fetchRetry exhausted")
 }
 
-function mapRow(e: any, dep: typeof DEPARTMENTS[0]): any {
+function mapRow(e: any, dep: typeof DEPARTMENTS[0], lmsUserMap: Record<string, string>): any {
   const h = dep.h  // header prefix
   const d = dep.d  // detail prefix
 
   const entryNo = (e[dep.entryNo] || "").trim()
   const headId = e.headid || e.id || ""
+  const entryById = dep.entryBy && e[dep.entryBy] ? String(e[dep.entryBy]).trim() : ""
+  const createdName = entryById ? (lmsUserMap[entryById] || null) : null
 
   return {
     // Dedup key: Dept_EntryNo_HeadId (unique per contract row)
@@ -155,7 +161,8 @@ function mapRow(e: any, dep: typeof DEPARTMENTS[0]): any {
     tax_amount_paise: safePaise(e[h + "tax_amt"] || 0),
     lms_advance_cash_paise: safePaise(e[h + "advance_cash"] || 0),
     lms_advance_bank_paise: safePaise(e[h + "advance_chq"] || 0),
-    created_user_name: e.username || null,
+    created_user_name: createdName,
+    created_by_lms_id: entryById ? safeInt(entryById) : null,
     synced_at: new Date().toISOString(),
     // New fields
     ppt_link: e.pptLink || null,
@@ -210,6 +217,16 @@ serve(async (req) => {
     let totalFetched = 0
     const errors: string[] = []
 
+    // Build LMS user id → profile name map (once per sync run)
+    const { data: profileRows } = await supabase
+      .from("profiles")
+      .select("lms_user_id, name")
+      .not("lms_user_id", "is", null)
+    const lmsUserMap: Record<string, string> = {}
+    ;(profileRows || []).forEach(function (p: any) {
+      if (p.lms_user_id) lmsUserMap[String(p.lms_user_id)] = p.name
+    })
+
     // Parallel sync all departments
     var syncStartedAt = new Date().toISOString()
 
@@ -246,7 +263,7 @@ serve(async (req) => {
           var c = contracts[ci]
           var cancelRemarks = (c[dep.h + "cancel_remarks"] || "").trim()
           if (cancelRemarks) continue
-          allRows.push(mapRow(c, dep))
+          allRows.push(mapRow(c, dep, lmsUserMap))
         }
 
         if (contracts.length < PAGE_SIZE) break
