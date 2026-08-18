@@ -10,6 +10,7 @@ function Vendors({ profile }) {
   var [expenseTypes, setExpenseTypes] = useState([])
   var [expenseSubTypes, setExpenseSubTypes] = useState([])
   var [expandedExpTypes, setExpandedExpTypes] = useState({})
+  var [expandedEtVendors, setExpandedEtVendors] = useState({})
   var [expandedCatDepts, setExpandedCatDepts] = useState({})
   var [expandedExpDepts, setExpandedExpDepts] = useState({})
   var [loading, setLoading] = useState(true)
@@ -1127,12 +1128,24 @@ function Vendors({ profile }) {
                 <div className="lg:col-span-2 min-w-0 mt-1.5 lg:mt-0">
                   <p className="lg:hidden text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Expense Types</p>
                   {etNames.length > 0 ? (
-                    <div className="flex flex-wrap gap-1">
-                      {etNames.slice(0, 3).map(function (en, ei) {
-                        return <span key={ei} className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">{en}</span>
-                      })}
-                      {etNames.length > 3 && <span className="text-[10px] text-gray-400 font-medium">+{etNames.length - 3}</span>}
-                    </div>
+                    (function () {
+                      var isExpanded = !!expandedEtVendors[v.id]
+                      var visibleNames = isExpanded ? etNames : etNames.slice(0, 3)
+                      return (
+                        <div className="flex flex-wrap gap-1">
+                          {visibleNames.map(function (en, ei) {
+                            return <span key={ei} className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">{en}</span>
+                          })}
+                          {etNames.length > 3 && (
+                            <button type="button"
+                              onClick={function () { setExpandedEtVendors(function (prev) { var n = Object.assign({}, prev); n[v.id] = !prev[v.id]; return n }) }}
+                              className="text-[10px] font-semibold text-indigo-500 hover:text-indigo-700 hover:underline px-1">
+                              {isExpanded ? '− Less' : '+' + (etNames.length - 3) + ' more'}
+                            </button>
+                          )}
+                        </div>
+                      )
+                    })()
                   ) : (
                     <span className="text-[11px] text-gray-300 italic">—</span>
                   )}
