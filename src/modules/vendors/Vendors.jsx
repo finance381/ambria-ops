@@ -1075,10 +1075,10 @@ function Vendors({ profile }) {
           {filtered.map(function (v, vi) {
             var catNames = (v.category_ids || []).map(function (cid) { return catMap[cid] }).filter(Boolean)
             // Expense types: direct tags from vendor.expense_type_ids
-            var etIdSet = {}
-            ;(v.expense_type_ids || []).forEach(function (id) { etIdSet[id] = true })
-            var etNames = expenseTypes.filter(function (et) { return etIdSet[et.id] })
-              .map(function (et) { return (et.icon ? et.icon + ' ' : '') + et.name })
+            var estIdSet = {}
+            ;(v.expense_sub_type_ids || []).forEach(function (id) { estIdSet[id] = true })
+            var etNames = expenseSubTypes.filter(function (st) { return estIdSet[st.id] })
+              .map(function (st) { return st.name })
             return (
               <div key={v.id}
                 className={"px-4 py-3 lg:px-5 lg:py-4 lg:grid lg:grid-cols-12 lg:gap-3 lg:items-center transition-colors " +
