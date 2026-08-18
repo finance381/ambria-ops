@@ -504,6 +504,59 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
         </div>
       </div>
 
+      {(function () {
+        var items = (exp.metadata && Array.isArray(exp.metadata.item_receipts)) ? exp.metadata.item_receipts : []
+        if (items.length === 0) return null
+        var itemsTotal = items.reduce(function (s, it) { return s + ((Number(it.qty) || 0) * (Number(it.rate_paise) || 0)) }, 0)
+        return (
+          <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+            <div className="px-4 py-2 bg-indigo-50 border-b border-indigo-100 flex items-center justify-between">
+              <div className="flex items-center gap-2 flex-wrap">
+                <p className="text-xs font-bold text-indigo-700 uppercase tracking-wider">Items ({items.length})</p>
+                {exp.item_receipt_status && (
+                  <span className={"text-[10px] font-bold uppercase px-1.5 py-0.5 rounded " + (exp.item_receipt_status === 'received' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700')}>
+                    {exp.item_receipt_status}
+                  </span>
+                )}
+              </div>
+              {itemsTotal > 0 && <p className="text-xs font-bold text-gray-700">{formatPoints(itemsTotal)}</p>}
+            </div>
+            <div className="divide-y divide-gray-100">
+              {items.map(function (it, i) {
+                var qty = Number(it.qty) || 0
+                var rate = Number(it.rate_paise) || 0
+                var subtotal = qty * rate
+                return (
+                  <div key={i} className="px-4 py-2.5">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium text-gray-800 truncate">{it.query || '—'}</p>
+                        <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                          <span className="text-[11px] text-gray-500">{qty} {it.unit || ''}</span>
+                          {rate > 0 && <span className="text-[11px] text-gray-400">× {formatPoints(rate)}</span>}
+                          {it.matched_item_id && it.matched_source && (
+                            <span className="text-[10px] font-semibold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded">
+                              {it.matched_source === 'catering_store' ? 'Catering match' : 'Inventory match'}
+                            </span>
+                          )}
+                          {!it.matched_item_id && (
+                            <span className="text-[10px] font-semibold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded">New item</span>
+                          )}
+                        </div>
+                        {it.notes && (
+                          <p className="text-[11px] text-gray-500 italic mt-0.5 truncate">"{it.notes}"</p>
+                        )}
+                      </div>
+                      {subtotal > 0 && <span className="text-sm font-bold text-gray-900 shrink-0">{formatPoints(subtotal)}</span>}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )
+      })()}
+
       {allocations.length > 0 && (
         <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
           <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
