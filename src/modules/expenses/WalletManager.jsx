@@ -413,7 +413,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     if (!dateStr) { setCollectEvents([]); return }
     setCollectFunctionsLoading(true)
     var { data } = await supabase.from('events')
-      .select('id, event_name, function_date, venue_name, client_name, session, contact_person, contact_number, secondary_contact')
+      .select('id, event_name, function_date, venue_name, client_name, session, contact_person, contact_number, secondary_contact, created_user_name')
       .eq('function_date', dateStr)
       .order('event_name')
     setCollectEvents(data || [])
@@ -654,6 +654,11 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                         <div className={"text-xs " + (selected ? "text-blue-700" : "text-gray-500")}>
                           {(ev.venue_name || '') + (ev.session ? ' · ' + ev.session : '')}
                         </div>
+                        {ev.created_user_name && (
+                          <div className={"text-[11px] mt-0.5 " + (selected ? "text-blue-600" : "text-gray-400")}>
+                            Contract by {ev.created_user_name}
+                          </div>
+                        )}
                         {(ev.contact_number || ev.secondary_contact) && (
                           <div className="flex flex-wrap items-center gap-2 mt-1.5 text-xs">
                             {ev.contact_person && <span className="text-gray-500">{ev.contact_person}:</span>}
