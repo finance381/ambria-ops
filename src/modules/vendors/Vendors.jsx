@@ -31,7 +31,7 @@ function Vendors({ profile }) {
       supabase.from('categories').select('id, name, sub_department_id').order('name'),
       supabase.from('departments').select('id, name').eq('active', true).order('name'),
       supabase.from('sub_departments').select('id, name, department_id').eq('active', true).order('name'),
-      supabase.from('expense_types').select('id, name, icon').eq('active', true).order('sort_order').order('name'),
+      supabase.from('expense_types').select('id, name, icon, department_id, sub_department_id').eq('active', true).order('sort_order').order('name'),
       supabase.from('expense_sub_types').select('id, name, expense_type_id').eq('active', true).order('sort_order').order('name'),
     ])
     setVendors(vRes.data || [])
@@ -839,13 +839,36 @@ function Vendors({ profile }) {
             <p className="text-[11px] text-gray-400 mb-2">Tick a parent type to bulk-tick its sub-types. Click a row to expand and pick specific sub-types.</p>
             <div className="space-y-2 max-h-80 overflow-y-auto p-1">
               {expenseTypes.length === 0 && <p className="text-xs text-gray-400 px-1">No expense types configured</p>}
-              {expenseTypes.map(function (t) {
-                var subs = expenseSubTypes.filter(function (s) { return s.expense_type_id === t.id })
-                var typeChecked = (form.expense_type_ids || []).indexOf(t.id) !== -1
-                var selSubCount = subs.filter(function (s) { return (form.expense_sub_type_ids || []).indexOf(s.id) !== -1 }).length
-                var isExpanded = expandedExpTypes[t.id] != null ? expandedExpTypes[t.id] : (selSubCount > 0)
-                return (
-                  <div key={t.id} className="border border-gray-100 rounded-lg overflow-hidden">
+              {(function () {
+                // Group expense types by department (via sub_department_id → department, fallback to direct department_id)
+                var byDept = {}
+                expenseTypes.forEach(function (t) {
+                  var deptKey = '__unassigned'
+                  if (t.sub_department_id) {
+                    var sd = subDepartments.find(function (s) { return s.id === t.sub_department_id })
+                    if (sd && sd.department_id) deptKey = String(sd.department_id)
+                  } else if (t.department_id) {
+                    deptKey = String(t.department_id)
+                  }
+                  if (!byDept[deptKey]) byDept[deptKey] = []
+                  byDept[deptKey].push(t)
+                })
+                var orderedDepts = departments.filter(function (d) { return byDept[String(d.id)] })
+                var groups = orderedDepts.map(function (d) { return { key: 'd' + d.id, deptName: d.name, types: byDept[String(d.id)] } })
+                if (byDept.__unassigned) groups.push({ key: 'unassigned', deptName: 'Unassigned', types: byDept.__unassigned })
+                if (groups.length === 0) return null
+
+                return groups.map(function (g) {
+                  return (
+                    <div key={g.key} className="space-y-1.5">
+                      <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1 mt-2 first:mt-0">{g.deptName}</p>
+                      {g.types.map(function (t) {
+                        var subs = expenseSubTypes.filter(function (s) { return s.expense_type_id === t.id })
+                        var typeChecked = (form.expense_type_ids || []).indexOf(t.id) !== -1
+                        var selSubCount = subs.filter(function (s) { return (form.expense_sub_type_ids || []).indexOf(s.id) !== -1 }).length
+                        var isExpanded = expandedExpTypes[t.id] != null ? expandedExpTypes[t.id] : (selSubCount > 0)
+                        return (
+                          <div key={t.id} className="border border-gray-100 rounded-lg overflow-hidden">
                     <div className="flex items-center gap-2 px-3 py-2 bg-gray-50">
                       <input type="checkbox" checked={typeChecked}
                         onChange={function () { toggleExpType(t.id) }}
@@ -878,6 +901,10 @@ function Vendors({ profile }) {
                   </div>
                 )
               })}
+                    </div>
+                  )
+                })
+              })()}
             </div>
           </div>
 

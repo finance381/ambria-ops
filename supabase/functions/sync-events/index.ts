@@ -184,6 +184,11 @@ serve(async (req) => {
   }
 
   try {
+    // Cron bypass — allow scheduled invocations via secret header (skips user auth)
+    const cronSecret = req.headers.get("x-cron-secret")
+    const cronExpected = Deno.env.get("SYNC_CRON_SECRET")
+    const isCron = !!(cronSecret && cronExpected && cronSecret === cronExpected)
+
     // Auth check — only admin/auditor can trigger
     const authHeader = req.headers.get("Authorization")
     if (!authHeader) {
@@ -195,21 +200,23 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     const supabase = createClient(supabaseUrl, supabaseKey)
 
-    // Verify caller role
-    const userClient = createClient(supabaseUrl, Deno.env.get("SUPABASE_ANON_KEY")!, {
-      global: { headers: { Authorization: authHeader } }
-    })
-    const { data: { user } } = await userClient.auth.getUser()
-    if (!user) {
-      return new Response(JSON.stringify({ error: "Invalid token" }), {
-        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" }
+    // Skip user role check for cron
+    if (!isCron) {
+      const userClient = createClient(supabaseUrl, Deno.env.get("SUPABASE_ANON_KEY")!, {
+        global: { headers: { Authorization: authHeader } }
       })
-    }
-    const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).single()
-    if (!profile || (profile.role !== "admin" && profile.role !== "auditor")) {
-      return new Response(JSON.stringify({ error: "Admin only" }), {
-        status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" }
-      })
+      const { data: { user } } = await userClient.auth.getUser()
+      if (!user) {
+        return new Response(JSON.stringify({ error: "Invalid token" }), {
+          status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" }
+        })
+      }
+      const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).single()
+      if (!profile || (profile.role !== "admin" && profile.role !== "auditor")) {
+        return new Response(JSON.stringify({ error: "Admin only" }), {
+          status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" }
+        })
+      }
     }
 
     const lmsUserId = Deno.env.get("LMS_USER_ID") || "1"
