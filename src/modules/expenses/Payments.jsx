@@ -45,6 +45,30 @@ function Payments({ profile }) {
   var [payLockedMode, setPayLockedMode] = useState('')
   var [recent, setRecent] = useState([])
   var [showRecent, setShowRecent] = useState(false)
+  var [lightbox, setLightbox] = useState(null)
+
+  function openLightbox(paths, startIdx) {
+    var items = (paths || []).map(function (path) {
+      return {
+        path: path,
+        url: supabase.storage.from('receipts').getPublicUrl(path).data?.publicUrl,
+        isImage: /\.(jpg|jpeg|png|gif|webp)$/i.test(path),
+        isPdf: /\.pdf$/i.test(path),
+        isAudio: /\.(webm|ogg|mp3|wav)$/i.test(path),
+      }
+    })
+    setLightbox({ items: items, index: startIdx || 0 })
+  }
+
+  function closeLightbox() { setLightbox(null) }
+  function navLightbox(dir) {
+    setLightbox(function (lb) {
+      if (!lb) return lb
+      var n = lb.items.length
+      var next = (lb.index + dir + n) % n
+      return Object.assign({}, lb, { index: next })
+    })
+  }
 
   async function loadAll() {
     if (!canView) { setLoading(false); return }
@@ -63,14 +87,42 @@ function Payments({ profile }) {
     var ids = pendingVendors.map(function (v) { return v.vendor_id })
     var { data: rows } = await supabase
       .from('ledger_entries')
-      .select('id, party_id, entry_date, description, credit_paise, debit_paise, metadata')
+      .select('id, party_id, entry_date, description, credit_paise, debit_paise, metadata, ref_type, ref_id')
       .eq('ledger_type', 'vendor')
       .in('party_id', ids)
       .is('deleted_at', null)
     var pur = (rows || []).filter(function (r) {
       return r.metadata && r.metadata.kind === 'purchase'
     })
-    setPurchases(pur)
+
+    // Enrich purchases with expense receipt paths
+    var expIds = []
+    pur.forEach(function (p) {
+      if (p.ref_type === 'expense' && p.ref_id && /^[0-9]+$/.test(String(p.ref_id))) {
+        var id = Number(p.ref_id)
+        if (expIds.indexOf(id) === -1) expIds.push(id)
+      }
+    })
+    var receiptsByExpId = {}
+    if (expIds.length > 0) {
+      var { data: exps } = await supabase.from('expenses')
+        .select('id, receipt_paths, receipt_path')
+        .in('id', expIds)
+      ;(exps || []).forEach(function (ex) {
+        var paths = Array.isArray(ex.receipt_paths) && ex.receipt_paths.length > 0
+          ? ex.receipt_paths
+          : (ex.receipt_path ? [ex.receipt_path] : [])
+        if (paths.length > 0) receiptsByExpId[ex.id] = paths
+      })
+    }
+    var purWithReceipts = pur.map(function (p) {
+      if (p.ref_type === 'expense' && p.ref_id) {
+        var id = Number(p.ref_id)
+        if (receiptsByExpId[id]) return Object.assign({}, p, { _receipts: receiptsByExpId[id] })
+      }
+      return p
+    })
+    setPurchases(purWithReceipts)
 
     // Recently paid — last 7 days of payment + deduction rows across all vendors
     var since = new Date(Date.now() - 7 * 86400000).toISOString().split('T')[0]
@@ -263,9 +315,9 @@ function Payments({ profile }) {
       {/* Two cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <PaymentCard title="💵 Cash Payments" rows={filtered.cash} total={totals.cash}
-          expanded={expanded} onToggleExpand={toggleExpand} onPay={openPay} />
+          expanded={expanded} onToggleExpand={toggleExpand} onPay={openPay} onOpenLightbox={openLightbox} />
         <PaymentCard title="🏦 Bank Transfers" rows={filtered.bank} total={totals.bank}
-          expanded={expanded} onToggleExpand={toggleExpand} onPay={openPay} />
+          expanded={expanded} onToggleExpand={toggleExpand} onPay={openPay} onOpenLightbox={openLightbox} />
       </div>
 
       {/* Empty state */}
@@ -318,19 +370,49 @@ function Payments({ profile }) {
       )}
 
       {/* Pay modal */}
-      {payTarget && (
+            {payTarget && (
         <PayVendorModal
           vendor={payTarget}
+          profile={profile}
+          onClose={closePay}
+          onSuccess={function () { closePay(); loadAll() }}
           lockedMode={payLockedMode}
-          onClose={function () { setPayTarget(null); setPayLockedMode('') }}
-          onSuccess={onPaySuccess}
         />
+      )}
+
+      {lightbox && (
+        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4"
+          onClick={closeLightbox}>
+          <button onClick={function (e) { e.stopPropagation(); closeLightbox() }}
+            className="absolute top-4 right-4 text-white text-2xl w-10 h-10 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20">✕</button>
+          {lightbox.items.length > 1 && (
+            <>
+              <button onClick={function (e) { e.stopPropagation(); navLightbox(-1) }}
+                className="absolute left-4 top-1/2 -translate-y-1/2 text-white text-2xl w-10 h-10 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20">‹</button>
+              <button onClick={function (e) { e.stopPropagation(); navLightbox(1) }}
+                className="absolute right-4 top-1/2 -translate-y-1/2 text-white text-2xl w-10 h-10 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20">›</button>
+            </>
+          )}
+          <div className="max-w-5xl max-h-[90vh] w-full flex flex-col items-center gap-2" onClick={function (e) { e.stopPropagation() }}>
+            {(function () {
+              var it = lightbox.items[lightbox.index]
+              if (!it || !it.url) return <p className="text-white">Receipt unavailable</p>
+              if (it.isImage) return <img src={it.url} alt="Receipt" className="max-w-full max-h-[85vh] object-contain rounded shadow-2xl" />
+              if (it.isPdf) return <iframe src={it.url} title="Receipt PDF" className="w-full h-[85vh] rounded shadow-2xl bg-white" />
+              if (it.isAudio) return <audio controls src={it.url} className="w-full max-w-md" />
+              return <a href={it.url} target="_blank" rel="noopener noreferrer" className="text-white underline">Open file</a>
+            })()}
+            {lightbox.items.length > 1 && (
+              <p className="text-white/70 text-xs">{lightbox.index + 1} / {lightbox.items.length}</p>
+            )}
+          </div>
+        </div>
       )}
     </div>
   )
 }
 
-function PaymentCard({ title, rows, total, expanded, onToggleExpand, onPay }) {
+function PaymentCard({ title, rows, total, expanded, onToggleExpand, onPay, onOpenLightbox }) {
   return (
     <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
       <div className="px-4 py-3 border-b border-gray-100 bg-gray-50">
@@ -386,8 +468,34 @@ function PaymentCard({ title, rows, total, expanded, onToggleExpand, onPay }) {
                       var portion = (p.metadata && p.metadata.credit_portion_paise) || 0
                       var pDue = p.metadata && p.metadata.due_date
                       var pChip = dueChip(pDue)
+                      var receipts = p._receipts || []
+                      var firstImgPath = receipts.find(function (path) { return /\.(jpg|jpeg|png|gif|webp)$/i.test(path) }) || receipts[0]
+                      var firstThumb = firstImgPath
+                        ? { path: firstImgPath, url: supabase.storage.from('receipts').getPublicUrl(firstImgPath).data?.publicUrl, isImage: /\.(jpg|jpeg|png|gif|webp)$/i.test(firstImgPath) }
+                        : null
                       return (
-                        <div key={p.id} className="flex items-center justify-between text-[11px] gap-2">
+                        <div key={p.id} className="flex items-center gap-2 text-[11px]">
+                          {firstThumb ? (
+                            <button onClick={function () { onOpenLightbox && onOpenLightbox(receipts, 0) }}
+                              className="relative group flex-shrink-0 w-8 h-8 rounded border border-gray-200 overflow-hidden bg-gray-50 hover:border-indigo-400 hover:shadow-md transition-all">
+                              {firstThumb.isImage ? (
+                                <>
+                                  <img src={firstThumb.url} alt="Receipt" className="w-full h-full object-cover" />
+                                  <div className="absolute left-0 top-0 opacity-0 group-hover:opacity-100 pointer-events-none z-20 transition-opacity">
+                                    <img src={firstThumb.url} alt="Receipt preview"
+                                      className="max-w-[240px] max-h-[240px] rounded-lg shadow-2xl border-2 border-white -translate-y-full mb-1 bg-white" />
+                                  </div>
+                                </>
+                              ) : (
+                                <div className="w-full h-full flex items-center justify-center text-gray-500 text-base">📄</div>
+                              )}
+                              {receipts.length > 1 && (
+                                <span className="absolute bottom-0 right-0 text-[8px] font-bold text-white bg-indigo-600 px-1 rounded-tl leading-none py-0.5">+{receipts.length - 1}</span>
+                              )}
+                            </button>
+                          ) : (
+                            <div className="w-8 h-8 flex-shrink-0 rounded border border-dashed border-gray-200 flex items-center justify-center text-gray-300 text-[10px]">—</div>
+                          )}
                           <span className="text-gray-700 truncate flex-1">
                             {formatDate(p.entry_date)} · {p.description}
                           </span>
