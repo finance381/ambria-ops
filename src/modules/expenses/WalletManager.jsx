@@ -27,6 +27,10 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   var [txnFrom, setTxnFrom] = useState('')
   var [txnTo, setTxnTo] = useState('')
   var [walletSearch, setWalletSearch] = useState('')
+  var [walletRoleFilter, setWalletRoleFilter] = useState('')
+  var [walletBalanceState, setWalletBalanceState] = useState('all')
+  var [walletPendingOnly, setWalletPendingOnly] = useState(false)
+  var [walletSort, setWalletSort] = useState('name')
   var [issueModal, setIssueModal] = useState(null)
   var [issueAmount, setIssueAmount] = useState('')
   var [issueDesc, setIssueDesc] = useState('')
@@ -1038,13 +1042,46 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   // ═══════════════════════════════════════════════
   if (walletView === 'wallets') {
     var wSearchLower = walletSearch.toLowerCase()
-    var filteredWallets = allWallets.filter(function (w) {
-      if (!walletSearch) return true
+    var uniqueRoles = {}
+    ;(allWallets || []).forEach(function (w) {
       var p = walletProfiles[w.user_id]
-      return (p?.name || '').toLowerCase().indexOf(wSearchLower) !== -1 ||
-        (p?.email || '').toLowerCase().indexOf(wSearchLower) !== -1 ||
-        (p?.role || '').toLowerCase().indexOf(wSearchLower) !== -1
+      if (p && p.role) uniqueRoles[p.role] = true
     })
+    var roleOptions = Object.keys(uniqueRoles).sort()
+
+    var filteredWallets = allWallets.filter(function (w) {
+      var p = walletProfiles[w.user_id]
+      if (walletSearch) {
+        var matches = (p?.name || '').toLowerCase().indexOf(wSearchLower) !== -1 ||
+          (p?.email || '').toLowerCase().indexOf(wSearchLower) !== -1 ||
+          (p?.role || '').toLowerCase().indexOf(wSearchLower) !== -1
+        if (!matches) return false
+      }
+      if (walletRoleFilter && (p?.role || '') !== walletRoleFilter) return false
+      var bal = w.balance_paise || 0
+      if (walletBalanceState === 'positive' && bal <= 0) return false
+      if (walletBalanceState === 'zero' && bal !== 0) return false
+      if (walletBalanceState === 'negative' && bal >= 0) return false
+      if (walletPendingOnly && !(w._pendingCount > 0)) return false
+      return true
+    })
+
+    if (walletSort === 'balance_desc') {
+      filteredWallets = filteredWallets.slice().sort(function (a, b) { return (b.balance_paise || 0) - (a.balance_paise || 0) })
+    } else if (walletSort === 'balance_asc') {
+      filteredWallets = filteredWallets.slice().sort(function (a, b) { return (a.balance_paise || 0) - (b.balance_paise || 0) })
+    } else if (walletSort === 'pending') {
+      filteredWallets = filteredWallets.slice().sort(function (a, b) { return (b._pendingCount || 0) - (a._pendingCount || 0) })
+    } else if (walletSort === 'activity') {
+      filteredWallets = filteredWallets.slice().sort(function (a, b) {
+        var ta = a.updated_at ? new Date(a.updated_at).getTime() : 0
+        var tb = b.updated_at ? new Date(b.updated_at).getTime() : 0
+        return tb - ta
+      })
+    }
+
+    var filtersActive = !!walletRoleFilter || walletBalanceState !== 'all' || walletPendingOnly || walletSort !== 'name'
+
     return (
       <div className="space-y-4">
         <div className="flex items-center justify-between">
@@ -1065,6 +1102,53 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
           placeholder="Search name, email, role..."
           className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
           style={{ fontSize: '16px' }} />
+
+        <div className="flex flex-wrap items-center gap-2">
+          <select value={walletRoleFilter} onChange={function (e) { setWalletRoleFilter(e.target.value) }}
+            className="px-3 py-1.5 border border-gray-200 rounded-lg text-xs bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            style={{ fontSize: '16px' }}>
+            <option value="">All Roles</option>
+            {roleOptions.map(function (r) { return <option key={r} value={r}>{r}</option> })}
+          </select>
+
+          <div className="inline-flex bg-gray-100 rounded-lg p-0.5">
+            {[['all', 'All'], ['positive', '+ ve'], ['zero', 'Zero'], ['negative', '− ve']].map(function (opt) {
+              var active = walletBalanceState === opt[0]
+              var color = opt[0] === 'positive' ? 'text-green-700' : opt[0] === 'negative' ? 'text-red-700' : 'text-gray-700'
+              return (
+                <button key={opt[0]} type="button" onClick={function () { setWalletBalanceState(opt[0]) }}
+                  className={"px-2.5 py-1 text-[11px] font-bold rounded-md transition-colors " + (active ? "bg-white shadow-sm " + color : "text-gray-500")}>
+                  {opt[1]}
+                </button>
+              )
+            })}
+          </div>
+
+          <label className="inline-flex items-center gap-1.5 text-xs text-gray-600 px-2.5 py-1.5 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 bg-white">
+            <input type="checkbox" checked={walletPendingOnly}
+              onChange={function (e) { setWalletPendingOnly(e.target.checked) }}
+              className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
+            <span className="font-medium">Pending only</span>
+          </label>
+
+          <select value={walletSort} onChange={function (e) { setWalletSort(e.target.value) }}
+            className="px-3 py-1.5 border border-gray-200 rounded-lg text-xs bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 ml-auto"
+            style={{ fontSize: '16px' }}>
+            <option value="name">Sort: Name</option>
+            <option value="balance_desc">Balance high → low</option>
+            <option value="balance_asc">Balance low → high</option>
+            <option value="pending">Most pending</option>
+            <option value="activity">Recent activity</option>
+          </select>
+
+          {filtersActive && (
+            <button type="button"
+              onClick={function () { setWalletRoleFilter(''); setWalletBalanceState('all'); setWalletPendingOnly(false); setWalletSort('name') }}
+              className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 px-2">
+              Clear
+            </button>
+          )}
+        </div>
         {myWallet && (
           <div onClick={function () {
             setWalletProfiles(function (prev) { var n = Object.assign({}, prev); n[profile.id] = profile; return n })
