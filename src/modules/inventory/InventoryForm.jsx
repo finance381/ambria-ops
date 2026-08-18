@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { supabase, getImageUrl } from '../../lib/supabase'
 import { prepUpload } from '../../lib/uploadHelper'
 import SearchDropdown from '../../components/ui/SearchDropdown'
+import AllocationRows from '../../components/ui/AllocationRows'
 import ImageCrop from '../../components/ImageCrop'
 import { translateToHindi } from '../../lib/translate'
 import { titleCase } from '../../lib/format'
@@ -217,9 +218,17 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved }) {
     setAllocations(function (prev) { return prev.map(function (row, i) { if (i !== index) return row; var updated = { ...row, [field]: value }; if (field === 'venue_id') updated.sub_venue_id = ''; if (field === 'department') updated.sub_department_id = ''; return updated }) })
   }
   function addAllocationRow() {
-    setAllocations(function (prev) { return [{ department: '', sub_department_id: '', venue_id: '', sub_venue_id: '', qty: '' }, ...prev] })
+    setAllocations(function (prev) { return prev.concat([{ department: '', sub_department_id: '', venue_id: '', sub_venue_id: '', qty: '' }]) })
   }
   function removeAllocationRow(index) { setAllocations(function (prev) { if (prev.length <= 1) return prev; return prev.filter(function (_, i) { return i !== index }) }) }
+  function duplicateAllocationRow(index) {
+    setAllocations(function (prev) {
+      var src = prev[index]
+      if (!src) return prev
+      var dup = Object.assign({}, src, { qty: '' })
+      return prev.concat([dup])
+    })
+  }
 
   function handleImageChange(e) {
     var file = e.target.files?.[0]; if (!file) return
@@ -715,41 +724,56 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved }) {
       </div>
 
       {/* ═══ ALLOCATION CARD ═══ */}
-      <div className="bg-gray-50 rounded-lg border border-gray-200 p-4 space-y-3">
-        <div className="flex items-center justify-between">
-          <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">{t('Allocations') || 'Allocations'}</h3>
-          <button type="button" onClick={addAllocationRow} className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 transition-colors">+ Add Row</button>
-        </div>
+      <div className="space-y-2">
         {errors.dept && <p className="text-xs text-red-500">{errors.dept}</p>}
-        {allocations.map(function (row, index) {
-          return (
-            <div key={index} className="bg-white rounded-lg border border-gray-200 p-3 space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold text-gray-400">#{index + 1}</span>
-                {allocations.length > 1 && <button type="button" onClick={function () { removeAllocationRow(index) }} className="text-xs text-red-400 hover:text-red-600 font-semibold">Remove</button>}
+        <AllocationRows
+          allocations={allocations}
+          accent="gray"
+          title={t('Allocations') || 'Allocations'}
+          onAdd={addAllocationRow}
+          onRemove={removeAllocationRow}
+          onDuplicate={duplicateAllocationRow}
+          isComplete={function (a) { return !!a.department && !!a.venue_id && !!a.qty && Number(a.qty) > 0 }}
+          renderChip={function (a) {
+            var v = a.venue_id ? venues.find(function (x) { return String(x.id) === String(a.venue_id) }) : null
+            var sv = a.sub_venue_id && v ? subVenues.find(function (x) { return String(x.id) === String(a.sub_venue_id) }) : null
+            var sd = a.sub_department_id ? subDepartments.find(function (x) { return String(x.id) === String(a.sub_department_id) }) : null
+            return {
+              left: (
+                <>
+                  {v && <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-indigo-50 text-[10px] font-semibold text-indigo-700 shrink-0">{v.code}</span>}
+                  {a.department && <span className="text-gray-700 font-medium truncate">{a.department}</span>}
+                  {sd && <span className="text-gray-400 shrink-0">›</span>}
+                  {sd && <span className="text-gray-500 truncate">{sd.name}</span>}
+                  {sv && <span className="text-gray-400 shrink-0">·</span>}
+                  {sv && <span className="text-gray-500 truncate">{sv.name}</span>}
+                </>
+              ),
+              right: (Number(a.qty) || 0).toString(),
+            }
+          }}
+          renderExpanded={function (row, index) {
+            var parentDept = row.department ? departments.find(function (d) { return d.name === row.department }) : null
+            var filteredSubDepts = parentDept ? subDepartments.filter(function (sd) { return sd.department_id === parentDept.id && sd.active !== false }) : []
+            var filteredSubVenues = row.venue_id ? subVenues.filter(function (sv) { return String(sv.venue_id) === row.venue_id }) : []
+            return (
+              <div className="space-y-2">
+                <SearchDropdown label={t('Department')} required items={deptItems} value={row.department} onChange={function (val) { updateAllocation(index, 'department', val) }} placeholder={t('Search Department...')} />
+                {parentDept && filteredSubDepts.length > 0 && (
+                  <SearchDropdown label={t('Sub-department') || 'Sub-department'} items={filteredSubDepts.map(function (sd) { return { label: sd.name, value: String(sd.id) } })} value={row.sub_department_id} onChange={function (val) { updateAllocation(index, 'sub_department_id', val) }} placeholder="Select sub-department..." />
+                )}
+                <SearchDropdown label={t('Venue') || 'Venue'} items={venues.map(function (v) { return { label: v.code + ' — ' + v.name, value: String(v.id) } })} value={row.venue_id} onChange={function (val) { updateAllocation(index, 'venue_id', val) }} placeholder="Select venue..." />
+                {row.venue_id && filteredSubVenues.length > 0 && (
+                  <SearchDropdown label="Sub-venue" items={filteredSubVenues.map(function (sv) { return { label: sv.name, value: String(sv.id) } })} value={row.sub_venue_id} onChange={function (val) { updateAllocation(index, 'sub_venue_id', val) }} placeholder="Select sub-venue..." />
+                )}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('Quantity')}</label>
+                  <input type="number" min="0" step="any" inputMode="numeric" value={row.qty} onChange={function (e) { updateAllocation(index, 'qty', e.target.value) }} placeholder="0" className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" style={{ fontSize: '16px' }} />
+                </div>
               </div>
-              <SearchDropdown label={t('Department')} required items={deptItems} value={row.department} onChange={function (val) { updateAllocation(index, 'department', val) }} placeholder={t('Search Department...')} />
-              {row.department && (function () {
-                var parentDept = departments.find(function (d) { return d.name === row.department })
-                if (!parentDept) return null
-                var filtered = subDepartments.filter(function (sd) { return sd.department_id === parentDept.id && sd.active !== false })
-                if (filtered.length === 0) return null
-                return <SearchDropdown label={t('Sub-department') || 'Sub-department'} items={filtered.map(function (sd) { return { label: sd.name, value: String(sd.id) } })} value={row.sub_department_id} onChange={function (val) { updateAllocation(index, 'sub_department_id', val) }} placeholder="Select sub-department..." />
-              })()}
-              <SearchDropdown label={t('Venue') || 'Venue'} items={venues.map(function (v) { return { label: v.code + ' — ' + v.name, value: String(v.id) } })} value={row.venue_id} onChange={function (val) { updateAllocation(index, 'venue_id', val) }} placeholder="Select venue..." />
-              {row.venue_id && (function () {
-                var filtered = subVenues.filter(function (sv) { return String(sv.venue_id) === row.venue_id })
-                if (filtered.length === 0) return null
-                return <SearchDropdown label="Sub-venue" items={filtered.map(function (sv) { return { label: sv.name, value: String(sv.id) } })} value={row.sub_venue_id} onChange={function (val) { updateAllocation(index, 'sub_venue_id', val) }} placeholder="Select sub-venue..." />
-              })()}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">{t('Quantity')}</label>
-                <input type="number" min="0" step="any" inputMode="numeric" value={row.qty} onChange={function (e) { updateAllocation(index, 'qty', e.target.value) }} placeholder="0" className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-              </div>
-              
-            </div>
-          )
-        })}
+            )
+          }}
+        />
       </div>
 
       {/* ═══ DYNAMIC DIMENSIONS ═══ */}

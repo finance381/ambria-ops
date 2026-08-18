@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { logActivity } from '../../lib/logger'
 import { formatPoints } from '../../lib/format'
 import SearchDropdown from '../../components/ui/SearchDropdown'
+import AllocationRows from '../../components/ui/AllocationRows'
 import { useVoice } from '../../hooks/useVoice'
 import EventDatePicker from '../../components/ui/EventDatePicker'
 import { compressImage } from '../../lib/imageCompress'
@@ -499,6 +500,17 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
       if (i !== entryIdx) return e
       if (e.allocations.length <= 1) return e
       return Object.assign({}, e, { allocations: e.allocations.filter(function (_, j) { return j !== allocIdx }) })
+    })
+    setEntries(updated)
+  }
+
+  function duplicateAllocation(entryIdx, allocIdx) {
+    var updated = entries.map(function (e, i) {
+      if (i !== entryIdx) return e
+      var src = e.allocations[allocIdx]
+      if (!src) return e
+      var dup = Object.assign({}, src, { amountPaise: '' })
+      return Object.assign({}, e, { allocations: e.allocations.concat([dup]) })
     })
     setEntries(updated)
   }
@@ -1492,36 +1504,57 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
               </div>
 
               {/* Allocations — hidden in Item Select mode */}
-              {!entry.isItemPurchase && (
-              <div className="border border-gray-100 rounded-lg bg-gray-50 p-3">
-                <div className="flex items-center justify-between mb-2">
-                  <label className="text-xs font-semibold text-gray-600">Allocations</label>
-                  <button type="button" onClick={function () { addAllocation(idx) }}
-                    className="text-xs px-2 py-1 rounded bg-amber-100 text-amber-700 hover:bg-amber-200 font-medium">+ Row</button>
-                </div>
-                {(function () {
-                  if (!entry.expenseTypeId) return null
-                  var t = expenseTypes.find(function (et) { return String(et.id) === String(entry.expenseTypeId) })
-                  if (!t || !t.department_id) return null
-                  var mismatches = entry.allocations.filter(function (a) { return a.departmentId && Number(a.departmentId) !== t.department_id })
-                  if (mismatches.length === 0) return null
-                  var typeDept = departments.find(function (d) { return d.id === t.department_id })
-                  return (
-                    <div className="mb-2 px-2.5 py-1.5 bg-amber-50 border border-amber-300 rounded-md text-[11px] text-amber-800">
-                      ⚠️ Type "{t.name}" is scoped to <b>{typeDept?.name || ('dept #' + t.department_id)}</b>, but {mismatches.length} allocation{mismatches.length > 1 ? 's use' : ' uses'} a different dept. Allowed but flagged for review.
-                    </div>
-                  )
-                })()}
-                <div className="space-y-2">
-                  {entry.allocations.map(function (alloc, aIdx) {
-                    var allocDeptId = alloc.departmentId ? Number(alloc.departmentId) : null
-                    var scopedTypes = allocDeptId ? expenseTypes.filter(function (t) { return t.department_id === allocDeptId }) : []
-                    var genericTypes = expenseTypes.filter(function (t) { return !t.department_id })
-                    var allocSubTypeOptions = alloc.expenseTypeId ? expenseSubTypes.filter(function (s) { return s.expense_type_id === Number(alloc.expenseTypeId) }) : []
-                    var isFallback = !!alloc.expenseTypeId && !!allocDeptId && scopedTypes.findIndex(function (t) { return String(t.id) === String(alloc.expenseTypeId) }) === -1
-                    return (
-                      <div key={aIdx} className="flex gap-2 items-start">
-                        <div className="flex-1 space-y-1.5">
+              {!entry.isItemPurchase && (function () {
+                var headerWarning = null
+                var scopedType = entry.expenseTypeId ? expenseTypes.find(function (et) { return String(et.id) === String(entry.expenseTypeId) }) : null
+                if (scopedType && scopedType.department_id) {
+                  var mismatches = entry.allocations.filter(function (a) { return a.departmentId && Number(a.departmentId) !== scopedType.department_id })
+                  if (mismatches.length > 0) {
+                    var typeDept = departments.find(function (d) { return d.id === scopedType.department_id })
+                    headerWarning = (
+                      <div className="px-2.5 py-1.5 bg-amber-50 border border-amber-300 rounded-md text-[11px] text-amber-800">
+                        ⚠️ Type "{scopedType.name}" is scoped to <b>{typeDept?.name || ('dept #' + scopedType.department_id)}</b>, but {mismatches.length} allocation{mismatches.length > 1 ? 's use' : ' uses'} a different dept. Allowed but flagged for review.
+                      </div>
+                    )
+                  }
+                }
+                return (
+                  <AllocationRows
+                    allocations={entry.allocations}
+                    accent="amber"
+                    headerWarning={headerWarning}
+                    onAdd={function () { addAllocation(idx) }}
+                    onRemove={function (aIdx) { removeAllocation(idx, aIdx) }}
+                    onDuplicate={function (aIdx) { duplicateAllocation(idx, aIdx) }}
+                    isComplete={function (a) { return !!a.departmentId && !!a.venueId && !!a.expenseTypeId && !!a.amountPaise && Number(a.amountPaise) > 0 }}
+                    renderChip={function (a) {
+                      var v = venues.find(function (x) { return String(x.id) === String(a.venueId) })
+                      var d = departments.find(function (x) { return String(x.id) === String(a.departmentId) })
+                      var et = expenseTypes.find(function (x) { return String(x.id) === String(a.expenseTypeId) })
+                      var st = expenseSubTypes.find(function (x) { return String(x.id) === String(a.expenseSubTypeId) })
+                      var typeLabel = st ? st.name : (et ? et.name : '')
+                      var amt = Number(a.amountPaise) || 0
+                      return {
+                        left: (
+                          <>
+                            {v && <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-indigo-50 text-[10px] font-semibold text-indigo-700 shrink-0">{v.code}</span>}
+                            {d && <span className="text-gray-700 font-medium truncate">{d.name}</span>}
+                            {typeLabel && <span className="text-gray-400 shrink-0">›</span>}
+                            {typeLabel && <span className="text-gray-500 truncate">{typeLabel}</span>}
+                            {a.remarks && <span className="text-gray-400 truncate italic">· "{a.remarks}"</span>}
+                          </>
+                        ),
+                        right: formatPoints(amt),
+                      }
+                    }}
+                    renderExpanded={function (alloc, aIdx) {
+                      var allocDeptId = alloc.departmentId ? Number(alloc.departmentId) : null
+                      var scopedTypes = allocDeptId ? expenseTypes.filter(function (t) { return t.department_id === allocDeptId }) : []
+                      var genericTypes = expenseTypes.filter(function (t) { return !t.department_id })
+                      var allocSubTypeOptions = alloc.expenseTypeId ? expenseSubTypes.filter(function (s) { return s.expense_type_id === Number(alloc.expenseTypeId) }) : []
+                      var isFallback = !!alloc.expenseTypeId && !!allocDeptId && scopedTypes.findIndex(function (t) { return String(t.id) === String(alloc.expenseTypeId) }) === -1
+                      return (
+                        <div className="space-y-1.5">
                           <div className="grid grid-cols-2 gap-2">
                             <select value={alloc.departmentId}
                               onChange={function (e) {
@@ -1577,16 +1610,11 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                             <p className="text-[10px] text-amber-700 font-medium">⚠ No dept-specific match — using generic/top-level type</p>
                           )}
                         </div>
-                        {entry.allocations.length > 1 && (
-                          <button type="button" onClick={function () { removeAllocation(idx, aIdx) }}
-                            className="text-red-400 hover:text-red-600 text-xs mt-1">✕</button>
-                        )}
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-              )}
+                      )
+                    }}
+                  />
+                )
+              })()}
 
               {/* Amount + GST + Gross Total — bottom */}
               <div className="border border-amber-200 rounded-lg bg-amber-50/40 p-3 space-y-2">

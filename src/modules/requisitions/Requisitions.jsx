@@ -8,6 +8,7 @@ import ItemReceipts from './ItemReceipts'
 import { Badge } from '../../components/ui/Badge'
 import { APPROVAL_STATUS_COLORS, APPROVAL_STATUS_LABELS } from '../../lib/constants'
 import EventDatePicker from '../../components/ui/EventDatePicker'
+import AllocationRows from '../../components/ui/AllocationRows'
 import { prepUpload } from '../../lib/uploadHelper'
 import { filterUserCategories } from '../../lib/categories'
 import { pushBack, goBack as navBack } from '../../lib/backNav'
@@ -916,6 +917,18 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
     })
   }
 
+  function duplicateAllocation(cartIndex, allocIndex) {
+    setCart(function (prev) {
+      return prev.map(function (item, i) {
+        if (i !== cartIndex) return item
+        var src = item.allocations[allocIndex]
+        if (!src) return item
+        var dup = Object.assign({}, src, { qty: '' })
+        return Object.assign({}, item, { allocations: item.allocations.concat([dup]) })
+      })
+    })
+  }
+
   // Total estimated cost (live)
   var totalCostPaise = 0
   cart.forEach(function (c) {
@@ -1422,37 +1435,49 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
 
               {/* Venue Allocations */}
               <div className="border-t border-gray-100 pt-2 space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-bold text-gray-400">Venue Allocation</span>
-                  <button type="button" onClick={function () { addAllocation(index) }}
-                    className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-800">+ Add</button>
-                </div>
-                {item.allocations.map(function (alloc, aIdx) {
-                  return (
-                    <div key={aIdx} className="flex gap-2 items-end">
-                      <div className="flex-1">
-                        <select value={alloc.venue_id}
-                          onChange={function (e) { updateAllocation(index, aIdx, 'venue_id', e.target.value) }}
-                          className="w-full px-2 py-1.5 border border-gray-200 rounded-md text-[12px] focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
-                          style={{ fontSize: '16px' }}>
-                          <option value="">Venue...</option>
-                          {venues.map(function (v) { return <option key={v.id} value={String(v.id)}>{v.code ? v.code + ' — ' + v.name : v.name}</option> })}
-                        </select>
+                <AllocationRows
+                  allocations={item.allocations}
+                  accent="gray"
+                  title="Venue Allocation"
+                  onAdd={function () { addAllocation(index) }}
+                  onRemove={function (aIdx) { removeAllocation(index, aIdx) }}
+                  onDuplicate={function (aIdx) { duplicateAllocation(index, aIdx) }}
+                  isComplete={function (a) { return !!a.venue_id && !!a.qty && Number(a.qty) > 0 }}
+                  renderChip={function (a) {
+                    var v = a.venue_id ? venues.find(function (x) { return String(x.id) === String(a.venue_id) }) : null
+                    return {
+                      left: (
+                        <>
+                          {v && <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-indigo-50 text-[10px] font-semibold text-indigo-700 shrink-0">{v.code || v.name}</span>}
+                          {v && <span className="text-gray-700 font-medium truncate">{v.name}</span>}
+                        </>
+                      ),
+                      right: (Number(a.qty) || 0) + ' ' + (item.unit || ''),
+                    }
+                  }}
+                  renderExpanded={function (alloc, aIdx) {
+                    return (
+                      <div className="flex gap-2 items-end">
+                        <div className="flex-1">
+                          <select value={alloc.venue_id}
+                            onChange={function (e) { updateAllocation(index, aIdx, 'venue_id', e.target.value) }}
+                            className="w-full px-2 py-1.5 border border-gray-200 rounded-md text-[12px] focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+                            style={{ fontSize: '16px' }}>
+                            <option value="">Venue...</option>
+                            {venues.map(function (v) { return <option key={v.id} value={String(v.id)}>{v.code ? v.code + ' — ' + v.name : v.name}</option> })}
+                          </select>
+                        </div>
+                        <div className="w-20">
+                          <input type="number" min="0" step="any" inputMode="numeric" value={alloc.qty}
+                            onChange={function (e) { updateAllocation(index, aIdx, 'qty', e.target.value) }}
+                            placeholder="Qty"
+                            className="w-full px-2 py-1.5 border border-gray-200 rounded-md text-[12px] focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                            style={{ fontSize: '16px' }} />
+                        </div>
                       </div>
-                      <div className="w-20">
-                        <input type="number" min="0" step="any" inputMode="numeric" value={alloc.qty}
-                          onChange={function (e) { updateAllocation(index, aIdx, 'qty', e.target.value) }}
-                          placeholder="Qty"
-                          className="w-full px-2 py-1.5 border border-gray-200 rounded-md text-[12px] focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                          style={{ fontSize: '16px' }} />
-                      </div>
-                      {item.allocations.length > 1 && (
-                        <button type="button" onClick={function () { removeAllocation(index, aIdx) }}
-                          className="text-xs text-red-400 hover:text-red-600 p-1">✕</button>
-                      )}
-                    </div>
-                  )
-                })}
+                    )
+                  }}
+                />
                 {(function () {
                   var filled = item.allocations.filter(function (a) { return a.venue_id && Number(a.qty) > 0 })
                   if (filled.length === 0) return null
@@ -1585,102 +1610,108 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
             var diff = target - allocTotal
             var isMatch = target > 0 && Math.abs(diff) < 0.01
             var isOver = allocTotal > target && target > 0
+            var headerWarning = null
+            var scopedType = expTypeId ? expenseTypes.find(function (et) { return String(et.id) === String(expTypeId) }) : null
+            if (scopedType && scopedType.department_id) {
+              var mismatches = expAllocations.filter(function (a) { return a.departmentId && Number(a.departmentId) !== scopedType.department_id })
+              if (mismatches.length > 0) {
+                var typeDept = departments.find(function (d) { return d.id === scopedType.department_id })
+                headerWarning = (
+                  <div className="px-2.5 py-1.5 bg-amber-50 border border-amber-300 rounded-md text-[11px] text-amber-800">
+                    ⚠️ Type "{scopedType.name}" is scoped to <b>{typeDept?.name || ('dept #' + scopedType.department_id)}</b>, but {mismatches.length} allocation{mismatches.length > 1 ? 's use' : ' uses'} a different dept. Allowed but flagged for review.
+                  </div>
+                )
+              }
+            }
+            var footer = target > 0 ? (
+              <div className={"flex items-center justify-between px-3 py-2 border-t " + (isMatch ? 'bg-green-50 border-green-200' : isOver ? 'bg-red-50 border-red-200' : 'bg-amber-50 border-amber-200')}>
+                <span className={"text-[11px] font-bold " + (isMatch ? 'text-green-700' : isOver ? 'text-red-700' : 'text-amber-700')}>
+                  {isMatch ? '✓ Fully allocated' : isOver ? '⚠ Over by ' + diff.toFixed(0).replace('-', '') : 'Remaining: ' + diff.toFixed(0)}
+                </span>
+                <span className={"text-[12px] font-bold " + (isMatch ? 'text-green-800' : isOver ? 'text-red-800' : 'text-amber-800')}>
+                  {allocTotal.toLocaleString('en-IN')} / {target.toLocaleString('en-IN')}
+                </span>
+              </div>
+            ) : null
             return (
-              <div className="border border-amber-200 rounded-xl bg-amber-50/40 overflow-hidden">
-                <div className="flex items-center justify-between px-3 py-2 bg-amber-100/60">
-                  <span className="text-[11px] font-bold text-amber-800 uppercase tracking-wide">Allocations</span>
-                  <button type="button" onClick={function () { setExpAllocations(function (p) { return p.concat([{ departmentId: '', subDepartmentId: '', venue_id: '', amount: '' }]) }) }}
-                    className="text-[11px] font-bold text-amber-700 hover:text-amber-900 px-2 py-0.5 rounded bg-amber-200/60 hover:bg-amber-200">+ Add</button>
-                </div>
-                {(function () {
-                  if (!expTypeId) return null
-                  var t = expenseTypes.find(function (et) { return String(et.id) === String(expTypeId) })
-                  if (!t || !t.department_id) return null
-                  var mismatches = expAllocations.filter(function (a) { return a.departmentId && Number(a.departmentId) !== t.department_id })
-                  if (mismatches.length === 0) return null
-                  var typeDept = departments.find(function (d) { return d.id === t.department_id })
+              <AllocationRows
+                allocations={expAllocations}
+                accent="amber"
+                headerWarning={headerWarning}
+                footer={footer}
+                onAdd={function () { setExpAllocations(function (p) { return p.concat([{ departmentId: '', subDepartmentId: '', venue_id: '', amount: '' }]) }) }}
+                onRemove={function (aIdx) { setExpAllocations(function (p) { return p.filter(function (_, j) { return j !== aIdx }) }) }}
+                onDuplicate={function (aIdx) { setExpAllocations(function (p) { var src = p[aIdx]; if (!src) return p; return p.concat([Object.assign({}, src, { amount: '' })]) }) }}
+                isComplete={function (a) { return !!a.departmentId && !!a.venue_id && !!a.amount && Number(a.amount) > 0 }}
+                renderChip={function (a) {
+                  var d = a.departmentId ? departments.find(function (x) { return String(x.id) === String(a.departmentId) }) : null
+                  var sd = a.subDepartmentId ? subDepartments.find(function (x) { return String(x.id) === String(a.subDepartmentId) }) : null
+                  var v = a.venue_id ? venues.find(function (x) { return String(x.id) === String(a.venue_id) }) : null
+                  var amt = Number(a.amount) || 0
+                  return {
+                    left: (
+                      <>
+                        {v && <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-indigo-50 text-[10px] font-semibold text-indigo-700 shrink-0">{v.code || v.name}</span>}
+                        {d && <span className="text-gray-700 font-medium truncate">{d.name}</span>}
+                        {sd && <span className="text-gray-400 shrink-0">›</span>}
+                        {sd && <span className="text-gray-500 truncate">{sd.name}</span>}
+                      </>
+                    ),
+                    right: amt.toLocaleString('en-IN'),
+                  }
+                }}
+                renderExpanded={function (alloc, aIdx) {
+                  var allocSubDepts = alloc.departmentId ? subDepartments.filter(function (sd) { return sd.department_id === Number(alloc.departmentId) }) : []
+                  var selDept = alloc.departmentId ? departments.find(function (d) { return String(d.id) === alloc.departmentId }) : null
+                  var isVenueDept = selDept && selDept.name.toLowerCase().indexOf('venue') === 0
                   return (
-                    <div className="mx-2.5 mt-2 px-2.5 py-1.5 bg-amber-50 border border-amber-300 rounded-md text-[11px] text-amber-800">
-                      ⚠️ Type "{t.name}" is scoped to <b>{typeDept?.name || ('dept #' + t.department_id)}</b>, but {mismatches.length} allocation{mismatches.length > 1 ? 's use' : ' uses'} a different dept. Allowed but flagged for review.
+                    <div className="space-y-2">
+                      <div className="grid grid-cols-2 gap-2">
+                        <select value={alloc.departmentId}
+                          onChange={function (e) { setExpAllocations(function (p) { return p.map(function (a, j) { return j === aIdx ? Object.assign({}, a, { departmentId: e.target.value, subDepartmentId: '', venue_id: '' }) : a }) }) }}
+                          className="w-full px-2 py-2 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-2 focus:ring-amber-500 bg-gray-50"
+                          style={{ fontSize: '16px' }}>
+                          <option value="">Dept</option>
+                          {departments.map(function (d) { return <option key={d.id} value={String(d.id)}>{d.name}</option> })}
+                        </select>
+                        {isVenueDept ? (
+                          <select value={alloc.venue_id}
+                            onChange={function (e) { setExpAllocations(function (p) { return p.map(function (a, j) { return j === aIdx ? Object.assign({}, a, { venue_id: e.target.value }) : a }) }) }}
+                            className="w-full px-2 py-2 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-2 focus:ring-amber-500 bg-gray-50"
+                            style={{ fontSize: '16px' }}>
+                            <option value="">Venue</option>
+                            {venues.map(function (v) { return <option key={v.id} value={String(v.id)}>{v.code || v.name}</option> })}
+                          </select>
+                        ) : allocSubDepts.length > 0 ? (
+                          <select value={alloc.subDepartmentId}
+                            onChange={function (e) { setExpAllocations(function (p) { return p.map(function (a, j) { return j === aIdx ? Object.assign({}, a, { subDepartmentId: e.target.value }) : a }) }) }}
+                            className="w-full px-2 py-2 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-2 focus:ring-amber-500 bg-gray-50"
+                            style={{ fontSize: '16px' }}>
+                            <option value="">Sub-dept</option>
+                            {allocSubDepts.map(function (sd) { return <option key={sd.id} value={String(sd.id)}>{sd.name}</option> })}
+                          </select>
+                        ) : <div />}
+                      </div>
+                      <div className={"grid gap-2 " + (isVenueDept ? "" : "grid-cols-2")}>
+                        {!isVenueDept && (
+                          <select value={alloc.venue_id}
+                            onChange={function (e) { setExpAllocations(function (p) { return p.map(function (a, j) { return j === aIdx ? Object.assign({}, a, { venue_id: e.target.value }) : a }) }) }}
+                            className="w-full px-2 py-2 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-2 focus:ring-amber-500 bg-gray-50"
+                            style={{ fontSize: '16px' }}>
+                            <option value="">Venue</option>
+                            {venues.map(function (v) { return <option key={v.id} value={String(v.id)}>{v.code || v.name}</option> })}
+                          </select>
+                        )}
+                        <input type="number" min="0" step="any" inputMode="decimal" value={alloc.amount}
+                          onChange={function (e) { setExpAllocations(function (p) { return p.map(function (a, j) { return j === aIdx ? Object.assign({}, a, { amount: e.target.value }) : a }) }) }}
+                          placeholder="Amount"
+                          className="w-full px-2 py-2 border border-gray-200 rounded-md text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-amber-500"
+                          style={{ fontSize: '16px' }} />
+                      </div>
                     </div>
                   )
-                })()}
-                <div className="p-2.5 space-y-2">
-                  {expAllocations.map(function (alloc, aIdx) {
-                    var allocSubDepts = alloc.departmentId ? subDepartments.filter(function (sd) { return sd.department_id === Number(alloc.departmentId) }) : []
-                    return (
-                      <div key={aIdx} className="bg-white rounded-lg border border-gray-200 p-2.5 relative">
-                        {expAllocations.length > 1 && (
-                          <button type="button" onClick={function () { setExpAllocations(function (p) { return p.filter(function (_, j) { return j !== aIdx }) }) }}
-                            className="absolute top-1.5 right-1.5 w-5 h-5 flex items-center justify-center text-[10px] text-red-400 hover:text-red-600 hover:bg-red-50 rounded-full">✕</button>
-                        )}
-                        <div className="space-y-2">
-                          {(function () {
-                            var selDept = alloc.departmentId ? departments.find(function (d) { return String(d.id) === alloc.departmentId }) : null
-                            var isVenueDept = selDept && selDept.name.toLowerCase().indexOf('venue') === 0
-                            return (
-                              <div className="space-y-2">
-                                <div className="grid grid-cols-2 gap-2">
-                                  <select value={alloc.departmentId}
-                                    onChange={function (e) { setExpAllocations(function (p) { return p.map(function (a, j) { return j === aIdx ? Object.assign({}, a, { departmentId: e.target.value, subDepartmentId: '', venue_id: '' }) : a }) }) }}
-                                    className="w-full px-2 py-2 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-2 focus:ring-amber-500 bg-gray-50"
-                                    style={{ fontSize: '16px' }}>
-                                    <option value="">Dept</option>
-                                    {departments.map(function (d) { return <option key={d.id} value={String(d.id)}>{d.name}</option> })}
-                                  </select>
-                                  {isVenueDept ? (
-                                    <select value={alloc.venue_id}
-                                      onChange={function (e) { setExpAllocations(function (p) { return p.map(function (a, j) { return j === aIdx ? Object.assign({}, a, { venue_id: e.target.value }) : a }) }) }}
-                                      className="w-full px-2 py-2 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-2 focus:ring-amber-500 bg-gray-50"
-                                      style={{ fontSize: '16px' }}>
-                                      <option value="">Venue</option>
-                                      {venues.map(function (v) { return <option key={v.id} value={String(v.id)}>{v.code || v.name}</option> })}
-                                    </select>
-                                  ) : allocSubDepts.length > 0 ? (
-                                    <select value={alloc.subDepartmentId}
-                                      onChange={function (e) { setExpAllocations(function (p) { return p.map(function (a, j) { return j === aIdx ? Object.assign({}, a, { subDepartmentId: e.target.value }) : a }) }) }}
-                                      className="w-full px-2 py-2 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-2 focus:ring-amber-500 bg-gray-50"
-                                      style={{ fontSize: '16px' }}>
-                                      <option value="">Sub-dept</option>
-                                      {allocSubDepts.map(function (sd) { return <option key={sd.id} value={String(sd.id)}>{sd.name}</option> })}
-                                    </select>
-                                  ) : <div />}
-                                </div>
-                                <div className={"grid gap-2 " + (isVenueDept ? "" : "grid-cols-2")}>
-                                  {!isVenueDept && (
-                                    <select value={alloc.venue_id}
-                                      onChange={function (e) { setExpAllocations(function (p) { return p.map(function (a, j) { return j === aIdx ? Object.assign({}, a, { venue_id: e.target.value }) : a }) }) }}
-                                      className="w-full px-2 py-2 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-2 focus:ring-amber-500 bg-gray-50"
-                                      style={{ fontSize: '16px' }}>
-                                      <option value="">Venue</option>
-                                      {venues.map(function (v) { return <option key={v.id} value={String(v.id)}>{v.code || v.name}</option> })}
-                                    </select>
-                                  )}
-                                  <input type="number" min="0" step="any" inputMode="decimal" value={alloc.amount}
-                                    onChange={function (e) { setExpAllocations(function (p) { return p.map(function (a, j) { return j === aIdx ? Object.assign({}, a, { amount: e.target.value }) : a }) }) }}
-                                    placeholder="Amount"
-                                    className="w-full px-2 py-2 border border-gray-200 rounded-md text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-amber-500"
-                                    style={{ fontSize: '16px' }} />
-                                </div>
-                              </div>
-                            )
-                          })()}
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-                {target > 0 && (
-                  <div className={"flex items-center justify-between px-3 py-2 border-t " + (isMatch ? 'bg-green-50 border-green-200' : isOver ? 'bg-red-50 border-red-200' : 'bg-amber-50 border-amber-200')}>
-                    <span className={"text-[11px] font-bold " + (isMatch ? 'text-green-700' : isOver ? 'text-red-700' : 'text-amber-700')}>
-                      {isMatch ? '✓ Fully allocated' : isOver ? '⚠ Over by ' + diff.toFixed(0).replace('-', '') : 'Remaining: ' + diff.toFixed(0)}
-                    </span>
-                    <span className={"text-[12px] font-bold " + (isMatch ? 'text-green-800' : isOver ? 'text-red-800' : 'text-amber-800')}>
-                      {allocTotal.toLocaleString('en-IN')} / {target.toLocaleString('en-IN')}
-                    </span>
-                  </div>
-                )}
-              </div>
+                }}
+              />
             )
           })()}
           <div>
