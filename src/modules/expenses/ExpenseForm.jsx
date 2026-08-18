@@ -19,6 +19,7 @@ function makeEntry() {
     expenseDate: new Date().toISOString().split('T')[0],
     fieldValues: {},
     allocations: [{ departmentId: '', venueId: '', expenseTypeId: '', expenseSubTypeId: '', amountPaise: '', remarks: '' }],
+    showAllocations: false,
     receiptFiles: [],
     receiptPreviews: [],
     audioBlob: null,
@@ -121,6 +122,7 @@ function hydrateEntry(exp) {
     recording: false,
     isItemPurchase: isItemP,
     items: isItemP && itemsFromMeta.length > 0 ? itemsFromMeta : [makeItem()],
+    showAllocations: allocs.length > 1 || allocs.some(function (a) { return !!a.departmentId || !!a.venueId || (!!a.amountPaise && Number(a.amountPaise) > 0) }),
     paymentCreditRupees: exp.payment_credit_paise ? String(exp.payment_credit_paise / 100) : '',
     payWithCash: (exp.payment_credit_cash_paise || 0) > 0,
     payWithBank: (exp.payment_credit_bank_paise || 0) > 0,
@@ -361,6 +363,15 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
     setEntries(updated)
     setItemMatches([])
     setItemSearchKey('')
+  }
+
+  function toggleShowAllocations(idx) {
+    setEntries(function (prev) {
+      return prev.map(function (e, i) {
+        if (i !== idx) return e
+        return Object.assign({}, e, { showAllocations: !e.showAllocations })
+      })
+    })
   }
 
   function computeItemsTotal(entry) {
@@ -1503,8 +1514,21 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                 )}
               </div>
 
-              {/* Allocations — hidden in Item Select mode */}
-              {!entry.isItemPurchase && (function () {
+              {/* Allocations — hidden in Item Select mode + behind toggle */}
+              {!entry.isItemPurchase && (
+                <div className={"border rounded-lg p-3 transition-colors " + (entry.showAllocations ? "border-amber-200 bg-amber-50/40" : "border-gray-100 bg-gray-50")}>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <label className="text-xs font-semibold text-gray-700">🎯 Split Allocations</label>
+                      <p className="text-[10px] text-gray-400 mt-0.5">Divide across departments / venues / sub-types</p>
+                    </div>
+                    <button type="button" onClick={function () { toggleShowAllocations(idx) }} className="flex items-center">
+                      <div className={"relative w-9 h-5 rounded-full transition-colors " + (entry.showAllocations ? "bg-amber-500" : "bg-gray-300")}>
+                        <div className={"absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform " + (entry.showAllocations ? "translate-x-4" : "translate-x-0.5")} />
+                      </div>
+                    </button>
+                  </div>
+                  {entry.showAllocations && <div className="mt-3">{(function () {
                 var headerWarning = null
                 var scopedType = entry.expenseTypeId ? expenseTypes.find(function (et) { return String(et.id) === String(entry.expenseTypeId) }) : null
                 if (scopedType && scopedType.department_id) {
@@ -1614,7 +1638,9 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                     }}
                   />
                 )
-              })()}
+              })()}</div>}
+                </div>
+              )}
 
               {/* Amount + GST + Gross Total — bottom */}
               <div className="border border-amber-200 rounded-lg bg-amber-50/40 p-3 space-y-2">

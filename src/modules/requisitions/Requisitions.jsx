@@ -670,6 +670,9 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
     }
     return [{ departmentId: '', subDepartmentId: '', venue_id: '', amount: '' }]
   })
+  var [showExpAllocations, setShowExpAllocations] = useState(function () {
+    return !!(editReq && editReq.expense_alloc_json && editReq.expense_alloc_json.length > 0)
+  })
   var [listening, setListening] = useState(false)
   var searchContainerRef = useRef(null)
   var recognitionRef = useRef(null)
@@ -678,7 +681,7 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
   var SpeechRec = typeof window !== 'undefined' ? (window.SpeechRecognition || window.webkitSpeechRecognition) : null
 
   function emptyCartItem() {
-    return { mode: 'existing', item_id: null, item_name: '', category_id: '', qty: '1', unit: 'Pieces', notes: '', _source: 'new', search: '', estimated_cost: '', allocations: [{ venue_id: '', qty: '' }] }
+    return { mode: 'existing', item_id: null, item_name: '', category_id: '', qty: '1', unit: 'Pieces', notes: '', _source: 'new', search: '', estimated_cost: '', allocations: [{ venue_id: '', qty: '' }], showAllocations: false }
   }
 
   // Initialize cart — empty for new, pre-filled for edit
@@ -699,6 +702,7 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
           allocations: li.requisition_item_allocations && li.requisition_item_allocations.length > 0
             ? li.requisition_item_allocations.map(function (a) { return { venue_id: String(a.venue_id), qty: String(a.qty) } })
             : [{ venue_id: '', qty: '' }],
+          showAllocations: !!(li.requisition_item_allocations && li.requisition_item_allocations.length > 0),
         }
       })
       setCart(prefilled)
@@ -913,6 +917,15 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
         if (i !== cartIndex) return item
         if (item.allocations.length <= 1) return item
         return Object.assign({}, item, { allocations: item.allocations.filter(function (_, j) { return j !== allocIndex }) })
+      })
+    })
+  }
+
+  function toggleShowItemAllocations(cartIndex) {
+    setCart(function (prev) {
+      return prev.map(function (item, i) {
+        if (i !== cartIndex) return item
+        return Object.assign({}, item, { showAllocations: !item.showAllocations })
       })
     })
   }
@@ -1433,8 +1446,21 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
                 </div>
               </div>
 
-              {/* Venue Allocations */}
-              <div className="border-t border-gray-100 pt-2 space-y-1.5">
+              {/* Venue Allocations — behind toggle */}
+              <div className={"border-t border-gray-100 pt-2 space-y-1.5 " + (item.showAllocations ? "" : "")}>
+                <div className={"border rounded-lg p-2.5 transition-colors " + (item.showAllocations ? "border-gray-200 bg-gray-50" : "border-gray-100 bg-white")}>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <label className="text-[11px] font-semibold text-gray-700">📍 Venue Allocation</label>
+                      <p className="text-[10px] text-gray-400 mt-0.5">Split qty across venues</p>
+                    </div>
+                    <button type="button" onClick={function () { toggleShowItemAllocations(index) }} className="flex items-center">
+                      <div className={"relative w-9 h-5 rounded-full transition-colors " + (item.showAllocations ? "bg-indigo-500" : "bg-gray-300")}>
+                        <div className={"absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform " + (item.showAllocations ? "translate-x-4" : "translate-x-0.5")} />
+                      </div>
+                    </button>
+                  </div>
+                  {item.showAllocations && <div className="mt-2">
                 <AllocationRows
                   allocations={item.allocations}
                   accent="gray"
@@ -1487,6 +1513,8 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
                   if (sum === itemQty) return <p className="text-[10px] text-green-600 font-medium">✓ Fully allocated</p>
                   return <p className="text-[10px] text-red-500 font-medium">Allocated {sum} of {itemQty} — must match</p>
                 })()}
+                </div>}
+                </div>
               </div>
             </div>
           )
@@ -1604,7 +1632,19 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
               className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
               style={{ fontSize: '16px' }} />
           </div>
-          {(function () {
+          <div className={"border rounded-lg p-3 transition-colors " + (showExpAllocations ? "border-amber-200 bg-amber-50/40" : "border-gray-100 bg-gray-50")}>
+            <div className="flex items-center justify-between">
+              <div>
+                <label className="text-xs font-semibold text-gray-700">🎯 Split Allocations</label>
+                <p className="text-[10px] text-gray-400 mt-0.5">Divide across departments / venues</p>
+              </div>
+              <button type="button" onClick={function () { setShowExpAllocations(function (v) { return !v }) }} className="flex items-center">
+                <div className={"relative w-9 h-5 rounded-full transition-colors " + (showExpAllocations ? "bg-amber-500" : "bg-gray-300")}>
+                  <div className={"absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform " + (showExpAllocations ? "translate-x-4" : "translate-x-0.5")} />
+                </div>
+              </button>
+            </div>
+          {showExpAllocations && <div className="mt-3">{(function () {
             var allocTotal = expAllocations.reduce(function (s, a) { return s + (Number(a.amount) || 0) }, 0)
             var target = Number(expAmount) || 0
             var diff = target - allocTotal
@@ -1713,7 +1753,8 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
                 }}
               />
             )
-          })()}
+          })()}</div>}
+          </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">📷 Receipt / Quote</label>
             {expReceipt ? (

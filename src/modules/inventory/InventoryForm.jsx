@@ -45,6 +45,7 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved }) {
   var [subVenues, setSubVenues] = useState([])
   var [subDepartments, setSubDepartments] = useState([])
   var [allocations, setAllocations] = useState([{ department: '', sub_department_id: '', venue_id: '', sub_venue_id: '', qty: '' }])
+  var [showAllocations, setShowAllocations] = useState(false)
   var [type, setType] = useState(seed?.type || 'Indoor')
   var [imageFile, setImageFile] = useState(null)
   var [imagePreview, setImagePreview] = useState(seed?.image_path ? getImageUrl(seed.image_path) : '')
@@ -217,6 +218,10 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved }) {
   function updateAllocation(index, field, value) {
     setAllocations(function (prev) { return prev.map(function (row, i) { if (i !== index) return row; var updated = { ...row, [field]: value }; if (field === 'venue_id') updated.sub_venue_id = ''; if (field === 'department') updated.sub_department_id = ''; return updated }) })
   }
+  useEffect(function () {
+    if (showAllocations) return
+    if (allocations.some(function (a) { return a.department || a.venue_id || a.qty })) setShowAllocations(true)
+  }, [allocations])
   function addAllocationRow() {
     setAllocations(function (prev) { return prev.concat([{ department: '', sub_department_id: '', venue_id: '', sub_venue_id: '', qty: '' }]) })
   }
@@ -723,8 +728,20 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved }) {
         </div>
       </div>
 
-      {/* ═══ ALLOCATION CARD ═══ */}
-      <div className="space-y-2">
+      {/* ═══ ALLOCATION CARD — behind toggle ═══ */}
+      <div className={"border rounded-lg p-3 transition-colors " + (showAllocations ? "border-indigo-200 bg-indigo-50/40" : "border-gray-100 bg-gray-50")}>
+        <div className="flex items-center justify-between">
+          <div>
+            <label className="text-xs font-semibold text-gray-700">📍 {t('Allocations') || 'Allocations'}</label>
+            <p className="text-[10px] text-gray-400 mt-0.5">Distribute qty across depts / venues</p>
+          </div>
+          <button type="button" onClick={function () { setShowAllocations(function (v) { return !v }) }} className="flex items-center">
+            <div className={"relative w-9 h-5 rounded-full transition-colors " + (showAllocations ? "bg-indigo-500" : "bg-gray-300")}>
+              <div className={"absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform " + (showAllocations ? "translate-x-4" : "translate-x-0.5")} />
+            </div>
+          </button>
+        </div>
+        {showAllocations && <div className="mt-3 space-y-2">
         {errors.dept && <p className="text-xs text-red-500">{errors.dept}</p>}
         <AllocationRows
           allocations={allocations}
@@ -774,6 +791,7 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved }) {
             )
           }}
         />
+        </div>}
       </div>
 
       {/* ═══ DYNAMIC DIMENSIONS ═══ */}
