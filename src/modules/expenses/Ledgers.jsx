@@ -89,6 +89,7 @@ function Ledgers({ profile }) {
   var [totals, setTotals] = useState({ total: 0, pending: 0, committed: 0, allocs: 0 })
   var [loading, setLoading] = useState(false)
   var [collapsedDepts, setCollapsedDepts] = useState({})
+  var collapseInitializedRef = useRef(false)
   var [deptDelta, setDeptDelta] = useState({})
   var allocSnapshot = useRef({})
   var isFirstLoad = useRef(true)
@@ -227,6 +228,13 @@ function Ledgers({ profile }) {
     setDeptDelta(newDeltas)
     setDeptGroups(groups)
     setTotals({ total: total, pending: pending, committed: committed, allocs: rows.length })
+    // On first load only, default all dept groups to collapsed.
+    if (!collapseInitializedRef.current && groups.length > 0) {
+      var allCollapsed = {}
+      groups.forEach(function (g) { allCollapsed[g.key] = true })
+      setCollapsedDepts(allCollapsed)
+      collapseInitializedRef.current = true
+    }
     setLoading(false)
   }
 
