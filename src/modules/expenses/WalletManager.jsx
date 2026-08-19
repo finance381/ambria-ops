@@ -417,7 +417,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     if (!dateStr) { setCollectEvents([]); return }
     setCollectFunctionsLoading(true)
     var { data } = await supabase.from('events')
-      .select('id, event_name, function_date, venue_name, client_name, session, contact_person, contact_number, secondary_contact, created_user_name')
+      .select('id, event_name, function_date, venue_name, client_name, session, contact_person, contact_number, secondary_contact, created_user_name, department, contract_no')
       .eq('function_date', dateStr)
       .order('event_name')
     setCollectEvents(data || [])
@@ -658,6 +658,26 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                         <div className={"text-xs " + (selected ? "text-blue-700" : "text-gray-500")}>
                           {(ev.venue_name || '') + (ev.session ? ' · ' + ev.session : '')}
                         </div>
+                        {(ev.department || ev.contract_no) && (
+                          <div className="flex items-center gap-1.5 mt-1">
+                            {ev.department && (
+                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200">{ev.department}</span>
+                            )}
+                            {ev.contract_no && (
+                              <span className="text-[10px] font-mono text-gray-500">#{ev.contract_no}</span>
+                            )}
+                          </div>
+                        )}
+                        {(ev.department || ev.contract_no) && (
+                          <div className="flex items-center gap-1.5 mt-1">
+                            {ev.department && (
+                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200">{ev.department}</span>
+                            )}
+                            {ev.contract_no && (
+                              <span className="text-[10px] font-mono text-gray-500">#{ev.contract_no}</span>
+                            )}
+                          </div>
+                        )}
                         {ev.created_user_name && (
                           <div className={"text-[11px] mt-0.5 " + (selected ? "text-blue-600" : "text-gray-400")}>
                             Contract by {ev.created_user_name}

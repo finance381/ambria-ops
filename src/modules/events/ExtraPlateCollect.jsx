@@ -81,7 +81,7 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
     if (!d) { setEvents([]); return }
     setEventsLoading(true)
     var { data } = await supabase.from('events')
-      .select('id, event_name, function_date, venue_name, client_name, session, extra_plates_charge, total_plates, complementary_plates, created_user_name')
+      .select('id, event_name, function_date, venue_name, client_name, session, extra_plates_charge, total_plates, complementary_plates, created_user_name, department, contract_no')
       .eq('function_date', d)
       .order('event_name')
     setEvents(data || [])
@@ -387,6 +387,16 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
                         <div className={"text-xs " + (selected ? "text-blue-700" : "text-gray-500")}>
                           {(ev.venue_name || '') + (ev.session ? ' · ' + ev.session : '')}
                         </div>
+                        {(ev.department || ev.contract_no) && (
+                          <div className="flex items-center gap-1.5 mt-1">
+                            {ev.department && (
+                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200">{ev.department}</span>
+                            )}
+                            {ev.contract_no && (
+                              <span className="text-[10px] font-mono text-gray-500">#{ev.contract_no}</span>
+                            )}
+                          </div>
+                        )}
                         {ev.created_user_name && (
                           <div className={"text-[11px] mt-0.5 " + (selected ? "text-blue-600" : "text-gray-400")}>
                             Contract by {ev.created_user_name}
