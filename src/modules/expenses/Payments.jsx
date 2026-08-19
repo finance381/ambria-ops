@@ -38,8 +38,12 @@ function Payments({ profile }) {
   var [purchases, setPurchases] = useState([])
   var [loading, setLoading] = useState(true)
   var [search, setSearch] = useState('')
-  var [dueWithin, setDueWithin] = useState('')
-  var [onlyOverdue, setOnlyOverdue] = useState(false)
+  var [departments, setDepartments] = useState([])
+  var [vendorTypeFilter, setVendorTypeFilter] = useState('')
+  var [deptFilter, setDeptFilter] = useState('')
+  var [agingBucket, setAgingBucket] = useState('all')
+  var [minAmount, setMinAmount] = useState('')
+  var [sortMode, setSortMode] = useState('priority')
   var [expanded, setExpanded] = useState({})
   var [payTarget, setPayTarget] = useState(null)
   var [payLockedMode, setPayLockedMode] = useState('')
@@ -80,7 +84,32 @@ function Payments({ profile }) {
     var pendingVendors = (vs || []).filter(function (v) {
       return (v.cash_balance_paise || 0) > 0 || (v.bank_balance_paise || 0) > 0
     })
-    setVendors(pendingVendors)
+
+    // Enrich vendors with vendor_type + department chain
+    var vendorIds = pendingVendors.map(function (v) { return v.vendor_id })
+    var [vExtRes, catsRes, sdRes, etRes, dRes] = await Promise.all([
+      vendorIds.length > 0 ? supabase.from('vendors').select('id, vendor_type, category_ids, expense_type_ids').in('id', vendorIds) : Promise.resolve({ data: [] }),
+      supabase.from('categories').select('id, sub_department_id'),
+      supabase.from('sub_departments').select('id, department_id'),
+      supabase.from('expense_types').select('id, department_id'),
+      supabase.from('departments').select('id, name').eq('active', true).order('name')
+    ])
+    var catToSd = {}; (catsRes.data || []).forEach(function (c) { catToSd[c.id] = c.sub_department_id })
+    var sdToDept = {}; (sdRes.data || []).forEach(function (s) { sdToDept[s.id] = s.department_id })
+    var etToDept = {}; (etRes.data || []).forEach(function (t) { etToDept[t.id] = t.department_id })
+    var vExtras = {}
+    ;(vExtRes.data || []).forEach(function (v) {
+      var deptIds = {}
+      ;(v.category_ids || []).forEach(function (cid) { var sd = catToSd[cid]; if (sd) { var d = sdToDept[sd]; if (d) deptIds[d] = true } })
+      ;(v.expense_type_ids || []).forEach(function (tid) { var d = etToDept[tid]; if (d) deptIds[d] = true })
+      vExtras[v.id] = { vendorType: v.vendor_type, deptIds: Object.keys(deptIds).map(Number) }
+    })
+    var enriched = pendingVendors.map(function (v) {
+      var ext = vExtras[v.vendor_id] || {}
+      return Object.assign({}, v, { _vendorType: ext.vendorType || null, _deptIds: ext.deptIds || [] })
+    })
+    setVendors(enriched)
+    setDepartments(dRes.data || [])
     if (pendingVendors.length === 0) {
       setPurchases([]); setLoading(false); return
     }
@@ -194,7 +223,9 @@ function Payments({ profile }) {
           earliest_due: g.earliest_due,
           is_overdue: isOverdue,
           rows: g.rows,
-          row_count: g.rows.length
+          row_count: g.rows.length,
+          _vendorType: v._vendorType || null,
+          _deptIds: v._deptIds || []
         })
       })
       return out.sort(sortRows)
@@ -204,23 +235,49 @@ function Payments({ profile }) {
   }, [vendors, purchases])
 
   var filtered = useMemo(function () {
+    var q = search.trim().toLowerCase()
+    var minAmt = Number(minAmount) || 0
+    var deptId = deptFilter ? Number(deptFilter) : 0
+    var today = new Date().toISOString().split('T')[0]
+
+    function inBucket(r) {
+      if (agingBucket === 'all') return true
+      var due = r.earliest_due
+      if (agingBucket === 'no_deadline') return !due
+      if (!due) return false
+      var d = daysBetween(today, due)
+      if (agingBucket === 'overdue') return d < 0
+      if (agingBucket === 'due_week') return d >= 0 && d <= 7
+      if (agingBucket === 'due_later') return d > 7
+      return true
+    }
+
     function apply(list) {
-      var q = search.trim().toLowerCase()
-      var within = Number(dueWithin) || 0
-      var today = new Date().toISOString().split('T')[0]
-      return list.filter(function (r) {
+      var out = list.filter(function (r) {
         if (q && (r.vendor_name || '').toLowerCase().indexOf(q) === -1) return false
-        if (onlyOverdue && !r.is_overdue) return false
-        if (within > 0) {
-          if (!r.earliest_due) return false
-          var d = daysBetween(today, r.earliest_due)
-          if (d > within) return false
-        }
+        if (vendorTypeFilter && r._vendorType !== vendorTypeFilter) return false
+        if (deptId && (r._deptIds || []).indexOf(deptId) === -1) return false
+        if (minAmt > 0 && r.balance < minAmt) return false
+        if (!inBucket(r)) return false
         return true
       })
+      if (sortMode === 'amount_desc') {
+        out = out.slice().sort(function (a, b) { return b.balance - a.balance })
+      } else if (sortMode === 'name') {
+        out = out.slice().sort(function (a, b) { return (a.vendor_name || '').localeCompare(b.vendor_name || '') })
+      } else if (sortMode === 'oldest') {
+        out = out.slice().sort(function (a, b) {
+          var da = a.earliest_due; var db = b.earliest_due
+          if (!da && !db) return b.balance - a.balance
+          if (!da) return 1
+          if (!db) return -1
+          return da.localeCompare(db)
+        })
+      }
+      return out
     }
     return { cash: apply(cards.cash), bank: apply(cards.bank) }
-  }, [cards, search, dueWithin, onlyOverdue])
+  }, [cards, search, vendorTypeFilter, deptFilter, agingBucket, minAmount, sortMode])
 
   var totals = useMemo(function () {
     function sum(list) { return list.reduce(function (s, r) { return s + r.balance }, 0) }
@@ -296,19 +353,65 @@ function Payments({ profile }) {
           placeholder="Search vendor name..."
           className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-indigo-300"
           style={{ fontSize: '16px' }} />
-        <div className="flex gap-2 items-center flex-wrap">
-          <label className="text-xs text-gray-600">Due within</label>
-          <input type="number" value={dueWithin}
-            onChange={function (ev) { setDueWithin(ev.target.value) }}
-            placeholder="days" min="0"
-            className="w-20 px-2 py-1 border border-gray-200 rounded-lg text-sm bg-white"
-            style={{ fontSize: '16px' }} />
-          <span className="text-xs text-gray-500">days (blank = all)</span>
-          <label className="flex items-center gap-1.5 text-xs text-gray-700 cursor-pointer ml-2">
-            <input type="checkbox" checked={onlyOverdue}
-              onChange={function (ev) { setOnlyOverdue(ev.target.checked) }} />
-            Show only overdue
-          </label>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <select value={vendorTypeFilter}
+            onChange={function (ev) { setVendorTypeFilter(ev.target.value) }}
+            className="px-3 py-1.5 border border-gray-200 rounded-lg text-xs bg-white focus:ring-2 focus:ring-indigo-300"
+            style={{ fontSize: '16px' }}>
+            <option value="">All Types</option>
+            <option value="Supplier">Supplier</option>
+            <option value="Contractor">Contractor</option>
+            <option value="Service Provider">Service Provider</option>
+            <option value="Rental">Rental</option>
+          </select>
+
+          <select value={deptFilter}
+            onChange={function (ev) { setDeptFilter(ev.target.value) }}
+            className="px-3 py-1.5 border border-gray-200 rounded-lg text-xs bg-white focus:ring-2 focus:ring-indigo-300"
+            style={{ fontSize: '16px' }}>
+            <option value="">All Depts</option>
+            {departments.map(function (d) { return <option key={d.id} value={String(d.id)}>{d.name}</option> })}
+          </select>
+
+          <div className="inline-flex bg-gray-100 rounded-lg p-0.5">
+            {[['all', 'All'], ['overdue', 'Overdue'], ['due_week', 'Due ≤ 7d'], ['due_later', 'Later'], ['no_deadline', 'No date']].map(function (opt) {
+              var active = agingBucket === opt[0]
+              var color = opt[0] === 'overdue' ? 'text-red-700' : opt[0] === 'due_week' ? 'text-amber-700' : 'text-gray-700'
+              return (
+                <button key={opt[0]} type="button" onClick={function () { setAgingBucket(opt[0]) }}
+                  className={"px-2.5 py-1 text-[11px] font-bold rounded-md transition-colors " + (active ? "bg-white shadow-sm " + color : "text-gray-500")}>
+                  {opt[1]}
+                </button>
+              )
+            })}
+          </div>
+
+          <div className="inline-flex items-center gap-1.5">
+            <span className="text-[11px] text-gray-500">Min</span>
+            <input type="number" value={minAmount}
+              onChange={function (ev) { setMinAmount(ev.target.value) }}
+              placeholder="0" min="0"
+              className="w-20 px-2 py-1.5 border border-gray-200 rounded-lg text-xs bg-white focus:ring-2 focus:ring-indigo-300"
+              style={{ fontSize: '16px' }} />
+            <span className="text-[11px] text-gray-500">pts</span>
+          </div>
+
+          <select value={sortMode}
+            onChange={function (ev) { setSortMode(ev.target.value) }}
+            className="px-3 py-1.5 border border-gray-200 rounded-lg text-xs bg-white focus:ring-2 focus:ring-indigo-300 ml-auto"
+            style={{ fontSize: '16px' }}>
+            <option value="priority">Sort: Priority</option>
+            <option value="amount_desc">Amount high → low</option>
+            <option value="name">Name A → Z</option>
+            <option value="oldest">Oldest due first</option>
+          </select>
+
+          {(vendorTypeFilter || deptFilter || agingBucket !== 'all' || minAmount || sortMode !== 'priority') && (
+            <button type="button"
+              onClick={function () { setVendorTypeFilter(''); setDeptFilter(''); setAgingBucket('all'); setMinAmount(''); setSortMode('priority') }}
+              className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 px-2">Clear</button>
+          )}
         </div>
       </div>
 
