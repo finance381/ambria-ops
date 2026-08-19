@@ -68,6 +68,10 @@ function makeItem() {
   }
 }
 
+function isItemComplete(im) {
+  return !!(im && String(im.itemQuery || '').trim() && Number(im.itemQty) > 0 && Number(im.itemRate) > 0)
+}
+
 function hydrateEntry(exp) {
   var meta = (exp.metadata && typeof exp.metadata === 'object') ? Object.assign({}, exp.metadata) : {}
   if (!meta.vendor_name && exp.vendor_name) meta.vendor_name = exp.vendor_name
@@ -408,7 +412,8 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
   function addItem(entryIdx) {
     var updated = entries.map(function (e, i) {
       if (i !== entryIdx) return e
-      return Object.assign({}, e, { items: e.items.concat([makeItem()]) })
+      var newItems = e.items.concat([makeItem()])
+      return Object.assign({}, e, { items: newItems, _editingItemIdx: newItems.length - 1 })
     })
     setEntries(updated)
   }
@@ -417,11 +422,25 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
     var updated = entries.map(function (e, i) {
       if (i !== entryIdx) return e
       if (e.items.length <= 1) return e
-      return Object.assign({}, e, { items: e.items.filter(function (_, j) { return j !== itemIdx }) })
+      var cur = e._editingItemIdx == null ? -1 : e._editingItemIdx
+      var next = cur === itemIdx ? -1 : (cur > itemIdx ? cur - 1 : cur)
+      return Object.assign({}, e, {
+        items: e.items.filter(function (_, j) { return j !== itemIdx }),
+        _editingItemIdx: next,
+      })
     })
     setEntries(updated)
     var key = entryIdx + '_' + itemIdx
     if (itemSearchKey === key) { setItemMatches([]); setItemSearchKey('') }
+  }
+
+  function setItemEditing(entryIdx, itemIdx) {
+    setEntries(function (prev) {
+      return prev.map(function (e, i) {
+        if (i !== entryIdx) return e
+        return Object.assign({}, e, { _editingItemIdx: itemIdx })
+      })
+    })
   }
 
   function updateItem(entryIdx, itemIdx, field, val) {
@@ -1498,8 +1517,34 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                     {entry.items.map(function (im, iIdx) {
                       var key = idx + '_' + iIdx
                       var lineTotal = (Number(im.itemQty) || 0) * (Number(im.itemRate) || 0)
+                      var editingIdx = entry._editingItemIdx == null ? -1 : entry._editingItemIdx
+                      var expanded = !isItemComplete(im) || editingIdx === iIdx
+                      if (!expanded) {
+                        return (
+                          <div key={im._key} className="border border-indigo-100 rounded-lg bg-white px-3 py-2 flex items-center gap-2">
+                            <span className="text-[10px] font-bold text-indigo-700 flex-shrink-0">#{iIdx + 1}</span>
+                            <button type="button" onClick={function () { if (!isEditing) setItemEditing(idx, iIdx) }}
+                              className={"flex-1 min-w-0 flex items-center gap-2 text-left " + (isEditing ? "cursor-default" : "hover:opacity-70")}>
+                              <div className="min-w-0 flex-1">
+                                <p className="text-xs font-semibold text-gray-800 truncate">
+                                  {im.itemQuery}
+                                  {im.itemMatchedId && <span className="ml-1.5 text-[9px] font-bold text-green-600">✓</span>}
+                                </p>
+                                <p className="text-[10px] text-gray-500 truncate">
+                                  {im.itemQty} {im.itemUnit} × {Number(im.itemRate).toLocaleString('en-IN')} pts{im.itemNotes ? ' · ' + im.itemNotes : ''}
+                                </p>
+                              </div>
+                              <span className="text-xs font-bold text-indigo-700 flex-shrink-0 tabular-nums">{lineTotal.toLocaleString('en-IN', { maximumFractionDigits: 2 })} pts</span>
+                            </button>
+                            {entry.items.length > 1 && !isEditing && (
+                              <button type="button" onClick={function () { removeItem(idx, iIdx) }}
+                                className="text-xs px-2 py-0.5 rounded bg-red-50 text-red-500 hover:bg-red-100 flex-shrink-0" title="Remove item">✕</button>
+                            )}
+                          </div>
+                        )
+                      }
                       return (
-                        <div key={im._key} className="border border-indigo-100 rounded-lg bg-white p-3 space-y-2.5">
+                        <div key={im._key} className="border border-indigo-200 rounded-lg bg-white p-3 space-y-2.5">
                           <div className="flex items-center justify-between">
                             <span className="text-[11px] font-bold text-indigo-700">Item #{iIdx + 1}</span>
                             {entry.items.length > 1 && (
