@@ -57,6 +57,7 @@ function extractRootToken(name) {
 function makeItem() {
   return {
     _key: Date.now() + '_' + Math.random().toString(36).slice(2, 8),
+    itemMode: 'existing',
     itemQuery: '',
     itemMatchedId: null,
     itemMatchedSource: null,
@@ -97,6 +98,7 @@ function hydrateEntry(exp) {
   var itemsFromMeta = Array.isArray(meta.item_receipts) ? meta.item_receipts.map(function (it, i) {
     return {
       _key: Date.now() + '_i' + i + '_' + Math.random().toString(36).slice(2, 6),
+      itemMode: it.matched_source === 'new' ? 'new' : 'existing',
       itemQuery: it.query || '',
       itemMatchedId: it.matched_item_id || null,
       itemMatchedSource: it.matched_source || null,
@@ -145,6 +147,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
   var [departments, setDepartments] = useState([])
   var [venues, setVenues] = useState([])
   var [subDepartments, setSubDepartments] = useState([])
+  var [itemCategories, setItemCategories] = useState([])
   var [loading, setLoading] = useState(true)
   var [lookupCache, setLookupCache] = useState({})
 
@@ -179,12 +182,13 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
   }, [])
 
   async function loadRefData() {
-    var [etR, estR, dR, vR, sdR] = await Promise.all([
+    var [etR, estR, dR, vR, sdR, cR] = await Promise.all([
       supabase.from('expense_types').select('id, name, icon, description, sort_order, department_id').eq('active', true).order('sort_order').order('name'),
       supabase.from('expense_sub_types').select('id, expense_type_id, name, extra_fields, active, sort_order').eq('active', true).order('sort_order').order('name'),
       supabase.from('departments').select('id, name').eq('active', true).eq('hide_from_lists', false).order('name'),
       supabase.from('venues').select('id, code, name').eq('active', true).order('name'),
       supabase.from('sub_departments').select('id, name, department_id, departments!inner(hide_from_lists)').eq('active', true).eq('departments.hide_from_lists', false).order('name'),
+      supabase.from('categories').select('id, name').order('name'),
     ])
     setExpenseTypes(etR.data || [])
     setExpenseSubTypes(estR.data || [])
@@ -194,6 +198,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
     setDepartments((isAdminRole || userDeptIds.length === 0) ? allDepts : allDepts.filter(function (d) { return userDeptIds.indexOf(d.id) !== -1 }))
     setVenues(vR.data || [])
     setSubDepartments(sdR.data || [])
+    setItemCategories(cR.data || [])
     setLoading(false)
   }
 
@@ -441,6 +446,27 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
         return Object.assign({}, e, { _editingItemIdx: itemIdx })
       })
     })
+  }
+
+  function toggleItemMode(entryIdx, itemIdx) {
+    setEntries(function (prev) {
+      return prev.map(function (e, i) {
+        if (i !== entryIdx) return e
+        var newItems = e.items.map(function (it, j) {
+          if (j !== itemIdx) return it
+          var nextMode = it.itemMode === 'new' ? 'existing' : 'new'
+          return Object.assign({}, it, {
+            itemMode: nextMode,
+            itemMatchedId: null,
+            itemMatchedSource: null,
+            itemMatchedCategoryId: null,
+          })
+        })
+        return Object.assign({}, e, { items: newItems })
+      })
+    })
+    var key = entryIdx + '_' + itemIdx
+    if (itemSearchKey === key) { setItemMatches([]); setItemSearchKey('') }
   }
 
   function updateItem(entryIdx, itemIdx, field, val) {
@@ -1099,8 +1125,8 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
               var rateN = Number(im.itemRate) || 0
               return {
                 query: (im.itemQuery || '').trim(),
-                matched_item_id: im.itemMatchedId,
-                matched_source: im.itemMatchedSource,
+                matched_item_id: im.itemMode === 'new' ? null : im.itemMatchedId,
+                matched_source: im.itemMode === 'new' ? 'new' : im.itemMatchedSource,
                 matched_category_id: im.itemMatchedCategoryId,
                 qty: qtyN,
                 unit: im.itemUnit,
@@ -1528,7 +1554,9 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                               <div className="min-w-0 flex-1">
                                 <p className="text-xs font-semibold text-gray-800 truncate">
                                   {im.itemQuery}
-                                  {im.itemMatchedId && <span className="ml-1.5 text-[9px] font-bold text-green-600">✓</span>}
+                                  {im.itemMode === 'new' ? (
+                                    <span className="ml-1.5 text-[9px] font-bold text-amber-600">✦ New</span>
+                                  ) : (im.itemMatchedId && <span className="ml-1.5 text-[9px] font-bold text-green-600">✓</span>)}
                                 </p>
                                 <p className="text-[10px] text-gray-500 truncate">
                                   {im.itemQty} {im.itemUnit} × {Number(im.itemRate).toLocaleString('en-IN')} pts{im.itemNotes ? ' · ' + im.itemNotes : ''}
@@ -1547,38 +1575,67 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                         <div key={im._key} className="border border-indigo-200 rounded-lg bg-white p-3 space-y-2.5">
                           <div className="flex items-center justify-between">
                             <span className="text-[11px] font-bold text-indigo-700">Item #{iIdx + 1}</span>
-                            {entry.items.length > 1 && (
-                              <button type="button" onClick={function () { removeItem(idx, iIdx) }}
-                                className="text-xs px-2 py-0.5 rounded bg-red-50 text-red-500 hover:bg-red-100" title="Remove item">✕</button>
-                            )}
+                            <div className="flex items-center gap-2">
+                              <button type="button" onClick={function () { toggleItemMode(idx, iIdx) }}
+                                className="flex items-center gap-1.5" title={im.itemMode === 'new' ? 'Switch to inventory search' : 'Create as new item'}>
+                                <span className="text-[10px] font-bold text-gray-500">{im.itemMode === 'new' ? '✦ New Item' : '📦 Inventory'}</span>
+                                <div className={"relative w-9 h-5 rounded-full transition-colors " + (im.itemMode === 'new' ? "bg-amber-400" : "bg-indigo-500")}>
+                                  <div className={"absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform " + (im.itemMode === 'new' ? "translate-x-4" : "translate-x-0.5")} />
+                                </div>
+                              </button>
+                              {entry.items.length > 1 && (
+                                <button type="button" onClick={function () { removeItem(idx, iIdx) }}
+                                  className="text-xs px-2 py-0.5 rounded bg-red-50 text-red-500 hover:bg-red-100" title="Remove item">✕</button>
+                              )}
+                            </div>
                           </div>
 
-                          {/* Item name search */}
-                          <div className="relative">
-                            <label className="block text-xs font-medium text-gray-600 mb-1">Item Name <span className="text-red-500">*</span>{im.itemMatchedId && <span className="ml-2 text-[10px] font-bold text-green-600">✓ Matched existing</span>}</label>
-                            <input type="text" value={im.itemQuery}
-                              onChange={function (e) { updateItem(idx, iIdx, 'itemQuery', e.target.value); searchInventoryItems(idx, iIdx, e.target.value) }}
-                              onFocus={function () { if (im.itemQuery && im.itemQuery.length >= 2) searchInventoryItems(idx, iIdx, im.itemQuery) }}
-                              placeholder="Search or type new item name..."
-                              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-300 bg-white" style={{ fontSize: '16px' }} />
-                            {itemSearchKey === key && itemMatches.length > 0 && (
-                              <div className="absolute z-20 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-56 overflow-y-auto">
-                                {itemMatches.map(function (m) {
-                                  return (
-                                    <button key={m._source + '_' + m.id} type="button"
-                                      onMouseDown={function (evt) { evt.preventDefault(); pickItemMatch(idx, iIdx, m) }}
-                                      className="w-full text-left px-3 py-2 hover:bg-indigo-50 border-b border-gray-50 last:border-0">
-                                      <div className="text-sm text-gray-800 font-medium truncate">{m.name}</div>
-                                      <div className="text-[10px] text-gray-400">{m._source === 'catering_store' ? 'Catering Store' : 'Inventory'}{m.unit ? ' · ' + m.unit : ''}</div>
-                                    </button>
-                                  )
-                                })}
+                          {im.itemMode === 'new' ? (
+                            <div className="space-y-2">
+                              <div>
+                                <label className="block text-xs font-medium text-gray-600 mb-1">Item Name <span className="text-red-500">*</span></label>
+                                <input type="text" value={im.itemQuery}
+                                  onChange={function (e) { updateItem(idx, iIdx, 'itemQuery', e.target.value) }}
+                                  placeholder="Item name (e.g. A4 Sheets, Broom, Chair)" maxLength="200"
+                                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-300 bg-white" style={{ fontSize: '16px' }} />
                               </div>
-                            )}
-                            {im.itemQuery && !im.itemMatchedId && itemMatches.length === 0 && itemSearchKey === key && im.itemQuery.length >= 2 && (
-                              <p className="text-[10px] text-amber-600 mt-1">No match — receiver will create as new inventory item</p>
-                            )}
-                          </div>
+                              <div>
+                                <label className="block text-xs font-medium text-gray-600 mb-1">Category <span className="text-gray-400">(optional)</span></label>
+                                <select value={im.itemMatchedCategoryId || ''}
+                                  onChange={function (e) { updateItem(idx, iIdx, 'itemMatchedCategoryId', e.target.value ? Number(e.target.value) : null) }}
+                                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-indigo-300" style={{ fontSize: '16px' }}>
+                                  <option value="">Category (optional)</option>
+                                  {itemCategories.map(function (c) { return <option key={c.id} value={String(c.id)}>{c.name}</option> })}
+                                </select>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="relative">
+                              <label className="block text-xs font-medium text-gray-600 mb-1">Item Name <span className="text-red-500">*</span>{im.itemMatchedId && <span className="ml-2 text-[10px] font-bold text-green-600">✓ Matched existing</span>}</label>
+                              <input type="text" value={im.itemQuery}
+                                onChange={function (e) { updateItem(idx, iIdx, 'itemQuery', e.target.value); searchInventoryItems(idx, iIdx, e.target.value) }}
+                                onFocus={function () { if (im.itemQuery && im.itemQuery.length >= 2) searchInventoryItems(idx, iIdx, im.itemQuery) }}
+                                placeholder="Search or type new item name..."
+                                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-300 bg-white" style={{ fontSize: '16px' }} />
+                              {itemSearchKey === key && itemMatches.length > 0 && (
+                                <div className="absolute z-20 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-56 overflow-y-auto">
+                                  {itemMatches.map(function (m) {
+                                    return (
+                                      <button key={m._source + '_' + m.id} type="button"
+                                        onMouseDown={function (evt) { evt.preventDefault(); pickItemMatch(idx, iIdx, m) }}
+                                        className="w-full text-left px-3 py-2 hover:bg-indigo-50 border-b border-gray-50 last:border-0">
+                                        <div className="text-sm text-gray-800 font-medium truncate">{m.name}</div>
+                                        <div className="text-[10px] text-gray-400">{m._source === 'catering_store' ? 'Catering Store' : 'Inventory'}{m.unit ? ' · ' + m.unit : ''}</div>
+                                      </button>
+                                    )
+                                  })}
+                                </div>
+                              )}
+                              {im.itemQuery && !im.itemMatchedId && itemMatches.length === 0 && itemSearchKey === key && im.itemQuery.length >= 2 && (
+                                <p className="text-[10px] text-amber-600 mt-1">No match — receiver will create as new inventory item</p>
+                              )}
+                            </div>
+                          )}
 
                           {/* Qty + Unit */}
                           <div className="grid grid-cols-2 gap-2">
