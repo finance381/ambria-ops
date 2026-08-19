@@ -8,6 +8,7 @@ var ENTRY_TYPES = [
   { key: 'collection', label: 'Collections' },
   { key: 'lms_advance', label: 'LMS Advances' },
   { key: 'expense', label: 'Expenses' },
+  { key: 'plates', label: 'Plates' },
 ]
 
 function EventLedger(props) {
@@ -21,6 +22,8 @@ function EventLedger(props) {
   var [balanceLoading, setBalanceLoading] = useState(false)
   var [entries, setEntries] = useState([])
   var [entriesLoading, setEntriesLoading] = useState(false)
+  var [plateEvents, setPlateEvents] = useState([])
+  var [platesLoading, setPlatesLoading] = useState(false)
   var [filter, setFilter] = useState('all')
 
   async function loadFunctions(dateStr) {
@@ -29,6 +32,7 @@ function EventLedger(props) {
     setEventDetail(null)
     setBalance(null)
     setEntries([])
+    setPlateEvents([])
     if (!dateStr) { setFunctions([]); return }
     setFunctionsLoading(true)
     var { data } = await supabase.from('events')
@@ -42,11 +46,12 @@ function EventLedger(props) {
 
   async function selectFunction(fid) {
     setEventId(fid)
-    if (!fid) { setEventDetail(null); setBalance(null); setEntries([]); return }
+    if (!fid) { setEventDetail(null); setBalance(null); setEntries([]); setPlateEvents([]); return }
     var detail = functions.find(function (f) { return String(f.id) === fid })
     setEventDetail(detail || null)
     loadBalance(fid)
     loadEntries(fid)
+    loadPlateEvents(fid)
   }
 
   useEffect(function () {
@@ -74,6 +79,27 @@ function EventLedger(props) {
       .order('created_at', { ascending: false })
     setEntries(data || [])
     setEntriesLoading(false)
+  }
+
+  async function loadPlateEvents(fid) {
+    setPlatesLoading(true)
+    var [iRes, cRes] = await Promise.all([
+      supabase.from('extra_plate_issues')
+        .select('id, plates_count, notes, status, cancelled_reason, cancelled_at, created_at, issued_by')
+        .eq('event_id', Number(fid))
+        .order('created_at', { ascending: false }),
+      supabase.from('extra_plate_collections')
+        .select('id, extras_charged, plates_returned, rate_paise, total_paise, discount_paise, payment_mode, payment_sub_mode, notes, status, cancelled_reason, cancelled_at, created_at, collected_by')
+        .eq('event_id', Number(fid))
+        .order('created_at', { ascending: false })
+    ])
+    var issues = (iRes.data || []).map(function (r) { return Object.assign({}, r, { _kind: 'issue' }) })
+    var collections = (cRes.data || []).map(function (r) { return Object.assign({}, r, { _kind: 'collection' }) })
+    var merged = issues.concat(collections).sort(function (a, b) {
+      return new Date(b.created_at) - new Date(a.created_at)
+    })
+    setPlateEvents(merged)
+    setPlatesLoading(false)
   }
 
   function filteredEntries() {
@@ -173,7 +199,64 @@ function EventLedger(props) {
         </div>
       )}
 
-      {eventId && (
+      {eventId && filter === 'plates' && (
+        <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+          {platesLoading ? (
+            <p className="text-xs text-gray-400 p-4">Loading plate history...</p>
+          ) : plateEvents.length === 0 ? (
+            <p className="text-sm text-gray-400 p-4 text-center">No plate activity for this event</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 border-b border-gray-200">
+                  <tr>
+                    <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600 uppercase">Date</th>
+                    <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600 uppercase">Type</th>
+                    <th className="px-3 py-2 text-right text-xs font-semibold text-gray-600 uppercase">Plates</th>
+                    <th className="px-3 py-2 text-right text-xs font-semibold text-gray-600 uppercase">Returned</th>
+                    <th className="px-3 py-2 text-right text-xs font-semibold text-gray-600 uppercase">Charged</th>
+                    <th className="px-3 py-2 text-right text-xs font-semibold text-gray-600 uppercase">Amount</th>
+                    <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600 uppercase">Mode</th>
+                    <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600 uppercase">Notes</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {plateEvents.map(function (p) {
+                    var isIssue = p._kind === 'issue'
+                    var isCancelled = p.status === 'cancelled'
+                    var isWaste = !isIssue && (p.extras_charged === 0 || p.total_paise === 0) && (p.plates_returned || 0) > 0
+                    var typeLabel = isIssue ? 'Issue' : (isWaste ? 'Waste' : 'Collection')
+                    var typeClass = isIssue
+                      ? 'bg-blue-100 text-blue-700'
+                      : isWaste ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'
+                    var modeLabel = !isIssue && p.payment_mode
+                      ? p.payment_mode + (p.payment_sub_mode ? ' · ' + p.payment_sub_mode : '')
+                      : '—'
+                    return (
+                      <tr key={p._kind + '-' + p.id} className={"border-b border-gray-100 last:border-b-0 " + (isCancelled ? "opacity-40 line-through" : "")}>
+                        <td className="px-3 py-2 text-xs text-gray-600 whitespace-nowrap">{formatDate(p.created_at)}</td>
+                        <td className="px-3 py-2">
+                          <span className={"inline-block px-2 py-0.5 rounded text-xs font-medium " + typeClass}>
+                            {typeLabel}{isCancelled ? ' · Cancelled' : ''}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2 text-right text-xs font-mono text-gray-800">{isIssue ? p.plates_count : '—'}</td>
+                        <td className="px-3 py-2 text-right text-xs font-mono text-amber-700">{!isIssue && (p.plates_returned || 0) > 0 ? p.plates_returned : '—'}</td>
+                        <td className="px-3 py-2 text-right text-xs font-mono text-gray-800">{!isIssue && (p.extras_charged || 0) > 0 ? p.extras_charged : '—'}</td>
+                        <td className="px-3 py-2 text-right text-xs font-mono text-green-700">{!isIssue && (p.total_paise || 0) > 0 ? formatPoints(p.total_paise) : '—'}</td>
+                        <td className="px-3 py-2 text-xs text-gray-700">{modeLabel}</td>
+                        <td className="px-3 py-2 text-xs text-gray-600">{p.notes || (isCancelled && p.cancelled_reason ? '(' + p.cancelled_reason + ')' : '—')}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {eventId && filter !== 'plates' && (
         <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
           {entriesLoading ? (
             <p className="text-xs text-gray-400 p-4">Loading entries...</p>
