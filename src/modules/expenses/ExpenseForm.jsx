@@ -4,6 +4,7 @@ import { logActivity } from '../../lib/logger'
 import { formatPoints } from '../../lib/format'
 import SearchDropdown from '../../components/ui/SearchDropdown'
 import AllocationRows from '../../components/ui/AllocationRows'
+import ysFixWebmDuration from 'fix-webm-duration'
 import { useVoice } from '../../hooks/useVoice'
 import EventDatePicker from '../../components/ui/EventDatePicker'
 import { compressImage } from '../../lib/imageCompress'
@@ -311,20 +312,39 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
     navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
       var chunks = []
       var recorder = new MediaRecorder(stream, { mimeType: 'audio/webm' })
-      mediaRecorders.current[idx] = { recorder: recorder, stream: stream }
+      var startedAt = Date.now()
+      mediaRecorders.current[idx] = { recorder: recorder, stream: stream, startedAt: startedAt }
       recorder.ondataavailable = function (e) { if (e.data.size > 0) chunks.push(e.data) }
       recorder.onstop = function () {
         stream.getTracks().forEach(function (t) { t.stop() })
-        var blob = new Blob(chunks, { type: 'audio/webm' })
-        var url = URL.createObjectURL(blob)
-        var updated = entries.map(function (e, i) {
-          if (i !== idx) return e
-          if (e.audioUrl) URL.revokeObjectURL(e.audioUrl)
-          e.receiptPreviews.forEach(function (u) { URL.revokeObjectURL(u) })
-          return Object.assign({}, e, { audioBlob: blob, audioUrl: url, recording: false, receiptFiles: [], receiptPreviews: [] })
+        var rawBlob = new Blob(chunks, { type: 'audio/webm' })
+        var durationMs = Date.now() - startedAt
+        // Patch the WebM header with actual duration so seek/playback works past ~3s
+        ysFixWebmDuration(rawBlob, durationMs, { logger: false }).then(function (fixedBlob) {
+          var blob = fixedBlob || rawBlob
+          var url = URL.createObjectURL(blob)
+          setEntries(function (prev) {
+            return prev.map(function (e, i) {
+              if (i !== idx) return e
+              if (e.audioUrl) URL.revokeObjectURL(e.audioUrl)
+              e.receiptPreviews.forEach(function (u) { URL.revokeObjectURL(u) })
+              return Object.assign({}, e, { audioBlob: blob, audioUrl: url, recording: false, receiptFiles: [], receiptPreviews: [] })
+            })
+          })
+          delete mediaRecorders.current[idx]
+        }).catch(function () {
+          // Fallback: use unpatched blob
+          var url = URL.createObjectURL(rawBlob)
+          setEntries(function (prev) {
+            return prev.map(function (e, i) {
+              if (i !== idx) return e
+              if (e.audioUrl) URL.revokeObjectURL(e.audioUrl)
+              e.receiptPreviews.forEach(function (u) { URL.revokeObjectURL(u) })
+              return Object.assign({}, e, { audioBlob: rawBlob, audioUrl: url, recording: false, receiptFiles: [], receiptPreviews: [] })
+            })
+          })
+          delete mediaRecorders.current[idx]
         })
-        setEntries(updated)
-        delete mediaRecorders.current[idx]
       }
       var updated = entries.map(function (e, i) {
         if (i !== idx) return e

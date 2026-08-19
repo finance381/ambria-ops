@@ -407,7 +407,25 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
               if (r.isVoice) {
                 return (
                   <div key={rIdx} className="space-y-1">
-                    <audio controls preload="metadata" className="w-full">
+                    <audio controls preload="auto" className="w-full"
+                      onLoadedMetadata={function (ev) {
+                        // MediaRecorder WebM lacks proper cues → playback stops after first cluster (~3s).
+                        // Force browser to scan the whole file to build a runtime seek index.
+                        var a = ev.target
+                        var fixed = false
+                        function reset() {
+                          if (fixed) return
+                          fixed = true
+                          try { a.currentTime = 0 } catch (_) {}
+                          a.removeEventListener('timeupdate', reset)
+                          a.removeEventListener('durationchange', reset)
+                        }
+                        try {
+                          a.currentTime = 1e101
+                          a.addEventListener('timeupdate', reset)
+                          a.addEventListener('durationchange', reset)
+                        } catch (_) {}
+                      }}>
                       <source src={r.url} type="audio/webm" />
                       <source src={r.url} />
                       Your browser cannot play this audio.
