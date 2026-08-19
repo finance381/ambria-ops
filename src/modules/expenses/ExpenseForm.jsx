@@ -1025,6 +1025,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
             expense_sub_type_id: e0.expenseSubTypeId ? Number(e0.expenseSubTypeId) : null,
             amount_paise: newPaise,
             remarks: null,
+            source: 'auto_default',
           })
         }
         if (editAllocRows.length > 0) await supabase.from('expense_allocations').insert(editAllocRows)
@@ -1228,6 +1229,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
               expense_sub_type_id: e.expenseSubTypeId ? Number(e.expenseSubTypeId) : null,
               amount_paise: paise,
               remarks: null,
+              source: 'auto_default',
             })
           }
           if (allocRows.length > 0) await supabase.from('expense_allocations').insert(allocRows)

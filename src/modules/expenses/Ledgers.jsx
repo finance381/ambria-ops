@@ -46,6 +46,12 @@ var STATUS_COLORS = {
 }
 var PAGE_SIZE = 50
 
+var SOURCE_BADGES = {
+  allocation: { label: 'Allocation', cls: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
+  auto_default: { label: 'No alloc', cls: 'bg-gray-100 text-gray-600 border-gray-200' },
+  cost_transfer: { label: 'Transfer', cls: 'bg-purple-50 text-purple-700 border-purple-200' },
+}
+
 function fmtISO(d) { return d.toISOString().split('T')[0] }
 
 function getPresetRange(preset) {
@@ -89,6 +95,7 @@ function Ledgers({ profile }) {
   var [totals, setTotals] = useState({ total: 0, pending: 0, committed: 0, allocs: 0 })
   var [loading, setLoading] = useState(false)
   var [collapsedDepts, setCollapsedDepts] = useState({})
+  var [collapsedTypes, setCollapsedTypes] = useState({})
   var collapseInitializedRef = useRef(false)
   var [deptDelta, setDeptDelta] = useState({})
   var allocSnapshot = useRef({})
@@ -185,30 +192,42 @@ function Ledgers({ profile }) {
     var total = 0, pending = 0, committed = 0
     rows.forEach(function (r) {
       var deptKey = r.department_id != null ? String(r.department_id) : '__unassigned__'
-      var rowKey = (r.expense_type_id || 0) + '|' + (r.expense_sub_type_id || 0)
+      var typeKey = r.expense_type_id != null ? String(r.expense_type_id) : '__untyped__'
+      var subKey = r.expense_sub_type_id != null ? String(r.expense_sub_type_id) : '__no_sub__'
       if (!byDept[deptKey]) {
-        byDept[deptKey] = { key: deptKey, deptId: r.department_id, total: 0, pending: 0, committed: 0, allocs: 0, rowMap: {} }
+        byDept[deptKey] = { key: deptKey, deptId: r.department_id, total: 0, pending: 0, committed: 0, allocs: 0, typeMap: {} }
       }
       var g = byDept[deptKey]
       g.total += r.amount_paise || 0
       g.pending += r.pending_paise || 0
       g.committed += r.committed_paise || 0
       g.allocs += 1
-      if (!g.rowMap[rowKey]) {
-        g.rowMap[rowKey] = { typeId: r.expense_type_id, subTypeId: r.expense_sub_type_id, total: 0, pending: 0, committed: 0, allocs: 0 }
+      if (!g.typeMap[typeKey]) {
+        g.typeMap[typeKey] = { typeKey: typeKey, typeId: r.expense_type_id, total: 0, pending: 0, committed: 0, allocs: 0, subMap: {} }
       }
-      var rr = g.rowMap[rowKey]
-      rr.total += r.amount_paise || 0
-      rr.pending += r.pending_paise || 0
-      rr.committed += r.committed_paise || 0
-      rr.allocs += 1
+      var t = g.typeMap[typeKey]
+      t.total += r.amount_paise || 0
+      t.pending += r.pending_paise || 0
+      t.committed += r.committed_paise || 0
+      t.allocs += 1
+      if (!t.subMap[subKey]) {
+        t.subMap[subKey] = { typeId: r.expense_type_id, subTypeId: r.expense_sub_type_id, total: 0, pending: 0, committed: 0, allocs: 0 }
+      }
+      var s = t.subMap[subKey]
+      s.total += r.amount_paise || 0
+      s.pending += r.pending_paise || 0
+      s.committed += r.committed_paise || 0
+      s.allocs += 1
       total += r.amount_paise || 0
       pending += r.pending_paise || 0
       committed += r.committed_paise || 0
     })
     var groups = Object.values(byDept).map(function (g) {
-      var rowsArr = Object.values(g.rowMap).sort(function (a, b) { return b.total - a.total })
-      return { key: g.key, deptId: g.deptId, total: g.total, pending: g.pending, committed: g.committed, allocs: g.allocs, rows: rowsArr }
+      var typeGroups = Object.values(g.typeMap).map(function (t) {
+        var subRows = Object.values(t.subMap).sort(function (a, b) { return b.total - a.total })
+        return { typeKey: t.typeKey, typeId: t.typeId, total: t.total, pending: t.pending, committed: t.committed, allocs: t.allocs, subRows: subRows }
+      }).sort(function (a, b) { return b.total - a.total })
+      return { key: g.key, deptId: g.deptId, total: g.total, pending: g.pending, committed: g.committed, allocs: g.allocs, typeGroups: typeGroups }
     })
     groups.sort(function (a, b) { return b.total - a.total })
 
@@ -230,9 +249,14 @@ function Ledgers({ profile }) {
     setTotals({ total: total, pending: pending, committed: committed, allocs: rows.length })
     // On first load only, default all dept groups to collapsed.
     if (!collapseInitializedRef.current && groups.length > 0) {
-      var allCollapsed = {}
-      groups.forEach(function (g) { allCollapsed[g.key] = true })
-      setCollapsedDepts(allCollapsed)
+      var allDeptCollapsed = {}
+      var allTypeCollapsed = {}
+      groups.forEach(function (g) {
+        allDeptCollapsed[g.key] = true
+        g.typeGroups.forEach(function (t) { allTypeCollapsed[g.key + '|' + t.typeKey] = true })
+      })
+      setCollapsedDepts(allDeptCollapsed)
+      setCollapsedTypes(allTypeCollapsed)
       collapseInitializedRef.current = true
     }
     setLoading(false)
@@ -243,7 +267,7 @@ function Ledgers({ profile }) {
     setDrillLoading(true)
     var offset = append ? drillOffset : 0
     var q = supabase.from('v_ledger')
-      .select('allocation_id, expense_id, user_id, venue_id, amount_paise, remarks, expense_date, description, status, created_at')
+      .select('allocation_id, expense_id, user_id, venue_id, amount_paise, remarks, expense_date, description, status, created_at, source')
       .in('status', ['recorded', 'flagged', 'acknowledged', 'deducted'])
       .gte('expense_date', dateFrom)
       .lte('expense_date', dateTo)
@@ -303,6 +327,15 @@ function Ledgers({ profile }) {
     })
   }
 
+  function toggleType(deptKey, typeKey) {
+    var key = deptKey + '|' + typeKey
+    setCollapsedTypes(function (prev) {
+      var next = Object.assign({}, prev)
+      next[key] = !prev[key]
+      return next
+    })
+  }
+
   function applyPreset(preset) {
     setDatePreset(preset)
     if (preset === 'custom') return
@@ -317,10 +350,13 @@ function Ledgers({ profile }) {
     deptGroups.forEach(function (g) {
       var d = g.deptId ? (deptMap[g.deptId] || 'Unassigned') : 'Unallocated'
       lines.push(esc(d) + ' (subtotal),,,' + (g.total / 100) + ',' + (g.committed / 100) + ',' + (g.pending / 100) + ',' + g.allocs)
-      g.rows.forEach(function (r) {
-        var t = r.typeId ? (typeMap[r.typeId] || 'Untyped') : 'Untyped'
-        var s = r.subTypeId ? (subTypeMap[r.subTypeId] || '—') : '—'
-        lines.push(esc(d) + ',' + esc(t) + ',' + esc(s) + ',' + (r.total / 100) + ',' + (r.committed / 100) + ',' + (r.pending / 100) + ',' + r.allocs)
+      g.typeGroups.forEach(function (t) {
+        var tn = t.typeId ? (typeMap[t.typeId] || 'Untyped') : 'Untyped'
+        lines.push(esc(d) + ',' + esc(tn) + ' (subtotal),,' + (t.total / 100) + ',' + (t.committed / 100) + ',' + (t.pending / 100) + ',' + t.allocs)
+        t.subRows.forEach(function (r) {
+          var s = r.subTypeId ? (subTypeMap[r.subTypeId] || '—') : '—'
+          lines.push(esc(d) + ',' + esc(tn) + ',' + esc(s) + ',' + (r.total / 100) + ',' + (r.committed / 100) + ',' + (r.pending / 100) + ',' + r.allocs)
+        })
       })
     })
     var csv = '\uFEFF' + lines.join('\n')
@@ -386,18 +422,29 @@ function Ledgers({ profile }) {
           { content: fmtPts(g.total), styles: { fontStyle: 'bold', fillColor: [235, 240, 250], halign: 'right' } },
           { content: String(g.allocs), styles: { fontStyle: 'bold', fillColor: [235, 240, 250], halign: 'right' } },
         ])
-        g.rows.forEach(function (r) {
-          var typeName = r.typeId ? (typeMap[r.typeId] || 'Untyped') : 'Untyped'
-          var subTypeName = r.subTypeId ? (subTypeMap[r.subTypeId] || '—') : '—'
+        g.typeGroups.forEach(function (t) {
+          var typeName = t.typeId ? (typeMap[t.typeId] || 'Untyped') : 'Untyped'
+          // Type subtotal row (lightly shaded)
           body.push([
             '',
-            typeName,
-            subTypeName,
-            { content: fmtPts(r.committed), styles: { halign: 'right', textColor: [20, 100, 60] } },
-            { content: fmtPts(r.pending), styles: { halign: 'right', textColor: [140, 90, 20] } },
-            { content: fmtPts(r.total), styles: { halign: 'right', fontStyle: 'bold' } },
-            { content: String(r.allocs), styles: { halign: 'right', textColor: [120, 120, 120] } },
+            { content: typeName, colSpan: 2, styles: { fontStyle: 'bold', fillColor: [245, 247, 250], textColor: [60, 60, 90] } },
+            { content: fmtPts(t.committed), styles: { fontStyle: 'bold', fillColor: [245, 247, 250], textColor: [20, 100, 60], halign: 'right' } },
+            { content: fmtPts(t.pending), styles: { fontStyle: 'bold', fillColor: [245, 247, 250], textColor: [140, 90, 20], halign: 'right' } },
+            { content: fmtPts(t.total), styles: { fontStyle: 'bold', fillColor: [245, 247, 250], halign: 'right' } },
+            { content: String(t.allocs), styles: { fontStyle: 'bold', fillColor: [245, 247, 250], halign: 'right' } },
           ])
+          t.subRows.forEach(function (r) {
+            var subTypeName = r.subTypeId ? (subTypeMap[r.subTypeId] || '—') : '—'
+            body.push([
+              '',
+              '',
+              subTypeName,
+              { content: fmtPts(r.committed), styles: { halign: 'right', textColor: [20, 100, 60] } },
+              { content: fmtPts(r.pending), styles: { halign: 'right', textColor: [140, 90, 20] } },
+              { content: fmtPts(r.total), styles: { halign: 'right', fontStyle: 'bold' } },
+              { content: String(r.allocs), styles: { halign: 'right', textColor: [120, 120, 120] } },
+            ])
+          })
         })
         grandTotal += g.total
         grandCommitted += g.committed
@@ -445,22 +492,28 @@ function Ledgers({ profile }) {
     }
   }
 
-  // Client-side filter: search + pendingOnly
+  // Client-side filter: search + pendingOnly (nested dept -> type -> sub-type)
   var visibleGroups = deptGroups.map(function (g) {
     var deptName = g.deptId ? (deptMap[g.deptId] || 'Unassigned') : 'Unallocated'
     var q = searchDeb.toLowerCase()
     var deptMatch = !q || deptName.toLowerCase().indexOf(q) !== -1
-    var filteredRows = g.rows.filter(function (r) {
-      if (pendingOnly && r.pending === 0) return false
-      if (!q) return true
-      if (deptMatch) return true
-      var tn = r.typeId ? (typeMap[r.typeId] || '') : ''
-      var sn = r.subTypeId ? (subTypeMap[r.subTypeId] || '') : ''
-      return tn.toLowerCase().indexOf(q) !== -1 || sn.toLowerCase().indexOf(q) !== -1
-    })
     if (pendingOnly && g.pending === 0) return null
-    if (q && !deptMatch && filteredRows.length === 0) return null
-    return Object.assign({}, g, { rows: filteredRows, deptName: deptName })
+    var filteredTypes = g.typeGroups.map(function (t) {
+      var tn = t.typeId ? (typeMap[t.typeId] || 'Untyped') : 'Untyped'
+      var typeMatch = deptMatch || (q && tn.toLowerCase().indexOf(q) !== -1)
+      var subRows = t.subRows.filter(function (r) {
+        if (pendingOnly && r.pending === 0) return false
+        if (!q) return true
+        if (typeMatch) return true
+        var sn = r.subTypeId ? (subTypeMap[r.subTypeId] || '') : ''
+        return sn.toLowerCase().indexOf(q) !== -1
+      })
+      if (pendingOnly && t.pending === 0 && subRows.length === 0) return null
+      if (q && !typeMatch && subRows.length === 0) return null
+      return Object.assign({}, t, { subRows: subRows, typeName: tn })
+    }).filter(Boolean)
+    if (q && !deptMatch && filteredTypes.length === 0) return null
+    return Object.assign({}, g, { typeGroups: filteredTypes, deptName: deptName })
   }).filter(Boolean)
 
   // ─── DRILL VIEW ───
@@ -529,6 +582,14 @@ function Ledgers({ profile }) {
                         <span className={"text-[10px] px-1.5 py-0.5 rounded font-semibold " + (STATUS_COLORS[r.status] || 'bg-gray-100 text-gray-600')}>
                           {STATUS_LABELS[r.status] || r.status}
                         </span>
+                        {(function () {
+                          var sb = SOURCE_BADGES[r.source] || SOURCE_BADGES.allocation
+                          return (
+                            <span className={"text-[9px] px-1.5 py-0.5 rounded border font-semibold " + sb.cls}>
+                              {sb.label}
+                            </span>
+                          )
+                        })()}
                       </div>
                       <p className="text-sm text-gray-800 truncate mt-1">{r.description || '—'}</p>
                       {r.remarks && <p className="text-xs italic text-gray-500 mt-0.5">"{r.remarks}"</p>}
@@ -645,16 +706,16 @@ function Ledgers({ profile }) {
       ) : (
         <div className="space-y-1.5">
           {visibleGroups.map(function (g) {
-            var collapsed = collapsedDepts[g.key]
+            var deptCollapsed = collapsedDepts[g.key]
             var delta = deptDelta[g.key] || 0
             return (
               <div key={g.key} className="bg-white border border-gray-200 rounded-lg overflow-hidden">
                 <button onClick={function () { toggleDept(g.key, g.allocs) }}
                   className="w-full grid grid-cols-[1fr_70px_70px_80px_36px] items-center px-3 py-2 hover:bg-gray-50 transition-colors text-left">
                   <div className="flex items-center gap-2 min-w-0">
-                    <span className="text-xs text-gray-400 flex-shrink-0">{collapsed ? '▸' : '▾'}</span>
+                    <span className="text-xs text-gray-400 flex-shrink-0">{deptCollapsed ? '▸' : '▾'}</span>
                     <span className="text-sm font-bold text-gray-900 truncate">{g.deptName}</span>
-                    <span className="text-[10px] text-gray-400 flex-shrink-0">{g.rows.length}</span>
+                    <span className="text-[10px] text-gray-400 flex-shrink-0">{g.typeGroups.length}</span>
                     {delta > 0 && (
                       <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700 font-bold flex-shrink-0 animate-pulse">
                         +{delta}
@@ -666,21 +727,40 @@ function Ledgers({ profile }) {
                   <span className="text-xs text-right font-bold text-gray-900 tabular-nums">{formatPoints(g.total)}</span>
                   <span className="text-[10px] text-right text-gray-400">{g.allocs}</span>
                 </button>
-                {!collapsed && g.rows.map(function (r, i) {
-                  var typeName = r.typeId ? (typeMap[r.typeId] || 'Untyped') : 'Untyped'
-                  var subTypeName = r.subTypeId ? (subTypeMap[r.subTypeId] || '—') : '—'
+                {!deptCollapsed && g.typeGroups.map(function (t) {
+                  var typeKeyFull = g.key + '|' + t.typeKey
+                  var typeCollapsed = collapsedTypes[typeKeyFull]
+                  var typeName = t.typeId ? (typeMap[t.typeId] || 'Untyped') : 'Untyped'
                   return (
-                    <button key={i} onClick={function () { openRow(g, r) }}
-                      className="w-full grid grid-cols-[1fr_70px_70px_80px_36px] items-center px-3 py-2 pl-9 border-t border-gray-100 hover:bg-indigo-50 transition-colors text-left">
-                      <div className="min-w-0">
-                        <p className="text-xs text-gray-800 truncate">{subTypeName}</p>
-                        <p className="text-[10px] text-gray-500 truncate">{typeName}</p>
-                      </div>
-                      <span className="text-xs text-right text-green-700 tabular-nums">{formatPoints(r.committed)}</span>
-                      <span className="text-xs text-right text-amber-700 tabular-nums">{formatPoints(r.pending)}</span>
-                      <span className="text-xs text-right font-bold text-gray-800 tabular-nums">{formatPoints(r.total)}</span>
-                      <span className="text-[10px] text-right text-gray-400">{r.allocs}</span>
-                    </button>
+                    <div key={t.typeKey}>
+                      <button onClick={function () { toggleType(g.key, t.typeKey) }}
+                        className="w-full grid grid-cols-[1fr_70px_70px_80px_36px] items-center px-3 py-1.5 pl-9 border-t border-gray-100 bg-gray-50 hover:bg-gray-100 transition-colors text-left">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="text-[10px] text-gray-400 flex-shrink-0">{typeCollapsed ? '▸' : '▾'}</span>
+                          <span className="text-xs font-semibold text-gray-800 truncate">{typeName}</span>
+                          <span className="text-[10px] text-gray-400 flex-shrink-0">{t.subRows.length}</span>
+                        </div>
+                        <span className="text-[11px] text-right text-green-700 tabular-nums">{formatPoints(t.committed)}</span>
+                        <span className="text-[11px] text-right text-amber-700 tabular-nums">{formatPoints(t.pending)}</span>
+                        <span className="text-[11px] text-right font-bold text-gray-800 tabular-nums">{formatPoints(t.total)}</span>
+                        <span className="text-[10px] text-right text-gray-400">{t.allocs}</span>
+                      </button>
+                      {!typeCollapsed && t.subRows.map(function (r, i) {
+                        var subTypeName = r.subTypeId ? (subTypeMap[r.subTypeId] || '—') : '—'
+                        return (
+                          <button key={i} onClick={function () { openRow(g, r) }}
+                            className="w-full grid grid-cols-[1fr_70px_70px_80px_36px] items-center px-3 py-2 pl-14 border-t border-gray-100 hover:bg-indigo-50 transition-colors text-left">
+                            <div className="min-w-0">
+                              <p className="text-xs text-gray-700 truncate">{subTypeName}</p>
+                            </div>
+                            <span className="text-xs text-right text-green-700 tabular-nums">{formatPoints(r.committed)}</span>
+                            <span className="text-xs text-right text-amber-700 tabular-nums">{formatPoints(r.pending)}</span>
+                            <span className="text-xs text-right font-bold text-gray-800 tabular-nums">{formatPoints(r.total)}</span>
+                            <span className="text-[10px] text-right text-gray-400">{r.allocs}</span>
+                          </button>
+                        )
+                      })}
+                    </div>
                   )
                 })}
               </div>

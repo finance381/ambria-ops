@@ -2065,6 +2065,7 @@ function RequisitionDetail({ req, items, profile, isAdmin, isAuditor, isReqDeptA
           amount_paise: req.expense_amount_paise,
           expense_type_id: req.expense_type_id || null,
           expense_sub_type_id: req.expense_sub_type_id || null,
+          source: 'auto_default',
         }])
       }
 
