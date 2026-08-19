@@ -671,7 +671,9 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
     return [{ departmentId: '', subDepartmentId: '', venue_id: '', amount: '' }]
   })
   var [showExpAllocations, setShowExpAllocations] = useState(function () {
-    return !!(editReq && editReq.expense_alloc_json && editReq.expense_alloc_json.length > 0)
+    if (!editReq || !editReq.expense_alloc_json) return false
+    var arr = editReq.expense_alloc_json
+    return arr.length > 1 || arr.some(function (a) { return !!a.venue_id })
   })
   var [listening, setListening] = useState(false)
   var searchContainerRef = useRef(null)
@@ -2040,6 +2042,30 @@ function RequisitionDetail({ req, items, profile, isAdmin, isAuditor, isReqDeptA
           }
         })
         await supabase.from('expense_allocations').insert(expAllocs)
+      } else if (req.expense_type_id) {
+        // Auto-default from req top-level type so the expense appears in the type/sub-type ledger
+        var defaultDeptId = null
+        var { data: expTypeRow } = await supabase.from('expense_types')
+          .select('department_id, sub_department_id')
+          .eq('id', req.expense_type_id).single()
+        if (expTypeRow) {
+          if (expTypeRow.department_id) defaultDeptId = expTypeRow.department_id
+          else if (expTypeRow.sub_department_id) {
+            var { data: sdRow } = await supabase.from('sub_departments')
+              .select('department_id').eq('id', expTypeRow.sub_department_id).single()
+            if (sdRow) defaultDeptId = sdRow.department_id
+          }
+        }
+        await supabase.from('expense_allocations').insert([{
+          expense_id: newExp.id,
+          department: req.department || null,
+          department_id: defaultDeptId,
+          sub_department_id: req.sub_department_id || null,
+          venue_id: null,
+          amount_paise: req.expense_amount_paise,
+          expense_type_id: req.expense_type_id || null,
+          expense_sub_type_id: req.expense_sub_type_id || null,
+        }])
       }
 
       try {

@@ -123,7 +123,7 @@ function hydrateEntry(exp) {
     recording: false,
     isItemPurchase: isItemP,
     items: isItemP && itemsFromMeta.length > 0 ? itemsFromMeta : [makeItem()],
-    showAllocations: allocs.length > 1 || allocs.some(function (a) { return !!a.departmentId || !!a.venueId || (!!a.amountPaise && Number(a.amountPaise) > 0) }),
+    showAllocations: allocs.length > 1 || allocs.some(function (a) { return !!a.venueId }),
     paymentCreditRupees: exp.payment_credit_paise ? String(exp.payment_credit_paise / 100) : '',
     payWithCash: (exp.payment_credit_cash_paise || 0) > 0,
     payWithBank: (exp.payment_credit_bank_paise || 0) > 0,
@@ -999,6 +999,34 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
               remarks: (a.remarks || '').trim() || null
             }
           })
+        // If user cleared all allocations, auto-create default from entry-level type
+        // so the expense still appears in the type/sub-type ledger.
+        if (editAllocRows.length === 0) {
+          var editExpType = e0.expenseTypeId ? expenseTypes.find(function (t) { return String(t.id) === String(e0.expenseTypeId) }) : null
+          var editDefaultDeptId = null
+          var editDefaultDeptName = null
+          if (editExpType) {
+            if (editExpType.department_id) editDefaultDeptId = editExpType.department_id
+            else if (editExpType.sub_department_id) {
+              var editSd = subDepartments.find(function (s) { return String(s.id) === String(editExpType.sub_department_id) })
+              if (editSd && editSd.department_id) editDefaultDeptId = editSd.department_id
+            }
+          }
+          if (editDefaultDeptId) {
+            var editDeptRow = departments.find(function (d) { return d.id === editDefaultDeptId })
+            if (editDeptRow) editDefaultDeptName = editDeptRow.name
+          }
+          editAllocRows.push({
+            expense_id: editExp.id,
+            department: editDefaultDeptName,
+            department_id: editDefaultDeptId,
+            venue_id: null,
+            expense_type_id: e0.expenseTypeId ? Number(e0.expenseTypeId) : null,
+            expense_sub_type_id: e0.expenseSubTypeId ? Number(e0.expenseSubTypeId) : null,
+            amount_paise: newPaise,
+            remarks: null,
+          })
+        }
         if (editAllocRows.length > 0) await supabase.from('expense_allocations').insert(editAllocRows)
 
         // Wallet diff — use actual wallet exposure (cash portion + tax if credit), not gross amount
@@ -1562,9 +1590,8 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                 )}
               </div>
 
-              {/* Allocations — hidden in Item Select mode + behind toggle */}
-              {!entry.isItemPurchase && (
-                <div className={"border rounded-lg p-3 transition-colors " + (entry.showAllocations ? "border-amber-200 bg-amber-50/40" : "border-gray-100 bg-gray-50")}>
+              {/* Allocations — behind toggle (available in both plain + Item Select modes) */}
+              <div className={"border rounded-lg p-3 transition-colors " + (entry.showAllocations ? "border-amber-200 bg-amber-50/40" : "border-gray-100 bg-gray-50")}>
                   <div className="flex items-center justify-between">
                     <div>
                       <label className="text-xs font-semibold text-gray-700">🎯 Split Allocations</label>
@@ -1688,7 +1715,6 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                 )
               })()}</div>}
                 </div>
-              )}
 
               {/* Amount + GST + Gross Total — bottom */}
               <div className="border border-amber-200 rounded-lg bg-amber-50/40 p-3 space-y-2">
