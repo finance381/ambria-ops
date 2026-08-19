@@ -206,7 +206,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
     if (!dateStr) { setEvents([]); setEventId(''); return }
     setEventsLoading(true)
     var { data } = await supabase.from('events')
-      .select('id, event_name, function_date, contract_type, venue_name, session, client_name, department, contract_no')
+      .select('id, event_name, function_date, contract_type, venue_name, session, client_name, department, contract_no, created_user_name')
       .eq('function_date', dateStr)
       .order('event_name')
     var rows = data || []
@@ -1390,7 +1390,8 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                 {events.map(function (ev) {
                   var deptTag = ev.department ? ' [' + ev.department + ']' : ''
                   var ctNo = ev.contract_no ? ' #' + ev.contract_no : ''
-                  return <option key={ev.id} value={String(ev.id)}>{ev.event_name + (ev.client_name ? ' — ' + ev.client_name : '') + ' · ' + (ev.venue_name || '') + deptTag + ctNo}</option>
+                  var by = ev.created_user_name ? ' · by ' + ev.created_user_name : ''
+                  return <option key={ev.id} value={String(ev.id)}>{ev.event_name + (ev.client_name ? ' — ' + ev.client_name : '') + ' · ' + (ev.venue_name || '') + deptTag + ctNo + by}</option>
                 })}
               </select>
             )}
