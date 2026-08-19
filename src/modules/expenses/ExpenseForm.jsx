@@ -462,7 +462,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
             itemMatchedCategoryId: null,
           })
         })
-        return Object.assign({}, e, { items: newItems })
+        return Object.assign({}, e, { items: newItems, _editingItemIdx: itemIdx })
       })
     })
     var key = entryIdx + '_' + itemIdx
@@ -473,11 +473,12 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
     var updated = entries.map(function (e, i) {
       if (i !== entryIdx) return e
       var copy = Object.assign({}, e)
+      copy._editingItemIdx = itemIdx
       copy.items = e.items.map(function (it, j) {
         if (j !== itemIdx) return it
         var ic = Object.assign({}, it)
         ic[field] = val
-        if (field === 'itemQuery') {
+        if (field === 'itemQuery' && it.itemMode !== 'new') {
           ic.itemMatchedId = null
           ic.itemMatchedSource = null
           ic.itemMatchedCategoryId = null
@@ -510,6 +511,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
     var updated = entries.map(function (e, i) {
       if (i !== entryIdx) return e
       var copy = Object.assign({}, e)
+      copy._editingItemIdx = itemIdx
       copy.items = e.items.map(function (it, j) {
         if (j !== itemIdx) return it
         return Object.assign({}, it, {
@@ -1078,7 +1080,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
         // Wallet diff — use actual wallet exposure (cash portion + tax if credit), not gross amount
         var newWalletSpend = _editSplit.walletSpendPaise
         var oldWalletSpend = (editExp.payment_credit_paise || 0) > 0
-          ? (editExp.payment_cash_paise || 0) + (editExp.tax_paise || 0)
+          ? (editExp.payment_cash_paise || 0)
           : (editExp.amount_paise || 0)
         var walletDiff = newWalletSpend - oldWalletSpend
         if (walletDiff !== 0) {
@@ -1280,11 +1282,11 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
           if (allocRows.length > 0) await supabase.from('expense_allocations').insert(allocRows)
 
           try {
-            // Credit-mode: wallet only debits cash + tax (credit portion is owed to vendor,
-            // tracked in ledger_entries by the DB trigger).
-            // All-cash mode: preserve legacy behaviour (amount only, tax not debited — pre-existing).
+            // Wallet only debits the immediate cash portion the user set as "Cash from Wallet".
+            // Credit portion (base + tax owed to vendor) leaves the wallet later via pay_vendor.
+            // All-cash mode falls back to gross so tax also debits now (no credit obligation).
             var walletDebitPaise = _split.creditPaise > 0
-              ? _split.cashPaise + _split.taxPaise
+              ? _split.cashPaise
               : paise
             if (walletDebitPaise > 0) {
               await supabase.rpc('wallet_self_debit', {
@@ -1385,7 +1387,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
               <select value={eventId} onChange={function (e) { setEventId(e.target.value) }}
                 className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-amber-300" style={{ fontSize: '16px' }}>
                 <option value="">Select event...</option>
-                {events.map(function (ev) { return <option key={ev.id} value={String(ev.id)}>{ev.event_name + ' · ' + (ev.venue_name || '')}</option> })}
+                {events.map(function (ev) { return <option key={ev.id} value={String(ev.id)}>{ev.event_name + (ev.client_name ? ' — ' + ev.client_name : '') + ' · ' + (ev.venue_name || '')}</option> })}
               </select>
             )}
             {(function () {
