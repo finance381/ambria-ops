@@ -311,9 +311,13 @@ function Payments({ profile }) {
     setPayTarget(v)
   }
 
-  async function onPaySuccess() {
+  function closePay() {
     setPayTarget(null)
     setPayLockedMode('')
+  }
+
+  async function onPaySuccess() {
+    closePay()
     await loadAll()
   }
 
@@ -485,7 +489,7 @@ function Payments({ profile }) {
           vendor={payTarget}
           profile={profile}
           onClose={closePay}
-          onSuccess={function () { closePay(); loadAll() }}
+          onSuccess={onPaySuccess}
           lockedMode={payLockedMode}
         />
       )}

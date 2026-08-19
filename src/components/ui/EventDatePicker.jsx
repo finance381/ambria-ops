@@ -21,7 +21,7 @@ var VENUE_COLORS = {
 }
 var DEFAULT_DOT_COLOR = '#6366F1'
 
-function EventDatePicker({ value, onChange, label, collapsible }) {
+function EventDatePicker({ value, onChange, label, collapsible, includePast }) {
   var today = new Date()
   var initDate = value ? new Date(value + 'T00:00:00') : today
   var [viewYear, setViewYear] = useState(initDate.getFullYear())
@@ -50,7 +50,7 @@ function EventDatePicker({ value, onChange, label, collapsible }) {
     var endStr = formatISO(endDate)
 
     var todayISO = formatISO(today)
-    var fromStr = startStr > todayISO ? startStr : todayISO
+    var fromStr = includePast ? startStr : (startStr > todayISO ? startStr : todayISO)
     var { data } = await supabase.from('events_safe')
       .select('function_date, venue_name')
       .not('function_date', 'is', null)

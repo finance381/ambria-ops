@@ -125,7 +125,7 @@ function EventLedger(props) {
     <div>
       {!propEventId && (
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
-        <EventDatePicker label="Event Date" value={date} onChange={loadFunctions} />
+        <EventDatePicker label="Event Date" value={date} onChange={loadFunctions} includePast />
         {date && (
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Function</label>
