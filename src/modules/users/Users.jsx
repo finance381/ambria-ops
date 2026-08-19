@@ -544,6 +544,7 @@ function Users() {
               <th className="text-left px-4 py-3 text-[11px] font-bold text-gray-500 uppercase tracking-wider">Email</th>
               <th className="text-left px-4 py-3 text-[11px] font-bold text-gray-500 uppercase tracking-wider">Phone</th>
               <th className="text-left px-4 py-3 text-[11px] font-bold text-gray-500 uppercase tracking-wider">Role</th>
+              <th className="text-left px-4 py-3 text-[11px] font-bold text-gray-500 uppercase tracking-wider" title="LMS user_id mapped to profile">LMS</th>
               <th className="text-left px-4 py-3 text-[11px] font-bold text-gray-500 uppercase tracking-wider">Categories</th>
               <th className="text-left px-4 py-3 text-[11px] font-bold text-gray-500 uppercase tracking-wider">Status</th>
               <th className="px-4 py-3" style={{ width: 80 }}></th>
@@ -565,6 +566,15 @@ function Users() {
                     <span className={"text-[11px] font-bold uppercase px-2 py-0.5 rounded-full " + (roleColors[user.role] || 'bg-gray-100 text-gray-600')}>
                       {user.role}
                     </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    {user._source === 'approved' ? (
+                      <span className="text-[10px] text-gray-300">—</span>
+                    ) : user.lms_user_id ? (
+                      <span className="text-[10px] font-bold text-green-700 bg-green-50 border border-green-200 px-1.5 py-0.5 rounded" title={'LMS ID: ' + user.lms_user_id}>Y</span>
+                    ) : (
+                      <span className="text-[10px] font-bold text-gray-500 bg-gray-100 border border-gray-200 px-1.5 py-0.5 rounded">N</span>
+                    )}
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex flex-wrap gap-1">
@@ -597,7 +607,7 @@ function Users() {
             })}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan="7" className="px-4 py-8 text-center text-gray-400">No users found</td>
+                <td colSpan="8" className="px-4 py-8 text-center text-gray-400">No users found</td>
               </tr>
             )}
           </tbody>
