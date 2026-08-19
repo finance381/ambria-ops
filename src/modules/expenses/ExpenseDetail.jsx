@@ -161,10 +161,27 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
   var receiptPaths = (exp.receipt_paths && exp.receipt_paths.length > 0)
     ? exp.receipt_paths
     : (exp.receipt_path ? [exp.receipt_path] : [])
+  var [signedReceiptUrls, setSignedReceiptUrls] = useState({})
+  var pathsKey = receiptPaths.join('|')
+  useEffect(function () {
+    if (receiptPaths.length === 0) return
+    var cancelled = false
+    Promise.all(receiptPaths.map(function (p) {
+      return supabase.storage.from('receipts').createSignedUrl(p, 3600)
+        .then(function (res) { return { path: p, url: res.data?.signedUrl || null } })
+        .catch(function () { return { path: p, url: null } })
+    })).then(function (results) {
+      if (cancelled) return
+      var m = {}
+      results.forEach(function (r) { if (r.url) m[r.path] = r.url })
+      setSignedReceiptUrls(m)
+    })
+    return function () { cancelled = true }
+  }, [pathsKey])
   var receipts = receiptPaths.map(function (path) {
     return {
       path: path,
-      url: supabase.storage.from('receipts').getPublicUrl(path).data?.publicUrl,
+      url: signedReceiptUrls[path] || supabase.storage.from('receipts').getPublicUrl(path).data?.publicUrl,
       isVoice: /\.(webm|ogg|mp3|wav)$/i.test(path),
       isImage: /\.(jpg|jpeg|png|gif|webp)$/i.test(path)
     }
@@ -388,7 +405,19 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
           <div className="p-3 space-y-2">
             {receipts.map(function (r, rIdx) {
               if (r.isVoice) {
-                return <audio key={rIdx} src={r.url} controls className="w-full" />
+                return (
+                  <div key={rIdx} className="space-y-1">
+                    <audio controls preload="metadata" className="w-full">
+                      <source src={r.url} type="audio/webm" />
+                      <source src={r.url} />
+                      Your browser cannot play this audio.
+                    </audio>
+                    <a href={r.url} download target="_blank" rel="noopener noreferrer"
+                      className="text-[10px] text-gray-400 hover:text-indigo-600 underline">
+                      ⬇ Download if playback fails
+                    </a>
+                  </div>
+                )
               }
               if (r.isImage) {
                 return (

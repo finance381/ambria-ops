@@ -1154,6 +1154,34 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                 remarks: (a.remarks || '').trim() || null
               }
             })
+          // If user recorded no allocation, auto-create one from entry-level type + full amount
+          // so the expense still appears in the type/sub-type ledger.
+          if (allocRows.length === 0) {
+            var expType = e.expenseTypeId ? expenseTypes.find(function (t) { return String(t.id) === String(e.expenseTypeId) }) : null
+            var defaultDeptId = null
+            var defaultDeptName = null
+            if (expType) {
+              if (expType.department_id) defaultDeptId = expType.department_id
+              else if (expType.sub_department_id) {
+                var sd = subDepartments.find(function (s) { return String(s.id) === String(expType.sub_department_id) })
+                if (sd && sd.department_id) defaultDeptId = sd.department_id
+              }
+            }
+            if (defaultDeptId) {
+              var deptRow = departments.find(function (d) { return d.id === defaultDeptId })
+              if (deptRow) defaultDeptName = deptRow.name
+            }
+            allocRows.push({
+              expense_id: exp.id,
+              department: defaultDeptName,
+              department_id: defaultDeptId,
+              venue_id: null,
+              expense_type_id: e.expenseTypeId ? Number(e.expenseTypeId) : null,
+              expense_sub_type_id: e.expenseSubTypeId ? Number(e.expenseSubTypeId) : null,
+              amount_paise: paise,
+              remarks: null,
+            })
+          }
           if (allocRows.length > 0) await supabase.from('expense_allocations').insert(allocRows)
 
           try {
