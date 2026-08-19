@@ -87,21 +87,28 @@ function Payments({ profile }) {
 
     // Enrich vendors with vendor_type + department chain
     var vendorIds = pendingVendors.map(function (v) { return v.vendor_id })
-    var [vExtRes, catsRes, sdRes, etRes, dRes] = await Promise.all([
-      vendorIds.length > 0 ? supabase.from('vendors').select('id, vendor_type, category_ids, expense_type_ids').in('id', vendorIds) : Promise.resolve({ data: [] }),
+    var [vExtRes, catsRes, sdRes, etRes, estRes, dRes] = await Promise.all([
+      vendorIds.length > 0 ? supabase.from('vendors').select('id, vendor_type, category_ids, expense_type_ids, expense_sub_type_ids').in('id', vendorIds) : Promise.resolve({ data: [] }),
       supabase.from('categories').select('id, sub_department_id'),
       supabase.from('sub_departments').select('id, department_id'),
-      supabase.from('expense_types').select('id, department_id'),
+      supabase.from('expense_types').select('id, department_id, sub_department_id'),
+      supabase.from('expense_sub_types').select('id, expense_type_id'),
       supabase.from('departments').select('id, name').eq('active', true).order('name')
     ])
     var catToSd = {}; (catsRes.data || []).forEach(function (c) { catToSd[c.id] = c.sub_department_id })
     var sdToDept = {}; (sdRes.data || []).forEach(function (s) { sdToDept[s.id] = s.department_id })
-    var etToDept = {}; (etRes.data || []).forEach(function (t) { etToDept[t.id] = t.department_id })
+    var etToDept = {}
+    ;(etRes.data || []).forEach(function (t) {
+      if (t.department_id) etToDept[t.id] = t.department_id
+      else if (t.sub_department_id && sdToDept[t.sub_department_id]) etToDept[t.id] = sdToDept[t.sub_department_id]
+    })
+    var stToType = {}; (estRes.data || []).forEach(function (s) { stToType[s.id] = s.expense_type_id })
     var vExtras = {}
     ;(vExtRes.data || []).forEach(function (v) {
       var deptIds = {}
       ;(v.category_ids || []).forEach(function (cid) { var sd = catToSd[cid]; if (sd) { var d = sdToDept[sd]; if (d) deptIds[d] = true } })
       ;(v.expense_type_ids || []).forEach(function (tid) { var d = etToDept[tid]; if (d) deptIds[d] = true })
+      ;(v.expense_sub_type_ids || []).forEach(function (stid) { var tid = stToType[stid]; if (tid) { var d = etToDept[tid]; if (d) deptIds[d] = true } })
       vExtras[v.id] = { vendorType: v.vendor_type, deptIds: Object.keys(deptIds).map(Number) }
     })
     var enriched = pendingVendors.map(function (v) {
