@@ -1,4 +1,38 @@
 import { useState, useEffect, useRef } from 'react'
+
+var _pdfFontCache = { regular: null, bold: null }
+
+async function _fetchTtfBase64(url) {
+  var r = await fetch(url)
+  if (!r.ok) throw new Error('font ' + url + ' → HTTP ' + r.status)
+  var buf = await r.arrayBuffer()
+  var bytes = new Uint8Array(buf)
+  var chunk = 0x8000
+  var pieces = []
+  for (var i = 0; i < bytes.length; i += chunk) {
+    pieces.push(String.fromCharCode.apply(null, bytes.subarray(i, i + chunk)))
+  }
+  return btoa(pieces.join(''))
+}
+
+async function _registerPdfFont(doc) {
+  try {
+    if (!_pdfFontCache.regular || !_pdfFontCache.bold) {
+      var REG_URL = 'https://cdn.jsdelivr.net/gh/googlefonts/noto-fonts@main/hinted/ttf/NotoSans/NotoSans-Regular.ttf'
+      var BLD_URL = 'https://cdn.jsdelivr.net/gh/googlefonts/noto-fonts@main/hinted/ttf/NotoSans/NotoSans-Bold.ttf'
+      var results = await Promise.all([_fetchTtfBase64(REG_URL), _fetchTtfBase64(BLD_URL)])
+      _pdfFontCache.regular = results[0]
+      _pdfFontCache.bold = results[1]
+    }
+    doc.addFileToVFS('NotoSans-Regular.ttf', _pdfFontCache.regular)
+    doc.addFont('NotoSans-Regular.ttf', 'NotoSans', 'normal')
+    doc.addFileToVFS('NotoSans-Bold.ttf', _pdfFontCache.bold)
+    doc.addFont('NotoSans-Bold.ttf', 'NotoSans', 'bold')
+    return true
+  } catch (e) {
+    return false
+  }
+}
 import { supabase } from '../../lib/supabase'
 import { formatPoints } from '../../lib/format'
 import { pushBack } from '../../lib/backNav'
@@ -39,6 +73,7 @@ function Ledgers({ profile }) {
   var [venueFilter, setVenueFilter] = useState('')
   var [statusFilter, setStatusFilter] = useState('')
   var [pendingOnly, setPendingOnly] = useState(false)
+  var [pdfBusy, setPdfBusy] = useState(false)
 
   // Master maps
   var [deptMap, setDeptMap] = useState({})
@@ -285,6 +320,123 @@ function Ledgers({ profile }) {
     var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'ledgers_' + dateFrom + '_' + dateTo + '.csv'; a.click()
   }
 
+  async function exportListPDF() {
+    if (pdfBusy) return
+    var groups = visibleGroups
+    if (!groups.length) return
+    setPdfBusy(true)
+    try {
+      var jsPDFmod = await import('jspdf')
+      var jsPDF = jsPDFmod.default || jsPDFmod.jsPDF
+      var autoTableMod = await import('jspdf-autotable')
+      var autoTable = autoTableMod.default || autoTableMod
+
+      var doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+      var pageW = doc.internal.pageSize.getWidth()
+      var pageH = doc.internal.pageSize.getHeight()
+
+      var fontOk = await _registerPdfFont(doc)
+      var FONT = fontOk ? 'NotoSans' : 'helvetica'
+
+      doc.setFont(FONT, 'bold'); doc.setFontSize(14)
+      doc.text('Expense Ledger Statement', 14, 15)
+      doc.setFont(FONT, 'normal'); doc.setFontSize(9)
+      doc.text('Generated: ' + new Date().toLocaleString('en-IN'), pageW - 14, 15, { align: 'right' })
+
+      var fParts = []
+      if (dateFrom || dateTo) fParts.push('Period: ' + (dateFrom || '…') + ' to ' + (dateTo || '…'))
+      if (userFilter) {
+        var u = users.find(function (x) { return String(x.id) === String(userFilter) })
+        fParts.push('User: ' + (u ? u.name : userFilter))
+      }
+      if (venueFilter) {
+        var v = venues.find(function (x) { return String(x.id) === String(venueFilter) })
+        fParts.push('Venue: ' + (v ? (v.name || v.code) : venueFilter))
+      }
+      if (statusFilter) fParts.push('Status: ' + statusFilter)
+      if (pendingOnly) fParts.push('Pending only')
+      if (searchDeb) fParts.push('Search: "' + searchDeb + '"')
+
+      doc.setFontSize(8); doc.setTextColor(80)
+      if (fParts.length) doc.text('Filters: ' + fParts.join('  ·  '), 14, 21, { maxWidth: pageW - 28 })
+      else doc.text('Filters: none', 14, 21)
+      doc.setTextColor(0)
+
+      function fmtPts(paise) {
+        return (paise / 100).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
+      }
+
+      var body = []
+      var grandTotal = 0, grandCommitted = 0, grandPending = 0, grandAllocs = 0
+
+      groups.forEach(function (g) {
+        // Dept subtotal row (bold, shaded)
+        body.push([
+          { content: g.deptName, colSpan: 3, styles: { fontStyle: 'bold', fillColor: [235, 240, 250], textColor: [30, 30, 90] } },
+          { content: fmtPts(g.committed), styles: { fontStyle: 'bold', fillColor: [235, 240, 250], textColor: [20, 100, 60], halign: 'right' } },
+          { content: fmtPts(g.pending), styles: { fontStyle: 'bold', fillColor: [235, 240, 250], textColor: [140, 90, 20], halign: 'right' } },
+          { content: fmtPts(g.total), styles: { fontStyle: 'bold', fillColor: [235, 240, 250], halign: 'right' } },
+          { content: String(g.allocs), styles: { fontStyle: 'bold', fillColor: [235, 240, 250], halign: 'right' } },
+        ])
+        g.rows.forEach(function (r) {
+          var typeName = r.typeId ? (typeMap[r.typeId] || 'Untyped') : 'Untyped'
+          var subTypeName = r.subTypeId ? (subTypeMap[r.subTypeId] || '—') : '—'
+          body.push([
+            '',
+            typeName,
+            subTypeName,
+            { content: fmtPts(r.committed), styles: { halign: 'right', textColor: [20, 100, 60] } },
+            { content: fmtPts(r.pending), styles: { halign: 'right', textColor: [140, 90, 20] } },
+            { content: fmtPts(r.total), styles: { halign: 'right', fontStyle: 'bold' } },
+            { content: String(r.allocs), styles: { halign: 'right', textColor: [120, 120, 120] } },
+          ])
+        })
+        grandTotal += g.total
+        grandCommitted += g.committed
+        grandPending += g.pending
+        grandAllocs += g.allocs
+      })
+
+      // Grand total footer
+      body.push([
+        { content: 'GRAND TOTAL', colSpan: 3, styles: { fontStyle: 'bold', fillColor: [50, 50, 50], textColor: 255 } },
+        { content: fmtPts(grandCommitted), styles: { fontStyle: 'bold', fillColor: [50, 50, 50], textColor: 255, halign: 'right' } },
+        { content: fmtPts(grandPending), styles: { fontStyle: 'bold', fillColor: [50, 50, 50], textColor: 255, halign: 'right' } },
+        { content: fmtPts(grandTotal), styles: { fontStyle: 'bold', fillColor: [50, 50, 50], textColor: 255, halign: 'right' } },
+        { content: String(grandAllocs), styles: { fontStyle: 'bold', fillColor: [50, 50, 50], textColor: 255, halign: 'right' } },
+      ])
+
+      autoTable(doc, {
+        startY: fParts.length ? 27 : 25,
+        head: [['Department', 'Type', 'Sub-Type', 'Committed', 'Pending', 'Total', 'Allocs']],
+        body: body,
+        styles: { font: FONT, fontSize: 8, cellPadding: 1.5, overflow: 'linebreak' },
+        headStyles: { font: FONT, fillColor: [50, 50, 50], textColor: 255, fontStyle: 'bold', halign: 'center' },
+        columnStyles: {
+          0: { cellWidth: 32 },
+          1: { cellWidth: 34 },
+          2: { cellWidth: 34 },
+          3: { cellWidth: 24, halign: 'right' },
+          4: { cellWidth: 24, halign: 'right' },
+          5: { cellWidth: 26, halign: 'right' },
+          6: { cellWidth: 14, halign: 'right' },
+        },
+        margin: { left: 10, right: 10 },
+        didDrawPage: function () {
+          doc.setFontSize(7); doc.setTextColor(120)
+          doc.text('Page ' + doc.internal.getCurrentPageInfo().pageNumber, pageW - 14, pageH - 6, { align: 'right' })
+          doc.setTextColor(0)
+        },
+      })
+
+      doc.save('ledger_' + dateFrom + '_' + dateTo + '.pdf')
+    } catch (err) {
+      alert('PDF export failed: ' + (err.message || err))
+    } finally {
+      setPdfBusy(false)
+    }
+  }
+
   // Client-side filter: search + pendingOnly
   var visibleGroups = deptGroups.map(function (g) {
     var deptName = g.deptId ? (deptMap[g.deptId] || 'Unassigned') : 'Unallocated'
@@ -471,6 +623,10 @@ function Ledgers({ profile }) {
             className="px-2 py-1 text-[11px] font-semibold text-green-600 bg-green-50 border border-green-200 rounded-md hover:bg-green-100 disabled:opacity-40">
             ↓ CSV
           </button>
+          <button onClick={exportListPDF} disabled={!visibleGroups.length || pdfBusy}
+            className="px-2 py-1 text-[11px] font-semibold text-red-600 bg-red-50 border border-red-200 rounded-md hover:bg-red-100 disabled:opacity-40">
+            {pdfBusy ? '…' : '↓ PDF'}
+          </button>
         </div>
       </div>
 
@@ -486,22 +642,21 @@ function Ledgers({ profile }) {
             return (
               <div key={g.key} className="bg-white border border-gray-200 rounded-lg overflow-hidden">
                 <button onClick={function () { toggleDept(g.key, g.allocs) }}
-                  className="w-full flex items-center justify-between px-3 py-2 hover:bg-gray-50 transition-colors text-left">
-                  <div className="flex items-center gap-2 min-w-0 flex-1">
+                  className="w-full grid grid-cols-[1fr_70px_70px_80px_36px] items-center px-3 py-2 hover:bg-gray-50 transition-colors text-left">
+                  <div className="flex items-center gap-2 min-w-0">
                     <span className="text-xs text-gray-400 flex-shrink-0">{collapsed ? '▸' : '▾'}</span>
                     <span className="text-sm font-bold text-gray-900 truncate">{g.deptName}</span>
-                    <span className="text-[10px] text-gray-400 flex-shrink-0">{g.rows.length} · {g.allocs}</span>
+                    <span className="text-[10px] text-gray-400 flex-shrink-0">{g.rows.length}</span>
                     {delta > 0 && (
                       <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700 font-bold flex-shrink-0 animate-pulse">
                         +{delta}
                       </span>
                     )}
                   </div>
-                  <div className="flex gap-4 items-center flex-shrink-0 text-xs tabular-nums">
-                    <span className="text-green-700">{formatPoints(g.committed)}</span>
-                    <span className="text-amber-700">{formatPoints(g.pending)}</span>
-                    <span className="font-bold text-gray-900 min-w-[60px] text-right">{formatPoints(g.total)}</span>
-                  </div>
+                  <span className="text-xs text-right text-green-700 tabular-nums">{formatPoints(g.committed)}</span>
+                  <span className="text-xs text-right text-amber-700 tabular-nums">{formatPoints(g.pending)}</span>
+                  <span className="text-xs text-right font-bold text-gray-900 tabular-nums">{formatPoints(g.total)}</span>
+                  <span className="text-[10px] text-right text-gray-400">{g.allocs}</span>
                 </button>
                 {!collapsed && g.rows.map(function (r, i) {
                   var typeName = r.typeId ? (typeMap[r.typeId] || 'Untyped') : 'Untyped'
