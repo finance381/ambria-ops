@@ -59,6 +59,9 @@ function Users() {
   // Edit user state
   var [editUser, setEditUser] = useState(null)
   var [editRole, setEditRole] = useState('')
+  var [editAuditeeIds, setEditAuditeeIds] = useState([])
+  var [originalAuditeeIds, setOriginalAuditeeIds] = useState([])
+  var [auditeeSearch, setAuditeeSearch] = useState('')
   var [editPhone, setEditPhone] = useState('')
   var [editPerms, setEditPerms] = useState([])
   var [editActive, setEditActive] = useState(true)
@@ -181,6 +184,15 @@ function Users() {
     }
     setEditUser(user)
     setEditRole(user.role)
+    setAuditeeSearch('')
+    if (user._source !== 'approved' && user.role === 'auditor') {
+      supabase.from('auditor_scopes').select('auditee_id').eq('auditor_id', user.id).then(function (r) {
+        var ids = (r.data || []).map(function (row) { return row.auditee_id })
+        setEditAuditeeIds(ids); setOriginalAuditeeIds(ids)
+      })
+    } else {
+      setEditAuditeeIds([]); setOriginalAuditeeIds([])
+    }
     setEditPhone(user.phone || '')
     setEditPerms(user.permissions || [])
     setEditActive(user.active)
@@ -417,13 +429,33 @@ function Users() {
       err = res.error
     }
 
-    if (err) {
-      setError(err.message)
-    } else {
-      setEditUser(null)
-      loadUsers()
-      try { await logActivity('USER_UPDATE', editUser.email + ' → role:' + editRole) } catch (_) {}
+    if (err) { setError(err.message); setSaving(false); return }
+
+    // Sync auditor_scopes if this profile is an auditor (not applicable to approved_emails)
+    if (editUser._source !== 'approved') {
+      if (editRole === 'auditor') {
+        var toAdd = editAuditeeIds.filter(function (id) { return originalAuditeeIds.indexOf(id) === -1 })
+        var toRemove = originalAuditeeIds.filter(function (id) { return editAuditeeIds.indexOf(id) === -1 })
+        if (toRemove.length > 0) {
+          var delRes = await supabase.from('auditor_scopes').delete().eq('auditor_id', editUser.id).in('auditee_id', toRemove)
+          if (delRes.error) { setError('Scope remove failed: ' + delRes.error.message); setSaving(false); return }
+        }
+        if (toAdd.length > 0) {
+          var insRes = await supabase.from('auditor_scopes').insert(toAdd.map(function (aid) {
+            return { auditor_id: editUser.id, auditee_id: aid, created_by: profile.id }
+          }))
+          if (insRes.error) { setError('Scope add failed: ' + insRes.error.message); setSaving(false); return }
+        }
+      } else if (originalAuditeeIds.length > 0) {
+        // Role changed away from auditor — wipe scopes
+        var wipeRes = await supabase.from('auditor_scopes').delete().eq('auditor_id', editUser.id)
+        if (wipeRes.error) { setError('Scope wipe failed: ' + wipeRes.error.message); setSaving(false); return }
+      }
     }
+
+    setEditUser(null)
+    loadUsers()
+    try { await logActivity('USER_UPDATE', editUser.email + ' → role:' + editRole) } catch (_) {}
     setSaving(false)
   }
 
@@ -704,6 +736,60 @@ function Users() {
                 </span>
               )}
             </div>
+
+            {editRole === 'auditor' && editUser._source !== 'approved' && (
+              <div className="border border-amber-200 bg-amber-50/40 rounded-lg p-3">
+                <div className="flex items-center justify-between mb-2">
+                  <div>
+                    <label className="text-sm font-semibold text-gray-800">👁 Auditees</label>
+                    <p className="text-[11px] text-gray-500 mt-0.5">This auditor will only see data for the users selected below.</p>
+                  </div>
+                  <span className="text-[11px] font-bold text-amber-700 bg-amber-100 border border-amber-300 px-2 py-0.5 rounded-full">
+                    {editAuditeeIds.length} selected
+                  </span>
+                </div>
+                <input type="text" value={auditeeSearch}
+                  onChange={function (e) { setAuditeeSearch(e.target.value) }}
+                  placeholder="Search users to audit..."
+                  className="w-full px-3 py-2 border border-gray-200 rounded-md text-sm mb-2" style={{ fontSize: '16px' }} />
+                <div className="max-h-56 overflow-y-auto border border-gray-200 rounded-md bg-white">
+                  {(function () {
+                    var q = auditeeSearch.toLowerCase()
+                    var candidates = users.filter(function (u) {
+                      if (u.id === editUser.id) return false
+                      if (u.active === false) return false
+                      if (!q) return true
+                      return (u.name || '').toLowerCase().indexOf(q) !== -1 ||
+                             (u.email || '').toLowerCase().indexOf(q) !== -1 ||
+                             (u.role || '').toLowerCase().indexOf(q) !== -1
+                    })
+                    if (candidates.length === 0) return <p className="text-xs text-gray-400 text-center py-3">No matches</p>
+                    return candidates.map(function (u) {
+                      var checked = editAuditeeIds.indexOf(u.id) !== -1
+                      return (
+                        <label key={u.id}
+                          className={"flex items-center gap-2 px-3 py-2 border-b border-gray-100 last:border-0 cursor-pointer " + (checked ? "bg-amber-50" : "hover:bg-gray-50")}>
+                          <input type="checkbox" checked={checked}
+                            onChange={function () {
+                              if (checked) setEditAuditeeIds(editAuditeeIds.filter(function (id) { return id !== u.id }))
+                              else setEditAuditeeIds(editAuditeeIds.concat([u.id]))
+                            }}
+                            className="rounded border-gray-300 text-amber-600 focus:ring-amber-500" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-gray-800 truncate">{u.name}</p>
+                            <p className="text-[10px] text-gray-400 truncate">{u.email || '—'} · {u.role || '—'}</p>
+                          </div>
+                        </label>
+                      )
+                    })
+                  })()}
+                </div>
+                {editAuditeeIds.length > 0 && (
+                  <button type="button" onClick={function () { setEditAuditeeIds([]) }}
+                    className="mt-2 text-[11px] font-semibold text-red-500 hover:text-red-700">Clear all</button>
+                )}
+              </div>
+            )}
             </div>)}
             {activePanel === 'employee' && (
   <div className="p-5 space-y-4">
