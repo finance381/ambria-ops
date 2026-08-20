@@ -193,7 +193,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     if (expRefIds.length > 0) {
       var expIdsNum = expRefIds.map(function (x) { return Number(x) }).filter(function (n) { return !isNaN(n) })
       var { data: eData } = await supabase.from('expenses')
-        .select('id, description, amount_paise, expense_date, event_id, expense_types(name), expense_sub_types(name), expense_allocations(department, sub_department_id)')
+        .select('id, description, amount_paise, expense_date, event_id, expense_types(name), expense_sub_types(name), expense_allocations(department)')
         .in('id', expIdsNum)
       var eMap = {}
       var evIds = {}
@@ -304,7 +304,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     if (expRefIds.length > 0) {
       var expIdsNum = expRefIds.map(function (x) { return Number(x) }).filter(function (n) { return !isNaN(n) })
       var { data: eData } = await supabase.from('expenses')
-        .select('id, description, amount_paise, expense_date, event_id, expense_types(name), expense_sub_types(name), expense_allocations(department, sub_department_id)')
+        .select('id, description, amount_paise, expense_date, event_id, expense_types(name), expense_sub_types(name), expense_allocations(department)')
         .in('id', expIdsNum)
       var eMap = {}
       var evIds = {}
