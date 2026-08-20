@@ -1108,6 +1108,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
     // ── Insert branch ──
     var submitted = 0
     var failed = 0
+    var failedMsgs = []
     var batchId = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : null
 
     try {
@@ -1304,17 +1305,18 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
           submitted++
         } catch (err) {
           console.error('EXPENSE_SUBMIT_FAIL entry', i, err)
-          try { logActivity('EXPENSE_SUBMIT_FAIL', 'entry ' + i + ' | ' + (err && err.message || String(err)).slice(0, 200)) } catch (_) {}
-          window._lastExpenseErr = err
+          var msg = (err && err.message) ? err.message : String(err)
+          failedMsgs.push('#' + (i + 1) + ': ' + msg)
+          try { logActivity('EXPENSE_SUBMIT_FAIL', 'entry ' + i + ' | ' + msg.slice(0, 200)) } catch (_) {}
           failed++
         }
       }
     } finally { setSaving(false) }
 
     if (failed > 0 && submitted > 0) {
-      setError(failed + ' failed, ' + submitted + ' submitted')
+      setError(failed + ' failed, ' + submitted + ' submitted\n' + failedMsgs.join('\n'))
     } else if (failed > 0) {
-      setError('All ' + failed + ' entries failed to submit')
+      setError('All ' + failed + ' entries failed to submit\n' + failedMsgs.join('\n'))
     } else {
       setSuccess(submitted + ' expense' + (submitted > 1 ? 's' : '') + ' submitted')
       setTimeout(function () { setEntries([makeEntry()]); if (onDone) onDone() }, 1500)
@@ -1327,7 +1329,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
 
   return (
     <div className="space-y-4">
-      {error && error.indexOf('Insufficient wallet balance') === -1 && <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">{error}</div>}
+      {/* Error banner moved next to the Submit button below — screenshot-friendly, one-tap Copy */}
       {success && <div className="p-3 rounded-lg bg-green-50 border border-green-200 text-green-700 text-sm">{success}</div>}
       {isAdminEdit && (
         <div className="p-3 rounded-lg bg-purple-50 border border-purple-200 text-purple-700 text-sm">
@@ -2231,6 +2233,35 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
           </div>
         )
       })()}
+
+      {/* Inline error card — sits right above the Submit button, always visible, easy screenshot */}
+      {error && error.indexOf('Insufficient wallet balance') === -1 && (
+        <div className="p-3 rounded-lg bg-red-50 border-2 border-red-300 text-red-800 text-sm shadow-sm">
+          <div className="flex items-start justify-between gap-2 mb-1.5">
+            <span className="font-bold uppercase text-[10px] tracking-wider text-red-600">Submit failed</span>
+            <div className="flex gap-1.5 flex-shrink-0">
+              <button type="button" onClick={function (ev) {
+                var b = ev.currentTarget
+                try {
+                  if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(error) }
+                  else {
+                    var ta = document.createElement('textarea'); ta.value = error; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta)
+                  }
+                  var orig = b.textContent; b.textContent = 'Copied ✓'; setTimeout(function () { b.textContent = orig }, 1500)
+                } catch (_) {}
+              }}
+                className="px-2 py-0.5 text-[10px] font-bold bg-white border border-red-300 text-red-700 rounded hover:bg-red-100">
+                📋 Copy
+              </button>
+              <button type="button" onClick={function () { setError('') }}
+                className="px-2 py-0.5 text-[10px] font-bold bg-white border border-red-300 text-red-700 rounded hover:bg-red-100">
+                ✕
+              </button>
+            </div>
+          </div>
+          <pre className="whitespace-pre-wrap break-words font-mono text-[11px] leading-tight max-h-40 overflow-y-auto m-0">{error}</pre>
+        </div>
+      )}
 
       {/* Add entry + Submit bar */}
       <div className="flex gap-3">
