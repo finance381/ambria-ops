@@ -19,6 +19,16 @@ var REF_TYPE_LABELS = {
   opening: 'Opening',
 }
 
+var REF_TYPE_STYLES = {
+  expense: 'bg-red-50 text-red-700 border-red-200',
+  expense_refund: 'bg-green-50 text-green-700 border-green-200',
+  transfer: 'bg-blue-50 text-blue-700 border-blue-200',
+  issued: 'bg-purple-50 text-purple-700 border-purple-200',
+  deducted: 'bg-orange-50 text-orange-700 border-orange-200',
+  collection: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  opening: 'bg-gray-100 text-gray-700 border-gray-300',
+}
+
 function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, onClose, onBalanceChange }) {
   var [walletView, setWalletView] = useState(null)
   var [allWallets, setAllWallets] = useState([])
@@ -124,8 +134,31 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     if (tRefIds.length > 0) {
       var { data: tData } = await supabase.from('wallet_transfers').select('id, from_user_id, to_user_id').in('id', tRefIds)
       var tMap = {}
-      ;(tData || []).forEach(function (tr) { tMap[tr.id] = tr })
+      var cpIds = {}
+      ;(tData || []).forEach(function (tr) {
+        tMap[tr.id] = tr
+        if (tr.from_user_id) cpIds[tr.from_user_id] = true
+        if (tr.to_user_id) cpIds[tr.to_user_id] = true
+      })
       setTransferParties(function (prev) { return Object.assign({}, prev, tMap) })
+      var cpArr = Object.keys(cpIds)
+      if (cpArr.length > 0) {
+        var { data: pData } = await supabase.from('profiles').select('id, name').in('id', cpArr)
+        var pMap = {}
+        ;(pData || []).forEach(function (p) { pMap[p.id] = p })
+        setWalletProfiles(function (prev) { return Object.assign({}, prev, pMap) })
+      }
+    }
+    var expRefIds = txns.filter(function (tt) {
+      return (tt.reference_type === 'expense' || tt.reference_type === 'expense_refund') && tt.reference_id
+    }).map(function (tt) { return tt.reference_id })
+    if (expRefIds.length > 0) {
+      var { data: eData } = await supabase.from('expenses')
+        .select('id, description, amount_paise, expense_date, expense_types(name, icon), expense_sub_types(name), expense_allocations(department, sub_department_id)')
+        .in('id', expRefIds)
+      var eMap = {}
+      ;(eData || []).forEach(function (e) { eMap[e.id] = e })
+      setExpenseRefs(function (prev) { return Object.assign({}, prev, eMap) })
     }
     setWalletTxns(txns)
   }
@@ -195,28 +228,58 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     if (t) query = query.lte('created_at', t + 'T23:59:59')
     var { data } = await query
     var txns = data || []
+    var cpIds = {}
     var tRefIds = txns.filter(function (t) { return t.reference_type === 'transfer' && t.reference_id }).map(function (t) { return t.reference_id })
     if (tRefIds.length > 0) {
       var { data: tData } = await supabase.from('wallet_transfers').select('id, from_user_id, to_user_id').in('id', tRefIds)
       var tMap = {}
-      ;(tData || []).forEach(function (tr) { tMap[tr.id] = tr })
+      ;(tData || []).forEach(function (tr) {
+        tMap[tr.id] = tr
+        if (tr.from_user_id) cpIds[tr.from_user_id] = true
+        if (tr.to_user_id) cpIds[tr.to_user_id] = true
+      })
       setTransferParties(tMap)
     } else {
       setTransferParties({})
     }
-    // Enrich expense + refund refs with type / sub-type / dept for finance context.
+    // Enrich expense + refund refs with type / sub-type / dept / event for finance context.
     var expRefIds = txns.filter(function (tt) {
       return (tt.reference_type === 'expense' || tt.reference_type === 'expense_refund') && tt.reference_id
     }).map(function (tt) { return tt.reference_id })
     if (expRefIds.length > 0) {
       var { data: eData } = await supabase.from('expenses')
-        .select('id, description, amount_paise, expense_date, expense_types(name, icon), expense_sub_types(name), expense_allocations(department, sub_department_id)')
+        .select('id, description, amount_paise, expense_date, event_id, expense_types(name, icon), expense_sub_types(name), expense_allocations(department, sub_department_id)')
         .in('id', expRefIds)
       var eMap = {}
-      ;(eData || []).forEach(function (e) { eMap[e.id] = e })
+      var evIds = {}
+      ;(eData || []).forEach(function (e) {
+        eMap[e.id] = e
+        if (e.event_id) evIds[e.event_id] = true
+      })
+      var evArr = Object.keys(evIds)
+      if (evArr.length > 0) {
+        var { data: evData } = await supabase.from('event_ledger').select('id, event_name').in('id', evArr)
+        var evNameMap = {}
+        ;(evData || []).forEach(function (ev) { evNameMap[ev.id] = ev.event_name })
+        Object.keys(eMap).forEach(function (eid) {
+          var ex = eMap[eid]
+          if (ex.event_id && evNameMap[ex.event_id]) ex._event_name = evNameMap[ex.event_id]
+        })
+      }
       setExpenseRefs(eMap)
     } else {
       setExpenseRefs({})
+    }
+    // Ensure counterparty profile names load (needed on non-admin own-wallet view).
+    var cpArr = Object.keys(cpIds)
+    if (cpArr.length > 0) {
+      var missing = cpArr.filter(function (id) { return !walletProfiles[id] })
+      if (missing.length > 0) {
+        var { data: pData } = await supabase.from('profiles').select('id, name').in('id', missing)
+        var pMap = {}
+        ;(pData || []).forEach(function (p) { pMap[p.id] = p })
+        setWalletProfiles(function (prev) { return Object.assign({}, prev, pMap) })
+      }
     }
     setWalletTxns(txns)
     if (wallet) setWalletView('transactions')
@@ -1039,6 +1102,35 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             <div className="space-y-2">
               {walletTxns.slice(0, 5).map(function (t) {
                 var isCredit = t.type === 'credit'
+                var xp = (t.reference_type === 'expense' || t.reference_type === 'expense_refund') && t.reference_id ? expenseRefs[t.reference_id] : null
+                var tr = t.reference_type === 'transfer' && t.reference_id ? transferParties[t.reference_id] : null
+                var cpName = null
+                if (tr) {
+                  var cpId = t.type === 'debit' ? tr.to_user_id : tr.from_user_id
+                  cpName = walletProfiles[cpId]?.name
+                }
+                var enrichLine = null
+                if (xp) {
+                  var typeName = xp.expense_types?.name || ''
+                  var subTypeName = xp.expense_sub_types?.name || ''
+                  var alloc = (xp.expense_allocations && xp.expense_allocations[0]) || null
+                  var dept = alloc?.department || ''
+                  var parts = []
+                  if (typeName) parts.push((xp.expense_types?.icon ? xp.expense_types.icon + ' ' : '') + typeName + (subTypeName ? ' › ' + subTypeName : ''))
+                  if (dept) parts.push(dept)
+                  if (t.reference_type === 'expense_refund' && xp.amount_paise) parts.push('orig ' + formatPoints(xp.amount_paise))
+                  if (parts.length > 0) enrichLine = <p className="text-[11px] text-indigo-600 truncate">{parts.join(' · ')}</p>
+                } else if (t.reference_type === 'collection') {
+                  enrichLine = <p className="text-[11px] text-emerald-600 truncate">🎉 Event Collection</p>
+                } else if (tr && cpName) {
+                  enrichLine = <p className="text-[11px] text-blue-600 truncate">{t.type === 'debit' ? '→ ' : '← '}{cpName}</p>
+                } else if (t.reference_type === 'issued') {
+                  enrichLine = <p className="text-[11px] text-purple-600 truncate">Issued by admin</p>
+                } else if (t.reference_type === 'deducted') {
+                  enrichLine = <p className="text-[11px] text-orange-600 truncate">Deducted by admin</p>
+                } else if (t.reference_type === 'opening') {
+                  enrichLine = <p className="text-[11px] text-gray-500 truncate">Opening balance</p>
+                }
                 return (
                   <div key={t.id} className="flex items-center gap-3 p-3 bg-white border border-gray-200 rounded-xl">
                     <div className={"w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 " + (isCredit ? "bg-green-50 text-green-600" : "bg-red-50 text-red-600")}>
@@ -1049,7 +1141,11 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                         <p className="text-sm font-bold text-gray-800 truncate">{t.description || (isCredit ? 'Credit' : 'Debit')}</p>
                         {t.status === 'pending' && <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded flex-shrink-0">Pending</span>}
                       </div>
-                      <p className="text-[11px] text-gray-400">{formatDate(t.created_at)}</p>
+                      {enrichLine}
+                      <p className="text-[11px] text-gray-400">
+                        {formatDate(t.created_at)}
+                        {t.reference_type ? ' · ' + (REF_TYPE_LABELS[t.reference_type] || t.reference_type) : ''}
+                      </p>
                     </div>
                     <span className={"text-sm font-bold flex-shrink-0 " + (isCredit ? "text-green-600" : "text-red-600")}>
                       {isCredit ? '+' : '−'}{formatPoints(t.amount_paise)}
@@ -1407,6 +1503,11 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                 <div className="flex items-start justify-between">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
+                      {t.reference_type && (
+                        <span className={"text-[9px] font-bold uppercase px-1.5 py-0.5 rounded border " + (REF_TYPE_STYLES[t.reference_type] || 'bg-gray-100 text-gray-700 border-gray-300')}>
+                          {REF_TYPE_LABELS[t.reference_type] || t.reference_type}
+                        </span>
+                      )}
                       <p className="text-sm text-gray-800">
                         {t.description || '—'}
                         {t.reference_type === 'transfer' && t.reference_id && transferParties[t.reference_id] && (function () {
@@ -1417,11 +1518,16 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                           return ' ' + (t.type === 'debit' ? '→' : '←') + ' ' + cpName
                         })()}
                       </p>
+                      {t.reference_type === 'collection' && t.payment_mode && (
+                        <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 border border-emerald-200">
+                          {t.payment_mode}
+                        </span>
+                      )}
                       {t.status === 'pending' && (
                         <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded">Pending</span>
                       )}
                     </div>
-                    {/* Enrichment: expense/refund → type › sub-type · dept · (refund amount + date) */}
+                    {/* Enrichment: expense/refund → type › sub-type · dept · event · (refund amount + date) */}
                     {(t.reference_type === 'expense' || t.reference_type === 'expense_refund') && t.reference_id && expenseRefs[t.reference_id] && (function () {
                       var e = expenseRefs[t.reference_id]
                       var typeName = e.expense_types?.name || ''
@@ -1431,6 +1537,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                       var parts = []
                       if (typeName) parts.push((e.expense_types?.icon ? e.expense_types.icon + ' ' : '') + typeName + (subTypeName ? ' › ' + subTypeName : ''))
                       if (dept) parts.push(dept)
+                      if (e._event_name) parts.push('🎯 ' + e._event_name)
                       if (t.reference_type === 'expense_refund' && e.amount_paise) parts.push('orig ' + formatPoints(e.amount_paise) + ' on ' + formatDate(e.expense_date))
                       if (parts.length === 0) return null
                       return <p className="text-[11px] text-indigo-600 mt-0.5">{parts.join(' · ')}</p>
