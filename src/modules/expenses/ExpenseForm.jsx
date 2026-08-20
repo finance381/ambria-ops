@@ -1188,7 +1188,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
           }
 
           var { data: exp, error: insErr } = await supabase.from('expenses').insert(payload).select('id').single()
-          if (insErr || !exp) { failed++; continue }
+          if (insErr || !exp) { console.error('EXPENSE_INSERT_FAIL', insErr, payload); throw new Error('Expense insert failed: ' + (insErr && insErr.message || 'no row returned')) }
 
           if (e.receiptFiles && e.receiptFiles.length > 0) {
             var uploadedPaths = []
@@ -1279,28 +1279,35 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
               source: 'auto_default',
             })
           }
-          if (allocRows.length > 0) await supabase.from('expense_allocations').insert(allocRows)
+          if (allocRows.length > 0) {
+            var { error: aErrIns } = await supabase.from('expense_allocations').insert(allocRows)
+            if (aErrIns) { console.error('ALLOC_INSERT_FAIL', aErrIns, allocRows); throw new Error('Allocations failed: ' + aErrIns.message) }
+          }
 
-          try {
-            // Wallet only debits the immediate cash portion the user set as "Cash from Wallet".
-            // Credit portion (base + tax owed to vendor) leaves the wallet later via pay_vendor.
-            // All-cash mode falls back to gross so tax also debits now (no credit obligation).
-            var walletDebitPaise = _split.creditPaise > 0
-              ? _split.cashPaise
-              : paise
-            if (walletDebitPaise > 0) {
-              await supabase.rpc('wallet_self_debit', {
-                p_amount_paise: walletDebitPaise,
-                p_description: 'Expense: ' + e.description.trim().slice(0, 50),
-                p_ref_type: 'expense',
-                p_ref_id: String(exp.id),
-              })
-            }
-          } catch (_) {}
+          // Wallet only debits the immediate cash portion the user set as "Cash from Wallet".
+          // Credit portion (base + tax owed to vendor) leaves the wallet later via pay_vendor.
+          // All-cash mode falls back to gross so tax also debits now (no credit obligation).
+          var walletDebitPaise = _split.creditPaise > 0
+            ? _split.cashPaise
+            : paise
+          if (walletDebitPaise > 0) {
+            var { error: wErr } = await supabase.rpc('wallet_self_debit', {
+              p_amount_paise: walletDebitPaise,
+              p_description: 'Expense: ' + e.description.trim().slice(0, 50),
+              p_ref_type: 'expense',
+              p_ref_id: String(exp.id),
+            })
+            if (wErr) { console.error('WALLET_DEBIT_FAIL', wErr); throw new Error('Wallet debit failed: ' + wErr.message) }
+          }
 
           try { await logActivity('EXPENSE_SUBMIT', (paise / 100) + ' pts | ' + e.description.trim().slice(0, 50)) } catch (_) {}
           submitted++
-        } catch (_) { failed++ }
+        } catch (err) {
+          console.error('EXPENSE_SUBMIT_FAIL entry', i, err)
+          try { logActivity('EXPENSE_SUBMIT_FAIL', 'entry ' + i + ' | ' + (err && err.message || String(err)).slice(0, 200)) } catch (_) {}
+          window._lastExpenseErr = err
+          failed++
+        }
       }
     } finally { setSaving(false) }
 
