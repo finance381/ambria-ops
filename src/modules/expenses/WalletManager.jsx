@@ -52,6 +52,7 @@ var REF_TYPE_LABELS = {
   issued: 'Issued',
   deducted: 'Deducted',
   collection: 'Collection',
+  collection_cancel: 'Cancel',
   opening: 'Opening',
 }
 
@@ -62,6 +63,7 @@ var REF_TYPE_STYLES = {
   issued: 'bg-purple-50 text-purple-700 border-purple-200',
   deducted: 'bg-orange-50 text-orange-700 border-orange-200',
   collection: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  collection_cancel: 'bg-rose-50 text-rose-700 border-rose-200',
   opening: 'bg-gray-100 text-gray-700 border-gray-300',
 }
 
@@ -110,6 +112,11 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   var [transferConfirmSaving, setTransferConfirmSaving] = useState(false)
   var [transferParties, setTransferParties] = useState({})
   var [expenseRefs, setExpenseRefs] = useState({})
+  // EPC back-links: wallet_tx_id → { epc, isCancel }. Populated by loadRecentTxns / openWalletTxns.
+  var [epcRefs, setEpcRefs] = useState({})
+  var [cancelTarget, setCancelTarget] = useState(null)  // { txn, kind: 'collection' | 'epc' }
+  var [cancelReason, setCancelReason] = useState('')
+  var [cancelSaving, setCancelSaving] = useState(false)
   var [collectModal, setCollectModal] = useState(false)
   var [collectDate, setCollectDate] = useState('')
   var [collectEvents, setCollectEvents] = useState([])
@@ -213,6 +220,20 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
       }
       setExpenseRefs(function (prev) { return Object.assign({}, prev, eMap) })
     }
+    // EPC back-links: any wallet_txn whose id matches extra_plate_collections.wallet_tx_id OR .cancel_wallet_tx_id
+    var txnIds = txns.map(function (tt) { return tt.id })
+    if (txnIds.length > 0) {
+      var { data: epcFwd } = await supabase.from('extra_plate_collections')
+        .select('id, event_id, extras_charged, plates_returned, total_paise, discount_paise, payment_mode, status, collected_by, wallet_tx_id, cancel_wallet_tx_id, cancelled_reason')
+        .in('wallet_tx_id', txnIds)
+      var { data: epcRev } = await supabase.from('extra_plate_collections')
+        .select('id, event_id, extras_charged, plates_returned, total_paise, discount_paise, payment_mode, status, collected_by, wallet_tx_id, cancel_wallet_tx_id, cancelled_reason')
+        .in('cancel_wallet_tx_id', txnIds)
+      var eMapEpc = {}
+      ;(epcFwd || []).forEach(function (r) { if (r.wallet_tx_id) eMapEpc[r.wallet_tx_id] = { epc: r, isCancel: false } })
+      ;(epcRev || []).forEach(function (r) { if (r.cancel_wallet_tx_id) eMapEpc[r.cancel_wallet_tx_id] = { epc: r, isCancel: true } })
+      setEpcRefs(function (prev) { return Object.assign({}, prev, eMapEpc) })
+    }
     setWalletTxns(txns)
   }
 
@@ -271,7 +292,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     var wid = (wallet || selectedWallet)?.id
     if (!wid) return
     var query = supabase.from('wallet_transactions')
-      .select('id, type, amount_paise, balance_after_paise, description, reference_type, reference_id, performed_by, created_at, issued_image_path, received_image_path, received_at, wallet_id, status, receipt_no, payment_mode')
+      .select('id, type, amount_paise, balance_after_paise, description, reference_type, reference_id, performed_by, created_at, issued_image_path, received_image_path, received_at, wallet_id, status, receipt_no, payment_mode, cancel_wallet_tx_id, cancelled_at, cancelled_by, cancelled_reason')
       .eq('wallet_id', wid)
       .order('created_at', { ascending: false })
       .limit(500)
@@ -325,6 +346,22 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
       setExpenseRefs(eMap)
     } else {
       setExpenseRefs({})
+    }
+    // EPC back-links: any wallet_txn whose id matches extra_plate_collections.wallet_tx_id OR .cancel_wallet_tx_id
+    var txnIds = txns.map(function (tt) { return tt.id })
+    if (txnIds.length > 0) {
+      var { data: epcFwd } = await supabase.from('extra_plate_collections')
+        .select('id, event_id, extras_charged, plates_returned, total_paise, discount_paise, payment_mode, status, collected_by, wallet_tx_id, cancel_wallet_tx_id, cancelled_reason')
+        .in('wallet_tx_id', txnIds)
+      var { data: epcRev } = await supabase.from('extra_plate_collections')
+        .select('id, event_id, extras_charged, plates_returned, total_paise, discount_paise, payment_mode, status, collected_by, wallet_tx_id, cancel_wallet_tx_id, cancelled_reason')
+        .in('cancel_wallet_tx_id', txnIds)
+      var eMapEpc = {}
+      ;(epcFwd || []).forEach(function (r) { if (r.wallet_tx_id) eMapEpc[r.wallet_tx_id] = { epc: r, isCancel: false } })
+      ;(epcRev || []).forEach(function (r) { if (r.cancel_wallet_tx_id) eMapEpc[r.cancel_wallet_tx_id] = { epc: r, isCancel: true } })
+      setEpcRefs(eMapEpc)
+    } else {
+      setEpcRefs({})
     }
     // Ensure counterparty profile names load (needed on non-admin own-wallet view).
     var cpArr = Object.keys(cpIds)
@@ -600,6 +637,84 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
         signatureUrl: signatureUrl,
       })
     } catch (e) { alert('Receipt generation failed: ' + e.message) }
+  }
+
+  function openCancel(txn, kind) {
+    setCancelTarget({ txn: txn, kind: kind })
+    setCancelReason('')
+  }
+
+  async function confirmCancel() {
+    if (cancelSaving || !cancelTarget) return
+    var reason = cancelReason.trim()
+    if (reason.length < 3) { alert('Reason required (min 3 chars)'); return }
+    setCancelSaving(true)
+    var t = cancelTarget.txn
+    var kind = cancelTarget.kind
+    var rpc, params, actName, lbl
+    if (kind === 'epc') {
+      var epcRow = (epcRefs[t.id] || {}).epc
+      if (!epcRow) { alert('EPC row not found'); setCancelSaving(false); return }
+      rpc = 'fn_extra_plate_cancel'
+      params = { p_collection_id: epcRow.id, p_reason: reason }
+      actName = 'EXTRA_PLATE_CANCEL_FROM_WALLET'
+      lbl = epcRow.extras_charged + ' extras · ' + formatPoints(t.amount_paise)
+    } else {
+      rpc = 'fn_wallet_collect_cancel'
+      params = { p_txn_id: t.id, p_reason: reason }
+      actName = 'WALLET_COLLECTION_CANCEL'
+      lbl = (t.receipt_no ? '#' + t.receipt_no + ' · ' : '') + formatPoints(t.amount_paise)
+    }
+    var { error } = await supabase.rpc(rpc, params)
+    if (error) { alert('Cancel failed: ' + error.message); setCancelSaving(false); return }
+    try { await logActivity(actName, lbl + ' | ' + reason) } catch (_) {}
+    setCancelTarget(null)
+    setCancelReason('')
+    setCancelSaving(false)
+    refreshBalance()
+    if (walletView === 'transactions') { openWalletTxns(null) }
+    else if (walletView === 'dashboard') { loadRecentTxns(selectedWallet) }
+  }
+
+  function renderCancelModal() {
+    if (!cancelTarget) return null
+    var t = cancelTarget.txn
+    var kind = cancelTarget.kind
+    var isEpc = kind === 'epc'
+    var epcRow = isEpc ? (epcRefs[t.id] || {}).epc : null
+    return (
+      <div className="fixed inset-0 z-50 bg-black/60 flex items-end sm:items-center justify-center p-0 sm:p-4"
+        onClick={function () { if (!cancelSaving) { setCancelTarget(null); setCancelReason('') } }}>
+        <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md p-5 space-y-3 max-h-[90vh] overflow-y-auto"
+          onClick={function (ev) { ev.stopPropagation() }}>
+          <h3 className="text-base font-bold text-gray-900">
+            Cancel {isEpc ? 'Extra Plate Collection' : 'Event Collection'}
+          </h3>
+          <div className="text-sm text-gray-600">
+            {isEpc && epcRow
+              ? epcRow.extras_charged + ' extras · ' + formatPoints(t.amount_paise) + (t.payment_mode ? ' · ' + t.payment_mode.toUpperCase() : '')
+              : (t.receipt_no ? '#' + t.receipt_no + ' · ' : '') + formatPoints(t.amount_paise) + (t.payment_mode ? ' · ' + t.payment_mode.toUpperCase() : '')}
+            {t.description ? ' — ' + t.description : ''}
+          </div>
+          <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded p-2">
+            Wallet will be debited {formatPoints(t.amount_paise)} and the event ledger reversed. This cannot be undone.
+          </div>
+          <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide">Reason</label>
+          <input type="text" value={cancelReason} onChange={function (e) { setCancelReason(e.target.value) }}
+            placeholder="Why is this being cancelled?"
+            className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm"
+            style={{ fontSize: '16px' }} />
+          <div className="flex gap-3 pt-2">
+            <button type="button" onClick={function () { setCancelTarget(null); setCancelReason('') }} disabled={cancelSaving}
+              className="flex-1 py-3 text-sm text-gray-600 bg-gray-100 rounded-xl font-semibold">Keep</button>
+            <button type="button" onClick={confirmCancel} disabled={cancelSaving || !cancelReason.trim()}
+              className="flex-1 py-3 text-sm text-white bg-red-600 rounded-xl disabled:opacity-40 font-semibold">
+              {cancelSaving ? 'Cancelling...' : 'Confirm Cancel'}
+            </button>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   async function submitCollection() {
@@ -1356,6 +1471,10 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                 var isExpKind = t.reference_type === 'expense' || t.reference_type === 'expense_refund'
                 var xp = isExpKind && t.reference_id ? expenseRefs[t.reference_id] : null
                 var tr = t.reference_type === 'transfer' && t.reference_id ? transferParties[t.reference_id] : null
+                var epcHit = epcRefs[t.id] || null
+                var isEpc = !!epcHit && !epcHit.isCancel
+                var isEpcCancel = !!epcHit && epcHit.isCancel
+                var isCancelled = t.status === 'cancelled'
                 var cpName = null
                 if (tr) {
                   var cpId = t.type === 'debit' ? tr.to_user_id : tr.from_user_id
@@ -1375,6 +1494,12 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                   else enrichLine = <p className="text-[11px] text-gray-400 italic truncate">No type / dept set</p>
                 } else if (t.reference_type === 'collection') {
                   enrichLine = <p className="text-[11px] text-emerald-600 truncate">🎉 Event Collection{t.payment_mode ? ' · ' + t.payment_mode : ''}</p>
+                } else if (t.reference_type === 'collection_cancel') {
+                  enrichLine = <p className="text-[11px] text-rose-600 truncate">🔁 Cancellation reversal</p>
+                } else if (isEpc) {
+                  enrichLine = <p className="text-[11px] text-emerald-600 truncate">🍽 Extra Plates · {epcHit.epc.extras_charged}{epcHit.epc.payment_mode ? ' · ' + epcHit.epc.payment_mode : ''}</p>
+                } else if (isEpcCancel) {
+                  enrichLine = <p className="text-[11px] text-rose-600 truncate">🔁 Extra Plate cancel</p>
                 } else if (tr && cpName) {
                   enrichLine = <p className="text-[11px] text-blue-600 truncate">{t.type === 'debit' ? '→ ' : '← '}{cpName}</p>
                 } else if (t.reference_type === 'issued') {
@@ -1384,8 +1509,10 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                 } else if (t.reference_type === 'opening') {
                   enrichLine = <p className="text-[11px] text-gray-500 truncate">Opening balance</p>
                 }
+                var epcCancellable = isEpc && epcHit.epc.status !== 'cancelled' && (isAdmin || epcHit.epc.collected_by === profile.id)
+                var collCancellable = t.reference_type === 'collection' && !isCancelled && (isAdmin || t.performed_by === profile.id)
                 return (
-                  <div key={t.id} className="flex items-center gap-3 p-3 bg-white border border-gray-200 rounded-xl">
+                  <div key={t.id} className={"flex items-center gap-3 p-3 bg-white border rounded-xl " + (isCancelled ? "border-gray-200 opacity-50" : "border-gray-200")}>
                     <div className={"w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 " + (isCredit ? "bg-green-50 text-green-600" : "bg-red-50 text-red-600")}>
                       <span className="text-sm font-bold">{isCredit ? '+' : '−'}</span>
                     </div>
@@ -1396,17 +1523,35 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                             {REF_TYPE_LABELS[t.reference_type] || t.reference_type}
                           </span>
                         )}
-                        <p className="text-sm font-bold text-gray-800 truncate">{t.description || (isCredit ? 'Credit' : 'Debit')}</p>
+                        <p className={"text-sm font-bold text-gray-800 truncate " + (isCancelled ? "line-through" : "")}>{t.description || (isCredit ? 'Credit' : 'Debit')}</p>
                         {t.status === 'pending' && <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded flex-shrink-0">Pending</span>}
+                        {isCancelled && <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 bg-rose-100 text-rose-700 rounded flex-shrink-0">Cancelled</span>}
                       </div>
                       {enrichLine}
-                      <p className="text-[11px] text-gray-400">{formatDate(t.created_at)}</p>
-                      {t.reference_type === 'collection' && t.receipt_no && (
-                        <button onClick={function () { printReceipt(t) }}
-                          className="mt-1 px-2 py-1 text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded hover:bg-blue-100 transition-colors">
-                          🖨 #{t.receipt_no}
-                        </button>
+                      {isCancelled && t.cancelled_reason && (
+                        <p className="text-[10px] text-rose-600 italic truncate">Reason: {t.cancelled_reason}</p>
                       )}
+                      <p className="text-[11px] text-gray-400">{formatDate(t.created_at)}</p>
+                      <div className="flex gap-1 flex-wrap mt-1">
+                        {t.reference_type === 'collection' && t.receipt_no && (
+                          <button onClick={function () { printReceipt(t) }}
+                            className="px-2 py-1 text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded hover:bg-blue-100 transition-colors">
+                            🖨 #{t.receipt_no}
+                          </button>
+                        )}
+                        {collCancellable && (
+                          <button onClick={function () { openCancel(t, 'collection') }}
+                            className="px-2 py-1 text-[10px] font-bold text-red-700 bg-red-50 border border-red-200 rounded hover:bg-red-100 transition-colors">
+                            🚫 Cancel
+                          </button>
+                        )}
+                        {epcCancellable && (
+                          <button onClick={function () { openCancel(t, 'epc') }}
+                            className="px-2 py-1 text-[10px] font-bold text-red-700 bg-red-50 border border-red-200 rounded hover:bg-red-100 transition-colors">
+                            🚫 Cancel
+                          </button>
+                        )}
+                      </div>
                     </div>
                     <span className={"text-sm font-bold flex-shrink-0 " + (isCredit ? "text-green-600" : "text-red-600")}>
                       {isCredit ? '+' : '−'}{formatPoints(t.amount_paise)}
@@ -1431,6 +1576,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
         {renderIssueModal()}
         {renderReceiveModal()}
         {renderTransferConfirmModal()}
+        {renderCancelModal()}
         {renderEnlargedImg()}
       </div>
       </div>
@@ -1763,8 +1909,17 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             var receivedUrl = t.received_image_path ? supabase.storage.from('receipts').getPublicUrl(t.received_image_path).data?.publicUrl : null
             var isOwnWallet = selectedWallet && selectedWallet.user_id === profile.id
             var canConfirm = isCredit && t.status === 'pending' && isOwnWallet
+            var epcHit = epcRefs[t.id] || null
+            var isEpc = !!epcHit && !epcHit.isCancel
+            var isEpcCancel = !!epcHit && epcHit.isCancel
+            var isCancelled = t.status === 'cancelled'
+            var epcCancellable = isEpc && epcHit.epc.status !== 'cancelled' && (isAdmin || epcHit.epc.collected_by === profile.id)
+            var collCancellable = t.reference_type === 'collection' && !isCancelled && (isAdmin || t.performed_by === profile.id)
+            var rowBorderClass = isCancelled
+              ? "border-gray-200 opacity-50"
+              : (t.status === 'pending' ? "border-amber-300 bg-amber-50/30" : "border-gray-200")
             return (
-              <div key={t.id} className={"bg-white border rounded-lg p-3 " + (t.status === 'pending' ? "border-amber-300 bg-amber-50/30" : "border-gray-200")}>
+              <div key={t.id} className={"bg-white border rounded-lg p-3 " + rowBorderClass}>
                 <div className="flex items-start justify-between">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
@@ -1773,7 +1928,17 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                           {REF_TYPE_LABELS[t.reference_type] || t.reference_type}
                         </span>
                       )}
-                      <p className="text-sm text-gray-800">
+                      {isEpc && (
+                        <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded border bg-emerald-50 text-emerald-700 border-emerald-200">
+                          Extra Plates
+                        </span>
+                      )}
+                      {isEpcCancel && (
+                        <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded border bg-rose-50 text-rose-700 border-rose-200">
+                          EP Cancel
+                        </span>
+                      )}
+                      <p className={"text-sm text-gray-800 " + (isCancelled ? "line-through" : "")}>
                         {t.description || '—'}
                         {t.reference_type === 'transfer' && t.reference_id && transferParties[t.reference_id] && (function () {
                           var tr = transferParties[t.reference_id]
@@ -1782,6 +1947,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                           if (!cpName) return null
                           return ' ' + (t.type === 'debit' ? '→' : '←') + ' ' + cpName
                         })()}
+                        {isEpc && ' · ' + epcHit.epc.extras_charged + ' extras'}
                       </p>
                       {t.reference_type === 'collection' && t.payment_mode && (
                         <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 border border-emerald-200">
@@ -1791,7 +1957,13 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                       {t.status === 'pending' && (
                         <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded">Pending</span>
                       )}
+                      {isCancelled && (
+                        <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 bg-rose-100 text-rose-700 rounded">Cancelled</span>
+                      )}
                     </div>
+                    {isCancelled && t.cancelled_reason && (
+                      <p className="text-[10px] text-rose-600 italic mt-0.5">Reason: {t.cancelled_reason}</p>
+                    )}
                     {/* Enrichment: expense/refund → type › sub-type · dept · event · (refund amount + date) */}
                     {(t.reference_type === 'expense' || t.reference_type === 'expense_refund') && t.reference_id && expenseRefs[t.reference_id] && (function () {
                       var e = expenseRefs[t.reference_id]
@@ -1851,6 +2023,12 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                         🖨 #{t.receipt_no}
                       </button>
                     )}
+                    {(collCancellable || epcCancellable) && (
+                      <button onClick={function () { openCancel(t, collCancellable ? 'collection' : 'epc') }}
+                        className="mt-1.5 ml-1 px-2 py-1 text-[10px] font-bold text-red-700 bg-red-50 border border-red-200 rounded hover:bg-red-100 transition-colors">
+                        🚫 Cancel
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1862,6 +2040,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
         {renderCollectModal()}
         {renderTransferModal()}
         {renderTransferConfirmModal()}
+        {renderCancelModal()}
         {renderEnlargedImg()}
       </div>
     )
