@@ -9,6 +9,42 @@ import EventDatePicker from '../../components/ui/EventDatePicker'
 import { useVoice } from '../../hooks/useVoice'
 import { generateCollectionReceiptPdf } from '../../lib/pdfReceipt'
 
+// Cached Unicode font for jsPDF (loaded once per browser session on first PDF export)
+var _pdfFontCache = { regular: null, bold: null }
+
+async function _fetchTtfBase64(url) {
+  var r = await fetch(url)
+  if (!r.ok) throw new Error('font ' + url + ' → HTTP ' + r.status)
+  var buf = await r.arrayBuffer()
+  var bytes = new Uint8Array(buf)
+  var chunk = 0x8000
+  var pieces = []
+  for (var i = 0; i < bytes.length; i += chunk) {
+    pieces.push(String.fromCharCode.apply(null, bytes.subarray(i, i + chunk)))
+  }
+  return btoa(pieces.join(''))
+}
+
+async function _registerPdfFont(doc) {
+  try {
+    if (!_pdfFontCache.regular || !_pdfFontCache.bold) {
+      var REG_URL = 'https://cdn.jsdelivr.net/gh/googlefonts/noto-fonts@main/hinted/ttf/NotoSans/NotoSans-Regular.ttf'
+      var BLD_URL = 'https://cdn.jsdelivr.net/gh/googlefonts/noto-fonts@main/hinted/ttf/NotoSans/NotoSans-Bold.ttf'
+      var results = await Promise.all([_fetchTtfBase64(REG_URL), _fetchTtfBase64(BLD_URL)])
+      _pdfFontCache.regular = results[0]
+      _pdfFontCache.bold = results[1]
+    }
+    doc.addFileToVFS('NotoSans-Regular.ttf', _pdfFontCache.regular)
+    doc.addFont('NotoSans-Regular.ttf', 'NotoSans', 'normal')
+    doc.addFileToVFS('NotoSans-Bold.ttf', _pdfFontCache.bold)
+    doc.addFont('NotoSans-Bold.ttf', 'NotoSans', 'bold')
+    return true
+  } catch (e) {
+    console.warn('PDF font load failed, using helvetica fallback:', e.message)
+    return false
+  }
+}
+
 var REF_TYPE_LABELS = {
   expense: 'Expense',
   expense_refund: 'Refund',
@@ -39,6 +75,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   var [txnTo, setTxnTo] = useState('')
   var [walletSearch, setWalletSearch] = useState('')
   var [walletRoleFilter, setWalletRoleFilter] = useState('')
+  var [pdfBusy, setPdfBusy] = useState(false)
   var [walletBalanceState, setWalletBalanceState] = useState('all')
   var [walletPendingOnly, setWalletPendingOnly] = useState(false)
   var [walletSort, setWalletSort] = useState('name')
@@ -627,6 +664,173 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     var csv = '\uFEFF' + headers.join(',') + '\n' + rows.join('\n')
     var blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
     var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'wallet_' + userName + '_' + new Date().toISOString().split('T')[0] + '.csv'; a.click()
+  }
+
+  async function exportWalletPDF() {
+    if (!walletTxns.length || !selectedWallet || pdfBusy) return
+    setPdfBusy(true)
+    try {
+      var jsPDFmod = await import('jspdf')
+      var jsPDF = jsPDFmod.default || jsPDFmod.jsPDF
+      var autoTableMod = await import('jspdf-autotable')
+      var autoTable = autoTableMod.default || autoTableMod
+
+      var doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+      var fontOk = await _registerPdfFont(doc)
+      var FONT = fontOk ? 'NotoSans' : 'helvetica'
+      var pageW = doc.internal.pageSize.getWidth()
+      var pageH = doc.internal.pageSize.getHeight()
+
+      // Chronological (oldest → newest) for bank-statement feel
+      var chrono = walletTxns.slice().sort(function (a, b) {
+        return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      })
+
+      var totalCr = 0, totalDb = 0
+      chrono.forEach(function (t) {
+        if (t.type === 'credit') totalCr += (t.amount_paise || 0)
+        else totalDb += (t.amount_paise || 0)
+      })
+      var oldest = chrono[0]
+      var newest = chrono[chrono.length - 1]
+      var opening = oldest ? ((oldest.balance_after_paise || 0) - (oldest.type === 'credit' ? (oldest.amount_paise || 0) : -(oldest.amount_paise || 0))) : 0
+      var closing = newest ? (newest.balance_after_paise || 0) : 0
+
+      var userName = walletProfiles[selectedWallet.user_id]?.name || 'User'
+      var userEmail = walletProfiles[selectedWallet.user_id]?.email || selectedWallet.email || ''
+      var mm = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+      function fmtD(iso) {
+        if (!iso) return '—'
+        var d = new Date(iso.length === 10 ? iso + 'T00:00:00' : iso)
+        return String(d.getDate()).padStart(2, '0') + '-' + mm[d.getMonth()] + '-' + d.getFullYear()
+      }
+      function fmtN(paise) {
+        return ((paise || 0) / 100).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
+      }
+      function enrichFor(t) {
+        if (t.reference_type === 'expense' || t.reference_type === 'expense_refund') {
+          var e = t.reference_id ? expenseRefs[t.reference_id] : null
+          if (!e) return ''
+          var parts = []
+          var tn = e.expense_types?.name || ''
+          var stn = e.expense_sub_types?.name || ''
+          if (tn) parts.push(tn + (stn ? ' > ' + stn : ''))
+          var alloc = (e.expense_allocations && e.expense_allocations[0]) || null
+          if (alloc?.department) parts.push(alloc.department)
+          if (e._event_name) parts.push('Event: ' + e._event_name)
+          return parts.join(' · ')
+        }
+        if (t.reference_type === 'transfer' && t.reference_id) {
+          var tr = transferParties[t.reference_id]
+          if (!tr) return ''
+          var cpId = t.type === 'debit' ? tr.to_user_id : tr.from_user_id
+          var cpName = walletProfiles[cpId]?.name
+          if (!cpName) return ''
+          return (t.type === 'debit' ? '→ ' : '← ') + cpName
+        }
+        if (t.reference_type === 'collection') {
+          var bits = []
+          if (t.payment_mode) bits.push(t.payment_mode)
+          if (t.receipt_no) bits.push('Receipt #' + t.receipt_no)
+          return bits.join(' · ')
+        }
+        if (t.reference_type === 'issued') return 'Issued by admin'
+        if (t.reference_type === 'deducted') return 'Deducted by admin'
+        if (t.reference_type === 'opening') return 'Opening balance'
+        return ''
+      }
+
+      var periodFrom = txnFrom || (oldest ? oldest.created_at.split('T')[0] : '')
+      var periodTo = txnTo || (newest ? newest.created_at.split('T')[0] : '')
+
+      // Header
+      doc.setFont(FONT, 'bold'); doc.setFontSize(14)
+      doc.text('WALLET STATEMENT', 10, 14)
+      doc.setFont(FONT, 'normal'); doc.setFontSize(8); doc.setTextColor(120)
+      doc.text('Generated ' + new Date().toLocaleString('en-IN'), pageW - 10, 14, { align: 'right' })
+      doc.setTextColor(0)
+
+      doc.setFontSize(9)
+      var y = 22
+      doc.setFont(FONT, 'bold'); doc.text('Account:', 10, y)
+      doc.setFont(FONT, 'normal'); doc.text(userName + (userEmail ? '  (' + userEmail + ')' : ''), 28, y)
+      y += 5
+      doc.setFont(FONT, 'bold'); doc.text('Period:', 10, y)
+      doc.setFont(FONT, 'normal'); doc.text(fmtD(periodFrom) + '  to  ' + fmtD(periodTo) + '     (' + chrono.length + ' transactions)', 28, y)
+      y += 7
+
+      // Summary strip
+      autoTable(doc, {
+        startY: y,
+        head: [['Opening Balance', 'Total Credits', 'Total Debits', 'Closing Balance']],
+        body: [[
+          fmtN(opening),
+          '+' + fmtN(totalCr),
+          '-' + fmtN(totalDb),
+          fmtN(closing),
+        ]],
+        styles: { font: FONT, fontSize: 9, halign: 'right', cellPadding: 2 },
+        headStyles: { font: FONT, fillColor: [50, 50, 50], textColor: 255, fontStyle: 'bold', halign: 'right', fontSize: 8 },
+        columnStyles: {
+          0: { cellWidth: 47.5 },
+          1: { cellWidth: 47.5, textColor: [16, 128, 60] },
+          2: { cellWidth: 47.5, textColor: [180, 30, 30] },
+          3: { cellWidth: 47.5, fontStyle: 'bold' },
+        },
+        margin: { left: 10, right: 10 },
+      })
+
+      // Main ledger
+      var body = chrono.map(function (t) {
+        var dt = t.created_at ? new Date(t.created_at) : null
+        var dateCell = dt ? fmtD(t.created_at.split('T')[0]) + '\n' + dt.toTimeString().slice(0, 5) : ''
+        var refLabel = REF_TYPE_LABELS[t.reference_type] || (t.reference_type || '')
+        var refNo = t.reference_id ? String(t.reference_id).slice(0, 10) : ''
+        var refCell = refLabel + (refNo ? '\n#' + refNo : '')
+        var enrich = enrichFor(t)
+        var descCell = (t.description || '—') + (enrich ? '\n' + enrich : '')
+        var isCredit = t.type === 'credit'
+        var amt = fmtN(t.amount_paise || 0)
+        return [
+          dateCell,
+          refCell,
+          descCell,
+          isCredit ? '' : amt,
+          isCredit ? amt : '',
+          fmtN(t.balance_after_paise || 0),
+        ]
+      })
+
+      autoTable(doc, {
+        startY: doc.lastAutoTable.finalY + 6,
+        head: [['Date', 'Ref', 'Particulars', 'Debit', 'Credit', 'Balance']],
+        body: body,
+        styles: { font: FONT, fontSize: 8, cellPadding: 1.5, overflow: 'linebreak', valign: 'top' },
+        headStyles: { font: FONT, fillColor: [50, 50, 50], textColor: 255, fontStyle: 'bold', halign: 'center' },
+        columnStyles: {
+          0: { cellWidth: 22, fontSize: 7 },
+          1: { cellWidth: 22, fontSize: 7 },
+          2: { cellWidth: 'auto' },
+          3: { cellWidth: 24, halign: 'right', textColor: [180, 30, 30] },
+          4: { cellWidth: 24, halign: 'right', textColor: [16, 128, 60] },
+          5: { cellWidth: 24, halign: 'right', fontStyle: 'bold' },
+        },
+        margin: { left: 10, right: 10 },
+        didDrawPage: function () {
+          doc.setFontSize(7); doc.setTextColor(120)
+          doc.text('Page ' + doc.internal.getCurrentPageInfo().pageNumber, pageW - 10, pageH - 6, { align: 'right' })
+          doc.text('Ambria Ops · Wallet statement for ' + userName, 10, pageH - 6)
+          doc.setTextColor(0)
+        },
+      })
+
+      doc.save('wallet_' + userName.replace(/\s+/g, '_') + '_' + new Date().toISOString().split('T')[0] + '.pdf')
+      try { await logActivity('WALLET_PDF_EXPORT', userName + ' | ' + chrono.length + ' txns') } catch (_) {}
+    } catch (err) {
+      alert('PDF export failed: ' + (err.message || err))
+    } finally {
+      setPdfBusy(false)
+    }
   }
 
   // ═══════════════════════════════════════════════
@@ -1432,6 +1636,12 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                 <button onClick={exportWalletCSV}
                   className="px-3 py-1.5 text-xs font-bold text-green-600 bg-green-50 border border-green-200 rounded-lg hover:bg-green-100 transition-colors">
                   📥 CSV
+                </button>
+              )}
+              {walletTxns.length > 0 && (
+                <button onClick={exportWalletPDF} disabled={pdfBusy}
+                  className="px-3 py-1.5 text-xs font-bold text-red-600 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 transition-colors disabled:opacity-40">
+                  {pdfBusy ? '⏳ Generating…' : '📄 PDF'}
                 </button>
               )}
             </div>
