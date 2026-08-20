@@ -73,6 +73,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   var [walletTxns, setWalletTxns] = useState([])
   var [txnFrom, setTxnFrom] = useState('')
   var [txnTo, setTxnTo] = useState('')
+  var [txnRefType, setTxnRefType] = useState('')
   var [walletSearch, setWalletSearch] = useState('')
   var [walletRoleFilter, setWalletRoleFilter] = useState('')
   var [pdfBusy, setPdfBusy] = useState(false)
@@ -265,7 +266,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     setAllWallets(combined)
   }
 
-  async function openWalletTxns(wallet, from, to) {
+  async function openWalletTxns(wallet, from, to, refType) {
     if (wallet) setSelectedWallet(wallet)
     var wid = (wallet || selectedWallet)?.id
     if (!wid) return
@@ -276,8 +277,10 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
       .limit(500)
     var f = from != null ? from : txnFrom
     var t = to != null ? to : txnTo
+    var rt = refType != null ? refType : txnRefType
     if (f) query = query.gte('created_at', f + 'T00:00:00')
     if (t) query = query.lte('created_at', t + 'T23:59:59')
+    if (rt) query = query.eq('reference_type', rt)
     var { data } = await query
     var txns = data || []
     var cpIds = {}
@@ -1370,6 +1373,12 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                       </div>
                       {enrichLine}
                       <p className="text-[11px] text-gray-400">{formatDate(t.created_at)}</p>
+                      {t.reference_type === 'collection' && t.receipt_no && (
+                        <button onClick={function () { printReceipt(t) }}
+                          className="mt-1 px-2 py-1 text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded hover:bg-blue-100 transition-colors">
+                          🖨 #{t.receipt_no}
+                        </button>
+                      )}
                     </div>
                     <span className={"text-sm font-bold flex-shrink-0 " + (isCredit ? "text-green-600" : "text-red-600")}>
                       {isCredit ? '+' : '−'}{formatPoints(t.amount_paise)}
@@ -1614,24 +1623,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
               <p className="text-xs text-gray-400">{txnUser.email || '—'} · Balance: <span className={"font-bold " + ((selectedWallet.balance_paise || 0) < 0 ? "text-red-600" : "text-green-700")}>{formatPoints(selectedWallet.balance_paise)}</span></p>
             </div>
             <div className="flex gap-2">
-              {selectedWallet && selectedWallet.user_id === profile.id && (
-                <button onClick={openCollectModal}
-                  className="px-3 py-1.5 text-xs font-bold text-blue-600 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors">
-                  ↓ Collect
-                </button>
-              )}
-              {selectedWallet && selectedWallet.user_id === profile.id && (
-                <button onClick={openTransferModal}
-                  className="px-3 py-1.5 text-xs font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 transition-colors">
-                  ↗ Transfer
-                </button>
-              )}
-              {(isAdmin || isAuditor) && (
-                <button onClick={function () { setIssueModal(selectedWallet); setIssueAmount(''); setIssueDesc(''); setIssueType('credit') }}
-                  className="px-3 py-1.5 text-xs font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors">
-                  + Issue
-                </button>
-              )}
+
               {walletTxns.length > 0 && (
                 <button onClick={exportWalletCSV}
                   className="px-3 py-1.5 text-xs font-bold text-green-600 bg-green-50 border border-green-200 rounded-lg hover:bg-green-100 transition-colors">
@@ -1659,6 +1651,21 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             <input type="date" value={txnTo} onChange={function (e) { setTxnTo(e.target.value); openWalletTxns(null, null, e.target.value) }}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
               style={{ fontSize: '16px' }} />
+          </div>
+          <div className="flex-1">
+            <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Type</label>
+            <select value={txnRefType} onChange={function (e) { setTxnRefType(e.target.value); openWalletTxns(null, null, null, e.target.value) }}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              style={{ fontSize: '16px' }}>
+              <option value="">All Types</option>
+              <option value="expense">Expenses</option>
+              <option value="expense_refund">Refunds</option>
+              <option value="collection">Collections</option>
+              <option value="transfer">Transfers</option>
+              <option value="issued">Issued (admin)</option>
+              <option value="deducted">Deducted (admin)</option>
+              <option value="opening">Opening</option>
+            </select>
           </div>
           {(txnFrom || txnTo) && (
             <button onClick={function () { setTxnFrom(''); setTxnTo(''); openWalletTxns(null, '', '') }}

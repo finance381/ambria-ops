@@ -44,31 +44,41 @@ export async function generateCollectionReceiptPdf(data) {
   var doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
   var pageW = doc.internal.pageSize.getWidth()
   var margin = 12
+  var isBank = data.paymentMode === 'bank'
+  var titleY
 
-  doc.setLineWidth(0.3); doc.rect(margin, 12, pageW - 2*margin, 24)
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(11)
-  doc.text('GET YOUR VENUE EVENT PVT. LTD.', margin + 2, 18)
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(9)
-  doc.text('F-20, Dwarka Link Rd, Samalka, New Delhi, Delhi, 110037', margin + 2, 23)
-  doc.text('Contact Details: +91 8826522444, sales@ambria.in', margin + 2, 27.5)
-  doc.text('GSTIN:', margin + 2, 32)
+  if (isBank) {
+    // Bank receipt keeps the full company letterhead
+    doc.setLineWidth(0.3); doc.rect(margin, 12, pageW - 2*margin, 24)
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(11)
+    doc.text('GET YOUR VENUE EVENT PVT. LTD.', margin + 2, 18)
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(9)
+    doc.text('F-20, Dwarka Link Rd, Samalka, New Delhi, Delhi, 110037', margin + 2, 23)
+    doc.text('Contact Details: +91 8826522444, sales@ambria.in', margin + 2, 27.5)
+    doc.text('GSTIN:', margin + 2, 32)
 
-  doc.setFillColor(0, 0, 0)
-  doc.rect(pageW - margin - 32, 15, 30, 15, 'F')
-  doc.setTextColor(255, 255, 255); doc.setFont('helvetica', 'bold'); doc.setFontSize(11)
-  doc.text('AMBRIA', pageW - margin - 17, 24, { align: 'center' })
-  doc.setTextColor(0, 0, 0)
+    doc.setFillColor(0, 0, 0)
+    doc.rect(pageW - margin - 32, 15, 30, 15, 'F')
+    doc.setTextColor(255, 255, 255); doc.setFont('helvetica', 'bold'); doc.setFontSize(11)
+    doc.text('AMBRIA', pageW - margin - 17, 24, { align: 'center' })
+    doc.setTextColor(0, 0, 0)
 
-  var titleY = 40
+    titleY = 40
+  } else {
+    // Cash receipt: no header, start directly with the title bar (Sahaj format)
+    titleY = 15
+  }
   doc.setFillColor(230, 230, 230)
   doc.rect(margin, titleY, pageW - 2*margin, 7, 'F')
   doc.setLineWidth(0.3); doc.rect(margin, titleY, pageW - 2*margin, 7)
   doc.setFont('helvetica', 'bold'); doc.setFontSize(11)
   doc.text('Receive Receipt', pageW / 2, titleY + 5, { align: 'center' })
 
-  var isBank = data.paymentMode === 'bank'
   var netAmount = data.amountPaise / 100
-  var netStr = netAmount.toLocaleString('en-IN', { minimumFractionDigits: 1, maximumFractionDigits: 2 })
+  // Cash uses plain "10000.0" per Sahaj convention; bank keeps en-IN grouping
+  var netStr = isBank
+    ? netAmount.toLocaleString('en-IN', { minimumFractionDigits: 1, maximumFractionDigits: 2 })
+    : netAmount.toFixed(1)
   var body = [
     ['Receipt No.', { content: data.receiptNo || '', styles: { fontStyle: 'bold' } }, 'Receipt Date', fmtDDMMYYYY(data.createdAt)],
     ['Pay Mode', { content: (data.paymentMode || '').toUpperCase(), styles: { fontStyle: 'bold' } }, 'Remarks', data.description || ''],
