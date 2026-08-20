@@ -154,10 +154,24 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     }).map(function (tt) { return tt.reference_id })
     if (expRefIds.length > 0) {
       var { data: eData } = await supabase.from('expenses')
-        .select('id, description, amount_paise, expense_date, expense_types(name, icon), expense_sub_types(name), expense_allocations(department, sub_department_id)')
+        .select('id, description, amount_paise, expense_date, event_id, expense_types(name), expense_sub_types(name), expense_allocations(department, sub_department_id)')
         .in('id', expRefIds)
       var eMap = {}
-      ;(eData || []).forEach(function (e) { eMap[e.id] = e })
+      var evIds = {}
+      ;(eData || []).forEach(function (e) {
+        eMap[e.id] = e
+        if (e.event_id) evIds[e.event_id] = true
+      })
+      var evArr = Object.keys(evIds)
+      if (evArr.length > 0) {
+        var { data: evData } = await supabase.from('event_ledger').select('id, event_name').in('id', evArr)
+        var evNameMap = {}
+        ;(evData || []).forEach(function (ev) { evNameMap[ev.id] = ev.event_name })
+        Object.keys(eMap).forEach(function (eid) {
+          var ex = eMap[eid]
+          if (ex.event_id && evNameMap[ex.event_id]) ex._event_name = evNameMap[ex.event_id]
+        })
+      }
       setExpenseRefs(function (prev) { return Object.assign({}, prev, eMap) })
     }
     setWalletTxns(txns)
@@ -248,7 +262,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     }).map(function (tt) { return tt.reference_id })
     if (expRefIds.length > 0) {
       var { data: eData } = await supabase.from('expenses')
-        .select('id, description, amount_paise, expense_date, event_id, expense_types(name, icon), expense_sub_types(name), expense_allocations(department, sub_department_id)')
+        .select('id, description, amount_paise, expense_date, event_id, expense_types(name), expense_sub_types(name), expense_allocations(department, sub_department_id)')
         .in('id', expRefIds)
       var eMap = {}
       var evIds = {}
@@ -1102,7 +1116,8 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             <div className="space-y-2">
               {walletTxns.slice(0, 5).map(function (t) {
                 var isCredit = t.type === 'credit'
-                var xp = (t.reference_type === 'expense' || t.reference_type === 'expense_refund') && t.reference_id ? expenseRefs[t.reference_id] : null
+                var isExpKind = t.reference_type === 'expense' || t.reference_type === 'expense_refund'
+                var xp = isExpKind && t.reference_id ? expenseRefs[t.reference_id] : null
                 var tr = t.reference_type === 'transfer' && t.reference_id ? transferParties[t.reference_id] : null
                 var cpName = null
                 if (tr) {
@@ -1110,18 +1125,19 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                   cpName = walletProfiles[cpId]?.name
                 }
                 var enrichLine = null
-                if (xp) {
-                  var typeName = xp.expense_types?.name || ''
-                  var subTypeName = xp.expense_sub_types?.name || ''
-                  var alloc = (xp.expense_allocations && xp.expense_allocations[0]) || null
+                if (isExpKind) {
+                  var typeName = xp?.expense_types?.name || ''
+                  var subTypeName = xp?.expense_sub_types?.name || ''
+                  var alloc = (xp?.expense_allocations && xp.expense_allocations[0]) || null
                   var dept = alloc?.department || ''
                   var parts = []
                   if (typeName) parts.push((xp.expense_types?.icon ? xp.expense_types.icon + ' ' : '') + typeName + (subTypeName ? ' › ' + subTypeName : ''))
                   if (dept) parts.push(dept)
-                  if (t.reference_type === 'expense_refund' && xp.amount_paise) parts.push('orig ' + formatPoints(xp.amount_paise))
+                  if (t.reference_type === 'expense_refund' && xp?.amount_paise) parts.push('orig ' + formatPoints(xp.amount_paise))
                   if (parts.length > 0) enrichLine = <p className="text-[11px] text-indigo-600 truncate">{parts.join(' · ')}</p>
+                  else enrichLine = <p className="text-[11px] text-gray-400 italic truncate">No type / dept set</p>
                 } else if (t.reference_type === 'collection') {
-                  enrichLine = <p className="text-[11px] text-emerald-600 truncate">🎉 Event Collection</p>
+                  enrichLine = <p className="text-[11px] text-emerald-600 truncate">🎉 Event Collection{t.payment_mode ? ' · ' + t.payment_mode : ''}</p>
                 } else if (tr && cpName) {
                   enrichLine = <p className="text-[11px] text-blue-600 truncate">{t.type === 'debit' ? '→ ' : '← '}{cpName}</p>
                 } else if (t.reference_type === 'issued') {
@@ -1138,14 +1154,16 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5">
+                        {t.reference_type && (
+                          <span className={"text-[9px] font-bold uppercase px-1.5 py-0.5 rounded border flex-shrink-0 " + (REF_TYPE_STYLES[t.reference_type] || 'bg-gray-100 text-gray-700 border-gray-300')}>
+                            {REF_TYPE_LABELS[t.reference_type] || t.reference_type}
+                          </span>
+                        )}
                         <p className="text-sm font-bold text-gray-800 truncate">{t.description || (isCredit ? 'Credit' : 'Debit')}</p>
                         {t.status === 'pending' && <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded flex-shrink-0">Pending</span>}
                       </div>
                       {enrichLine}
-                      <p className="text-[11px] text-gray-400">
-                        {formatDate(t.created_at)}
-                        {t.reference_type ? ' · ' + (REF_TYPE_LABELS[t.reference_type] || t.reference_type) : ''}
-                      </p>
+                      <p className="text-[11px] text-gray-400">{formatDate(t.created_at)}</p>
                     </div>
                     <span className={"text-sm font-bold flex-shrink-0 " + (isCredit ? "text-green-600" : "text-red-600")}>
                       {isCredit ? '+' : '−'}{formatPoints(t.amount_paise)}
