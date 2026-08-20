@@ -7,6 +7,7 @@ import SearchDropdown from '../../components/ui/SearchDropdown'
 import BottomSheet from '../../components/ui/BottomSheet'
 import EventDatePicker from '../../components/ui/EventDatePicker'
 import { useVoice } from '../../hooks/useVoice'
+import { generateCollectionReceiptPdf } from '../../lib/pdfReceipt'
 
 var REF_TYPE_LABELS = {
   expense: 'Expense',
@@ -184,7 +185,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     var wid = (wallet || selectedWallet)?.id
     if (!wid) return
     var query = supabase.from('wallet_transactions')
-      .select('id, type, amount_paise, balance_after_paise, description, reference_type, reference_id, performed_by, created_at, issued_image_path, received_image_path, received_at, wallet_id, status')
+      .select('id, type, amount_paise, balance_after_paise, description, reference_type, reference_id, performed_by, created_at, issued_image_path, received_image_path, received_at, wallet_id, status, receipt_no, payment_mode')
       .eq('wallet_id', wid)
       .order('created_at', { ascending: false })
       .limit(500)
@@ -435,6 +436,25 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     setCollectBalanceLoading(false)
   }
 
+  async function printReceipt(txn) {
+    if (!txn) return
+    var contractNo = null
+    if (txn.reference_id) {
+      var { data: ev } = await supabase.from('events').select('contract_no').eq('id', Number(txn.reference_id)).maybeSingle()
+      contractNo = ev ? ev.contract_no : null
+    }
+    try {
+      await generateCollectionReceiptPdf({
+        receiptNo: txn.receipt_no,
+        paymentMode: txn.payment_mode,
+        amountPaise: txn.amount_paise,
+        description: txn.description,
+        createdAt: txn.created_at,
+        contractNo: contractNo,
+      })
+    } catch (e) { alert('Receipt generation failed: ' + e.message) }
+  }
+
   async function submitCollection() {
     if (collectSaving) return
     if (!collectEventId) { alert('Select a function'); return }
@@ -463,6 +483,19 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
       alert('Warning: this collection exceeds the agreed ' + collectMode + ' amount for the event. Recorded anyway.')
     }
     try { await logActivity('WALLET_COLLECTION', evtName + ' | ' + collectMode + ' | ' + formatPoints(amountPaise)) } catch (_) {}
+
+    // Auto-open PDF receipt in new tab
+    try {
+      await printReceipt({
+        receipt_no: data ? data.receipt_no : null,
+        payment_mode: collectMode,
+        amount_paise: amountPaise,
+        description: desc,
+        created_at: new Date().toISOString(),
+        reference_id: collectEventId,
+      })
+    } catch (_) {}
+
     setCollectModal(false)
     setCollectSaving(false)
     refreshBalance()
@@ -1438,6 +1471,12 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                       <button onClick={function () { setReceiveModal(t); setReceiveImage(null) }}
                         className="mt-1.5 px-2 py-1 text-[10px] font-bold text-amber-700 bg-amber-100 border border-amber-300 rounded hover:bg-amber-200 transition-colors">
                         📷 Confirm Received
+                      </button>
+                    )}
+                    {t.reference_type === 'collection' && t.receipt_no && (
+                      <button onClick={function () { printReceipt(t) }}
+                        className="mt-1.5 ml-1 px-2 py-1 text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded hover:bg-blue-100 transition-colors">
+                        🖨 #{t.receipt_no}
                       </button>
                     )}
                   </div>
