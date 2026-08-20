@@ -153,9 +153,10 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
       return (tt.reference_type === 'expense' || tt.reference_type === 'expense_refund') && tt.reference_id
     }).map(function (tt) { return tt.reference_id })
     if (expRefIds.length > 0) {
+      var expIdsNum = expRefIds.map(function (x) { return Number(x) }).filter(function (n) { return !isNaN(n) })
       var { data: eData } = await supabase.from('expenses')
         .select('id, description, amount_paise, expense_date, event_id, expense_types(name), expense_sub_types(name), expense_allocations(department, sub_department_id)')
-        .in('id', expRefIds)
+        .in('id', expIdsNum)
       var eMap = {}
       var evIds = {}
       ;(eData || []).forEach(function (e) {
@@ -261,9 +262,10 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
       return (tt.reference_type === 'expense' || tt.reference_type === 'expense_refund') && tt.reference_id
     }).map(function (tt) { return tt.reference_id })
     if (expRefIds.length > 0) {
+      var expIdsNum = expRefIds.map(function (x) { return Number(x) }).filter(function (n) { return !isNaN(n) })
       var { data: eData } = await supabase.from('expenses')
         .select('id, description, amount_paise, expense_date, event_id, expense_types(name), expense_sub_types(name), expense_allocations(department, sub_department_id)')
-        .in('id', expRefIds)
+        .in('id', expIdsNum)
       var eMap = {}
       var evIds = {}
       ;(eData || []).forEach(function (e) {
