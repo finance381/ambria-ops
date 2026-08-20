@@ -558,9 +558,32 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   async function printReceipt(txn) {
     if (!txn) return
     var contractNo = null
+    var clientName = ''
+    var eventDate = ''
+    var dealBy = ''
     if (txn.reference_id) {
-      var { data: ev } = await supabase.from('events').select('contract_no').eq('id', Number(txn.reference_id)).maybeSingle()
-      contractNo = ev ? ev.contract_no : null
+      var { data: ev } = await supabase.from('events')
+        .select('contract_no, client_name, function_date, created_user_name')
+        .eq('id', Number(txn.reference_id)).maybeSingle()
+      if (ev) {
+        contractNo = ev.contract_no || null
+        clientName = ev.client_name || ''
+        eventDate = ev.function_date || ''
+        dealBy = ev.created_user_name || ''
+      }
+    }
+    var collectorId = txn.performed_by
+    var receivedByName = walletProfiles[collectorId]?.name || ''
+    var signatureUrl = null
+    if (collectorId) {
+      var { data: pr } = await supabase.from('profiles').select('name, signature_path').eq('id', collectorId).maybeSingle()
+      if (pr) {
+        if (!receivedByName) receivedByName = pr.name || ''
+        if (pr.signature_path) {
+          var { data: signed } = await supabase.storage.from('images').createSignedUrl(pr.signature_path, 300)
+          signatureUrl = signed?.signedUrl || null
+        }
+      }
     }
     try {
       await generateCollectionReceiptPdf({
@@ -570,6 +593,11 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
         description: txn.description,
         createdAt: txn.created_at,
         contractNo: contractNo,
+        clientName: clientName,
+        eventDate: eventDate,
+        dealBy: dealBy,
+        receivedByName: receivedByName,
+        signatureUrl: signatureUrl,
       })
     } catch (e) { alert('Receipt generation failed: ' + e.message) }
   }

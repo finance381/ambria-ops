@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import Modal from '../../components/ui/Modal'
 import { logActivity } from '../../lib/logger'
+import { prepUpload } from '../../lib/uploadHelper'
 
 var DEFAULT_ROLES = ['admin', 'auditor', 'sales', 'production', 'logistics']
 
@@ -85,6 +86,10 @@ function Users() {
   var [subCatFilter, setSubCatFilter] = useState('')
   var [deleteConfirm, setDeleteConfirm] = useState(null)
   var [editEmail, setEditEmail] = useState('')
+  var [editSignaturePath, setEditSignaturePath] = useState('')
+  var [editSignatureUrl, setEditSignatureUrl] = useState('')
+  var [sigUploading, setSigUploading] = useState(false)
+  var [sigError, setSigError] = useState('')
 
   // Add user state
   var [addOpen, setAddOpen] = useState(false)
@@ -208,8 +213,63 @@ function Users() {
     setRoleSearch('')
     setRoleDropOpen(false)
     setEditEmail(user.email || '')
+    setEditSignaturePath(user.signature_path || '')
+    setEditSignatureUrl('')
+    setSigUploading(false)
+    setSigError('')
+    if (user.signature_path) {
+      supabase.storage.from('images').createSignedUrl(user.signature_path, 300).then(function (res) {
+        if (res && res.data && res.data.signedUrl) setEditSignatureUrl(res.data.signedUrl)
+      })
+    }
     setDeleteConfirm(null)
     setSaving(false)
+  }
+
+  async function uploadSignature(file) {
+    if (!file || !editUser || !editUser.id) return
+    setSigUploading(true); setSigError('')
+    try {
+      var compressed = await prepUpload(file, 60)
+      var ext = (compressed.name || file.name || 'sig.png').split('.').pop().toLowerCase()
+      if (!/^(png|jpe?g|webp)$/.test(ext)) ext = 'png'
+      var path = 'signatures/' + editUser.id + '.' + ext
+      var { error: upErr } = await supabase.storage.from('images')
+        .upload(path, compressed, { upsert: true, contentType: compressed.type || 'image/png' })
+      if (upErr) throw upErr
+      // Clean up sibling extensions (avoid stale files)
+      var siblings = ['png', 'jpg', 'jpeg', 'webp'].filter(function (e) { return e !== ext })
+      var sibPaths = siblings.map(function (e) { return 'signatures/' + editUser.id + '.' + e })
+      try { await supabase.storage.from('images').remove(sibPaths) } catch (_) {}
+      var { error: dbErr } = await supabase.from('profiles').update({ signature_path: path }).eq('id', editUser.id)
+      if (dbErr) throw dbErr
+      var { data: signed } = await supabase.storage.from('images').createSignedUrl(path, 300)
+      setEditSignaturePath(path)
+      setEditSignatureUrl(signed?.signedUrl || '')
+      try { await logActivity('USER_SIGNATURE_UPLOAD', editUser.email || editUser.id) } catch (_) {}
+    } catch (e) {
+      setSigError(e.message || 'Upload failed')
+    } finally {
+      setSigUploading(false)
+    }
+  }
+
+  async function removeSignature() {
+    if (!editUser || !editUser.id || !editSignaturePath) return
+    if (!confirm('Remove signature?')) return
+    setSigUploading(true); setSigError('')
+    try {
+      try { await supabase.storage.from('images').remove([editSignaturePath]) } catch (_) {}
+      var { error: dbErr } = await supabase.from('profiles').update({ signature_path: null }).eq('id', editUser.id)
+      if (dbErr) throw dbErr
+      setEditSignaturePath('')
+      setEditSignatureUrl('')
+      try { await logActivity('USER_SIGNATURE_REMOVE', editUser.email || editUser.id) } catch (_) {}
+    } catch (e) {
+      setSigError(e.message || 'Remove failed')
+    } finally {
+      setSigUploading(false)
+    }
   }
 
   function togglePerm(perm) {
