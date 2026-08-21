@@ -8,6 +8,7 @@ import BottomSheet from '../../components/ui/BottomSheet'
 import EventDatePicker from '../../components/ui/EventDatePicker'
 import { useVoice } from '../../hooks/useVoice'
 import { generateCollectionReceiptPdf } from '../../lib/pdfReceipt'
+import ExpenseDetail from './ExpenseDetail'
 
 // Cached Unicode font for jsPDF (loaded once per browser session on first PDF export)
 var _pdfFontCache = { regular: null, bold: null }
@@ -67,7 +68,7 @@ var REF_TYPE_STYLES = {
   opening: 'bg-gray-100 text-gray-700 border-gray-300',
 }
 
-function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, onClose, onBalanceChange }) {
+function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, onClose, onBalanceChange, onOpenExpense }) {
   var [walletView, setWalletView] = useState(null)
   var [allWallets, setAllWallets] = useState([])
   var [walletProfiles, setWalletProfiles] = useState({})
@@ -710,6 +711,231 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             <button type="button" onClick={confirmCancel} disabled={cancelSaving || !cancelReason.trim()}
               className="flex-1 py-3 text-sm text-white bg-red-600 rounded-xl disabled:opacity-40 font-semibold">
               {cancelSaving ? 'Cancelling...' : 'Confirm Cancel'}
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Detail overlays: expense (ExpenseDetail reused) + collection (self-contained modal) ──
+  var [expenseDetailTarget, setExpenseDetailTarget] = useState(null)  // full expense row for ExpenseDetail
+  var [expenseDetailLoading, setExpenseDetailLoading] = useState(false)
+  var [detailTarget, setDetailTarget] = useState(null)  // { txn, kind, event, collectorName, imgUrl, loading }
+
+  async function openExpenseDetail(expenseId) {
+    if (!expenseId) return
+    setExpenseDetailLoading(true)
+    setExpenseDetailTarget({ _placeholder: true, id: expenseId })
+    var { data: row, error } = await supabase.from('expenses')
+      .select('id, user_id, batch_id, expense_type_id, expense_sub_type_id, amount_paise, tax_paise, description, status, expense_date, receipt_path, receipt_paths, created_at, rejection_reason, flag_reason, penalty_paise, penalized_at, penalized_by, reviewed_at, reviewed_by, acknowledged_at, acknowledged_by, deduction_type, vendor_name, travel_from, travel_to, travel_mode, metadata, event_id, deleted_at, expense_types(name, extra_fields), expense_sub_types(name, extra_fields), events(event_name), expense_allocations(department, department_id, sub_department_id, venue_id, amount_paise)')
+      .eq('id', Number(expenseId)).maybeSingle()
+    setExpenseDetailLoading(false)
+    if (error || !row) { alert('Expense not found: ' + (error?.message || 'missing')); setExpenseDetailTarget(null); return }
+    setExpenseDetailTarget(row)
+  }
+
+  function closeExpenseDetail(refresh) {
+    setExpenseDetailTarget(null)
+    if (refresh) {
+      refreshBalance()
+      if (walletView === 'transactions') { openWalletTxns(null) }
+      else if (walletView === 'dashboard') { loadRecentTxns(selectedWallet) }
+    }
+  }
+
+  function renderExpenseDetailModal() {
+    if (!expenseDetailTarget) return null
+    return (
+      <div className="fixed inset-0 z-50 bg-black/70 flex items-start sm:items-center justify-center p-0 sm:p-4 overflow-y-auto"
+        onClick={function () { closeExpenseDetail(false) }}>
+        <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-2xl p-4 sm:p-5 min-h-screen sm:min-h-0 sm:max-h-[92vh] overflow-y-auto"
+          onClick={function (ev) { ev.stopPropagation() }}>
+          {expenseDetailLoading || expenseDetailTarget._placeholder ? (
+            <div className="py-16 text-center text-sm text-gray-500">Loading expense…</div>
+          ) : (
+            <ExpenseDetail
+              key={expenseDetailTarget.id}
+              exp={expenseDetailTarget}
+              profile={profile}
+              isAdmin={isAdmin}
+              isDeptApprover={false}
+              onBack={function () { closeExpenseDetail(false) }}
+              onUpdated={function () { closeExpenseDetail(true) }}
+              onEdit={function () { alert('To edit this expense, please open the Expenses tab.'); closeExpenseDetail(false) }}
+              onRaiseGV={function () { alert('To raise a General Voucher, please open the Expenses tab.'); closeExpenseDetail(false) }}
+            />
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  async function openCollectionDetail(txn, kind) {
+    setDetailTarget({ txn: txn, kind: kind, loading: true })
+    var evData = null
+    if (kind === 'collection' && txn.reference_id) {
+      var { data: ev } = await supabase.from('events')
+        .select('id, contract_no, event_name, client_name, function_date, created_user_name, venue_name')
+        .eq('id', Number(txn.reference_id)).maybeSingle()
+      evData = ev || null
+    } else if (kind === 'epc') {
+      var epcRow = (epcRefs[txn.id] || {}).epc
+      if (epcRow && epcRow.event_id) {
+        var { data: ev2 } = await supabase.from('events')
+          .select('id, contract_no, event_name, client_name, function_date, created_user_name, venue_name')
+          .eq('id', epcRow.event_id).maybeSingle()
+        evData = ev2 || null
+      }
+    }
+    var collectorName = walletProfiles[txn.performed_by]?.name || ''
+    if (!collectorName && txn.performed_by) {
+      var { data: pr } = await supabase.from('profiles').select('name').eq('id', txn.performed_by).maybeSingle()
+      if (pr) collectorName = pr.name || ''
+    }
+    var imgUrl = txn.received_image_path
+      ? supabase.storage.from('receipts').getPublicUrl(txn.received_image_path).data?.publicUrl
+      : null
+    setDetailTarget({ txn: txn, kind: kind, loading: false, event: evData, collectorName: collectorName, imgUrl: imgUrl })
+  }
+
+  function renderCollectionDetailModal() {
+    if (!detailTarget) return null
+    var t = detailTarget.txn
+    var kind = detailTarget.kind
+    var isEpc = kind === 'epc'
+    var ev = detailTarget.event || null
+    var epcRow = isEpc ? (epcRefs[t.id] || {}).epc : null
+    var isCancelled = t.status === 'cancelled' || (isEpc && epcRow && epcRow.status === 'cancelled')
+    var canCancel = !isCancelled && (
+      (kind === 'collection' && (isAdmin || t.performed_by === profile.id)) ||
+      (isEpc && epcRow && (isAdmin || epcRow.collected_by === profile.id))
+    )
+    return (
+      <div className="fixed inset-0 z-50 bg-black/60 flex items-end sm:items-center justify-center p-0 sm:p-4"
+        onClick={function () { setDetailTarget(null) }}>
+        <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md p-5 space-y-3 max-h-[90vh] overflow-y-auto"
+          onClick={function (ev2) { ev2.stopPropagation() }}>
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <h3 className="text-base font-bold text-gray-900">
+                {isEpc ? '🍽 Extra Plate Collection' : '🎯 Event Collection'}
+              </h3>
+              {ev && (
+                <p className="text-xs text-gray-500 mt-0.5">
+                  {ev.event_name || '—'}{ev.client_name ? ' · ' + ev.client_name : ''}
+                </p>
+              )}
+            </div>
+            <button type="button" onClick={function () { setDetailTarget(null) }}
+              className="w-7 h-7 rounded-full bg-gray-100 text-gray-500 flex items-center justify-center flex-shrink-0">✕</button>
+          </div>
+          {isCancelled && (
+            <div className="p-2 rounded bg-rose-50 border border-rose-200 text-rose-700 text-xs">
+              <span className="font-bold uppercase text-[9px] tracking-wider">Cancelled</span>
+              {(t.cancelled_reason || (epcRow && epcRow.cancelled_reason)) && (
+                <div className="mt-0.5">Reason: {t.cancelled_reason || epcRow.cancelled_reason}</div>
+              )}
+            </div>
+          )}
+          <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
+            <div>
+              <p className="text-[10px] uppercase text-gray-500">Amount</p>
+              <p className="font-bold text-gray-900 text-base">{formatPoints(t.amount_paise)}</p>
+            </div>
+            <div>
+              <p className="text-[10px] uppercase text-gray-500">Payment</p>
+              <p className="font-medium text-gray-800">{t.payment_mode ? t.payment_mode.toUpperCase() : '—'}</p>
+            </div>
+            {t.receipt_no && (
+              <div>
+                <p className="text-[10px] uppercase text-gray-500">Receipt No</p>
+                <p className="font-medium text-gray-800">#{t.receipt_no}</p>
+              </div>
+            )}
+            {isEpc && epcRow && (
+              <>
+                <div>
+                  <p className="text-[10px] uppercase text-gray-500">Plates Charged</p>
+                  <p className="font-medium text-gray-800">{epcRow.extras_charged}</p>
+                </div>
+                {epcRow.plates_returned > 0 && (
+                  <div>
+                    <p className="text-[10px] uppercase text-gray-500">Returned</p>
+                    <p className="font-medium text-gray-800">{epcRow.plates_returned}</p>
+                  </div>
+                )}
+                {epcRow.discount_paise > 0 && (
+                  <div>
+                    <p className="text-[10px] uppercase text-gray-500">Discount</p>
+                    <p className="font-medium text-gray-800">{formatPoints(epcRow.discount_paise)}</p>
+                  </div>
+                )}
+              </>
+            )}
+            {ev && ev.function_date && (
+              <div>
+                <p className="text-[10px] uppercase text-gray-500">Event Date</p>
+                <p className="font-medium text-gray-800">{formatDate(ev.function_date)}</p>
+              </div>
+            )}
+            {ev && ev.contract_no && (
+              <div>
+                <p className="text-[10px] uppercase text-gray-500">Contract</p>
+                <p className="font-medium text-gray-800">{ev.contract_no}</p>
+              </div>
+            )}
+            {ev && ev.venue_name && (
+              <div>
+                <p className="text-[10px] uppercase text-gray-500">Venue</p>
+                <p className="font-medium text-gray-800">{ev.venue_name}</p>
+              </div>
+            )}
+            {ev && ev.created_user_name && (
+              <div>
+                <p className="text-[10px] uppercase text-gray-500">Deal By</p>
+                <p className="font-medium text-gray-800">{ev.created_user_name}</p>
+              </div>
+            )}
+            <div>
+              <p className="text-[10px] uppercase text-gray-500">Collected By</p>
+              <p className="font-medium text-gray-800">{detailTarget.collectorName || '—'}</p>
+            </div>
+            <div>
+              <p className="text-[10px] uppercase text-gray-500">When</p>
+              <p className="font-medium text-gray-800">{formatDate(t.created_at)}</p>
+            </div>
+          </div>
+          {t.description && (
+            <div>
+              <p className="text-[10px] uppercase text-gray-500 mb-0.5">Description</p>
+              <p className="text-sm text-gray-800">{t.description}</p>
+            </div>
+          )}
+          {detailTarget.imgUrl && (
+            <div>
+              <p className="text-[10px] uppercase text-gray-500 mb-1">Receipt Image</p>
+              <img src={detailTarget.imgUrl} alt="receipt"
+                onClick={function () { setEnlargedImg(detailTarget.imgUrl) }}
+                className="w-full max-h-64 object-contain rounded border border-gray-200 cursor-zoom-in bg-gray-50" />
+            </div>
+          )}
+          <div className="flex gap-2 pt-2 border-t border-gray-100">
+            {kind === 'collection' && t.receipt_no && (
+              <button type="button" onClick={function () { printReceipt(t) }}
+                className="flex-1 py-2 text-xs font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100">
+                🖨 Reprint
+              </button>
+            )}
+            {canCancel && (
+              <button type="button" onClick={function () { setDetailTarget(null); openCancel(t, kind) }}
+                className="flex-1 py-2 text-xs font-bold text-red-700 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100">
+                🚫 Cancel
+              </button>
+            )}
+            <button type="button" onClick={function () { setDetailTarget(null) }}
+              className="flex-1 py-2 text-xs font-bold text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200">
+              Close
             </button>
           </div>
         </div>
@@ -1511,8 +1737,23 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                 }
                 var epcCancellable = isEpc && epcHit.epc.status !== 'cancelled' && (isAdmin || epcHit.epc.collected_by === profile.id)
                 var collCancellable = t.reference_type === 'collection' && !isCancelled && (isAdmin || t.performed_by === profile.id)
+                var isExpRow = (t.reference_type === 'expense' || t.reference_type === 'expense_refund') && t.reference_id
+                var rowIsClickable = isExpRow || t.reference_type === 'collection' || isEpc
+                function handleRowClick() {
+                  if (!rowIsClickable) return
+                  if (isExpRow) {
+                    if (onOpenExpense) onOpenExpense(t.reference_id)
+                    else openExpenseDetail(t.reference_id)
+                  } else if (t.reference_type === 'collection') {
+                    openCollectionDetail(t, 'collection')
+                  } else if (isEpc) {
+                    openCollectionDetail(t, 'epc')
+                  }
+                }
                 return (
-                  <div key={t.id} className={"flex items-center gap-3 p-3 bg-white border rounded-xl " + (isCancelled ? "border-gray-200 opacity-50" : "border-gray-200")}>
+                  <div key={t.id}
+                    onClick={handleRowClick}
+                    className={"flex items-center gap-3 p-3 bg-white border rounded-xl " + (isCancelled ? "border-gray-200 opacity-50" : "border-gray-200") + (rowIsClickable ? " cursor-pointer hover:border-indigo-300 hover:bg-indigo-50/30 transition-colors" : "")}>
                     <div className={"w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 " + (isCredit ? "bg-green-50 text-green-600" : "bg-red-50 text-red-600")}>
                       <span className="text-sm font-bold">{isCredit ? '+' : '−'}</span>
                     </div>
@@ -1532,21 +1773,21 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                         <p className="text-[10px] text-rose-600 italic truncate">Reason: {t.cancelled_reason}</p>
                       )}
                       <p className="text-[11px] text-gray-400">{formatDate(t.created_at)}</p>
-                      <div className="flex gap-1 flex-wrap mt-1">
+                      <div className="flex gap-1 flex-wrap mt-1" onClick={function (ev) { ev.stopPropagation() }}>
                         {t.reference_type === 'collection' && t.receipt_no && (
-                          <button onClick={function () { printReceipt(t) }}
+                          <button onClick={function (ev) { ev.stopPropagation(); printReceipt(t) }}
                             className="px-2 py-1 text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded hover:bg-blue-100 transition-colors">
                             🖨 #{t.receipt_no}
                           </button>
                         )}
                         {collCancellable && (
-                          <button onClick={function () { openCancel(t, 'collection') }}
+                          <button onClick={function (ev) { ev.stopPropagation(); openCancel(t, 'collection') }}
                             className="px-2 py-1 text-[10px] font-bold text-red-700 bg-red-50 border border-red-200 rounded hover:bg-red-100 transition-colors">
                             🚫 Cancel
                           </button>
                         )}
                         {epcCancellable && (
-                          <button onClick={function () { openCancel(t, 'epc') }}
+                          <button onClick={function (ev) { ev.stopPropagation(); openCancel(t, 'epc') }}
                             className="px-2 py-1 text-[10px] font-bold text-red-700 bg-red-50 border border-red-200 rounded hover:bg-red-100 transition-colors">
                             🚫 Cancel
                           </button>
@@ -1577,6 +1818,8 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
         {renderReceiveModal()}
         {renderTransferConfirmModal()}
         {renderCancelModal()}
+        {renderCollectionDetailModal()}
+        {renderExpenseDetailModal()}
         {renderEnlargedImg()}
       </div>
       </div>
@@ -1915,11 +2158,26 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             var isCancelled = t.status === 'cancelled'
             var epcCancellable = isEpc && epcHit.epc.status !== 'cancelled' && (isAdmin || epcHit.epc.collected_by === profile.id)
             var collCancellable = t.reference_type === 'collection' && !isCancelled && (isAdmin || t.performed_by === profile.id)
+            var isExpRow = (t.reference_type === 'expense' || t.reference_type === 'expense_refund') && t.reference_id
+            var rowIsClickable = isExpRow || t.reference_type === 'collection' || isEpc
+            function handleRowClick() {
+              if (!rowIsClickable) return
+              if (isExpRow) {
+                if (onOpenExpense) onOpenExpense(t.reference_id)
+                else openExpenseDetail(t.reference_id)
+              } else if (t.reference_type === 'collection') {
+                openCollectionDetail(t, 'collection')
+              } else if (isEpc) {
+                openCollectionDetail(t, 'epc')
+              }
+            }
             var rowBorderClass = isCancelled
               ? "border-gray-200 opacity-50"
               : (t.status === 'pending' ? "border-amber-300 bg-amber-50/30" : "border-gray-200")
             return (
-              <div key={t.id} className={"bg-white border rounded-lg p-3 " + rowBorderClass}>
+              <div key={t.id}
+                onClick={handleRowClick}
+                className={"bg-white border rounded-lg p-3 " + rowBorderClass + (rowIsClickable ? " cursor-pointer hover:border-indigo-300 hover:bg-indigo-50/30 transition-colors" : "")}>
                 <div className="flex items-start justify-between">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
@@ -2012,19 +2270,19 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                     </p>
                     <p className="text-[10px] text-gray-400">bal: {formatPoints(t.balance_after_paise)}</p>
                     {canConfirm && (
-                      <button onClick={function () { setReceiveModal(t); setReceiveImage(null) }}
+                      <button onClick={function (ev) { ev.stopPropagation(); setReceiveModal(t); setReceiveImage(null) }}
                         className="mt-1.5 px-2 py-1 text-[10px] font-bold text-amber-700 bg-amber-100 border border-amber-300 rounded hover:bg-amber-200 transition-colors">
                         📷 Confirm Received
                       </button>
                     )}
                     {t.reference_type === 'collection' && t.receipt_no && (
-                      <button onClick={function () { printReceipt(t) }}
+                      <button onClick={function (ev) { ev.stopPropagation(); printReceipt(t) }}
                         className="mt-1.5 ml-1 px-2 py-1 text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded hover:bg-blue-100 transition-colors">
                         🖨 #{t.receipt_no}
                       </button>
                     )}
                     {(collCancellable || epcCancellable) && (
-                      <button onClick={function () { openCancel(t, collCancellable ? 'collection' : 'epc') }}
+                      <button onClick={function (ev) { ev.stopPropagation(); openCancel(t, collCancellable ? 'collection' : 'epc') }}
                         className="mt-1.5 ml-1 px-2 py-1 text-[10px] font-bold text-red-700 bg-red-50 border border-red-200 rounded hover:bg-red-100 transition-colors">
                         🚫 Cancel
                       </button>
@@ -2041,6 +2299,8 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
         {renderTransferModal()}
         {renderTransferConfirmModal()}
         {renderCancelModal()}
+        {renderCollectionDetailModal()}
+        {renderExpenseDetailModal()}
         {renderEnlargedImg()}
       </div>
     )
