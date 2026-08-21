@@ -4,6 +4,7 @@ import { logActivity } from '../../lib/logger'
 import { formatPoints } from '../../lib/format'
 import PayVendorModal from './PayVendorModal'
 import PaymentProofThumbs from '../../components/ledger/PaymentProofThumbs'
+import SearchDropdown from '../../components/ui/SearchDropdown'
 import LedgerSourceMedia from '../../components/ledger/LedgerSourceMedia'
 
 function VendorLedger({ profile }) {
@@ -17,15 +18,133 @@ function VendorLedger({ profile }) {
   var [search, setSearch] = useState('')
   var [statusFilter, setStatusFilter] = useState('all')  // 'all' | 'with_balance' | 'incomplete'
 
+  // Filter dropdowns (all optional, cascade where hierarchical)
+  var [fExpType, setFExpType] = useState('')
+  var [fExpSubType, setFExpSubType] = useState('')
+  var [fCategory, setFCategory] = useState('')
+  var [fSubCategory, setFSubCategory] = useState('')
+  var [expenseTypes, setExpenseTypes] = useState([])
+  var [expenseSubTypes, setExpenseSubTypes] = useState([])
+  var [categories, setCategories] = useState([])
+  var [subCategories, setSubCategories] = useState([])
+  // vendorTags: { [vendor_id]: { types:[], subTypes:[], cats:[], subCats:[] } }
+  var [vendorTags, setVendorTags] = useState({})
+
   var [selectedVendor, setSelectedVendor] = useState(null)
   var [entries, setEntries] = useState([])
   var [entriesLoading, setEntriesLoading] = useState(false)
   var [showDeleted, setShowDeleted] = useState(false)
 
   useEffect(function () {
-    if (canView) loadVendors()
+    if (canView) { loadVendors(); loadFilterData() }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Cascade: clearing parent clears its child; changing parent clears child too
+  useEffect(function () { setFExpSubType('') }, [fExpType])
+  useEffect(function () { setFSubCategory('') }, [fCategory])
+
+  async function loadFilterData() {
+    // Reference tables for the 4 dropdowns
+    var [rTypes, rSubTypes, rCats, rSubCats] = await Promise.all([
+      supabase.from('expense_types').select('id, name').order('name'),
+      supabase.from('expense_sub_types').select('id, name, expense_type_id').order('name'),
+      supabase.from('categories').select('id, name').order('name'),
+      supabase.from('sub_categories').select('id, name, category_id').order('name')
+    ])
+    setExpenseTypes(rTypes.data || [])
+    setExpenseSubTypes(rSubTypes.data || [])
+    setCategories(rCats.data || [])
+    setSubCategories(rSubCats.data || [])
+
+    // ── Build vendor→tags map ──
+    // 1. Vendor ↔ expense linkage via ledger_entries
+    var { data: entriesRaw } = await supabase.from('ledger_entries')
+      .select('party_id, ref_id')
+      .eq('ledger_type', 'vendor')
+      .eq('ref_type', 'expense')
+      .not('ref_id', 'is', null)
+      .limit(50000)
+    var vendorExpMap = {}  // vendor_id → [expense_id]
+    var allExpIds = []
+    ;(entriesRaw || []).forEach(function (le) {
+      if (!/^[0-9]+$/.test(String(le.ref_id))) return
+      var eid = Number(le.ref_id)
+      var vid = String(le.party_id)
+      if (!vendorExpMap[vid]) vendorExpMap[vid] = []
+      if (vendorExpMap[vid].indexOf(eid) === -1) vendorExpMap[vid].push(eid)
+      if (allExpIds.indexOf(eid) === -1) allExpIds.push(eid)
+    })
+    // 2. Fetch type/sub-type for those expenses (chunked)
+    var expTagMap = {}  // expense_id → { t, st }
+    var i, chunk, exps
+    for (i = 0; i < allExpIds.length; i += 500) {
+      chunk = allExpIds.slice(i, i + 500)
+      var r1 = await supabase.from('expenses')
+        .select('id, expense_type_id, expense_sub_type_id')
+        .in('id', chunk)
+      exps = r1.data || []
+      exps.forEach(function (e) { expTagMap[e.id] = { t: e.expense_type_id, st: e.expense_sub_type_id } })
+    }
+    // 3. PO items → vendor_name, category_id, item_id (for sub-category lookup)
+    var { data: poItems } = await supabase.from('purchase_order_items')
+      .select('vendor_name, category_id, item_id')
+      .not('vendor_name', 'is', null)
+      .limit(50000)
+    // 4. Sub-cat via inventory_items for referenced item_ids
+    var itemIds = []
+    ;(poItems || []).forEach(function (pi) {
+      if (pi.item_id && itemIds.indexOf(pi.item_id) === -1) itemIds.push(pi.item_id)
+    })
+    var itemSubCatMap = {}
+    for (i = 0; i < itemIds.length; i += 500) {
+      chunk = itemIds.slice(i, i + 500)
+      var r2 = await supabase.from('inventory_items')
+        .select('id, sub_category_id')
+        .in('id', chunk)
+      ;(r2.data || []).forEach(function (it) { if (it.sub_category_id) itemSubCatMap[it.id] = it.sub_category_id })
+    }
+    // Build vendor_name (lowercased) → { cats, subCats }
+    var vendorNameTagMap = {}
+    ;(poItems || []).forEach(function (pi) {
+      var nm = (pi.vendor_name || '').trim().toLowerCase()
+      if (!nm) return
+      if (!vendorNameTagMap[nm]) vendorNameTagMap[nm] = { cats: [], subCats: [] }
+      if (pi.category_id && vendorNameTagMap[nm].cats.indexOf(pi.category_id) === -1) vendorNameTagMap[nm].cats.push(pi.category_id)
+      var sc = itemSubCatMap[pi.item_id]
+      if (sc && vendorNameTagMap[nm].subCats.indexOf(sc) === -1) vendorNameTagMap[nm].subCats.push(sc)
+    })
+    // 5. Merge into final vendor_id → tags. Cats/subCats matched by vendor_name via the vendors list.
+    var { data: vListForName } = await supabase.from('v_vendor_ledger')
+      .select('vendor_id, vendor_name')
+    var vidToName = {}
+    ;(vListForName || []).forEach(function (v) { vidToName[String(v.vendor_id)] = (v.vendor_name || '').trim().toLowerCase() })
+    var finalMap = {}
+    Object.keys(vendorExpMap).forEach(function (vid) {
+      var types = [], subTypes = []
+      vendorExpMap[vid].forEach(function (eid) {
+        var t = expTagMap[eid]
+        if (t) {
+          if (t.t && types.indexOf(t.t) === -1) types.push(t.t)
+          if (t.st && subTypes.indexOf(t.st) === -1) subTypes.push(t.st)
+        }
+      })
+      var nameKey = vidToName[vid] || ''
+      var poTags = vendorNameTagMap[nameKey] || { cats: [], subCats: [] }
+      finalMap[vid] = { types: types, subTypes: subTypes, cats: poTags.cats, subCats: poTags.subCats }
+    })
+    // Also populate empty tags for vendors that have PO items but no expenses
+    ;(vListForName || []).forEach(function (v) {
+      var vid = String(v.vendor_id)
+      if (finalMap[vid]) return
+      var nameKey = vidToName[vid] || ''
+      var poTags = vendorNameTagMap[nameKey] || { cats: [], subCats: [] }
+      if (poTags.cats.length > 0 || poTags.subCats.length > 0) {
+        finalMap[vid] = { types: [], subTypes: [], cats: poTags.cats, subCats: poTags.subCats }
+      }
+    })
+    setVendorTags(finalMap)
+  }
 
   async function loadVendors() {
     setLoading(true)
@@ -140,11 +259,20 @@ function VendorLedger({ profile }) {
   // ── LIST VIEW ──
   if (view === 'list') {
     var q = search.trim().toLowerCase()
+    var hasAnyDropdownFilter = !!(fExpType || fExpSubType || fCategory || fSubCategory)
     var filtered = vendors.filter(function (v) {
       if (!v.vendor_active) return false
       if (q && (v.vendor_name || '').toLowerCase().indexOf(q) === -1) return false
       if (statusFilter === 'with_balance' && (v.balance_paise || 0) === 0) return false
       if (statusFilter === 'incomplete' && v.vendor_status !== 'incomplete') return false
+      if (hasAnyDropdownFilter) {
+        var tags = vendorTags[String(v.vendor_id)]
+        if (!tags) return false
+        if (fExpType && tags.types.indexOf(Number(fExpType)) === -1) return false
+        if (fExpSubType && tags.subTypes.indexOf(Number(fExpSubType)) === -1) return false
+        if (fCategory && tags.cats.indexOf(Number(fCategory)) === -1) return false
+        if (fSubCategory && tags.subCats.indexOf(Number(fSubCategory)) === -1) return false
+      }
       return true
     })
 
@@ -212,6 +340,38 @@ function VendorLedger({ profile }) {
             })}
           </div>
         </div>
+
+        {/* Advanced filters */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+          <SearchDropdown
+            items={expenseTypes.map(function (t) { return { label: t.name, value: String(t.id) } })}
+            value={fExpType} onChange={function (v) { setFExpType(v) }}
+            placeholder="Expense type" />
+          <SearchDropdown
+            items={(fExpType ? expenseSubTypes.filter(function (st) { return String(st.expense_type_id) === String(fExpType) }) : expenseSubTypes)
+              .map(function (st) { return { label: st.name, value: String(st.id) } })}
+            value={fExpSubType} onChange={function (v) { setFExpSubType(v) }}
+            placeholder="Expense sub-type" />
+          <SearchDropdown
+            items={categories.map(function (c) { return { label: c.name, value: String(c.id) } })}
+            value={fCategory} onChange={function (v) { setFCategory(v) }}
+            placeholder="Item category" />
+          <SearchDropdown
+            items={(fCategory ? subCategories.filter(function (sc) { return String(sc.category_id) === String(fCategory) }) : subCategories)
+              .map(function (sc) { return { label: sc.name, value: String(sc.id) } })}
+            value={fSubCategory} onChange={function (v) { setFSubCategory(v) }}
+            placeholder="Item sub-category" />
+        </div>
+        {(fExpType || fExpSubType || fCategory || fSubCategory) && (
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-gray-500">
+              {filtered.length} of {vendors.filter(function (v) { return v.vendor_active }).length} vendors match
+            </span>
+            <button type="button"
+              onClick={function () { setFExpType(''); setFExpSubType(''); setFCategory(''); setFSubCategory('') }}
+              className="text-indigo-600 hover:text-indigo-800 font-semibold">✕ Clear filters</button>
+          </div>
+        )}
 
         {/* List */}
         {loading ? (
