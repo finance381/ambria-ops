@@ -11,17 +11,27 @@ function SearchDropdown({ items, value, onChange, onAdd, onInputChange, placehol
   var recognitionRef = useRef(null)
 
   var isFocused = useRef(false)
+  // isDirty is a stronger signal than isFocused: it stays true while the user's typed
+  // query hasn't yet matched a valid item, and self-clears when it does. This survives
+  // the parent recreating the `items` array on every render (which was clobbering user typing).
+  var isDirty = useRef(false)
 
-  // Sync display text when value changes externally (not while typing)
+  // Sync display text when value changes externally.
   useEffect(function () {
-    if (isFocused.current) return
+    var expected = ''
     if (value) {
       var match = items.find(function (i) { return i.value === value })
-      var next = match ? match.label : value
-      setQuery(function (prev) { return prev === next ? prev : next })
-    } else {
-      setQuery(function (prev) { return prev === '' ? prev : '' })
+      expected = match ? match.label : value
     }
+    setQuery(function (prev) {
+      if (prev === expected) {
+        // Query already reflects external state — clear dirty flag (they've aligned)
+        isDirty.current = false
+        return prev
+      }
+      if (isDirty.current) return prev  // user is mid-typing — don't overwrite
+      return expected
+    })
   }, [value, items])
 
   // Close on outside click
@@ -29,6 +39,7 @@ function SearchDropdown({ items, value, onChange, onAdd, onInputChange, placehol
     function handleClick(e) {
       if (containerRef.current && !containerRef.current.contains(e.target)) {
         isFocused.current = false
+        isDirty.current = false  // Blur = end of typing session; allow sync to snap back to committed value
         setOpen(false)
       }
     }
@@ -64,6 +75,7 @@ function SearchDropdown({ items, value, onChange, onAdd, onInputChange, placehol
 
   function handleInputChange(e) {
     var val = e.target.value
+    isDirty.current = true
     setQuery(val)
     if (value) onChange('')
     setOpen(true)
