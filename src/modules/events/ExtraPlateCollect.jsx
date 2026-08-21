@@ -4,6 +4,7 @@ import { formatDate, formatPoints } from '../../lib/format'
 import { logActivity } from '../../lib/logger'
 import { prepUpload } from '../../lib/uploadHelper'
 import EventDatePicker from '../../components/ui/EventDatePicker'
+import VoiceInput from '../../components/ui/VoiceInput'
 
 var BANK_SUB_MODES = [
   { value: 'upi', label: 'UPI' },
@@ -732,10 +733,9 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
                     : 'Wallet debited and event ledger reversed. This cannot be undone.')}
             </div>
             <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide">Reason</label>
-            <input type="text" value={cancelReason} onChange={function (e) { setCancelReason(e.target.value) }}
+            <VoiceInput type="text" value={cancelReason} onChange={function (e) { setCancelReason(e.target.value) }}
               placeholder="Why?"
-              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm"
-              style={{ fontSize: '16px' }} />
+              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm" />
             <div className="flex gap-3 pt-2">
               <button type="button" onClick={function () { setCancelTarget(null) }} disabled={cancelSaving}
                 className="flex-1 py-3 text-sm text-gray-600 bg-gray-100 rounded-xl font-semibold">Keep</button>

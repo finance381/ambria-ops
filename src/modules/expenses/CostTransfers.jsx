@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import Modal from '../../components/ui/Modal'
 import SearchDropdown from '../../components/ui/SearchDropdown'
 import { logActivity } from '../../lib/logger'
+import VoiceInput from '../../components/ui/VoiceInput'
 
 var PARTY_TYPES = [
   { key: 'expense', label: 'Expense Type', icon: 'ti-receipt' },
@@ -406,10 +407,9 @@ function CostTransfers({ profile }) {
 
           <div>
             <label className="block text-xs font-semibold text-gray-700 mb-1.5">Description *</label>
-            <input type="text" value={form.description}
+            <VoiceInput type="text" value={form.description}
               onChange={function (e) { updForm({ description: e.target.value }) }}
               placeholder="e.g. 4 days painter labor for kitchen"
-              style={{ fontSize: '16px' }}
               className="w-full px-2 py-1.5 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-indigo-400" />
           </div>
 

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { logActivity } from '../../lib/logger'
 import { compressImage } from '../../lib/imageCompress'
+import VoiceInput from '../../components/ui/VoiceInput'
 
 function PayVendorModal({ vendor, profile, onClose, onSuccess }) {
   var [payMode, setPayMode] = useState('')
@@ -199,11 +200,10 @@ function PayVendorModal({ vendor, profile, onClose, onSuccess }) {
 
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1">Description</label>
-          <input type="text" value={payDescription}
+          <VoiceInput type="text" value={payDescription}
             onChange={function (ev) { setPayDescription(ev.target.value) }}
             placeholder="Payment to vendor"
-            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-indigo-300"
-            style={{ fontSize: '16px' }} />
+            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-indigo-300" />
         </div>
 
         <div>
@@ -219,11 +219,10 @@ function PayVendorModal({ vendor, profile, onClose, onSuccess }) {
                 placeholder="Deduction amount (pts)" min="0" step="any"
                 className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm bg-amber-50 focus:ring-2 focus:ring-amber-300"
                 style={{ fontSize: '16px' }} />
-              <input type="text" value={deductionReason}
+              <VoiceInput type="text" value={deductionReason}
                 onChange={function (ev) { setDeductionReason(ev.target.value) }}
                 placeholder="Reason (required)"
-                className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm bg-amber-50 focus:ring-2 focus:ring-amber-300"
-                style={{ fontSize: '16px' }} />
+                className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm bg-amber-50 focus:ring-2 focus:ring-amber-300" />
               <div>
                 <label className="block text-[11px] font-medium text-amber-800 mb-1">
                   Updated Bill / Deduction Proof

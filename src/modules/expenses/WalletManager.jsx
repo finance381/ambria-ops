@@ -9,6 +9,7 @@ import EventDatePicker from '../../components/ui/EventDatePicker'
 import { useVoice } from '../../hooks/useVoice'
 import { generateCollectionReceiptPdf } from '../../lib/pdfReceipt'
 import ExpenseDetail from './ExpenseDetail'
+import VoiceInput from '../../components/ui/VoiceInput'
 
 // Cached Unicode font for jsPDF (loaded once per browser session on first PDF export)
 var _pdfFontCache = { regular: null, bold: null }
@@ -701,10 +702,9 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             Wallet will be debited {formatPoints(t.amount_paise)} and the event ledger reversed. This cannot be undone.
           </div>
           <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide">Reason</label>
-          <input type="text" value={cancelReason} onChange={function (e) { setCancelReason(e.target.value) }}
+          <VoiceInput type="text" value={cancelReason} onChange={function (e) { setCancelReason(e.target.value) }}
             placeholder="Why is this being cancelled?"
-            className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm"
-            style={{ fontSize: '16px' }} />
+            className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm" />
           <div className="flex gap-3 pt-2">
             <button type="button" onClick={function () { setCancelTarget(null); setCancelReason('') }} disabled={cancelSaving}
               className="flex-1 py-3 text-sm text-gray-600 bg-gray-100 rounded-xl font-semibold">Keep</button>
@@ -1236,10 +1236,9 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-            <input type="text" value={issueDesc} onChange={function (e) { setIssueDesc(e.target.value) }}
+            <VoiceInput type="text" value={issueDesc} onChange={function (e) { setIssueDesc(e.target.value) }}
               placeholder="e.g. Weekly allowance, Reimbursement..."
-              maxLength="300" className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              style={{ fontSize: '16px' }} />
+              maxLength="300" className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">📷 Cash Photo</label>
@@ -1462,16 +1461,9 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
           {collectEventId && (
             <div>
               <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">5. Description</label>
-              <div className="relative">
-                <input type="text" value={collectDesc} onChange={function (e) { setCollectDesc(e.target.value) }}
-                  placeholder="e.g. Advance payment, Final settlement..."
-                  maxLength="300" className="w-full px-3 py-2.5 pr-10 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  style={{ fontSize: '16px' }} />
-                <button type="button"
-                  onClick={function () { collectVoice.start(function (text) { setCollectDesc(function (prev) { return (prev ? prev + ' ' : '') + text }) }) }}
-                  className={"absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded " + (collectVoice.listening ? "text-red-500 animate-pulse" : "text-blue-600 hover:bg-blue-50")}
-                  aria-label="Voice input">🎤</button>
-              </div>
+              <VoiceInput type="text" value={collectDesc} onChange={function (e) { setCollectDesc(e.target.value) }}
+                placeholder="e.g. Advance payment, Final settlement..."
+                maxLength="300" className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
             </div>
           )}
 
@@ -1536,10 +1528,9 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-            <input type="text" value={transferDesc} onChange={function (e) { setTransferDesc(e.target.value) }}
+            <VoiceInput type="text" value={transferDesc} onChange={function (e) { setTransferDesc(e.target.value) }}
               placeholder="e.g. Repayment, Lunch money..." maxLength="300"
-              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
-              style={{ fontSize: '16px' }} />
+              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">📷 Cash Photo</label>
@@ -2004,9 +1995,8 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                 onChange={function (e) { setBulkAmount(e.target.value) }}
                 placeholder="Amount (pts)" className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 style={{ fontSize: '16px' }} />
-              <input type="text" value={bulkDesc} onChange={function (e) { setBulkDesc(e.target.value) }}
-                placeholder="Description" maxLength="300" className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                style={{ fontSize: '16px' }} />
+              <VoiceInput type="text" value={bulkDesc} onChange={function (e) { setBulkDesc(e.target.value) }}
+                placeholder="Description" maxLength="300" className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
             </div>
             <div className="flex gap-2">
               <button onClick={function () { setBulkMode(false); setBulkSelected({}); setBulkAmount(''); setBulkDesc('') }}

@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { logActivity } from '../../lib/logger'
 import { formatPoints } from '../../lib/format'
 import { compressImage } from '../../lib/imageCompress'
+import VoiceInput from '../../components/ui/VoiceInput'
 
 
 var REASON_PRESETS = [
@@ -279,12 +280,11 @@ function PaySalaryModal(props) {
               {adjReasonPreset === 'Other' && (
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">Specify</label>
-                  <input type="text" value={adjReasonOther}
+                  <VoiceInput type="text" value={adjReasonOther}
                     onChange={function (ev) { setAdjReasonOther(ev.target.value) }}
                     placeholder="Adjustment reason..."
                     maxLength="200"
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-indigo-300"
-                    style={{ fontSize: '16px' }} />
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-indigo-300" />
                 </div>
               )}
               <p className="text-[10px] text-gray-500">

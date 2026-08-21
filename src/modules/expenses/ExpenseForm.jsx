@@ -8,6 +8,7 @@ import ysFixWebmDuration from 'fix-webm-duration'
 import { useVoice } from '../../hooks/useVoice'
 import EventDatePicker from '../../components/ui/EventDatePicker'
 import { compressImage } from '../../lib/imageCompress'
+import VoiceInput from '../../components/ui/VoiceInput'
 
 function makeEntry() {
   return {
@@ -1685,18 +1686,9 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
 
               {/* Description */}
               <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="text-xs font-medium text-gray-600">Description</label>
-                  <button type="button"
-                    onClick={function () {
-                      if (voice.listening) { voice.stop() }
-                      else { voice.start(function (text) { updateEntry(idx, 'description', entry.description + (entry.description ? ' ' : '') + text) }) }
-                    }}
-                    className={"px-2 py-0.5 rounded text-xs font-medium transition-all " +
-                      (voice.listening ? "bg-red-500 text-white animate-pulse" : "bg-gray-100 text-gray-500 hover:bg-gray-200")}
-                  >{voice.listening ? '⏹ Stop' : '🎤 Dictate'}</button>
-                </div>
-                <textarea value={entry.description} onChange={function (e) { updateEntry(idx, 'description', e.target.value) }}
+                <label className="block text-xs font-medium text-gray-600 mb-1">Description</label>
+                <VoiceInput as="textarea" value={entry.description}
+                  onChange={function (e) { updateEntry(idx, 'description', e.target.value) }}
                   placeholder="What was this expense for..." rows={2}
                   className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-300 resize-none" />
               </div>
@@ -2009,10 +2001,10 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                             <input type="number" inputMode="numeric" value={alloc.amountRupees}
                               onChange={function (e) { updateAllocation(idx, aIdx, 'amountRupees', e.target.value) }}
                               placeholder="Amt" className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs focus:ring-2 focus:ring-amber-300" style={{ fontSize: '16px' }} />
-                            <input type="text" value={alloc.remarks}
+                            <VoiceInput type="text" value={alloc.remarks}
                               onChange={function (e) { updateAllocation(idx, aIdx, 'remarks', e.target.value) }}
                               placeholder="Remarks" maxLength={200}
-                              className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs focus:ring-2 focus:ring-amber-300" style={{ fontSize: '16px' }} />
+                              className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs focus:ring-2 focus:ring-amber-300" />
                           </div>
                           {isFallback && (
                             <p className="text-[10px] text-amber-700 font-medium">⚠ No dept-specific match — using generic/top-level type</p>
