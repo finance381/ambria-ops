@@ -152,11 +152,18 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
   }, [exp.id])
 
   var isDeleted = !!exp.deleted_at
+  var isAuditor = profile?.role === 'auditor'
   var canReview = !isDeleted && (isAdmin || isDeptApprover) && (exp.status === 'recorded' || exp.status === 'flagged') && exp.user_id !== profile?.id
   var canDelete = !isDeleted && ((exp.user_id === profile?.id && (exp.status === 'recorded' || exp.status === 'flagged')) || isAdmin)
   var canEdit = !isDeleted && (exp.user_id === profile?.id || isAdmin) && (exp.status === 'recorded' || exp.status === 'flagged')
   var canResubmit = !isDeleted && exp.user_id === profile?.id && exp.status === 'flagged'
-  var canRaiseGV = !isDeleted && (isAdmin || (profile?.permissions || []).indexOf('finance_gv') !== -1) && (exp.status === 'recorded' || exp.status === 'flagged' || exp.status === 'deducted' || exp.status === 'acknowledged')
+  // GV rules:
+  //  • recorded / flagged / deducted → admin OR anyone with finance_gv permission
+  //  • acknowledged → admin OR auditor only (finance_gv perm not enough — locks stricter after ack)
+  var canRaiseGV = !isDeleted && (
+    (exp.status === 'acknowledged' && (isAdmin || isAuditor)) ||
+    ((exp.status === 'recorded' || exp.status === 'flagged' || exp.status === 'deducted') && (isAdmin || (profile?.permissions || []).indexOf('finance_gv') !== -1))
+  )
 
   var receiptPaths = (exp.receipt_paths && exp.receipt_paths.length > 0)
     ? exp.receipt_paths
