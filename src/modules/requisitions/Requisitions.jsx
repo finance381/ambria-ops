@@ -8,6 +8,7 @@ import ItemReceipts from './ItemReceipts'
 import { Badge } from '../../components/ui/Badge'
 import { APPROVAL_STATUS_COLORS, APPROVAL_STATUS_LABELS } from '../../lib/constants'
 import EventDatePicker from '../../components/ui/EventDatePicker'
+import VoiceInput from '../../components/ui/VoiceInput'
 import AllocationRows from '../../components/ui/AllocationRows'
 import { prepUpload } from '../../lib/uploadHelper'
 import { filterUserCategories } from '../../lib/categories'
@@ -1621,10 +1622,9 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
           })}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-            <textarea value={purpose} onChange={function (e) { setPurpose(e.target.value) }}
+            <VoiceInput as="textarea" value={purpose} onChange={function (e) { setPurpose(e.target.value) }}
               rows="2" maxLength="500" placeholder="What is this expense for..."
-              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 resize-none"
-              style={{ fontSize: '16px' }} />
+              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 resize-none" />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Amount (pts)</label>
@@ -2466,11 +2466,10 @@ function RequisitionDetail({ req, items, profile, isAdmin, isAuditor, isReqDeptA
         <div className="space-y-3">
           <div className="bg-red-50 border border-red-200 rounded-lg p-3">
             <label className="block text-sm font-medium text-red-700 mb-1">Rejection Reason <span className="text-red-500">*</span></label>
-            <textarea value={rejectReason}
+            <VoiceInput as="textarea" value={rejectReason}
               onChange={function (e) { setRejectReason(e.target.value) }}
               rows="3" maxLength="500" placeholder="Reason for rejection..."
-              className="w-full px-3 py-2 border border-red-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-red-500 resize-none"
-              style={{ fontSize: '16px' }} />
+              className="w-full px-3 py-2 border border-red-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-red-500 resize-none" />
           </div>
           <div className="flex gap-3">
             <button onClick={function () { setRejectMode(false); setRejectReason('') }}
@@ -2501,11 +2500,10 @@ function RequisitionDetail({ req, items, profile, isAdmin, isAuditor, isReqDeptA
         <div className="space-y-3">
           <div className="bg-red-50 border border-red-200 rounded-lg p-3">
             <label className="block text-sm font-medium text-red-700 mb-1">Reason for Deletion <span className="text-red-500">*</span></label>
-            <textarea value={deleteReason}
+            <VoiceInput as="textarea" value={deleteReason}
               onChange={function (e) { setDeleteReason(e.target.value) }}
               rows="2" maxLength="300" placeholder="Why is this requisition being deleted..."
-              className="w-full px-3 py-2 border border-red-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-red-500 resize-none"
-              style={{ fontSize: '16px' }} />
+              className="w-full px-3 py-2 border border-red-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-red-500 resize-none" />
           </div>
           <div className="flex gap-3">
             <button onClick={function () { setDeleteMode(false); setDeleteReason('') }}

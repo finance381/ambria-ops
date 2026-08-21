@@ -5,6 +5,7 @@ import { logActivity } from '../../lib/logger'
 import { useRealtime } from '../../lib/useRealtime'
 import Modal from '../../components/ui/Modal'
 import InventoryForm from '../inventory/InventoryForm'
+import VoiceInput from '../../components/ui/VoiceInput'
 
 function AdminReview({ profile }) {
   var [pendingMasters, setPendingMasters] = useState([])
@@ -427,10 +428,9 @@ function AdminReview({ profile }) {
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Reason <span className="text-red-500">*</span></label>
-              <textarea value={rejectReason} onChange={function (e) { setRejectReason(e.target.value) }}
+              <VoiceInput as="textarea" value={rejectReason} onChange={function (e) { setRejectReason(e.target.value) }}
                 rows="3" maxLength="500" placeholder="Reason for rejection..."
-                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-red-500 resize-none"
-                style={{ fontSize: '16px' }} />
+                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-red-500 resize-none" />
             </div>
             <div className="flex gap-3">
               <button onClick={function () { setRejectTarget(null) }}

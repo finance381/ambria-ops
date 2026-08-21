@@ -1107,16 +1107,24 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
       // Admin-only retype: change type/sub-type only, preserve everything else
       if (isAdminEdit) {
         try {
-          var { error: aErr } = await supabase.from('expenses').update({
+          var { data: updated, error: aErr } = await supabase.from('expenses').update({
             expense_type_id: Number(e0.expenseTypeId),
             expense_sub_type_id: Number(e0.expenseSubTypeId),
-          }).eq('id', editExp.id)
+          }).eq('id', editExp.id).select('id, expense_type_id, expense_sub_type_id')
           if (aErr) throw new Error(aErr.message)
+          if (!updated || updated.length === 0) {
+            throw new Error('Update blocked — no row returned. Likely RLS: your role may not be permitted to change this expense\'s type. Contact admin if you believe this is a mistake.')
+          }
+          var row = updated[0]
+          if (row.expense_type_id !== Number(e0.expenseTypeId) || row.expense_sub_type_id !== Number(e0.expenseSubTypeId)) {
+            throw new Error('Update returned mismatched values (expected ' + e0.expenseTypeId + '/' + e0.expenseSubTypeId + ', got ' + row.expense_type_id + '/' + row.expense_sub_type_id + ')')
+          }
           try { await logActivity('EXPENSE_ADMIN_RETYPE', 'exp #' + editExp.id + ' | type=' + e0.expenseTypeId + '/' + e0.expenseSubTypeId) } catch (_) {}
           setSaving(false)
           setSuccess('Type updated')
           setTimeout(function () { if (onDone) onDone() }, 800)
         } catch (err) {
+          console.error('ADMIN_RETYPE_FAIL', err, { expenseId: editExp.id, targetType: e0.expenseTypeId, targetSubType: e0.expenseSubTypeId })
           setError('Retype failed: ' + (err.message || err))
           setSaving(false)
         }
