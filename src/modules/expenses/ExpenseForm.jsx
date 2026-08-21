@@ -19,7 +19,7 @@ function makeEntry() {
     taxAmount: '',
     expenseDate: new Date().toISOString().split('T')[0],
     fieldValues: {},
-    allocations: [{ departmentId: '', venueId: '', expenseTypeId: '', expenseSubTypeId: '', amountPaise: '', remarks: '' }],
+    allocations: [{ departmentId: '', venueId: '', expenseTypeId: '', expenseSubTypeId: '', amountRupees: '', remarks: '' }],
     showAllocations: false,
     receiptFiles: [],
     receiptPreviews: [],
@@ -39,7 +39,7 @@ function makeEntry() {
 }
 
 function makeAllocation() {
-  return { departmentId: '', venueId: '', expenseTypeId: '', expenseSubTypeId: '', amountPaise: '', remarks: '' }
+  return { departmentId: '', venueId: '', expenseTypeId: '', expenseSubTypeId: '', amountRupees: '', remarks: '' }
 }
 
 // ── Auto-save draft (new-entry only) ──────────────────────────
@@ -145,12 +145,12 @@ function hydrateEntry(exp) {
       venueId: a.venue_id ? String(a.venue_id) : '',
       expenseTypeId: a.expense_type_id ? String(a.expense_type_id) : '',
       expenseSubTypeId: a.expense_sub_type_id ? String(a.expense_sub_type_id) : '',
-      amountPaise: a.amount_paise != null ? String(a.amount_paise / 100) : '',
+      amountRupees: a.amount_paise != null ? String(a.amount_paise / 100) : '',
       remarks: a.remarks || ''
     }
   })
   if (allocs.length === 0) {
-    allocs = [{ departmentId: '', venueId: '', expenseTypeId: '', expenseSubTypeId: '', amountPaise: '', remarks: '' }]
+    allocs = [{ departmentId: '', venueId: '', expenseTypeId: '', expenseSubTypeId: '', amountRupees: '', remarks: '' }]
   }
 
   var itemsFromMeta = Array.isArray(meta.item_receipts) ? meta.item_receipts.map(function (it, i) {
@@ -256,6 +256,15 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
       if (!parsed || !parsed.savedAt) return
       if (Date.now() - parsed.savedAt > DRAFT_EXPIRY_MS) { localStorage.removeItem(draftKey); return }
       if (!parsed.entries || parsed.entries.length === 0) return
+      // v93 → v94 shim: migrate old draft key `amountPaise` → `amountRupees` (semantic rename, same value: rupees)
+      parsed.entries.forEach(function (e) {
+        (e.allocations || []).forEach(function (a) {
+          if (a && a.amountPaise != null && a.amountRupees == null) {
+            a.amountRupees = a.amountPaise
+            delete a.amountPaise
+          }
+        })
+      })
       if (parsed.entries.every(isEmptyDraftEntry)) { localStorage.removeItem(draftKey); return }
       setDraftRestorable(parsed)
     } catch (_) {}
@@ -739,7 +748,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
       if (i !== entryIdx) return e
       var src = e.allocations[allocIdx]
       if (!src) return e
-      var dup = Object.assign({}, src, { amountPaise: '' })
+      var dup = Object.assign({}, src, { amountRupees: '' })
       return Object.assign({}, e, { allocations: e.allocations.concat([dup]) })
     })
     setEntries(updated)
@@ -1194,7 +1203,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
               venue_id: a.venueId ? Number(a.venueId) : null,
               expense_type_id: aTypeId,
               expense_sub_type_id: aSubTypeId,
-              amount_paise: a.amountPaise ? Math.round(Number(a.amountPaise) * 100) : 0,
+              amount_paise: a.amountRupees ? Math.round(Number(a.amountRupees) * 100) : 0,
               remarks: (a.remarks || '').trim() || null
             }
           })
@@ -1399,7 +1408,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                 venue_id: a.venueId ? Number(a.venueId) : null,
                 expense_type_id: aTypeId,
                 expense_sub_type_id: aSubTypeId,
-                amount_paise: a.amountPaise ? Math.round(Number(a.amountPaise) * 100) : 0,
+                amount_paise: a.amountRupees ? Math.round(Number(a.amountRupees) * 100) : 0,
                 remarks: (a.remarks || '').trim() || null
               }
             })
@@ -1925,14 +1934,14 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                     onAdd={function () { addAllocation(idx) }}
                     onRemove={function (aIdx) { removeAllocation(idx, aIdx) }}
                     onDuplicate={function (aIdx) { duplicateAllocation(idx, aIdx) }}
-                    isComplete={function (a) { return !!a.departmentId && !!a.venueId && !!a.expenseTypeId && !!a.amountPaise && Number(a.amountPaise) > 0 }}
+                    isComplete={function (a) { return !!a.departmentId && !!a.venueId && !!a.expenseTypeId && !!a.amountRupees && Number(a.amountRupees) > 0 }}
                     renderChip={function (a) {
                       var v = venues.find(function (x) { return String(x.id) === String(a.venueId) })
                       var d = departments.find(function (x) { return String(x.id) === String(a.departmentId) })
                       var et = expenseTypes.find(function (x) { return String(x.id) === String(a.expenseTypeId) })
                       var st = expenseSubTypes.find(function (x) { return String(x.id) === String(a.expenseSubTypeId) })
                       var typeLabel = st ? st.name : (et ? et.name : '')
-                      var amt = Number(a.amountPaise) || 0
+                      var amt = Number(a.amountRupees) || 0
                       return {
                         left: (
                           <>
@@ -1997,8 +2006,8 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                             </select>
                           </div>
                           <div className="grid grid-cols-2 gap-2">
-                            <input type="number" inputMode="numeric" value={alloc.amountPaise}
-                              onChange={function (e) { updateAllocation(idx, aIdx, 'amountPaise', e.target.value) }}
+                            <input type="number" inputMode="numeric" value={alloc.amountRupees}
+                              onChange={function (e) { updateAllocation(idx, aIdx, 'amountRupees', e.target.value) }}
                               placeholder="Amt" className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs focus:ring-2 focus:ring-amber-300" style={{ fontSize: '16px' }} />
                             <input type="text" value={alloc.remarks}
                               onChange={function (e) { updateAllocation(idx, aIdx, 'remarks', e.target.value) }}
