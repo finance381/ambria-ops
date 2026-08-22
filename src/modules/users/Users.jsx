@@ -50,7 +50,7 @@ var _PERM_GROUPS_LOCAL_UNUSED = [
 ]
 // ^ _PERM_GROUPS_LOCAL_UNUSED retained temporarily; real source is lib/permissions.js. Delete this whole block in v95 cleanup.
 
-function Users() {
+function Users({ profile }) {
   var [users, setUsers] = useState([])
   var [loading, setLoading] = useState(true)
   var [search, setSearch] = useState('')
