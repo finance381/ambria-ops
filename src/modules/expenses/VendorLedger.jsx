@@ -5,6 +5,7 @@ import { formatPoints } from '../../lib/format'
 import PayVendorModal from './PayVendorModal'
 import PaymentProofThumbs from '../../components/ledger/PaymentProofThumbs'
 import SearchDropdown from '../../components/ui/SearchDropdown'
+import ExpenseDetail from './ExpenseDetail'
 import LedgerSourceMedia from '../../components/ledger/LedgerSourceMedia'
 
 function VendorLedger({ profile }) {
@@ -33,6 +34,52 @@ function VendorLedger({ profile }) {
   var [selectedVendor, setSelectedVendor] = useState(null)
   var [entries, setEntries] = useState([])
   var [entriesLoading, setEntriesLoading] = useState(false)
+  var [expenseDetailTarget, setExpenseDetailTarget] = useState(null)  // hydrated expense row for overlay
+  var [expenseDetailLoading, setExpenseDetailLoading] = useState(false)
+
+  async function openExpenseDetail(expenseId) {
+    if (!expenseId) return
+    setExpenseDetailLoading(true)
+    setExpenseDetailTarget({ _placeholder: true, id: expenseId })
+    var { data: row, error } = await supabase.from('expenses')
+      .select('id, user_id, batch_id, expense_type_id, expense_sub_type_id, amount_paise, tax_paise, description, status, expense_date, receipt_path, receipt_paths, created_at, rejection_reason, flag_reason, penalty_paise, penalized_at, penalized_by, reviewed_at, reviewed_by, acknowledged_at, acknowledged_by, deduction_type, vendor_name, travel_from, travel_to, travel_mode, metadata, event_id, deleted_at, expense_types(name, extra_fields), expense_sub_types(name, extra_fields), events(event_name), expense_allocations(department, department_id, venue_id, amount_paise)')
+      .eq('id', Number(expenseId)).maybeSingle()
+    setExpenseDetailLoading(false)
+    if (error || !row) { alert('Expense not found: ' + (error?.message || 'missing')); setExpenseDetailTarget(null); return }
+    setExpenseDetailTarget(row)
+  }
+
+  function closeExpenseDetail(refresh) {
+    setExpenseDetailTarget(null)
+    if (refresh && selectedVendor) { loadEntries(selectedVendor, showDeleted) }
+  }
+
+  function renderExpenseDetailModal() {
+    if (!expenseDetailTarget) return null
+    return (
+      <div className="fixed inset-0 z-50 bg-black/70 flex items-start sm:items-center justify-center p-0 sm:p-4 overflow-y-auto"
+        onClick={function () { closeExpenseDetail(false) }}>
+        <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-2xl p-4 sm:p-5 min-h-screen sm:min-h-0 sm:max-h-[92vh] overflow-y-auto"
+          onClick={function (ev) { ev.stopPropagation() }}>
+          {expenseDetailLoading || expenseDetailTarget._placeholder ? (
+            <div className="py-16 text-center text-sm text-gray-500">Loading expense…</div>
+          ) : (
+            <ExpenseDetail
+              key={expenseDetailTarget.id}
+              exp={expenseDetailTarget}
+              profile={profile}
+              isAdmin={isAdmin}
+              isDeptApprover={false}
+              onBack={function () { closeExpenseDetail(false) }}
+              onUpdated={function () { closeExpenseDetail(true) }}
+              onEdit={function () { alert('To edit this expense, please open the Expenses tab.'); closeExpenseDetail(false) }}
+              onRaiseGV={function () { alert('To raise a General Voucher, please open the Expenses tab.'); closeExpenseDetail(false) }}
+            />
+          )}
+        </div>
+      </div>
+    )
+  }
   var [showDeleted, setShowDeleted] = useState(false)
 
   useEffect(function () {
@@ -538,11 +585,18 @@ function VendorLedger({ profile }) {
             var amt = isCredit ? (e.credit_paise || 0) : (e.debit_paise || 0)
             var kind = e.metadata && e.metadata.kind ? e.metadata.kind : e.ref_type
             var dotColor = isDeleted ? 'bg-gray-300' : isCredit ? 'bg-amber-500' : 'bg-green-500'
+            var isExpRow = e.ref_type === 'expense' && e.ref_id && /^[0-9]+$/.test(String(e.ref_id)) && !isDeleted
+            function handleRowClick() {
+              if (!isExpRow) return
+              openExpenseDetail(Number(e.ref_id))
+            }
             return (
               <div key={e.id}
+                onClick={handleRowClick}
                 className={"flex items-start gap-3 px-3 py-3 " +
                   (idx < displayEntries.length - 1 ? "border-b border-gray-100 " : "") +
-                  (isDeleted ? "opacity-50" : "")}>
+                  (isDeleted ? "opacity-50" : "") +
+                  (isExpRow ? " cursor-pointer hover:bg-indigo-50/40 transition-colors" : "")}>
                 <div className={"w-2 h-2 rounded-full mt-1.5 flex-shrink-0 " + dotColor}></div>
                 <div className="flex-1 min-w-0">
                   <p className={"text-sm font-medium text-gray-900 " + (isDeleted ? "line-through" : "")}>
@@ -573,9 +627,13 @@ function VendorLedger({ profile }) {
                       </div>
                     )
                   })()}
-                  <PaymentProofThumbs meta={e.metadata} />
+                  <div onClick={function (ev) { ev.stopPropagation() }}>
+                    <PaymentProofThumbs meta={e.metadata} />
+                  </div>
                   {e._sourceReceipts && e._sourceReceipts.length > 0 && (
-                    <LedgerSourceMedia paths={e._sourceReceipts} />
+                    <div onClick={function (ev) { ev.stopPropagation() }}>
+                      <LedgerSourceMedia paths={e._sourceReceipts} />
+                    </div>
                   )}
                   {e._breakdown && (function () {
                     var b = e._breakdown
@@ -631,7 +689,7 @@ function VendorLedger({ profile }) {
                     <p className="text-[10px] text-gray-400">Bal: {formatPoints(e.runningBalance)}</p>
                   )}
                   {isAdmin && !isDeleted && (
-                    <button onClick={function () { reverseEntry(e.id) }}
+                    <button onClick={function (ev) { ev.stopPropagation(); reverseEntry(e.id) }}
                       className="text-[10px] text-red-500 hover:text-red-700 mt-1 font-medium">
                       ↩ Reverse
                     </button>
@@ -642,6 +700,7 @@ function VendorLedger({ profile }) {
           })}
         </div>
       )}
+      {renderExpenseDetailModal()}
     </div>
   )
 }
