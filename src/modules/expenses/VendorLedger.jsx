@@ -33,7 +33,6 @@ function VendorLedger({ profile }) {
   var [selectedVendor, setSelectedVendor] = useState(null)
   var [entries, setEntries] = useState([])
   var [entriesLoading, setEntriesLoading] = useState(false)
-  var [expandedEntryId, setExpandedEntryId] = useState(null)  // toggle for amount breakdown + allocations
   var [showDeleted, setShowDeleted] = useState(false)
 
   useEffect(function () {
@@ -586,48 +585,38 @@ function VendorLedger({ profile }) {
                     var roundedTotalPaise = Math.round(totalPaise / 100) * 100
                     var roundOffPaise = roundedTotalPaise - totalPaise
                     var hasRoundOff = roundOffPaise !== 0
-                    var isExpanded = expandedEntryId === e.id
                     return (
-                      <div className="mt-1.5">
-                        <button type="button"
-                          onClick={function () { setExpandedEntryId(isExpanded ? null : e.id) }}
-                          className="text-[10px] font-semibold text-indigo-600 hover:text-indigo-800">
-                          {isExpanded ? '▾ Hide details' : '▸ Show details'}
-                        </button>
-                        {isExpanded && (
-                          <div className="mt-2 p-2.5 bg-gray-50 border border-gray-200 rounded-lg space-y-2">
-                            <div className="text-[11px]">
-                              <div className="font-bold uppercase text-[9px] tracking-wider text-gray-500 mb-1">Amount breakdown</div>
-                              <div className="flex justify-between text-gray-700"><span>Base</span><span>{formatPoints(basePaise)}</span></div>
-                              {taxPaise > 0 && (
-                                <div className="flex justify-between text-gray-700"><span>GST</span><span>{formatPoints(taxPaise)}</span></div>
-                              )}
-                              <div className="flex justify-between text-gray-700 pt-1 border-t border-gray-200 mt-1"><span>Sub-total</span><span>{formatPoints(totalPaise)}</span></div>
-                              {hasRoundOff && (
-                                <div className="flex justify-between text-amber-700"><span>Round off</span><span>{roundOffPaise > 0 ? '+' : ''}{formatPoints(roundOffPaise)}</span></div>
-                              )}
-                              <div className="flex justify-between font-bold text-gray-900 pt-1 border-t border-gray-300 mt-1">
-                                <span>Grand total{hasRoundOff ? ' (rounded)' : ''}</span>
-                                <span>{formatPoints(roundedTotalPaise)}</span>
-                              </div>
-                            </div>
-                            {b.allocations && b.allocations.length > 0 && (
-                              <div className="text-[11px] pt-2 border-t border-gray-200">
-                                <div className="font-bold uppercase text-[9px] tracking-wider text-gray-500 mb-1">Allocation{b.allocations.length > 1 ? 's' : ''}</div>
-                                {b.allocations.map(function (a, ai) {
-                                  var vName = a.venue_id && e._venueNames ? e._venueNames[a.venue_id] : null
-                                  var parts = []
-                                  if (a.department) parts.push(a.department)
-                                  if (vName) parts.push(vName)
-                                  return (
-                                    <div key={ai} className="flex justify-between gap-2 text-gray-700 py-0.5">
-                                      <span className="truncate">{parts.length > 0 ? parts.join(' · ') : '—'}{a.remarks ? ' — ' + a.remarks : ''}</span>
-                                      <span className="flex-shrink-0 font-medium">{formatPoints(a.amount_paise || 0)}</span>
-                                    </div>
-                                  )
-                                })}
-                              </div>
-                            )}
+                      <div className="mt-2 p-2.5 bg-gray-50 border border-gray-200 rounded-lg space-y-2">
+                        <div className="text-[11px]">
+                          <div className="font-bold uppercase text-[9px] tracking-wider text-gray-500 mb-1">Amount breakdown</div>
+                          <div className="flex justify-between text-gray-700"><span>Base</span><span>{formatPoints(basePaise)}</span></div>
+                          {taxPaise > 0 && (
+                            <div className="flex justify-between text-gray-700"><span>GST</span><span>{formatPoints(taxPaise)}</span></div>
+                          )}
+                          <div className="flex justify-between text-gray-700 pt-1 border-t border-gray-200 mt-1"><span>Sub-total</span><span>{formatPoints(totalPaise)}</span></div>
+                          {hasRoundOff && (
+                            <div className="flex justify-between text-amber-700"><span>Round off</span><span>{roundOffPaise > 0 ? '+' : ''}{formatPoints(roundOffPaise)}</span></div>
+                          )}
+                          <div className="flex justify-between font-bold text-gray-900 pt-1 border-t border-gray-300 mt-1">
+                            <span>Grand total{hasRoundOff ? ' (rounded)' : ''}</span>
+                            <span>{formatPoints(roundedTotalPaise)}</span>
+                          </div>
+                        </div>
+                        {b.allocations && b.allocations.length > 0 && (
+                          <div className="text-[11px] pt-2 border-t border-gray-200">
+                            <div className="font-bold uppercase text-[9px] tracking-wider text-gray-500 mb-1">Allocation{b.allocations.length > 1 ? 's' : ''}</div>
+                            {b.allocations.map(function (a, ai) {
+                              var vName = a.venue_id && e._venueNames ? e._venueNames[a.venue_id] : null
+                              var parts = []
+                              if (a.department) parts.push(a.department)
+                              if (vName) parts.push(vName)
+                              return (
+                                <div key={ai} className="flex justify-between gap-2 text-gray-700 py-0.5">
+                                  <span className="truncate">{parts.length > 0 ? parts.join(' · ') : '—'}{a.remarks ? ' — ' + a.remarks : ''}</span>
+                                  <span className="flex-shrink-0 font-medium">{formatPoints(a.amount_paise || 0)}</span>
+                                </div>
+                              )
+                            })}
                           </div>
                         )}
                       </div>
