@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import { logActivity } from '../../lib/logger'
+import VoiceInput from '../../components/ui/VoiceInput'
 
 function Vendors({ profile }) {
   var [vendors, setVendors] = useState([])
@@ -933,11 +934,10 @@ function Vendors({ profile }) {
           {/* Notes */}
           <div className="p-5">
             <label className="block text-xs font-medium text-gray-600 mb-1">Notes</label>
-            <textarea value={form.notes}
+            <VoiceInput as="textarea" value={form.notes}
               onChange={function (e) { setForm(function (p) { return Object.assign({}, p, { notes: e.target.value }) }) }}
               rows="2" placeholder="Internal notes, special instructions..."
-              className="w-full px-4 py-3 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none bg-gray-50"
-              style={{ fontSize: '16px' }} />
+              className="w-full px-4 py-3 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none bg-gray-50" />
           </div>
         </div>
 

@@ -8,6 +8,7 @@ import SearchDropdown from '../../components/ui/SearchDropdown'
 import InventoryForm from '../inventory/InventoryForm'
 import BottomSheet from '../../components/ui/BottomSheet'
 import { pushBack, goBack as navBack } from '../../lib/backNav'
+import VoiceInput from '../../components/ui/VoiceInput'
 import { prepUpload } from '../../lib/uploadHelper'
 
 var PO_STATUS_LABELS = {
@@ -2397,10 +2398,9 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, ve
             {editingNotes && (
               <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 space-y-2">
                 <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Notes</p>
-                <textarea value={notesText} onChange={function (e) { setNotesText(e.target.value) }}
+                <VoiceInput as="textarea" value={notesText} onChange={function (e) { setNotesText(e.target.value) }}
                   rows={3} autoFocus placeholder="Add notes for this PO..."
-                  className="w-full text-xs text-gray-700 border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400 resize-none"
-                  style={{ fontSize: '16px' }} />
+                  className="w-full text-xs text-gray-700 border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400 resize-none" />
                 <div className="flex gap-2">
                   <button disabled={notesSaving} onClick={async function () {
                     var trimmed = notesText.trim()

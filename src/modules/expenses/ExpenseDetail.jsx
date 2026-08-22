@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { formatDate, formatPoints } from '../../lib/format'
 import { logActivity } from '../../lib/logger'
 import { APPROVAL_STATUS_COLORS, APPROVAL_STATUS_LABELS } from '../../lib/constants'
+import VoiceInput from '../../components/ui/VoiceInput'
 
 function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdated, onEdit, onRaiseGV }) {
   var [saving, setSaving] = useState(false)
@@ -152,11 +153,18 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
   }, [exp.id])
 
   var isDeleted = !!exp.deleted_at
+  var isAuditor = profile?.role === 'auditor'
   var canReview = !isDeleted && (isAdmin || isDeptApprover) && (exp.status === 'recorded' || exp.status === 'flagged') && exp.user_id !== profile?.id
   var canDelete = !isDeleted && ((exp.user_id === profile?.id && (exp.status === 'recorded' || exp.status === 'flagged')) || isAdmin)
   var canEdit = !isDeleted && (exp.user_id === profile?.id || isAdmin) && (exp.status === 'recorded' || exp.status === 'flagged')
   var canResubmit = !isDeleted && exp.user_id === profile?.id && exp.status === 'flagged'
-  var canRaiseGV = !isDeleted && (isAdmin || (profile?.permissions || []).indexOf('finance_gv') !== -1) && (exp.status === 'recorded' || exp.status === 'flagged' || exp.status === 'deducted' || exp.status === 'acknowledged')
+  // GV rules:
+  //  • recorded / flagged / deducted → admin OR anyone with finance_gv permission
+  //  • acknowledged → admin OR auditor only (finance_gv perm not enough — locks stricter after ack)
+  var canRaiseGV = !isDeleted && (
+    (exp.status === 'acknowledged' && (isAdmin || isAuditor)) ||
+    ((exp.status === 'recorded' || exp.status === 'flagged' || exp.status === 'deducted') && (isAdmin || (profile?.permissions || []).indexOf('finance_gv') !== -1))
+  )
 
   var receiptPaths = (exp.receipt_paths && exp.receipt_paths.length > 0)
     ? exp.receipt_paths
@@ -839,11 +847,10 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
         <div className="space-y-3">
           <div className="bg-red-50 border border-red-200 rounded-lg p-3">
             <label className="block text-sm font-medium text-red-700 mb-1">Reason for Deletion <span className="text-red-500">*</span></label>
-            <textarea value={deleteReason}
+            <VoiceInput as="textarea" value={deleteReason}
               onChange={function (e) { setDeleteReason(e.target.value) }}
               rows="2" maxLength="300" placeholder="Why is this expense being deleted..."
-              className="w-full px-3 py-2 border border-red-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-red-500 resize-none"
-              style={{ fontSize: '16px' }} />
+              className="w-full px-3 py-2 border border-red-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-red-500 resize-none" />
           </div>
           <div className="flex gap-3">
             <button onClick={function () { setDeleteMode(false); setDeleteReason('') }}

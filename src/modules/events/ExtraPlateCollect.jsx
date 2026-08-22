@@ -4,6 +4,7 @@ import { formatDate, formatPoints } from '../../lib/format'
 import { logActivity } from '../../lib/logger'
 import { prepUpload } from '../../lib/uploadHelper'
 import EventDatePicker from '../../components/ui/EventDatePicker'
+import VoiceInput from '../../components/ui/VoiceInput'
 
 var BANK_SUB_MODES = [
   { value: 'upi', label: 'UPI' },
@@ -659,15 +660,23 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
             var evQuota = g.event?.total_plates || 0
             var evComp = g.event?.complementary_plates || 0
             var evPaid = evQuota - evComp
-            var evIssuedTotal = 0, evCollectedTotal = 0
+            var evIssuedTotal = 0, evChargedTotal = 0, evReturnedTotal = 0, evWasteTotal = 0
             for (var x = 0; x < g.items.length; x++) {
               var it = g.items[x]
               if (it.status !== 'active') continue
-              if (it._kind === 'issue') evIssuedTotal += it.plates_count
-              else evCollectedTotal += it.extras_charged
+              if (it._kind === 'issue') {
+                evIssuedTotal += it.plates_count
+              } else {
+                var chg = Number(it.extras_charged || 0)
+                var ret = Number(it.plates_returned || 0)
+                evChargedTotal += chg
+                if (chg === 0) evWasteTotal += ret
+                else evReturnedTotal += ret
+              }
             }
-            var evExtras = Math.max(0, evIssuedTotal - evQuota)
-            var evDue = Math.max(0, evExtras - evCollectedTotal)
+            var evNetConsumed = evIssuedTotal - evReturnedTotal - evWasteTotal
+            var evExtras = Math.max(0, evNetConsumed - evQuota)
+            var evDue = Math.max(0, evExtras - evChargedTotal)
             return (
               <div key={g.event_id} className="rounded-lg border border-gray-200 bg-white p-3 space-y-2">
                 <div>
@@ -680,9 +689,14 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
                   </div>
                   <div className="text-[11px] text-gray-700 mt-1">
                     Quota <span className="font-semibold">{evQuota}</span> ({evPaid}+{evComp}) ·
-                    Issued <span className="font-semibold">{evIssuedTotal}</span> ·
-                    Extras <span className="font-semibold">{evExtras}</span> ·
-                    Collected <span className="font-semibold">{evCollectedTotal}</span>
+                    Issued <span className="font-semibold">{evIssuedTotal}</span>
+                    {(evReturnedTotal > 0 || evWasteTotal > 0) && (
+                      <span> · Returned <span className="font-semibold">{evReturnedTotal + evWasteTotal}</span>
+                        {evWasteTotal > 0 && <span className="text-amber-700"> ({evWasteTotal} waste)</span>}
+                      </span>
+                    )}
+                    <span> · Extras <span className="font-semibold">{evExtras}</span> ·
+                    Charged <span className="font-semibold">{evChargedTotal}</span></span>
                     {evDue > 0 && <span className="text-red-700 font-semibold"> · Due {evDue}</span>}
                   </div>
                 </div>
@@ -707,18 +721,21 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
             <div className="text-sm text-gray-600">
               {cancelTarget.type === 'issue'
                 ? cancelTarget.row.plates_count + ' plates'
-                : cancelTarget.row.extras_charged + ' extras · ₹' + (cancelTarget.row.total_paise / 100).toLocaleString('en-IN') + ' · ' + cancelTarget.row.payment_mode}
+                : (cancelTarget.row.extras_charged === 0
+                    ? (cancelTarget.row.plates_returned || 0) + ' returned (waste — no charge)'
+                    : cancelTarget.row.extras_charged + ' extras · ₹' + ((cancelTarget.row.total_paise - (cancelTarget.row.discount_paise || 0)) / 100).toLocaleString('en-IN') + ' · ' + (cancelTarget.row.payment_mode || '—'))}
             </div>
             <div className="text-xs text-red-600 bg-red-50 border border-red-200 rounded p-2">
               {cancelTarget.type === 'issue'
                 ? 'Marks issue cancelled. If a collection exists for this event, log a correction issue with negative plates instead.'
-                : 'Wallet debited and event ledger reversed. This cannot be undone.'}
+                : (cancelTarget.row.extras_charged === 0
+                    ? 'Marks this waste-only entry cancelled. No wallet or ledger changes (nothing was charged).'
+                    : 'Wallet debited and event ledger reversed. This cannot be undone.')}
             </div>
             <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide">Reason</label>
-            <input type="text" value={cancelReason} onChange={function (e) { setCancelReason(e.target.value) }}
+            <VoiceInput type="text" value={cancelReason} onChange={function (e) { setCancelReason(e.target.value) }}
               placeholder="Why?"
-              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm"
-              style={{ fontSize: '16px' }} />
+              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm" />
             <div className="flex gap-3 pt-2">
               <button type="button" onClick={function () { setCancelTarget(null) }} disabled={cancelSaving}
                 className="flex-1 py-3 text-sm text-gray-600 bg-gray-100 rounded-xl font-semibold">Keep</button>

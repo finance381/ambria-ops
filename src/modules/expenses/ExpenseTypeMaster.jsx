@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
+import VoiceInput from '../../components/ui/VoiceInput'
 
 var FIELD_TYPES = [
   { value: 'text', label: 'Text' },
@@ -471,11 +472,10 @@ function SubTypeList({ expenseType, onBack }) {
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Description</label>
-            <input type="text" value={form.description}
+            <VoiceInput type="text" value={form.description}
               onChange={function (e) { setForm(Object.assign({}, form, { description: e.target.value })) }}
               placeholder="Optional description"
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
-              style={{ fontSize: '16px' }} />
+              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
           </div>
           <div className="flex gap-2">
             <button onClick={cancelEdit}
@@ -738,11 +738,10 @@ function ExpenseTypeMaster({ onBack }) {
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">Description</label>
-                    <input type="text" value={form.description}
+                    <VoiceInput type="text" value={form.description}
                       onChange={function (e) { setForm(Object.assign({}, form, { description: e.target.value })) }}
                       placeholder="Optional description"
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
-                      style={{ fontSize: '16px' }} />
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
@@ -813,11 +812,10 @@ function ExpenseTypeMaster({ onBack }) {
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Description</label>
-              <input type="text" value={form.description}
+              <VoiceInput type="text" value={form.description}
                 onChange={function (e) { setForm(Object.assign({}, form, { description: e.target.value })) }}
                 placeholder="Optional description"
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
-                style={{ fontSize: '16px' }} />
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>

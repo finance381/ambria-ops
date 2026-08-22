@@ -35,6 +35,20 @@ function fmtDDMMYYYY(dateStr) {
   return dd + '/' + mm + '/' + yyyy
 }
 
+async function fetchImgAsDataUrl(url) {
+  try {
+    var r = await fetch(url)
+    if (!r.ok) return null
+    var blob = await r.blob()
+    return await new Promise(function (resolve) {
+      var reader = new FileReader()
+      reader.onload = function () { resolve(reader.result) }
+      reader.onerror = function () { resolve(null) }
+      reader.readAsDataURL(blob)
+    })
+  } catch (_) { return null }
+}
+
 export async function generateCollectionReceiptPdf(data) {
   var jsPDFmod = await import('jspdf')
   var jsPDF = jsPDFmod.default || jsPDFmod.jsPDF
@@ -82,12 +96,13 @@ export async function generateCollectionReceiptPdf(data) {
   var body = [
     ['Receipt No.', { content: data.receiptNo || '', styles: { fontStyle: 'bold' } }, 'Receipt Date', fmtDDMMYYYY(data.createdAt)],
     ['Pay Mode', { content: (data.paymentMode || '').toUpperCase(), styles: { fontStyle: 'bold' } }, 'Remarks', data.description || ''],
-    ['Contract No.', { content: data.contractNo || '', styles: { fontStyle: 'bold' } }, '', ''],
+    ['Contract No.', { content: data.contractNo || '', styles: { fontStyle: 'bold' } }, 'Client Name', { content: data.clientName || '', styles: { fontStyle: 'bold' } }],
+    ['Event Date', data.eventDate ? fmtDDMMYYYY(data.eventDate) : '', 'Deal By', data.dealBy || ''],
   ]
   if (isBank) body.push(['Cheque No.', '0', 'Cheque Date', ''])
   body.push(
     ['Payment Amount', { content: netStr, styles: { halign: 'right' } }, 'TDS Amount', { content: '0.0', styles: { halign: 'right' } }],
-    ['Deduction', { content: '0.0', styles: { halign: 'right' } }, 'Net Amount', { content: netStr, styles: { halign: 'right', fontStyle: 'bold' } }],
+    ['Discount', { content: '0.0', styles: { halign: 'right' } }, 'Net Amount', { content: netStr, styles: { halign: 'right', fontStyle: 'bold' } }],
   )
 
   autoTable(doc, {
@@ -116,6 +131,23 @@ export async function generateCollectionReceiptPdf(data) {
     columnStyles: { 0: { cellWidth: pageW - 2*margin } },
     margin: { left: margin, right: margin },
   })
+
+  // Signature block — two side-by-side boxes
+  var sigY = doc.lastAutoTable.finalY + 12
+  var sigH = 32
+  var colW = (pageW - 2*margin) / 2
+  var sigDataUrl = null
+  if (data.signatureUrl) sigDataUrl = await fetchImgAsDataUrl(data.signatureUrl)
+
+  doc.setLineWidth(0.3)
+  doc.rect(margin, sigY, colW, sigH)
+  doc.rect(margin + colW, sigY, colW, sigH)
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(9)
+  doc.text('Received By: ' + (data.receivedByName || ''), margin + 2, sigY + 5)
+  doc.text('Received By (Signature):', margin + colW + 2, sigY + 5)
+  if (sigDataUrl) {
+    try { doc.addImage(sigDataUrl, 'PNG', margin + 3, sigY + 8, 45, 20) } catch (_) {}
+  }
 
   var url = doc.output('bloburl')
   window.open(url, '_blank')

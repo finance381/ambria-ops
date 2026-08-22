@@ -8,6 +8,7 @@ import ysFixWebmDuration from 'fix-webm-duration'
 import { useVoice } from '../../hooks/useVoice'
 import EventDatePicker from '../../components/ui/EventDatePicker'
 import { compressImage } from '../../lib/imageCompress'
+import VoiceInput from '../../components/ui/VoiceInput'
 
 function makeEntry() {
   return {
@@ -19,7 +20,7 @@ function makeEntry() {
     taxAmount: '',
     expenseDate: new Date().toISOString().split('T')[0],
     fieldValues: {},
-    allocations: [{ departmentId: '', venueId: '', expenseTypeId: '', expenseSubTypeId: '', amountPaise: '', remarks: '' }],
+    allocations: [{ departmentId: '', venueId: '', expenseTypeId: '', expenseSubTypeId: '', amountRupees: '', remarks: '' }],
     showAllocations: false,
     receiptFiles: [],
     receiptPreviews: [],
@@ -39,7 +40,65 @@ function makeEntry() {
 }
 
 function makeAllocation() {
-  return { departmentId: '', venueId: '', expenseTypeId: '', expenseSubTypeId: '', amountPaise: '', remarks: '' }
+  return { departmentId: '', venueId: '', expenseTypeId: '', expenseSubTypeId: '', amountRupees: '', remarks: '' }
+}
+
+// ── Auto-save draft (new-entry only) ──────────────────────────
+// Persists typed fields to localStorage across reloads. File/Blob objects
+// (receipts, voice notes) can't serialize — saved as metadata so the UI
+// can prompt the user to re-attach. One draft per user (overwrite on save).
+var DRAFT_KEY_PREFIX = 'ambria_expense_draft_'
+var DRAFT_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000
+var DRAFT_DEBOUNCE_MS = 800
+
+function serializeDraftEntry(e) {
+  return Object.assign({}, e, {
+    receiptFiles: [],
+    receiptPreviews: [],
+    receiptFilesMeta: (e.receiptFiles || []).map(function (f) {
+      return { name: f.name || 'file', size: f.size || 0, type: f.type || '' }
+    }),
+    audioBlob: null,
+    audioUrl: '',
+    recording: false,
+    audioBlobMeta: e.audioBlob ? { size: e.audioBlob.size || 0, type: e.audioBlob.type || 'audio/webm' } : null
+  })
+}
+
+function deserializeDraftEntry(e) {
+  return Object.assign({}, e, {
+    receiptFiles: [],
+    receiptPreviews: [],
+    audioBlob: null,
+    audioUrl: '',
+    recording: false,
+    receiptFilesMeta: e.receiptFilesMeta || [],
+    audioBlobMeta: e.audioBlobMeta || null
+  })
+}
+
+function isEmptyDraftEntry(e) {
+  if (!e) return true
+  if (e.description && e.description.trim()) return false
+  if (e.amount && String(e.amount).trim() && String(e.amount).trim() !== '0') return false
+  if (e.expenseTypeId || e.expenseSubTypeId) return false
+  var fv = e.fieldValues || {}
+  for (var k in fv) { if (fv[k]) return false }
+  if ((e.receiptFilesMeta || []).length > 0) return false
+  if (e.audioBlobMeta) return false
+  return true
+}
+
+function formatDraftAge(ts) {
+  if (!ts) return ''
+  var s = Math.floor((Date.now() - ts) / 1000)
+  if (s < 5) return 'just now'
+  if (s < 60) return s + 's ago'
+  var m = Math.floor(s / 60)
+  if (m < 60) return m + 'm ago'
+  var h = Math.floor(m / 60)
+  if (h < 24) return h + 'h ago'
+  return Math.floor(h / 24) + 'd ago'
 }
 
 
@@ -87,12 +146,12 @@ function hydrateEntry(exp) {
       venueId: a.venue_id ? String(a.venue_id) : '',
       expenseTypeId: a.expense_type_id ? String(a.expense_type_id) : '',
       expenseSubTypeId: a.expense_sub_type_id ? String(a.expense_sub_type_id) : '',
-      amountPaise: a.amount_paise != null ? String(a.amount_paise / 100) : '',
+      amountRupees: a.amount_paise != null ? String(a.amount_paise / 100) : '',
       remarks: a.remarks || ''
     }
   })
   if (allocs.length === 0) {
-    allocs = [{ departmentId: '', venueId: '', expenseTypeId: '', expenseSubTypeId: '', amountPaise: '', remarks: '' }]
+    allocs = [{ departmentId: '', venueId: '', expenseTypeId: '', expenseSubTypeId: '', amountRupees: '', remarks: '' }]
   }
 
   var itemsFromMeta = Array.isArray(meta.item_receipts) ? meta.item_receipts.map(function (it, i) {
@@ -173,6 +232,13 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
   })
   var [removedReceipts, setRemovedReceipts] = useState([])
 
+  // Draft (new-entry only) — restore banner + debounced save + save-indicator
+  var [draftRestorable, setDraftRestorable] = useState(null)
+  var [draftSavedAt, setDraftSavedAt] = useState(null)
+  var [draftTick, setDraftTick] = useState(0)  // forces "Xs ago" refresh
+  var draftSaveTimer = useRef(null)
+  var draftKey = profile ? DRAFT_KEY_PREFIX + profile.id : null
+
   useEffect(function () { loadRefData(); ensureLookupData('vendors') }, [])
 
   useEffect(function () {
@@ -180,6 +246,102 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
       loadEventsByDate(editExp.expense_date)
     }
   }, [])
+
+  // ─── Draft: check localStorage on mount ───
+  useEffect(function () {
+    if (isEditing || !draftKey) return
+    try {
+      var raw = localStorage.getItem(draftKey)
+      if (!raw) return
+      var parsed = JSON.parse(raw)
+      if (!parsed || !parsed.savedAt) return
+      if (Date.now() - parsed.savedAt > DRAFT_EXPIRY_MS) { localStorage.removeItem(draftKey); return }
+      if (!parsed.entries || parsed.entries.length === 0) return
+      // v93 → v94 shim: migrate old draft key `amountPaise` → `amountRupees` (semantic rename, same value: rupees)
+      parsed.entries.forEach(function (e) {
+        (e.allocations || []).forEach(function (a) {
+          if (a && a.amountPaise != null && a.amountRupees == null) {
+            a.amountRupees = a.amountPaise
+            delete a.amountPaise
+          }
+        })
+      })
+      if (parsed.entries.every(isEmptyDraftEntry)) { localStorage.removeItem(draftKey); return }
+      setDraftRestorable(parsed)
+    } catch (_) {}
+  }, [])
+
+  // ─── Draft: debounced auto-save on changes ───
+  useEffect(function () {
+    if (isEditing || !draftKey || saving) return
+    if (draftRestorable) return  // don't clobber a pending restore with the blank default
+    if (!entries || entries.every(isEmptyDraftEntry)) return
+    if (draftSaveTimer.current) clearTimeout(draftSaveTimer.current)
+    draftSaveTimer.current = setTimeout(function () {
+      try {
+        var payload = {
+          savedAt: Date.now(),
+          entries: entries.map(serializeDraftEntry),
+          isFunction: isFunction,
+          eventDate: eventDate,
+          eventId: eventId
+        }
+        localStorage.setItem(draftKey, JSON.stringify(payload))
+        setDraftSavedAt(payload.savedAt)
+      } catch (_) {}
+    }, DRAFT_DEBOUNCE_MS)
+    return function () { if (draftSaveTimer.current) clearTimeout(draftSaveTimer.current) }
+  }, [entries, isFunction, eventDate, eventId, isEditing, saving, draftRestorable])
+
+  // ─── Draft: safety-save on tab close / navigate away ───
+  useEffect(function () {
+    if (isEditing || !draftKey) return
+    function handler() {
+      try {
+        if (!entries || entries.every(isEmptyDraftEntry)) return
+        var payload = {
+          savedAt: Date.now(),
+          entries: entries.map(serializeDraftEntry),
+          isFunction: isFunction,
+          eventDate: eventDate,
+          eventId: eventId
+        }
+        localStorage.setItem(draftKey, JSON.stringify(payload))
+      } catch (_) {}
+    }
+    window.addEventListener('beforeunload', handler)
+    return function () { window.removeEventListener('beforeunload', handler) }
+  }, [entries, isFunction, eventDate, eventId, isEditing])
+
+  // ─── Draft: tick "Xs ago" indicator every 15s ───
+  useEffect(function () {
+    if (!draftSavedAt) return
+    var iv = setInterval(function () { setDraftTick(function (x) { return x + 1 }) }, 15000)
+    return function () { clearInterval(iv) }
+  }, [draftSavedAt])
+
+  function restoreDraft() {
+    if (!draftRestorable) return
+    try {
+      setEntries((draftRestorable.entries || []).map(deserializeDraftEntry))
+      if (draftRestorable.isFunction != null) setIsFunction(!!draftRestorable.isFunction)
+      if (draftRestorable.eventDate) { setEventDate(draftRestorable.eventDate); loadEventsByDate(draftRestorable.eventDate) }
+      if (draftRestorable.eventId) setEventId(draftRestorable.eventId)
+      setDraftSavedAt(draftRestorable.savedAt)
+    } catch (_) {}
+    setDraftRestorable(null)
+  }
+
+  function discardDraft() {
+    try { if (draftKey) localStorage.removeItem(draftKey) } catch (_) {}
+    setDraftRestorable(null)
+    setDraftSavedAt(null)
+  }
+
+  function clearDraftAfterSubmit() {
+    try { if (draftKey) localStorage.removeItem(draftKey) } catch (_) {}
+    setDraftSavedAt(null)
+  }
 
   async function loadRefData() {
     var [etR, estR, dR, vR, sdR, cR] = await Promise.all([
@@ -587,7 +749,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
       if (i !== entryIdx) return e
       var src = e.allocations[allocIdx]
       if (!src) return e
-      var dup = Object.assign({}, src, { amountPaise: '' })
+      var dup = Object.assign({}, src, { amountRupees: '' })
       return Object.assign({}, e, { allocations: e.allocations.concat([dup]) })
     })
     setEntries(updated)
@@ -945,16 +1107,24 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
       // Admin-only retype: change type/sub-type only, preserve everything else
       if (isAdminEdit) {
         try {
-          var { error: aErr } = await supabase.from('expenses').update({
+          var { data: updated, error: aErr } = await supabase.from('expenses').update({
             expense_type_id: Number(e0.expenseTypeId),
             expense_sub_type_id: Number(e0.expenseSubTypeId),
-          }).eq('id', editExp.id)
+          }).eq('id', editExp.id).select('id, expense_type_id, expense_sub_type_id')
           if (aErr) throw new Error(aErr.message)
+          if (!updated || updated.length === 0) {
+            throw new Error('Update blocked — no row returned. Likely RLS: your role may not be permitted to change this expense\'s type. Contact admin if you believe this is a mistake.')
+          }
+          var row = updated[0]
+          if (row.expense_type_id !== Number(e0.expenseTypeId) || row.expense_sub_type_id !== Number(e0.expenseSubTypeId)) {
+            throw new Error('Update returned mismatched values (expected ' + e0.expenseTypeId + '/' + e0.expenseSubTypeId + ', got ' + row.expense_type_id + '/' + row.expense_sub_type_id + ')')
+          }
           try { await logActivity('EXPENSE_ADMIN_RETYPE', 'exp #' + editExp.id + ' | type=' + e0.expenseTypeId + '/' + e0.expenseSubTypeId) } catch (_) {}
           setSaving(false)
           setSuccess('Type updated')
           setTimeout(function () { if (onDone) onDone() }, 800)
         } catch (err) {
+          console.error('ADMIN_RETYPE_FAIL', err, { expenseId: editExp.id, targetType: e0.expenseTypeId, targetSubType: e0.expenseSubTypeId })
           setError('Retype failed: ' + (err.message || err))
           setSaving(false)
         }
@@ -1042,7 +1212,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
               venue_id: a.venueId ? Number(a.venueId) : null,
               expense_type_id: aTypeId,
               expense_sub_type_id: aSubTypeId,
-              amount_paise: a.amountPaise ? Math.round(Number(a.amountPaise) * 100) : 0,
+              amount_paise: a.amountRupees ? Math.round(Number(a.amountRupees) * 100) : 0,
               remarks: (a.remarks || '').trim() || null
             }
           })
@@ -1108,6 +1278,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
     // ── Insert branch ──
     var submitted = 0
     var failed = 0
+    var failedMsgs = []
     var batchId = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : null
 
     try {
@@ -1188,7 +1359,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
           }
 
           var { data: exp, error: insErr } = await supabase.from('expenses').insert(payload).select('id').single()
-          if (insErr || !exp) { failed++; continue }
+          if (insErr || !exp) { console.error('EXPENSE_INSERT_FAIL', insErr, payload); throw new Error('Expense insert failed: ' + (insErr && insErr.message || 'no row returned')) }
 
           if (e.receiptFiles && e.receiptFiles.length > 0) {
             var uploadedPaths = []
@@ -1246,7 +1417,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                 venue_id: a.venueId ? Number(a.venueId) : null,
                 expense_type_id: aTypeId,
                 expense_sub_type_id: aSubTypeId,
-                amount_paise: a.amountPaise ? Math.round(Number(a.amountPaise) * 100) : 0,
+                amount_paise: a.amountRupees ? Math.round(Number(a.amountRupees) * 100) : 0,
                 remarks: (a.remarks || '').trim() || null
               }
             })
@@ -1279,37 +1450,46 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
               source: 'auto_default',
             })
           }
-          if (allocRows.length > 0) await supabase.from('expense_allocations').insert(allocRows)
+          if (allocRows.length > 0) {
+            var { error: aErrIns } = await supabase.from('expense_allocations').insert(allocRows)
+            if (aErrIns) { console.error('ALLOC_INSERT_FAIL', aErrIns, allocRows); throw new Error('Allocations failed: ' + aErrIns.message) }
+          }
 
-          try {
-            // Wallet only debits the immediate cash portion the user set as "Cash from Wallet".
-            // Credit portion (base + tax owed to vendor) leaves the wallet later via pay_vendor.
-            // All-cash mode falls back to gross so tax also debits now (no credit obligation).
-            var walletDebitPaise = _split.creditPaise > 0
-              ? _split.cashPaise
-              : paise
-            if (walletDebitPaise > 0) {
-              await supabase.rpc('wallet_self_debit', {
-                p_amount_paise: walletDebitPaise,
-                p_description: 'Expense: ' + e.description.trim().slice(0, 50),
-                p_ref_type: 'expense',
-                p_ref_id: String(exp.id),
-              })
-            }
-          } catch (_) {}
+          // Wallet only debits the immediate cash portion the user set as "Cash from Wallet".
+          // Credit portion (base + tax owed to vendor) leaves the wallet later via pay_vendor.
+          // All-cash mode falls back to gross so tax also debits now (no credit obligation).
+          var walletDebitPaise = _split.creditPaise > 0
+            ? _split.cashPaise
+            : paise
+          if (walletDebitPaise > 0) {
+            var { error: wErr } = await supabase.rpc('wallet_self_debit', {
+              p_amount_paise: walletDebitPaise,
+              p_description: 'Expense: ' + e.description.trim().slice(0, 50),
+              p_ref_type: 'expense',
+              p_ref_id: String(exp.id),
+            })
+            if (wErr) { console.error('WALLET_DEBIT_FAIL', wErr); throw new Error('Wallet debit failed: ' + wErr.message) }
+          }
 
           try { await logActivity('EXPENSE_SUBMIT', (paise / 100) + ' pts | ' + e.description.trim().slice(0, 50)) } catch (_) {}
           submitted++
-        } catch (_) { failed++ }
+        } catch (err) {
+          console.error('EXPENSE_SUBMIT_FAIL entry', i, err)
+          var msg = (err && err.message) ? err.message : String(err)
+          failedMsgs.push('#' + (i + 1) + ': ' + msg)
+          try { logActivity('EXPENSE_SUBMIT_FAIL', 'entry ' + i + ' | ' + msg.slice(0, 200)) } catch (_) {}
+          failed++
+        }
       }
     } finally { setSaving(false) }
 
     if (failed > 0 && submitted > 0) {
-      setError(failed + ' failed, ' + submitted + ' submitted')
+      setError(failed + ' failed, ' + submitted + ' submitted\n' + failedMsgs.join('\n'))
     } else if (failed > 0) {
-      setError('All ' + failed + ' entries failed to submit')
+      setError('All ' + failed + ' entries failed to submit\n' + failedMsgs.join('\n'))
     } else {
       setSuccess(submitted + ' expense' + (submitted > 1 ? 's' : '') + ' submitted')
+      clearDraftAfterSubmit()
       setTimeout(function () { setEntries([makeEntry()]); if (onDone) onDone() }, 1500)
     }
   }
@@ -1320,7 +1500,34 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
 
   return (
     <div className="space-y-4">
-      {error && error.indexOf('Insufficient wallet balance') === -1 && <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">{error}</div>}
+      {/* Draft-restore banner — shows only if a saved draft was found on mount */}
+      {draftRestorable && (
+        <div className="p-3 rounded-lg bg-indigo-50 border-2 border-indigo-300 text-indigo-900 text-sm shadow-sm">
+          <div className="flex items-center justify-between gap-3 mb-1.5">
+            <div className="flex items-center gap-2">
+              <span className="text-lg">💾</span>
+              <span className="font-bold">Unsaved draft found</span>
+            </div>
+            <span className="text-[11px] text-indigo-600">
+              {formatDraftAge(draftRestorable.savedAt)} · {(draftRestorable.entries || []).length} entr{(draftRestorable.entries || []).length === 1 ? 'y' : 'ies'}
+            </span>
+          </div>
+          <p className="text-[12px] text-indigo-700 mb-2">
+            Your last session ended without submitting. Restore your typed details? (Receipts and voice notes will need to be re-attached — files can't be saved in the browser.)
+          </p>
+          <div className="flex gap-2">
+            <button type="button" onClick={restoreDraft}
+              className="flex-1 py-2 text-xs font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors">
+              ↺ Restore
+            </button>
+            <button type="button" onClick={discardDraft}
+              className="flex-1 py-2 text-xs font-bold text-indigo-700 bg-white border border-indigo-300 rounded-lg hover:bg-indigo-100 transition-colors">
+              Start Fresh
+            </button>
+          </div>
+        </div>
+      )}
+      {/* Error banner moved next to the Submit button below — screenshot-friendly, one-tap Copy */}
       {success && <div className="p-3 rounded-lg bg-green-50 border border-green-200 text-green-700 text-sm">{success}</div>}
       {isAdminEdit && (
         <div className="p-3 rounded-lg bg-purple-50 border border-purple-200 text-purple-700 text-sm">
@@ -1487,18 +1694,9 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
 
               {/* Description */}
               <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="text-xs font-medium text-gray-600">Description</label>
-                  <button type="button"
-                    onClick={function () {
-                      if (voice.listening) { voice.stop() }
-                      else { voice.start(function (text) { updateEntry(idx, 'description', entry.description + (entry.description ? ' ' : '') + text) }) }
-                    }}
-                    className={"px-2 py-0.5 rounded text-xs font-medium transition-all " +
-                      (voice.listening ? "bg-red-500 text-white animate-pulse" : "bg-gray-100 text-gray-500 hover:bg-gray-200")}
-                  >{voice.listening ? '⏹ Stop' : '🎤 Dictate'}</button>
-                </div>
-                <textarea value={entry.description} onChange={function (e) { updateEntry(idx, 'description', e.target.value) }}
+                <label className="block text-xs font-medium text-gray-600 mb-1">Description</label>
+                <VoiceInput as="textarea" value={entry.description}
+                  onChange={function (e) { updateEntry(idx, 'description', e.target.value) }}
                   placeholder="What was this expense for..." rows={2}
                   className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-300 resize-none" />
               </div>
@@ -1736,14 +1934,14 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                     onAdd={function () { addAllocation(idx) }}
                     onRemove={function (aIdx) { removeAllocation(idx, aIdx) }}
                     onDuplicate={function (aIdx) { duplicateAllocation(idx, aIdx) }}
-                    isComplete={function (a) { return !!a.departmentId && !!a.venueId && !!a.expenseTypeId && !!a.amountPaise && Number(a.amountPaise) > 0 }}
+                    isComplete={function (a) { return !!a.departmentId && !!a.venueId && !!a.expenseTypeId && !!a.amountRupees && Number(a.amountRupees) > 0 }}
                     renderChip={function (a) {
                       var v = venues.find(function (x) { return String(x.id) === String(a.venueId) })
                       var d = departments.find(function (x) { return String(x.id) === String(a.departmentId) })
                       var et = expenseTypes.find(function (x) { return String(x.id) === String(a.expenseTypeId) })
                       var st = expenseSubTypes.find(function (x) { return String(x.id) === String(a.expenseSubTypeId) })
                       var typeLabel = st ? st.name : (et ? et.name : '')
-                      var amt = Number(a.amountPaise) || 0
+                      var amt = Number(a.amountRupees) || 0
                       return {
                         left: (
                           <>
@@ -1808,13 +2006,13 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                             </select>
                           </div>
                           <div className="grid grid-cols-2 gap-2">
-                            <input type="number" inputMode="numeric" value={alloc.amountPaise}
-                              onChange={function (e) { updateAllocation(idx, aIdx, 'amountPaise', e.target.value) }}
+                            <input type="number" inputMode="numeric" value={alloc.amountRupees}
+                              onChange={function (e) { updateAllocation(idx, aIdx, 'amountRupees', e.target.value) }}
                               placeholder="Amt" className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs focus:ring-2 focus:ring-amber-300" style={{ fontSize: '16px' }} />
-                            <input type="text" value={alloc.remarks}
+                            <VoiceInput type="text" value={alloc.remarks}
                               onChange={function (e) { updateAllocation(idx, aIdx, 'remarks', e.target.value) }}
                               placeholder="Remarks" maxLength={200}
-                              className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs focus:ring-2 focus:ring-amber-300" style={{ fontSize: '16px' }} />
+                              className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs focus:ring-2 focus:ring-amber-300" />
                           </div>
                           {isFallback && (
                             <p className="text-[10px] text-amber-700 font-medium">⚠ No dept-specific match — using generic/top-level type</p>
@@ -2171,6 +2369,32 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                     <button type="button" onClick={function () { removeAudio(idx) }}
                       className="w-6 h-6 bg-red-500 text-white rounded-full text-xs flex items-center justify-center shadow-sm hover:bg-red-600 flex-shrink-0">✕</button>
                   </div>
+                ) : (entry.receiptFilesMeta && entry.receiptFilesMeta.length > 0) || entry.audioBlobMeta ? (
+                  <div className="p-2.5 rounded-lg bg-amber-50 border border-amber-300 text-amber-800 text-[11px] mb-2">
+                    <div className="font-bold mb-0.5">🔗 Please re-attach — restored from draft</div>
+                    {entry.receiptFilesMeta && entry.receiptFilesMeta.length > 0 && (
+                      <div className="truncate">
+                        {entry.receiptFilesMeta.length} receipt{entry.receiptFilesMeta.length > 1 ? 's' : ''}: {entry.receiptFilesMeta.map(function (m) { return m.name }).join(', ')}
+                      </div>
+                    )}
+                    {entry.audioBlobMeta && <div>1 voice note</div>}
+                    <div className="flex gap-2 mt-2">
+                      <label className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border-2 border-dashed border-amber-400 text-xs text-amber-700 hover:border-amber-500 cursor-pointer transition-colors">
+                        <span>📁</span><span>Gallery</span>
+                        <input type="file" accept="image/*,.pdf" multiple className="hidden"
+                          onChange={function (e) { addReceipts(idx, e.target.files); e.target.value = '' }} />
+                      </label>
+                      <label className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border-2 border-dashed border-amber-400 text-xs text-amber-700 hover:border-amber-500 cursor-pointer transition-colors">
+                        <span>📷</span><span>Camera</span>
+                        <input type="file" accept="image/*" capture="environment" className="hidden"
+                          onChange={function (e) { addReceipts(idx, e.target.files); e.target.value = '' }} />
+                      </label>
+                      <button type="button" onClick={function () { startRecording(idx) }}
+                        className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border-2 border-dashed border-amber-400 text-xs text-amber-700 hover:border-amber-500 transition-colors">
+                        <span>🎙</span><span>Voice</span>
+                      </button>
+                    </div>
+                  </div>
                 ) : entry.recording ? (
                   <button type="button" onClick={function () { stopRecording(idx) }}
                     className="w-full py-3 rounded-lg bg-red-500 text-white text-sm font-medium animate-pulse flex items-center justify-center gap-2">
@@ -2225,6 +2449,35 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
         )
       })()}
 
+      {/* Inline error card — sits right above the Submit button, always visible, easy screenshot */}
+      {error && error.indexOf('Insufficient wallet balance') === -1 && (
+        <div className="p-3 rounded-lg bg-red-50 border-2 border-red-300 text-red-800 text-sm shadow-sm">
+          <div className="flex items-start justify-between gap-2 mb-1.5">
+            <span className="font-bold uppercase text-[10px] tracking-wider text-red-600">Submit failed</span>
+            <div className="flex gap-1.5 flex-shrink-0">
+              <button type="button" onClick={function (ev) {
+                var b = ev.currentTarget
+                try {
+                  if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(error) }
+                  else {
+                    var ta = document.createElement('textarea'); ta.value = error; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta)
+                  }
+                  var orig = b.textContent; b.textContent = 'Copied ✓'; setTimeout(function () { b.textContent = orig }, 1500)
+                } catch (_) {}
+              }}
+                className="px-2 py-0.5 text-[10px] font-bold bg-white border border-red-300 text-red-700 rounded hover:bg-red-100">
+                📋 Copy
+              </button>
+              <button type="button" onClick={function () { setError('') }}
+                className="px-2 py-0.5 text-[10px] font-bold bg-white border border-red-300 text-red-700 rounded hover:bg-red-100">
+                ✕
+              </button>
+            </div>
+          </div>
+          <pre className="whitespace-pre-wrap break-words font-mono text-[11px] leading-tight max-h-40 overflow-y-auto m-0">{error}</pre>
+        </div>
+      )}
+
       {/* Add entry + Submit bar */}
       <div className="flex gap-3">
         {!isEditing && (
@@ -2239,6 +2492,13 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
           {saving ? (isEditing ? 'Updating...' : 'Submitting...') : (isAdminEdit ? 'Update Type' : (isEditing ? 'Update Expense' : ('Submit ' + entries.length + ' Expense' + (entries.length > 1 ? 's' : ''))))}
         </button>
       </div>
+      {!isEditing && draftSavedAt && (
+        <p className="text-[10px] text-gray-400 text-center -mt-2">
+          💾 Draft saved · {formatDraftAge(draftSavedAt + draftTick * 0)}
+          <button type="button" onClick={discardDraft}
+            className="ml-2 text-red-500 hover:text-red-700 underline">clear</button>
+        </p>
+      )}
 
       {zoomImg && (
         <div onClick={function () { setZoomImg('') }}

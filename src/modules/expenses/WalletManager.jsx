@@ -8,6 +8,8 @@ import BottomSheet from '../../components/ui/BottomSheet'
 import EventDatePicker from '../../components/ui/EventDatePicker'
 import { useVoice } from '../../hooks/useVoice'
 import { generateCollectionReceiptPdf } from '../../lib/pdfReceipt'
+import ExpenseDetail from './ExpenseDetail'
+import VoiceInput from '../../components/ui/VoiceInput'
 
 // Cached Unicode font for jsPDF (loaded once per browser session on first PDF export)
 var _pdfFontCache = { regular: null, bold: null }
@@ -52,6 +54,7 @@ var REF_TYPE_LABELS = {
   issued: 'Issued',
   deducted: 'Deducted',
   collection: 'Collection',
+  collection_cancel: 'Cancel',
   opening: 'Opening',
 }
 
@@ -62,10 +65,11 @@ var REF_TYPE_STYLES = {
   issued: 'bg-purple-50 text-purple-700 border-purple-200',
   deducted: 'bg-orange-50 text-orange-700 border-orange-200',
   collection: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  collection_cancel: 'bg-rose-50 text-rose-700 border-rose-200',
   opening: 'bg-gray-100 text-gray-700 border-gray-300',
 }
 
-function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, onClose, onBalanceChange }) {
+function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, onClose, onBalanceChange, onOpenExpense }) {
   var [walletView, setWalletView] = useState(null)
   var [allWallets, setAllWallets] = useState([])
   var [walletProfiles, setWalletProfiles] = useState({})
@@ -110,6 +114,11 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   var [transferConfirmSaving, setTransferConfirmSaving] = useState(false)
   var [transferParties, setTransferParties] = useState({})
   var [expenseRefs, setExpenseRefs] = useState({})
+  // EPC back-links: wallet_tx_id → { epc, isCancel }. Populated by loadRecentTxns / openWalletTxns.
+  var [epcRefs, setEpcRefs] = useState({})
+  var [cancelTarget, setCancelTarget] = useState(null)  // { txn, kind: 'collection' | 'epc' }
+  var [cancelReason, setCancelReason] = useState('')
+  var [cancelSaving, setCancelSaving] = useState(false)
   var [collectModal, setCollectModal] = useState(false)
   var [collectDate, setCollectDate] = useState('')
   var [collectEvents, setCollectEvents] = useState([])
@@ -213,6 +222,20 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
       }
       setExpenseRefs(function (prev) { return Object.assign({}, prev, eMap) })
     }
+    // EPC back-links: any wallet_txn whose id matches extra_plate_collections.wallet_tx_id OR .cancel_wallet_tx_id
+    var txnIds = txns.map(function (tt) { return tt.id })
+    if (txnIds.length > 0) {
+      var { data: epcFwd } = await supabase.from('extra_plate_collections')
+        .select('id, event_id, extras_charged, plates_returned, total_paise, discount_paise, payment_mode, status, collected_by, wallet_tx_id, cancel_wallet_tx_id, cancelled_reason')
+        .in('wallet_tx_id', txnIds)
+      var { data: epcRev } = await supabase.from('extra_plate_collections')
+        .select('id, event_id, extras_charged, plates_returned, total_paise, discount_paise, payment_mode, status, collected_by, wallet_tx_id, cancel_wallet_tx_id, cancelled_reason')
+        .in('cancel_wallet_tx_id', txnIds)
+      var eMapEpc = {}
+      ;(epcFwd || []).forEach(function (r) { if (r.wallet_tx_id) eMapEpc[r.wallet_tx_id] = { epc: r, isCancel: false } })
+      ;(epcRev || []).forEach(function (r) { if (r.cancel_wallet_tx_id) eMapEpc[r.cancel_wallet_tx_id] = { epc: r, isCancel: true } })
+      setEpcRefs(function (prev) { return Object.assign({}, prev, eMapEpc) })
+    }
     setWalletTxns(txns)
   }
 
@@ -271,7 +294,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     var wid = (wallet || selectedWallet)?.id
     if (!wid) return
     var query = supabase.from('wallet_transactions')
-      .select('id, type, amount_paise, balance_after_paise, description, reference_type, reference_id, performed_by, created_at, issued_image_path, received_image_path, received_at, wallet_id, status, receipt_no, payment_mode')
+      .select('id, type, amount_paise, balance_after_paise, description, reference_type, reference_id, performed_by, created_at, issued_image_path, received_image_path, received_at, wallet_id, status, receipt_no, payment_mode, cancel_wallet_tx_id, cancelled_at, cancelled_by, cancelled_reason')
       .eq('wallet_id', wid)
       .order('created_at', { ascending: false })
       .limit(500)
@@ -325,6 +348,22 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
       setExpenseRefs(eMap)
     } else {
       setExpenseRefs({})
+    }
+    // EPC back-links: any wallet_txn whose id matches extra_plate_collections.wallet_tx_id OR .cancel_wallet_tx_id
+    var txnIds = txns.map(function (tt) { return tt.id })
+    if (txnIds.length > 0) {
+      var { data: epcFwd } = await supabase.from('extra_plate_collections')
+        .select('id, event_id, extras_charged, plates_returned, total_paise, discount_paise, payment_mode, status, collected_by, wallet_tx_id, cancel_wallet_tx_id, cancelled_reason')
+        .in('wallet_tx_id', txnIds)
+      var { data: epcRev } = await supabase.from('extra_plate_collections')
+        .select('id, event_id, extras_charged, plates_returned, total_paise, discount_paise, payment_mode, status, collected_by, wallet_tx_id, cancel_wallet_tx_id, cancelled_reason')
+        .in('cancel_wallet_tx_id', txnIds)
+      var eMapEpc = {}
+      ;(epcFwd || []).forEach(function (r) { if (r.wallet_tx_id) eMapEpc[r.wallet_tx_id] = { epc: r, isCancel: false } })
+      ;(epcRev || []).forEach(function (r) { if (r.cancel_wallet_tx_id) eMapEpc[r.cancel_wallet_tx_id] = { epc: r, isCancel: true } })
+      setEpcRefs(eMapEpc)
+    } else {
+      setEpcRefs({})
     }
     // Ensure counterparty profile names load (needed on non-admin own-wallet view).
     var cpArr = Object.keys(cpIds)
@@ -558,9 +597,32 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   async function printReceipt(txn) {
     if (!txn) return
     var contractNo = null
+    var clientName = ''
+    var eventDate = ''
+    var dealBy = ''
     if (txn.reference_id) {
-      var { data: ev } = await supabase.from('events').select('contract_no').eq('id', Number(txn.reference_id)).maybeSingle()
-      contractNo = ev ? ev.contract_no : null
+      var { data: ev } = await supabase.from('events')
+        .select('contract_no, client_name, function_date, created_user_name')
+        .eq('id', Number(txn.reference_id)).maybeSingle()
+      if (ev) {
+        contractNo = ev.contract_no || null
+        clientName = ev.client_name || ''
+        eventDate = ev.function_date || ''
+        dealBy = ev.created_user_name || ''
+      }
+    }
+    var collectorId = txn.performed_by
+    var receivedByName = walletProfiles[collectorId]?.name || ''
+    var signatureUrl = null
+    if (collectorId) {
+      var { data: pr } = await supabase.from('profiles').select('name, signature_path').eq('id', collectorId).maybeSingle()
+      if (pr) {
+        if (!receivedByName) receivedByName = pr.name || ''
+        if (pr.signature_path) {
+          var { data: signed } = await supabase.storage.from('images').createSignedUrl(pr.signature_path, 300)
+          signatureUrl = signed?.signedUrl || null
+        }
+      }
     }
     try {
       await generateCollectionReceiptPdf({
@@ -570,8 +632,315 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
         description: txn.description,
         createdAt: txn.created_at,
         contractNo: contractNo,
+        clientName: clientName,
+        eventDate: eventDate,
+        dealBy: dealBy,
+        receivedByName: receivedByName,
+        signatureUrl: signatureUrl,
       })
     } catch (e) { alert('Receipt generation failed: ' + e.message) }
+  }
+
+  function openCancel(txn, kind) {
+    setCancelTarget({ txn: txn, kind: kind })
+    setCancelReason('')
+  }
+
+  async function confirmCancel() {
+    if (cancelSaving || !cancelTarget) return
+    var reason = cancelReason.trim()
+    if (reason.length < 3) { alert('Reason required (min 3 chars)'); return }
+    setCancelSaving(true)
+    var t = cancelTarget.txn
+    var kind = cancelTarget.kind
+    var rpc, params, actName, lbl
+    if (kind === 'epc') {
+      var epcRow = (epcRefs[t.id] || {}).epc
+      if (!epcRow) { alert('EPC row not found'); setCancelSaving(false); return }
+      rpc = 'fn_extra_plate_cancel'
+      params = { p_collection_id: epcRow.id, p_reason: reason }
+      actName = 'EXTRA_PLATE_CANCEL_FROM_WALLET'
+      lbl = epcRow.extras_charged + ' extras · ' + formatPoints(t.amount_paise)
+    } else {
+      rpc = 'fn_wallet_collect_cancel'
+      params = { p_txn_id: t.id, p_reason: reason }
+      actName = 'WALLET_COLLECTION_CANCEL'
+      lbl = (t.receipt_no ? '#' + t.receipt_no + ' · ' : '') + formatPoints(t.amount_paise)
+    }
+    var { error } = await supabase.rpc(rpc, params)
+    if (error) { alert('Cancel failed: ' + error.message); setCancelSaving(false); return }
+    try { await logActivity(actName, lbl + ' | ' + reason) } catch (_) {}
+    setCancelTarget(null)
+    setCancelReason('')
+    setCancelSaving(false)
+    refreshBalance()
+    if (walletView === 'transactions') { openWalletTxns(null) }
+    else if (walletView === 'dashboard') { loadRecentTxns(selectedWallet) }
+  }
+
+  function renderCancelModal() {
+    if (!cancelTarget) return null
+    var t = cancelTarget.txn
+    var kind = cancelTarget.kind
+    var isEpc = kind === 'epc'
+    var epcRow = isEpc ? (epcRefs[t.id] || {}).epc : null
+    return (
+      <div className="fixed inset-0 z-50 bg-black/60 flex items-end sm:items-center justify-center p-0 sm:p-4"
+        onClick={function () { if (!cancelSaving) { setCancelTarget(null); setCancelReason('') } }}>
+        <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md p-5 space-y-3 max-h-[90vh] overflow-y-auto"
+          onClick={function (ev) { ev.stopPropagation() }}>
+          <h3 className="text-base font-bold text-gray-900">
+            Cancel {isEpc ? 'Extra Plate Collection' : 'Event Collection'}
+          </h3>
+          <div className="text-sm text-gray-600">
+            {isEpc && epcRow
+              ? epcRow.extras_charged + ' extras · ' + formatPoints(t.amount_paise) + (t.payment_mode ? ' · ' + t.payment_mode.toUpperCase() : '')
+              : (t.receipt_no ? '#' + t.receipt_no + ' · ' : '') + formatPoints(t.amount_paise) + (t.payment_mode ? ' · ' + t.payment_mode.toUpperCase() : '')}
+            {t.description ? ' — ' + t.description : ''}
+          </div>
+          <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded p-2">
+            Wallet will be debited {formatPoints(t.amount_paise)} and the event ledger reversed. This cannot be undone.
+          </div>
+          <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide">Reason</label>
+          <VoiceInput type="text" value={cancelReason} onChange={function (e) { setCancelReason(e.target.value) }}
+            placeholder="Why is this being cancelled?"
+            className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm" />
+          <div className="flex gap-3 pt-2">
+            <button type="button" onClick={function () { setCancelTarget(null); setCancelReason('') }} disabled={cancelSaving}
+              className="flex-1 py-3 text-sm text-gray-600 bg-gray-100 rounded-xl font-semibold">Keep</button>
+            <button type="button" onClick={confirmCancel} disabled={cancelSaving || !cancelReason.trim()}
+              className="flex-1 py-3 text-sm text-white bg-red-600 rounded-xl disabled:opacity-40 font-semibold">
+              {cancelSaving ? 'Cancelling...' : 'Confirm Cancel'}
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Detail overlays: expense (ExpenseDetail reused) + collection (self-contained modal) ──
+  var [expenseDetailTarget, setExpenseDetailTarget] = useState(null)  // full expense row for ExpenseDetail
+  var [expenseDetailLoading, setExpenseDetailLoading] = useState(false)
+  var [detailTarget, setDetailTarget] = useState(null)  // { txn, kind, event, collectorName, imgUrl, loading }
+
+  async function openExpenseDetail(expenseId) {
+    if (!expenseId) return
+    setExpenseDetailLoading(true)
+    setExpenseDetailTarget({ _placeholder: true, id: expenseId })
+    var { data: row, error } = await supabase.from('expenses')
+      .select('id, user_id, batch_id, expense_type_id, expense_sub_type_id, amount_paise, tax_paise, description, status, expense_date, receipt_path, receipt_paths, created_at, rejection_reason, flag_reason, penalty_paise, penalized_at, penalized_by, reviewed_at, reviewed_by, acknowledged_at, acknowledged_by, deduction_type, vendor_name, travel_from, travel_to, travel_mode, metadata, event_id, deleted_at, expense_types(name, extra_fields), expense_sub_types(name, extra_fields), events(event_name), expense_allocations(department, department_id, venue_id, amount_paise)')
+      .eq('id', Number(expenseId)).maybeSingle()
+    setExpenseDetailLoading(false)
+    if (error || !row) { alert('Expense not found: ' + (error?.message || 'missing')); setExpenseDetailTarget(null); return }
+    setExpenseDetailTarget(row)
+  }
+
+  function closeExpenseDetail(refresh) {
+    setExpenseDetailTarget(null)
+    if (refresh) {
+      refreshBalance()
+      if (walletView === 'transactions') { openWalletTxns(null) }
+      else if (walletView === 'dashboard') { loadRecentTxns(selectedWallet) }
+    }
+  }
+
+  function renderExpenseDetailModal() {
+    if (!expenseDetailTarget) return null
+    return (
+      <div className="fixed inset-0 z-50 bg-black/70 flex items-start sm:items-center justify-center p-0 sm:p-4 overflow-y-auto"
+        onClick={function () { closeExpenseDetail(false) }}>
+        <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-2xl p-4 sm:p-5 min-h-screen sm:min-h-0 sm:max-h-[92vh] overflow-y-auto"
+          onClick={function (ev) { ev.stopPropagation() }}>
+          {expenseDetailLoading || expenseDetailTarget._placeholder ? (
+            <div className="py-16 text-center text-sm text-gray-500">Loading expense…</div>
+          ) : (
+            <ExpenseDetail
+              key={expenseDetailTarget.id}
+              exp={expenseDetailTarget}
+              profile={profile}
+              isAdmin={isAdmin}
+              isDeptApprover={false}
+              onBack={function () { closeExpenseDetail(false) }}
+              onUpdated={function () { closeExpenseDetail(true) }}
+              onEdit={function () { alert('To edit this expense, please open the Expenses tab.'); closeExpenseDetail(false) }}
+              onRaiseGV={function () { alert('To raise a General Voucher, please open the Expenses tab.'); closeExpenseDetail(false) }}
+            />
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  async function openCollectionDetail(txn, kind) {
+    setDetailTarget({ txn: txn, kind: kind, loading: true })
+    var evData = null
+    if (kind === 'collection' && txn.reference_id) {
+      var { data: ev } = await supabase.from('events')
+        .select('id, contract_no, event_name, client_name, function_date, created_user_name, venue_name')
+        .eq('id', Number(txn.reference_id)).maybeSingle()
+      evData = ev || null
+    } else if (kind === 'epc') {
+      var epcRow = (epcRefs[txn.id] || {}).epc
+      if (epcRow && epcRow.event_id) {
+        var { data: ev2 } = await supabase.from('events')
+          .select('id, contract_no, event_name, client_name, function_date, created_user_name, venue_name')
+          .eq('id', epcRow.event_id).maybeSingle()
+        evData = ev2 || null
+      }
+    }
+    var collectorName = walletProfiles[txn.performed_by]?.name || ''
+    if (!collectorName && txn.performed_by) {
+      var { data: pr } = await supabase.from('profiles').select('name').eq('id', txn.performed_by).maybeSingle()
+      if (pr) collectorName = pr.name || ''
+    }
+    var imgUrl = txn.received_image_path
+      ? supabase.storage.from('receipts').getPublicUrl(txn.received_image_path).data?.publicUrl
+      : null
+    setDetailTarget({ txn: txn, kind: kind, loading: false, event: evData, collectorName: collectorName, imgUrl: imgUrl })
+  }
+
+  function renderCollectionDetailModal() {
+    if (!detailTarget) return null
+    var t = detailTarget.txn
+    var kind = detailTarget.kind
+    var isEpc = kind === 'epc'
+    var ev = detailTarget.event || null
+    var epcRow = isEpc ? (epcRefs[t.id] || {}).epc : null
+    var isCancelled = t.status === 'cancelled' || (isEpc && epcRow && epcRow.status === 'cancelled')
+    var canCancel = !isCancelled && (
+      (kind === 'collection' && (isAdmin || t.performed_by === profile.id)) ||
+      (isEpc && epcRow && (isAdmin || epcRow.collected_by === profile.id))
+    )
+    return (
+      <div className="fixed inset-0 z-50 bg-black/60 flex items-end sm:items-center justify-center p-0 sm:p-4"
+        onClick={function () { setDetailTarget(null) }}>
+        <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md p-5 space-y-3 max-h-[90vh] overflow-y-auto"
+          onClick={function (ev2) { ev2.stopPropagation() }}>
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <h3 className="text-base font-bold text-gray-900">
+                {isEpc ? '🍽 Extra Plate Collection' : '🎯 Event Collection'}
+              </h3>
+              {ev && (
+                <p className="text-xs text-gray-500 mt-0.5">
+                  {ev.event_name || '—'}{ev.client_name ? ' · ' + ev.client_name : ''}
+                </p>
+              )}
+            </div>
+            <button type="button" onClick={function () { setDetailTarget(null) }}
+              className="w-7 h-7 rounded-full bg-gray-100 text-gray-500 flex items-center justify-center flex-shrink-0">✕</button>
+          </div>
+          {isCancelled && (
+            <div className="p-2 rounded bg-rose-50 border border-rose-200 text-rose-700 text-xs">
+              <span className="font-bold uppercase text-[9px] tracking-wider">Cancelled</span>
+              {(t.cancelled_reason || (epcRow && epcRow.cancelled_reason)) && (
+                <div className="mt-0.5">Reason: {t.cancelled_reason || epcRow.cancelled_reason}</div>
+              )}
+            </div>
+          )}
+          <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
+            <div>
+              <p className="text-[10px] uppercase text-gray-500">Amount</p>
+              <p className="font-bold text-gray-900 text-base">{formatPoints(t.amount_paise)}</p>
+            </div>
+            <div>
+              <p className="text-[10px] uppercase text-gray-500">Payment</p>
+              <p className="font-medium text-gray-800">{t.payment_mode ? t.payment_mode.toUpperCase() : '—'}</p>
+            </div>
+            {t.receipt_no && (
+              <div>
+                <p className="text-[10px] uppercase text-gray-500">Receipt No</p>
+                <p className="font-medium text-gray-800">#{t.receipt_no}</p>
+              </div>
+            )}
+            {isEpc && epcRow && (
+              <>
+                <div>
+                  <p className="text-[10px] uppercase text-gray-500">Plates Charged</p>
+                  <p className="font-medium text-gray-800">{epcRow.extras_charged}</p>
+                </div>
+                {epcRow.plates_returned > 0 && (
+                  <div>
+                    <p className="text-[10px] uppercase text-gray-500">Returned</p>
+                    <p className="font-medium text-gray-800">{epcRow.plates_returned}</p>
+                  </div>
+                )}
+                {epcRow.discount_paise > 0 && (
+                  <div>
+                    <p className="text-[10px] uppercase text-gray-500">Discount</p>
+                    <p className="font-medium text-gray-800">{formatPoints(epcRow.discount_paise)}</p>
+                  </div>
+                )}
+              </>
+            )}
+            {ev && ev.function_date && (
+              <div>
+                <p className="text-[10px] uppercase text-gray-500">Event Date</p>
+                <p className="font-medium text-gray-800">{formatDate(ev.function_date)}</p>
+              </div>
+            )}
+            {ev && ev.contract_no && (
+              <div>
+                <p className="text-[10px] uppercase text-gray-500">Contract</p>
+                <p className="font-medium text-gray-800">{ev.contract_no}</p>
+              </div>
+            )}
+            {ev && ev.venue_name && (
+              <div>
+                <p className="text-[10px] uppercase text-gray-500">Venue</p>
+                <p className="font-medium text-gray-800">{ev.venue_name}</p>
+              </div>
+            )}
+            {ev && ev.created_user_name && (
+              <div>
+                <p className="text-[10px] uppercase text-gray-500">Deal By</p>
+                <p className="font-medium text-gray-800">{ev.created_user_name}</p>
+              </div>
+            )}
+            <div>
+              <p className="text-[10px] uppercase text-gray-500">Collected By</p>
+              <p className="font-medium text-gray-800">{detailTarget.collectorName || '—'}</p>
+            </div>
+            <div>
+              <p className="text-[10px] uppercase text-gray-500">When</p>
+              <p className="font-medium text-gray-800">{formatDate(t.created_at)}</p>
+            </div>
+          </div>
+          {t.description && (
+            <div>
+              <p className="text-[10px] uppercase text-gray-500 mb-0.5">Description</p>
+              <p className="text-sm text-gray-800">{t.description}</p>
+            </div>
+          )}
+          {detailTarget.imgUrl && (
+            <div>
+              <p className="text-[10px] uppercase text-gray-500 mb-1">Receipt Image</p>
+              <img src={detailTarget.imgUrl} alt="receipt"
+                onClick={function () { setEnlargedImg(detailTarget.imgUrl) }}
+                className="w-full max-h-64 object-contain rounded border border-gray-200 cursor-zoom-in bg-gray-50" />
+            </div>
+          )}
+          <div className="flex gap-2 pt-2 border-t border-gray-100">
+            {kind === 'collection' && t.receipt_no && (
+              <button type="button" onClick={function () { printReceipt(t) }}
+                className="flex-1 py-2 text-xs font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100">
+                🖨 Reprint
+              </button>
+            )}
+            {canCancel && (
+              <button type="button" onClick={function () { setDetailTarget(null); openCancel(t, kind) }}
+                className="flex-1 py-2 text-xs font-bold text-red-700 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100">
+                🚫 Cancel
+              </button>
+            )}
+            <button type="button" onClick={function () { setDetailTarget(null) }}
+              className="flex-1 py-2 text-xs font-bold text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200">
+              Close
+            </button>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   async function submitCollection() {
@@ -867,10 +1236,9 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-            <input type="text" value={issueDesc} onChange={function (e) { setIssueDesc(e.target.value) }}
+            <VoiceInput type="text" value={issueDesc} onChange={function (e) { setIssueDesc(e.target.value) }}
               placeholder="e.g. Weekly allowance, Reimbursement..."
-              maxLength="300" className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              style={{ fontSize: '16px' }} />
+              maxLength="300" className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">📷 Cash Photo</label>
@@ -1093,16 +1461,9 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
           {collectEventId && (
             <div>
               <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">5. Description</label>
-              <div className="relative">
-                <input type="text" value={collectDesc} onChange={function (e) { setCollectDesc(e.target.value) }}
-                  placeholder="e.g. Advance payment, Final settlement..."
-                  maxLength="300" className="w-full px-3 py-2.5 pr-10 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  style={{ fontSize: '16px' }} />
-                <button type="button"
-                  onClick={function () { collectVoice.start(function (text) { setCollectDesc(function (prev) { return (prev ? prev + ' ' : '') + text }) }) }}
-                  className={"absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded " + (collectVoice.listening ? "text-red-500 animate-pulse" : "text-blue-600 hover:bg-blue-50")}
-                  aria-label="Voice input">🎤</button>
-              </div>
+              <VoiceInput type="text" value={collectDesc} onChange={function (e) { setCollectDesc(e.target.value) }}
+                placeholder="e.g. Advance payment, Final settlement..."
+                maxLength="300" className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
             </div>
           )}
 
@@ -1167,10 +1528,9 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-            <input type="text" value={transferDesc} onChange={function (e) { setTransferDesc(e.target.value) }}
+            <VoiceInput type="text" value={transferDesc} onChange={function (e) { setTransferDesc(e.target.value) }}
               placeholder="e.g. Repayment, Lunch money..." maxLength="300"
-              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
-              style={{ fontSize: '16px' }} />
+              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">📷 Cash Photo</label>
@@ -1328,6 +1688,10 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                 var isExpKind = t.reference_type === 'expense' || t.reference_type === 'expense_refund'
                 var xp = isExpKind && t.reference_id ? expenseRefs[t.reference_id] : null
                 var tr = t.reference_type === 'transfer' && t.reference_id ? transferParties[t.reference_id] : null
+                var epcHit = epcRefs[t.id] || null
+                var isEpc = !!epcHit && !epcHit.isCancel
+                var isEpcCancel = !!epcHit && epcHit.isCancel
+                var isCancelled = t.status === 'cancelled'
                 var cpName = null
                 if (tr) {
                   var cpId = t.type === 'debit' ? tr.to_user_id : tr.from_user_id
@@ -1347,6 +1711,12 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                   else enrichLine = <p className="text-[11px] text-gray-400 italic truncate">No type / dept set</p>
                 } else if (t.reference_type === 'collection') {
                   enrichLine = <p className="text-[11px] text-emerald-600 truncate">🎉 Event Collection{t.payment_mode ? ' · ' + t.payment_mode : ''}</p>
+                } else if (t.reference_type === 'collection_cancel') {
+                  enrichLine = <p className="text-[11px] text-rose-600 truncate">🔁 Cancellation reversal</p>
+                } else if (isEpc) {
+                  enrichLine = <p className="text-[11px] text-emerald-600 truncate">🍽 Extra Plates · {epcHit.epc.extras_charged}{epcHit.epc.payment_mode ? ' · ' + epcHit.epc.payment_mode : ''}</p>
+                } else if (isEpcCancel) {
+                  enrichLine = <p className="text-[11px] text-rose-600 truncate">🔁 Extra Plate cancel</p>
                 } else if (tr && cpName) {
                   enrichLine = <p className="text-[11px] text-blue-600 truncate">{t.type === 'debit' ? '→ ' : '← '}{cpName}</p>
                 } else if (t.reference_type === 'issued') {
@@ -1356,8 +1726,25 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                 } else if (t.reference_type === 'opening') {
                   enrichLine = <p className="text-[11px] text-gray-500 truncate">Opening balance</p>
                 }
+                var epcCancellable = isEpc && epcHit.epc.status !== 'cancelled' && (isAdmin || epcHit.epc.collected_by === profile.id)
+                var collCancellable = t.reference_type === 'collection' && !isCancelled && (isAdmin || t.performed_by === profile.id)
+                var isExpRow = (t.reference_type === 'expense' || t.reference_type === 'expense_refund') && t.reference_id
+                var rowIsClickable = isExpRow || t.reference_type === 'collection' || isEpc
+                function handleRowClick() {
+                  if (!rowIsClickable) return
+                  if (isExpRow) {
+                    if (onOpenExpense) onOpenExpense(t.reference_id)
+                    else openExpenseDetail(t.reference_id)
+                  } else if (t.reference_type === 'collection') {
+                    openCollectionDetail(t, 'collection')
+                  } else if (isEpc) {
+                    openCollectionDetail(t, 'epc')
+                  }
+                }
                 return (
-                  <div key={t.id} className="flex items-center gap-3 p-3 bg-white border border-gray-200 rounded-xl">
+                  <div key={t.id}
+                    onClick={handleRowClick}
+                    className={"flex items-center gap-3 p-3 bg-white border rounded-xl " + (isCancelled ? "border-gray-200 opacity-50" : "border-gray-200") + (rowIsClickable ? " cursor-pointer hover:border-indigo-300 hover:bg-indigo-50/30 transition-colors" : "")}>
                     <div className={"w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 " + (isCredit ? "bg-green-50 text-green-600" : "bg-red-50 text-red-600")}>
                       <span className="text-sm font-bold">{isCredit ? '+' : '−'}</span>
                     </div>
@@ -1368,17 +1755,35 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                             {REF_TYPE_LABELS[t.reference_type] || t.reference_type}
                           </span>
                         )}
-                        <p className="text-sm font-bold text-gray-800 truncate">{t.description || (isCredit ? 'Credit' : 'Debit')}</p>
+                        <p className={"text-sm font-bold text-gray-800 truncate " + (isCancelled ? "line-through" : "")}>{t.description || (isCredit ? 'Credit' : 'Debit')}</p>
                         {t.status === 'pending' && <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded flex-shrink-0">Pending</span>}
+                        {isCancelled && <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 bg-rose-100 text-rose-700 rounded flex-shrink-0">Cancelled</span>}
                       </div>
                       {enrichLine}
-                      <p className="text-[11px] text-gray-400">{formatDate(t.created_at)}</p>
-                      {t.reference_type === 'collection' && t.receipt_no && (
-                        <button onClick={function () { printReceipt(t) }}
-                          className="mt-1 px-2 py-1 text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded hover:bg-blue-100 transition-colors">
-                          🖨 #{t.receipt_no}
-                        </button>
+                      {isCancelled && t.cancelled_reason && (
+                        <p className="text-[10px] text-rose-600 italic truncate">Reason: {t.cancelled_reason}</p>
                       )}
+                      <p className="text-[11px] text-gray-400">{formatDate(t.created_at)}</p>
+                      <div className="flex gap-1 flex-wrap mt-1" onClick={function (ev) { ev.stopPropagation() }}>
+                        {t.reference_type === 'collection' && t.receipt_no && (
+                          <button onClick={function (ev) { ev.stopPropagation(); printReceipt(t) }}
+                            className="px-2 py-1 text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded hover:bg-blue-100 transition-colors">
+                            🖨 #{t.receipt_no}
+                          </button>
+                        )}
+                        {collCancellable && (
+                          <button onClick={function (ev) { ev.stopPropagation(); openCancel(t, 'collection') }}
+                            className="px-2 py-1 text-[10px] font-bold text-red-700 bg-red-50 border border-red-200 rounded hover:bg-red-100 transition-colors">
+                            🚫 Cancel
+                          </button>
+                        )}
+                        {epcCancellable && (
+                          <button onClick={function (ev) { ev.stopPropagation(); openCancel(t, 'epc') }}
+                            className="px-2 py-1 text-[10px] font-bold text-red-700 bg-red-50 border border-red-200 rounded hover:bg-red-100 transition-colors">
+                            🚫 Cancel
+                          </button>
+                        )}
+                      </div>
                     </div>
                     <span className={"text-sm font-bold flex-shrink-0 " + (isCredit ? "text-green-600" : "text-red-600")}>
                       {isCredit ? '+' : '−'}{formatPoints(t.amount_paise)}
@@ -1403,6 +1808,9 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
         {renderIssueModal()}
         {renderReceiveModal()}
         {renderTransferConfirmModal()}
+        {renderCancelModal()}
+        {renderCollectionDetailModal()}
+        {renderExpenseDetailModal()}
         {renderEnlargedImg()}
       </div>
       </div>
@@ -1587,9 +1995,8 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                 onChange={function (e) { setBulkAmount(e.target.value) }}
                 placeholder="Amount (pts)" className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 style={{ fontSize: '16px' }} />
-              <input type="text" value={bulkDesc} onChange={function (e) { setBulkDesc(e.target.value) }}
-                placeholder="Description" maxLength="300" className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                style={{ fontSize: '16px' }} />
+              <VoiceInput type="text" value={bulkDesc} onChange={function (e) { setBulkDesc(e.target.value) }}
+                placeholder="Description" maxLength="300" className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
             </div>
             <div className="flex gap-2">
               <button onClick={function () { setBulkMode(false); setBulkSelected({}); setBulkAmount(''); setBulkDesc('') }}
@@ -1735,8 +2142,32 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             var receivedUrl = t.received_image_path ? supabase.storage.from('receipts').getPublicUrl(t.received_image_path).data?.publicUrl : null
             var isOwnWallet = selectedWallet && selectedWallet.user_id === profile.id
             var canConfirm = isCredit && t.status === 'pending' && isOwnWallet
+            var epcHit = epcRefs[t.id] || null
+            var isEpc = !!epcHit && !epcHit.isCancel
+            var isEpcCancel = !!epcHit && epcHit.isCancel
+            var isCancelled = t.status === 'cancelled'
+            var epcCancellable = isEpc && epcHit.epc.status !== 'cancelled' && (isAdmin || epcHit.epc.collected_by === profile.id)
+            var collCancellable = t.reference_type === 'collection' && !isCancelled && (isAdmin || t.performed_by === profile.id)
+            var isExpRow = (t.reference_type === 'expense' || t.reference_type === 'expense_refund') && t.reference_id
+            var rowIsClickable = isExpRow || t.reference_type === 'collection' || isEpc
+            function handleRowClick() {
+              if (!rowIsClickable) return
+              if (isExpRow) {
+                if (onOpenExpense) onOpenExpense(t.reference_id)
+                else openExpenseDetail(t.reference_id)
+              } else if (t.reference_type === 'collection') {
+                openCollectionDetail(t, 'collection')
+              } else if (isEpc) {
+                openCollectionDetail(t, 'epc')
+              }
+            }
+            var rowBorderClass = isCancelled
+              ? "border-gray-200 opacity-50"
+              : (t.status === 'pending' ? "border-amber-300 bg-amber-50/30" : "border-gray-200")
             return (
-              <div key={t.id} className={"bg-white border rounded-lg p-3 " + (t.status === 'pending' ? "border-amber-300 bg-amber-50/30" : "border-gray-200")}>
+              <div key={t.id}
+                onClick={handleRowClick}
+                className={"bg-white border rounded-lg p-3 " + rowBorderClass + (rowIsClickable ? " cursor-pointer hover:border-indigo-300 hover:bg-indigo-50/30 transition-colors" : "")}>
                 <div className="flex items-start justify-between">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
@@ -1745,7 +2176,17 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                           {REF_TYPE_LABELS[t.reference_type] || t.reference_type}
                         </span>
                       )}
-                      <p className="text-sm text-gray-800">
+                      {isEpc && (
+                        <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded border bg-emerald-50 text-emerald-700 border-emerald-200">
+                          Extra Plates
+                        </span>
+                      )}
+                      {isEpcCancel && (
+                        <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded border bg-rose-50 text-rose-700 border-rose-200">
+                          EP Cancel
+                        </span>
+                      )}
+                      <p className={"text-sm text-gray-800 " + (isCancelled ? "line-through" : "")}>
                         {t.description || '—'}
                         {t.reference_type === 'transfer' && t.reference_id && transferParties[t.reference_id] && (function () {
                           var tr = transferParties[t.reference_id]
@@ -1754,6 +2195,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                           if (!cpName) return null
                           return ' ' + (t.type === 'debit' ? '→' : '←') + ' ' + cpName
                         })()}
+                        {isEpc && ' · ' + epcHit.epc.extras_charged + ' extras'}
                       </p>
                       {t.reference_type === 'collection' && t.payment_mode && (
                         <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 border border-emerald-200">
@@ -1763,7 +2205,13 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                       {t.status === 'pending' && (
                         <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded">Pending</span>
                       )}
+                      {isCancelled && (
+                        <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 bg-rose-100 text-rose-700 rounded">Cancelled</span>
+                      )}
                     </div>
+                    {isCancelled && t.cancelled_reason && (
+                      <p className="text-[10px] text-rose-600 italic mt-0.5">Reason: {t.cancelled_reason}</p>
+                    )}
                     {/* Enrichment: expense/refund → type › sub-type · dept · event · (refund amount + date) */}
                     {(t.reference_type === 'expense' || t.reference_type === 'expense_refund') && t.reference_id && expenseRefs[t.reference_id] && (function () {
                       var e = expenseRefs[t.reference_id]
@@ -1812,15 +2260,21 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                     </p>
                     <p className="text-[10px] text-gray-400">bal: {formatPoints(t.balance_after_paise)}</p>
                     {canConfirm && (
-                      <button onClick={function () { setReceiveModal(t); setReceiveImage(null) }}
+                      <button onClick={function (ev) { ev.stopPropagation(); setReceiveModal(t); setReceiveImage(null) }}
                         className="mt-1.5 px-2 py-1 text-[10px] font-bold text-amber-700 bg-amber-100 border border-amber-300 rounded hover:bg-amber-200 transition-colors">
                         📷 Confirm Received
                       </button>
                     )}
                     {t.reference_type === 'collection' && t.receipt_no && (
-                      <button onClick={function () { printReceipt(t) }}
+                      <button onClick={function (ev) { ev.stopPropagation(); printReceipt(t) }}
                         className="mt-1.5 ml-1 px-2 py-1 text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded hover:bg-blue-100 transition-colors">
                         🖨 #{t.receipt_no}
+                      </button>
+                    )}
+                    {(collCancellable || epcCancellable) && (
+                      <button onClick={function (ev) { ev.stopPropagation(); openCancel(t, collCancellable ? 'collection' : 'epc') }}
+                        className="mt-1.5 ml-1 px-2 py-1 text-[10px] font-bold text-red-700 bg-red-50 border border-red-200 rounded hover:bg-red-100 transition-colors">
+                        🚫 Cancel
                       </button>
                     )}
                   </div>
@@ -1834,6 +2288,9 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
         {renderCollectModal()}
         {renderTransferModal()}
         {renderTransferConfirmModal()}
+        {renderCancelModal()}
+        {renderCollectionDetailModal()}
+        {renderExpenseDetailModal()}
         {renderEnlargedImg()}
       </div>
     )

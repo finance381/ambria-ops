@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import EventDatePicker from '../../components/ui/EventDatePicker'
 import { useLang } from '../../lib/i18n.jsx'
+import VoiceInput from '../../components/ui/VoiceInput'
 
 /* ═══════════════════════════════════════════════════════
    AMBRIA QUOTE CALCULATOR — Server-Side Pricing
@@ -2624,9 +2625,9 @@ function QuoteCalculator({ profile, onExit, onSignOut }) {
 
         {/* NOTES */}
         <StepCard step={4} title="Notes">
-          <textarea value={notes} onChange={function(e){ setNotes(e.target.value) }}
+          <VoiceInput as="textarea" value={notes} onChange={function(e){ setNotes(e.target.value) }}
             rows="3" maxLength="1000" placeholder="Remarks, special requests, negotiation context..."
-            style={{ width: '100%', padding: 11, borderRadius: 9, border: '2px solid ' + C.border, fontSize: 14, fontFamily: 'inherit', color: '#211F3B', background: C.bg, resize: 'vertical', outline: 'none' }} />
+            style={{ width: '100%', padding: 11, paddingRight: 40, borderRadius: 9, border: '2px solid ' + C.border, fontSize: 14, fontFamily: 'inherit', color: C.text, background: C.bg, resize: 'vertical', outline: 'none' }} />
           {notes.length > 0 && <div style={{ fontSize: 10, color: C.muted, textAlign: 'right', marginTop: 4 }}>{notes.length}/1000</div>}
         </StepCard>
 
