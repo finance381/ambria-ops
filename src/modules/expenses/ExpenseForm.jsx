@@ -466,16 +466,17 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
   }
 
   function removeReceipt(idx, rIdx) {
-    var updated = entries.map(function (e, i) {
-      if (i !== idx) return e
-      var url = e.receiptPreviews[rIdx]
-      if (url) URL.revokeObjectURL(url)
-      return Object.assign({}, e, {
-        receiptFiles: e.receiptFiles.filter(function (_, j) { return j !== rIdx }),
-        receiptPreviews: e.receiptPreviews.filter(function (_, j) { return j !== rIdx })
+    setEntries(function (prev) {
+      return prev.map(function (e, i) {
+        if (i !== idx) return e
+        var url = e.receiptPreviews[rIdx]
+        if (url) URL.revokeObjectURL(url)
+        return Object.assign({}, e, {
+          receiptFiles: e.receiptFiles.filter(function (_, j) { return j !== rIdx }),
+          receiptPreviews: e.receiptPreviews.filter(function (_, j) { return j !== rIdx })
+        })
       })
     })
-    setEntries(updated)
   }
 
   var mediaRecorders = useRef({})
@@ -518,11 +519,12 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
           delete mediaRecorders.current[idx]
         })
       }
-      var updated = entries.map(function (e, i) {
-        if (i !== idx) return e
-        return Object.assign({}, e, { recording: true })
+      setEntries(function (prev) {
+        return prev.map(function (e, i) {
+          if (i !== idx) return e
+          return Object.assign({}, e, { recording: true })
+        })
       })
-      setEntries(updated)
       recorder.start()
       setTimeout(function () { stopRecording(idx) }, 30000)
     }).catch(function () { setError('Microphone access denied') })
@@ -534,25 +536,27 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
   }
 
   function removeAudio(idx) {
-    var updated = entries.map(function (e, i) {
-      if (i !== idx) return e
-      if (e.audioUrl) URL.revokeObjectURL(e.audioUrl)
-      return Object.assign({}, e, { audioBlob: null, audioUrl: '', recording: false })
+    setEntries(function (prev) {
+      return prev.map(function (e, i) {
+        if (i !== idx) return e
+        if (e.audioUrl) URL.revokeObjectURL(e.audioUrl)
+        return Object.assign({}, e, { audioBlob: null, audioUrl: '', recording: false })
+      })
     })
-    setEntries(updated)
   }
 
   // ── Item receipt helpers ──
   function toggleItemPurchase(idx) {
-    var updated = entries.map(function (e, i) {
-      if (i !== idx) return e
-      var on = !e.isItemPurchase
-      return Object.assign({}, e, {
-        isItemPurchase: on,
-        items: on ? (e.items && e.items.length > 0 ? e.items : [makeItem()]) : [makeItem()]
+    setEntries(function (prev) {
+      return prev.map(function (e, i) {
+        if (i !== idx) return e
+        var on = !e.isItemPurchase
+        return Object.assign({}, e, {
+          isItemPurchase: on,
+          items: on ? (e.items && e.items.length > 0 ? e.items : [makeItem()]) : [makeItem()]
+        })
       })
     })
-    setEntries(updated)
     setItemMatches([])
     setItemSearchKey('')
   }
@@ -578,26 +582,28 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
   }
 
   function addItem(entryIdx) {
-    var updated = entries.map(function (e, i) {
-      if (i !== entryIdx) return e
-      var newItems = e.items.concat([makeItem()])
-      return Object.assign({}, e, { items: newItems, _editingItemIdx: newItems.length - 1 })
+    setEntries(function (prev) {
+      return prev.map(function (e, i) {
+        if (i !== entryIdx) return e
+        var newItems = e.items.concat([makeItem()])
+        return Object.assign({}, e, { items: newItems, _editingItemIdx: newItems.length - 1 })
+      })
     })
-    setEntries(updated)
   }
 
   function removeItem(entryIdx, itemIdx) {
-    var updated = entries.map(function (e, i) {
-      if (i !== entryIdx) return e
-      if (e.items.length <= 1) return e
-      var cur = e._editingItemIdx == null ? -1 : e._editingItemIdx
-      var next = cur === itemIdx ? -1 : (cur > itemIdx ? cur - 1 : cur)
-      return Object.assign({}, e, {
-        items: e.items.filter(function (_, j) { return j !== itemIdx }),
-        _editingItemIdx: next,
+    setEntries(function (prev) {
+      return prev.map(function (e, i) {
+        if (i !== entryIdx) return e
+        if (e.items.length <= 1) return e
+        var cur = e._editingItemIdx == null ? -1 : e._editingItemIdx
+        var next = cur === itemIdx ? -1 : (cur > itemIdx ? cur - 1 : cur)
+        return Object.assign({}, e, {
+          items: e.items.filter(function (_, j) { return j !== itemIdx }),
+          _editingItemIdx: next,
+        })
       })
     })
-    setEntries(updated)
     var key = entryIdx + '_' + itemIdx
     if (itemSearchKey === key) { setItemMatches([]); setItemSearchKey('') }
   }
@@ -633,24 +639,25 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
   }
 
   function updateItem(entryIdx, itemIdx, field, val) {
-    var updated = entries.map(function (e, i) {
-      if (i !== entryIdx) return e
-      var copy = Object.assign({}, e)
-      copy._editingItemIdx = itemIdx
-      copy.items = e.items.map(function (it, j) {
-        if (j !== itemIdx) return it
-        var ic = Object.assign({}, it)
-        ic[field] = val
-        if (field === 'itemQuery' && it.itemMode !== 'new') {
-          ic.itemMatchedId = null
-          ic.itemMatchedSource = null
-          ic.itemMatchedCategoryId = null
-        }
-        return ic
+    setEntries(function (prev) {
+      return prev.map(function (e, i) {
+        if (i !== entryIdx) return e
+        var copy = Object.assign({}, e)
+        copy._editingItemIdx = itemIdx
+        copy.items = e.items.map(function (it, j) {
+          if (j !== itemIdx) return it
+          var ic = Object.assign({}, it)
+          ic[field] = val
+          if (field === 'itemQuery' && it.itemMode !== 'new') {
+            ic.itemMatchedId = null
+            ic.itemMatchedSource = null
+            ic.itemMatchedCategoryId = null
+          }
+          return ic
+        })
+        return copy
       })
-      return copy
     })
-    setEntries(updated)
   }
 
   function searchInventoryItems(entryIdx, itemIdx, term) {
@@ -671,23 +678,24 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
   }
 
   function pickItemMatch(entryIdx, itemIdx, item) {
-    var updated = entries.map(function (e, i) {
-      if (i !== entryIdx) return e
-      var copy = Object.assign({}, e)
-      copy._editingItemIdx = itemIdx
-      copy.items = e.items.map(function (it, j) {
-        if (j !== itemIdx) return it
-        return Object.assign({}, it, {
-          itemQuery: item.name,
-          itemMatchedId: item.id,
-          itemMatchedSource: item._source,
-          itemMatchedCategoryId: item.category_id || null,
-          itemUnit: item.unit || it.itemUnit
+    setEntries(function (prev) {
+      return prev.map(function (e, i) {
+        if (i !== entryIdx) return e
+        var copy = Object.assign({}, e)
+        copy._editingItemIdx = itemIdx
+        copy.items = e.items.map(function (it, j) {
+          if (j !== itemIdx) return it
+          return Object.assign({}, it, {
+            itemQuery: item.name,
+            itemMatchedId: item.id,
+            itemMatchedSource: item._source,
+            itemMatchedCategoryId: item.category_id || null,
+            itemUnit: item.unit || it.itemUnit
+          })
         })
+        return copy
       })
-      return copy
     })
-    setEntries(updated)
     setItemMatches([])
     setItemSearchKey('')
   }
@@ -703,57 +711,63 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
         return Object.assign({}, it, { _key: Date.now() + '_' + Math.random().toString(36).slice(2, 8) })
       })
     })
-    var updated = entries.slice()
-    updated.splice(idx + 1, 0, dup)
-    setEntries(updated)
+    setEntries(function (prev) {
+      var next = prev.slice()
+      next.splice(idx + 1, 0, dup)
+      return next
+    })
   }
 
   // ── Allocation helpers ──
   function updateAllocation(entryIdx, allocIdx, field, val) {
-    var updated = entries.map(function (e, i) {
-      if (i !== entryIdx) return e
-      var copy = Object.assign({}, e)
-      copy.allocations = e.allocations.map(function (a, j) {
-        if (j !== allocIdx) return a
-        var ac = Object.assign({}, a)
-        ac[field] = val
-        return ac
+    setEntries(function (prev) {
+      return prev.map(function (e, i) {
+        if (i !== entryIdx) return e
+        var copy = Object.assign({}, e)
+        copy.allocations = e.allocations.map(function (a, j) {
+          if (j !== allocIdx) return a
+          var ac = Object.assign({}, a)
+          ac[field] = val
+          return ac
+        })
+        return copy
       })
-      return copy
     })
-    setEntries(updated)
   }
 
   function addAllocation(entryIdx) {
-    var updated = entries.map(function (e, i) {
-      if (i !== entryIdx) return e
-      var nA = makeAllocation()
-      // Prefill from entry's top-level; dept-specific match applied when dept picked
-      nA.expenseTypeId = e.expenseTypeId || ''
-      nA.expenseSubTypeId = e.expenseSubTypeId || ''
-      return Object.assign({}, e, { allocations: e.allocations.concat([nA]) })
+    setEntries(function (prev) {
+      return prev.map(function (e, i) {
+        if (i !== entryIdx) return e
+        var nA = makeAllocation()
+        // Prefill from entry's top-level; dept-specific match applied when dept picked
+        nA.expenseTypeId = e.expenseTypeId || ''
+        nA.expenseSubTypeId = e.expenseSubTypeId || ''
+        return Object.assign({}, e, { allocations: e.allocations.concat([nA]) })
+      })
     })
-    setEntries(updated)
   }
 
   function removeAllocation(entryIdx, allocIdx) {
-    var updated = entries.map(function (e, i) {
-      if (i !== entryIdx) return e
-      if (e.allocations.length <= 1) return e
-      return Object.assign({}, e, { allocations: e.allocations.filter(function (_, j) { return j !== allocIdx }) })
+    setEntries(function (prev) {
+      return prev.map(function (e, i) {
+        if (i !== entryIdx) return e
+        if (e.allocations.length <= 1) return e
+        return Object.assign({}, e, { allocations: e.allocations.filter(function (_, j) { return j !== allocIdx }) })
+      })
     })
-    setEntries(updated)
   }
 
   function duplicateAllocation(entryIdx, allocIdx) {
-    var updated = entries.map(function (e, i) {
-      if (i !== entryIdx) return e
-      var src = e.allocations[allocIdx]
-      if (!src) return e
-      var dup = Object.assign({}, src, { amountRupees: '' })
-      return Object.assign({}, e, { allocations: e.allocations.concat([dup]) })
+    setEntries(function (prev) {
+      return prev.map(function (e, i) {
+        if (i !== entryIdx) return e
+        var src = e.allocations[allocIdx]
+        if (!src) return e
+        var dup = Object.assign({}, src, { amountRupees: '' })
+        return Object.assign({}, e, { allocations: e.allocations.concat([dup]) })
+      })
     })
-    setEntries(updated)
   }
 
   // Pick best-matching allocation-scope type/sub-type for a dept.
@@ -789,13 +803,14 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
   }
 
   function updateFieldValue(entryIdx, key, val) {
-    var updated = entries.map(function (e, i) {
-      if (i !== entryIdx) return e
-      var fv = Object.assign({}, e.fieldValues)
-      fv[key] = val
-      return Object.assign({}, e, { fieldValues: fv })
+    setEntries(function (prev) {
+      return prev.map(function (e, i) {
+        if (i !== entryIdx) return e
+        var fv = Object.assign({}, e.fieldValues)
+        fv[key] = val
+        return Object.assign({}, e, { fieldValues: fv })
+      })
     })
-    setEntries(updated)
   }
 
   // Payment split model (v87+):
@@ -855,21 +870,22 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
   }
 
   function setPaymentCredit(idx, valRupees) {
-    var updated = entries.map(function (e, i) {
-      if (i !== idx) return e
-      var patch = { paymentCreditRupees: valRupees }
-      // Reset leg splits — user must re-pick after changing total
-      patch.paymentCreditCashRupees = ''
-      patch.paymentCreditBankRupees = ''
-      if (!Number(valRupees || 0)) {
-        patch.payWithCash = false
-        patch.payWithBank = false
-        patch.cashDueDate = ''
-        patch.bankDueDate = ''
-      }
-      return Object.assign({}, e, patch)
+    setEntries(function (prev) {
+      return prev.map(function (e, i) {
+        if (i !== idx) return e
+        var patch = { paymentCreditRupees: valRupees }
+        // Reset leg splits — user must re-pick after changing total
+        patch.paymentCreditCashRupees = ''
+        patch.paymentCreditBankRupees = ''
+        if (!Number(valRupees || 0)) {
+          patch.payWithCash = false
+          patch.payWithBank = false
+          patch.cashDueDate = ''
+          patch.bankDueDate = ''
+        }
+        return Object.assign({}, e, patch)
+      })
     })
-    setEntries(updated)
   }
 
   function setPaymentCash(idx, valRupees) {
@@ -883,11 +899,12 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
     if (!isFinite(cashN) || cashN < 0) cashN = 0
     if (cashN > amtRupees) cashN = amtRupees
     var creditN = Math.max(0, amtRupees - cashN)
-    var updated = entries.map(function (en, i) {
-      if (i !== idx) return en
-      return Object.assign({}, en, { paymentCreditRupees: creditN ? String(creditN) : '' })
+    setEntries(function (prev) {
+      return prev.map(function (en, i) {
+        if (i !== idx) return en
+        return Object.assign({}, en, { paymentCreditRupees: creditN ? String(creditN) : '' })
+      })
     })
-    setEntries(updated)
   }
 
   // Vendor stub auto-create: insert a minimal 'incomplete' vendor row and
