@@ -33,6 +33,7 @@ function VendorLedger({ profile }) {
   var [selectedVendor, setSelectedVendor] = useState(null)
   var [entries, setEntries] = useState([])
   var [entriesLoading, setEntriesLoading] = useState(false)
+  var [expandedEntryId, setExpandedEntryId] = useState(null)  // toggle for amount breakdown + allocations
   var [showDeleted, setShowDeleted] = useState(false)
 
   useEffect(function () {
@@ -181,22 +182,47 @@ function VendorLedger({ profile }) {
     })
 
     var receiptsByExpId = {}
+    var breakdownByExpId = {}  // { [expId]: { amount_paise, tax_paise, allocations: [...] } }
     if (expIds.length > 0) {
       var { data: exps } = await supabase.from('expenses')
-        .select('id, receipt_paths, receipt_path')
+        .select('id, receipt_paths, receipt_path, amount_paise, tax_paise, expense_allocations(department, department_id, venue_id, amount_paise, remarks)')
         .in('id', expIds)
       ;(exps || []).forEach(function (ex) {
         var paths = Array.isArray(ex.receipt_paths) && ex.receipt_paths.length > 0
           ? ex.receipt_paths
           : (ex.receipt_path ? [ex.receipt_path] : [])
         if (paths.length > 0) receiptsByExpId[ex.id] = paths
+        breakdownByExpId[ex.id] = {
+          amount_paise: ex.amount_paise || 0,
+          tax_paise: ex.tax_paise || 0,
+          allocations: ex.expense_allocations || []
+        }
       })
+    }
+
+    // Venue name lookup for allocation display
+    var venueIds = []
+    Object.keys(breakdownByExpId).forEach(function (k) {
+      breakdownByExpId[k].allocations.forEach(function (a) {
+        if (a.venue_id && venueIds.indexOf(a.venue_id) === -1) venueIds.push(a.venue_id)
+      })
+    })
+    var venueNameById = {}
+    if (venueIds.length > 0) {
+      var { data: vRows } = await supabase.from('venues').select('id, name').in('id', venueIds)
+      ;(vRows || []).forEach(function (v) { venueNameById[v.id] = v.name })
     }
 
     var merged = rows.map(function (r) {
       if (r.ref_type === 'expense' && r.ref_id) {
         var id = Number(r.ref_id)
-        if (receiptsByExpId[id]) return Object.assign({}, r, { _sourceReceipts: receiptsByExpId[id] })
+        var patch = {}
+        if (receiptsByExpId[id]) patch._sourceReceipts = receiptsByExpId[id]
+        if (breakdownByExpId[id]) {
+          patch._breakdown = breakdownByExpId[id]
+          patch._venueNames = venueNameById
+        }
+        if (Object.keys(patch).length > 0) return Object.assign({}, r, patch)
       }
       return r
     })
@@ -552,6 +578,61 @@ function VendorLedger({ profile }) {
                   {e._sourceReceipts && e._sourceReceipts.length > 0 && (
                     <LedgerSourceMedia paths={e._sourceReceipts} />
                   )}
+                  {e._breakdown && (function () {
+                    var b = e._breakdown
+                    var totalPaise = b.amount_paise
+                    var taxPaise = b.tax_paise || 0
+                    var basePaise = totalPaise - taxPaise
+                    var roundedTotalPaise = Math.round(totalPaise / 100) * 100
+                    var roundOffPaise = roundedTotalPaise - totalPaise
+                    var hasRoundOff = roundOffPaise !== 0
+                    var isExpanded = expandedEntryId === e.id
+                    return (
+                      <div className="mt-1.5">
+                        <button type="button"
+                          onClick={function () { setExpandedEntryId(isExpanded ? null : e.id) }}
+                          className="text-[10px] font-semibold text-indigo-600 hover:text-indigo-800">
+                          {isExpanded ? '▾ Hide details' : '▸ Show details'}
+                        </button>
+                        {isExpanded && (
+                          <div className="mt-2 p-2.5 bg-gray-50 border border-gray-200 rounded-lg space-y-2">
+                            <div className="text-[11px]">
+                              <div className="font-bold uppercase text-[9px] tracking-wider text-gray-500 mb-1">Amount breakdown</div>
+                              <div className="flex justify-between text-gray-700"><span>Base</span><span>{formatPoints(basePaise)}</span></div>
+                              {taxPaise > 0 && (
+                                <div className="flex justify-between text-gray-700"><span>GST</span><span>{formatPoints(taxPaise)}</span></div>
+                              )}
+                              <div className="flex justify-between text-gray-700 pt-1 border-t border-gray-200 mt-1"><span>Sub-total</span><span>{formatPoints(totalPaise)}</span></div>
+                              {hasRoundOff && (
+                                <div className="flex justify-between text-amber-700"><span>Round off</span><span>{roundOffPaise > 0 ? '+' : ''}{formatPoints(roundOffPaise)}</span></div>
+                              )}
+                              <div className="flex justify-between font-bold text-gray-900 pt-1 border-t border-gray-300 mt-1">
+                                <span>Grand total{hasRoundOff ? ' (rounded)' : ''}</span>
+                                <span>{formatPoints(roundedTotalPaise)}</span>
+                              </div>
+                            </div>
+                            {b.allocations && b.allocations.length > 0 && (
+                              <div className="text-[11px] pt-2 border-t border-gray-200">
+                                <div className="font-bold uppercase text-[9px] tracking-wider text-gray-500 mb-1">Allocation{b.allocations.length > 1 ? 's' : ''}</div>
+                                {b.allocations.map(function (a, ai) {
+                                  var vName = a.venue_id && e._venueNames ? e._venueNames[a.venue_id] : null
+                                  var parts = []
+                                  if (a.department) parts.push(a.department)
+                                  if (vName) parts.push(vName)
+                                  return (
+                                    <div key={ai} className="flex justify-between gap-2 text-gray-700 py-0.5">
+                                      <span className="truncate">{parts.length > 0 ? parts.join(' · ') : '—'}{a.remarks ? ' — ' + a.remarks : ''}</span>
+                                      <span className="flex-shrink-0 font-medium">{formatPoints(a.amount_paise || 0)}</span>
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })()}
                 </div>
                 <div className="text-right flex-shrink-0">
                   <p className={"text-sm font-bold " + (isCredit ? "text-amber-800" : "text-green-700")}>
