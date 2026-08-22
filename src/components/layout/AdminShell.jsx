@@ -26,6 +26,7 @@ var Analytics = lazy(function () { return import('../../modules/analytics/Analyt
 var Overview = lazy(function () { return import('../../modules/overview/Overview') })
 var JobDepartments = lazy(function () { return import('../../modules/employees/JobDepartments') })
 var Employees = lazy(function () { return import('../../modules/employees/Employees') })
+var RoleTemplates = lazy(function () { return import('../../modules/users/RoleTemplates') })
 var EmployeeDocTypes = lazy(function () { return import('../../modules/employees/EmployeeDocTypes') })
 var SalaryLedger = lazy(function () { return import('../../modules/employees/SalaryLedger') })
 var SalaryPayouts = lazy(function () { return import('../../modules/expenses/SalaryPayouts') })
@@ -74,6 +75,7 @@ var SUB_TAB_CONFIG = {
   ],
   users: [
     { key: 'users', label: 'Users', component: Users },
+    { key: 'role_templates', label: 'Role Templates', component: RoleTemplates },
     { key: 'employees', label: 'Employees', component: Employees },
     { key: 'logs', label: 'Activity Logs', component: ActivityLogs },
   ],

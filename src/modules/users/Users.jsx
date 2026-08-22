@@ -3,10 +3,9 @@ import { supabase } from '../../lib/supabase'
 import Modal from '../../components/ui/Modal'
 import { logActivity } from '../../lib/logger'
 import { prepUpload } from '../../lib/uploadHelper'
+import { PERM_GROUPS, DEFAULT_ROLES } from '../../lib/permissions'
 
-var DEFAULT_ROLES = ['admin', 'auditor', 'sales', 'production', 'logistics']
-
-var PERM_GROUPS = [
+var _PERM_GROUPS_LOCAL_UNUSED = [
   { group: 'Personal', icon: '🪪', children: [
     { key: 'feature_my_profile', label: 'My Profile', grants: ['feature_my_profile'] },
   ]},
@@ -49,6 +48,7 @@ var PERM_GROUPS = [
     { key: 'feature_admin', label: 'Admin Panel', grants: ['feature_admin'], optional: [{ key: 'admin_masters', label: 'Manage masters' }, { key: 'admin_users', label: 'Manage users' }, { key: 'admin_approve', label: 'Approve items' }] },
   ]},
 ]
+// ^ _PERM_GROUPS_LOCAL_UNUSED retained temporarily; real source is lib/permissions.js. Delete this whole block in v95 cleanup.
 
 function Users() {
   var [users, setUsers] = useState([])
@@ -109,6 +109,9 @@ function Users() {
   var [roleSearch, setRoleSearch] = useState('')
   var [roleDropOpen, setRoleDropOpen] = useState(false)
 
+  // Role → default permissions template (from public.role_defaults)
+  var [roleDefaultsMap, setRoleDefaultsMap] = useState({})
+
   useEffect(function () { loadUsers(); loadLookups(); loadEmployees() }, [])
 
   async function loadEmployees() {
@@ -159,13 +162,14 @@ function Users() {
   }
 
   async function loadLookups() {
-    var [catRes, subCatRes, subDeptRes, deptRes, etRes, estRes] = await Promise.all([
+    var [catRes, subCatRes, subDeptRes, deptRes, etRes, estRes, rdRes] = await Promise.all([
       supabase.from('categories').select('id, name, sub_department_id').order('name'),
       supabase.from('sub_categories').select('id, name, category_id').order('name'),
       supabase.from('sub_departments').select('id, name, department_id, active').order('name'),
       supabase.from('departments').select('id, name').eq('active', true).order('name'),
       supabase.from('expense_types').select('id, name, icon, department_id, sub_department_id').eq('active', true).order('sort_order').order('name'),
       supabase.from('expense_sub_types').select('id, name, expense_type_id').eq('active', true).order('sort_order').order('name'),
+      supabase.from('role_defaults').select('role, permissions'),
     ])
     setCategories(catRes.data || [])
     setSubCategories(subCatRes.data || [])
@@ -173,6 +177,9 @@ function Users() {
     setDepartments(deptRes.data || [])
     setExpenseTypes(etRes.data || [])
     setExpenseSubTypes(estRes.data || [])
+    var rdMap = {}
+    ;(rdRes.data || []).forEach(function (r) { rdMap[r.role] = r.permissions || [] })
+    setRoleDefaultsMap(rdMap)
   }
 
   // ═══ EDIT USER ═══
@@ -552,11 +559,17 @@ function Users() {
     e.preventDefault()
     if (!addName.trim() || !addEmail.trim()) return
     setSaving(true); setError('')
+    // Seed from role template if available; otherwise minimal (My Profile only).
+    var seedPerms = (roleDefaultsMap[addRole] && roleDefaultsMap[addRole].length > 0)
+      ? roleDefaultsMap[addRole].slice()
+      : ['feature_my_profile']
+    if (seedPerms.indexOf('feature_my_profile') === -1) seedPerms.push('feature_my_profile')
+
     var { error: err } = await supabase.from('approved_emails').insert({
       email: addEmail.trim().toLowerCase(),
       name: addName.trim(),
       role: addRole,
-      permissions: ['feature_my_profile'],
+      permissions: seedPerms,
     })
     if (err) {
       setError(err.message)
@@ -1205,7 +1218,31 @@ function Users() {
                 {activePanel === 'permissions' && (<div>
             {/* Permissions — Grouped */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Permissions</label>
+              <div className="flex items-center justify-between mb-2">
+                <label className="block text-sm font-medium text-gray-700">Permissions</label>
+                {(function () {
+                  var tpl = roleDefaultsMap[editRole]
+                  if (!tpl || tpl.length === 0) return null
+                  // Show apply button if template differs from current perms.
+                  var same = tpl.length === editPerms.length &&
+                    tpl.every(function (k) { return editPerms.indexOf(k) >= 0 })
+                  if (same) {
+                    return <span className="text-[10px] text-green-600 font-semibold">✓ Matches {editRole} defaults</span>
+                  }
+                  return (
+                    <button type="button"
+                      onClick={function () {
+                        if (!window.confirm('Overwrite current permissions with the "' + editRole + '" role template? Individual toggles you set will be lost.')) return
+                        var next = tpl.slice()
+                        if (next.indexOf('feature_my_profile') === -1) next.push('feature_my_profile')
+                        setEditPerms(next)
+                      }}
+                      className="text-[11px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 px-2.5 py-1 rounded-md hover:bg-indigo-100 transition-colors">
+                      ⚡ Apply {editRole} defaults ({tpl.length})
+                    </button>
+                  )
+                })()}
+              </div>
               <div className="space-y-2">
                 {PERM_GROUPS.map(function (grp) {
                   var allChildKeys = []
