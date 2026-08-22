@@ -418,15 +418,16 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
 
   // ── Entry helpers ──
   function updateEntry(idx, field, val) {
-    var updated = entries.map(function (e, i) {
-      if (i !== idx) return e
-      var copy = Object.assign({}, e)
-      copy[field] = val
-      if (field === 'expenseTypeId') { copy.expenseSubTypeId = ''; copy.fieldValues = {} }
-      if (field === 'expenseSubTypeId') { copy.fieldValues = {} }
-      return copy
+    setEntries(function (prev) {
+      return prev.map(function (e, i) {
+        if (i !== idx) return e
+        var copy = Object.assign({}, e)
+        copy[field] = val
+        if (field === 'expenseTypeId') { copy.expenseSubTypeId = ''; copy.fieldValues = {} }
+        if (field === 'expenseSubTypeId') { copy.fieldValues = {} }
+        return copy
+      })
     })
-    setEntries(updated)
 
     // Pre-fetch lookup data when sub-type changes
     if (field === 'expenseSubTypeId' && val) {
@@ -1552,7 +1553,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                 label="Expense Type"
                 items={typeList.map(function (et) { return { label: (et.icon ? et.icon + ' ' : '') + et.name, value: String(et.id) } })}
                 value={e0.expenseTypeId}
-                onChange={function (val) { updateEntry(0, 'expenseTypeId', val); updateEntry(0, 'expenseSubTypeId', '') }}
+                onChange={function (val) { updateEntry(0, 'expenseTypeId', val) }}
                 placeholder="Search or select type..."
               />
             </div>
