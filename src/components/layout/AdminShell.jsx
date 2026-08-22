@@ -38,12 +38,12 @@ function ExpenseTypesMaster(props) {
 // ── Sub-tab switcher ──
 function SubTabs({ tabs, active, onChange }) {
   return (
-    <div className="flex gap-6 mb-6 border-b border-gray-200">
+    <div className="flex gap-6 mb-6 border-b border-slate-200">
       {tabs.map(function (t) {
         return (
           <button key={t.key} onClick={function () { onChange(t.key) }}
             className={"px-1 pb-2.5 text-[13px] font-semibold border-b-2 -mb-px transition-colors " +
-              (active === t.key ? "text-gray-900 border-gray-900" : "text-gray-400 border-transparent hover:text-gray-600")}>
+              (active === t.key ? "border-emerald-500 text-emerald-600" : "text-slate-400 border-transparent hover:text-slate-600")}>
             {t.label}
           </button>
         )
@@ -146,12 +146,12 @@ function AdminShell({ profile, onSignOut }) {
   var activeLabel = ADMIN_TABS.find(function (t) { return t.key === active })?.label || ''
 
   return (
-    <div className="flex min-h-screen bg-gray-100">
+    <div className="flex min-h-screen bg-slate-50">
       {/* Sidebar */}
-      <aside className="w-56 shrink-0 bg-slate-900 flex flex-col sticky top-0 h-screen z-40">
-        <div className="px-4 py-4 border-b border-white/10">
+      <aside className="w-56 shrink-0 flex flex-col sticky top-0 h-screen z-40" style={{ background: '#111827', boxShadow: '1px 0 0 #1F2937' }}>
+        <div className="px-4 py-4 border-b border-white/8">
           <h1 className="text-white text-sm font-bold tracking-tight">Ambria Ops</h1>
-          <p className="text-[10px] uppercase tracking-[0.12em] text-slate-400 mt-0.5 font-medium">Admin</p>
+          <p className="text-[10px] uppercase tracking-[0.12em] mt-0.5 font-medium" style={{ color: 'rgba(148,163,184,.6)' }}>Admin</p>
         </div>
         <nav className="flex-1 px-2 py-3 space-y-0.5 overflow-y-auto">
           {ADMIN_TABS.map(function (tab) {
@@ -162,20 +162,22 @@ function AdminShell({ profile, onSignOut }) {
                 onClick={function () { setActive(tab.key); setSubTab(null) }}
                 className={"w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-[13px] text-left transition-colors " +
                   (isActive
-                    ? "bg-amber-500/15 text-white font-semibold"
+                    ? "text-white font-semibold"
                     : "text-slate-300 hover:bg-white/5")}
+                style={isActive ? { background: 'rgba(16,185,129,.15)' } : {}}
               >
-                <i className={"ti " + tab.icon + " text-[16px] leading-none " + (isActive ? "text-amber-400" : "text-slate-400")} aria-hidden="true" />
+                <i className={"ti " + tab.icon + " text-[16px] leading-none"} style={{ color: isActive ? '#6EE7B7' : 'rgba(156,163,175,.7)' }} aria-hidden="true" />
                 <span>{tab.label}</span>
               </button>
             )
           })}
         </nav>
-        <div className="px-4 py-3 border-t border-white/10">
-          <div className="text-[13px] text-slate-200 truncate">{profile.name}</div>
+        <div className="px-4 py-3 border-t border-white/8">
+          <div className="text-[13px] truncate" style={{ color: 'rgba(226,232,240,.9)' }}>{profile.name}</div>
           <button
             onClick={onSignOut}
-            className="mt-1 text-[11px] text-slate-400 hover:text-white transition-colors"
+            className="mt-1 text-[11px] transition-colors hover:text-white"
+            style={{ color: 'rgba(148,163,184,.6)' }}
           >
             Sign out
           </button>
@@ -184,15 +186,15 @@ function AdminShell({ profile, onSignOut }) {
 
       {/* Content */}
       <main className="flex-1 min-w-0 px-8 py-6">
-        {active !== 'overview' && <h2 className="text-xl font-bold text-gray-800 mb-5">{activeLabel}</h2>}
+        {active !== 'overview' && <h2 className="text-xl font-bold mb-5" style={{ color: '#0F172A' }}>{activeLabel}</h2>}
         {ActiveModule && (
           <Suspense fallback={<div className="text-center py-8 text-sm text-gray-400">Loading...</div>}>
             <ActiveModule profile={profile} onNavigate={function (tab, sub) { setActive(tab); setSubTab(sub || null) }} activeSubTab={subTab} />
           </Suspense>
         )}
         {!ActiveModule && (
-          <div className="bg-white rounded-lg border border-gray-200 p-8 text-center">
-            <p className="text-gray-400 text-sm">{active} — coming soon</p>
+          <div className="bg-white rounded-lg border border-slate-200 p-8 text-center">
+            <p className="text-slate-400 text-sm">{active} — coming soon</p>
           </div>
         )}
       </main>

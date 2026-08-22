@@ -10,18 +10,24 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: 'prompt',
-      includeAssets: ['favicon.ico'],
+      includeAssets: ['favicon.svg'],
       manifest: {
-          "name": "Ambria Inventory Manager",
-          "short_name": "Inventory",
-            "description": "Internal inventory management system for Ambria",
+          "name": "Ambria Ops",
+          "short_name": "Ambria Ops",
+            "description": "Internal operations app for Ambria: inventory, events, quotes and finance",
             "start_url": "./",
             "display": "standalone",
             "background_color": "#f5f6f8",
-            "theme_color": "#1a1a2e",
+            "theme_color": "#0B0B0D",
             "orientation": "portrait",
             "handle_links": "not-preferred",
             "icons": [
+              {
+                "src": "favicon.svg",
+                "sizes": "any",
+                "type": "image/svg+xml",
+                "purpose": "any"
+              },
               {
                 "src": "icon-192.png",
                 "sizes": "192x192",

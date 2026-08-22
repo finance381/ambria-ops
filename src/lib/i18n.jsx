@@ -16,7 +16,7 @@ var SKIP_WORDS = [
 
 function shouldSkip(text) {
   var trimmed = text.trim()
-  if (trimmed.length < 3) return true
+  if (trimmed.length < 2) return true
   if (/^[\d\s.,₹#%:→←\/×·—–\-()@]+$/.test(trimmed)) return true
   if (/^[A-Z]{2,5}[-_]\d+/.test(trimmed)) return true
   if (/^https?:|@/.test(trimmed)) return true
@@ -24,7 +24,10 @@ function shouldSkip(text) {
   if (/[\u0900-\u097F]/.test(trimmed)) return true
   var lower = trimmed.toLowerCase()
   if (SKIP_WORDS.includes(lower)) return true
-  if (/^[A-Z][a-z]+$/.test(trimmed) && trimmed.length < 12) return true
+  // A single capitalised word under 12 characters used to be skipped, which is
+  // most of the interface: Slot, Food, Venue, Dinner, Print, Draft, Included...
+  // Only all-caps tokens (LMS, GST, AP) are treated as names now.
+  if (/^[A-Z0-9]{2,6}$/.test(trimmed)) return true
   if (/^\+?[\d\s-]{7,}$/.test(trimmed)) return true
   if (/^\d{1,2}\s*(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)/i.test(trimmed)) return true
   if (/^\d{1,2}\/\d{1,2}\/\d{2,4}$/.test(trimmed)) return true
@@ -62,7 +65,9 @@ function getTextNodes(root) {
       if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'NOSCRIPT' || tag === 'CODE' || tag === 'PRE') return NodeFilter.FILTER_REJECT
       if (parent.closest('[data-notranslate]')) return NodeFilter.FILTER_REJECT
       if (parent.isContentEditable) return NodeFilter.FILTER_REJECT
-      if (tag === 'INPUT' || tag === 'TEXTAREA') return NodeFilter.FILTER_REJECT
+      // <option> text is handled as an attribute target, so skip it here and
+      // keep exactly one writer per string
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'OPTION') return NodeFilter.FILTER_REJECT
       return NodeFilter.FILTER_ACCEPT
     }
   })
@@ -70,36 +75,48 @@ function getTextNodes(root) {
   return nodes
 }
 
-function translateInputs(root, lang) {
-  var inputs = root.querySelectorAll('input[placeholder], textarea[placeholder]')
-  inputs.forEach(function (el) {
-    if (lang === 'hi') {
-      var origPh = el.getAttribute('data-orig-ph')
-      if (!origPh) { el.setAttribute('data-orig-ph', el.placeholder); origPh = el.placeholder }
-      var cached = getCached(origPh)
-      if (cached) el.placeholder = cached
-    } else {
-      var orig = el.getAttribute('data-orig-ph')
-      if (orig) { el.placeholder = orig; el.removeAttribute('data-orig-ph') }
-    }
+// Placeholders, <option> labels and tooltips are attributes, not text nodes, so
+// they need their own pass. They used to be filled from cache only, which meant
+// a string never seen in body text stayed English for good; they now join the
+// same batch request as everything else.
+function collectAttrTargets(root) {
+  var targets = []
+  root.querySelectorAll('input[placeholder], textarea[placeholder]').forEach(function (el) {
+    targets.push({ el: el, kind: 'ph', key: 'data-orig-ph' })
   })
+  root.querySelectorAll('select option').forEach(function (el) {
+    targets.push({ el: el, kind: 'opt', key: 'data-orig' })
+  })
+  root.querySelectorAll('[title]').forEach(function (el) {
+    targets.push({ el: el, kind: 'title', key: 'data-orig-title' })
+  })
+  return targets
 }
 
-function translateOptions(root, lang) {
-  var options = root.querySelectorAll('select option')
-  options.forEach(function (el) {
-    var text = el.textContent.trim()
-    if (!text || shouldSkip(text)) return
-    if (lang === 'hi') {
-      if (!el.getAttribute('data-orig')) el.setAttribute('data-orig', el.textContent)
-      var cached = getCached(text)
-      if (cached) el.textContent = cached
-    } else {
-      var orig = el.getAttribute('data-orig')
-      if (orig) { el.textContent = orig; el.removeAttribute('data-orig') }
-    }
-  })
+function readTarget(t) {
+  var stored = t.el.getAttribute(t.key)
+  if (stored) return stored
+  if (t.kind === 'ph') return t.el.placeholder || ''
+  if (t.kind === 'opt') return t.el.textContent || ''
+  return t.el.getAttribute('title') || ''
 }
+
+function writeTarget(t, orig, value) {
+  if (!t.el.getAttribute(t.key)) t.el.setAttribute(t.key, orig)
+  if (t.kind === 'ph') t.el.placeholder = value
+  else if (t.kind === 'opt') t.el.textContent = value
+  else t.el.setAttribute('title', value)
+}
+
+function restoreTarget(t) {
+  var orig = t.el.getAttribute(t.key)
+  if (!orig) return
+  if (t.kind === 'ph') t.el.placeholder = orig
+  else if (t.kind === 'opt') t.el.textContent = orig
+  else t.el.setAttribute('title', orig)
+  t.el.removeAttribute(t.key)
+}
+
 
 async function callTranslateFunction(texts) {
   try {
@@ -107,14 +124,22 @@ async function callTranslateFunction(texts) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        // The function gates on Authorization, not apikey: without the bearer
+        // token it answered 401 for every batch, so nothing was ever translated
+        // and the switch looked like it did nothing.
         'apikey': ANON_KEY,
+        'Authorization': 'Bearer ' + ANON_KEY,
       },
       body: JSON.stringify({ texts: texts }),
     })
-    if (!res.ok) return {}
+    if (!res.ok) {
+      try { console.warn('translate failed', res.status, await res.text()) } catch { /* body already read */ }
+      return {}
+    }
     var data = await res.json()
     return data.results || {}
   } catch (e) {
+    try { console.warn('translate error', e && e.message) } catch { /* console unavailable */ }
     return {}
   }
 }
@@ -142,50 +167,58 @@ async function batchTranslate(strings) {
 }
 
 async function translatePage(root) {
-  var textNodes = getTextNodes(root)
   var nodeMap = {}
+  var targetMap = {}
   var uncached = []
 
-  textNodes.forEach(function (node) {
+  getTextNodes(root).forEach(function (node) {
     var text = node.textContent.trim()
     if (shouldSkip(text)) return
     if (!node[ORIG_KEY]) node[ORIG_KEY] = node.textContent
     var cached = getCached(text)
     if (cached) {
-      node.textContent = node.textContent.replace(text, cached)
-    } else {
-      if (!nodeMap[text]) { nodeMap[text] = []; uncached.push(text) }
-      nodeMap[text].push(node)
+      node.textContent = node[ORIG_KEY].replace(text, cached)
+      return
     }
+    if (!nodeMap[text]) { nodeMap[text] = []; uncached.push(text) }
+    nodeMap[text].push(node)
   })
 
-  translateInputs(root, 'hi')
-  translateOptions(root, 'hi')
+  collectAttrTargets(root).forEach(function (t) {
+    var text = readTarget(t).trim()
+    if (!text || shouldSkip(text)) return
+    var cached = getCached(text)
+    if (cached) { writeTarget(t, text, cached); return }
+    if (!targetMap[text]) { targetMap[text] = []; uncached.push(text) }
+    targetMap[text].push(t)
+  })
 
-  if (uncached.length > 0) {
-    var unique = [...new Set(uncached)]
-    var results = await batchTranslate(unique)
-    Object.keys(results).forEach(function (original) {
-      var translated = results[original]
-      ;(nodeMap[original] || []).forEach(function (node) {
-        if (node[ORIG_KEY] && node.parentElement) {
-          node.textContent = node[ORIG_KEY].replace(original, translated)
-        }
-      })
+  if (uncached.length === 0) return
+
+  var unique = [...new Set(uncached)]
+  var results = await batchTranslate(unique)
+  Object.keys(results).forEach(function (original) {
+    var translated = results[original]
+    if (!translated) return
+    ;(nodeMap[original] || []).forEach(function (node) {
+      if (node[ORIG_KEY] && node.parentElement) {
+        node.textContent = node[ORIG_KEY].replace(original, translated)
+      }
     })
-  }
+    ;(targetMap[original] || []).forEach(function (t) {
+      writeTarget(t, original, translated)
+    })
+  })
 }
 
 function restorePage(root) {
-  var textNodes = getTextNodes(root)
-  textNodes.forEach(function (node) {
+  getTextNodes(root).forEach(function (node) {
     if (node[ORIG_KEY]) {
       node.textContent = node[ORIG_KEY]
       delete node[ORIG_KEY]
     }
   })
-  translateInputs(root, 'en')
-  translateOptions(root, 'en')
+  collectAttrTargets(root).forEach(restoreTarget)
 }
 
 var LangContext = createContext()

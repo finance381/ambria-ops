@@ -1,1 +1,14 @@
+/* Global stylesheet: the self-hosted Inter faces the quote screen renders in,
+   then the Tailwind layer.
+
+   Self-hosted rather than a CDN link so the PWA keeps its typography with no
+   network round-trip. Only the latin subsets are imported — Inter carries no
+   Devanagari, so Hindi copy falls through to the system stack declared in
+   QuoteCalculator's FONT constant. */
+
+@import "@fontsource/inter/latin-400.css";
+@import "@fontsource/inter/latin-500.css";
+@import "@fontsource/inter/latin-600.css";
+@import "@fontsource/inter/latin-700.css";
+@import "@fontsource/inter/latin-800.css";
 @import "tailwindcss";

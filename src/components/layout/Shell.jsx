@@ -355,73 +355,88 @@ function Shell({ profile, onSignOut }) {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="sticky top-0 z-40 bg-white border-b border-gray-200">
+    <div className={tab === 'quote' ? "min-h-screen lg:h-screen lg:overflow-hidden" : "min-h-screen"} style={{ background: '#F8FAFC' }}>
+      {/* Header — hidden on the quote screen, which carries its own topbar */}
+      {tab !== 'quote' && (
+      <header className="sticky top-0 z-40 bg-white border-b border-gray-200" style={{ boxShadow: '0 1px 3px rgba(0,0,0,.06)' }}>
         <div className="max-w-[540px] mx-auto flex items-center justify-between px-4 py-3">
           <div className="flex items-center gap-3">
             {(activeGroup || tab) && (
               <button
                 onClick={goBack}
-                className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-900 hover:bg-gray-100 transition-colors"
+                className="w-8 h-8 flex items-center justify-center rounded-lg transition-colors"
+                style={{ color: '#94A3B8' }}
+                onMouseEnter={function(e){ e.currentTarget.style.background='#F3F4F6'; e.currentTarget.style.color='#111827' }}
+                onMouseLeave={function(e){ e.currentTarget.style.background='transparent'; e.currentTarget.style.color='#9CA3AF' }}
               >
                 ←
               </button>
             )}
             <div>
-              <div className="text-base font-bold text-gray-900 leading-tight">
+              <div className="text-base font-bold leading-tight" style={{ color: '#0F172A' }}>
                 {headerTitle}
               </div>
-              <div className="text-[11px] text-gray-400 font-medium">Ambria</div>
+              <div className="text-[11px] font-medium" style={{ color: '#94A3B8' }}>Ambria</div>
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <div className="flex bg-white border border-gray-200 rounded-full overflow-hidden">
+            <div className="flex bg-white border border-slate-200 rounded-full overflow-hidden">
               <button
                 onClick={function () { switchLang('en') }}
                 className={"px-2.5 py-1 text-[11px] font-bold transition-colors " +
-                  (lang === 'en' ? "bg-gray-900 text-white" : "text-gray-400")}
+                  (lang === 'en' ? "text-white" : "text-slate-400")}
+                style={lang === 'en' ? { background: '#0F172A' } : {}}
               >
                 EN
               </button>
               <button
                 onClick={function () { switchLang('hi') }}
                 className={"px-2.5 py-1 text-[11px] font-bold transition-colors " +
-                  (lang === 'hi' ? "bg-gray-900 text-white" : "text-gray-400")}
+                  (lang === 'hi' ? "text-white" : "text-slate-400")}
+                style={lang === 'hi' ? { background: '#0F172A' } : {}}
               >
                 हि
               </button>
             </div>
             <a href="/"
-              className="text-[11px] px-2 py-1 border border-gray-200 rounded-lg text-gray-400 hover:text-indigo-500 hover:border-indigo-200 transition-colors no-underline"
+              className="text-[11px] px-2 py-1 border border-slate-200 rounded-lg transition-colors no-underline"
+              style={{ color: '#94A3B8' }}
+              onMouseEnter={function(e){ e.currentTarget.style.color='#0284C7'; e.currentTarget.style.borderColor='#BAE6FD' }}
+              onMouseLeave={function(e){ e.currentTarget.style.color='#94A3B8'; e.currentTarget.style.borderColor='#E2E8F0' }}
             >
               ⌂
             </a>
             <button
               onClick={onSignOut}
-              className="text-[11px] px-2 py-1 border border-gray-200 rounded-lg text-gray-400 hover:text-red-500 hover:border-red-200 transition-colors"
+              className="text-[11px] px-2 py-1 border border-slate-200 rounded-lg transition-colors"
+              style={{ color: '#94A3B8' }}
+              onMouseEnter={function(e){ e.currentTarget.style.color='#DC2626'; e.currentTarget.style.borderColor='#FECACA' }}
+              onMouseLeave={function(e){ e.currentTarget.style.color='#94A3B8'; e.currentTarget.style.borderColor='#E2E8F0' }}
             >
               Sign Out
             </button>
           </div>
         </div>
       </header>
+      )}
 
       {/* User bar */}
+      {tab !== 'quote' && (
       <div className="max-w-[540px] mx-auto px-4 pt-3">
-        <div className="bg-white border border-gray-200 rounded-xl px-4 py-2.5 flex items-center gap-3 shadow-sm">
-          <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-sm font-bold text-indigo-600">
+        <div className="bg-white border border-gray-200 rounded-xl px-4 py-2.5 flex items-center gap-3" style={{ boxShadow: '0 1px 3px rgba(0,0,0,.06)' }}>
+          <div className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold text-white" style={{ background: '#111827' }}>
             {profile.name?.charAt(0) || '?'}
           </div>
           <div className="flex-1 min-w-0">
-            <div className="text-sm font-semibold text-gray-800 truncate">{profile.name}</div>
-            <div className="text-[11px] text-gray-400 truncate">{profile.email || ''}</div>
+            <div className="text-sm font-semibold truncate" style={{ color: '#0F172A' }}>{profile.name}</div>
+            <div className="text-[11px] truncate" style={{ color: '#94A3B8' }}>{profile.email || ''}</div>
           </div>
           <span className={"text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider " + (ROLE_COLORS[profile.role] || '')}>
             {profile.role}
           </span>
         </div>
       </div>
+      )}
 
       {/* Success banner */}
       {showSuccess && (
@@ -435,7 +450,7 @@ function Shell({ profile, onSignOut }) {
 
       {/* Content */}
       <main className={tab === 'quote'
-        ? "w-full py-4 pb-8"
+        ? "w-full lg:h-full"
         : "max-w-[540px] mx-auto px-4 py-4 pb-8"}>
 
         {/* Level 0: Group Cards */}
@@ -466,7 +481,10 @@ function Shell({ profile, onSignOut }) {
                 <button
                   key={g.key}
                   onClick={function () { openGroup(g) }}
-                  className="relative bg-white border border-gray-200 rounded-xl p-5 flex flex-col items-center gap-2 shadow-sm hover:shadow-md hover:border-gray-300 active:scale-[0.98] transition-all"
+                  className="relative bg-white border border-slate-200 rounded-xl p-5 flex flex-col items-center gap-2 active:scale-[0.98] transition-all"
+                  style={{ boxShadow: '0 1px 4px rgba(14,165,233,.06)' }}
+                  onMouseEnter={function(e){ e.currentTarget.style.borderColor='#BAE6FD'; e.currentTarget.style.boxShadow='0 4px 14px rgba(14,165,233,.12)' }}
+                  onMouseLeave={function(e){ e.currentTarget.style.borderColor='#E2E8F0'; e.currentTarget.style.boxShadow='0 1px 4px rgba(14,165,233,.06)' }}
                 >
                   {badge > 0 && (
                     <span className="absolute top-2 right-2 min-w-[20px] h-5 px-1.5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
@@ -474,12 +492,12 @@ function Shell({ profile, onSignOut }) {
                     </span>
                   )}
                   <span className="text-2xl">{g.icon}</span>
-                  <span className="text-sm font-semibold text-gray-800">{g.label}</span>
+                  <span className="text-sm font-semibold" style={{ color: '#0F172A' }}>{g.label}</span>
                 </button>
               )
             })}
             {visibleGroups.length === 0 && (
-              <div className="col-span-2 text-center py-12 text-gray-400 text-sm">
+              <div className="col-span-2 text-center py-12 text-sm" style={{ color: '#94A3B8' }}>
                 No features assigned. Contact admin.
               </div>
             )}
@@ -495,15 +513,18 @@ function Shell({ profile, onSignOut }) {
               if (f.key === 'feature_wallet' && walletBalance !== null) {
                 extra = <span className={"text-xs font-bold " + (walletBalance < 0 ? "text-red-600" : "text-green-700")}>{formatPoints(walletBalance)}</span>
               } else if (f.key === 'feature_expenses' && financeStats.expMonthCount > 0) {
-                extra = <span className="text-xs text-gray-500 font-medium">{financeStats.expMonthCount + ' · ' + formatPoints(financeStats.expMonthTotal)}</span>
+                extra = <span className="text-xs font-medium" style={{ color: '#64748B' }}>{financeStats.expMonthCount + ' · ' + formatPoints(financeStats.expMonthTotal)}</span>
               } else if (f.key === 'feature_ledger_view' && financeStats.ledgerMonthTotal > 0) {
-                extra = <span className="text-xs text-gray-500 font-medium">{formatPoints(financeStats.ledgerMonthTotal) + ' this month'}</span>
+                extra = <span className="text-xs font-medium" style={{ color: '#64748B' }}>{formatPoints(financeStats.ledgerMonthTotal) + ' this month'}</span>
               }
               return (
                 <button
                   key={f.key}
                   onClick={function () { openModule(f) }}
-                  className="relative bg-white border border-gray-200 rounded-xl p-5 flex flex-col items-center gap-2 shadow-sm hover:shadow-md hover:border-gray-300 active:scale-[0.98] transition-all"
+                  className="relative bg-white border border-slate-200 rounded-xl p-5 flex flex-col items-center gap-2 active:scale-[0.98] transition-all"
+                  style={{ boxShadow: '0 1px 4px rgba(14,165,233,.06)' }}
+                  onMouseEnter={function(e){ e.currentTarget.style.borderColor='#BAE6FD'; e.currentTarget.style.boxShadow='0 4px 14px rgba(14,165,233,.12)' }}
+                  onMouseLeave={function(e){ e.currentTarget.style.borderColor='#E2E8F0'; e.currentTarget.style.boxShadow='0 1px 4px rgba(14,165,233,.06)' }}
                 >
                   {badges[f.key] > 0 && (
                     <span className="absolute top-2 right-2 min-w-[20px] h-5 px-1.5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
@@ -511,7 +532,7 @@ function Shell({ profile, onSignOut }) {
                     </span>
                   )}
                   <span className="text-2xl">{f.icon}</span>
-                  <span className="text-sm font-semibold text-gray-800">{f.label}</span>
+                  <span className="text-sm font-semibold" style={{ color: '#0F172A' }}>{f.label}</span>
                   {extra}
                 </button>
               )
@@ -538,7 +559,7 @@ function Shell({ profile, onSignOut }) {
           <ExtraPlateCollect profile={profile} />
         )}
         {tab === 'quote' && (
-          <QuoteCalculator profile={profile} />
+          <QuoteCalculator profile={profile} onExit={goBack} onSignOut={onSignOut} />
         )}
         {tab === 'dept_review' && (
           <DeptReview profile={profile} />
@@ -603,9 +624,11 @@ function Shell({ profile, onSignOut }) {
       </main>
 
       {/* Footer */}
+      {tab !== 'quote' && (
       <footer className="text-center py-4 text-[11px] text-gray-300 tracking-wider">
         Ambria <span className="text-amber-400">●</span> Ops
       </footer>
+      )}
     </div>
   )
 }
