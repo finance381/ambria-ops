@@ -137,7 +137,13 @@ async function callTranslateFunction(texts) {
       return {}
     }
     var data = await res.json()
-    return data.results || {}
+    // The function reports which provider answered and how many strings it
+    // could not translate; surface that instead of treating an empty batch as
+    // 'nothing needed translating'.
+    if (data && data.failed) {
+      try { console.warn('translate: ' + data.translated + '/' + data.requested + ' via ' + data.provider + (data.note ? ' (' + data.note + ')' : '')) } catch { /* console unavailable */ }
+    }
+    return (data && data.results) || {}
   } catch (e) {
     try { console.warn('translate error', e && e.message) } catch { /* console unavailable */ }
     return {}
@@ -153,16 +159,28 @@ async function batchTranslate(strings) {
     batches.push(strings.slice(i, i + BATCH_SIZE))
   }
 
-  // Fire all batches in parallel
-  var promises = batches.map(function (batch) {
+  function run(batch) {
     return callTranslateFunction(batch).then(function (results) {
       Object.keys(results).forEach(function (key) {
         allResults[key] = results[key]
         setCache(key, results[key])
       })
     })
-  })
-  await Promise.all(promises)
+  }
+
+  // Fire all batches in parallel
+  await Promise.all(batches.map(run))
+
+  // Upstream throttling is usually a short burst limit, so give whatever came
+  // back empty exactly one more chance rather than leaving those strings in
+  // English until the user toggles the language again.
+  var missing = strings.filter(function (t) { return !allResults[t] })
+  if (missing.length > 0) {
+    await new Promise(function (r) { setTimeout(r, 2000) })
+    var retryBatches = []
+    for (var j = 0; j < missing.length; j += BATCH_SIZE) retryBatches.push(missing.slice(j, j + BATCH_SIZE))
+    await Promise.all(retryBatches.map(run))
+  }
   return allResults
 }
 
