@@ -41,16 +41,52 @@ function isErrorResponse(text) {
   return false
 }
 
+// MyMemory answers from a public translation memory, so for a short or ambiguous
+// label it can return an unrelated sentence from its corpus ("Inventory" came
+// back as a Hindi exam question) or a phrase in another language ("Discount" ->
+// "Prisavslag"). Junk like that has to be caught against the source string, not
+// just scanned for provider warnings.
+function looksBadTranslation(src, hi) {
+  if (!hi || isErrorResponse(hi)) return true
+  var t = String(hi).trim()
+  if (!t || t.toLowerCase() === String(src).toLowerCase()) return true
+  if (!/[ऀ-ॿ]/.test(t)) return true
+  if (t.length > Math.max(24, String(src).length * 4)) return true
+  if (/&(gt|lt|amp|quot);/.test(t)) return true
+  var latin = (t.match(/[A-Za-z]/g) || []).length
+  var deva = (t.match(/[ऀ-ॿ]/g) || []).length
+  if (latin > deva) return true
+  return false
+}
+
+// The shipped dictionary: built by scripts/build-hi-dict.mjs from the app's own
+// source, so switching to Hindi is a lookup instead of a network round trip per
+// string. Loaded on demand — English sessions never pay for it.
+var DICT = {}
+var dictPromise = null
+function loadDict() {
+  if (!dictPromise) {
+    dictPromise = import('./hi.json')
+      .then(function (m) { DICT = (m && m.default) || m || {}; return DICT })
+      .catch(function () { return {} })
+  }
+  return dictPromise
+}
+
 function getCached(text) {
+  // dictionary first: it is curated and cannot go stale behind a bad API answer
+  if (DICT[text]) return DICT[text]
   try {
     var val = localStorage.getItem(CACHE_PREFIX + text)
-    if (val && isErrorResponse(val)) { localStorage.removeItem(CACHE_PREFIX + text); return null }
+    // Junk cached before this check existed is dropped on read, so a browser
+    // that already stored a bad answer repairs itself instead of showing it.
+    if (val && looksBadTranslation(text, val)) { localStorage.removeItem(CACHE_PREFIX + text); return null }
     return val
   } catch (e) { return null }
 }
 
 function setCache(text, val) {
-  if (isErrorResponse(val)) return
+  if (looksBadTranslation(text, val)) return
   try { localStorage.setItem(CACHE_PREFIX + text, val) } catch (e) {}
 }
 
@@ -162,6 +198,7 @@ async function batchTranslate(strings) {
   function run(batch) {
     return callTranslateFunction(batch).then(function (results) {
       Object.keys(results).forEach(function (key) {
+        if (looksBadTranslation(key, results[key])) return
         allResults[key] = results[key]
         setCache(key, results[key])
       })
@@ -185,6 +222,7 @@ async function batchTranslate(strings) {
 }
 
 async function translatePage(root) {
+  await loadDict()
   var nodeMap = {}
   var targetMap = {}
   var uncached = []
@@ -217,7 +255,7 @@ async function translatePage(root) {
   var results = await batchTranslate(unique)
   Object.keys(results).forEach(function (original) {
     var translated = results[original]
-    if (!translated) return
+    if (looksBadTranslation(original, translated)) return
     ;(nodeMap[original] || []).forEach(function (node) {
       if (node[ORIG_KEY] && node.parentElement) {
         node.textContent = node[ORIG_KEY].replace(original, translated)
@@ -273,6 +311,7 @@ export function LangProvider({ children }) {
 
   function switchLang(newLang) {
     if (newLang === lang) return
+    if (newLang === 'hi') loadDict()
     if (newLang === 'en') restorePage(document.body)
     setLang(newLang)
     try { localStorage.setItem('ambria_lang', newLang) } catch (e) {}
