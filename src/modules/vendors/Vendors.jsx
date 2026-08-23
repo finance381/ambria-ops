@@ -22,7 +22,7 @@ function Vendors({ profile }) {
   var [estFilter, setEstFilter] = useState('')
   var [showInactive, setShowInactive] = useState(false)
   var [editing, setEditing] = useState(null)
-  var [form, setForm] = useState({ name: '', contact: '', phone: '', phone2: '', email: '', address: '', category_ids: [], expense_type_ids: [], expense_sub_type_ids: [], notes: '', opening_balance: '', gst_number: '', pan_number: '', bank_account: '', bank_ifsc: '', vendor_type: 'Supplier', lead_time_days: '', referred_by: '' })
+  var [form, setForm] = useState({ name: '', contact: '', phone: '', phone2: '', email: '', address: '', category_ids: [], expense_type_ids: [], expense_sub_type_ids: [], notes: '', opening_balance: '', opening_balance_direction: 'credit', gst_number: '', pan_number: '', bank_account: '', bank_ifsc: '', vendor_type: 'Supplier', lead_time_days: '', referred_by: '' })
   var [importReview, setImportReview] = useState(null)
   var [importSummary, setImportSummary] = useState(null)
   var importFileRef = useRef(null)
@@ -66,7 +66,8 @@ function Vendors({ profile }) {
       expense_type_ids: v.expense_type_ids || [],
       expense_sub_type_ids: v.expense_sub_type_ids || [],
       notes: v.notes || '',
-      opening_balance: v.opening_balance_paise ? String(v.opening_balance_paise / 100) : '',
+      opening_balance: v.opening_balance_paise ? String(Math.abs(v.opening_balance_paise) / 100) : '',
+      opening_balance_direction: (v.opening_balance_paise || 0) < 0 ? 'debit' : 'credit',
       gst_number: v.gst_number || '',
       pan_number: v.pan_number || '',
       bank_account: v.bank_account || '',
@@ -79,7 +80,7 @@ function Vendors({ profile }) {
 
   function cancelEdit() {
     setEditing(null)
-    setForm({ name: '', contact: '', phone: '', phone2: '', email: '', address: '', category_ids: [], expense_type_ids: [], expense_sub_type_ids: [], notes: '', opening_balance: '', gst_number: '', pan_number: '', bank_account: '', bank_ifsc: '', vendor_type: 'Supplier', lead_time_days: '', referred_by: '' })
+    setForm({ name: '', contact: '', phone: '', phone2: '', email: '', address: '', category_ids: [], expense_type_ids: [], expense_sub_type_ids: [], notes: '', opening_balance: '', opening_balance_direction: 'credit', gst_number: '', pan_number: '', bank_account: '', bank_ifsc: '', vendor_type: 'Supplier', lead_time_days: '', referred_by: '' })
   }
 
   function toggleCat(catId) {
@@ -148,7 +149,9 @@ function Vendors({ profile }) {
       expense_type_ids: form.expense_type_ids || [],
       expense_sub_type_ids: form.expense_sub_type_ids || [],
       notes: form.notes.trim() || null,
-      opening_balance_paise: form.opening_balance ? Math.round(Number(form.opening_balance) * 100) : 0,
+      opening_balance_paise: form.opening_balance
+        ? Math.round(Number(form.opening_balance) * 100) * (form.opening_balance_direction === 'debit' ? -1 : 1)
+        : 0,
       gst_number: form.gst_number.trim() || null,
       pan_number: form.pan_number.trim() || null,
       bank_account: form.bank_account.trim() || null,
@@ -719,11 +722,32 @@ function Vendors({ profile }) {
             <div className="grid grid-cols-3 gap-3">
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Opening Balance (₹)</label>
-                <input type="number" min="0" step="0.01" inputMode="decimal" value={form.opening_balance}
-                  onChange={function (e) { setForm(function (p) { return Object.assign({}, p, { opening_balance: e.target.value }) }) }}
-                  placeholder="0.00"
-                  className="w-full px-4 py-3 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-gray-50"
-                  style={{ fontSize: '16px' }} />
+                <div className="flex gap-1">
+                  <input type="number" min="0" step="0.01" inputMode="decimal" value={form.opening_balance}
+                    onChange={function (e) { setForm(function (p) { return Object.assign({}, p, { opening_balance: e.target.value }) }) }}
+                    placeholder="0.00"
+                    className="flex-1 min-w-0 px-3 py-3 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-gray-50"
+                    style={{ fontSize: '16px' }} />
+                  <div className="flex bg-gray-100 border border-gray-200 rounded-lg p-0.5 flex-shrink-0">
+                    <button type="button"
+                      onClick={function () { setForm(function (p) { return Object.assign({}, p, { opening_balance_direction: 'credit' }) }) }}
+                      className={"px-2.5 text-[11px] font-bold rounded-md transition-colors " +
+                        (form.opening_balance_direction !== 'debit' ? "bg-amber-500 text-white shadow-sm" : "text-gray-500 hover:text-gray-700")}>
+                      Cr
+                    </button>
+                    <button type="button"
+                      onClick={function () { setForm(function (p) { return Object.assign({}, p, { opening_balance_direction: 'debit' }) }) }}
+                      className={"px-2.5 text-[11px] font-bold rounded-md transition-colors " +
+                        (form.opening_balance_direction === 'debit' ? "bg-green-600 text-white shadow-sm" : "text-gray-500 hover:text-gray-700")}>
+                      Dr
+                    </button>
+                  </div>
+                </div>
+                <p className="text-[10px] text-gray-400 mt-1">
+                  {form.opening_balance_direction === 'debit'
+                    ? 'Vendor owes us (advance / recovery pending)'
+                    : 'We owe vendor (carried outstanding)'}
+                </p>
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">GST Number</label>
@@ -1116,8 +1140,10 @@ function Vendors({ profile }) {
                       {v.vendor_type && v.vendor_type !== 'Supplier' && (
                         <span className="text-[10px] font-medium text-gray-400">{v.vendor_type}</span>
                       )}
-                      {v.opening_balance_paise > 0 && (
-                        <span className="text-[10px] font-semibold text-amber-600">Bal: ₹{(v.opening_balance_paise / 100).toLocaleString('en-IN')}</span>
+                      {v.opening_balance_paise !== 0 && v.opening_balance_paise != null && (
+                        <span className={"text-[10px] font-semibold " + (v.opening_balance_paise > 0 ? "text-amber-600" : "text-green-700")}>
+                          Opening: ₹{(Math.abs(v.opening_balance_paise) / 100).toLocaleString('en-IN')} {v.opening_balance_paise > 0 ? 'Cr' : 'Dr'}
+                        </span>
                       )}
                     </div>
                     {v.notes && <p className="text-[11px] text-gray-400 truncate mt-0.5">{v.notes}</p>}
