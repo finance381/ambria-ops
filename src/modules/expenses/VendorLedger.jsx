@@ -7,6 +7,7 @@ import PaymentProofThumbs from '../../components/ledger/PaymentProofThumbs'
 import SearchDropdown from '../../components/ui/SearchDropdown'
 import ExpenseDetail from './ExpenseDetail'
 import LedgerSourceMedia from '../../components/ledger/LedgerSourceMedia'
+import { registerPdfFont } from '../../lib/pdfFont'
 
 // Cached Unicode font for jsPDF — loaded once per session on first PDF export.
 var _pdfFontCache = { regular: null, bold: null }
@@ -591,7 +592,7 @@ function VendorLedger({ profile }) {
       var autoTable = autoTableMod.default || autoTableMod
 
       var doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
-      var fontOk = await _registerPdfFont(doc)
+      var fontOk = await registerPdfFont(doc)
       var FONT = fontOk ? 'NotoSans' : 'helvetica'
       var pageW = doc.internal.pageSize.getWidth()
       var pageH = doc.internal.pageSize.getHeight()

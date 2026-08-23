@@ -461,31 +461,35 @@ function Events({ profile }) {
                         ? <span className="text-[10px] font-bold text-amber-600">{Math.abs(uncollected)} over-collected</span>
                         : (extraPlateSummary.issued_active > 0 ? <span className="text-[10px] font-bold text-green-600">✓ settled</span> : null)}
                   </div>
-                  <div className={"grid gap-2 text-sm " + (hasMoneyPerm ? "grid-cols-4" : "grid-cols-3")}>
+                  <div className="grid grid-cols-5 gap-2 text-sm">
                     <div>
                       <p className="text-[10px] text-gray-500 uppercase">Issued</p>
                       <p className="font-medium text-gray-800">{extraPlateSummary.issued_active}</p>
                     </div>
                     <div>
-                      <p className="text-[10px] text-gray-500 uppercase">Returned</p>
-                      <p className="font-medium text-gray-800">{extraPlateSummary.returned_active || 0}</p>
-                      {extraPlateSummary.waste_active > 0 && (
-                        <p className="text-[9px] text-amber-700">+{extraPlateSummary.waste_active} waste</p>
-                      )}
-                    </div>
-                    <div>
                       <p className="text-[10px] text-gray-500 uppercase">Charged</p>
                       <p className="font-medium text-gray-800">{extraPlateSummary.charged_active}</p>
                     </div>
-                    {hasMoneyPerm && (
-                      <div>
-                        <p className="text-[10px] text-gray-500 uppercase">Collected</p>
-                        <p className="font-medium text-green-700">{formatPaise(extraPlateSummary.net_paise)}</p>
-                      </div>
-                    )}
+                    <div>
+                      <p className="text-[10px] text-gray-500 uppercase">Returned</p>
+                      <p className="font-medium text-gray-800">{extraPlateSummary.returned_active || 0}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-gray-500 uppercase">Waste</p>
+                      <p className={"font-medium " + (extraPlateSummary.waste_active > 0 ? "text-amber-700" : "text-gray-800")}>{extraPlateSummary.waste_active || 0}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-gray-500 uppercase">Net Due</p>
+                      <p className={"font-medium " + (uncollected > 0 ? "text-red-700" : "text-gray-800")}>{Math.max(0, uncollected)}</p>
+                    </div>
                   </div>
-                  {hasMoneyPerm && extraPlateSummary.discount_paise > 0 && (
-                    <p className="text-[10px] text-gray-500 mt-2">Discount given: {formatPaise(extraPlateSummary.discount_paise)}</p>
+                  {hasMoneyPerm && (
+                    <p className="text-[10px] text-gray-600 mt-2">
+                      Collected: <span className="font-semibold text-green-700">{formatPaise(extraPlateSummary.net_paise)}</span>
+                      {extraPlateSummary.discount_paise > 0 && (
+                        <span className="text-gray-500"> · Discount given: {formatPaise(extraPlateSummary.discount_paise)}</span>
+                      )}
+                    </p>
                   )}
                   {(extraPlateSummary.issued_cancelled > 0 || extraPlateSummary.collections_cancelled > 0) && (
                     <p className="text-[10px] text-gray-400 mt-1">

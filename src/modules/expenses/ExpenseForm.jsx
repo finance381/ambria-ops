@@ -257,15 +257,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
       if (!parsed || !parsed.savedAt) return
       if (Date.now() - parsed.savedAt > DRAFT_EXPIRY_MS) { localStorage.removeItem(draftKey); return }
       if (!parsed.entries || parsed.entries.length === 0) return
-      // v93 → v94 shim: migrate old draft key `amountPaise` → `amountRupees` (semantic rename, same value: rupees)
-      parsed.entries.forEach(function (e) {
-        (e.allocations || []).forEach(function (a) {
-          if (a && a.amountPaise != null && a.amountRupees == null) {
-            a.amountRupees = a.amountPaise
-            delete a.amountPaise
-          }
-        })
-      })
+
       if (parsed.entries.every(isEmptyDraftEntry)) { localStorage.removeItem(draftKey); return }
       setDraftRestorable(parsed)
     } catch (_) {}
