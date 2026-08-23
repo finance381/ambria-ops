@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { formatPoints, formatDate } from '../../lib/format'
 import { useRealtime } from '../../lib/useRealtime'
 import PayVendorModal from './PayVendorModal'
+import { filterVisibleVendors } from '../../lib/vendorGating'
 
 function daysBetween(d1, d2) {
   var ms = new Date(d2) - new Date(d1)
@@ -109,13 +110,17 @@ function Payments({ profile }) {
       ;(v.category_ids || []).forEach(function (cid) { var sd = catToSd[cid]; if (sd) { var d = sdToDept[sd]; if (d) deptIds[d] = true } })
       ;(v.expense_type_ids || []).forEach(function (tid) { var d = etToDept[tid]; if (d) deptIds[d] = true })
       ;(v.expense_sub_type_ids || []).forEach(function (stid) { var tid = stToType[stid]; if (tid) { var d = etToDept[tid]; if (d) deptIds[d] = true } })
-      vExtras[v.id] = { vendorType: v.vendor_type, deptIds: Object.keys(deptIds).map(Number) }
+      vExtras[v.id] = { vendorType: v.vendor_type, deptIds: Object.keys(deptIds).map(Number), estIds: v.expense_sub_type_ids || [] }
     })
     var enriched = pendingVendors.map(function (v) {
       var ext = vExtras[v.vendor_id] || {}
-      return Object.assign({}, v, { _vendorType: ext.vendorType || null, _deptIds: ext.deptIds || [] })
+      return Object.assign({}, v, {
+        _vendorType: ext.vendorType || null,
+        _deptIds: ext.deptIds || [],
+        expense_sub_type_ids: ext.estIds || []
+      })
     })
-    setVendors(enriched)
+    setVendors(filterVisibleVendors(enriched, profile))
     setDepartments(dRes.data || [])
     if (pendingVendors.length === 0) {
       setPurchases([]); setLoading(false); return

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import { logActivity } from '../../lib/logger'
+import { filterVisibleVendors } from '../../lib/vendorGating'
 import SearchDropdown from '../../components/ui/SearchDropdown'
 import VoiceInput from '../../components/ui/VoiceInput'
 
@@ -39,7 +40,7 @@ function Vendors({ profile }) {
       supabase.from('expense_types').select('id, name, icon, department_id, sub_department_id').eq('active', true).order('sort_order').order('name'),
       supabase.from('expense_sub_types').select('id, name, expense_type_id').eq('active', true).order('sort_order').order('name'),
     ])
-    setVendors(vRes.data || [])
+    setVendors(filterVisibleVendors(vRes.data || [], profile))
     setCategories(cRes.data || [])
     setDepartments(dRes.data || [])
     setSubDepartments(sdRes.data || [])

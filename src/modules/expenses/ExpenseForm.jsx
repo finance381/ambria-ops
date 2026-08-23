@@ -945,12 +945,26 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
     if (field.type === 'lookup') {
       var items = []
       if (field.source === 'vendors') {
-        // Filter vendors: match on current sub-type, or parent type if tagged at type level.
+        // Filter vendors: (1) user-tag gating (admin/auditor bypass, else intersect with user's expense_sub_type_ids),
+        // then (2) match on current sub-type or parent type if tagged at type level.
         var raw = lookupCache.vendors || []
+        var isAdminVend = profile?.role === 'admin' || profile?.role === 'auditor'
+        var userEstIdsV = profile?.expense_sub_type_ids || []
         var subTypeIdNum = entry ? Number(entry.expenseSubTypeId) : 0
         var subType = subTypeIdNum ? expenseSubTypes.find(function (s) { return s.id === subTypeIdNum }) : null
         var parentTypeId = subType ? subType.expense_type_id : 0
         items = raw.filter(function (v) {
+          // User-tag gate
+          if (!isAdminVend) {
+            if (userEstIdsV.length === 0) return false
+            var vTags = v.expense_sub_type_ids || []
+            var hit = false
+            for (var gi = 0; gi < vTags.length; gi++) {
+              if (userEstIdsV.indexOf(vTags[gi]) !== -1) { hit = true; break }
+            }
+            if (!hit) return false
+          }
+          // Existing sub-type / parent-type filter
           if (!subTypeIdNum) return true
           var stIds = v.expense_sub_type_ids || []
           var tIds = v.expense_type_ids || []

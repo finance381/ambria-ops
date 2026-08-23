@@ -7,6 +7,7 @@ import PaymentProofThumbs from '../../components/ledger/PaymentProofThumbs'
 import SearchDropdown from '../../components/ui/SearchDropdown'
 import ExpenseDetail from './ExpenseDetail'
 import LedgerSourceMedia from '../../components/ledger/LedgerSourceMedia'
+import { filterVisibleVendors } from '../../lib/vendorGating'
 import { registerPdfFont } from '../../lib/pdfFont'
 
 // Cached Unicode font for jsPDF — loaded once per session on first PDF export.
@@ -238,24 +239,32 @@ function VendorLedger({ profile }) {
     if (error) { setLoading(false); return }
     var rows = data || []
 
-    // Merge phones from vendors master (v_vendor_ledger doesn't expose contact fields)
+    // Merge phones + gating tags from vendors master (v_vendor_ledger doesn't expose these fields)
     var vendorIds = rows.map(function (r) { return r.vendor_id }).filter(Boolean)
     if (vendorIds.length > 0) {
       var CHUNK = 500
-      var phoneMap = {}
+      var vMasterMap = {}
       for (var i = 0; i < vendorIds.length; i += CHUNK) {
         var chunk = vendorIds.slice(i, i + CHUNK)
         var pRes = await supabase.from('vendors')
-          .select('id, phone, phone2, contact')
+          .select('id, phone, phone2, contact, expense_sub_type_ids')
           .in('id', chunk)
-        ;(pRes.data || []).forEach(function (p) { phoneMap[p.id] = p })
+        ;(pRes.data || []).forEach(function (p) { vMasterMap[p.id] = p })
       }
       rows = rows.map(function (r) {
-        var p = phoneMap[r.vendor_id]
+        var p = vMasterMap[r.vendor_id]
         if (!p) return r
-        return Object.assign({}, r, { _phone: p.phone || null, _phone2: p.phone2 || null, _contact: p.contact || null })
+        return Object.assign({}, r, {
+          _phone: p.phone || null,
+          _phone2: p.phone2 || null,
+          _contact: p.contact || null,
+          expense_sub_type_ids: p.expense_sub_type_ids || []
+        })
       })
     }
+
+    // Apply user-tag gating (admin/auditor bypass)
+    rows = filterVisibleVendors(rows, profile)
 
     setVendors(rows)
     setLoading(false)

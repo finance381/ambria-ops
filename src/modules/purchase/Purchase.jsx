@@ -10,6 +10,7 @@ import BottomSheet from '../../components/ui/BottomSheet'
 import { pushBack, goBack as navBack } from '../../lib/backNav'
 import VoiceInput from '../../components/ui/VoiceInput'
 import { prepUpload } from '../../lib/uploadHelper'
+import { filterVisibleVendors } from '../../lib/vendorGating'
 
 var PO_STATUS_LABELS = {
   draft: 'Draft',
@@ -85,8 +86,8 @@ function Purchase({ profile, mode }) {
     if (isAdmin) {
       loadQueue()
       loadStaff()
-      supabase.from('vendors').select('id, name, contact, phone, category_ids, active').eq('active', true).order('name')
-        .then(function (r) { setVendorList(r.data || []) })
+      supabase.from('vendors').select('id, name, contact, phone, category_ids, active, expense_sub_type_ids').eq('active', true).order('name')
+        .then(function (r) { setVendorList(filterVisibleVendors(r.data || [], profile)) })
         .catch(function () { setVendorList([]) })
     }
   }, [])
