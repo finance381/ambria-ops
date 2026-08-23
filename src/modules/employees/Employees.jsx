@@ -57,8 +57,12 @@ function Employees({ profile }) {
   useEffect(function () { loadAll() }, [])
 
   async function loadAll() {
+    var baseCols = 'id, employee_code, full_name, designation, job_department_ids, contact_number, personal_email, status, doj, profile_id, reporting_manager_id, created_by'
+    var selectCols = canSeeSalary
+      ? baseCols + ', monthly_cash_paise, monthly_bank_paise, night_wage_paise'
+      : baseCols
     var empQuery = supabase.from('employees')
-      .select('id, employee_code, full_name, designation, job_department_ids, contact_number, personal_email, status, doj, profile_id, reporting_manager_id, created_by')
+      .select(selectCols)
       .order('employee_code', { ascending: true })
     if (!canSeeAll) empQuery = empQuery.eq('created_by', profile.id)
 
@@ -182,10 +186,16 @@ function Employees({ profile }) {
   })
 
   filtered.sort(function (a, b) {
-    var va = a[sortKey] || ''
-    var vb = b[sortKey] || ''
-    if (typeof va === 'string') va = va.toLowerCase()
-    if (typeof vb === 'string') vb = vb.toLowerCase()
+    var va, vb
+    if (sortKey === 'monthly_total_paise') {
+      va = (a.monthly_cash_paise || 0) + (a.monthly_bank_paise || 0)
+      vb = (b.monthly_cash_paise || 0) + (b.monthly_bank_paise || 0)
+    } else {
+      va = a[sortKey] || ''
+      vb = b[sortKey] || ''
+      if (typeof va === 'string') va = va.toLowerCase()
+      if (typeof vb === 'string') vb = vb.toLowerCase()
+    }
     if (va < vb) return sortDir === 'asc' ? -1 : 1
     if (va > vb) return sortDir === 'asc' ? 1 : -1
     return 0
@@ -550,13 +560,19 @@ function Employees({ profile }) {
                 <th className="px-3 py-2 text-left"><SortHeader label="Status" k="status" /></th>
                 <th className="px-3 py-2 text-left text-[11px] font-bold text-gray-500 uppercase tracking-wider">Contact</th>
                 <th className="px-3 py-2 text-left"><SortHeader label="DOJ" k="doj" /></th>
+                {canSeeSalary && (
+                  <th className="px-3 py-2 text-right"><SortHeader label="Salary /mo" k="monthly_total_paise" /></th>
+                )}
+                {canSeeSalary && (
+                  <th className="px-3 py-2 text-right"><SortHeader label="Night Wage" k="night_wage_paise" /></th>
+                )}
                 <th className="px-3 py-2 text-center text-[11px] font-bold text-gray-500 uppercase tracking-wider">App</th>
                 <th className="px-3 py-2 text-right text-[11px] font-bold text-gray-500 uppercase tracking-wider w-32">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {filtered.length === 0 && (
-                <tr><td colSpan="9" className="px-3 py-8 text-center text-gray-400 text-sm">
+                <tr><td colSpan={canSeeSalary ? 11 : 9} className="px-3 py-8 text-center text-gray-400 text-sm">
                   {rows.length === 0
                     ? 'No employees yet. Click "+ Add Employee" to create the first one.'
                     : 'No matches for current filters.'}
@@ -578,6 +594,29 @@ function Employees({ profile }) {
                       <div className="text-gray-400">{r.personal_email || ''}</div>
                     </td>
                     <td className="px-3 py-2 text-xs text-gray-600">{r.doj ? formatDate(r.doj) : '—'}</td>
+                    {canSeeSalary && (function () {
+                      var cashP = r.monthly_cash_paise || 0
+                      var bankP = r.monthly_bank_paise || 0
+                      var total = cashP + bankP
+                      if (total === 0) return <td className="px-3 py-2 text-right text-xs text-gray-300">—</td>
+                      var totalRupees = Math.round(total / 100).toLocaleString('en-IN')
+                      var cashK = cashP ? Math.round(cashP / 100000 * 10) / 10 : 0
+                      var bankK = bankP ? Math.round(bankP / 100000 * 10) / 10 : 0
+                      var hint = (cashP ? cashK + 'k C' : '') + (cashP && bankP ? ' · ' : '') + (bankP ? bankK + 'k B' : '')
+                      return (
+                        <td className="px-3 py-2 text-right text-xs whitespace-nowrap">
+                          <div className="font-semibold text-gray-700">₹ {totalRupees}</div>
+                          <div className="text-[10px] text-gray-400">{hint}</div>
+                        </td>
+                      )
+                    })()}
+                    {canSeeSalary && (
+                      <td className="px-3 py-2 text-right text-xs whitespace-nowrap">
+                        {r.night_wage_paise
+                          ? <span className="font-medium text-gray-700">₹ {Math.round(r.night_wage_paise / 100).toLocaleString('en-IN')}</span>
+                          : <span className="text-gray-300">—</span>}
+                      </td>
+                    )}
                     <td className="px-3 py-2 text-center">
                       {r.profile_id ? (
                         <span title="Linked to app login" className="text-green-600 text-sm">✓</span>

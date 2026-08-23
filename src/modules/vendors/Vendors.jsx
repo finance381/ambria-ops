@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import { logActivity } from '../../lib/logger'
+import SearchDropdown from '../../components/ui/SearchDropdown'
 import VoiceInput from '../../components/ui/VoiceInput'
 
 function Vendors({ profile }) {
@@ -18,6 +19,7 @@ function Vendors({ profile }) {
   var [saving, setSaving] = useState(false)
   var [search, setSearch] = useState('')
   var [catFilter, setCatFilter] = useState('')
+  var [estFilter, setEstFilter] = useState('')
   var [showInactive, setShowInactive] = useState(false)
   var [editing, setEditing] = useState(null)
   var [form, setForm] = useState({ name: '', contact: '', phone: '', phone2: '', email: '', address: '', category_ids: [], expense_type_ids: [], expense_sub_type_ids: [], notes: '', opening_balance: '', gst_number: '', pan_number: '', bank_account: '', bank_ifsc: '', vendor_type: 'Supplier', lead_time_days: '', referred_by: '' })
@@ -467,6 +469,7 @@ function Vendors({ profile }) {
     if (!showInactive && !v.active) return false
     if (search && v.name.toLowerCase().indexOf(search.toLowerCase()) === -1) return false
     if (catFilter && (v.category_ids || []).indexOf(Number(catFilter)) === -1) return false
+    if (estFilter && (v.expense_sub_type_ids || []).indexOf(Number(estFilter)) === -1) return false
     return true
   })
 
@@ -982,13 +985,33 @@ function Vendors({ profile }) {
             className="w-full pl-9 pr-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-gray-50"
             style={{ fontSize: '16px' }} />
         </div>
-        <select value={catFilter}
-          onChange={function (e) { setCatFilter(e.target.value) }}
-          className="w-full lg:w-auto px-3 py-2.5 border border-gray-200 rounded-lg text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 lg:min-w-[180px]"
-          style={{ fontSize: '16px' }}>
-          <option value="">All Categories</option>
-          {categories.map(function (c) { return <option key={c.id} value={c.id}>{c.name}</option> })}
-        </select>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 lg:contents">
+          <div className="lg:min-w-[180px]">
+            <SearchDropdown
+              items={categories.map(function (c) { return { label: c.name, value: String(c.id) } })}
+              value={catFilter}
+              onChange={function (v) { setCatFilter(v) }}
+              placeholder="🔎 Category" />
+          </div>
+          <div className="lg:min-w-[220px]">
+            <SearchDropdown
+              items={expenseSubTypes.map(function (st) {
+                var parent = expenseTypes.find(function (t) { return t.id === st.expense_type_id })
+                var prefix = parent ? (parent.name + ' › ') : ''
+                return { label: prefix + st.name, value: String(st.id) }
+              })}
+              value={estFilter}
+              onChange={function (v) { setEstFilter(v) }}
+              placeholder="🔎 Sub-expense type" />
+          </div>
+          {(catFilter || estFilter) && (
+            <button type="button"
+              onClick={function () { setCatFilter(''); setEstFilter('') }}
+              className="lg:whitespace-nowrap px-3 py-2 text-xs font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors">
+              ✕ Clear filters
+            </button>
+          )}
+        </div>
         <label className="flex items-center gap-2 text-xs text-gray-500 cursor-pointer select-none whitespace-nowrap">
           <input type="checkbox" checked={showInactive}
             onChange={function () { setShowInactive(!showInactive) }}
