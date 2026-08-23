@@ -8,6 +8,42 @@ import SearchDropdown from '../../components/ui/SearchDropdown'
 import ExpenseDetail from './ExpenseDetail'
 import LedgerSourceMedia from '../../components/ledger/LedgerSourceMedia'
 
+// Cached Unicode font for jsPDF — loaded once per session on first PDF export.
+var _pdfFontCache = { regular: null, bold: null }
+
+async function _fetchTtfBase64(url) {
+  var r = await fetch(url)
+  if (!r.ok) throw new Error('font ' + url + ' → HTTP ' + r.status)
+  var buf = await r.arrayBuffer()
+  var bytes = new Uint8Array(buf)
+  var chunk = 0x8000
+  var pieces = []
+  for (var i = 0; i < bytes.length; i += chunk) {
+    pieces.push(String.fromCharCode.apply(null, bytes.subarray(i, i + chunk)))
+  }
+  return btoa(pieces.join(''))
+}
+
+async function _registerPdfFont(doc) {
+  try {
+    if (!_pdfFontCache.regular || !_pdfFontCache.bold) {
+      var REG_URL = 'https://cdn.jsdelivr.net/gh/googlefonts/noto-fonts@main/hinted/ttf/NotoSans/NotoSans-Regular.ttf'
+      var BLD_URL = 'https://cdn.jsdelivr.net/gh/googlefonts/noto-fonts@main/hinted/ttf/NotoSans/NotoSans-Bold.ttf'
+      var results = await Promise.all([_fetchTtfBase64(REG_URL), _fetchTtfBase64(BLD_URL)])
+      _pdfFontCache.regular = results[0]
+      _pdfFontCache.bold = results[1]
+    }
+    doc.addFileToVFS('NotoSans-Regular.ttf', _pdfFontCache.regular)
+    doc.addFont('NotoSans-Regular.ttf', 'NotoSans', 'normal')
+    doc.addFileToVFS('NotoSans-Bold.ttf', _pdfFontCache.bold)
+    doc.addFont('NotoSans-Bold.ttf', 'NotoSans', 'bold')
+    return true
+  } catch (e) {
+    console.warn('PDF font load failed, using helvetica fallback:', e.message)
+    return false
+  }
+}
+
 function VendorLedger({ profile }) {
   var perms = (profile && profile.permissions) || []
   var isAdmin = perms.indexOf('feature_admin') !== -1
@@ -298,6 +334,7 @@ function VendorLedger({ profile }) {
   }
 
   var [showPayModal, setShowPayModal] = useState(false)
+  var [pdfBusy, setPdfBusy] = useState(false)
 
   function payVendor() {
     if (!selectedVendor) return
@@ -497,6 +534,155 @@ function VendorLedger({ profile }) {
     )
   }
 
+  // ── PDF EXPORT: bank-statement style vendor ledger ──
+  async function exportVendorPDF() {
+    if (pdfBusy || !selectedVendor || !entries || entries.length === 0) return
+    setPdfBusy(true)
+    try {
+      var jsPDFmod = await import('jspdf')
+      var jsPDF = jsPDFmod.default || jsPDFmod.jsPDF
+      var autoTableMod = await import('jspdf-autotable')
+      var autoTable = autoTableMod.default || autoTableMod
+
+      var doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+      var fontOk = await _registerPdfFont(doc)
+      var FONT = fontOk ? 'NotoSans' : 'helvetica'
+      var pageW = doc.internal.pageSize.getWidth()
+      var pageH = doc.internal.pageSize.getHeight()
+
+      // Chronological, deleted excluded (matches on-screen balance math)
+      var chrono = entries.filter(function (e) { return !e.deleted_at }).slice().sort(function (a, b) {
+        return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      })
+
+      var totalCr = 0, totalDb = 0
+      chrono.forEach(function (e) {
+        totalCr += (e.credit_paise || 0)
+        totalDb += (e.debit_paise || 0)
+      })
+      var closing = totalCr - totalDb
+      var opening = 0  // Vendor ledgers start from zero — no imported opening balance concept
+      var oldest = chrono[0]
+      var newest = chrono[chrono.length - 1]
+      var periodFrom = oldest && oldest.created_at ? oldest.created_at.split('T')[0] : ''
+      var periodTo   = newest && newest.created_at ? newest.created_at.split('T')[0] : ''
+
+      var vendorName = selectedVendor.vendor_name || 'Vendor #' + selectedVendor.vendor_id
+      var mm = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+      function fmtD(iso) {
+        if (!iso) return '—'
+        var d = new Date(iso.length === 10 ? iso + 'T00:00:00' : iso)
+        return String(d.getDate()).padStart(2, '0') + '-' + mm[d.getMonth()] + '-' + d.getFullYear()
+      }
+      function fmtN(paise) {
+        return ((paise || 0) / 100).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
+      }
+      function refCellFor(e) {
+        var kind = (e.metadata && e.metadata.kind) || e.ref_type || ''
+        var refNo = ''
+        if (e.metadata && e.metadata.purchase_number) refNo = 'PO #' + e.metadata.purchase_number
+        else if (e.metadata && e.metadata.receipt_number) refNo = 'RCPT #' + e.metadata.receipt_number
+        else if (e.ref_id) refNo = '#' + String(e.ref_id).slice(0, 8)
+        var label = kind ? kind.toString().toUpperCase().replace(/_/g, ' ') : ''
+        return label + (refNo ? '\n' + refNo : '')
+      }
+      function particularsFor(e) {
+        var desc = e.description || '—'
+        var extra = []
+        if (e.metadata && e.metadata.mode) extra.push(String(e.metadata.mode).toUpperCase())
+        if (e.metadata && e.metadata.due_date) extra.push('Due ' + fmtD(e.metadata.due_date))
+        return desc + (extra.length ? '\n' + extra.join(' · ') : '')
+      }
+
+      // Header
+      doc.setFont(FONT, 'bold'); doc.setFontSize(14)
+      doc.text('VENDOR STATEMENT', 10, 14)
+      doc.setFont(FONT, 'normal'); doc.setFontSize(8); doc.setTextColor(120)
+      doc.text('Generated ' + new Date().toLocaleString('en-IN'), pageW - 10, 14, { align: 'right' })
+      doc.setTextColor(0)
+
+      doc.setFontSize(9)
+      var y = 22
+      doc.setFont(FONT, 'bold'); doc.text('Vendor:', 10, y)
+      doc.setFont(FONT, 'normal'); doc.text(vendorName + '   (Vendor #' + selectedVendor.vendor_id + ')', 28, y)
+      y += 5
+      doc.setFont(FONT, 'bold'); doc.text('Period:', 10, y)
+      doc.setFont(FONT, 'normal'); doc.text(fmtD(periodFrom) + '  to  ' + fmtD(periodTo) + '     (' + chrono.length + ' entries)', 28, y)
+      y += 7
+
+      // Summary strip
+      autoTable(doc, {
+        startY: y,
+        head: [['Opening Balance', 'Bills (Credits)', 'Payments (Debits)', 'Closing Balance']],
+        body: [[
+          fmtN(opening),
+          '+' + fmtN(totalCr),
+          '-' + fmtN(totalDb),
+          fmtN(closing),
+        ]],
+        styles: { font: FONT, fontSize: 9, halign: 'right', cellPadding: 2 },
+        headStyles: { font: FONT, fillColor: [50, 50, 50], textColor: 255, fontStyle: 'bold', halign: 'right', fontSize: 8 },
+        columnStyles: {
+          0: { cellWidth: 47.5 },
+          1: { cellWidth: 47.5, textColor: [140, 90, 20] },
+          2: { cellWidth: 47.5, textColor: [16, 128, 60] },
+          3: { cellWidth: 47.5, fontStyle: 'bold' },
+        },
+        margin: { left: 10, right: 10 },
+      })
+
+      // Main ledger table (running balance recomputed chronologically)
+      var running = 0
+      var body = chrono.map(function (e) {
+        var isCredit = (e.credit_paise || 0) > 0
+        running += (e.credit_paise || 0) - (e.debit_paise || 0)
+        var dt = e.created_at ? new Date(e.created_at) : null
+        var dateCell = dt ? fmtD(e.created_at.split('T')[0]) + '\n' + dt.toTimeString().slice(0, 5) : ''
+        var cr = (e.credit_paise || 0)
+        var db = (e.debit_paise || 0)
+        return [
+          dateCell,
+          refCellFor(e),
+          particularsFor(e),
+          isCredit ? fmtN(cr) : '',
+          !isCredit ? fmtN(db) : '',
+          fmtN(running),
+        ]
+      })
+
+      autoTable(doc, {
+        startY: doc.lastAutoTable.finalY + 6,
+        head: [['Date', 'Ref', 'Particulars', 'Bill (Cr)', 'Payment (Dr)', 'Balance']],
+        body: body,
+        styles: { font: FONT, fontSize: 8, cellPadding: 1.5, overflow: 'linebreak', valign: 'top' },
+        headStyles: { font: FONT, fillColor: [50, 50, 50], textColor: 255, fontStyle: 'bold', halign: 'center' },
+        columnStyles: {
+          0: { cellWidth: 22, fontSize: 7 },
+          1: { cellWidth: 24, fontSize: 7 },
+          2: { cellWidth: 'auto' },
+          3: { cellWidth: 22, halign: 'right', textColor: [140, 90, 20] },
+          4: { cellWidth: 22, halign: 'right', textColor: [16, 128, 60] },
+          5: { cellWidth: 24, halign: 'right', fontStyle: 'bold' },
+        },
+        margin: { left: 10, right: 10 },
+        didDrawPage: function () {
+          doc.setFontSize(7); doc.setTextColor(120)
+          doc.text('Page ' + doc.internal.getCurrentPageInfo().pageNumber, pageW - 10, pageH - 6, { align: 'right' })
+          doc.text('Ambria Ops · Vendor statement for ' + vendorName, 10, pageH - 6)
+          doc.setTextColor(0)
+        },
+      })
+
+      var safeName = vendorName.replace(/[^a-z0-9]+/gi, '_').slice(0, 40)
+      doc.save('vendor_' + safeName + '_' + new Date().toISOString().split('T')[0] + '.pdf')
+      try { await logActivity('VENDOR_LEDGER_PDF_EXPORT', vendorName + ' | ' + chrono.length + ' entries | closing ' + (closing / 100).toFixed(2)) } catch (_) {}
+    } catch (err) {
+      alert('PDF export failed: ' + (err.message || err))
+    } finally {
+      setPdfBusy(false)
+    }
+  }
+
   // ── DETAIL VIEW ──
   var vs = selectedVendor
   if (!vs) return null
@@ -534,6 +720,11 @@ function VendorLedger({ profile }) {
             className={"px-3 py-2 text-xs font-bold rounded-lg transition-colors flex-shrink-0 " +
               (currentBalance > 0 ? "bg-indigo-600 text-white hover:bg-indigo-700" : "bg-gray-200 text-gray-400 cursor-not-allowed")}>
             💸 Pay Vendor
+          </button>
+          <button onClick={exportVendorPDF}
+            disabled={pdfBusy || !entries || entries.length === 0}
+            className="px-3 py-2 text-sm font-bold rounded-lg transition-colors bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 disabled:opacity-40 disabled:cursor-not-allowed">
+            {pdfBusy ? 'Building…' : '📄 PDF'}
           </button>
         </div>
         <div className="border-t border-gray-100 pt-3">
