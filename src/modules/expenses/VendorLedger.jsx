@@ -234,7 +234,29 @@ function VendorLedger({ profile }) {
     var { data, error } = await supabase.from('v_vendor_ledger')
       .select('*')
       .order('balance_paise', { ascending: false })
-    if (!error) setVendors(data || [])
+    if (error) { setLoading(false); return }
+    var rows = data || []
+
+    // Merge phones from vendors master (v_vendor_ledger doesn't expose contact fields)
+    var vendorIds = rows.map(function (r) { return r.vendor_id }).filter(Boolean)
+    if (vendorIds.length > 0) {
+      var CHUNK = 500
+      var phoneMap = {}
+      for (var i = 0; i < vendorIds.length; i += CHUNK) {
+        var chunk = vendorIds.slice(i, i + CHUNK)
+        var pRes = await supabase.from('vendors')
+          .select('id, phone, phone2, contact')
+          .in('id', chunk)
+        ;(pRes.data || []).forEach(function (p) { phoneMap[p.id] = p })
+      }
+      rows = rows.map(function (r) {
+        var p = phoneMap[r.vendor_id]
+        if (!p) return r
+        return Object.assign({}, r, { _phone: p.phone || null, _phone2: p.phone2 || null, _contact: p.contact || null })
+      })
+    }
+
+    setVendors(rows)
     setLoading(false)
   }
 
@@ -318,6 +340,22 @@ function VendorLedger({ profile }) {
     setView('detail')
     setShowDeleted(false)
     await loadEntries(v, false)
+    // Fetch phones + contact name from vendors master (not in v_vendor_ledger view)
+    try {
+      var contactRes = await supabase.from('vendors')
+        .select('phone, phone2, contact')
+        .eq('id', v.vendor_id).maybeSingle()
+      if (contactRes.data) {
+        setSelectedVendor(function (prev) {
+          if (!prev || prev.vendor_id !== v.vendor_id) return prev
+          return Object.assign({}, prev, {
+            _phone: contactRes.data.phone || null,
+            _phone2: contactRes.data.phone2 || null,
+            _contact: contactRes.data.contact || null,
+          })
+        })
+      }
+    } catch (_) {}
     try { logActivity('VENDOR_LEDGER_VIEW', v.vendor_name + ' (id ' + v.vendor_id + ')') } catch (_) {}
   }
 
@@ -500,15 +538,23 @@ function VendorLedger({ profile }) {
               var isOverdue = (v.overdue_count || 0) > 0
               return (
                 <button key={v.vendor_id} onClick={function () { openVendor(v) }}
-                  className={"text-left border rounded-xl p-3 hover:shadow-sm active:scale-[0.99] transition-all " + balBg + (isOverdue ? " ring-2 ring-red-300" : "")}>
+                  className={"text-left border rounded-xl p-3 hover:shadow-sm active:scale-[0.99] transition-all w-full " + balBg + (isOverdue ? " ring-2 ring-red-300" : "")}>
                   <div className="flex items-start justify-between gap-2 mb-2">
                     <p className="text-sm font-bold text-gray-900 truncate flex-1">{v.vendor_name || '—'}</p>
-                    <div className="flex gap-1 flex-shrink-0">
+                    <div className="flex gap-1 flex-shrink-0 items-center">
                       {isOverdue && (
                         <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 bg-red-100 text-red-700 rounded">⚠ Overdue</span>
                       )}
                       {v.vendor_status === 'incomplete' && (
                         <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded">Incomplete</span>
+                      )}
+                      {v._phone && (
+                        <a href={'tel:' + v._phone.replace(/[^0-9+]/g, '')}
+                          onClick={function (ev) { ev.stopPropagation() }}
+                          title={'Call ' + (v._contact || v.vendor_name || 'vendor') + (v._phone2 ? ' · alt: ' + v._phone2 : '')}
+                          className="text-[10px] font-bold px-2 py-0.5 bg-green-600 text-white rounded hover:bg-green-700 no-underline">
+                          📞
+                        </a>
                       )}
                     </div>
                   </div>
@@ -721,6 +767,13 @@ function VendorLedger({ profile }) {
               (currentBalance > 0 ? "bg-indigo-600 text-white hover:bg-indigo-700" : "bg-gray-200 text-gray-400 cursor-not-allowed")}>
             💸 Pay Vendor
           </button>
+          {vs._phone && (
+            <a href={'tel:' + vs._phone.replace(/[^0-9+]/g, '')}
+              title={'Call ' + (vs._contact || vs.vendor_name || 'vendor') + (vs._phone2 ? ' · alt: ' + vs._phone2 : '')}
+              className="px-3 py-2 text-xs font-bold rounded-lg transition-colors flex-shrink-0 bg-green-600 text-white hover:bg-green-700 no-underline">
+              📞 Call
+            </a>
+          )}
           <button onClick={exportVendorPDF}
             disabled={pdfBusy || !entries || entries.length === 0}
             className="px-3 py-2 text-sm font-bold rounded-lg transition-colors bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 disabled:opacity-40 disabled:cursor-not-allowed">
