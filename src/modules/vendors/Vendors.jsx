@@ -1157,7 +1157,20 @@ function Vendors({ profile }) {
                 {/* Contact */}
                 <div className="lg:col-span-2 min-w-0 mt-1.5 lg:mt-0">
                   {v.contact && <p className="text-xs text-gray-600 truncate">{v.contact}</p>}
-                  {v.phone && <p className="text-[11px] text-gray-400 truncate">{v.phone}</p>}
+                  {v.phone && (
+                    <a href={'tel:' + v.phone.replace(/[^0-9+]/g, '')}
+                      title={'Call ' + (v.contact || v.name || 'vendor') + (v.phone2 ? ' · alt: ' + v.phone2 : '')}
+                      className="inline-flex items-center gap-1 text-[11px] text-indigo-600 hover:text-indigo-800 truncate no-underline">
+                      📞 {v.phone}
+                    </a>
+                  )}
+                  {v.phone2 && (
+                    <a href={'tel:' + v.phone2.replace(/[^0-9+]/g, '')}
+                      title={'Call alt: ' + v.phone2}
+                      className="block text-[10px] text-gray-400 hover:text-indigo-600 truncate no-underline mt-0.5">
+                      📞 {v.phone2}
+                    </a>
+                  )}
                   {!v.contact && !v.phone && <span className="text-[11px] text-gray-300 hidden lg:inline">—</span>}
                 </div>
                 {/* Categories */}
