@@ -2048,6 +2048,40 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             </button>
           )}
         </div>
+        {walletTxns.length > 0 && (function () {
+          var chrono = walletTxns.slice().sort(function (a, b) {
+            return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+          })
+          var totalCr = 0, totalDb = 0
+          chrono.forEach(function (t) {
+            if (t.type === 'credit') totalCr += (t.amount_paise || 0)
+            else totalDb += (t.amount_paise || 0)
+          })
+          var oldest = chrono[0]
+          var newest = chrono[chrono.length - 1]
+          var opening = oldest ? ((oldest.balance_after_paise || 0) - (oldest.type === 'credit' ? (oldest.amount_paise || 0) : -(oldest.amount_paise || 0))) : 0
+          var closing = newest ? (newest.balance_after_paise || 0) : 0
+          return (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-2.5">
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Opening</p>
+                <p className={"text-sm font-bold mt-0.5 " + (opening < 0 ? "text-red-600" : "text-gray-900")}>{formatPoints(opening)}</p>
+              </div>
+              <div className="bg-green-50 border border-green-200 rounded-lg p-2.5">
+                <p className="text-[10px] font-bold text-green-600 uppercase tracking-wider">Total Credits</p>
+                <p className="text-sm font-bold text-green-700 mt-0.5">+{formatPoints(totalCr)}</p>
+              </div>
+              <div className="bg-red-50 border border-red-200 rounded-lg p-2.5">
+                <p className="text-[10px] font-bold text-red-600 uppercase tracking-wider">Total Debits</p>
+                <p className="text-sm font-bold text-red-700 mt-0.5">-{formatPoints(totalDb)}</p>
+              </div>
+              <div className="bg-gray-900 border border-gray-900 rounded-lg p-2.5">
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Closing</p>
+                <p className={"text-sm font-bold mt-0.5 " + (closing < 0 ? "text-red-400" : "text-green-400")}>{formatPoints(closing)}</p>
+              </div>
+            </div>
+          )
+        })()}
         {selectedWallet && selectedWallet.user_id === profile.id && pendingIncoming.length > 0 && (
           <div className="space-y-2">
             <p className="text-[10px] font-bold text-amber-600 uppercase tracking-wider">Incoming Transfers</p>
