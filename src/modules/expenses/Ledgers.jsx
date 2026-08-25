@@ -820,7 +820,7 @@ function Ledgers({ profile }) {
               <div key={g.key} className="bg-white border border-gray-200 rounded-lg overflow-hidden">
                 <div className="flex items-stretch hover:bg-gray-50 transition-colors">
                   <button onClick={function () { toggleDept(g.key, g.allocs) }}
-                    className="flex-1 grid grid-cols-[1fr_70px_70px_80px_36px] items-center px-3 py-2 text-left">
+                    className="flex-1 grid grid-cols-[1fr_100px_100px_120px_40px] gap-2 items-center px-3 py-2 text-left">
                     <div className="flex items-center gap-2 min-w-0">
                       <span className="text-xs text-gray-400 flex-shrink-0">{deptCollapsed ? '▸' : '▾'}</span>
                       <span className="text-sm font-bold text-gray-900 truncate">{g.deptName}</span>
@@ -831,9 +831,9 @@ function Ledgers({ profile }) {
                         </span>
                       )}
                     </div>
-                    <span className="text-xs text-right text-green-700 tabular-nums">{formatPoints(g.committed)}</span>
-                    <span className="text-xs text-right text-amber-700 tabular-nums">{formatPoints(g.pending)}</span>
-                    <span className="text-xs text-right font-bold text-gray-900 tabular-nums">{formatPoints(g.total)}</span>
+                    <span className="text-xs text-right text-green-700 tabular-nums whitespace-nowrap">{formatPoints(g.committed)}</span>
+                    <span className="text-xs text-right text-amber-700 tabular-nums whitespace-nowrap">{formatPoints(g.pending)}</span>
+                    <span className="text-xs text-right font-bold text-gray-900 tabular-nums whitespace-nowrap">{formatPoints(g.total)}</span>
                     <span className="text-[10px] text-right text-gray-400">{g.allocs}</span>
                   </button>
                   <button onClick={function (e) { e.stopPropagation(); exportScopedPDF(g.deptId) }}
@@ -851,15 +851,15 @@ function Ledgers({ profile }) {
                     <div key={t.typeKey}>
                       <div className="flex items-stretch border-t border-gray-100 bg-gray-50 hover:bg-gray-100 transition-colors">
                         <button onClick={function () { toggleType(g.key, t.typeKey) }}
-                          className="flex-1 grid grid-cols-[1fr_70px_70px_80px_36px] items-center px-3 py-1.5 pl-9 text-left">
+                          className="flex-1 grid grid-cols-[1fr_100px_100px_120px_40px] gap-2 items-center px-3 py-1.5 pl-9 text-left">
                           <div className="flex items-center gap-2 min-w-0">
                             <span className="text-[10px] text-gray-400 flex-shrink-0">{typeCollapsed ? '▸' : '▾'}</span>
                             <span className="text-xs font-semibold text-gray-800 truncate">{typeName}</span>
                             <span className="text-[10px] text-gray-400 flex-shrink-0">{t.subRows.length}</span>
                           </div>
-                          <span className="text-[11px] text-right text-green-700 tabular-nums">{formatPoints(t.committed)}</span>
-                          <span className="text-[11px] text-right text-amber-700 tabular-nums">{formatPoints(t.pending)}</span>
-                          <span className="text-[11px] text-right font-bold text-gray-800 tabular-nums">{formatPoints(t.total)}</span>
+                          <span className="text-[11px] text-right text-green-700 tabular-nums whitespace-nowrap">{formatPoints(t.committed)}</span>
+                          <span className="text-[11px] text-right text-amber-700 tabular-nums whitespace-nowrap">{formatPoints(t.pending)}</span>
+                          <span className="text-[11px] text-right font-bold text-gray-800 tabular-nums whitespace-nowrap">{formatPoints(t.total)}</span>
                           <span className="text-[10px] text-right text-gray-400">{t.allocs}</span>
                         </button>
                         <button onClick={function (e) { e.stopPropagation(); exportScopedPDF(g.deptId, t.typeId) }}
@@ -874,13 +874,13 @@ function Ledgers({ profile }) {
                         return (
                           <div key={i} className="flex items-stretch border-t border-gray-100 hover:bg-indigo-50 transition-colors">
                             <button onClick={function () { openRow(g, r) }}
-                              className="flex-1 grid grid-cols-[1fr_70px_70px_80px_36px] items-center px-3 py-2 pl-14 text-left">
+                              className="flex-1 grid grid-cols-[1fr_100px_100px_120px_40px] gap-2 items-center px-3 py-2 pl-14 text-left">
                               <div className="min-w-0">
                                 <p className="text-xs text-gray-700 truncate">{subTypeName}</p>
                               </div>
-                              <span className="text-xs text-right text-green-700 tabular-nums">{formatPoints(r.committed)}</span>
-                              <span className="text-xs text-right text-amber-700 tabular-nums">{formatPoints(r.pending)}</span>
-                              <span className="text-xs text-right font-bold text-gray-800 tabular-nums">{formatPoints(r.total)}</span>
+                              <span className="text-xs text-right text-green-700 tabular-nums whitespace-nowrap">{formatPoints(r.committed)}</span>
+                              <span className="text-xs text-right text-amber-700 tabular-nums whitespace-nowrap">{formatPoints(r.pending)}</span>
+                              <span className="text-xs text-right font-bold text-gray-800 tabular-nums whitespace-nowrap">{formatPoints(r.total)}</span>
                               <span className="text-[10px] text-right text-gray-400">{r.allocs}</span>
                             </button>
                             <button onClick={function (e) { e.stopPropagation(); exportScopedPDF(g.deptId, r.typeId, r.subTypeId) }}
