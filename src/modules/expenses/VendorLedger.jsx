@@ -247,7 +247,7 @@ function VendorLedger({ profile }) {
       for (var i = 0; i < vendorIds.length; i += CHUNK) {
         var chunk = vendorIds.slice(i, i + CHUNK)
         var pRes = await supabase.from('vendors')
-          .select('id, phone, phone2, contact, expense_sub_type_ids')
+          .select('id, phone, phone2, contact, expense_sub_type_ids, opening_balance_paise')
           .in('id', chunk)
         ;(pRes.data || []).forEach(function (p) { vMasterMap[p.id] = p })
       }
@@ -258,7 +258,8 @@ function VendorLedger({ profile }) {
           _phone: p.phone || null,
           _phone2: p.phone2 || null,
           _contact: p.contact || null,
-          expense_sub_type_ids: p.expense_sub_type_ids || []
+          expense_sub_type_ids: p.expense_sub_type_ids || [],
+          _opening_paise: p.opening_balance_paise || 0
         })
       })
     }
@@ -353,7 +354,7 @@ function VendorLedger({ profile }) {
     // Fetch phones + contact name from vendors master (not in v_vendor_ledger view)
     try {
       var contactRes = await supabase.from('vendors')
-        .select('phone, phone2, contact')
+        .select('phone, phone2, contact, opening_balance_paise')
         .eq('id', v.vendor_id).maybeSingle()
       if (contactRes.data) {
         setSelectedVendor(function (prev) {
@@ -362,6 +363,7 @@ function VendorLedger({ profile }) {
             _phone: contactRes.data.phone || null,
             _phone2: contactRes.data.phone2 || null,
             _contact: contactRes.data.contact || null,
+            _opening_paise: contactRes.data.opening_balance_paise || 0,
           })
         })
       }
@@ -581,6 +583,11 @@ function VendorLedger({ profile }) {
                       : 'No activity'}
                     {v.earliest_due_date && ' · earliest due ' + v.earliest_due_date}
                   </p>
+                  {v._opening_paise !== 0 && (
+                    <p className={"text-[10px] font-semibold mt-0.5 " + (v._opening_paise > 0 ? "text-amber-700" : "text-green-700")}>
+                      Opening: {formatPoints(Math.abs(v._opening_paise))} {v._opening_paise > 0 ? 'Cr' : 'Dr'}
+                    </p>
+                  )}
                 </button>
               )
             })}
@@ -616,8 +623,8 @@ function VendorLedger({ profile }) {
         totalCr += (e.credit_paise || 0)
         totalDb += (e.debit_paise || 0)
       })
-      var closing = totalCr - totalDb
-      var opening = 0  // Vendor ledgers start from zero — no imported opening balance concept
+      var opening = selectedVendor._opening_paise || 0
+      var closing = opening + totalCr - totalDb
       var oldest = chrono[0]
       var newest = chrono[chrono.length - 1]
       var periodFrom = oldest && oldest.created_at ? oldest.created_at.split('T')[0] : ''
@@ -687,8 +694,8 @@ function VendorLedger({ profile }) {
         margin: { left: 10, right: 10 },
       })
 
-      // Main ledger table (running balance recomputed chronologically)
-      var running = 0
+      // Main ledger table (running balance recomputed chronologically, seeded with vendor opening balance)
+      var running = opening
       var body = chrono.map(function (e) {
         var isCredit = (e.credit_paise || 0) > 0
         running += (e.credit_paise || 0) - (e.debit_paise || 0)
@@ -744,7 +751,9 @@ function VendorLedger({ profile }) {
   if (!vs) return null
 
   // Compute running balance chronologically forward (deleted rows contribute 0)
-  var running = 0
+  // Seed with vendor opening balance from master (matches PDF export)
+  var openingPaise = vs._opening_paise || 0
+  var running = openingPaise
   var withRunning = entries.map(function (e) {
     if (!e.deleted_at) running += (e.credit_paise || 0) - (e.debit_paise || 0)
     return Object.assign({}, e, { runningBalance: e.deleted_at ? null : running })
@@ -793,6 +802,11 @@ function VendorLedger({ profile }) {
         <div className="border-t border-gray-100 pt-3">
           <p className="text-[11px] font-bold uppercase tracking-wider text-gray-500 mb-0.5">Outstanding Balance</p>
           <p className={"text-3xl font-bold " + balColor}>{formatPoints(currentBalance)}</p>
+          {openingPaise !== 0 && (
+            <p className={"text-[11px] font-semibold mt-0.5 " + (openingPaise > 0 ? "text-amber-700" : "text-green-700")}>
+              Includes opening: {formatPoints(Math.abs(openingPaise))} {openingPaise > 0 ? 'Cr' : 'Dr'}
+            </p>
+          )}
           {((vs.cash_balance_paise || 0) !== 0 || (vs.bank_balance_paise || 0) !== 0) && (
             <div className="flex gap-3 mt-2 text-xs">
               <span className="text-gray-600">💵 Cash: <span className="font-semibold text-gray-900">{formatPoints(vs.cash_balance_paise || 0)}</span></span>
