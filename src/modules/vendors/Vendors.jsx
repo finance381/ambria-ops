@@ -50,11 +50,17 @@ function Vendors({ profile }) {
   }
 
   function startAdd() {
+    setExpandedCatDepts({})
+    setExpandedExpDepts({})
+    setExpandedExpTypes({})
     setEditing('new')
     setForm({ name: '', contact: '', phone: '', phone2: '', email: '', address: '', category_ids: [], expense_type_ids: [], expense_sub_type_ids: [], notes: '', opening_balance: '', gst_number: '', pan_number: '', bank_account: '', bank_ifsc: '', vendor_type: 'Supplier', lead_time_days: '', referred_by: '' })
   }
 
   function startEdit(v) {
+    setExpandedCatDepts({})
+    setExpandedExpDepts({})
+    setExpandedExpTypes({})
     setEditing(v.id)
     setForm({
       name: v.name || '',
@@ -80,6 +86,9 @@ function Vendors({ profile }) {
   }
 
   function cancelEdit() {
+    setExpandedCatDepts({})
+    setExpandedExpDepts({})
+    setExpandedExpTypes({})
     setEditing(null)
     setForm({ name: '', contact: '', phone: '', phone2: '', email: '', address: '', category_ids: [], expense_type_ids: [], expense_sub_type_ids: [], notes: '', opening_balance: '', opening_balance_direction: 'credit', gst_number: '', pan_number: '', bank_account: '', bank_ifsc: '', vendor_type: 'Supplier', lead_time_days: '', referred_by: '' })
   }
@@ -795,7 +804,7 @@ function Vendors({ profile }) {
                 <span className="text-[11px] text-indigo-600 font-semibold">{form.category_ids.length} selected</span>
               )}
             </div>
-            <div className="space-y-3 max-h-96 overflow-y-auto p-1">
+            <div className="space-y-3 lg:max-h-96 lg:overflow-y-auto p-1">
               {(function () {
                 // Group: dept → sub-dept → categories
                 var byDept = {}
@@ -872,7 +881,7 @@ function Vendors({ profile }) {
               )}
             </div>
             <p className="text-[11px] text-gray-400 mb-2">Tick a parent type to bulk-tick its sub-types. Click a row to expand and pick specific sub-types.</p>
-            <div className="space-y-2 max-h-80 overflow-y-auto p-1">
+            <div className="space-y-2 lg:max-h-80 lg:overflow-y-auto p-1">
               {expenseTypes.length === 0 && <p className="text-xs text-gray-400 px-1">No expense types configured</p>}
               {(function () {
                 // Group expense types by department (via sub_department_id → department, fallback to direct department_id)
