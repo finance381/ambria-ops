@@ -541,25 +541,58 @@ function Ledgers({ profile }) {
     }
   }
 
-  async function exportSubTypePDF(deptId, typeId, subTypeId) {
+  // Level auto-inferred: pass deptId alone for dept-level, deptId+typeId for type-level, all three for sub-type level.
+  async function exportScopedPDF(deptId, typeId, subTypeId) {
     if (pdfBusy) return
     setPdfBusy(true)
     try {
       var dName = deptId != null ? (deptMap[deptId] || 'Unassigned') : 'Unallocated'
-      var tName = typeId != null ? (typeMap[typeId] || 'Untyped') : 'Untyped'
-      var sName = subTypeId != null ? (subTypeMap[subTypeId] || '—') : '—'
-      var ctx = await _pdfSetup('Sub-Type Ledger — ' + sName)
-      var allocs = await fetchAllocDetail({
-        deptId: deptId != null ? deptId : null,
-        typeId: typeId != null ? typeId : null,
-        subTypeId: subTypeId != null ? subTypeId : null,
-      })
+      var tName = typeId != null ? (typeMap[typeId] || 'Untyped') : null
+      var sName = subTypeId != null ? (subTypeMap[subTypeId] || '—') : null
+      var level, titleLabel, fileTag
+      if (sName != null) { level = 'sub'; titleLabel = 'Sub-Type Ledger — ' + sName; fileTag = sName }
+      else if (tName != null) { level = 'type'; titleLabel = 'Expense Type Ledger — ' + tName; fileTag = tName }
+      else { level = 'dept'; titleLabel = 'Department Ledger — ' + dName; fileTag = dName }
+      var ctx = await _pdfSetup(titleLabel)
+      var filter = { deptId: deptId != null ? deptId : null }
+      if (typeId !== undefined) filter.typeId = typeId != null ? typeId : null
+      if (subTypeId !== undefined) filter.subTypeId = subTypeId != null ? subTypeId : null
+      var allocs = await fetchAllocDetail(filter)
       if (allocs.length === 0) {
-        ctx.doc.setFontSize(10); ctx.doc.text('No allocations in this sub-type for the current filter.', 14, ctx.startY + 6)
-      } else {
+        ctx.doc.setFontSize(10); ctx.doc.text('No allocations in this scope for the current filter.', 14, ctx.startY + 6)
+      } else if (level === 'sub') {
         _renderAllocSection(ctx, dName + ' → ' + tName + ' → ' + sName, allocs)
+      } else if (level === 'type') {
+        // Group by sub-type
+        var subMap = {}
+        allocs.forEach(function (a) {
+          var k = a.expense_sub_type_id != null ? String(a.expense_sub_type_id) : '__u'
+          if (!subMap[k]) subMap[k] = { subTypeId: a.expense_sub_type_id, rows: [] }
+          subMap[k].rows.push(a)
+        })
+        Object.values(subMap).forEach(function (s) {
+          var sn = s.subTypeId != null ? (subTypeMap[s.subTypeId] || '—') : '—'
+          _renderAllocSection(ctx, dName + ' → ' + tName + ' → ' + sn, s.rows)
+        })
+      } else {
+        // Dept level: group by type → sub-type
+        var typeMap2 = {}
+        allocs.forEach(function (a) {
+          var tk = a.expense_type_id != null ? String(a.expense_type_id) : '__u'
+          var sk = a.expense_sub_type_id != null ? String(a.expense_sub_type_id) : '__u'
+          if (!typeMap2[tk]) typeMap2[tk] = { typeId: a.expense_type_id, subs: {} }
+          if (!typeMap2[tk].subs[sk]) typeMap2[tk].subs[sk] = { subTypeId: a.expense_sub_type_id, rows: [] }
+          typeMap2[tk].subs[sk].rows.push(a)
+        })
+        Object.values(typeMap2).forEach(function (t) {
+          var tn = t.typeId != null ? (typeMap[t.typeId] || 'Untyped') : 'Untyped'
+          Object.values(t.subs).forEach(function (s) {
+            var sn = s.subTypeId != null ? (subTypeMap[s.subTypeId] || '—') : '—'
+            _renderAllocSection(ctx, dName + ' → ' + tn + ' → ' + sn, s.rows)
+          })
+        })
       }
-      _openPdfPreview(ctx.doc, 'ledger_' + sName.replace(/[^a-z0-9]+/gi, '_') + '_' + dateFrom + '_' + dateTo + '.pdf')
+      _openPdfPreview(ctx.doc, 'ledger_' + fileTag.replace(/[^a-z0-9]+/gi, '_') + '_' + dateFrom + '_' + dateTo + '.pdf')
     } catch (err) {
       alert('PDF export failed: ' + (err.message || err))
     } finally {
@@ -785,41 +818,57 @@ function Ledgers({ profile }) {
             var delta = deptDelta[g.key] || 0
             return (
               <div key={g.key} className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-                <button onClick={function () { toggleDept(g.key, g.allocs) }}
-                  className="w-full grid grid-cols-[1fr_70px_70px_80px_36px] items-center px-3 py-2 hover:bg-gray-50 transition-colors text-left">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="text-xs text-gray-400 flex-shrink-0">{deptCollapsed ? '▸' : '▾'}</span>
-                    <span className="text-sm font-bold text-gray-900 truncate">{g.deptName}</span>
-                    <span className="text-[10px] text-gray-400 flex-shrink-0">{g.typeGroups.length}</span>
-                    {delta > 0 && (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700 font-bold flex-shrink-0 animate-pulse">
-                        +{delta}
-                      </span>
-                    )}
-                  </div>
-                  <span className="text-xs text-right text-green-700 tabular-nums">{formatPoints(g.committed)}</span>
-                  <span className="text-xs text-right text-amber-700 tabular-nums">{formatPoints(g.pending)}</span>
-                  <span className="text-xs text-right font-bold text-gray-900 tabular-nums">{formatPoints(g.total)}</span>
-                  <span className="text-[10px] text-right text-gray-400">{g.allocs}</span>
-                </button>
+                <div className="flex items-stretch hover:bg-gray-50 transition-colors">
+                  <button onClick={function () { toggleDept(g.key, g.allocs) }}
+                    className="flex-1 grid grid-cols-[1fr_70px_70px_80px_36px] items-center px-3 py-2 text-left">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="text-xs text-gray-400 flex-shrink-0">{deptCollapsed ? '▸' : '▾'}</span>
+                      <span className="text-sm font-bold text-gray-900 truncate">{g.deptName}</span>
+                      <span className="text-[10px] text-gray-400 flex-shrink-0">{g.typeGroups.length}</span>
+                      {delta > 0 && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700 font-bold flex-shrink-0 animate-pulse">
+                          +{delta}
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-xs text-right text-green-700 tabular-nums">{formatPoints(g.committed)}</span>
+                    <span className="text-xs text-right text-amber-700 tabular-nums">{formatPoints(g.pending)}</span>
+                    <span className="text-xs text-right font-bold text-gray-900 tabular-nums">{formatPoints(g.total)}</span>
+                    <span className="text-[10px] text-right text-gray-400">{g.allocs}</span>
+                  </button>
+                  <button onClick={function (e) { e.stopPropagation(); exportScopedPDF(g.deptId) }}
+                    disabled={pdfBusy}
+                    title="Open department PDF in new tab"
+                    className="px-2 border-l border-gray-100 text-[10px] font-semibold text-rose-500 hover:bg-rose-50 disabled:opacity-40">
+                    ↓ PDF
+                  </button>
+                </div>
                 {!deptCollapsed && g.typeGroups.map(function (t) {
                   var typeKeyFull = g.key + '|' + t.typeKey
                   var typeCollapsed = collapsedTypes[typeKeyFull]
                   var typeName = t.typeId ? (typeMap[t.typeId] || 'Untyped') : 'Untyped'
                   return (
                     <div key={t.typeKey}>
-                      <button onClick={function () { toggleType(g.key, t.typeKey) }}
-                        className="w-full grid grid-cols-[1fr_70px_70px_80px_36px] items-center px-3 py-1.5 pl-9 border-t border-gray-100 bg-gray-50 hover:bg-gray-100 transition-colors text-left">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span className="text-[10px] text-gray-400 flex-shrink-0">{typeCollapsed ? '▸' : '▾'}</span>
-                          <span className="text-xs font-semibold text-gray-800 truncate">{typeName}</span>
-                          <span className="text-[10px] text-gray-400 flex-shrink-0">{t.subRows.length}</span>
-                        </div>
-                        <span className="text-[11px] text-right text-green-700 tabular-nums">{formatPoints(t.committed)}</span>
-                        <span className="text-[11px] text-right text-amber-700 tabular-nums">{formatPoints(t.pending)}</span>
-                        <span className="text-[11px] text-right font-bold text-gray-800 tabular-nums">{formatPoints(t.total)}</span>
-                        <span className="text-[10px] text-right text-gray-400">{t.allocs}</span>
-                      </button>
+                      <div className="flex items-stretch border-t border-gray-100 bg-gray-50 hover:bg-gray-100 transition-colors">
+                        <button onClick={function () { toggleType(g.key, t.typeKey) }}
+                          className="flex-1 grid grid-cols-[1fr_70px_70px_80px_36px] items-center px-3 py-1.5 pl-9 text-left">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="text-[10px] text-gray-400 flex-shrink-0">{typeCollapsed ? '▸' : '▾'}</span>
+                            <span className="text-xs font-semibold text-gray-800 truncate">{typeName}</span>
+                            <span className="text-[10px] text-gray-400 flex-shrink-0">{t.subRows.length}</span>
+                          </div>
+                          <span className="text-[11px] text-right text-green-700 tabular-nums">{formatPoints(t.committed)}</span>
+                          <span className="text-[11px] text-right text-amber-700 tabular-nums">{formatPoints(t.pending)}</span>
+                          <span className="text-[11px] text-right font-bold text-gray-800 tabular-nums">{formatPoints(t.total)}</span>
+                          <span className="text-[10px] text-right text-gray-400">{t.allocs}</span>
+                        </button>
+                        <button onClick={function (e) { e.stopPropagation(); exportScopedPDF(g.deptId, t.typeId) }}
+                          disabled={pdfBusy}
+                          title="Open expense-type PDF in new tab"
+                          className="px-2 border-l border-gray-100 text-[10px] font-semibold text-rose-500 hover:bg-rose-50 disabled:opacity-40">
+                          ↓ PDF
+                        </button>
+                      </div>
                       {!typeCollapsed && t.subRows.map(function (r, i) {
                         var subTypeName = r.subTypeId ? (subTypeMap[r.subTypeId] || '—') : '—'
                         return (
@@ -834,7 +883,7 @@ function Ledgers({ profile }) {
                               <span className="text-xs text-right font-bold text-gray-800 tabular-nums">{formatPoints(r.total)}</span>
                               <span className="text-[10px] text-right text-gray-400">{r.allocs}</span>
                             </button>
-                            <button onClick={function (e) { e.stopPropagation(); exportSubTypePDF(g.deptId, r.typeId, r.subTypeId) }}
+                            <button onClick={function (e) { e.stopPropagation(); exportScopedPDF(g.deptId, r.typeId, r.subTypeId) }}
                               disabled={pdfBusy}
                               title="Open sub-type PDF in new tab"
                               className="px-2 border-l border-gray-100 text-[10px] font-semibold text-rose-500 hover:bg-rose-50 disabled:opacity-40">
