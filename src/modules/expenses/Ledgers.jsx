@@ -13,6 +13,14 @@ var STATUS_COLORS = {
 }
 var PAGE_SIZE = 50
 
+var SUB_MODE_LABEL = { upi: 'UPI', bank_transfer: 'Bank Transfer', cheque: 'Cheque', paytm_card_machine: 'Paytm Card', hdfc_card_machine: 'HDFC Card' }
+
+function _paymentLabel(mode, subMode) {
+  if (!mode) return '—'
+  if (mode === 'cash') return 'Cash'
+  return 'Bank' + (subMode ? ' · ' + (SUB_MODE_LABEL[subMode] || subMode) : '')
+}
+
 var SOURCE_BADGES = {
   allocation: { label: 'Allocation', cls: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
   auto_default: { label: 'No alloc', cls: 'bg-gray-100 text-gray-600 border-gray-200' },
@@ -229,6 +237,70 @@ function Ledgers({ profile }) {
     setLoading(false)
   }
 
+  // Fetch individual alloc rows enriched with vendor + payment info. Used by PDF exports.
+  // filter: { deptId?, typeId?, subTypeId? } — nulls treated as .is('...', null); undefined = no constraint on that col.
+  async function fetchAllocDetail(filter) {
+    var statusIn = statusFilter ? [statusFilter] : ['recorded', 'flagged', 'acknowledged', 'deducted']
+    var rows = []; var from = 0; var pageSize = 1000
+    while (true) {
+      var q = supabase.from('v_ledger')
+        .select('allocation_id, expense_id, department_id, expense_type_id, expense_sub_type_id, user_id, venue_id, amount_paise, pending_paise, committed_paise, remarks, expense_date, description, status, created_at, source')
+        .in('status', statusIn)
+        .gte('expense_date', dateFrom)
+        .lte('expense_date', dateTo)
+        .order('expense_date', { ascending: false })
+        .order('created_at', { ascending: false })
+        .range(from, from + pageSize - 1)
+      if (hasScope) q = q.in('department_id', scopeDeptIds)
+      if (userFilter) q = q.eq('user_id', userFilter)
+      if (venueFilter) q = q.eq('venue_id', Number(venueFilter))
+      if (filter) {
+        if (filter.deptId !== undefined) { if (filter.deptId === null) q = q.is('department_id', null); else q = q.eq('department_id', filter.deptId) }
+        if (filter.typeId !== undefined) { if (filter.typeId === null) q = q.is('expense_type_id', null); else q = q.eq('expense_type_id', filter.typeId) }
+        if (filter.subTypeId !== undefined) { if (filter.subTypeId === null) q = q.is('expense_sub_type_id', null); else q = q.eq('expense_sub_type_id', filter.subTypeId) }
+      }
+      var page = await q
+      if (page.error) throw new Error(page.error.message)
+      var chunk = page.data || []
+      rows = rows.concat(chunk)
+      if (chunk.length < pageSize) break
+      from += pageSize
+      if (from > 50000) break
+    }
+    if (pendingOnly) rows = rows.filter(function (r) { return (r.pending_paise || 0) > 0 })
+
+    // Batch-fetch expenses meta (vendor_id, payment_mode, payment_sub_mode) for each expense_id
+    var expenseIds = {}
+    rows.forEach(function (r) { if (r.expense_id != null) expenseIds[r.expense_id] = true })
+    var eIdList = Object.keys(expenseIds).map(Number)
+    var expMap = {}
+    var CHUNK = 500
+    for (var i = 0; i < eIdList.length; i += CHUNK) {
+      var eChunk = eIdList.slice(i, i + CHUNK)
+      var eRes = await supabase.from('expenses').select('id, vendor_id, payment_mode, payment_sub_mode').in('id', eChunk)
+      ;(eRes.data || []).forEach(function (e) { expMap[e.id] = e })
+    }
+    // Batch-fetch vendor names
+    var vendorIds = {}
+    Object.values(expMap).forEach(function (e) { if (e.vendor_id != null) vendorIds[e.vendor_id] = true })
+    var vIdList = Object.keys(vendorIds).map(Number)
+    var vMap = {}
+    for (var j = 0; j < vIdList.length; j += CHUNK) {
+      var vChunk = vIdList.slice(j, j + CHUNK)
+      var vRes = await supabase.from('vendors').select('id, name').in('id', vChunk)
+      ;(vRes.data || []).forEach(function (v) { vMap[v.id] = v.name })
+    }
+    // Merge
+    return rows.map(function (r) {
+      var e = expMap[r.expense_id] || {}
+      return Object.assign({}, r, {
+        _vendorName: e.vendor_id ? (vMap[e.vendor_id] || ('#' + e.vendor_id)) : '—',
+        _paymentMode: e.payment_mode || null,
+        _paymentSubMode: e.payment_sub_mode || null,
+      })
+    })
+  }
+
   async function loadDrill(append) {
     if (!drillGroup) return
     setDrillLoading(true)
@@ -331,127 +403,163 @@ function Ledgers({ profile }) {
     var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'ledgers_' + dateFrom + '_' + dateTo + '.csv'; a.click()
   }
 
+  // Shared PDF setup: creates doc, prints header + filter line. Returns { doc, FONT, pageW, pageH, startY, autoTable }.
+  async function _pdfSetup(title) {
+    var jsPDFmod = await import('jspdf')
+    var jsPDF = jsPDFmod.default || jsPDFmod.jsPDF
+    var autoTableMod = await import('jspdf-autotable')
+    var autoTable = autoTableMod.default || autoTableMod
+    var doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
+    var pageW = doc.internal.pageSize.getWidth()
+    var pageH = doc.internal.pageSize.getHeight()
+    var fontOk = await registerPdfFont(doc)
+    var FONT = fontOk ? 'NotoSans' : 'helvetica'
+    doc.setFont(FONT, 'bold'); doc.setFontSize(13)
+    doc.text(title, 14, 14)
+    doc.setFont(FONT, 'normal'); doc.setFontSize(8)
+    doc.text('Generated: ' + new Date().toLocaleString('en-IN'), pageW - 14, 14, { align: 'right' })
+    var fParts = []
+    if (dateFrom || dateTo) fParts.push('Period: ' + (dateFrom || '…') + ' to ' + (dateTo || '…'))
+    if (userFilter) { var u = users.find(function (x) { return String(x.id) === String(userFilter) }); fParts.push('User: ' + (u ? u.name : userFilter)) }
+    if (venueFilter) { var v = venues.find(function (x) { return String(x.id) === String(venueFilter) }); fParts.push('Venue: ' + (v ? (v.name || v.code) : venueFilter)) }
+    if (statusFilter) fParts.push('Status: ' + statusFilter)
+    if (pendingOnly) fParts.push('Pending only')
+    if (searchDeb) fParts.push('Search: "' + searchDeb + '"')
+    doc.setFontSize(7); doc.setTextColor(80)
+    doc.text(fParts.length ? 'Filters: ' + fParts.join('  ·  ') : 'Filters: none', 14, 19, { maxWidth: pageW - 28 })
+    doc.setTextColor(0)
+    return { doc: doc, FONT: FONT, pageW: pageW, pageH: pageH, startY: fParts.length ? 24 : 22, autoTable: autoTable }
+  }
+
+  function _fmtPts(paise) { return (paise / 100).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 }) }
+
+  // Renders one alloc-detail table section starting at nextY. Returns new Y after the table.
+  function _renderAllocSection(ctx, title, allocs) {
+    var doc = ctx.doc, FONT = ctx.FONT, autoTable = ctx.autoTable, pageW = ctx.pageW, pageH = ctx.pageH
+    var subCommitted = 0, subPending = 0, subTotal = 0
+    var body = allocs.map(function (a) {
+      subCommitted += (a.committed_paise || 0); subPending += (a.pending_paise || 0); subTotal += (a.amount_paise || 0)
+      var uName = userMap[a.user_id] || '—'
+      var vName = venueMap[a.venue_id] || '—'
+      return [
+        a.expense_date || '—',
+        a._vendorName,
+        (a.description || a.remarks || '—'),
+        uName,
+        vName,
+        (a.status ? (STATUS_LABELS[a.status] || a.status) : '—'),
+        _paymentLabel(a._paymentMode, a._paymentSubMode),
+        { content: _fmtPts(a.committed_paise || 0), styles: { halign: 'right', textColor: [20, 100, 60] } },
+        { content: _fmtPts(a.pending_paise || 0), styles: { halign: 'right', textColor: [140, 90, 20] } },
+        { content: _fmtPts(a.amount_paise || 0), styles: { halign: 'right', fontStyle: 'bold' } },
+      ]
+    })
+    body.push([
+      { content: 'Subtotal (' + allocs.length + ')', colSpan: 7, styles: { fontStyle: 'bold', fillColor: [235, 240, 250] } },
+      { content: _fmtPts(subCommitted), styles: { fontStyle: 'bold', fillColor: [235, 240, 250], halign: 'right', textColor: [20, 100, 60] } },
+      { content: _fmtPts(subPending), styles: { fontStyle: 'bold', fillColor: [235, 240, 250], halign: 'right', textColor: [140, 90, 20] } },
+      { content: _fmtPts(subTotal), styles: { fontStyle: 'bold', fillColor: [235, 240, 250], halign: 'right' } },
+    ])
+    doc.setFont(FONT, 'bold'); doc.setFontSize(10); doc.setTextColor(30, 30, 90)
+    doc.text(title, 14, ctx.startY)
+    doc.setTextColor(0)
+    autoTable(doc, {
+      startY: ctx.startY + 3,
+      head: [['Date', 'Vendor', 'Description', 'User', 'Venue', 'Status', 'Payment', 'Committed', 'Pending', 'Total']],
+      body: body,
+      styles: { font: FONT, fontSize: 7, cellPadding: 1.2, overflow: 'linebreak' },
+      headStyles: { font: FONT, fillColor: [50, 50, 50], textColor: 255, fontStyle: 'bold', halign: 'center', fontSize: 7 },
+      columnStyles: {
+        0: { cellWidth: 20 }, 1: { cellWidth: 34 }, 2: { cellWidth: 50 }, 3: { cellWidth: 24 },
+        4: { cellWidth: 22 }, 5: { cellWidth: 20 }, 6: { cellWidth: 24 },
+        7: { cellWidth: 22, halign: 'right' }, 8: { cellWidth: 22, halign: 'right' }, 9: { cellWidth: 24, halign: 'right' },
+      },
+      margin: { left: 10, right: 10 },
+      didDrawPage: function () {
+        doc.setFontSize(6); doc.setTextColor(120)
+        doc.text('Page ' + doc.internal.getCurrentPageInfo().pageNumber, pageW - 14, pageH - 5, { align: 'right' })
+        doc.setTextColor(0)
+      },
+    })
+    ctx.startY = (doc.lastAutoTable ? doc.lastAutoTable.finalY : ctx.startY) + 8
+  }
+
+  function _openPdfPreview(doc, filename) {
+    try {
+      var blob = doc.output('blob')
+      var url = URL.createObjectURL(blob)
+      var w = window.open(url, '_blank')
+      if (!w) {
+        // Pop-up blocked — fall back to download
+        doc.save(filename)
+      }
+      // Revoke after a delay so the new tab has time to load
+      setTimeout(function () { URL.revokeObjectURL(url) }, 60000)
+    } catch (e) {
+      doc.save(filename)
+    }
+  }
+
   async function exportListPDF() {
     if (pdfBusy) return
     var groups = visibleGroups
     if (!groups.length) return
     setPdfBusy(true)
     try {
-      var jsPDFmod = await import('jspdf')
-      var jsPDF = jsPDFmod.default || jsPDFmod.jsPDF
-      var autoTableMod = await import('jspdf-autotable')
-      var autoTable = autoTableMod.default || autoTableMod
-
-      var doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
-      var pageW = doc.internal.pageSize.getWidth()
-      var pageH = doc.internal.pageSize.getHeight()
-
-      var fontOk = await registerPdfFont(doc)
-      var FONT = fontOk ? 'NotoSans' : 'helvetica'
-
-      doc.setFont(FONT, 'bold'); doc.setFontSize(14)
-      doc.text('Expense Ledger Statement', 14, 15)
-      doc.setFont(FONT, 'normal'); doc.setFontSize(9)
-      doc.text('Generated: ' + new Date().toLocaleString('en-IN'), pageW - 14, 15, { align: 'right' })
-
-      var fParts = []
-      if (dateFrom || dateTo) fParts.push('Period: ' + (dateFrom || '…') + ' to ' + (dateTo || '…'))
-      if (userFilter) {
-        var u = users.find(function (x) { return String(x.id) === String(userFilter) })
-        fParts.push('User: ' + (u ? u.name : userFilter))
-      }
-      if (venueFilter) {
-        var v = venues.find(function (x) { return String(x.id) === String(venueFilter) })
-        fParts.push('Venue: ' + (v ? (v.name || v.code) : venueFilter))
-      }
-      if (statusFilter) fParts.push('Status: ' + statusFilter)
-      if (pendingOnly) fParts.push('Pending only')
-      if (searchDeb) fParts.push('Search: "' + searchDeb + '"')
-
-      doc.setFontSize(8); doc.setTextColor(80)
-      if (fParts.length) doc.text('Filters: ' + fParts.join('  ·  '), 14, 21, { maxWidth: pageW - 28 })
-      else doc.text('Filters: none', 14, 21)
-      doc.setTextColor(0)
-
-      function fmtPts(paise) {
-        return (paise / 100).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
-      }
-
-      var body = []
-      var grandTotal = 0, grandCommitted = 0, grandPending = 0, grandAllocs = 0
-
-      groups.forEach(function (g) {
-        // Dept subtotal row (bold, shaded)
-        body.push([
-          { content: g.deptName, colSpan: 3, styles: { fontStyle: 'bold', fillColor: [235, 240, 250], textColor: [30, 30, 90] } },
-          { content: fmtPts(g.committed), styles: { fontStyle: 'bold', fillColor: [235, 240, 250], textColor: [20, 100, 60], halign: 'right' } },
-          { content: fmtPts(g.pending), styles: { fontStyle: 'bold', fillColor: [235, 240, 250], textColor: [140, 90, 20], halign: 'right' } },
-          { content: fmtPts(g.total), styles: { fontStyle: 'bold', fillColor: [235, 240, 250], halign: 'right' } },
-          { content: String(g.allocs), styles: { fontStyle: 'bold', fillColor: [235, 240, 250], halign: 'right' } },
-        ])
-        g.typeGroups.forEach(function (t) {
-          var typeName = t.typeId ? (typeMap[t.typeId] || 'Untyped') : 'Untyped'
-          // Type subtotal row (lightly shaded)
-          body.push([
-            '',
-            { content: typeName, colSpan: 2, styles: { fontStyle: 'bold', fillColor: [245, 247, 250], textColor: [60, 60, 90] } },
-            { content: fmtPts(t.committed), styles: { fontStyle: 'bold', fillColor: [245, 247, 250], textColor: [20, 100, 60], halign: 'right' } },
-            { content: fmtPts(t.pending), styles: { fontStyle: 'bold', fillColor: [245, 247, 250], textColor: [140, 90, 20], halign: 'right' } },
-            { content: fmtPts(t.total), styles: { fontStyle: 'bold', fillColor: [245, 247, 250], halign: 'right' } },
-            { content: String(t.allocs), styles: { fontStyle: 'bold', fillColor: [245, 247, 250], halign: 'right' } },
-          ])
-          t.subRows.forEach(function (r) {
-            var subTypeName = r.subTypeId ? (subTypeMap[r.subTypeId] || '—') : '—'
-            body.push([
-              '',
-              '',
-              subTypeName,
-              { content: fmtPts(r.committed), styles: { halign: 'right', textColor: [20, 100, 60] } },
-              { content: fmtPts(r.pending), styles: { halign: 'right', textColor: [140, 90, 20] } },
-              { content: fmtPts(r.total), styles: { halign: 'right', fontStyle: 'bold' } },
-              { content: String(r.allocs), styles: { halign: 'right', textColor: [120, 120, 120] } },
-            ])
+      var ctx = await _pdfSetup('Expense Ledger — Detailed')
+      var allocs = await fetchAllocDetail(null)
+      if (allocs.length === 0) {
+        ctx.doc.setFontSize(10); ctx.doc.text('No allocations in range.', 14, ctx.startY + 6)
+      } else {
+        // Group by dept > type > sub-type in memory
+        var tree = {}
+        allocs.forEach(function (a) {
+          var dKey = a.department_id != null ? String(a.department_id) : '__u'
+          var tKey = a.expense_type_id != null ? String(a.expense_type_id) : '__u'
+          var sKey = a.expense_sub_type_id != null ? String(a.expense_sub_type_id) : '__u'
+          if (!tree[dKey]) tree[dKey] = { deptId: a.department_id, types: {} }
+          if (!tree[dKey].types[tKey]) tree[dKey].types[tKey] = { typeId: a.expense_type_id, subs: {} }
+          if (!tree[dKey].types[tKey].subs[sKey]) tree[dKey].types[tKey].subs[sKey] = { subTypeId: a.expense_sub_type_id, rows: [] }
+          tree[dKey].types[tKey].subs[sKey].rows.push(a)
+        })
+        Object.values(tree).forEach(function (d) {
+          var dName = d.deptId != null ? (deptMap[d.deptId] || 'Unassigned') : 'Unallocated'
+          Object.values(d.types).forEach(function (t) {
+            var tName = t.typeId != null ? (typeMap[t.typeId] || 'Untyped') : 'Untyped'
+            Object.values(t.subs).forEach(function (s) {
+              var sName = s.subTypeId != null ? (subTypeMap[s.subTypeId] || '—') : '—'
+              _renderAllocSection(ctx, dName + ' → ' + tName + ' → ' + sName, s.rows)
+            })
           })
         })
-        grandTotal += g.total
-        grandCommitted += g.committed
-        grandPending += g.pending
-        grandAllocs += g.allocs
+      }
+      _openPdfPreview(ctx.doc, 'ledger_detailed_' + dateFrom + '_' + dateTo + '.pdf')
+    } catch (err) {
+      alert('PDF export failed: ' + (err.message || err))
+    } finally {
+      setPdfBusy(false)
+    }
+  }
+
+  async function exportSubTypePDF(deptId, typeId, subTypeId) {
+    if (pdfBusy) return
+    setPdfBusy(true)
+    try {
+      var dName = deptId != null ? (deptMap[deptId] || 'Unassigned') : 'Unallocated'
+      var tName = typeId != null ? (typeMap[typeId] || 'Untyped') : 'Untyped'
+      var sName = subTypeId != null ? (subTypeMap[subTypeId] || '—') : '—'
+      var ctx = await _pdfSetup('Sub-Type Ledger — ' + sName)
+      var allocs = await fetchAllocDetail({
+        deptId: deptId != null ? deptId : null,
+        typeId: typeId != null ? typeId : null,
+        subTypeId: subTypeId != null ? subTypeId : null,
       })
-
-      // Grand total footer
-      body.push([
-        { content: 'GRAND TOTAL', colSpan: 3, styles: { fontStyle: 'bold', fillColor: [50, 50, 50], textColor: 255 } },
-        { content: fmtPts(grandCommitted), styles: { fontStyle: 'bold', fillColor: [50, 50, 50], textColor: 255, halign: 'right' } },
-        { content: fmtPts(grandPending), styles: { fontStyle: 'bold', fillColor: [50, 50, 50], textColor: 255, halign: 'right' } },
-        { content: fmtPts(grandTotal), styles: { fontStyle: 'bold', fillColor: [50, 50, 50], textColor: 255, halign: 'right' } },
-        { content: String(grandAllocs), styles: { fontStyle: 'bold', fillColor: [50, 50, 50], textColor: 255, halign: 'right' } },
-      ])
-
-      autoTable(doc, {
-        startY: fParts.length ? 27 : 25,
-        head: [['Department', 'Type', 'Sub-Type', 'Committed', 'Pending', 'Total', 'Allocs']],
-        body: body,
-        styles: { font: FONT, fontSize: 8, cellPadding: 1.5, overflow: 'linebreak' },
-        headStyles: { font: FONT, fillColor: [50, 50, 50], textColor: 255, fontStyle: 'bold', halign: 'center' },
-        columnStyles: {
-          0: { cellWidth: 32 },
-          1: { cellWidth: 34 },
-          2: { cellWidth: 34 },
-          3: { cellWidth: 24, halign: 'right' },
-          4: { cellWidth: 24, halign: 'right' },
-          5: { cellWidth: 26, halign: 'right' },
-          6: { cellWidth: 14, halign: 'right' },
-        },
-        margin: { left: 10, right: 10 },
-        didDrawPage: function () {
-          doc.setFontSize(7); doc.setTextColor(120)
-          doc.text('Page ' + doc.internal.getCurrentPageInfo().pageNumber, pageW - 14, pageH - 6, { align: 'right' })
-          doc.setTextColor(0)
-        },
-      })
-
-      doc.save('ledger_' + dateFrom + '_' + dateTo + '.pdf')
+      if (allocs.length === 0) {
+        ctx.doc.setFontSize(10); ctx.doc.text('No allocations in this sub-type for the current filter.', 14, ctx.startY + 6)
+      } else {
+        _renderAllocSection(ctx, dName + ' → ' + tName + ' → ' + sName, allocs)
+      }
+      _openPdfPreview(ctx.doc, 'ledger_' + sName.replace(/[^a-z0-9]+/gi, '_') + '_' + dateFrom + '_' + dateTo + '.pdf')
     } catch (err) {
       alert('PDF export failed: ' + (err.message || err))
     } finally {
@@ -715,16 +823,24 @@ function Ledgers({ profile }) {
                       {!typeCollapsed && t.subRows.map(function (r, i) {
                         var subTypeName = r.subTypeId ? (subTypeMap[r.subTypeId] || '—') : '—'
                         return (
-                          <button key={i} onClick={function () { openRow(g, r) }}
-                            className="w-full grid grid-cols-[1fr_70px_70px_80px_36px] items-center px-3 py-2 pl-14 border-t border-gray-100 hover:bg-indigo-50 transition-colors text-left">
-                            <div className="min-w-0">
-                              <p className="text-xs text-gray-700 truncate">{subTypeName}</p>
-                            </div>
-                            <span className="text-xs text-right text-green-700 tabular-nums">{formatPoints(r.committed)}</span>
-                            <span className="text-xs text-right text-amber-700 tabular-nums">{formatPoints(r.pending)}</span>
-                            <span className="text-xs text-right font-bold text-gray-800 tabular-nums">{formatPoints(r.total)}</span>
-                            <span className="text-[10px] text-right text-gray-400">{r.allocs}</span>
-                          </button>
+                          <div key={i} className="flex items-stretch border-t border-gray-100 hover:bg-indigo-50 transition-colors">
+                            <button onClick={function () { openRow(g, r) }}
+                              className="flex-1 grid grid-cols-[1fr_70px_70px_80px_36px] items-center px-3 py-2 pl-14 text-left">
+                              <div className="min-w-0">
+                                <p className="text-xs text-gray-700 truncate">{subTypeName}</p>
+                              </div>
+                              <span className="text-xs text-right text-green-700 tabular-nums">{formatPoints(r.committed)}</span>
+                              <span className="text-xs text-right text-amber-700 tabular-nums">{formatPoints(r.pending)}</span>
+                              <span className="text-xs text-right font-bold text-gray-800 tabular-nums">{formatPoints(r.total)}</span>
+                              <span className="text-[10px] text-right text-gray-400">{r.allocs}</span>
+                            </button>
+                            <button onClick={function (e) { e.stopPropagation(); exportSubTypePDF(g.deptId, r.typeId, r.subTypeId) }}
+                              disabled={pdfBusy}
+                              title="Open sub-type PDF in new tab"
+                              className="px-2 border-l border-gray-100 text-[10px] font-semibold text-rose-500 hover:bg-rose-50 disabled:opacity-40">
+                              ↓ PDF
+                            </button>
+                          </div>
                         )
                       })}
                     </div>
