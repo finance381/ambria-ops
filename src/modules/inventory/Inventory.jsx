@@ -1,6 +1,6 @@
 import { supabase, getImageUrl, fetchAll } from '../../lib/supabase'
 import { useState, useEffect, useRef } from 'react'
-import { formatDate, titleCase } from '../../lib/format'
+import { formatDate, titleCase, formatPaise } from '../../lib/format'
 import Modal from '../../components/ui/Modal'
 import InventoryForm from './InventoryForm'
 import { useRealtime } from '../../lib/useRealtime'
@@ -300,6 +300,9 @@ function Inventory({ profile }) {
               <span>📅 {formatDate(item.entry_date || item.created_at)}</span>
               {item.is_asset && item.is_asset !== 'unknown' && (
                 <span>🏷️ Asset: {item.is_asset === 'yes' ? 'Yes' : 'No'}</span>
+              )}
+              {item.rate_paise != null && item.rate_paise > 0 && (
+                <span>💰 {formatPaise(item.rate_paise)}</span>
               )}
             </div>
             {/* Status badge */}
