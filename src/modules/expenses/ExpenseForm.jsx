@@ -1067,7 +1067,8 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
       var _todayStr = _toYMD(new Date())
       var _minStr = _toYMD(new Date(Date.now() - 3 * 86400000))
       if (e.expenseDate > _todayStr) return 'Entry ' + (i + 1) + ': Future dates require a requisition, not a direct expense'
-      if (e.expenseDate < _minStr) return 'Entry ' + (i + 1) + ': Date is more than 3 days old — contact admin or raise a requisition'
+      // On new expenses only: enforce 3-day back-cap. On edits, allow any date from original up to today.
+      if (!isEditing && e.expenseDate < _minStr) return 'Entry ' + (i + 1) + ': Date is more than 3 days old — contact admin or raise a requisition'
       var fields = getSubTypeFields(e.expenseSubTypeId)
       for (var f = 0; f < fields.length; f++) {
         // Employees-lookup (source='job_departments') is always required — the salary-ledger trigger
@@ -1732,18 +1733,20 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                 }, entry)
               })}
 
-              {/* Date — gated to today ± 3 days back */}
+              {/* Date — new expenses gated to today − 3 days; edits may widen the window to preserve the original date */}
               {(function () {
                 var toYMD = function (d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') }
                 var today = toYMD(new Date())
                 var minDate = toYMD(new Date(Date.now() - 3 * 86400000))
+                // On edit, widen `min` back to the original expense date so users can keep or restore it.
+                var effMin = (isEditing && editExp && editExp.expense_date && editExp.expense_date < minDate) ? editExp.expense_date : minDate
                 return (
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">Date</label>
-                    <input type="date" value={entry.expenseDate} min={minDate} max={today}
+                    <input type="date" value={entry.expenseDate} min={effMin} max={today}
                       onChange={function (e) { updateEntry(idx, 'expenseDate', e.target.value) }}
                       className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-300" style={{ fontSize: '16px' }} />
-                    <p className="text-[10px] text-gray-500 mt-1">Today or up to 3 days back. For future expenses, raise a requisition instead.</p>
+                    <p className="text-[10px] text-gray-500 mt-1">{isEditing ? 'Any date from the original up to today.' : 'Today or up to 3 days back. For future expenses, raise a requisition instead.'}</p>
                   </div>
                 )
               })()}
