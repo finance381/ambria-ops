@@ -28,6 +28,7 @@ export var PERM_GROUPS = [
     { key: 'feature_ledger_view', label: 'Expense Ledger', grants: ['feature_ledger_view'] },
     { key: 'feature_payments', label: 'Payments', grants: ['feature_payments'] },
     { key: 'feature_vendor_ledger', label: 'Vendor Ledger', grants: ['feature_vendor_ledger'] },
+    { key: 'feature_inventory_ledger', label: 'Inventory Ledger', grants: ['feature_inventory_ledger'] },
     { key: 'feature_salary_pay', label: 'Salary Payouts', grants: ['feature_salary_pay'], note: 'Also grant "See salaries" in HR → Employees' },
     { key: 'finance_cost_transfer', label: 'Cost Transfers', grants: ['finance_cost_transfer'] },
   ]},

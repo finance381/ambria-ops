@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabase'
 var Ledgers = lazy(function () { return import('./Ledgers') })
 var EventLedger = lazy(function () { return import('./EventLedger') })
 var VendorLedger = lazy(function () { return import('./VendorLedger') })
+var InventoryLedger = lazy(function () { return import('./InventoryLedger') })
 var SalaryLedger = lazy(function () { return import('../employees/SalaryLedger') })
 var GVLog = lazy(function () { return import('./GVLog') })
 var CostTransfers = lazy(function () { return import('./CostTransfers') })
@@ -12,6 +13,7 @@ var LEDGERS = [
   { key: 'expense', label: 'Expense', icon: 'ti-receipt', component: Ledgers, countTable: 'expenses', countFilter: function (q) { return q.is('deleted_at', null) } },
   { key: 'event', label: 'Event', icon: 'ti-calendar-event', component: EventLedger, countTable: 'event_ledger' },
   { key: 'vendor', label: 'Vendor', icon: 'ti-building-store', component: VendorLedger, countTable: 'ledger_entries', countFilter: function (q) { return q.eq('ledger_type', 'vendor').is('deleted_at', null) } },
+  { key: 'inventory', label: 'Inventory', icon: 'ti-package', component: InventoryLedger, countTable: null, perm: 'feature_inventory_ledger' },
   { key: 'salary', label: 'Salary', icon: 'ti-cash', component: SalaryLedger, countTable: 'ledger_entries', countFilter: function (q) { return q.eq('ledger_type', 'user_salary').is('deleted_at', null) } },
   { key: 'cost_transfer', label: 'Cost Transfers', icon: 'ti-arrows-right-left', component: CostTransfers, countTable: 'cost_transfers', countFilter: function (q) { return q.is('reversal_of', null).is('reversed_by_id', null) }, perm: 'finance_cost_transfer' },
   { key: 'gv', label: 'GV Log', icon: 'ti-history', component: GVLog, countTable: 'general_vouchers', countFilter: function (q) { return q.eq('is_reversal', false).is('reversed_by_gv_id', null) } },
