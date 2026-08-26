@@ -4,6 +4,7 @@ import { formatDate, formatPaise } from '../../lib/format'
 import { useRealtime } from '../../lib/useRealtime'
 import { registerPdfFont } from '../../lib/pdfFont'
 import ExpenseDetail from './ExpenseDetail'
+import MultiSearchDropdown from '../../components/ui/MultiSearchDropdown'
 
 var PAGE_SIZE = 50
 
@@ -17,10 +18,10 @@ function InventoryLedger({ profile }) {
   var [loading, setLoading] = useState(true)
   var [selectedItem, setSelectedItem] = useState(null)
   var [search, setSearch] = useState('')
-  var [catFilter, setCatFilter] = useState('')
-  var [subCatFilter, setSubCatFilter] = useState('')
-  var [sourceFilter, setSourceFilter] = useState('')
-  var [vendorFilter, setVendorFilter] = useState('')
+  var [catFilters, setCatFilters] = useState([])
+  var [subCatFilters, setSubCatFilters] = useState([])
+  var [sourceFilters, setSourceFilters] = useState([])
+  var [vendorFilters, setVendorFilters] = useState([])
   var [page, setPage] = useState(0)
   var [exporting, setExporting] = useState(false)
 
@@ -37,7 +38,7 @@ function InventoryLedger({ profile }) {
     if (canView) loadAll()
   })
 
-  useEffect(function () { setPage(0) }, [search, catFilter, subCatFilter, sourceFilter, vendorFilter])
+  useEffect(function () { setPage(0) }, [search, catFilters, subCatFilters, sourceFilters, vendorFilters])
 
   async function loadAll() {
     setLoading(true)
@@ -129,7 +130,7 @@ function InventoryLedger({ profile }) {
 
   function aggregateItem(item) {
     var rows = historyByItem[item._key] || []
-    if (vendorFilter) rows = rows.filter(function (r) { return r.vendor_name === vendorFilter })
+    if (vendorFilters.length > 0) rows = rows.filter(function (r) { return vendorFilters.indexOf(r.vendor_name) !== -1 })
     var vendors = []
     var vendorStats = {}
     var totalSpend = 0
@@ -178,21 +179,21 @@ function InventoryLedger({ profile }) {
   var allSubCats = useMemo(function () {
     var s = {}
     items.forEach(function (i) {
-      if (i.subcat && (!catFilter || i.cat === catFilter)) s[i.subcat] = true
+      if (i.subcat && (catFilters.length === 0 || catFilters.indexOf(i.cat) !== -1)) s[i.subcat] = true
     })
     return Object.keys(s).sort()
-  }, [items, catFilter])
+  }, [items, catFilters])
 
   var filteredItems = useMemo(function () {
     var q = search.trim().toLowerCase()
     return items.filter(function (i) {
-      if (sourceFilter && i._source !== sourceFilter) return false
-      if (catFilter && i.cat !== catFilter) return false
-      if (subCatFilter && i.subcat !== subCatFilter) return false
-      if (vendorFilter) {
+      if (sourceFilters.length > 0 && sourceFilters.indexOf(i._source) === -1) return false
+      if (catFilters.length > 0 && catFilters.indexOf(i.cat) === -1) return false
+      if (subCatFilters.length > 0 && subCatFilters.indexOf(i.subcat) === -1) return false
+      if (vendorFilters.length > 0) {
         var rows = historyByItem[i._key] || []
         var has = false
-        for (var k = 0; k < rows.length; k++) { if (rows[k].vendor_name === vendorFilter) { has = true; break } }
+        for (var k = 0; k < rows.length; k++) { if (vendorFilters.indexOf(rows[k].vendor_name) !== -1) { has = true; break } }
         if (!has) return false
       }
       if (q) {
@@ -201,7 +202,7 @@ function InventoryLedger({ profile }) {
       }
       return true
     })
-  }, [items, search, catFilter, subCatFilter, sourceFilter, vendorFilter, historyByItem])
+  }, [items, search, catFilters, subCatFilters, sourceFilters, vendorFilters, historyByItem])
 
   var pagedItems = useMemo(function () {
     return filteredItems.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
@@ -362,7 +363,7 @@ function InventoryLedger({ profile }) {
             <div><div className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold">Best rate</div><div className="text-sm font-semibold text-green-700 mt-0.5">{agg.bestRate != null ? formatPaise(agg.bestRate) : '—'}</div></div>
           </div>
 
-          {agg.cheapest && !vendorFilter && (
+          {agg.cheapest && vendorFilters.length === 0 && (
             <div className="mt-3 pt-3 border-t border-gray-100 flex items-center gap-2 text-xs">
               <span className="text-amber-500">★</span>
               <span className="text-gray-600">Best avg rate:</span>
@@ -376,9 +377,9 @@ function InventoryLedger({ profile }) {
         <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
           <div className="px-4 py-2 bg-gray-50 text-[10px] uppercase tracking-wider text-gray-500 font-semibold border-b border-gray-200 flex justify-between items-center">
             <span>Purchase history</span>
-            {vendorFilter && <span className="text-[10px] text-indigo-600 normal-case tracking-normal">Filtered: {vendorFilter}</span>}
+            {vendorFilters.length > 0 && <span className="text-[10px] text-indigo-600 normal-case tracking-normal">Filtered: {vendorFilters.join(', ')}</span>}
           </div>
-          {agg.allRows.length === 0 && <div className="text-center text-sm text-gray-400 py-8">No purchase history{vendorFilter ? ' for ' + vendorFilter : ''}.</div>}
+          {agg.allRows.length === 0 && <div className="text-center text-sm text-gray-400 py-8">No purchase history{vendorFilters.length > 0 ? ' for ' + vendorFilters.join(', ') : ''}.</div>}
           {agg.allRows.length > 0 && (
             <div>
               <div className="grid grid-cols-[90px_1fr_70px_100px_30px_100px_100px] gap-2 px-4 py-2 text-[10px] uppercase tracking-wider text-gray-500 font-semibold border-b border-gray-100">
@@ -424,36 +425,31 @@ function InventoryLedger({ profile }) {
           <button onClick={exportCSV} className="px-3 py-2 text-xs font-bold bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100">📊 CSV</button>
           <button onClick={exportPDF} disabled={exporting} className="px-3 py-2 text-xs font-bold bg-red-50 text-red-700 border border-red-200 rounded-lg hover:bg-red-100 disabled:opacity-50">📄 {exporting ? 'PDF...' : 'PDF'}</button>
         </div>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
-          <select value={sourceFilter} onChange={function (e) { setSourceFilter(e.target.value) }}
-            style={{ fontSize: '16px' }}
-            className="px-3 py-2 border border-gray-200 rounded-lg text-sm">
-            <option value="">All sources</option>
-            <option value="inventory">Inventory</option>
-            <option value="catering_store">Catering Store</option>
-          </select>
-          <select value={catFilter} onChange={function (e) { setCatFilter(e.target.value); setSubCatFilter('') }}
-            style={{ fontSize: '16px' }}
-            className="px-3 py-2 border border-gray-200 rounded-lg text-sm">
-            <option value="">All categories</option>
-            {allCats.map(function (c) { return <option key={c} value={c}>{c}</option> })}
-          </select>
-          <select value={subCatFilter} onChange={function (e) { setSubCatFilter(e.target.value) }}
-            style={{ fontSize: '16px' }}
-            className="px-3 py-2 border border-gray-200 rounded-lg text-sm">
-            <option value="">All sub-categories</option>
-            {allSubCats.map(function (s) { return <option key={s} value={s}>{s}</option> })}
-          </select>
-          <select value={vendorFilter} onChange={function (e) { setVendorFilter(e.target.value) }}
-            style={{ fontSize: '16px' }}
-            className="px-3 py-2 border border-gray-200 rounded-lg text-sm">
-            <option value="">All vendors</option>
-            {allVendors.map(function (v) { return <option key={v} value={v}>{v}</option> })}
-          </select>
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-2">
+          <MultiSearchDropdown
+            items={[{ value: 'inventory', label: 'Inventory' }, { value: 'catering_store', label: 'Catering Store' }]}
+            values={sourceFilters}
+            onChange={setSourceFilters}
+            placeholder="All sources" />
+          <MultiSearchDropdown
+            items={allCats.map(function (c) { return { value: c, label: c } })}
+            values={catFilters}
+            onChange={function (next) { setCatFilters(next); setSubCatFilters([]) }}
+            placeholder="All categories" />
+          <MultiSearchDropdown
+            items={allSubCats.map(function (s) { return { value: s, label: s } })}
+            values={subCatFilters}
+            onChange={setSubCatFilters}
+            placeholder="All sub-categories" />
+          <MultiSearchDropdown
+            items={allVendors.map(function (v) { return { value: v, label: v } })}
+            values={vendorFilters}
+            onChange={setVendorFilters}
+            placeholder="All vendors" />
         </div>
         <div className="text-[11px] text-gray-500">
           {filteredItems.length} of {items.length} items
-          {vendorFilter && <span className="ml-2 text-indigo-600 font-semibold">· vendor: {vendorFilter}</span>}
+          {vendorFilters.length > 0 && <span className="ml-2 text-indigo-600 font-semibold">· vendors: {vendorFilters.join(', ')}</span>}
         </div>
       </div>
 
@@ -488,7 +484,7 @@ function InventoryLedger({ profile }) {
                       })}
                       {a.vendors.length > 4 && <span className="text-[10px] text-gray-400 font-semibold">+{a.vendors.length - 4}</span>}
                     </div>
-                    {a.cheapest && !vendorFilter && a.vendors.length > 1 && (
+                    {a.cheapest && vendorFilters.length === 0 && a.vendors.length > 1 && (
                       <div className="mt-1 flex items-center gap-1 text-[10px]">
                         <span className="text-amber-500">★</span>
                         <span className="text-gray-500">Best avg:</span>
@@ -513,7 +509,7 @@ function InventoryLedger({ profile }) {
                 </div>
               )}
               {a.txnCount === 0 && (
-                <div className="mt-2 pt-2 border-t border-gray-100 text-[11px] text-gray-400">No purchase history{vendorFilter ? ' for ' + vendorFilter : ''}</div>
+                <div className="mt-2 pt-2 border-t border-gray-100 text-[11px] text-gray-400">No purchase history{vendorFilters.length > 0 ? ' for ' + vendorFilters.join(', ') : ''}</div>
               )}
             </button>
           )
