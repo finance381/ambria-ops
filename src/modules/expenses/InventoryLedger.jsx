@@ -23,8 +23,17 @@ function InventoryLedger({ profile }) {
   var [sourceFilters, setSourceFilters] = useState([])
   var [vendorFilters, setVendorFilters] = useState([])
   var [sortBy, setSortBy] = useState('name')  // name | value_desc | value_asc | rate_desc | rate_asc
+  var [showNoHistory, setShowNoHistory] = useState(false)
   var [page, setPage] = useState(0)
   var [exporting, setExporting] = useState(false)
+
+  function fmtQty(n) {
+    var num = Number(n || 0)
+    if (!isFinite(num)) return '0'
+    // Round to 2 decimals, then strip trailing zeros. Handles float artifacts like 404.400000000000801.
+    var rounded = Math.round(num * 100) / 100
+    return String(rounded)
+  }
 
   var [expenseDetailTarget, setExpenseDetailTarget] = useState(null)
   var [expenseDetailLoading, setExpenseDetailLoading] = useState(false)
@@ -39,7 +48,7 @@ function InventoryLedger({ profile }) {
     if (canView) loadAll()
   })
 
-  useEffect(function () { setPage(0) }, [search, catFilters, subCatFilters, sourceFilters, vendorFilters, sortBy])
+  useEffect(function () { setPage(0) }, [search, catFilters, subCatFilters, sourceFilters, vendorFilters, sortBy, showNoHistory])
 
   async function loadAll() {
     setLoading(true)
@@ -188,11 +197,12 @@ function InventoryLedger({ profile }) {
   var filteredItems = useMemo(function () {
     var q = search.trim().toLowerCase()
     return items.filter(function (i) {
+      var rows = historyByItem[i._key] || []
+      if (!showNoHistory && rows.length === 0) return false
       if (sourceFilters.length > 0 && sourceFilters.indexOf(i._source) === -1) return false
       if (catFilters.length > 0 && catFilters.indexOf(i.cat) === -1) return false
       if (subCatFilters.length > 0 && subCatFilters.indexOf(i.subcat) === -1) return false
       if (vendorFilters.length > 0) {
-        var rows = historyByItem[i._key] || []
         var has = false
         for (var k = 0; k < rows.length; k++) { if (vendorFilters.indexOf(rows[k].vendor_name) !== -1) { has = true; break } }
         if (!has) return false
@@ -203,7 +213,7 @@ function InventoryLedger({ profile }) {
       }
       return true
     })
-  }, [items, search, catFilters, subCatFilters, sourceFilters, vendorFilters, historyByItem])
+  }, [items, search, catFilters, subCatFilters, sourceFilters, vendorFilters, historyByItem, showNoHistory])
 
   var sortedItems = useMemo(function () {
     if (sortBy === 'name') return filteredItems
@@ -399,7 +409,7 @@ function InventoryLedger({ profile }) {
 
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 mt-3">
             <div><div className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold">Transactions</div><div className="text-sm font-semibold text-gray-900 mt-0.5">{agg.txnCount}</div></div>
-            <div><div className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold">Total qty</div><div className="text-sm font-semibold text-gray-900 mt-0.5">{agg.totalQty || 0}</div></div>
+            <div><div className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold">Total qty</div><div className="text-sm font-semibold text-gray-900 mt-0.5">{fmtQty(agg.totalQty)}</div></div>
             <div><div className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold">Avg rate</div><div className="text-sm font-semibold text-gray-900 mt-0.5">{agg.avgRate != null ? formatPaise(agg.avgRate) : '—'}</div></div>
             <div><div className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold">Best rate</div><div className="text-sm font-semibold text-green-700 mt-0.5">{agg.bestRate != null ? formatPaise(agg.bestRate) : '—'}</div></div>
           </div>
@@ -435,7 +445,7 @@ function InventoryLedger({ profile }) {
                   <div key={i} className="grid grid-cols-[90px_1fr_70px_100px_30px_100px_100px] gap-2 px-4 py-2 text-xs border-b border-gray-50 items-center">
                     <div className="text-gray-600">{h.txn_date ? formatDate(h.txn_date) : '—'}</div>
                     <div className="font-semibold text-gray-900 truncate">{h.vendor_name || '—'}</div>
-                    <div className="text-right font-semibold text-gray-900">{Number(h.qty || 0)}{h.unit ? ' ' + h.unit : ''}</div>
+                    <div className="text-right font-semibold text-gray-900">{fmtQty(h.qty)}{h.unit ? ' ' + h.unit : ''}</div>
                     <div className="text-right font-semibold text-gray-900">{formatPaise(h.rate_paise || 0)}</div>
                     <div className="text-center"><TrendIcon trend={h._trend} prev={h._prev_rate} /></div>
                     <div className="text-right font-semibold text-gray-900">{formatPaise(h.amount_paise || 0)}</div>
@@ -497,17 +507,29 @@ function InventoryLedger({ profile }) {
             <span className="text-gray-500">Total spend: <span className="font-bold text-gray-900">{formatPaise(totalSpendFiltered)}</span></span>
             {vendorFilters.length > 0 && <span className="text-indigo-600 font-semibold">· vendors: {vendorFilters.join(', ')}</span>}
           </div>
-          <div className="flex items-center gap-1.5">
-            <label className="text-[10px] uppercase tracking-wider text-gray-400 font-bold">Sort</label>
-            <select value={sortBy} onChange={function (e) { setSortBy(e.target.value) }}
-              style={{ fontSize: '13px' }}
-              className="px-2 py-1 border border-gray-200 rounded-md text-xs bg-white font-semibold text-gray-700">
-              <option value="name">Name A–Z</option>
-              <option value="value_desc">Value: high → low</option>
-              <option value="value_asc">Value: low → high</option>
-              <option value="rate_desc">Avg rate paid: high → low</option>
-              <option value="rate_asc">Avg rate paid: low → high</option>
-            </select>
+          <div className="flex items-center gap-3">
+            <button onClick={function () { setShowNoHistory(function (v) { return !v }) }}
+              className={"flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] font-semibold border transition-colors " +
+                (showNoHistory
+                  ? "bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100"
+                  : "bg-white text-gray-500 border-gray-200 hover:border-gray-300")}>
+              <span className={"w-3.5 h-3.5 rounded flex items-center justify-center text-[10px] leading-none " + (showNoHistory ? "bg-amber-500 text-white" : "border border-gray-300")}>
+                {showNoHistory ? '✓' : ''}
+              </span>
+              Show items with no history
+            </button>
+            <div className="flex items-center gap-1.5">
+              <label className="text-[10px] uppercase tracking-wider text-gray-400 font-bold">Sort</label>
+              <select value={sortBy} onChange={function (e) { setSortBy(e.target.value) }}
+                style={{ fontSize: '13px' }}
+                className="px-2 py-1 border border-gray-200 rounded-md text-xs bg-white font-semibold text-gray-700">
+                <option value="name">Name A–Z</option>
+                <option value="value_desc">Value: high → low</option>
+                <option value="value_asc">Value: low → high</option>
+                <option value="rate_desc">Avg rate paid: high → low</option>
+                <option value="rate_asc">Avg rate paid: low → high</option>
+              </select>
+            </div>
           </div>
         </div>
       </div>
@@ -528,7 +550,7 @@ function InventoryLedger({ profile }) {
                     {item._source === 'catering_store' && <span className="ml-1 text-purple-600 font-semibold">· Catering</span>}
                   </div>
                 </div>
-                <div className="text-right"><div className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold">Qty</div><div className="text-sm font-semibold text-gray-900">{item.live_qty || 0}</div></div>
+                <div className="text-right"><div className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold">Qty</div><div className="text-sm font-semibold text-gray-900">{fmtQty(item.live_qty)}</div></div>
                 <div className="text-right"><div className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold">Rate</div><div className="text-sm font-semibold text-gray-900">{item.rate_paise > 0 ? formatPaise(item.rate_paise) : '—'}</div></div>
                 <div className="text-right"><div className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold">Value</div><div className="text-sm font-semibold text-gray-900">{value > 0 ? formatPaise(value) : '—'}</div></div>
               </div>
