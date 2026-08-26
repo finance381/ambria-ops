@@ -22,6 +22,7 @@ function InventoryLedger({ profile }) {
   var [subCatFilters, setSubCatFilters] = useState([])
   var [sourceFilters, setSourceFilters] = useState([])
   var [vendorFilters, setVendorFilters] = useState([])
+  var [sortBy, setSortBy] = useState('name')  // name | value_desc | value_asc | rate_desc | rate_asc
   var [page, setPage] = useState(0)
   var [exporting, setExporting] = useState(false)
 
@@ -38,7 +39,7 @@ function InventoryLedger({ profile }) {
     if (canView) loadAll()
   })
 
-  useEffect(function () { setPage(0) }, [search, catFilters, subCatFilters, sourceFilters, vendorFilters])
+  useEffect(function () { setPage(0) }, [search, catFilters, subCatFilters, sourceFilters, vendorFilters, sortBy])
 
   async function loadAll() {
     setLoading(true)
@@ -204,11 +205,51 @@ function InventoryLedger({ profile }) {
     })
   }, [items, search, catFilters, subCatFilters, sourceFilters, vendorFilters, historyByItem])
 
-  var pagedItems = useMemo(function () {
-    return filteredItems.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
-  }, [filteredItems, page])
+  var sortedItems = useMemo(function () {
+    if (sortBy === 'name') return filteredItems
+    var arr = filteredItems.slice()
+    if (sortBy === 'value_desc' || sortBy === 'value_asc') {
+      arr.sort(function (a, b) {
+        var va = (a.live_qty || 0) * (a.rate_paise || 0)
+        var vb = (b.live_qty || 0) * (b.rate_paise || 0)
+        return sortBy === 'value_desc' ? vb - va : va - vb
+      })
+    } else if (sortBy === 'rate_desc' || sortBy === 'rate_asc') {
+      arr.sort(function (a, b) {
+        var aa = aggregateItem(a).avgRate
+        var ab = aggregateItem(b).avgRate
+        // Nulls (no history) sink to bottom regardless of direction
+        if (aa == null && ab == null) return 0
+        if (aa == null) return 1
+        if (ab == null) return -1
+        return sortBy === 'rate_desc' ? ab - aa : aa - ab
+      })
+    }
+    return arr
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filteredItems, sortBy, historyByItem, vendorFilters])
 
-  var totalPages = Math.max(1, Math.ceil(filteredItems.length / PAGE_SIZE))
+  var pagedItems = useMemo(function () {
+    return sortedItems.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
+  }, [sortedItems, page])
+
+  var totalPages = Math.max(1, Math.ceil(sortedItems.length / PAGE_SIZE))
+
+  var totalValue = useMemo(function () {
+    var sum = 0
+    filteredItems.forEach(function (i) { sum += (i.live_qty || 0) * (i.rate_paise || 0) })
+    return sum
+  }, [filteredItems])
+
+  var totalSpendFiltered = useMemo(function () {
+    var sum = 0
+    filteredItems.forEach(function (i) {
+      var rows = historyByItem[i._key] || []
+      if (vendorFilters.length > 0) rows = rows.filter(function (r) { return vendorFilters.indexOf(r.vendor_name) !== -1 })
+      rows.forEach(function (r) { sum += Number(r.amount_paise || 0) })
+    })
+    return sum
+  }, [filteredItems, historyByItem, vendorFilters])
 
   async function openExpenseDetail(expenseId) {
     if (!expenseId) return
@@ -447,9 +488,27 @@ function InventoryLedger({ profile }) {
             onChange={setVendorFilters}
             placeholder="All vendors" />
         </div>
-        <div className="text-[11px] text-gray-500">
-          {filteredItems.length} of {items.length} items
-          {vendorFilters.length > 0 && <span className="ml-2 text-indigo-600 font-semibold">· vendors: {vendorFilters.join(', ')}</span>}
+        <div className="flex flex-wrap items-center justify-between gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+          <div className="flex flex-wrap items-center gap-3 text-[11px]">
+            <span className="text-gray-500">{filteredItems.length} of {items.length} items</span>
+            <span className="text-gray-300">·</span>
+            <span className="text-gray-500">Total value: <span className="font-bold text-gray-900">{formatPaise(totalValue)}</span></span>
+            <span className="text-gray-300">·</span>
+            <span className="text-gray-500">Total spend: <span className="font-bold text-gray-900">{formatPaise(totalSpendFiltered)}</span></span>
+            {vendorFilters.length > 0 && <span className="text-indigo-600 font-semibold">· vendors: {vendorFilters.join(', ')}</span>}
+          </div>
+          <div className="flex items-center gap-1.5">
+            <label className="text-[10px] uppercase tracking-wider text-gray-400 font-bold">Sort</label>
+            <select value={sortBy} onChange={function (e) { setSortBy(e.target.value) }}
+              style={{ fontSize: '13px' }}
+              className="px-2 py-1 border border-gray-200 rounded-md text-xs bg-white font-semibold text-gray-700">
+              <option value="name">Name A–Z</option>
+              <option value="value_desc">Value: high → low</option>
+              <option value="value_asc">Value: low → high</option>
+              <option value="rate_desc">Avg rate paid: high → low</option>
+              <option value="rate_asc">Avg rate paid: low → high</option>
+            </select>
+          </div>
         </div>
       </div>
 
