@@ -255,7 +255,7 @@ function ReceiveModal({ receipt, profile, onClose, onDone }) {
     var { error: err } = await supabase.rpc('receive_expense_item', {
       p_expense_id: receipt.id,
       p_receipt_index: receipt.receipt_index,
-      p_item_id: matchedId,
+      p_item_id: matchedId == null ? null : Number(matchedId),
       p_qty: Number(receiveQty),
       p_source: matchedSource,
     })

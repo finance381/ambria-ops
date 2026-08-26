@@ -55,10 +55,10 @@ function InventoryLedger({ profile }) {
     try {
       var results = await Promise.all([
         fetchAll(supabase.from('inventory_items')
-          .select('id, name, inventory_id, rate_paise, categories(id, name), sub_categories(id, name), venue_allocations(qty)')
+          .select('id, name, inventory_id, qty, rate_paise, categories(id, name), sub_categories(id, name)')
           .order('name', { ascending: true })),
         fetchAll(supabase.from('catering_store_items')
-          .select('id, name, inventory_id, rate_paise, categories(id, name), sub_categories(id, name), cs_venue_allocations(qty)')
+          .select('id, name, inventory_id, qty, rate_paise, categories(id, name), sub_categories(id, name)')
           .order('name', { ascending: true })),
         fetchAll(supabase.from('v_item_purchase_history')
           .select('item_id, item_source, vendor_name, qty, unit, rate_paise, amount_paise, txn_date, source_type, source_id, source_ref'))
@@ -69,21 +69,19 @@ function InventoryLedger({ profile }) {
 
       var merged = []
       invRes.forEach(function (r) {
-        var qty = (r.venue_allocations || []).reduce(function (s, a) { return s + Number(a.qty || 0) }, 0)
         merged.push({
           _key: 'inventory:' + r.id, _source: 'inventory', id: r.id,
           name: r.name || '', code: r.inventory_id || '',
           cat: r.categories && r.categories.name || '', subcat: r.sub_categories && r.sub_categories.name || '',
-          rate_paise: r.rate_paise || 0, live_qty: qty
+          rate_paise: r.rate_paise || 0, live_qty: Number(r.qty || 0)
         })
       })
       csRes.forEach(function (r) {
-        var qty = (r.cs_venue_allocations || []).reduce(function (s, a) { return s + Number(a.qty || 0) }, 0)
         merged.push({
           _key: 'catering_store:' + r.id, _source: 'catering_store', id: r.id,
           name: r.name || '', code: r.inventory_id || '',
           cat: r.categories && r.categories.name || '', subcat: r.sub_categories && r.sub_categories.name || '',
-          rate_paise: r.rate_paise || 0, live_qty: qty
+          rate_paise: r.rate_paise || 0, live_qty: Number(r.qty || 0)
         })
       })
       merged.sort(function (a, b) { return (a.name || '').localeCompare(b.name || '') })
