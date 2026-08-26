@@ -82,7 +82,7 @@ function GVLog({ profile }) {
 
   function exportCSV() {
     if (!filtered.length) return
-    var headers = ['GV Number', 'Expense ID', 'Fiscal Year', 'Date', 'Creator', 'Reason', 'Status', 'Amount']
+    var headers = ['JV Number', 'Expense ID', 'Fiscal Year', 'Date', 'Creator', 'Reason', 'Status', 'Amount']
     var rows = filtered.map(function (g) {
       var e = expenseMap[g.expense_id] || {}
       var st = g.is_reversal ? 'Reversal' : (g.reversed_by_gv_id ? 'Reversed' : 'Active')
@@ -111,7 +111,7 @@ function GVLog({ profile }) {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-bold text-gray-900">General Voucher Log</h2>
+          <h2 className="text-lg font-bold text-gray-900">Journal Voucher Log</h2>
           <p className="text-xs text-gray-400">{filtered.length} vouchers</p>
         </div>
         {filtered.length > 0 && (
@@ -125,7 +125,7 @@ function GVLog({ profile }) {
       {/* Filters */}
       <div className="bg-white border border-gray-200 rounded-xl p-3 space-y-2">
         <input type="text" value={search} onChange={function (e) { setSearch(e.target.value) }}
-          placeholder="Search by GV #, expense ID, or reason..."
+          placeholder="Search by JV #, expense ID, or reason..."
           className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
           style={{ fontSize: '16px' }} />
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
@@ -143,7 +143,7 @@ function GVLog({ profile }) {
             <option value="all">All statuses</option>
             <option value="active">Active only</option>
             <option value="reversed">Reversed</option>
-            <option value="reversal">Reversal GVs</option>
+            <option value="reversal">Reversal JVs</option>
           </select>
         </div>
       </div>
@@ -155,7 +155,7 @@ function GVLog({ profile }) {
         <div className="bg-white border border-gray-200 rounded-xl p-8 text-center">
           <div className="text-4xl mb-3">📋</div>
           <p className="text-sm font-semibold text-gray-700 mb-1">No vouchers</p>
-          <p className="text-xs text-gray-400">Adjust filters or raise a GV from an expense</p>
+          <p className="text-xs text-gray-400">Adjust filters or raise a JV from an expense</p>
         </div>
       ) : (
         <div className="bg-white border border-gray-200 rounded-xl overflow-hidden divide-y divide-gray-100">

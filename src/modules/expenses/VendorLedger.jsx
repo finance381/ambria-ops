@@ -111,7 +111,7 @@ function VendorLedger({ profile }) {
               onBack={function () { closeExpenseDetail(false) }}
               onUpdated={function () { closeExpenseDetail(true) }}
               onEdit={function () { alert('To edit this expense, please open the Expenses tab.'); closeExpenseDetail(false) }}
-              onRaiseGV={function () { alert('To raise a General Voucher, please open the Expenses tab.'); closeExpenseDetail(false) }}
+              onRaiseGV={function () { alert('To raise a Journal Voucher, please open the Expenses tab.'); closeExpenseDetail(false) }}
             />
           )}
         </div>

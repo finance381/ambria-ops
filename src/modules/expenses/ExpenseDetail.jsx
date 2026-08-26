@@ -55,7 +55,7 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
 
   useEffect(function () {
     supabase.from('general_vouchers')
-      .select('id, gv_number, expense_id, created_by, created_at, reason, before_allocations, after_allocations, is_reversal, reverses_gv_id, reversed_by_gv_id')
+      .select('id, gv_number, expense_id, created_by, created_at, reason, before_allocations, after_allocations, before_fields, after_fields, is_reversal, reverses_gv_id, reversed_by_gv_id')
       .eq('expense_id', exp.id)
       .order('created_at', { ascending: false })
       .then(function (res) {
@@ -156,7 +156,9 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
   var isAuditor = profile?.role === 'auditor'
   var canReview = !isDeleted && (isAdmin || isDeptApprover) && (exp.status === 'recorded' || exp.status === 'flagged') && exp.user_id !== profile?.id
   var canDelete = !isDeleted && ((exp.user_id === profile?.id && (exp.status === 'recorded' || exp.status === 'flagged')) || isAdmin)
-  var canEdit = !isDeleted && (exp.user_id === profile?.id || isAdmin) && (exp.status === 'recorded' || exp.status === 'flagged')
+  // Admins use "Raise JV" instead of direct Edit (audit trail via Journal Voucher).
+  // Only the owner (non-admin) can still directly edit their own recorded/flagged expenses.
+  var canEdit = !isDeleted && exp.user_id === profile?.id && !isAdmin && (exp.status === 'recorded' || exp.status === 'flagged')
   var canResubmit = !isDeleted && exp.user_id === profile?.id && exp.status === 'flagged'
   // GV rules:
   //  • recorded / flagged / deducted → admin OR anyone with finance_gv permission
@@ -650,7 +652,7 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
       {gvs.length > 0 && (
         <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
           <div className="px-4 py-2 bg-purple-50 border-b border-purple-100">
-            <p className="text-xs font-bold text-purple-700 uppercase tracking-wider">General Vouchers ({gvs.length})</p>
+            <p className="text-xs font-bold text-purple-700 uppercase tracking-wider">Journal Vouchers ({gvs.length})</p>
           </div>
           <div className="divide-y divide-gray-100">
             {gvs.map(function (gv, gvIdx) {
@@ -682,6 +684,37 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
                       </button>
                     )}
                   </div>
+                  {isExpanded && gv.before_fields && gv.after_fields && (
+                    <div className="mt-3 bg-purple-50 border border-purple-200 rounded-lg overflow-hidden">
+                      <div className="px-3 py-1.5 bg-purple-100 border-b border-purple-200">
+                        <span className="text-[10px] font-bold text-purple-800 uppercase tracking-wider">📝 Parent expense field changes</span>
+                      </div>
+                      <div className="p-3 space-y-1.5">
+                        {(function () {
+                          var bf = gv.before_fields || {}
+                          var af = gv.after_fields || {}
+                          var rows = []
+                          if (bf.expense_type_id !== af.expense_type_id) {
+                            rows.push({ label: 'Expense Type', before: bf.expense_type_name || '—', after: af.expense_type_name || '—' })
+                          }
+                          if (bf.expense_sub_type_id !== af.expense_sub_type_id) {
+                            rows.push({ label: 'Sub-Type', before: bf.expense_sub_type_name || '—', after: af.expense_sub_type_name || '—' })
+                          }
+                          if (rows.length === 0) return <p className="text-[11px] text-gray-500 italic">No visible field changes.</p>
+                          return rows.map(function (r, ri) {
+                            return (
+                              <div key={ri} className="grid grid-cols-[70px_1fr_16px_1fr] gap-2 items-center text-[11px]">
+                                <span className="font-bold text-gray-600 uppercase text-[10px]">{r.label}</span>
+                                <span className="line-through text-gray-500 truncate">{r.before}</span>
+                                <span className="text-purple-600 font-bold text-center">→</span>
+                                <span className="font-semibold text-purple-800 truncate">{r.after}</span>
+                              </div>
+                            )
+                          })
+                        })()}
+                      </div>
+                    </div>
+                  )}
                   {isExpanded && (
                     <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
                       {[{ label: 'Before', arr: gv.before_allocations }, { label: 'After', arr: gv.after_allocations }].map(function (side) {
@@ -723,7 +756,7 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
       {canRaiseGV && (
         <button onClick={onRaiseGV} disabled={saving}
           className="w-full py-3 text-sm font-bold text-purple-700 bg-purple-50 border border-purple-200 rounded-lg hover:bg-purple-100 disabled:opacity-50 transition-colors">
-          📋 Raise General Voucher
+          📋 Raise JV
         </button>
       )}
 

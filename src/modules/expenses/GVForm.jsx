@@ -8,6 +8,7 @@ function makeAlloc() {
 }
 
 function GVForm({ exp, profile, onCancel, onSaved }) {
+  var isAdmin = profile && (profile.role === 'admin' || profile.role === 'auditor')
   var [reason, setReason] = useState('')
   var [allocations, setAllocations] = useState([])
   var [departments, setDepartments] = useState([])
@@ -17,6 +18,10 @@ function GVForm({ exp, profile, onCancel, onSaved }) {
   var [loading, setLoading] = useState(true)
   var [saving, setSaving] = useState(false)
   var [error, setError] = useState('')
+  // Optional: update parent expense fields (admin/finance_gv only)
+  var [fieldsExpanded, setFieldsExpanded] = useState(false)
+  var [newTypeId, setNewTypeId] = useState(exp.expense_type_id ? String(exp.expense_type_id) : '')
+  var [newSubTypeId, setNewSubTypeId] = useState(exp.expense_sub_type_id ? String(exp.expense_sub_type_id) : '')
 
   useEffect(function () {
     Promise.all([
@@ -113,19 +118,26 @@ function GVForm({ exp, profile, onCancel, onSaved }) {
       }
     })
 
+    // Only submit field updates if the section is expanded AND at least one value changed
+    var typeChanged = fieldsExpanded && Number(newTypeId) !== Number(exp.expense_type_id || 0)
+    var subChanged  = fieldsExpanded && Number(newSubTypeId || 0) !== Number(exp.expense_sub_type_id || 0)
+    var sendFieldUpdate = typeChanged || subChanged
+
     var { data, error: rpcErr } = await supabase.rpc('fn_create_gv', {
       p_expense_id: exp.id,
       p_reason: reason.trim(),
       p_allocations: payload,
+      p_new_expense_type_id: sendFieldUpdate ? (newTypeId ? Number(newTypeId) : null) : null,
+      p_new_expense_sub_type_id: sendFieldUpdate ? (newSubTypeId ? Number(newSubTypeId) : null) : null,
     })
 
     if (rpcErr) {
-      setError(rpcErr.message || 'Failed to raise GV')
+      setError(rpcErr.message || 'Failed to raise JV')
       setSaving(false)
       return
     }
 
-    try { await logActivity({ action: 'gv_create', entity: 'expense', entity_id: exp.id, meta: { gv_number: data?.gv_number } }) } catch (e) {}
+    try { await logActivity({ action: 'gv_create', entity: 'expense', entity_id: exp.id, meta: { gv_number: data?.gv_number, fields_changed: data?.fields_changed || false } }) } catch (e) {}
 
     setSaving(false)
     if (onSaved) onSaved(data)
@@ -141,8 +153,8 @@ function GVForm({ exp, profile, onCancel, onSaved }) {
       <div className="flex items-start justify-between">
         <div>
           <button onClick={onCancel} className="text-sm text-indigo-600 font-medium hover:text-indigo-800 mb-2">← Cancel</button>
-          <h2 className="text-lg font-bold text-gray-900">Raise General Voucher</h2>
-          <p className="text-xs text-gray-500">Reallocate expense #{exp.id} · {formatPoints(exp.amount_paise)}</p>
+          <h2 className="text-lg font-bold text-gray-900">Raise Journal Voucher</h2>
+          <p className="text-xs text-gray-500">Adjust expense #{exp.id} · {formatPoints(exp.amount_paise)}</p>
           {exp.description && <p className="text-xs text-gray-400 mt-0.5 truncate max-w-md">{exp.description}</p>}
         </div>
       </div>
@@ -151,11 +163,71 @@ function GVForm({ exp, profile, onCancel, onSaved }) {
       <div className="bg-white border border-gray-200 rounded-xl p-4">
         <label className="block text-[11px] font-bold text-gray-500 uppercase mb-1.5">Reason <span className="text-red-500">*</span></label>
         <textarea value={reason} onChange={function (e) { setReason(e.target.value) }}
-          placeholder="Why is this expense being reallocated?"
+          placeholder="Why is this expense being adjusted?"
           rows={2} maxLength={500}
           className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
           style={{ fontSize: '16px' }} />
       </div>
+
+      {/* Optional: Update parent expense fields */}
+      {isAdmin && (
+        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+          <button type="button" onClick={function () { setFieldsExpanded(function (v) { return !v }) }}
+            className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-50 transition-colors">
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-bold text-gray-500 uppercase">Update parent expense fields</span>
+              <span className="text-[10px] text-gray-400 normal-case tracking-normal">optional · admin only</span>
+            </div>
+            <span className={"text-gray-400 transition-transform " + (fieldsExpanded ? "rotate-180" : "")}>▾</span>
+          </button>
+          {fieldsExpanded && (function () {
+            var currentTypeName = (expenseTypes.find(function (t) { return t.id === Number(exp.expense_type_id) }) || {}).name || '—'
+            var currentSubName = (expenseSubTypes.find(function (s) { return s.id === Number(exp.expense_sub_type_id) }) || {}).name || '—'
+            var subOpts = newTypeId ? expenseSubTypes.filter(function (s) { return s.expense_type_id === Number(newTypeId) }) : []
+            var typeChangedPreview = Number(newTypeId || 0) !== Number(exp.expense_type_id || 0)
+            var subChangedPreview = Number(newSubTypeId || 0) !== Number(exp.expense_sub_type_id || 0)
+            var willUpdate = typeChangedPreview || subChangedPreview
+            return (
+              <div className="border-t border-gray-100 p-4 space-y-3 bg-gray-50">
+                <div className="text-[10px] text-gray-500">
+                  Current: <span className="font-semibold text-gray-700">{currentTypeName}</span>
+                  {currentSubName !== '—' && <span> › <span className="font-semibold text-gray-700">{currentSubName}</span></span>}
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">New expense type</label>
+                    <select value={newTypeId}
+                      onChange={function (e) { setNewTypeId(e.target.value); setNewSubTypeId('') }}
+                      className="w-full px-2 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-indigo-300"
+                      style={{ fontSize: '16px' }}>
+                      <option value="">— Select —</option>
+                      {expenseTypes.map(function (t) { return <option key={t.id} value={String(t.id)}>{t.name}</option> })}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">New sub-type</label>
+                    <select value={newSubTypeId}
+                      onChange={function (e) { setNewSubTypeId(e.target.value) }}
+                      disabled={!newTypeId}
+                      className="w-full px-2 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-indigo-300 disabled:bg-gray-100 disabled:text-gray-400"
+                      style={{ fontSize: '16px' }}>
+                      <option value="">— None —</option>
+                      {subOpts.map(function (s) { return <option key={s.id} value={String(s.id)}>{s.name}</option> })}
+                    </select>
+                  </div>
+                </div>
+                {willUpdate ? (
+                  <div className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 font-semibold">
+                    ⚠ This JV will update the parent expense fields. The change is captured in the audit trail.
+                  </div>
+                ) : (
+                  <div className="text-[11px] text-gray-500 italic">No changes — leave collapsed to skip field updates.</div>
+                )}
+              </div>
+            )
+          })()}
+        </div>
+      )}
 
       {/* Allocations */}
       <div className="bg-white border border-gray-200 rounded-xl p-4">
@@ -244,7 +316,7 @@ function GVForm({ exp, profile, onCancel, onSaved }) {
       {/* Submit */}
       <button onClick={submit} disabled={saving || !sumOk || !reasonOk}
         className="w-full py-3 text-sm font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm">
-        {saving ? 'Raising GV...' : 'Raise General Voucher'}
+        {saving ? 'Raising JV...' : 'Raise Journal Voucher'}
       </button>
     </div>
   )
