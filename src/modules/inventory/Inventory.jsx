@@ -12,6 +12,7 @@ function Inventory({ profile }) {
   var [loading, setLoading] = useState(true)
   var [enlargedImg, setEnlargedImg] = useState(null)
   var [editItem, setEditItem] = useState(null)
+  var [history, setHistory] = useState([])
 
   // Realtime handler: stable identity, dereferences latest loadItems (which reads current filter state).
   // Without this, useRealtime captures the mount-time loadItems whose closure has empty filters —
@@ -35,7 +36,15 @@ function Inventory({ profile }) {
   var [metaReady, setMetaReady] = useState(false)
   var PAGE_SIZE = 50
 
-  useEffect(function () { loadMeta() }, [])
+  useEffect(function () { loadMeta(); loadHistory() }, [])
+
+  async function loadHistory() {
+    try {
+      var { data } = await supabase.from('v_item_purchase_history')
+        .select('item_id, item_source, vendor_name, rate_paise, txn_date')
+      setHistory(data || [])
+    } catch (_) { }
+  }
   useEffect(function () {
     var t = setTimeout(function () { setSearchDebounced(search) }, 400)
     return function () { clearTimeout(t) }
@@ -305,6 +314,31 @@ function Inventory({ profile }) {
                 <span>💰 {formatPaise(item.rate_paise)}</span>
               )}
             </div>
+            {/* Last 3 purchases */}
+            {(function () {
+              var matches = history.filter(function (h) {
+                return h.item_source === item._source && Number(h.item_id) === Number(item.id)
+              })
+              if (matches.length === 0) return null
+              matches.sort(function (a, b) {
+                return (b.txn_date || '').localeCompare(a.txn_date || '')
+              })
+              var last3 = matches.slice(0, 3)
+              return (
+                <div className="mt-2 pt-2 border-t border-gray-100">
+                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">📈 Last {last3.length} purchase{last3.length > 1 ? 's' : ''}</p>
+                  {last3.map(function (h, i) {
+                    return (
+                      <div key={i} className="grid grid-cols-[1fr_auto_auto] gap-2 text-[11px] py-0.5 items-baseline">
+                        <span className="font-semibold text-gray-700 truncate">{h.vendor_name || '—'}</span>
+                        <span className="font-semibold text-gray-800">{formatPaise(h.rate_paise || 0)}</span>
+                        <span className="text-[10px] text-gray-400">{h.txn_date ? formatDate(h.txn_date) : ''}</span>
+                      </div>
+                    )
+                  })}
+                </div>
+              )
+            })()}
             {/* Status badge */}
             {item.status && item.status !== 'approved' && (
               <div className="mt-2">
