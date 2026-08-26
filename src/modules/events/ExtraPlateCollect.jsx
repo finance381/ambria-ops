@@ -57,13 +57,19 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
   var [recentGroups, setRecentGroups] = useState([])
   var [listLoading, setListLoading] = useState(false)
   var [showAll, setShowAll] = useState(false)
+  var [filterFrom, setFilterFrom] = useState('')
+  var [filterTo, setFilterTo] = useState('')
+  var [filterVenues, setFilterVenues] = useState([])
+  var [filterKind, setFilterKind] = useState('both')  // both | issue | collection
+  var [filterPaymentMode, setFilterPaymentMode] = useState('all')  // all | cash | bank
+  var [exporting, setExporting] = useState(false)
 
   // Cancel modal (unified for issue + collection)
   var [cancelTarget, setCancelTarget] = useState(null) // { type, row }
   var [cancelReason, setCancelReason] = useState('')
   var [cancelSaving, setCancelSaving] = useState(false)
 
-  useEffect(function () { if (view === 'recent') loadRecent() }, [view, showAll])
+  useEffect(function () { if (view === 'recent') loadRecent() }, [view, showAll, filterFrom, filterTo])
 
   // ─── LOADERS ─────────────────────────────────────
 
@@ -126,20 +132,27 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
 
   async function loadRecent() {
     setListLoading(true)
-    var since = new Date()
-    since.setDate(since.getDate() - 30)
-    var sinceISO = since.toISOString()
+    var fromISO
+    if (filterFrom) {
+      fromISO = filterFrom + 'T00:00:00'
+    } else {
+      var since = new Date()
+      since.setDate(since.getDate() - 30)
+      fromISO = since.toISOString()
+    }
+    var toISO = filterTo ? filterTo + 'T23:59:59' : null
 
     var iQ = supabase.from('extra_plate_issues')
       .select('id, event_id, plates_count, receipt_path, notes, status, cancelled_reason, cancelled_at, created_at, issued_by, events(event_name, venue_name, client_name, function_date, total_plates, complementary_plates, extra_plates_charge)')
-      .gte('created_at', sinceISO)
+      .gte('created_at', fromISO)
       .order('created_at', { ascending: false })
-      .limit(200)
+      .limit(1000)
     var cQ = supabase.from('extra_plate_collections')
       .select('id, event_id, extras_charged, plates_returned, rate_paise, total_paise, discount_paise, payment_mode, payment_sub_mode, receipt_path, notes, status, cancelled_reason, cancelled_at, created_at, collected_by, events(event_name, venue_name, client_name, function_date, total_plates, complementary_plates, extra_plates_charge)')
-      .gte('created_at', sinceISO)
+      .gte('created_at', fromISO)
       .order('created_at', { ascending: false })
-      .limit(200)
+      .limit(1000)
+    if (toISO) { iQ = iQ.lte('created_at', toISO); cQ = cQ.lte('created_at', toISO) }
     if (!isAdmin || !showAll) {
       iQ = iQ.eq('issued_by', profile.id)
       cQ = cQ.eq('collected_by', profile.id)
@@ -148,6 +161,18 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
     var cRes = await cQ
     var iRows = (iRes.data || []).map(function (r) { return Object.assign({}, r, { _kind: 'issue' }) })
     var cRows = (cRes.data || []).map(function (r) { return Object.assign({}, r, { _kind: 'collection' }) })
+
+    // Creator name resolution
+    var userIds = []
+    iRows.forEach(function (r) { if (r.issued_by && userIds.indexOf(r.issued_by) === -1) userIds.push(r.issued_by) })
+    cRows.forEach(function (r) { if (r.collected_by && userIds.indexOf(r.collected_by) === -1) userIds.push(r.collected_by) })
+    var nameById = {}
+    if (userIds.length > 0) {
+      var { data: profRows } = await supabase.from('profiles').select('id, name').in('id', userIds)
+      ;(profRows || []).forEach(function (p) { nameById[p.id] = p.name || null })
+    }
+    iRows = iRows.map(function (r) { r._creatorName = nameById[r.issued_by] || null; return r })
+    cRows = cRows.map(function (r) { r._creatorName = nameById[r.collected_by] || null; return r })
     var all = iRows.concat(cRows)
 
     var byEvent = {}
@@ -645,8 +670,184 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
       )}
 
       {/* ─── RECENT VIEW ───────────────────────────── */}
-      {view === 'recent' && (
+      {view === 'recent' && (function () {
+        var venueOptions = []
+        recentGroups.forEach(function (g) {
+          var v = g.event && g.event.venue_name
+          if (v && venueOptions.indexOf(v) === -1) venueOptions.push(v)
+        })
+        venueOptions.sort()
+        var filteredGroups = recentGroups.map(function (g) {
+          var items = g.items.filter(function (r) {
+            if (filterKind === 'issue' && r._kind !== 'issue') return false
+            if (filterKind === 'collection' && r._kind !== 'collection') return false
+            if (filterPaymentMode !== 'all' && r._kind === 'collection' && r.payment_mode !== filterPaymentMode) return false
+            return true
+          })
+          return Object.assign({}, g, { _filtered: items })
+        }).filter(function (g) {
+          if (g._filtered.length === 0) return false
+          if (filterVenues.length > 0) {
+            var v = (g.event && g.event.venue_name) || ''
+            if (filterVenues.indexOf(v) === -1) return false
+          }
+          return true
+        })
+        function buildExportRows() {
+          var out = []
+          filteredGroups.forEach(function (g) {
+            var evName = (g.event && g.event.event_name) || 'Event ' + g.event_id
+            var client = (g.event && g.event.client_name) || ''
+            var venue = (g.event && g.event.venue_name) || ''
+            var fnDate = g.event && g.event.function_date ? formatDate(g.event.function_date) : ''
+            g._filtered.forEach(function (r) {
+              var isIss = r._kind === 'issue'
+              var totalRs = !isIss && r.total_paise ? (r.total_paise - (r.discount_paise || 0)) / 100 : ''
+              out.push({
+                event: evName, client: client, venue: venue, function_date: fnDate,
+                created_at: r.created_at,
+                kind: isIss ? 'Issue' : 'Collection',
+                plates: isIss ? r.plates_count : (r.extras_charged || 0),
+                returned: !isIss ? (r.plates_returned || 0) : '',
+                rate_rs: !isIss && r.rate_paise ? r.rate_paise / 100 : '',
+                discount_rs: !isIss && r.discount_paise ? r.discount_paise / 100 : '',
+                total_rs: totalRs,
+                payment_mode: !isIss ? (r.payment_mode || '') : '',
+                sub_mode: !isIss ? (SUB_MODE_LABEL[r.payment_sub_mode] || '') : '',
+                creator: r._creatorName || '',
+                status: r.status,
+                cancel_reason: r.status === 'cancelled' ? (r.cancelled_reason || '') : '',
+                notes: r.notes || ''
+              })
+            })
+          })
+          return out
+        }
+        function exportCSV() {
+          var rows = buildExportRows()
+          if (rows.length === 0) { alert('No rows to export.'); return }
+          var headers = ['Event','Client','Venue','Function Date','Created At','Kind','Plates','Returned','Rate (Rs)','Discount (Rs)','Total (Rs)','Payment Mode','Sub-mode','Creator','Status','Cancel Reason','Notes']
+          function esc(v) {
+            if (v == null || v === '') return ''
+            var s = String(v)
+            if (s.indexOf(',') !== -1 || s.indexOf('"') !== -1 || s.indexOf('\n') !== -1) return '"' + s.replace(/"/g, '""') + '"'
+            return s
+          }
+          var lines = [headers.join(',')]
+          rows.forEach(function (r) {
+            lines.push([r.event, r.client, r.venue, r.function_date, r.created_at, r.kind, r.plates, r.returned, r.rate_rs, r.discount_rs, r.total_rs, r.payment_mode, r.sub_mode, r.creator, r.status, r.cancel_reason, r.notes].map(esc).join(','))
+          })
+          var blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' })
+          var url = URL.createObjectURL(blob)
+          var a = document.createElement('a')
+          a.href = url
+          a.download = 'extra_plates_' + new Date().toISOString().slice(0,10) + '.csv'
+          a.click()
+          URL.revokeObjectURL(url)
+        }
+        async function exportPDF() {
+          if (exporting) return
+          var rows = buildExportRows()
+          if (rows.length === 0) { alert('No rows to export.'); return }
+          setExporting(true)
+          try {
+            var jsPDFmod = await import('jspdf')
+            var jsPDF = jsPDFmod.default || jsPDFmod.jsPDF
+            var autoTableMod = await import('jspdf-autotable')
+            var autoTable = autoTableMod.default || autoTableMod.autoTable
+            var pdfFontMod = await import('../../lib/pdfFont')
+            var doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
+            var fontRegistered = false
+            try { await pdfFontMod.registerPdfFont(doc); fontRegistered = true } catch (_) {}
+            var baseFont = fontRegistered ? 'NotoSans' : 'helvetica'
+            doc.setFont(baseFont, 'bold'); doc.setFontSize(14)
+            doc.text('EXTRA PLATES REPORT', 10, 12)
+            doc.setFont(baseFont, 'normal'); doc.setFontSize(9)
+            var rangeText = (filterFrom || '30d default') + ' to ' + (filterTo || 'today')
+            doc.text('Range: ' + rangeText + '  |  Generated ' + new Date().toLocaleString('en-IN'), 10, 18)
+            var bodyRows = rows.map(function (r) {
+              return [
+                r.event + (r.client ? '\n' + r.client : ''),
+                r.venue, r.function_date, r.kind,
+                String(r.plates || ''),
+                r.returned !== '' ? String(r.returned) : '',
+                r.rate_rs !== '' ? '₹' + r.rate_rs.toLocaleString('en-IN') : '',
+                r.discount_rs !== '' ? '₹' + r.discount_rs.toLocaleString('en-IN') : '',
+                r.total_rs !== '' ? '₹' + r.total_rs.toLocaleString('en-IN') : '',
+                (r.payment_mode || '') + (r.sub_mode ? '\n' + r.sub_mode : ''),
+                r.creator,
+                r.status + (r.cancel_reason ? '\n' + r.cancel_reason : '')
+              ]
+            })
+            autoTable(doc, {
+              startY: 23,
+              head: [['Event','Venue','Fn Date','Kind','Plates','Ret','Rate','Disc','Total','Payment','By','Status']],
+              body: bodyRows,
+              styles: { font: baseFont, fontSize: 8, cellPadding: 1.5 },
+              headStyles: { fillColor: [55,65,81], textColor: [255,255,255], font: baseFont, fontStyle: 'bold' },
+              columnStyles: { 4: { halign: 'right' }, 5: { halign: 'right' }, 6: { halign: 'right' }, 7: { halign: 'right' }, 8: { halign: 'right' } }
+            })
+            doc.save('extra_plates_' + new Date().toISOString().slice(0,10) + '.pdf')
+          } catch (e) {
+            alert('PDF export failed: ' + (e.message || e))
+          }
+          setExporting(false)
+        }
+        return (
         <div className="space-y-3">
+          <div className="rounded-lg border border-gray-200 bg-white p-3 space-y-2 text-xs">
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="flex items-center gap-1"><span className="text-gray-500">From</span>
+                <input type="date" value={filterFrom} onChange={function (e) { setFilterFrom(e.target.value) }}
+                  style={{ fontSize: '16px' }} className="px-2 py-1 border border-gray-300 rounded" /></label>
+              <label className="flex items-center gap-1"><span className="text-gray-500">To</span>
+                <input type="date" value={filterTo} onChange={function (e) { setFilterTo(e.target.value) }}
+                  style={{ fontSize: '16px' }} className="px-2 py-1 border border-gray-300 rounded" /></label>
+              {(filterFrom || filterTo) && (
+                <button type="button" onClick={function () { setFilterFrom(''); setFilterTo('') }}
+                  className="text-blue-600 underline">Reset dates</button>
+              )}
+              <button type="button" onClick={exportCSV} disabled={exporting}
+                className="ml-auto px-2.5 py-1 font-bold bg-green-50 text-green-700 border border-green-200 rounded hover:bg-green-100 disabled:opacity-50">📊 CSV</button>
+              <button type="button" onClick={exportPDF} disabled={exporting}
+                className="px-2.5 py-1 font-bold bg-red-50 text-red-700 border border-red-200 rounded hover:bg-red-100 disabled:opacity-50">📄 {exporting ? 'PDF...' : 'PDF'}</button>
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-gray-500">Kind:</span>
+              {['both','issue','collection'].map(function (k) {
+                return <button key={k} type="button" onClick={function () { setFilterKind(k) }}
+                  className={"px-2 py-0.5 rounded border font-semibold capitalize " +
+                    (filterKind === k ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600 border-gray-300")}>{k}</button>
+              })}
+              <span className="text-gray-500 ml-2">Payment:</span>
+              {[['all','All'],['cash','Cash'],['bank','Bank']].map(function (p) {
+                return <button key={p[0]} type="button" onClick={function () { setFilterPaymentMode(p[0]) }}
+                  className={"px-2 py-0.5 rounded border font-semibold " +
+                    (filterPaymentMode === p[0] ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600 border-gray-300")}>{p[1]}</button>
+              })}
+            </div>
+            {venueOptions.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-gray-500">Venue:</span>
+                {venueOptions.map(function (v) {
+                  var active = filterVenues.indexOf(v) !== -1
+                  return <button key={v} type="button"
+                    onClick={function () {
+                      setFilterVenues(function (prev) {
+                        if (prev.indexOf(v) === -1) return prev.concat([v])
+                        return prev.filter(function (x) { return x !== v })
+                      })
+                    }}
+                    className={"px-2 py-0.5 rounded border font-semibold " +
+                      (active ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600 border-gray-300")}>{v}</button>
+                })}
+                {filterVenues.length > 0 && (
+                  <button type="button" onClick={function () { setFilterVenues([]) }}
+                    className="text-blue-600 underline">Clear</button>
+                )}
+              </div>
+            )}
+          </div>
           {isAdmin && (
             <label className="flex items-center gap-2 text-xs text-gray-600">
               <input type="checkbox" checked={showAll} onChange={function (e) { setShowAll(e.target.checked) }} />
@@ -655,9 +856,12 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
           )}
           {listLoading && <p className="text-xs text-gray-400">Loading...</p>}
           {!listLoading && recentGroups.length === 0 && (
-            <p className="text-xs text-gray-400">No activity in the last 30 days</p>
+            <p className="text-xs text-gray-400">No activity in this date range</p>
           )}
-          {recentGroups.map(function (g) {
+          {!listLoading && recentGroups.length > 0 && filteredGroups.length === 0 && (
+            <p className="text-xs text-gray-400">No rows match current filters</p>
+          )}
+          {filteredGroups.map(function (g) {
             var evQuota = g.event?.total_plates || 0
             var evComp = g.event?.complementary_plates || 0
             var evPaid = evQuota - evComp
@@ -702,13 +906,14 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
                   </div>
                 </div>
                 <div className="space-y-1.5 border-t border-gray-100 pt-2">
-                  {g.items.map(function (r) { return renderHistoryRow(r, profile, isAdmin, openCancel) })}
+                  {g._filtered.map(function (r) { return renderHistoryRow(r, profile, isAdmin, openCancel) })}
                 </div>
               </div>
             )
           })}
         </div>
-      )}
+        )
+      })()}
 
       {/* ─── CANCEL MODAL ──────────────────────────── */}
       {cancelTarget && (
@@ -783,7 +988,10 @@ function renderHistoryRow(r, profile, isAdmin, openCancel) {
         </div>
         {r.notes && <div className="text-gray-500 italic mt-0.5">"{r.notes}"</div>}
         {isCancelled && r.cancelled_reason && <div className="text-red-600 mt-0.5">Reason: {r.cancelled_reason}</div>}
-        <div className="text-[10px] text-gray-400 mt-0.5">{formatDate(r.created_at)}</div>
+        <div className="text-[10px] text-gray-400 mt-0.5">
+          {formatDate(r.created_at)}
+          {r._creatorName && ' · by ' + r._creatorName}
+        </div>
       </div>
       <div className="flex items-center gap-2 flex-shrink-0">
         {receiptUrl && (
