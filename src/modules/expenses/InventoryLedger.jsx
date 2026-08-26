@@ -67,6 +67,67 @@ function InventoryLedger({ profile }) {
       var csRes = results[1] || []
       var histRes = results[2] || []
 
+      // Creator name lookup: expenses.user_id (source_type='expense') + purchase_orders.created_by (source_type='po')
+      var expIds = []
+      var poItemIds = []
+      histRes.forEach(function (h) {
+        if (!h.source_id) return
+        if (h.source_type === 'expense') {
+          var n = Number(h.source_id)
+          if (isFinite(n) && expIds.indexOf(n) === -1) expIds.push(n)
+        } else if (h.source_type === 'po') {
+          if (poItemIds.indexOf(h.source_id) === -1) poItemIds.push(h.source_id)
+        }
+      })
+      var userIdBySource = {}  // key: source_type + ':' + source_id → user_id
+      var allUserIds = []
+      function addUid(u) { if (u && allUserIds.indexOf(u) === -1) allUserIds.push(u) }
+      if (expIds.length > 0) {
+        var CHUNK = 500
+        for (var i = 0; i < expIds.length; i += CHUNK) {
+          var eChunk = expIds.slice(i, i + CHUNK)
+          var eRes = await supabase.from('expenses').select('id, user_id').in('id', eChunk)
+          ;(eRes.data || []).forEach(function (r) {
+            userIdBySource['expense:' + r.id] = r.user_id
+            addUid(r.user_id)
+          })
+        }
+      }
+      if (poItemIds.length > 0) {
+        var poIdSet = []
+        for (var j = 0; j < poItemIds.length; j += 500) {
+          var iChunk = poItemIds.slice(j, j + 500)
+          var iRes = await supabase.from('purchase_order_items').select('id, po_id').in('id', iChunk)
+          ;(iRes.data || []).forEach(function (pi) {
+            userIdBySource['po_item_map:' + pi.id] = pi.po_id  // temp store po_id
+            if (pi.po_id && poIdSet.indexOf(pi.po_id) === -1) poIdSet.push(pi.po_id)
+          })
+        }
+        var poCreatorById = {}
+        for (var k = 0; k < poIdSet.length; k += 500) {
+          var pChunk = poIdSet.slice(k, k + 500)
+          var pRes = await supabase.from('purchase_orders').select('id, created_by').in('id', pChunk)
+          ;(pRes.data || []).forEach(function (po) { poCreatorById[po.id] = po.created_by; addUid(po.created_by) })
+        }
+        // Resolve po_item_map → final creator user_id under po:<source_id>
+        poItemIds.forEach(function (piId) {
+          var poId = userIdBySource['po_item_map:' + piId]
+          if (poId && poCreatorById[poId]) userIdBySource['po:' + piId] = poCreatorById[poId]
+          delete userIdBySource['po_item_map:' + piId]
+        })
+      }
+      var nameById = {}
+      if (allUserIds.length > 0) {
+        var { data: profRows } = await supabase.from('profiles').select('id, name').in('id', allUserIds)
+        ;(profRows || []).forEach(function (p) { nameById[p.id] = p.name || null })
+      }
+      histRes = histRes.map(function (h) {
+        var key = h.source_type + ':' + h.source_id
+        var uid = userIdBySource[key]
+        var nm = uid ? nameById[uid] : null
+        return nm ? Object.assign({}, h, { _creatorName: nm }) : h
+      })
+
       var merged = []
       invRes.forEach(function (r) {
         merged.push({
@@ -435,23 +496,28 @@ function InventoryLedger({ profile }) {
                 <div>Date</div><div>Vendor</div><div className="text-right">Qty</div><div className="text-right">Rate</div><div></div><div className="text-right">Amount</div><div className="text-right">Source</div>
               </div>
               {agg.allRows.map(function (h, i) {
-                var srcColor = h.source_type === 'po' ? 'bg-indigo-50 text-indigo-700' : 'bg-amber-50 text-amber-700 hover:bg-amber-100 cursor-pointer'
+                var isExp = h.source_type === 'expense'
+                var srcColor = isExp ? 'bg-amber-50 text-amber-700' : 'bg-indigo-50 text-indigo-700'
                 var chip = (
                   <span className={"inline-block text-[10px] px-1.5 py-0.5 rounded font-semibold " + srcColor}>{h.source_ref}</span>
                 )
+                function handleRowClick() {
+                  if (isExp && h.source_id) openExpenseDetail(h.source_id)
+                }
                 return (
-                  <div key={i} className="grid grid-cols-[90px_1fr_70px_100px_30px_100px_100px] gap-2 px-4 py-2 text-xs border-b border-gray-50 items-center">
+                  <div key={i} onClick={handleRowClick}
+                    className={"grid grid-cols-[90px_1fr_70px_100px_30px_100px_100px] gap-2 px-4 py-2 text-xs border-b border-gray-50 items-center " +
+                      (isExp ? "cursor-pointer hover:bg-indigo-50/40 transition-colors" : "")}>
                     <div className="text-gray-600">{h.txn_date ? formatDate(h.txn_date) : '—'}</div>
-                    <div className="font-semibold text-gray-900 truncate">{h.vendor_name || '—'}</div>
+                    <div className="min-w-0">
+                      <p className="font-semibold text-gray-900 truncate">{h.vendor_name || '—'}</p>
+                      {h._creatorName && <p className="text-[10px] text-gray-400 truncate">by {h._creatorName}</p>}
+                    </div>
                     <div className="text-right font-semibold text-gray-900">{fmtQty(h.qty)}{h.unit ? ' ' + h.unit : ''}</div>
                     <div className="text-right font-semibold text-gray-900">{formatPaise(h.rate_paise || 0)}</div>
                     <div className="text-center"><TrendIcon trend={h._trend} prev={h._prev_rate} /></div>
                     <div className="text-right font-semibold text-gray-900">{formatPaise(h.amount_paise || 0)}</div>
-                    <div className="text-right">
-                      {h.source_type === 'expense' ? (
-                        <button onClick={function () { openExpenseDetail(h.source_id) }} className="inline-block">{chip}</button>
-                      ) : chip}
-                    </div>
+                    <div className="text-right">{chip}</div>
                   </div>
                 )
               })}
@@ -576,11 +642,11 @@ function InventoryLedger({ profile }) {
                     <div className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold mb-1">Last 3 purchases</div>
                     {a.last3.map(function (h, i) {
                       return (
-                        <div key={i} className="grid grid-cols-[1fr_auto_16px_auto] gap-1.5 text-[11px] py-0.5 items-baseline">
+                        <div key={i} className="grid grid-cols-[1fr_auto_34px_auto] gap-2 text-[11px] py-0.5 items-baseline">
                           <span className="font-semibold text-gray-900 truncate">{h.vendor_name || '—'}</span>
                           <span className="font-semibold text-gray-900">{formatPaise(h.rate_paise || 0)}</span>
                           <span className="text-center"><TrendIcon trend={h._trend} prev={h._prev_rate} /></span>
-                          <span className="text-[10px] text-gray-400">{h.txn_date ? formatDate(h.txn_date) : ''}</span>
+                          <span className="text-[10px] text-gray-400 whitespace-nowrap">{h.txn_date ? formatDate(h.txn_date) : ''}</span>
                         </div>
                       )
                     })}

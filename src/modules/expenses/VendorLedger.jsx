@@ -328,17 +328,29 @@ function VendorLedger({ profile }) {
       ;(vRows || []).forEach(function (v) { venueNameById[v.id] = v.name })
     }
 
+    // Creator name lookup — resolves ledger_entries.created_by across expense + purchase + all row types
+    var creatorIds = []
+    rows.forEach(function (r) {
+      if (r.created_by && creatorIds.indexOf(r.created_by) === -1) creatorIds.push(r.created_by)
+    })
+    var creatorNameById = {}
+    if (creatorIds.length > 0) {
+      var { data: pRows } = await supabase.from('profiles').select('id, name').in('id', creatorIds)
+      ;(pRows || []).forEach(function (p) { creatorNameById[p.id] = p.name || null })
+    }
+
     var merged = rows.map(function (r) {
+      var patch = {}
+      if (r.created_by && creatorNameById[r.created_by]) patch._creatorName = creatorNameById[r.created_by]
       if (r.ref_type === 'expense' && r.ref_id) {
         var id = Number(r.ref_id)
-        var patch = {}
         if (receiptsByExpId[id]) patch._sourceReceipts = receiptsByExpId[id]
         if (breakdownByExpId[id]) {
           patch._breakdown = breakdownByExpId[id]
           patch._venueNames = venueNameById
         }
-        if (Object.keys(patch).length > 0) return Object.assign({}, r, patch)
       }
+      if (Object.keys(patch).length > 0) return Object.assign({}, r, patch)
       return r
     })
 
@@ -872,6 +884,7 @@ function VendorLedger({ profile }) {
                   </p>
                   <p className="text-[11px] text-gray-500 mt-0.5">
                     {e.entry_date} · {kind} #{e.ref_id}
+                    {e._creatorName && ' · by ' + e._creatorName}
                     {isDeleted && ' · deleted'}
                   </p>
                   {(function () {
