@@ -36,7 +36,7 @@ function EventLedger(props) {
     if (!dateStr) { setFunctions([]); return }
     setFunctionsLoading(true)
     var { data } = await supabase.from('events')
-      .select('id, event_name, function_date, venue_name, client_name, session, department, created_user_name, agreed_cash_paise, agreed_bank_paise')
+      .select('id, event_name, function_date, venue_name, client_name, session, department, created_user_name, contract_no, agreed_cash_paise, agreed_bank_paise')
       .eq('function_date', dateStr)
       .order('event_name')
     setFunctions(data || [])
@@ -132,19 +132,40 @@ function EventLedger(props) {
             {functionsLoading && <p className="text-xs text-gray-400">Loading...</p>}
             {!functionsLoading && functions.length === 0 && <p className="text-xs text-gray-400">No functions on this date</p>}
             {functions.length > 0 && (
-              <select value={eventId} onChange={function (e) { selectFunction(e.target.value) }}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-indigo-300"
-                style={{ fontSize: '16px' }}>
-                <option value="">Select function...</option>
+              <div className="space-y-2">
                 {functions.map(function (f) {
-                  var label = f.event_name
-                  if (f.client_name) label += ' — ' + f.client_name
-                  if (f.venue_name) label += ' · ' + f.venue_name
-                  if (f.department) label += ' · ' + f.department
-                  if (f.created_user_name) label += ' · by ' + f.created_user_name
-                  return <option key={f.id} value={String(f.id)}>{label}</option>
+                  var selected = String(f.id) === String(eventId)
+                  var deptCls = f.department === 'Venue' ? 'bg-blue-100 text-blue-700'
+                    : f.department === 'Decor' ? 'bg-purple-100 text-purple-700'
+                    : f.department === 'Catering' ? 'bg-amber-100 text-amber-700'
+                    : f.department === 'Entertainment' ? 'bg-pink-100 text-pink-700'
+                    : 'bg-gray-100 text-gray-600'
+                  return (
+                    <button key={f.id} type="button" onClick={function () { selectFunction(String(f.id)) }}
+                      className={"w-full text-left rounded-lg border p-3 transition-colors " +
+                        (selected ? "border-indigo-500 bg-indigo-50/40 ring-1 ring-indigo-200"
+                                  : "border-gray-200 bg-white hover:border-indigo-300 hover:bg-indigo-50/20")}>
+                      <div className="text-sm font-semibold text-gray-900">
+                        {f.event_name}{f.client_name && <span> — {f.client_name}</span>}
+                      </div>
+                      {(f.venue_name || f.session) && (
+                        <div className="text-xs text-gray-500 mt-0.5">
+                          {f.venue_name || ''}{f.venue_name && f.session ? ' · ' : ''}{f.session || ''}
+                        </div>
+                      )}
+                      {(f.department || f.contract_no) && (
+                        <div className="flex items-center gap-2 mt-1.5">
+                          {f.department && <span className={"text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full " + deptCls}>{f.department}</span>}
+                          {f.contract_no && <span className="text-[11px] text-gray-500 font-mono">#{f.contract_no}</span>}
+                        </div>
+                      )}
+                      {f.created_user_name && (
+                        <div className="text-[11px] text-gray-400 mt-1">Contract by {f.created_user_name}</div>
+                      )}
+                    </button>
+                  )
                 })}
-              </select>
+              </div>
             )}
           </div>
         )}
