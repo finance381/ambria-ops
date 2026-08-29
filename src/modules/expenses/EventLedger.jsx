@@ -69,12 +69,14 @@ function EventLedger(props) {
   var [plateEvents, setPlateEvents] = useState([])
   var [platesLoading, setPlatesLoading] = useState(false)
   var [filter, setFilter] = useState('all')
+  var [balancesByContract, setBalancesByContract] = useState({})
 
   async function loadFunctions(dateStr) {
     setDate(dateStr)
     setEventId('')
     setEventDetail(null)
     setBalance(null)
+    setBalancesByContract({})
     setEntries([])
     setPlateEvents([])
     if (!dateStr) { setFunctions([]); return }
@@ -92,7 +94,7 @@ function EventLedger(props) {
 
   function selectGroup(g) {
     if (!g) {
-      setEventId(''); setEventDetail(null); setBalance(null); setEntries([]); setPlateEvents([])
+      setEventId(''); setEventDetail(null); setBalance(null); setBalancesByContract({}); setEntries([]); setPlateEvents([])
       return
     }
     setEventId(String(g.event_ids[0]))  // legacy anchor: any contract in this group
@@ -122,20 +124,23 @@ function EventLedger(props) {
   }, [propEventId])
 
   async function loadBalance(ids) {
-    if (!ids || ids.length === 0) { setBalance(null); return }
+    if (!ids || ids.length === 0) { setBalance(null); setBalancesByContract({}); return }
     setBalanceLoading(true)
     var results = await Promise.all(ids.map(function (id) {
       return supabase.rpc('fn_event_balance', { p_event_id: Number(id) })
     }))
     var agg = { pending_cash_paise: 0, pending_bank_paise: 0, agreed_cash_paise: 0, agreed_bank_paise: 0, collected_cash_paise: 0, collected_bank_paise: 0, spent_paise: 0 }
+    var byId = {}
     var any = false
-    results.forEach(function (r) {
+    results.forEach(function (r, idx) {
       if (r.error || !r.data || r.data.length === 0) return
       any = true
       var row = r.data[0]
+      byId[ids[idx]] = row
       Object.keys(agg).forEach(function (k) { agg[k] += Number(row[k] || 0) })
     })
     setBalance(any ? agg : null)
+    setBalancesByContract(byId)
     setBalanceLoading(false)
   }
 
@@ -146,7 +151,16 @@ function EventLedger(props) {
       .select('id, entry_type, direction, payment_mode, amount_paise, reference_type, reference_id, description, created_by, created_at, event_id')
       .in('event_id', ids.map(Number))
       .order('created_at', { ascending: false })
-    setEntries(data || [])
+    var rows = data || []
+    var creatorIds = []
+    rows.forEach(function (r) { if (r.created_by && creatorIds.indexOf(r.created_by) === -1) creatorIds.push(r.created_by) })
+    var nameById = {}
+    if (creatorIds.length > 0) {
+      var { data: profRows } = await supabase.from('profiles').select('id, name').in('id', creatorIds)
+      ;(profRows || []).forEach(function (p) { nameById[p.id] = p.name || null })
+    }
+    rows = rows.map(function (r) { r._creatorName = nameById[r.created_by] || null; return r })
+    setEntries(rows)
     setEntriesLoading(false)
   }
 
@@ -191,6 +205,14 @@ function EventLedger(props) {
   var colCashP = balance ? Number(balance.collected_cash_paise || 0) : 0
   var colBankP = balance ? Number(balance.collected_bank_paise || 0) : 0
   var spentP = balance ? Number(balance.spent_paise || 0) : 0
+
+  var _groups = _buildGroups(functions)
+  var selectedGroup = eventId
+    ? _groups.find(function (g) { return g.event_ids.map(String).indexOf(String(eventId)) !== -1 })
+    : null
+  var contractByEventId = {}
+  if (selectedGroup) selectedGroup.contracts.forEach(function (c) { contractByEventId[c.id] = c })
+  var multiContract = !!(selectedGroup && selectedGroup.contracts.length > 1)
 
   return (
     <div>
@@ -279,6 +301,51 @@ function EventLedger(props) {
           <div className="bg-white border border-gray-200 rounded-lg p-3">
             <div className="text-xs text-gray-500 uppercase tracking-wide">Total Spent</div>
             <div className="text-lg font-semibold text-red-700">{balanceLoading ? '—' : formatPoints(spentP)}</div>
+          </div>
+        </div>
+      )}
+
+      {eventId && multiContract && (
+        <div className="mb-4 bg-white border border-gray-200 rounded-lg overflow-hidden">
+          <div className="px-3 py-2 border-b border-gray-100 text-[11px] font-semibold text-gray-500 uppercase tracking-wide bg-gray-50">Per-Contract Breakdown</div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead className="bg-gray-50 border-b border-gray-200">
+                <tr>
+                  <th className="px-3 py-2 text-left font-semibold text-gray-600 uppercase">Contract</th>
+                  <th className="px-3 py-2 text-right font-semibold text-gray-600 uppercase">Agreed Cash</th>
+                  <th className="px-3 py-2 text-right font-semibold text-gray-600 uppercase">Coll. Cash</th>
+                  <th className="px-3 py-2 text-right font-semibold text-gray-600 uppercase">Pend. Cash</th>
+                  <th className="px-3 py-2 text-right font-semibold text-gray-600 uppercase">Agreed Bank</th>
+                  <th className="px-3 py-2 text-right font-semibold text-gray-600 uppercase">Coll. Bank</th>
+                  <th className="px-3 py-2 text-right font-semibold text-gray-600 uppercase">Pend. Bank</th>
+                </tr>
+              </thead>
+              <tbody>
+                {selectedGroup.contracts.map(function (c) {
+                  var b = balancesByContract[c.id] || {}
+                  var pcash = Number(b.pending_cash_paise || 0)
+                  var pbank = Number(b.pending_bank_paise || 0)
+                  return (
+                    <tr key={c.id} className="border-b border-gray-100 last:border-b-0">
+                      <td className="px-3 py-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          {c.department && <span className={"text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full " + _deptCls(c.department)}>{c.department}</span>}
+                          {c.contract_no && <span className="text-gray-500 font-mono">#{c.contract_no}</span>}
+                          {c.created_user_name && <span className="text-[11px] text-gray-400">· by {c.created_user_name}</span>}
+                        </div>
+                      </td>
+                      <td className="px-3 py-2 text-right font-mono">{formatPoints(Number(b.agreed_cash_paise || 0))}</td>
+                      <td className="px-3 py-2 text-right font-mono text-gray-600">{formatPoints(Number(b.collected_cash_paise || 0))}</td>
+                      <td className={"px-3 py-2 text-right font-mono font-semibold " + (pcash > 0 ? "text-red-600" : "text-green-600")}>{formatPoints(pcash)}</td>
+                      <td className="px-3 py-2 text-right font-mono">{formatPoints(Number(b.agreed_bank_paise || 0))}</td>
+                      <td className="px-3 py-2 text-right font-mono text-gray-600">{formatPoints(Number(b.collected_bank_paise || 0))}</td>
+                      <td className={"px-3 py-2 text-right font-mono font-semibold " + (pbank > 0 ? "text-red-600" : "text-green-600")}>{formatPoints(pbank)}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
@@ -391,7 +458,15 @@ function EventLedger(props) {
                         <td className="px-3 py-2 text-right text-xs font-mono text-red-700">
                           {e.direction === 'out' ? formatPoints(e.amount_paise) : ''}
                         </td>
-                        <td className="px-3 py-2 text-xs text-gray-700">{e.description || '—'}</td>
+                        <td className="px-3 py-2 text-xs text-gray-700">
+                          {multiContract && contractByEventId[e.event_id] && contractByEventId[e.event_id].department && (
+                            <span className={"inline-block text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full mr-2 " + _deptCls(contractByEventId[e.event_id].department)}>
+                              {contractByEventId[e.event_id].department}
+                            </span>
+                          )}
+                          {e.description || '—'}
+                          {e._creatorName && <div className="text-[10px] text-gray-400 mt-0.5">by {e._creatorName}</div>}
+                        </td>
                       </tr>
                     )
                   })}
