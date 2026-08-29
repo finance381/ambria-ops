@@ -239,7 +239,7 @@ function CostTransfers({ profile }) {
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
-        <p className="text-sm text-gray-500">Move cost between ledgers without touching wallet.</p>
+        <p className="text-sm text-gray-500">Move cost between expense types without touching wallet.</p>
         <button onClick={function () { setForm(EMPTY_FORM); setError(''); setShowForm(true) }}
           className="px-3 py-1.5 rounded-md bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700">
           <i className="ti ti-plus" style={{ fontSize: '14px', marginRight: '4px' }} aria-hidden="true"></i>
@@ -541,52 +541,11 @@ function PartySection({ side, form, updForm, expTypes, expSubTypes, events, vend
         </div>
       )
     }
-  } else if (t === 'event') {
-    var evItems = events.map(function (x) {
-      var lbl = (x.event_name || x.client_name || ('Event #' + x.id)) + ' — ' + (x.function_date || '')
-      return { value: String(x.id), label: lbl }
-    })
-    picker = (
-      <SearchDropdown items={evItems}
-        value={form[fld('event_id')]}
-        onChange={function (v) { var patch = {}; patch[fld('event_id')] = v; updForm(patch) }}
-        placeholder="Search event by name or date" />
-    )
-  } else if (t === 'vendor') {
-    var vdItems = vendors.map(function (x) { return { value: String(x.id), label: x.name } })
-    picker = (
-      <SearchDropdown items={vdItems}
-        value={form[fld('vendor_id')]}
-        onChange={function (v) { var patch = {}; patch[fld('vendor_id')] = v; updForm(patch) }}
-        placeholder="Search vendor" />
-    )
-  } else if (t === 'employee') {
-    var emItems = employees.map(function (x) { return { value: String(x.id), label: x.full_name } })
-    picker = (
-      <SearchDropdown items={emItems}
-        value={form[fld('employee_id')]}
-        onChange={function (v) { var patch = {}; patch[fld('employee_id')] = v; updForm(patch) }}
-        placeholder="Search employee" />
-    )
   }
 
   return (
     <div>
       <label className="block text-xs font-semibold text-gray-700 mb-1.5 uppercase tracking-wider">{side}</label>
-      <div className="grid grid-cols-4 gap-1 mb-2">
-        {PARTY_TYPES.map(function (pt) {
-          var isActive = t === pt.key
-          return (
-            <button key={pt.key} type="button"
-              onClick={function () { var patch = {}; patch[side + '_party_type'] = pt.key; updForm(patch) }}
-              className={"px-2 py-1.5 text-xs rounded border " +
-                (isActive ? "bg-indigo-50 border-indigo-500 text-indigo-700 font-semibold" : "bg-white border-gray-200 text-gray-600 hover:border-gray-300")}>
-              <i className={"ti " + pt.icon} style={{ fontSize: '13px', marginRight: '3px' }} aria-hidden="true"></i>
-              {pt.label}
-            </button>
-          )
-        })}
-      </div>
       {picker}
       {lookupFields}
     </div>
