@@ -11,6 +11,50 @@ var ENTRY_TYPES = [
   { key: 'plates', label: 'Plates' },
 ]
 
+var EVT_COLS = 'id, event_name, function_date, venue_name, client_name, session, department, created_user_name, contract_no, agreed_cash_paise, agreed_bank_paise'
+
+function _deptOrder(d) {
+  if (d === 'Venue') return 0
+  if (d === 'Decor') return 1
+  if (d === 'Catering') return 2
+  if (d === 'Entertainment') return 3
+  return 9
+}
+function _deptCls(d) {
+  if (d === 'Venue') return 'bg-blue-100 text-blue-700'
+  if (d === 'Decor') return 'bg-purple-100 text-purple-700'
+  if (d === 'Catering') return 'bg-amber-100 text-amber-700'
+  if (d === 'Entertainment') return 'bg-pink-100 text-pink-700'
+  return 'bg-gray-100 text-gray-600'
+}
+function _groupKey(f) {
+  return (f.client_name || '') + '|' + (f.function_date || '') + '|' + (f.venue_name || '') + '|' + (f.session || '')
+}
+function _buildGroups(rows) {
+  var byKey = {}
+  for (var i = 0; i < rows.length; i++) {
+    var k = _groupKey(rows[i])
+    if (!byKey[k]) byKey[k] = []
+    byKey[k].push(rows[i])
+  }
+  var out = []
+  Object.keys(byKey).forEach(function (k) {
+    var contracts = byKey[k].slice().sort(function (a, b) { return _deptOrder(a.department) - _deptOrder(b.department) })
+    var primary = contracts[0]
+    out.push({
+      key: k,
+      contracts: contracts,
+      event_ids: contracts.map(function (c) { return c.id }),
+      event_name: primary.event_name,
+      client_name: primary.client_name,
+      venue_name: primary.venue_name,
+      session: primary.session,
+      function_date: primary.function_date
+    })
+  })
+  return out
+}
+
 function EventLedger(props) {
   var propEventId = props && props.eventId ? String(props.eventId) : null
   var [date, setDate] = useState('')
@@ -36,61 +80,88 @@ function EventLedger(props) {
     if (!dateStr) { setFunctions([]); return }
     setFunctionsLoading(true)
     var { data } = await supabase.from('events')
-      .select('id, event_name, function_date, venue_name, client_name, session, department, created_user_name, contract_no, agreed_cash_paise, agreed_bank_paise')
+      .select(EVT_COLS)
       .eq('function_date', dateStr)
       .order('event_name')
-    setFunctions(data || [])
+    var rows = data || []
+    setFunctions(rows)
     setFunctionsLoading(false)
-    if (data && data.length === 1) selectFunction(String(data[0].id))
+    var groups = _buildGroups(rows)
+    if (groups.length === 1) selectGroup(groups[0])
   }
 
-  async function selectFunction(fid) {
-    setEventId(fid)
-    if (!fid) { setEventDetail(null); setBalance(null); setEntries([]); setPlateEvents([]); return }
-    var detail = functions.find(function (f) { return String(f.id) === fid })
-    setEventDetail(detail || null)
-    loadBalance(fid)
-    loadEntries(fid)
-    loadPlateEvents(fid)
+  function selectGroup(g) {
+    if (!g) {
+      setEventId(''); setEventDetail(null); setBalance(null); setEntries([]); setPlateEvents([])
+      return
+    }
+    setEventId(String(g.event_ids[0]))  // legacy anchor: any contract in this group
+    setEventDetail(g.contracts[0])
+    loadBalance(g.event_ids)
+    loadEntries(g.event_ids)
+    loadPlateEvents(g.event_ids)
   }
 
   useEffect(function () {
     if (!propEventId) return
-    supabase.from('events')
-      .select('id, event_name, function_date, venue_name, client_name, session, agreed_cash_paise, agreed_bank_paise')
-      .eq('id', Number(propEventId)).maybeSingle()
-      .then(function (r) { setEventDetail(r.data || null) })
-    loadBalance(propEventId)
-    loadEntries(propEventId)
+    ;(async function () {
+      var primaryRes = await supabase.from('events')
+        .select(EVT_COLS)
+        .eq('id', Number(propEventId)).maybeSingle()
+      if (!primaryRes.data) return
+      var primary = primaryRes.data
+      var sameDate = await supabase.from('events')
+        .select(EVT_COLS)
+        .eq('function_date', primary.function_date)
+      var pool = (sameDate.data || []).filter(function (r) { return _groupKey(r) === _groupKey(primary) })
+      if (pool.length === 0) pool = [primary]
+      setFunctions(pool)
+      var group = _buildGroups(pool)[0]
+      selectGroup(group)
+    })()
   }, [propEventId])
 
-  async function loadBalance(fid) {
+  async function loadBalance(ids) {
+    if (!ids || ids.length === 0) { setBalance(null); return }
     setBalanceLoading(true)
-    var { data, error } = await supabase.rpc('fn_event_balance', { p_event_id: Number(fid) })
-    if (!error && data && data.length > 0) setBalance(data[0])
+    var results = await Promise.all(ids.map(function (id) {
+      return supabase.rpc('fn_event_balance', { p_event_id: Number(id) })
+    }))
+    var agg = { pending_cash_paise: 0, pending_bank_paise: 0, agreed_cash_paise: 0, agreed_bank_paise: 0, collected_cash_paise: 0, collected_bank_paise: 0, spent_paise: 0 }
+    var any = false
+    results.forEach(function (r) {
+      if (r.error || !r.data || r.data.length === 0) return
+      any = true
+      var row = r.data[0]
+      Object.keys(agg).forEach(function (k) { agg[k] += Number(row[k] || 0) })
+    })
+    setBalance(any ? agg : null)
     setBalanceLoading(false)
   }
 
-  async function loadEntries(fid) {
+  async function loadEntries(ids) {
+    if (!ids || ids.length === 0) { setEntries([]); return }
     setEntriesLoading(true)
     var { data } = await supabase.from('event_ledger')
-      .select('id, entry_type, direction, payment_mode, amount_paise, reference_type, reference_id, description, created_by, created_at')
-      .eq('event_id', Number(fid))
+      .select('id, entry_type, direction, payment_mode, amount_paise, reference_type, reference_id, description, created_by, created_at, event_id')
+      .in('event_id', ids.map(Number))
       .order('created_at', { ascending: false })
     setEntries(data || [])
     setEntriesLoading(false)
   }
 
-  async function loadPlateEvents(fid) {
+  async function loadPlateEvents(ids) {
+    if (!ids || ids.length === 0) { setPlateEvents([]); return }
     setPlatesLoading(true)
+    var numIds = ids.map(Number)
     var [iRes, cRes] = await Promise.all([
       supabase.from('extra_plate_issues')
         .select('id, plates_count, notes, status, cancelled_reason, cancelled_at, created_at, issued_by')
-        .eq('event_id', Number(fid))
+        .in('event_id', numIds)
         .order('created_at', { ascending: false }),
       supabase.from('extra_plate_collections')
         .select('id, extras_charged, plates_returned, rate_paise, total_paise, discount_paise, payment_mode, payment_sub_mode, notes, status, cancelled_reason, cancelled_at, created_at, collected_by')
-        .eq('event_id', Number(fid))
+        .in('event_id', numIds)
         .order('created_at', { ascending: false })
     ])
     var issues = (iRes.data || []).map(function (r) { return Object.assign({}, r, { _kind: 'issue' }) })
@@ -131,42 +202,42 @@ function EventLedger(props) {
             <label className="block text-sm font-medium text-gray-700 mb-1">Function</label>
             {functionsLoading && <p className="text-xs text-gray-400">Loading...</p>}
             {!functionsLoading && functions.length === 0 && <p className="text-xs text-gray-400">No functions on this date</p>}
-            {functions.length > 0 && (
-              <div className="space-y-2">
-                {functions.map(function (f) {
-                  var selected = String(f.id) === String(eventId)
-                  var deptCls = f.department === 'Venue' ? 'bg-blue-100 text-blue-700'
-                    : f.department === 'Decor' ? 'bg-purple-100 text-purple-700'
-                    : f.department === 'Catering' ? 'bg-amber-100 text-amber-700'
-                    : f.department === 'Entertainment' ? 'bg-pink-100 text-pink-700'
-                    : 'bg-gray-100 text-gray-600'
-                  return (
-                    <button key={f.id} type="button" onClick={function () { selectFunction(String(f.id)) }}
-                      className={"w-full text-left rounded-lg border p-3 transition-colors " +
-                        (selected ? "border-indigo-500 bg-indigo-50/40 ring-1 ring-indigo-200"
-                                  : "border-gray-200 bg-white hover:border-indigo-300 hover:bg-indigo-50/20")}>
-                      <div className="text-sm font-semibold text-gray-900">
-                        {f.event_name}{f.client_name && <span> — {f.client_name}</span>}
-                      </div>
-                      {(f.venue_name || f.session) && (
-                        <div className="text-xs text-gray-500 mt-0.5">
-                          {f.venue_name || ''}{f.venue_name && f.session ? ' · ' : ''}{f.session || ''}
+            {functions.length > 0 && (function () {
+              var groups = _buildGroups(functions)
+              return (
+                <div className="space-y-2">
+                  {groups.map(function (g) {
+                    var selected = g.event_ids.map(String).indexOf(String(eventId)) !== -1
+                    return (
+                      <button key={g.key} type="button" onClick={function () { selectGroup(g) }}
+                        className={"w-full text-left rounded-lg border p-3 transition-colors " +
+                          (selected ? "border-indigo-500 bg-indigo-50/40 ring-1 ring-indigo-200"
+                                    : "border-gray-200 bg-white hover:border-indigo-300 hover:bg-indigo-50/20")}>
+                        <div className="text-sm font-semibold text-gray-900">
+                          {g.event_name}{g.client_name && <span> — {g.client_name}</span>}
                         </div>
-                      )}
-                      {(f.department || f.contract_no) && (
-                        <div className="flex items-center gap-2 mt-1.5">
-                          {f.department && <span className={"text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full " + deptCls}>{f.department}</span>}
-                          {f.contract_no && <span className="text-[11px] text-gray-500 font-mono">#{f.contract_no}</span>}
+                        {(g.venue_name || g.session) && (
+                          <div className="text-xs text-gray-500 mt-0.5">
+                            {g.venue_name || ''}{g.venue_name && g.session ? ' · ' : ''}{g.session || ''}
+                          </div>
+                        )}
+                        <div className="mt-2 space-y-1">
+                          {g.contracts.map(function (c) {
+                            return (
+                              <div key={c.id} className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px]">
+                                {c.department && <span className={"text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full " + _deptCls(c.department)}>{c.department}</span>}
+                                {c.contract_no && <span className="text-gray-500 font-mono">#{c.contract_no}</span>}
+                                {c.created_user_name && <span className="text-gray-400">· by {c.created_user_name}</span>}
+                              </div>
+                            )
+                          })}
                         </div>
-                      )}
-                      {f.created_user_name && (
-                        <div className="text-[11px] text-gray-400 mt-1">Contract by {f.created_user_name}</div>
-                      )}
-                    </button>
-                  )
-                })}
-              </div>
-            )}
+                      </button>
+                    )
+                  })}
+                </div>
+              )
+            })()}
           </div>
         )}
       </div>
