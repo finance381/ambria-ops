@@ -122,7 +122,7 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
 
   useEffect(function () {
     supabase.from('expense_allocations')
-      .select('id, department, venue_id, sub_venue_id, amount_paise, department_id, expense_type_id, expense_sub_type_id, remarks')
+      .select('id, department, venue_id, sub_venue_id, amount_paise, department_id, expense_type_id, expense_sub_type_id, remarks, source')
       .eq('expense_id', exp.id)
       .then(function (res) {
         var rows = res.data || []
@@ -614,14 +614,17 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
         )
       })()}
 
-      {allocations.length > 0 && (
+      {(function () {
+        var shownAllocations = allocations.filter(function (a) { return a.source !== 'auto_default' })
+        if (shownAllocations.length === 0) return null
+        return (
         <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
           <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
             <p className="text-xs font-bold text-gray-500 uppercase tracking-wider">Allocations</p>
-            <p className="text-xs font-bold text-gray-700">{formatPoints(allocations.reduce(function (s, a) { return s + (a.amount_paise || 0) }, 0))}</p>
+            <p className="text-xs font-bold text-gray-700">{formatPoints(shownAllocations.reduce(function (s, a) { return s + (a.amount_paise || 0) }, 0))}</p>
           </div>
           <div className="divide-y divide-gray-100">
-            {allocations.map(function (a) {
+            {shownAllocations.map(function (a) {
               var deptLabel = a.department_id && allocVenues['d_' + a.department_id] ? allocVenues['d_' + a.department_id] : a.department || '—'
               var typeLabel = a.expense_type_id && allocVenues['et_' + a.expense_type_id] ? allocVenues['et_' + a.expense_type_id] : null
               var subTypeLabel = a.expense_sub_type_id && allocVenues['est_' + a.expense_sub_type_id] ? allocVenues['est_' + a.expense_sub_type_id] : null
@@ -647,7 +650,8 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
             })}
           </div>
         </div>
-      )}
+        )
+      })()}
 
       {gvs.length > 0 && (
         <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
