@@ -36,7 +36,7 @@ function EventLedger(props) {
     if (!dateStr) { setFunctions([]); return }
     setFunctionsLoading(true)
     var { data } = await supabase.from('events')
-      .select('id, event_name, function_date, venue_name, client_name, session, agreed_cash_paise, agreed_bank_paise')
+      .select('id, event_name, function_date, venue_name, client_name, session, department, created_user_name, agreed_cash_paise, agreed_bank_paise')
       .eq('function_date', dateStr)
       .order('event_name')
     setFunctions(data || [])
@@ -136,7 +136,14 @@ function EventLedger(props) {
                 className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-indigo-300"
                 style={{ fontSize: '16px' }}>
                 <option value="">Select function...</option>
-                {functions.map(function (f) { return <option key={f.id} value={String(f.id)}>{f.event_name + (f.client_name ? ' — ' + f.client_name : '') + ' · ' + (f.venue_name || '')}</option> })}
+                {functions.map(function (f) {
+                  var label = f.event_name
+                  if (f.client_name) label += ' — ' + f.client_name
+                  if (f.venue_name) label += ' · ' + f.venue_name
+                  if (f.department) label += ' · ' + f.department
+                  if (f.created_user_name) label += ' · by ' + f.created_user_name
+                  return <option key={f.id} value={String(f.id)}>{label}</option>
+                })}
               </select>
             )}
           </div>
