@@ -156,6 +156,45 @@ function CostTransfers({ profile }) {
     return t
   }
 
+  function partyMeta(row, side) {
+    if (row[side + '_party_type'] !== 'expense') return null
+    var meta = row[side + '_meta'] || {}
+    var subId = row[side + '_expense_sub_type_id']
+    if (!subId) return null
+    var picked = expSubTypes.find(function (x) { return x.id === subId })
+    if (!picked || !Array.isArray(picked.extra_fields)) return null
+    var items = []
+    picked.extra_fields.forEach(function (f) {
+      if (f.type !== 'lookup' || !f.source) return
+      var val = meta[f.key]
+      if (val === '' || val == null) return
+      var label = ''
+      if (f.source === 'vendors') {
+        var vd = vendors.find(function (x) { return String(x.id) === String(val) })
+        label = vd ? vd.name : ('#' + val)
+      } else if (f.source === 'venues') {
+        var vn = venues.find(function (x) { return String(x.id) === String(val) })
+        label = vn ? (vn.code ? vn.code + ' — ' + vn.name : vn.name) : ('#' + val)
+      } else if (f.source === 'job_departments') {
+        var emp = employees.find(function (x) { return String(x.id) === String(val) })
+        label = emp ? emp.full_name : ('#' + val)
+      }
+      if (label) items.push({ label: f.label, value: label })
+    })
+    if (items.length === 0) return null
+    return (
+      <div className="mt-1 space-y-0.5">
+        {items.map(function (it, i) {
+          return (
+            <div key={i} className="text-[10px] text-gray-500">
+              <span className="font-medium">{it.label}:</span> {it.value}
+            </div>
+          )
+        })}
+      </div>
+    )
+  }
+
   function updForm(patch) {
     setForm(function (p) { return Object.assign({}, p, patch) })
   }
@@ -352,8 +391,8 @@ function CostTransfers({ profile }) {
                 return (
                   <tr key={r.id} className={isReversed ? "bg-gray-50 text-gray-400" : ""}>
                     <td className="px-3 py-2 text-xs whitespace-nowrap">{r.effective_date}</td>
-                    <td className="px-3 py-2 text-xs">{partyLabel(r, 'from')}</td>
-                    <td className="px-3 py-2 text-xs">{partyLabel(r, 'to')}</td>
+                    <td className="px-3 py-2 text-xs">{partyLabel(r, 'from')}{partyMeta(r, 'from')}</td>
+                    <td className="px-3 py-2 text-xs">{partyLabel(r, 'to')}{partyMeta(r, 'to')}</td>
                     <td className="px-3 py-2 text-right font-mono text-xs whitespace-nowrap">
                       Rs {(r.amount_paise / 100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                     </td>
