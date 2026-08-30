@@ -21,6 +21,7 @@ function Users({ profile }) {
   var [auditeeSearch, setAuditeeSearch] = useState('')
   var [editPhone, setEditPhone] = useState('')
   var [editValue, setEditValue] = useState({ mobile: [], desktop: [], scopes: {} })
+  var [editVenueIds, setEditVenueIds] = useState([])
   var [editActive, setEditActive] = useState(true)
   var [editCatIds, setEditCatIds] = useState([])
   var [editSubCatIds, setEditSubCatIds] = useState([])
@@ -61,6 +62,7 @@ function Users({ profile }) {
   var [editSubDeptIds, setEditSubDeptIds] = useState([])
   var [editEventDeptIds, setEditEventDeptIds] = useState([])
   var [departments, setDepartments] = useState([])
+  var [venues, setVenues] = useState([])
   var [roles, setRoles] = useState(DEFAULT_ROLES)
   var [roleSearch, setRoleSearch] = useState('')
   var [roleDropOpen, setRoleDropOpen] = useState(false)
@@ -111,6 +113,7 @@ function Users({ profile }) {
         event_dept_ids: p.event_dept_ids || [],
         expense_type_ids: p.expense_type_ids || [],
         expense_sub_type_ids: p.expense_sub_type_ids || [],
+        venue_ids: p.venue_ids || [],
         active: null,
       }
     }))
@@ -118,7 +121,7 @@ function Users({ profile }) {
   }
 
   async function loadLookups() {
-    var [catRes, subCatRes, subDeptRes, deptRes, etRes, estRes, rdRes] = await Promise.all([
+    var [catRes, subCatRes, subDeptRes, deptRes, etRes, estRes, rdRes, venueRes] = await Promise.all([
       supabase.from('categories').select('id, name, sub_department_id').order('name'),
       supabase.from('sub_categories').select('id, name, category_id').order('name'),
       supabase.from('sub_departments').select('id, name, department_id, active').order('name'),
@@ -126,6 +129,7 @@ function Users({ profile }) {
       supabase.from('expense_types').select('id, name, icon, department_id, sub_department_id').eq('active', true).order('sort_order').order('name'),
       supabase.from('expense_sub_types').select('id, name, expense_type_id').eq('active', true).order('sort_order').order('name'),
       supabase.from('role_defaults').select('role, permissions, mobile_permissions, desktop_permissions, data_scopes'),
+      supabase.from('venues').select('id, code, name, active').eq('active', true).order('id'),
     ])
     setCategories(catRes.data || [])
     setSubCategories(subCatRes.data || [])
@@ -133,6 +137,7 @@ function Users({ profile }) {
     setDepartments(deptRes.data || [])
     setExpenseTypes(etRes.data || [])
     setExpenseSubTypes(estRes.data || [])
+    setVenues(venueRes.data || [])
     var rdMap = {}
     ;(rdRes.data || []).forEach(function (r) {
       rdMap[r.role] = {
@@ -174,6 +179,7 @@ function Users({ profile }) {
       desktop: user.desktop_permissions || [],
       scopes: user.data_scopes || {},
     })
+    setEditVenueIds(user.venue_ids || [])
     setEditActive(user.active)
     setEditCatIds(user.category_ids || [])
     setEditSubCatIds(user.sub_category_ids || [])
@@ -436,6 +442,7 @@ function Users({ profile }) {
         mobile_permissions: editValue.mobile,
         desktop_permissions: editValue.desktop,
         data_scopes: editValue.scopes,
+        venue_ids: editVenueIds,
         category_ids: editCatIds,
         sub_category_ids: editSubCatIds,
         sub_department_ids: editSubDeptIds,
@@ -454,6 +461,7 @@ function Users({ profile }) {
         mobile_permissions: editValue.mobile,
         desktop_permissions: editValue.desktop,
         data_scopes: editValue.scopes,
+        venue_ids: editVenueIds,
         active: editActive,
         category_ids: editCatIds,
         sub_category_ids: editSubCatIds,
@@ -547,6 +555,7 @@ function Users({ profile }) {
       mobile_permissions: _seedMobile,
       desktop_permissions: _seedDesktop,
       data_scopes: _seedScopes,
+      venue_ids: [],
     })
     if (err) {
       setError(err.message)
@@ -1224,6 +1233,41 @@ function Users({ profile }) {
                   )
                 })()}
               </div>
+              {venues.length > 0 && (
+                <div className="mb-3 bg-gray-50 border border-gray-200 rounded-lg p-2.5">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-xs font-semibold text-gray-700">Venue access</label>
+                    <span className="text-[10px] text-gray-400">
+                      {editVenueIds.length === 0 ? 'No restriction' : editVenueIds.length + ' selected'}
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {venues.map(function (v) {
+                      var on = editVenueIds.indexOf(v.id) >= 0
+                      return (
+                        <button key={v.id} type="button"
+                          onClick={function () {
+                            if (on) {
+                              setEditVenueIds(editVenueIds.filter(function (id) { return id !== v.id }))
+                            } else {
+                              setEditVenueIds(editVenueIds.concat([v.id]))
+                            }
+                          }}
+                          className={"px-2 py-0.5 rounded-md border transition-colors " +
+                            (on
+                              ? "bg-indigo-100 border-indigo-300 text-indigo-800 font-semibold"
+                              : "bg-white border-gray-200 text-gray-500 hover:bg-gray-50")}
+                          style={{ fontSize: '11px' }}>
+                          {v.code || v.name}
+                        </button>
+                      )
+                    })}
+                  </div>
+                  <p className="text-[10px] text-gray-400 mt-1.5">
+                    Restricts rows visible under any "My venue" scope chip below. Empty = all venues.
+                  </p>
+                </div>
+              )}
               <PermMatrix value={editValue} onChange={setEditValue} />
             </div>
             </div>)}
