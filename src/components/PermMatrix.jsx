@@ -15,11 +15,16 @@ function Toggle(props) {
   }
   return (
     <button type="button" onClick={props.onClick} disabled={props.readOnly}
-      className={"w-8 h-4 rounded-full transition-colors relative inline-block " +
+      style={{ width: '32px', height: '18px' }}
+      className={"rounded-full transition-colors relative inline-block overflow-hidden " +
         (props.on ? "bg-indigo-500" : "bg-gray-300") +
         (props.readOnly ? " opacity-60 cursor-not-allowed" : " cursor-pointer")}>
-      <span className={"absolute top-0.5 w-3 h-3 bg-white rounded-full shadow transition-transform " +
-        (props.on ? "translate-x-4" : "translate-x-0.5")} />
+      <span
+        style={Object.assign(
+          { width: '14px', height: '14px', top: '2px', transition: 'left 0.15s, right 0.15s' },
+          props.on ? { right: '2px' } : { left: '2px' }
+        )}
+        className="absolute bg-white rounded-full shadow" />
     </button>
   )
 }

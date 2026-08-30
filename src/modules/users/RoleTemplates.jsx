@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import Modal from '../../components/ui/Modal'
 import { logActivity } from '../../lib/logger'
-import { PERM_GROUPS, DEFAULT_ROLES, countActiveFeatures } from '../../lib/permissions'
+import { DEFAULT_ROLES, countActiveFeatures, expandToLegacy, normalizePerms } from '../../lib/permissions'
+import PermMatrix from '../../components/PermMatrix'
 
 var ROLE_COLORS = {
   admin: 'bg-purple-100 text-purple-700 border-purple-200',
@@ -22,7 +23,7 @@ function RoleTemplates({ profile }) {
 
   // Edit modal
   var [editRole, setEditRole] = useState(null)
-  var [editPerms, setEditPerms] = useState([])
+  var [editValue, setEditValue] = useState({ mobile: [], desktop: [], scopes: {} })
 
   // Add-role modal
   var [addOpen, setAddOpen] = useState(false)
@@ -37,7 +38,7 @@ function RoleTemplates({ profile }) {
   async function load() {
     setLoading(true); setError('')
     var [rdRes, profRes] = await Promise.all([
-      supabase.from('role_defaults').select('role, permissions, updated_at, updated_by'),
+      supabase.from('role_defaults').select('role, permissions, mobile_permissions, desktop_permissions, data_scopes, updated_at, updated_by'),
       supabase.from('profiles').select('role, active'),
     ])
     if (rdRes.error) { setError(rdRes.error.message); setLoading(false); return }
@@ -76,30 +77,32 @@ function RoleTemplates({ profile }) {
   // ═══ EDIT ═══
   function openEdit(row) {
     setEditRole(row.role)
-    setEditPerms((row.permissions || []).slice())
-    setError('')
-  }
-
-  function togglePerm(k) {
-    setEditPerms(function (prev) {
-      if (prev.indexOf(k) >= 0) return prev.filter(function (p) { return p !== k })
-      return prev.concat([k])
+    setEditValue({
+      mobile: (row.mobile_permissions || []).slice(),
+      desktop: (row.desktop_permissions || []).slice(),
+      scopes: Object.assign({}, row.data_scopes || {}),
     })
+    setError('')
   }
 
   async function saveTemplate() {
     if (saving) return
     if (!editRole) return
     setSaving(true); setError('')
+    var _newUnion = editValue.mobile.slice()
+    editValue.desktop.forEach(function (k) { if (_newUnion.indexOf(k) === -1) _newUnion.push(k) })
     var res = await supabase.from('role_defaults').upsert({
       role: editRole,
-      permissions: editPerms,
+      permissions: expandToLegacy(_newUnion),
+      mobile_permissions: editValue.mobile,
+      desktop_permissions: editValue.desktop,
+      data_scopes: editValue.scopes,
       updated_by: profile.id,
       updated_at: new Date().toISOString(),
     }, { onConflict: 'role' }).select()
     if (res.error) { setError(res.error.message); setSaving(false); return }
-    try { await logActivity('ROLE_TEMPLATE_UPDATE', editRole + ' → ' + editPerms.length + ' perms') } catch (_) {}
-    setEditRole(null); setEditPerms([])
+    try { await logActivity('ROLE_TEMPLATE_UPDATE', editRole + ' → ' + editValue.mobile.length + 'm/' + editValue.desktop.length + 'd perms') } catch (_) {}
+    setEditRole(null); setEditValue({ mobile: [], desktop: [], scopes: {} })
     load()
     setSaving(false)
   }
@@ -109,11 +112,20 @@ function RoleTemplates({ profile }) {
     if (saving) return
     if (!bulkTarget) return
     setSaving(true); setError(''); setBulkResult('')
-    var seed = (bulkTarget.permissions || []).slice()
-    if (seed.indexOf('feature_my_profile') === -1) seed.push('feature_my_profile')
+    var _bMob = (bulkTarget.mobile_permissions  || []).slice()
+    var _bDsk = (bulkTarget.desktop_permissions || []).slice()
+    if (_bMob.indexOf('personal.profile') === -1) _bMob.push('personal.profile')
+    if (_bDsk.indexOf('personal.profile') === -1) _bDsk.push('personal.profile')
+    var _bUnion = _bMob.slice()
+    _bDsk.forEach(function (k) { if (_bUnion.indexOf(k) === -1) _bUnion.push(k) })
 
     var res = await supabase.from('profiles')
-      .update({ permissions: seed })
+      .update({
+        permissions: expandToLegacy(_bUnion),
+        mobile_permissions: _bMob,
+        desktop_permissions: _bDsk,
+        data_scopes: bulkTarget.data_scopes || {},
+      })
       .eq('role', bulkTarget.role)
       .select('id')
     if (res.error) { setError(res.error.message); setSaving(false); return }
@@ -135,6 +147,9 @@ function RoleTemplates({ profile }) {
     var res = await supabase.from('role_defaults').insert({
       role: name,
       permissions: [],
+      mobile_permissions: [],
+      desktop_permissions: [],
+      data_scopes: {},
       updated_by: profile.id,
     })
     if (res.error) { setError(res.error.message); setSaving(false); return }
@@ -178,7 +193,9 @@ function RoleTemplates({ profile }) {
       {/* Cards grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         {templates.map(function (t) {
-          var featCount = countActiveFeatures(t.permissions || [])
+          var _tUnion = (t.mobile_permissions || []).slice()
+          ;(t.desktop_permissions || []).forEach(function (k) { if (_tUnion.indexOf(k) === -1) _tUnion.push(k) })
+          var featCount = countActiveFeatures(_tUnion.length > 0 ? _tUnion : (t.permissions || []))
           var badge = ROLE_COLORS[t.role] || 'bg-gray-100 text-gray-600 border-gray-200'
           return (
             <div key={t.role} className="bg-white rounded-lg border border-gray-200 p-4 flex flex-col gap-3">
@@ -204,7 +221,7 @@ function RoleTemplates({ profile }) {
                   <span className="text-2xl font-bold text-gray-800">{featCount}</span>
                   <span className="text-[11px] text-gray-400">feature{featCount === 1 ? '' : 's'} enabled</span>
                 </div>
-                <p className="text-[10px] text-gray-400 mt-0.5">{(t.permissions || []).length} raw perm keys</p>
+                <p className="text-[10px] text-gray-400 mt-0.5">{(t.mobile_permissions || []).length}m · {(t.desktop_permissions || []).length}d keys</p>
               </div>
 
               <div className="flex gap-2 mt-auto">
@@ -229,90 +246,8 @@ function RoleTemplates({ profile }) {
         title={'Edit template: ' + (editRole || '')} wide>
         {editRole && (
           <form onSubmit={function (e) { e.preventDefault(); saveTemplate() }} className="flex flex-col" style={{ minHeight: '400px' }}>
-            <div className="flex-1 p-4 overflow-y-auto space-y-2">
-              {PERM_GROUPS.map(function (grp) {
-                var allChildKeys = []
-                grp.children.forEach(function (ch) { ch.grants.forEach(function (g) { if (allChildKeys.indexOf(g) === -1) allChildKeys.push(g) }) })
-                var groupOn = allChildKeys.every(function (g) { return editPerms.indexOf(g) >= 0 })
-                var groupPartial = !groupOn && allChildKeys.some(function (g) { return editPerms.indexOf(g) >= 0 })
-
-                return (
-                  <div key={grp.group} className="rounded-xl border border-gray-200 overflow-hidden">
-                    <button type="button" onClick={function () {
-                      if (groupOn) {
-                        var rm = []
-                        grp.children.forEach(function (ch) {
-                          ch.grants.forEach(function (g) { rm.push(g) });
-                          (ch.optional || []).forEach(function (o) { rm.push(o.key) })
-                        })
-                        setEditPerms(function (prev) { return prev.filter(function (p) { return rm.indexOf(p) === -1 }) })
-                      } else {
-                        setEditPerms(function (prev) {
-                          var m = prev.slice()
-                          grp.children.forEach(function (ch) { ch.grants.forEach(function (g) { if (m.indexOf(g) === -1) m.push(g) }) })
-                          return m
-                        })
-                      }
-                    }} className={"w-full flex items-center justify-between px-4 py-3 " + (groupOn ? "bg-indigo-50" : groupPartial ? "bg-amber-50" : "bg-gray-50")}>
-                      <div className="flex items-center gap-2">
-                        <span className="text-lg">{grp.icon}</span>
-                        <span className="text-sm font-bold text-gray-800">{grp.group}</span>
-                        <span className="text-[10px] text-gray-400 ml-1">{grp.children.length}</span>
-                      </div>
-                      <div className={"w-10 h-6 rounded-full transition-colors relative " + (groupOn ? "bg-indigo-600" : groupPartial ? "bg-amber-400" : "bg-gray-300")}>
-                        <div className={"absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform " + (groupOn || groupPartial ? "translate-x-4" : "translate-x-0.5")} />
-                      </div>
-                    </button>
-                    {(groupOn || groupPartial) && (
-                      <div className="border-t border-gray-100 px-3 py-2 space-y-1 bg-white">
-                        {grp.children.map(function (feat) {
-                          var isOn = feat.grants.every(function (g) { return editPerms.indexOf(g) >= 0 })
-                          return (
-                            <div key={feat.key}>
-                              <button type="button" onClick={function () {
-                                if (isOn) {
-                                  var ak = feat.grants.concat((feat.optional || []).map(function (o) { return o.key }))
-                                  setEditPerms(function (prev) { return prev.filter(function (p) { return ak.indexOf(p) === -1 }) })
-                                } else {
-                                  setEditPerms(function (prev) {
-                                    var m = prev.slice()
-                                    feat.grants.forEach(function (g) { if (m.indexOf(g) === -1) m.push(g) })
-                                    return m
-                                  })
-                                }
-                              }} className="w-full flex items-center justify-between py-2 px-2 rounded-lg hover:bg-gray-50">
-                                <div className="flex-1 text-left">
-                                  <div className={"text-[13px] font-medium " + (isOn ? "text-indigo-700" : "text-gray-500")}>{feat.label}</div>
-                                  {feat.note && (
-                                    <div className="text-[10px] text-amber-600 mt-0.5">ℹ️ {feat.note}</div>
-                                  )}
-                                </div>
-                                <div className={"w-8 h-5 rounded-full transition-colors relative " + (isOn ? "bg-indigo-500" : "bg-gray-300")}>
-                                  <div className={"absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform " + (isOn ? "translate-x-3" : "translate-x-0.5")} />
-                                </div>
-                              </button>
-                              {isOn && feat.optional && feat.optional.length > 0 && (
-                                <div className="pl-4 pb-1 flex flex-wrap gap-x-4 gap-y-1">
-                                  {feat.optional.map(function (opt) {
-                                    var optChecked = editPerms.indexOf(opt.key) >= 0
-                                    return (
-                                      <label key={opt.key} className="flex items-center gap-1.5 text-gray-600 cursor-pointer">
-                                        <input type="checkbox" checked={optChecked} onChange={function () { togglePerm(opt.key) }}
-                                          className="w-3 h-3 accent-indigo-600" />
-                                        <span className="text-[11px]">{opt.label}</span>
-                                      </label>
-                                    )
-                                  })}
-                                </div>
-                              )}
-                            </div>
-                          )
-                        })}
-                      </div>
-                    )}
-                  </div>
-                )
-              })}
+            <div className="flex-1 p-4 overflow-y-auto">
+              <PermMatrix value={editValue} onChange={setEditValue} />
             </div>
 
             {error && (
@@ -321,10 +256,11 @@ function RoleTemplates({ profile }) {
 
             <div className="border-t border-gray-200 bg-white p-3 flex justify-between items-center gap-3 flex-shrink-0">
               <span className="text-[11px] text-gray-400">
-                {editPerms.length} perm{editPerms.length === 1 ? '' : 's'} · {countActiveFeatures(editPerms)} feature{countActiveFeatures(editPerms) === 1 ? '' : 's'}
+                {editValue.mobile.length}m · {editValue.desktop.length}d keys ·
+                {' '}{countActiveFeatures(editValue.mobile.concat(editValue.desktop.filter(function (k) { return editValue.mobile.indexOf(k) === -1 })))} features
               </span>
               <div className="flex gap-2">
-                <button type="button" onClick={function () { setEditRole(null); setEditPerms([]) }}
+                <button type="button" onClick={function () { setEditRole(null); setEditValue({ mobile: [], desktop: [], scopes: {} }) }}
                   className="px-4 py-2 text-sm text-gray-600 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors">
                   Cancel
                 </button>
@@ -374,7 +310,7 @@ function RoleTemplates({ profile }) {
             <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
               <p className="text-sm text-amber-800 font-medium">⚠️ This will overwrite individual permissions.</p>
               <p className="text-[12px] text-amber-700 mt-1">
-                <strong>{bulkTarget.user_count}</strong> user{bulkTarget.user_count === 1 ? '' : 's'} with role <strong>{bulkTarget.role}</strong> will have their <code>permissions</code> array replaced with the template ({(bulkTarget.permissions || []).length} keys). Any per-user overrides are lost.
+                <strong>{bulkTarget.user_count}</strong> user{bulkTarget.user_count === 1 ? '' : 's'} with role <strong>{bulkTarget.role}</strong> will have their mobile / desktop permission arrays and data scopes replaced with the template ({(bulkTarget.mobile_permissions || []).length}m / {(bulkTarget.desktop_permissions || []).length}d keys). Any per-user overrides are lost.
               </p>
             </div>
             {bulkResult && (
