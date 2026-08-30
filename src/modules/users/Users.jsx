@@ -654,9 +654,24 @@ function Users({ profile }) {
                   <td className="px-4 py-3 text-gray-500 text-[12px]">{user.email || '—'}</td>
                   <td className="px-4 py-3 text-gray-500 text-[12px]">{user.phone || '—'}</td>
                   <td className="px-4 py-3">
-                    <span className={"text-[11px] font-bold uppercase px-2 py-0.5 rounded-full " + (roleColors[user.role] || 'bg-gray-100 text-gray-600')}>
-                      {user.role}
-                    </span>
+                    <div className="flex flex-col gap-1 items-start">
+                      <span className={"text-[11px] font-bold uppercase px-2 py-0.5 rounded-full " + (roleColors[user.role] || 'bg-gray-100 text-gray-600')}>
+                        {user.role}
+                      </span>
+                      {(user.venue_ids || []).length > 0 && (
+                        <div className="flex flex-wrap gap-0.5">
+                          {(user.venue_ids || []).map(function (vid) {
+                            var v = venues.find(function (x) { return x.id === vid })
+                            if (!v) return null
+                            return (
+                              <span key={vid}
+                                className="text-[9px] font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 px-1 py-0 rounded"
+                                title={v.name}>{v.code}</span>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </div>
                   </td>
                   <td className="px-4 py-3">
                     {user._source === 'approved' ? (

@@ -24,6 +24,8 @@ function RoleTemplates({ profile }) {
   // Edit modal
   var [editRole, setEditRole] = useState(null)
   var [editValue, setEditValue] = useState({ mobile: [], desktop: [], scopes: {} })
+  var [editVenueIds, setEditVenueIds] = useState([])
+  var [venues, setVenues] = useState([])
 
   // Add-role modal
   var [addOpen, setAddOpen] = useState(false)
@@ -37,10 +39,12 @@ function RoleTemplates({ profile }) {
 
   async function load() {
     setLoading(true); setError('')
-    var [rdRes, profRes] = await Promise.all([
-      supabase.from('role_defaults').select('role, permissions, mobile_permissions, desktop_permissions, data_scopes, updated_at, updated_by'),
+    var [rdRes, profRes, venueRes] = await Promise.all([
+      supabase.from('role_defaults').select('role, permissions, mobile_permissions, desktop_permissions, data_scopes, venue_ids, updated_at, updated_by'),
       supabase.from('profiles').select('role, active'),
+      supabase.from('venues').select('id, code, name, active').eq('active', true).order('id'),
     ])
+    setVenues(venueRes.data || [])
     if (rdRes.error) { setError(rdRes.error.message); setLoading(false); return }
 
     // Distinct roles across role_defaults + profiles + DEFAULT_ROLES
@@ -82,6 +86,7 @@ function RoleTemplates({ profile }) {
       desktop: (row.desktop_permissions || []).slice(),
       scopes: Object.assign({}, row.data_scopes || {}),
     })
+    setEditVenueIds((row.venue_ids || []).slice())
     setError('')
   }
 
@@ -97,12 +102,13 @@ function RoleTemplates({ profile }) {
       mobile_permissions: editValue.mobile,
       desktop_permissions: editValue.desktop,
       data_scopes: editValue.scopes,
+      venue_ids: editVenueIds,
       updated_by: profile.id,
       updated_at: new Date().toISOString(),
     }, { onConflict: 'role' }).select()
     if (res.error) { setError(res.error.message); setSaving(false); return }
-    try { await logActivity('ROLE_TEMPLATE_UPDATE', editRole + ' → ' + editValue.mobile.length + 'm/' + editValue.desktop.length + 'd perms') } catch (_) {}
-    setEditRole(null); setEditValue({ mobile: [], desktop: [], scopes: {} })
+    try { await logActivity('ROLE_TEMPLATE_UPDATE', editRole + ' → ' + editValue.mobile.length + 'm/' + editValue.desktop.length + 'd perms, ' + editVenueIds.length + ' venues') } catch (_) {}
+    setEditRole(null); setEditValue({ mobile: [], desktop: [], scopes: {} }); setEditVenueIds([])
     load()
     setSaving(false)
   }
@@ -125,6 +131,7 @@ function RoleTemplates({ profile }) {
         mobile_permissions: _bMob,
         desktop_permissions: _bDsk,
         data_scopes: bulkTarget.data_scopes || {},
+        venue_ids: bulkTarget.venue_ids || [],
       })
       .eq('role', bulkTarget.role)
       .select('id')
@@ -150,6 +157,7 @@ function RoleTemplates({ profile }) {
       mobile_permissions: [],
       desktop_permissions: [],
       data_scopes: {},
+      venue_ids: [],
       updated_by: profile.id,
     })
     if (res.error) { setError(res.error.message); setSaving(false); return }
@@ -195,6 +203,7 @@ function RoleTemplates({ profile }) {
         {templates.map(function (t) {
           var _tUnion = (t.mobile_permissions || []).slice()
           ;(t.desktop_permissions || []).forEach(function (k) { if (_tUnion.indexOf(k) === -1) _tUnion.push(k) })
+          var _tVenues = (t.venue_ids || [])
           var featCount = countActiveFeatures(_tUnion.length > 0 ? _tUnion : (t.permissions || []))
           var badge = ROLE_COLORS[t.role] || 'bg-gray-100 text-gray-600 border-gray-200'
           return (
@@ -247,6 +256,41 @@ function RoleTemplates({ profile }) {
         {editRole && (
           <form onSubmit={function (e) { e.preventDefault(); saveTemplate() }} className="flex flex-col" style={{ minHeight: '400px' }}>
             <div className="flex-1 p-4 overflow-y-auto">
+              {venues.length > 0 && (
+                <div className="mb-3 bg-gray-50 border border-gray-200 rounded-lg p-2.5">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-xs font-semibold text-gray-700">Default venue access</label>
+                    <span className="text-[10px] text-gray-400">
+                      {editVenueIds.length === 0 ? 'No restriction' : editVenueIds.length + ' selected'}
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {venues.map(function (v) {
+                      var on = editVenueIds.indexOf(v.id) >= 0
+                      return (
+                        <button key={v.id} type="button"
+                          onClick={function () {
+                            if (on) {
+                              setEditVenueIds(editVenueIds.filter(function (id) { return id !== v.id }))
+                            } else {
+                              setEditVenueIds(editVenueIds.concat([v.id]))
+                            }
+                          }}
+                          className={"px-2 py-0.5 rounded-md border transition-colors " +
+                            (on
+                              ? "bg-indigo-100 border-indigo-300 text-indigo-800 font-semibold"
+                              : "bg-white border-gray-200 text-gray-500 hover:bg-gray-50")}
+                          style={{ fontSize: '11px' }}>
+                          {v.code || v.name}
+                        </button>
+                      )
+                    })}
+                  </div>
+                  <p className="text-[10px] text-gray-400 mt-1.5">
+                    Applied to users on "Apply to all" bulk sync. Empty = all venues.
+                  </p>
+                </div>
+              )}
               <PermMatrix value={editValue} onChange={setEditValue} />
             </div>
 
@@ -260,7 +304,7 @@ function RoleTemplates({ profile }) {
                 {' '}{countActiveFeatures(editValue.mobile.concat(editValue.desktop.filter(function (k) { return editValue.mobile.indexOf(k) === -1 })))} features
               </span>
               <div className="flex gap-2">
-                <button type="button" onClick={function () { setEditRole(null); setEditValue({ mobile: [], desktop: [], scopes: {} }) }}
+                <button type="button" onClick={function () { setEditRole(null); setEditValue({ mobile: [], desktop: [], scopes: {} }); setEditVenueIds([]) }}
                   className="px-4 py-2 text-sm text-gray-600 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors">
                   Cancel
                 </button>
