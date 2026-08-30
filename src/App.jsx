@@ -5,6 +5,7 @@ import AdminShell from './components/layout/AdminShell'
 import PublicEmployeeForm from './pages/PublicEmployeeForm'
 import { LangProvider } from './lib/i18n.jsx'
 import UpdateBanner from './components/UpdateBanner'
+import { expandToLegacy } from './lib/permissions'
 
 // Safety net: if a lazy chunk 404s (stale bundle after deploy), reload once.
 // Guarded to prevent an infinite reload loop if the failure is not deploy-related.
@@ -39,11 +40,26 @@ function App() {
     return <Login />
   }
 
-  if (params.get('view') === 'admin' && (profile.role === 'admin' || profile.role === 'auditor')) {
-    return <LangProvider><AdminShell profile={profile} onSignOut={signOut} /><UpdateBanner /></LangProvider>
+  // Per-surface profile enrichment (Phase 3 / v98).
+  // `permissions` (legacy array) is what all existing perms.indexOf(...) checks
+  // read. We rebuild it per-surface from mobile_permissions / desktop_permissions
+  // so mobile users only see mobile-scoped features and vice versa.
+  // `permsNew` exposes the raw new-key array for granular checks (LedgersHub).
+  // `dataScopes` exposes the JSONB for row-scope-aware components.
+  function surfaceProfile(p, surface) {
+    var raw = (surface === 'desktop' ? p.desktop_permissions : p.mobile_permissions) || []
+    return Object.assign({}, p, {
+      permissions: expandToLegacy(raw),
+      permsNew:    raw,
+      dataScopes:  p.data_scopes || {},
+    })
   }
 
-  return <LangProvider><Shell profile={profile} onSignOut={signOut} /><UpdateBanner /></LangProvider>
+  if (params.get('view') === 'admin' && (profile.role === 'admin' || profile.role === 'auditor')) {
+    return <LangProvider><AdminShell profile={surfaceProfile(profile, 'desktop')} onSignOut={signOut} /><UpdateBanner /></LangProvider>
+  }
+
+  return <LangProvider><Shell profile={surfaceProfile(profile, 'mobile')} onSignOut={signOut} /><UpdateBanner /></LangProvider>
 }
 
 export default App

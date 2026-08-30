@@ -3,7 +3,8 @@ import { supabase } from '../../lib/supabase'
 import Modal from '../../components/ui/Modal'
 import { logActivity } from '../../lib/logger'
 import { prepUpload } from '../../lib/uploadHelper'
-import { PERM_GROUPS, DEFAULT_ROLES } from '../../lib/permissions'
+import { DEFAULT_ROLES, expandToLegacy } from '../../lib/permissions'
+import PermMatrix from '../../components/PermMatrix'
 
 function Users({ profile }) {
   var [users, setUsers] = useState([])
@@ -19,7 +20,7 @@ function Users({ profile }) {
   var [originalAuditeeIds, setOriginalAuditeeIds] = useState([])
   var [auditeeSearch, setAuditeeSearch] = useState('')
   var [editPhone, setEditPhone] = useState('')
-  var [editPerms, setEditPerms] = useState([])
+  var [editValue, setEditValue] = useState({ mobile: [], desktop: [], scopes: {} })
   var [editActive, setEditActive] = useState(true)
   var [editCatIds, setEditCatIds] = useState([])
   var [editSubCatIds, setEditSubCatIds] = useState([])
@@ -124,7 +125,7 @@ function Users({ profile }) {
       supabase.from('departments').select('id, name').eq('active', true).order('name'),
       supabase.from('expense_types').select('id, name, icon, department_id, sub_department_id').eq('active', true).order('sort_order').order('name'),
       supabase.from('expense_sub_types').select('id, name, expense_type_id').eq('active', true).order('sort_order').order('name'),
-      supabase.from('role_defaults').select('role, permissions'),
+      supabase.from('role_defaults').select('role, permissions, mobile_permissions, desktop_permissions, data_scopes'),
     ])
     setCategories(catRes.data || [])
     setSubCategories(subCatRes.data || [])
@@ -133,7 +134,14 @@ function Users({ profile }) {
     setExpenseTypes(etRes.data || [])
     setExpenseSubTypes(estRes.data || [])
     var rdMap = {}
-    ;(rdRes.data || []).forEach(function (r) { rdMap[r.role] = r.permissions || [] })
+    ;(rdRes.data || []).forEach(function (r) {
+      rdMap[r.role] = {
+        mobile: r.mobile_permissions || [],
+        desktop: r.desktop_permissions || [],
+        scopes: r.data_scopes || {},
+        legacy: r.permissions || [],
+      }
+    })
     setRoleDefaultsMap(rdMap)
   }
 
@@ -161,7 +169,11 @@ function Users({ profile }) {
       setEditAuditeeIds([]); setOriginalAuditeeIds([])
     }
     setEditPhone(user.phone || '')
-    setEditPerms(user.permissions || [])
+    setEditValue({
+      mobile: user.mobile_permissions || [],
+      desktop: user.desktop_permissions || [],
+      scopes: user.data_scopes || {},
+    })
     setEditActive(user.active)
     setEditCatIds(user.category_ids || [])
     setEditSubCatIds(user.sub_category_ids || [])
@@ -232,13 +244,6 @@ function Users({ profile }) {
     } finally {
       setSigUploading(false)
     }
-  }
-
-  function togglePerm(perm) {
-    setEditPerms(function (prev) {
-      if (prev.includes(perm)) return prev.filter(function (p) { return p !== perm })
-      return [...prev, perm]
-    })
   }
 
   function toggleCatId(id) {
@@ -421,11 +426,16 @@ function Users({ profile }) {
 
     var err
     if (editUser._source === 'approved') {
+      var _newUnion = editValue.mobile.slice()
+      editValue.desktop.forEach(function (k) { if (_newUnion.indexOf(k) === -1) _newUnion.push(k) })
       var res = await supabase.from('approved_emails').update({
         name: editUser.name,
         role: editRole,
         phone: editPhone.trim() || null,
-        permissions: editPerms,
+        permissions: expandToLegacy(_newUnion),
+        mobile_permissions: editValue.mobile,
+        desktop_permissions: editValue.desktop,
+        data_scopes: editValue.scopes,
         category_ids: editCatIds,
         sub_category_ids: editSubCatIds,
         sub_department_ids: editSubDeptIds,
@@ -435,10 +445,15 @@ function Users({ profile }) {
       }).eq('email', editUser._email_key)
       err = res.error
     } else {
+      var _newUnion2 = editValue.mobile.slice()
+      editValue.desktop.forEach(function (k) { if (_newUnion2.indexOf(k) === -1) _newUnion2.push(k) })
       var res = await supabase.from('profiles').update({
         role: editRole,
         phone: editPhone.trim() || null,
-        permissions: editPerms,
+        permissions: expandToLegacy(_newUnion2),
+        mobile_permissions: editValue.mobile,
+        desktop_permissions: editValue.desktop,
+        data_scopes: editValue.scopes,
         active: editActive,
         category_ids: editCatIds,
         sub_category_ids: editSubCatIds,
@@ -515,16 +530,23 @@ function Users({ profile }) {
     if (!addName.trim() || !addEmail.trim()) return
     setSaving(true); setError('')
     // Seed from role template if available; otherwise minimal (My Profile only).
-    var seedPerms = (roleDefaultsMap[addRole] && roleDefaultsMap[addRole].length > 0)
-      ? roleDefaultsMap[addRole].slice()
-      : ['feature_my_profile']
-    if (seedPerms.indexOf('feature_my_profile') === -1) seedPerms.push('feature_my_profile')
+    var _seedRD = roleDefaultsMap[addRole]
+    var _seedMobile  = (_seedRD && _seedRD.mobile.length > 0)  ? _seedRD.mobile.slice()  : ['personal.profile']
+    var _seedDesktop = (_seedRD && _seedRD.desktop.length > 0) ? _seedRD.desktop.slice() : ['personal.profile']
+    var _seedScopes  = (_seedRD && _seedRD.scopes) ? Object.assign({}, _seedRD.scopes) : {}
+    if (_seedMobile.indexOf('personal.profile')  === -1) _seedMobile.push('personal.profile')
+    if (_seedDesktop.indexOf('personal.profile') === -1) _seedDesktop.push('personal.profile')
+    var _seedUnion = _seedMobile.slice()
+    _seedDesktop.forEach(function (k) { if (_seedUnion.indexOf(k) === -1) _seedUnion.push(k) })
 
     var { error: err } = await supabase.from('approved_emails').insert({
       email: addEmail.trim().toLowerCase(),
       name: addName.trim(),
       role: addRole,
-      permissions: seedPerms,
+      permissions: expandToLegacy(_seedUnion),
+      mobile_permissions: _seedMobile,
+      desktop_permissions: _seedDesktop,
+      data_scopes: _seedScopes,
     })
     if (err) {
       setError(err.message)
@@ -686,7 +708,7 @@ function Users({ profile }) {
                 { key: 'event', label: 'Event', icon: '📅', count: editEventDeptIds.length },
                 { key: 'expense', label: 'Expense', icon: '💰', count: editSubDeptIds.length + editExpenseTypeIds.length + editExpenseSubTypeIds.length },
                 { key: 'inventory', label: 'Inventory', icon: '📦', count: editCatIds.length + editSubCatIds.length },
-                { key: 'permissions', label: 'Permissions', icon: '🔑', count: editPerms.length },
+                { key: 'permissions', label: 'Permissions', icon: '🔑', count: (editValue.mobile.length + editValue.desktop.length) },
               ].map(function (nav) {
                 var isActive = activePanel === nav.key
                 return (
@@ -1171,120 +1193,39 @@ function Users({ profile }) {
             </div>)}
 
                 {activePanel === 'permissions' && (<div>
-            {/* Permissions — Grouped */}
             <div>
               <div className="flex items-center justify-between mb-2">
                 <label className="block text-sm font-medium text-gray-700">Permissions</label>
                 {(function () {
                   var tpl = roleDefaultsMap[editRole]
-                  if (!tpl || tpl.length === 0) return null
-                  // Show apply button if template differs from current perms.
-                  var same = tpl.length === editPerms.length &&
-                    tpl.every(function (k) { return editPerms.indexOf(k) >= 0 })
-                  if (same) {
+                  if (!tpl) return null
+                  var tplMobileCount  = (tpl.mobile  || []).length
+                  var tplDesktopCount = (tpl.desktop || []).length
+                  if (tplMobileCount === 0 && tplDesktopCount === 0) return null
+                  var sameMobile  = tplMobileCount  === editValue.mobile.length  && tpl.mobile.every(function  (k) { return editValue.mobile.indexOf(k)  >= 0 })
+                  var sameDesktop = tplDesktopCount === editValue.desktop.length && tpl.desktop.every(function (k) { return editValue.desktop.indexOf(k) >= 0 })
+                  var sameScopes  = JSON.stringify(tpl.scopes || {}) === JSON.stringify(editValue.scopes || {})
+                  if (sameMobile && sameDesktop && sameScopes) {
                     return <span className="text-[10px] text-green-600 font-semibold">✓ Matches {editRole} defaults</span>
                   }
                   return (
                     <button type="button"
                       onClick={function () {
                         if (!window.confirm('Overwrite current permissions with the "' + editRole + '" role template? Individual toggles you set will be lost.')) return
-                        var next = tpl.slice()
-                        if (next.indexOf('feature_my_profile') === -1) next.push('feature_my_profile')
-                        setEditPerms(next)
+                        var nextMobile = (tpl.mobile || []).slice()
+                        var nextDesktop = (tpl.desktop || []).slice()
+                        if (nextMobile.indexOf('personal.profile')  === -1) nextMobile.push('personal.profile')
+                        if (nextDesktop.indexOf('personal.profile') === -1) nextDesktop.push('personal.profile')
+                        setEditValue({ mobile: nextMobile, desktop: nextDesktop, scopes: Object.assign({}, tpl.scopes || {}) })
                       }}
                       className="text-[11px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 px-2.5 py-1 rounded-md hover:bg-indigo-100 transition-colors">
-                      ⚡ Apply {editRole} defaults ({tpl.length})
+                      ⚡ Apply {editRole} defaults ({tplMobileCount}m / {tplDesktopCount}d)
                     </button>
                   )
                 })()}
               </div>
-              <div className="space-y-2">
-                {PERM_GROUPS.map(function (grp) {
-                  var allChildKeys = []
-                  grp.children.forEach(function (ch) { ch.grants.forEach(function (g) { if (allChildKeys.indexOf(g) === -1) allChildKeys.push(g) }) })
-                  var groupOn = allChildKeys.every(function (g) { return editPerms.indexOf(g) >= 0 })
-                  var groupPartial = !groupOn && allChildKeys.some(function (g) { return editPerms.indexOf(g) >= 0 })
-
-                  return (
-                    <div key={grp.group} className="rounded-xl border border-gray-200 overflow-hidden">
-                      <button type="button" onClick={function () {
-                        if (groupOn) {
-                          var rm = []
-                          grp.children.forEach(function (ch) {
-                            ch.grants.forEach(function (g) { rm.push(g) });
-                            (ch.optional || []).forEach(function (o) { rm.push(o.key) })
-                          })
-                          setEditPerms(function (prev) { return prev.filter(function (p) { return rm.indexOf(p) === -1 }) })
-                        } else {
-                          setEditPerms(function (prev) {
-                            var m = prev.slice()
-                            grp.children.forEach(function (ch) { ch.grants.forEach(function (g) { if (m.indexOf(g) === -1) m.push(g) }) })
-                            return m
-                          })
-                        }
-                      }} className={"w-full flex items-center justify-between px-4 py-3 " + (groupOn ? "bg-indigo-50" : groupPartial ? "bg-amber-50" : "bg-gray-50")}>
-                        <div className="flex items-center gap-2">
-                          <span className="text-lg">{grp.icon}</span>
-                          <span className="text-sm font-bold text-gray-800">{grp.group}</span>
-                          <span className="text-[10px] text-gray-400 ml-1">{grp.children.length}</span>
-                        </div>
-                        <div className={"w-10 h-6 rounded-full transition-colors relative " + (groupOn ? "bg-indigo-600" : groupPartial ? "bg-amber-400" : "bg-gray-300")}>
-                          <div className={"absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform " + (groupOn || groupPartial ? "translate-x-4" : "translate-x-0.5")} />
-                        </div>
-                      </button>
-                      {(groupOn || groupPartial) && (
-                        <div className="border-t border-gray-100 px-3 py-2 space-y-1 bg-white">
-                          {grp.children.map(function (feat) {
-                            var isOn = feat.grants.every(function (g) { return editPerms.indexOf(g) >= 0 })
-                            return (
-                              <div key={feat.key}>
-                                <button type="button" onClick={function () {
-                                  if (isOn) {
-                                    var ak = feat.grants.concat((feat.optional || []).map(function (o) { return o.key }))
-                                    setEditPerms(function (prev) { return prev.filter(function (p) { return ak.indexOf(p) === -1 }) })
-                                  } else {
-                                    setEditPerms(function (prev) {
-                                      var m = prev.slice()
-                                      feat.grants.forEach(function (g) { if (m.indexOf(g) === -1) m.push(g) })
-                                      return m
-                                    })
-                                  }
-                                }} className="w-full flex items-center justify-between py-2 px-2 rounded-lg hover:bg-gray-50">
-                                  <div className="flex-1 text-left">
-                                    <div className={"text-[13px] font-medium " + (isOn ? "text-indigo-700" : "text-gray-500")}>{feat.label}</div>
-                                    {feat.note && (
-                                      <div className="text-[10px] text-amber-600 mt-0.5">ℹ️ {feat.note}</div>
-                                    )}
-                                  </div>
-                                  <div className={"w-8 h-5 rounded-full transition-colors relative " + (isOn ? "bg-indigo-500" : "bg-gray-300")}>
-                                    <div className={"absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform " + (isOn ? "translate-x-3" : "translate-x-0.5")} />
-                                  </div>
-                                </button>
-                                {isOn && feat.optional && feat.optional.length > 0 && (
-                                  <div className="pl-4 pb-1 flex flex-wrap gap-x-4 gap-y-1">
-                                    {feat.optional.map(function (opt) {
-                                      var optChecked = editPerms.indexOf(opt.key) >= 0
-                                      return (
-                                        <label key={opt.key} className="flex items-center gap-1.5 text-gray-600 cursor-pointer">
-                                          <input type="checkbox" checked={optChecked} onChange={function () { togglePerm(opt.key) }}
-                                            className="w-3 h-3 accent-indigo-600" />
-                                          <span className="text-[11px]">{opt.label}</span>
-                                        </label>
-                                      )
-                                    })}
-                                  </div>
-                                )}
-                              </div>
-                            )
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
+              <PermMatrix value={editValue} onChange={setEditValue} />
             </div>
-
             </div>)}
               </div>
               {/* Universal bottom */}
