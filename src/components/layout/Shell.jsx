@@ -406,6 +406,23 @@ function Shell({ profile, onSignOut }) {
             >
               ⌂
             </a>
+            {(function () {
+              var canDesktop = profile.role === 'admin'
+                            || profile.role === 'auditor'
+                            || (profile.desktop_permissions || []).some(function (k) { return k !== 'personal.profile' })
+              if (!canDesktop) return null
+              return (
+                <a href="?view=admin"
+                  className="text-[11px] px-2 py-1 border border-slate-200 rounded-lg transition-colors no-underline"
+                  style={{ color: '#94A3B8' }}
+                  title="Switch to desktop view"
+                  onMouseEnter={function(e){ e.currentTarget.style.color='#7C3AED'; e.currentTarget.style.borderColor='#DDD6FE' }}
+                  onMouseLeave={function(e){ e.currentTarget.style.color='#94A3B8'; e.currentTarget.style.borderColor='#E2E8F0' }}
+                >
+                  🖥
+                </a>
+              )
+            })()}
             <button
               onClick={onSignOut}
               className="text-[11px] px-2 py-1 border border-slate-200 rounded-lg transition-colors"

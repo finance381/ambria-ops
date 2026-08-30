@@ -55,7 +55,9 @@ function App() {
     })
   }
 
-  if (params.get('view') === 'admin' && (profile.role === 'admin' || profile.role === 'auditor')) {
+  var _isPrivileged = profile.role === 'admin' || profile.role === 'auditor'
+  var _hasDesktopPerms = (profile.desktop_permissions || []).some(function (k) { return k !== 'personal.profile' })
+  if (params.get('view') === 'admin' && (_isPrivileged || _hasDesktopPerms)) {
     return <LangProvider><AdminShell profile={surfaceProfile(profile, 'desktop')} onSignOut={signOut} /><UpdateBanner /></LangProvider>
   }
 

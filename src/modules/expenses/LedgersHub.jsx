@@ -25,9 +25,8 @@ var LEDGERS = [
 function LedgersHub(props) {
   var permsNew = (props.profile && props.profile.permsNew) || []
   var permsLegacy = (props.profile && props.profile.permissions) || []
-  var isAdmin = props.profile && (props.profile.role === 'admin' || props.profile.role === 'auditor')
   var visible = LEDGERS.filter(function (l) {
-    if (!l.perm || isAdmin) return true
+    if (!l.perm) return true
     return hasPerm(permsNew, l.perm) || hasPerm(permsLegacy, l.perm)
   })
   var defaultKey = visible.length > 0 ? visible[0].key : 'expense'
