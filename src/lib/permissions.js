@@ -214,39 +214,7 @@ export function getDataScope(scopesObj, key, fallback) {
   return val || fallback || 'all'
 }
 
-// Reverse map: new key → array of legacy keys that mapped to it. Built lazily
-// from LEGACY_KEY_MAP. Used by expandToLegacy() to keep profiles.permissions
-// in sync while Phase 3 runtime migration is pending.
-var _reverseMapCache = null
-function reverseMap() {
-  if (_reverseMapCache) return _reverseMapCache
-  var out = {}
-  Object.keys(LEGACY_KEY_MAP).forEach(function (legacy) {
-    var newKey = LEGACY_KEY_MAP[legacy]
-    if (!out[newKey]) out[newKey] = []
-    out[newKey].push(legacy)
-  })
-  _reverseMapCache = out
-  return out
-}
 
-// Given an array of new keys, return the union of all legacy keys that would
-// have granted the same access. Used on save to write profiles.permissions
-// for runtime compat. New keys with no legacy equivalent are passed through.
-export function expandToLegacy(newKeys) {
-  if (!Array.isArray(newKeys)) return []
-  var rev = reverseMap()
-  var out = []
-  newKeys.forEach(function (k) {
-    var legacy = rev[k]
-    if (legacy) {
-      legacy.forEach(function (l) { if (out.indexOf(l) === -1) out.push(l) })
-    } else if (out.indexOf(k) === -1) {
-      out.push(k)
-    }
-  })
-  return out
-}
 
 // Count distinct feature rows fully on in a scoped perms array. Counts
 // top-level children + their grandchildren; skips optional sub-toggles.

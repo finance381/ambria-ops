@@ -11,7 +11,6 @@ var GVLog = lazy(function () { return import('./GVLog') })
 var CostTransfers = lazy(function () { return import('./CostTransfers') })
 
 // perm keys map 1:1 to PERM_GROUPS finance.ledgers children (permissions.js).
-// hasPerm() accepts either new or legacy keys, so pre-Phase-3 users are covered.
 var LEDGERS = [
   { key: 'expense',       label: 'Expense',        icon: 'ti-receipt',           component: Ledgers,         countTable: 'expenses',          countFilter: function (q) { return q.is('deleted_at', null) },                                                     perm: 'finance.ledgers.expense' },
   { key: 'event',         label: 'Event',          icon: 'ti-calendar-event',    component: EventLedger,     countTable: 'event_ledger',                                                                                                                        perm: 'finance.ledgers.event' },
@@ -24,10 +23,9 @@ var LEDGERS = [
 
 function LedgersHub(props) {
   var permsNew = (props.profile && props.profile.permsNew) || []
-  var permsLegacy = (props.profile && props.profile.permissions) || []
   var visible = LEDGERS.filter(function (l) {
     if (!l.perm) return true
-    return hasPerm(permsNew, l.perm) || hasPerm(permsLegacy, l.perm)
+    return hasPerm(permsNew, l.perm)
   })
   var defaultKey = visible.length > 0 ? visible[0].key : 'expense'
   var [active, setActive] = useState(props.activeSubTab && visible.some(function (l) { return l.key === props.activeSubTab }) ? props.activeSubTab : defaultKey)
