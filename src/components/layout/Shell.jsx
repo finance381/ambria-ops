@@ -27,67 +27,68 @@ import Vendors from '../../modules/vendors/Vendors'
 import Employees from '../../modules/employees/Employees'
 import AdminMobile from '../../modules/categories/AdminMobile.jsx'
 import MyProfile from '../../modules/employees/MyProfile'
+import { hasPerm } from '../../lib/permissions'
 
 var GROUPS = [
   {
     key: 'me', label: 'My Profile', icon: '🪪', items: [
-      { key: 'feature_my_profile', label: 'My Profile', icon: '🪪', tab: 'my_profile' },
+      { key: 'personal.profile', label: 'My Profile', icon: '🪪', tab: 'my_profile' },
     ]
   },
   {
     key: 'inventory', label: 'Inventory', icon: '📦', items: [
-      { key: 'feature_add', label: 'Add Item', icon: '📝', tab: 'add' },
-      { key: 'feature_items', label: 'Item List', icon: '📋', tab: 'my' },
-      { key: 'feature_production', label: 'Production', icon: '🔧', tab: 'production' },
-      { key: 'feature_boxes', label: 'Boxes', icon: '🗃️', tab: 'boxes' },
+      { key: 'inventory.add', label: 'Add Item', icon: '📝', tab: 'add' },
+      { key: 'inventory.items', label: 'Item List', icon: '📋', tab: 'my' },
+      { key: 'inventory.production', label: 'Production', icon: '🔧', tab: 'production' },
+      { key: 'inventory.boxes', label: 'Boxes', icon: '🗃️', tab: 'boxes' },
     ]
   },
   {
     key: 'review', label: 'Review', icon: '✅', items: [
-      { key: 'feature_dept_review', label: 'Dept Review', icon: '✅', tab: 'dept_review' },
-      { key: 'feature_pending', label: 'Pending Review', icon: '⏳', tab: 'pending_review' },
+      { key: 'review.dept', label: 'Dept Review', icon: '✅', tab: 'dept_review' },
+      { key: 'review.pending', label: 'Pending Review', icon: '⏳', tab: 'pending_review' },
     ]
   },
   {
     key: 'events', label: 'Events', icon: '📅', items: [
-      { key: 'feature_events', label: 'Events', icon: '📅', tab: 'events' },
-      { key: 'feature_quote', label: 'Quote Calc', icon: '🧮', tab: 'quote' },
-      { key: 'feature_ratecard', label: 'Rate Card', icon: '💲', tab: 'ratecard' },
-      { key: 'feature_extra_plate_collect', label: 'Extra Plates', icon: '🍽️', tab: 'extra_plates' },
+      { key: 'events.list', label: 'Events', icon: '📅', tab: 'events' },
+      { key: 'events.quote', label: 'Quote Calc', icon: '🧮', tab: 'quote' },
+      { key: 'events.ratecard', label: 'Rate Card', icon: '💲', tab: 'ratecard' },
+      { key: 'events.extra_plate_collect', label: 'Extra Plates', icon: '🍽️', tab: 'extra_plates' },
     ]
   },
   {
     key: 'procurement', label: 'Procurement', icon: '🛒', items: [
-      { key: 'feature_requisitions', label: 'Requisitions', icon: '📋', tab: 'requisitions' },
-      { key: 'feature_purchase', label: 'Purchase Orders', icon: '🛒', tab: 'purchase' },
-      { key: 'feature_vendors', label: 'Vendors', icon: '🏭', tab: 'vendors' },
+      { key: 'procurement.requisitions', label: 'Requisitions', icon: '📋', tab: 'requisitions' },
+      { key: 'procurement.purchase_orders', label: 'Purchase Orders', icon: '🛒', tab: 'purchase' },
+      { key: 'procurement.vendors', label: 'Vendors', icon: '🏭', tab: 'vendors' },
     ]
   },
   {
     key: 'logistics', label: 'Logistics', icon: '🚛', items: [
-      { key: 'feature_receive', label: 'Receive Items', icon: '📦', tab: 'receive' },
-      { key: 'feature_challans', label: 'Challans', icon: '🚛', tab: 'challans' },
+      { key: 'inventory.receive', label: 'Receive Items', icon: '📦', tab: 'receive' },
+      { key: 'inventory.challans', label: 'Challans', icon: '🚛', tab: 'challans' },
     ]
   },
   {
     key: 'expenses', label: 'Finance', icon: '💰', items: [
-      { key: 'feature_wallet', label: 'Wallet', icon: '👛', tab: 'wallet' },
-      { key: 'feature_expenses', label: 'PC & Direct Expenses', icon: '💰', tab: 'expenses' },
-      { key: 'feature_ledger_view', label: 'Expense Ledger', icon: '📒', tab: 'ledgers' },
-      { key: 'feature_payments', label: 'Payments', icon: '💳', tab: 'payments' },
-      { key: 'feature_salary_pay', label: 'Salary Payouts', icon: '💵', tab: 'salary_payouts' },
-      { key: 'feature_vendor_ledger', label: 'Vendor Ledger', icon: '🏭', tab: 'vendor_ledger' },
+      { key: 'finance.wallet', label: 'Wallet', icon: '👛', tab: 'wallet' },
+      { key: 'finance.expenses', label: 'PC & Direct Expenses', icon: '💰', tab: 'expenses' },
+      { key: 'finance.ledgers.expense', label: 'Expense Ledger', icon: '📒', tab: 'ledgers' },
+      { key: 'finance.payments', label: 'Payments', icon: '💳', tab: 'payments' },
+      { key: 'finance.salary_payouts', label: 'Salary Payouts', icon: '💵', tab: 'salary_payouts' },
+      { key: 'finance.ledgers.vendor', label: 'Vendor Ledger', icon: '🏭', tab: 'vendor_ledger' },
     ]
   },
   {
     key: 'hr', label: 'HR', icon: '👔', items: [
-      { key: 'feature_employees', label: 'Employees', icon: '👤', tab: 'employees' },
-      { key: 'feature_salary_ledger', label: 'Salary Ledger', icon: '📒', tab: 'salary_ledger' },
+      { key: 'hr.employees', label: 'Employees', icon: '👤', tab: 'employees' },
+      { key: 'finance.ledgers.salary', label: 'Salary Ledger', icon: '📒', tab: 'salary_ledger' },
     ]
   },
   {
     key: 'admin', label: 'Admin', icon: '⚙️', items: [
-      { key: 'feature_admin', label: 'Admin', icon: '⚙️', tab: 'admin' },
+      { key: 'admin.dashboard', label: 'Admin', icon: '⚙️', tab: 'admin' },
     ]
   },
 ]
@@ -101,7 +102,7 @@ function Shell({ profile, onSignOut }) {
   var [showSuccess, setShowSuccess] = useState(false)
 
   var isAdmin = profile.role === 'admin' || profile.role === 'auditor'
-  var perms = profile.permissions || []
+  var permsNew = profile.permsNew || []
   var { lang, switchLang } = useLang()
 
   var [badges, setBadges] = useState({})
@@ -119,8 +120,8 @@ function Shell({ profile, onSignOut }) {
       .then(function (res) { setWalletPending(res.count || 0) })
 
     var monthStart = new Date().toISOString().slice(0, 7) + '-01'
-    var hasExp = perms.indexOf('feature_expenses') !== -1
-    var hasLedger = perms.indexOf('feature_ledger_view') !== -1
+    var hasExp = hasPerm(permsNew, 'finance.expenses')
+    var hasLedger = hasPerm(permsNew, 'finance.ledgers.expense')
     if (hasExp || hasLedger) {
       Promise.all([
         hasExp
@@ -144,7 +145,7 @@ function Shell({ profile, onSignOut }) {
   // Filter groups: only show groups where user has at least one sub-feature permission
   // Items marked `always:true` bypass the permission check (personal / self-service features)
   var visibleGroups = GROUPS.map(function (g) {
-    var visibleItems = g.items.filter(function (f) { return f.always === true || perms.indexOf(f.key) !== -1 })
+    var visibleItems = g.items.filter(function (f) { return f.always === true || hasPerm(permsNew, f.key) })
     if (visibleItems.length === 0) return null
     return Object.assign({}, g, { items: visibleItems })
   }).filter(Boolean)
@@ -200,37 +201,37 @@ function Shell({ profile, onSignOut }) {
   async function loadBadges(isStale) {
     var counts = {}
     var isAdminRole = profile.role === 'admin' || profile.role === 'auditor'
-    var isDeptAppr = perms.indexOf('dept_approve') >= 0
-    var hasExpApprove = perms.indexOf('expense_approve') >= 0
+    var isDeptAppr = hasPerm(permsNew, 'review.dept.approve')
+    var hasExpApprove = hasPerm(permsNew, 'finance.expenses.approve')
 
     var promises = []
 
     // Dept Review badge
-    if (perms.indexOf('feature_dept_review') !== -1) {
+    if (hasPerm(permsNew, 'review.dept')) {
       promises.push(
         Promise.all([
           supabase.from('inventory_items').select('id', { count: 'exact', head: true }).eq('status', 'pending_dept'),
           supabase.from('catering_store_items').select('id', { count: 'exact', head: true }).eq('status', 'pending_dept'),
         ]).then(function (res) {
-          counts.feature_dept_review = (res[0].count || 0) + (res[1].count || 0)
+          counts['review.dept'] = (res[0].count || 0) + (res[1].count || 0)
         })
       )
     }
 
     // Pending Review badge
-    if (perms.indexOf('feature_pending') !== -1) {
+    if (hasPerm(permsNew, 'review.pending')) {
       promises.push(
         Promise.all([
           supabase.from('inventory_items').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
           supabase.from('catering_store_items').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
         ]).then(function (res) {
-          counts.feature_pending = (res[0].count || 0) + (res[1].count || 0)
+          counts['review.pending'] = (res[0].count || 0) + (res[1].count || 0)
         })
       )
     }
 
    // Requisitions badge
-    if (perms.indexOf('feature_requisitions') !== -1) {
+    if (hasPerm(permsNew, 'procurement.requisitions')) {
       // Approval badge for dept approvers / admins
       if (isDeptAppr || isAdminRole) {
         var reqStatuses = []
@@ -258,7 +259,7 @@ function Shell({ profile, onSignOut }) {
     }
 
     // Expenses badge
-    if (perms.indexOf('feature_expenses') !== -1) {
+    if (hasPerm(permsNew, 'finance.expenses')) {
       var expStatuses = ['recorded', 'flagged']
       if (expStatuses.length > 0) {
         promises.push(
@@ -266,13 +267,13 @@ function Shell({ profile, onSignOut }) {
             .select('id', { count: 'exact', head: true })
             .neq('user_id', profile.id)
             .in('status', expStatuses)
-            .then(function (res) { counts.feature_expenses = res.count || 0 })
+            .then(function (res) { counts['finance.expenses'] = res.count || 0 })
         )
       }
     }
 
     // Purchase Orders badge
-    if (perms.indexOf('feature_purchase') !== -1) {
+    if (hasPerm(permsNew, 'procurement.purchase_orders')) {
       if (isAdminRole) {
         // Admin: count items in queue (approved req items without PO)
         promises.push(
@@ -281,10 +282,10 @@ function Shell({ profile, onSignOut }) {
             .is('po_item_id', null)
             .eq('item_status', 'po_queued')
             .eq('requisitions.status', 'approved')
-            .then(function (res) { counts.feature_purchase = res.count || 0 })
+            .then(function (res) { counts['procurement.purchase_orders'] = res.count || 0 })
             .catch(function () {
               // FK hint fallback — just show 0
-              counts.feature_purchase = 0
+              counts['procurement.purchase_orders'] = 0
             })
         )
       } else {
@@ -294,55 +295,55 @@ function Shell({ profile, onSignOut }) {
             .select('id', { count: 'exact', head: true })
             .eq('assigned_to', profile.id)
             .eq('status', 'confirmed')
-            .then(function (res) { counts.feature_purchase = res.count || 0 })
+            .then(function (res) { counts['procurement.purchase_orders'] = res.count || 0 })
         )
       }
     }
 
     // Challans badge (active dispatched)
-    if (perms.indexOf('feature_challans') !== -1) {
+    if (hasPerm(permsNew, 'inventory.challans')) {
       promises.push(
         supabase.from('challans')
           .select('id', { count: 'exact', head: true })
           .in('status', ['dispatched', 'received'])
-          .then(function (res) { counts.feature_challans = res.count || 0 })
+          .then(function (res) { counts['inventory.challans'] = res.count || 0 })
       )
     }
 
     // Receive badge
-    if (perms.indexOf('feature_receive') !== -1) {
+    if (hasPerm(permsNew, 'inventory.receive')) {
       promises.push(
         supabase.from('purchase_order_items')
           .select('id', { count: 'exact', head: true })
           .eq('status', 'purchased')
-          .then(function (res) { counts.feature_receive = res.count || 0 })
+          .then(function (res) { counts['inventory.receive'] = res.count || 0 })
       )
     }
 
     // Payments badge (vendors with any overdue purchase)
-    if (perms.indexOf('feature_payments') !== -1) {
+    if (hasPerm(permsNew, 'finance.payments')) {
       promises.push(
         supabase.from('v_vendor_ledger')
           .select('vendor_id', { count: 'exact', head: true })
           .gt('overdue_count', 0)
-          .then(function (res) { counts.feature_payments = res.count || 0 })
+          .then(function (res) { counts['finance.payments'] = res.count || 0 })
       )
     }
 
     // Salary Payouts badge (employees unpaid ≥ 30 days)
-    // Extra gate: feature_employees_salary required alongside feature_salary_pay
-    if (perms.indexOf('feature_salary_pay') !== -1 && perms.indexOf('feature_employees_salary') !== -1) {
+    // Extra gate: hr.employees.salary_view required alongside finance.salary_payouts
+    if (hasPerm(permsNew, 'finance.salary_payouts') && hasPerm(permsNew, 'hr.employees.salary_view')) {
       promises.push(
         supabase.from('v_employee_ledger')
           .select('employee_id', { count: 'exact', head: true })
           .gte('unpaid_since_days', 30)
-          .then(function (res) { counts.feature_salary_pay = res.count || 0 })
+          .then(function (res) { counts['finance.salary_payouts'] = res.count || 0 })
       )
     }
 
     await Promise.allSettled(promises)
     if (isStale && isStale()) return
-    counts.feature_requisitions = (counts._req_approval || 0) + (counts._req_dispatch || 0)
+    counts['procurement.requisitions'] = (counts._req_approval || 0) + (counts._req_dispatch || 0)
     setBadges(counts)
     setLastBadgeLoad(Date.now())
   }
@@ -473,7 +474,7 @@ function Shell({ profile, onSignOut }) {
         {/* Level 0: Group Cards */}
         {!activeGroup && !tab && (
           <>
-            {perms.indexOf('feature_wallet') !== -1 && walletBalance !== null && (
+            {hasPerm(permsNew, 'finance.wallet') && walletBalance !== null && (
               <button
                 onClick={function () { setActiveGroup('expenses'); setTab('wallet') }}
                 className={"relative w-full mb-3 rounded-xl p-3 flex items-center justify-between border shadow-sm active:scale-[0.99] transition-all " + (walletBalance < 0 ? "bg-red-50 border-red-200" : "bg-green-50 border-green-200")}>
@@ -527,11 +528,11 @@ function Shell({ profile, onSignOut }) {
           <div className="grid grid-cols-2 gap-3 pt-2">
             {currentGroup.items.map(function (f) {
               var extra = null
-              if (f.key === 'feature_wallet' && walletBalance !== null) {
+              if (f.key === 'finance.wallet' && walletBalance !== null) {
                 extra = <span className={"text-xs font-bold " + (walletBalance < 0 ? "text-red-600" : "text-green-700")}>{formatPoints(walletBalance)}</span>
-              } else if (f.key === 'feature_expenses' && financeStats.expMonthCount > 0) {
+              } else if (f.key === 'finance.expenses' && financeStats.expMonthCount > 0) {
                 extra = <span className="text-xs font-medium" style={{ color: '#64748B' }}>{financeStats.expMonthCount + ' · ' + formatPoints(financeStats.expMonthTotal)}</span>
-              } else if (f.key === 'feature_ledger_view' && financeStats.ledgerMonthTotal > 0) {
+              } else if (f.key === 'finance.ledgers.expense' && financeStats.ledgerMonthTotal > 0) {
                 extra = <span className="text-xs font-medium" style={{ color: '#64748B' }}>{formatPoints(financeStats.ledgerMonthTotal) + ' this month'}</span>
               }
               return (

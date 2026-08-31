@@ -13,6 +13,7 @@ import AllocationRows from '../../components/ui/AllocationRows'
 import { prepUpload } from '../../lib/uploadHelper'
 import { filterUserCategories } from '../../lib/categories'
 import { pushBack, goBack as navBack } from '../../lib/backNav'
+import { hasPerm } from '../../lib/permissions'
 
 var PAGE_SIZE = 20
 var URGENCY_COLORS = {
@@ -66,11 +67,11 @@ function Requisitions({ profile, onBack }) {
 
   var isAdmin = profile?.role === 'admin'
   var isAuditor = profile?.role === 'auditor'
-  var isReqDeptApprover = (profile?.permissions || []).indexOf('req_dept_approve') !== -1
-  var isReqAdminApprover = (profile?.permissions || []).indexOf('req_admin_approve') !== -1
+  var isReqDeptApprover = hasPerm(profile?.permsNew, 'procurement.requisitions.dept_approve')
+  var isReqAdminApprover = hasPerm(profile?.permsNew, 'procurement.requisitions.admin_approve')
   var hasReqApprove = isAdmin || isAuditor || isReqDeptApprover || isReqAdminApprover
-  var showApproveTab = hasReqApprove && (profile?.permissions || []).indexOf('feature_requisitions') !== -1
-  var isItemReceiver = isAdmin || isAuditor || (profile?.permissions || []).indexOf('feature_add') !== -1 || (profile?.permissions || []).indexOf('inventory_add') !== -1
+  var showApproveTab = hasReqApprove && hasPerm(profile?.permsNew, 'procurement.requisitions')
+  var isItemReceiver = isAdmin || isAuditor || hasPerm(profile?.permsNew, 'inventory.add')
 
   async function loadReceiptsCount() {
     if (!isItemReceiver) return
@@ -1037,7 +1038,7 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
           if (expUpdErr) throw new Error(expUpdErr.message)
           try { await logActivity('REQUISITION_EDIT', purpose.trim() + ' | expense | ' + (amtPaise / 100)) } catch (_) {}
         } else {
-          var selfIsReqDeptApprover = (profile?.permissions || []).indexOf('req_dept_approve') !== -1
+          var selfIsReqDeptApprover = hasPerm(profile?.permsNew, 'procurement.requisitions.dept_approve')
           var isAdminRole = profile?.role === 'admin' || profile?.role === 'auditor'
           var status = 'pending_dept'
           if (isAdminRole) { status = 'approved' }
@@ -1109,7 +1110,7 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
         logActivity('REQUISITION_EDIT', purpose.trim() + ' | ' + lineItems.length + ' items')
       } else {
         // ─── CREATE new requisition ───
-        var selfIsReqDeptApprover = (profile?.permissions || []).indexOf('req_dept_approve') !== -1
+        var selfIsReqDeptApprover = hasPerm(profile?.permsNew, 'procurement.requisitions.dept_approve')
         var isAdminRole = profile?.role === 'admin' || profile?.role === 'auditor'
 
         var status = 'pending_dept'

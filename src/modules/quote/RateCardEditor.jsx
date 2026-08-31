@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
+import { hasPerm } from '../../lib/permissions'
 
 /* ═══════════════════════════════════════════════════════
    RATE CARD EDITOR — Fully dynamic, admin-only
@@ -1532,7 +1533,7 @@ var TABS = [
 var WIDE_TABS = ['season', 'rentals']
 
 function RateCardEditor({ profile }) {
-  var canEdit = profile.role === 'admin' || (profile.permissions && profile.permissions.indexOf('feature_ratecard') >= 0)
+  var canEdit = profile.role === 'admin' || hasPerm(profile.permsNew, 'events.ratecard')
   if (!canEdit) return (
     <div style={{ padding: 40, textAlign: 'center', color: C.muted, fontSize: 14 }}>Rate card edit access required</div>
   )

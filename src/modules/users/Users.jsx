@@ -3,7 +3,7 @@ import { supabase } from '../../lib/supabase'
 import Modal from '../../components/ui/Modal'
 import { logActivity } from '../../lib/logger'
 import { prepUpload } from '../../lib/uploadHelper'
-import { DEFAULT_ROLES, expandToLegacy } from '../../lib/permissions'
+import { DEFAULT_ROLES } from '../../lib/permissions'
 import PermMatrix from '../../components/PermMatrix'
 
 function Users({ profile }) {
@@ -106,7 +106,6 @@ function Users({ profile }) {
         email: p.email,
         phone: p.phone || '',
         role: p.role || 'logistics',
-        permissions: p.permissions || [],
         category_ids: p.category_ids || [],
         sub_category_ids: p.sub_category_ids || [],
         sub_department_ids: p.sub_department_ids || [],
@@ -128,7 +127,7 @@ function Users({ profile }) {
       supabase.from('departments').select('id, name').eq('active', true).order('name'),
       supabase.from('expense_types').select('id, name, icon, department_id, sub_department_id').eq('active', true).order('sort_order').order('name'),
       supabase.from('expense_sub_types').select('id, name, expense_type_id').eq('active', true).order('sort_order').order('name'),
-      supabase.from('role_defaults').select('role, permissions, mobile_permissions, desktop_permissions, data_scopes'),
+      supabase.from('role_defaults').select('role, mobile_permissions, desktop_permissions, data_scopes'),
       supabase.from('venues').select('id, code, name, active').eq('active', true).order('id'),
     ])
     setCategories(catRes.data || [])
@@ -432,13 +431,10 @@ function Users({ profile }) {
 
     var err
     if (editUser._source === 'approved') {
-      var _newUnion = editValue.mobile.slice()
-      editValue.desktop.forEach(function (k) { if (_newUnion.indexOf(k) === -1) _newUnion.push(k) })
       var res = await supabase.from('approved_emails').update({
         name: editUser.name,
         role: editRole,
         phone: editPhone.trim() || null,
-        permissions: expandToLegacy(_newUnion),
         mobile_permissions: editValue.mobile,
         desktop_permissions: editValue.desktop,
         data_scopes: editValue.scopes,
@@ -452,12 +448,9 @@ function Users({ profile }) {
       }).eq('email', editUser._email_key)
       err = res.error
     } else {
-      var _newUnion2 = editValue.mobile.slice()
-      editValue.desktop.forEach(function (k) { if (_newUnion2.indexOf(k) === -1) _newUnion2.push(k) })
       var res = await supabase.from('profiles').update({
         role: editRole,
         phone: editPhone.trim() || null,
-        permissions: expandToLegacy(_newUnion2),
         mobile_permissions: editValue.mobile,
         desktop_permissions: editValue.desktop,
         data_scopes: editValue.scopes,
@@ -544,14 +537,10 @@ function Users({ profile }) {
     var _seedScopes  = (_seedRD && _seedRD.scopes) ? Object.assign({}, _seedRD.scopes) : {}
     if (_seedMobile.indexOf('personal.profile')  === -1) _seedMobile.push('personal.profile')
     if (_seedDesktop.indexOf('personal.profile') === -1) _seedDesktop.push('personal.profile')
-    var _seedUnion = _seedMobile.slice()
-    _seedDesktop.forEach(function (k) { if (_seedUnion.indexOf(k) === -1) _seedUnion.push(k) })
-
     var { error: err } = await supabase.from('approved_emails').insert({
       email: addEmail.trim().toLowerCase(),
       name: addName.trim(),
       role: addRole,
-      permissions: expandToLegacy(_seedUnion),
       mobile_permissions: _seedMobile,
       desktop_permissions: _seedDesktop,
       data_scopes: _seedScopes,

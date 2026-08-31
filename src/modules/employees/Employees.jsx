@@ -6,6 +6,7 @@ import { useRealtime } from '../../lib/useRealtime'
 import Modal from '../../components/ui/Modal'
 import EmployeeForm from './EmployeeForm'
 import EmployeeDetail from './EmployeeDetail'
+import { hasPerm } from '../../lib/permissions'
 
 var STATUS_STYLES = {
   active:      { label: 'Active',      cls: 'bg-green-100 text-green-700' },
@@ -46,11 +47,11 @@ function Employees({ profile }) {
   var [importProgress, setImportProgress] = useState(null) // { done, total }
   var [importSummary, setImportSummary] = useState(null)   // { created, skipped, skippedRows }
 
-  var perms = (profile && profile.permissions) || []
+  var permsNew = (profile && profile.permsNew) || []
   var isAdminOrHR = profile && (profile.role === 'admin' || profile.role === 'auditor')
-  var hasEmployeesPerm = isAdminOrHR || perms.indexOf('feature_employees') !== -1
+  var hasEmployeesPerm = isAdminOrHR || hasPerm(permsNew, 'hr.employees')
   var canSeeAll = isAdminOrHR
-  var canSeeSalary = isAdminOrHR || perms.indexOf('feature_employees_salary') !== -1
+  var canSeeSalary = isAdminOrHR || hasPerm(permsNew, 'hr.employees.salary_view')
 
   useRealtime(['employees', 'job_departments'], function () { if (!saving) loadAll() })
 

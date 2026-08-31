@@ -5,13 +5,14 @@ import { useRealtime } from '../../lib/useRealtime'
 import { registerPdfFont } from '../../lib/pdfFont'
 import ExpenseDetail from './ExpenseDetail'
 import MultiSearchDropdown from '../../components/ui/MultiSearchDropdown'
+import { hasPerm } from '../../lib/permissions'
 
 var PAGE_SIZE = 50
 
 function InventoryLedger({ profile }) {
-  var perms = (profile && profile.permissions) || []
+  var permsNew = (profile && profile.permsNew) || []
   var isAdmin = profile && (profile.role === 'admin' || profile.role === 'auditor')
-  var canView = isAdmin || perms.indexOf('feature_inventory_ledger') !== -1
+  var canView = isAdmin || hasPerm(permsNew, 'finance.ledgers.inventory')
 
   var [items, setItems] = useState([])
   var [history, setHistory] = useState([])

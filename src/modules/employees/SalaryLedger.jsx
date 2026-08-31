@@ -7,12 +7,13 @@ import AccrueSalariesModal from './AccrueSalariesModal'
 import AdjustSalaryModal from './AdjustSalaryModal'
 import PaymentProofThumbs from '../../components/ledger/PaymentProofThumbs'
 import LedgerSourceMedia from '../../components/ledger/LedgerSourceMedia'
+import { hasPerm } from '../../lib/permissions'
 
 function SalaryLedger({ profile }) {
-  var perms = (profile && profile.permissions) || []
-  var isAdmin = perms.indexOf('feature_admin') !== -1
-  var canSeeSalary = perms.indexOf('feature_employees_salary') !== -1
-  var canView = isAdmin || (perms.indexOf('feature_salary_ledger') !== -1 && canSeeSalary)
+  var permsNew = (profile && profile.permsNew) || []
+  var isAdmin = hasPerm(permsNew, 'admin.dashboard')
+  var canSeeSalary = hasPerm(permsNew, 'hr.employees.salary_view')
+  var canView = isAdmin || (hasPerm(permsNew, 'finance.ledgers.salary') && canSeeSalary)
 
   var [view, setView] = useState('list')  // 'list' | 'detail'
   var [employees, setEmployees] = useState([])

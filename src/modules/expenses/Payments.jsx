@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { formatPoints, formatDate } from '../../lib/format'
 import { useRealtime } from '../../lib/useRealtime'
 import PayVendorModal from './PayVendorModal'
+import { hasPerm } from '../../lib/permissions'
 import { filterVisibleVendors } from '../../lib/vendorGating'
 
 function daysBetween(d1, d2) {
@@ -31,9 +32,9 @@ function sortRows(a, b) {
 }
 
 function Payments({ profile }) {
-  var perms = (profile && profile.permissions) || []
-  var isAdmin = perms.indexOf('feature_admin') !== -1
-  var canView = isAdmin || perms.indexOf('feature_payments') !== -1
+  var permsNew = (profile && profile.permsNew) || []
+  var isAdmin = hasPerm(permsNew, 'admin.dashboard')
+  var canView = isAdmin || hasPerm(permsNew, 'finance.payments')
 
   var [vendors, setVendors] = useState([])
   var [purchases, setPurchases] = useState([])

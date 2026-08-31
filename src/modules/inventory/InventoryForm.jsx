@@ -9,6 +9,7 @@ import { titleCase } from '../../lib/format'
 import { useLang } from '../../lib/i18n'
 import { logActivity } from '../../lib/logger'
 import { filterUserCategories } from '../../lib/categories'
+import { hasPerm } from '../../lib/permissions'
 
 var UNITS = [
   'Inches','Pieces', 'Nos', 'Sets', 'Pairs', 'Dozens',
@@ -432,7 +433,7 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved }) {
           p_exclude_id: profile.id,
         })
         // If submitter IS a dept approver for this category, skip dept tier
-        var selfIsDeptApprover = (profile?.permissions || []).includes('dept_approve') && (profile?.category_ids || []).includes(Number(categoryId))
+        var selfIsDeptApprover = hasPerm(profile?.permsNew, 'review.dept.approve') && (profile?.category_ids || []).includes(Number(categoryId))
         if (selfIsDeptApprover) {
           payload.status = 'pending'
           payload.dept_approved_by = profile.id

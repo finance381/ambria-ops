@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { formatDate, formatPoints } from '../../lib/format'
 import { logActivity } from '../../lib/logger'
 import { APPROVAL_STATUS_COLORS, APPROVAL_STATUS_LABELS } from '../../lib/constants'
+import { hasPerm } from '../../lib/permissions'
 import VoiceInput from '../../components/ui/VoiceInput'
 
 function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdated, onEdit, onRaiseGV }) {
@@ -165,7 +166,7 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
   //  • acknowledged → admin OR auditor only (finance_gv perm not enough — locks stricter after ack)
   var canRaiseGV = !isDeleted && (
     (exp.status === 'acknowledged' && (isAdmin || isAuditor)) ||
-    ((exp.status === 'recorded' || exp.status === 'flagged' || exp.status === 'deducted') && (isAdmin || (profile?.permissions || []).indexOf('finance_gv') !== -1))
+    ((exp.status === 'recorded' || exp.status === 'flagged' || exp.status === 'deducted') && (isAdmin || hasPerm(profile?.permsNew, 'finance.gv')))
   )
 
   var receiptPaths = (exp.receipt_paths && exp.receipt_paths.length > 0)

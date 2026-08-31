@@ -4,6 +4,7 @@ import { formatDate, titleCase, formatPaise } from '../../lib/format'
 import Modal from '../../components/ui/Modal'
 import InventoryForm from './InventoryForm'
 import { useRealtime } from '../../lib/useRealtime'
+import { hasPerm } from '../../lib/permissions'
 
 
 function Inventory({ profile }) {
@@ -357,7 +358,7 @@ function Inventory({ profile }) {
               var isOwner = item.submitted_by === profile.id
               var catIds = profile.category_ids || []
               var itemCatNum = Number(item.category_id)
-              var isDeptHead = (profile.permissions || []).includes('dept_approve') && catIds.some(function (c) { return Number(c) === itemCatNum })
+              var isDeptHead = hasPerm(profile.permsNew, 'review.dept.approve') && catIds.some(function (c) { return Number(c) === itemCatNum })
               var canEdit = isAdmin || (isDeptHead && (item.status === 'pending_dept' || item.status === 'pending'))
               if (!canEdit) return null
               return (

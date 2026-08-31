@@ -4,6 +4,7 @@ import { Badge } from '../../components/ui/Badge'
 import { formatDate, formatPaise, titleCase } from '../../lib/format'
 import Modal from '../../components/ui/Modal'
 import EventLedger from '../expenses/EventLedger'
+import { hasPerm } from '../../lib/permissions'
 
 var lastSyncTime = 0
 var SYNC_COOLDOWN = 5 * 60 * 1000
@@ -92,7 +93,7 @@ function Events({ profile }) {
   var [venueMap, setVenueMap] = useState({})
 
   var isAdmin = profile?.role === 'admin' || profile?.role === 'auditor'
-  var perms = profile?.permissions || []
+  var permsNew = profile?.permsNew || []
 
   useEffect(function () {
     if (!selectedFunction) { setExtraPlateSummary(null); return }
@@ -444,7 +445,7 @@ function Events({ profile }) {
 
             {/* Extra Plate summary — visible when activity exists */}
             {extraPlateSummary && (extraPlateSummary.issued_active !== 0 || extraPlateSummary.collections_active > 0 || extraPlateSummary.issued_cancelled > 0 || extraPlateSummary.collections_cancelled > 0) && (function () {
-              var hasMoneyPerm = isAdmin || perms.indexOf('feature_extra_plate_collect') >= 0
+              var hasMoneyPerm = isAdmin || hasPerm(permsNew, 'events.extra_plate_collect')
               var totalReturned = extraPlateSummary.returned_active + extraPlateSummary.waste_active
               var netConsumed = extraPlateSummary.issued_active - totalReturned
               // uncollected: extras eaten that haven't been charged yet

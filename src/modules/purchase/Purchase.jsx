@@ -10,6 +10,7 @@ import BottomSheet from '../../components/ui/BottomSheet'
 import { pushBack, goBack as navBack } from '../../lib/backNav'
 import VoiceInput from '../../components/ui/VoiceInput'
 import { prepUpload } from '../../lib/uploadHelper'
+import { hasPerm } from '../../lib/permissions'
 import { filterVisibleVendors } from '../../lib/vendorGating'
 
 var PO_STATUS_LABELS = {
@@ -75,8 +76,8 @@ function Purchase({ profile, mode }) {
 
   var assignLockRef = useRef(false)
   var isAdmin = profile?.role === 'admin' || profile?.role === 'auditor'
-  var hasPurchase = (profile?.permissions || []).indexOf('feature_purchase') !== -1
-  var hasReceive = (profile?.permissions || []).indexOf('feature_receive') !== -1
+  var hasPurchase = hasPerm(profile?.permsNew, 'procurement.purchase_orders')
+  var hasReceive = hasPerm(profile?.permsNew, 'inventory.receive')
   // mode === 'receive' forces receiver-only view for everyone (incl. admin) — Shell routes here from Receive Items tile
   var isReceiver = mode === 'receive' || (!isAdmin && hasReceive && !hasPurchase)
   var isPurchaser = !isAdmin && !isReceiver

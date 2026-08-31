@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import Modal from '../../components/ui/Modal'
 import { logActivity } from '../../lib/logger'
-import { DEFAULT_ROLES, countActiveFeatures, expandToLegacy, normalizePerms } from '../../lib/permissions'
+import { DEFAULT_ROLES, countActiveFeatures, normalizePerms } from '../../lib/permissions'
 import PermMatrix from '../../components/PermMatrix'
 
 var ROLE_COLORS = {
@@ -40,7 +40,7 @@ function RoleTemplates({ profile }) {
   async function load() {
     setLoading(true); setError('')
     var [rdRes, profRes, venueRes] = await Promise.all([
-      supabase.from('role_defaults').select('role, permissions, mobile_permissions, desktop_permissions, data_scopes, venue_ids, updated_at, updated_by'),
+      supabase.from('role_defaults').select('role, mobile_permissions, desktop_permissions, data_scopes, venue_ids, updated_at, updated_by'),
       supabase.from('profiles').select('role, active'),
       supabase.from('venues').select('id, code, name, active').eq('active', true).order('id'),
     ])
@@ -65,7 +65,7 @@ function RoleTemplates({ profile }) {
     Object.keys(counts).forEach(function (r) { if (allRoles.indexOf(r) === -1) allRoles.push(r) })
 
     var rows = allRoles.map(function (role) {
-      var t = byRole[role] || { role: role, permissions: [], updated_at: null, updated_by: null }
+      var t = byRole[role] || { role: role, mobile_permissions: [], desktop_permissions: [], data_scopes: {}, updated_at: null, updated_by: null }
       var c = counts[role] || { total: 0, active: 0 }
       return Object.assign({}, t, {
         user_count: c.total,
@@ -94,11 +94,8 @@ function RoleTemplates({ profile }) {
     if (saving) return
     if (!editRole) return
     setSaving(true); setError('')
-    var _newUnion = editValue.mobile.slice()
-    editValue.desktop.forEach(function (k) { if (_newUnion.indexOf(k) === -1) _newUnion.push(k) })
     var res = await supabase.from('role_defaults').upsert({
       role: editRole,
-      permissions: expandToLegacy(_newUnion),
       mobile_permissions: editValue.mobile,
       desktop_permissions: editValue.desktop,
       data_scopes: editValue.scopes,
@@ -122,12 +119,8 @@ function RoleTemplates({ profile }) {
     var _bDsk = (bulkTarget.desktop_permissions || []).slice()
     if (_bMob.indexOf('personal.profile') === -1) _bMob.push('personal.profile')
     if (_bDsk.indexOf('personal.profile') === -1) _bDsk.push('personal.profile')
-    var _bUnion = _bMob.slice()
-    _bDsk.forEach(function (k) { if (_bUnion.indexOf(k) === -1) _bUnion.push(k) })
-
     var res = await supabase.from('profiles')
       .update({
-        permissions: expandToLegacy(_bUnion),
         mobile_permissions: _bMob,
         desktop_permissions: _bDsk,
         data_scopes: bulkTarget.data_scopes || {},
@@ -153,7 +146,6 @@ function RoleTemplates({ profile }) {
     setSaving(true); setError('')
     var res = await supabase.from('role_defaults').insert({
       role: name,
-      permissions: [],
       mobile_permissions: [],
       desktop_permissions: [],
       data_scopes: {},
@@ -204,7 +196,7 @@ function RoleTemplates({ profile }) {
           var _tUnion = (t.mobile_permissions || []).slice()
           ;(t.desktop_permissions || []).forEach(function (k) { if (_tUnion.indexOf(k) === -1) _tUnion.push(k) })
           var _tVenues = (t.venue_ids || [])
-          var featCount = countActiveFeatures(_tUnion.length > 0 ? _tUnion : (t.permissions || []))
+          var featCount = countActiveFeatures(_tUnion)
           var badge = ROLE_COLORS[t.role] || 'bg-gray-100 text-gray-600 border-gray-200'
           return (
             <div key={t.role} className="bg-white rounded-lg border border-gray-200 p-4 flex flex-col gap-3">

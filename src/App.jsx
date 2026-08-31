@@ -5,7 +5,7 @@ import AdminShell from './components/layout/AdminShell'
 import PublicEmployeeForm from './pages/PublicEmployeeForm'
 import { LangProvider } from './lib/i18n.jsx'
 import UpdateBanner from './components/UpdateBanner'
-import { expandToLegacy } from './lib/permissions'
+
 
 // Safety net: if a lazy chunk 404s (stale bundle after deploy), reload once.
 // Guarded to prevent an infinite reload loop if the failure is not deploy-related.
@@ -40,16 +40,12 @@ function App() {
     return <Login />
   }
 
-  // Per-surface profile enrichment (Phase 3 / v98).
-  // `permissions` (legacy array) is what all existing perms.indexOf(...) checks
-  // read. We rebuild it per-surface from mobile_permissions / desktop_permissions
-  // so mobile users only see mobile-scoped features and vice versa.
-  // `permsNew` exposes the raw new-key array for granular checks (LedgersHub).
-  // `dataScopes` exposes the JSONB for row-scope-aware components.
+  // Per-surface profile enrichment (v100 / Phase 4).
+  // permsNew: raw new-key array per surface — all perm checks read this via hasPerm().
+  // dataScopes: JSONB for row-scope-aware components.
   function surfaceProfile(p, surface) {
     var raw = (surface === 'desktop' ? p.desktop_permissions : p.mobile_permissions) || []
     return Object.assign({}, p, {
-      permissions: expandToLegacy(raw),
       permsNew:    raw,
       dataScopes:  p.data_scopes || {},
     })

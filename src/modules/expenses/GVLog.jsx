@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { formatDate, formatPoints } from '../../lib/format'
+import { hasPerm } from '../../lib/permissions'
 
 function GVLog({ profile }) {
-  var perms = (profile && profile.permissions) || []
-  var isAdmin = profile?.role === 'admin' || perms.indexOf('feature_admin') !== -1
-  var canView = isAdmin || perms.indexOf('finance_gv') !== -1
+  var permsNew = (profile && profile.permsNew) || []
+  var isAdmin = profile?.role === 'admin' || hasPerm(permsNew, 'admin.dashboard')
+  var canView = isAdmin || hasPerm(permsNew, 'finance.gv')
 
   var [gvs, setGvs] = useState([])
   var [loading, setLoading] = useState(true)

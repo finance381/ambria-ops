@@ -9,6 +9,7 @@ import ExpenseDetail from './ExpenseDetail'
 import LedgerSourceMedia from '../../components/ledger/LedgerSourceMedia'
 import { filterVisibleVendors } from '../../lib/vendorGating'
 import { registerPdfFont } from '../../lib/pdfFont'
+import { hasPerm } from '../../lib/permissions'
 
 // Cached Unicode font for jsPDF — loaded once per session on first PDF export.
 var _pdfFontCache = { regular: null, bold: null }
@@ -47,9 +48,9 @@ async function _registerPdfFont(doc) {
 }
 
 function VendorLedger({ profile }) {
-  var perms = (profile && profile.permissions) || []
-  var isAdmin = perms.indexOf('feature_admin') !== -1
-  var canView = isAdmin || perms.indexOf('feature_vendor_ledger') !== -1
+  var permsNew = (profile && profile.permsNew) || []
+  var isAdmin = hasPerm(permsNew, 'admin.dashboard')
+  var canView = isAdmin || hasPerm(permsNew, 'finance.ledgers.vendor')
 
   var [view, setView] = useState('list')  // 'list' | 'detail'
   var [vendors, setVendors] = useState([])

@@ -11,6 +11,7 @@ import GVForm from './GVForm'
 import { useRealtime } from '../../lib/useRealtime'
 import ExpenseReport from './ExpenseReport'
 import { pushBack, goBack as navBack } from '../../lib/backNav'
+import { hasPerm } from '../../lib/permissions'
 
 var PAGE_SIZE = 20
 
@@ -52,10 +53,10 @@ function Expenses({ profile, masterMode }) {
   var [userOptions, setUserOptions] = useState([])
   var [profileMap, setProfileMap] = useState({})
 
-  var isAdmin = profile?.role === 'admin' || (profile?.permissions && profile.permissions.indexOf('expense_approve') >= 0)
+  var isAdmin = profile?.role === 'admin' || hasPerm(profile?.permsNew, 'finance.expenses.approve')
   var isAuditor = profile?.role === 'auditor'
-  var isDeptApprover = (profile?.permissions || []).indexOf('dept_approve') !== -1
-  var hasExpenseApprove = (profile?.permissions || []).indexOf('expense_approve') !== -1
+  var isDeptApprover = hasPerm(profile?.permsNew, 'review.dept.approve')
+  var hasExpenseApprove = hasPerm(profile?.permsNew, 'finance.expenses.approve')
   var showApproveTab = isAdmin || isAuditor || hasExpenseApprove
 
   useEffect(function () {
@@ -366,7 +367,7 @@ function Expenses({ profile, masterMode }) {
             className="flex-1 py-2.5 text-xs font-bold text-amber-600 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 transition-colors">
             📊 Reports
           </button>
-          {(profile?.permissions || []).indexOf('admin_masters') !== -1 && (
+          {hasPerm(profile?.permsNew, 'admin.masters') && (
             <button onClick={function () { setTypesModal(true) }}
               className="flex-1 py-2.5 text-xs font-bold text-purple-600 bg-purple-50 border border-purple-200 rounded-lg hover:bg-purple-100 transition-colors">
               ⚙ Types
