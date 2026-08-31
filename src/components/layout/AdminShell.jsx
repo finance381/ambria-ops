@@ -1,5 +1,6 @@
 import { useState, useEffect, lazy, Suspense } from 'react'
 import { ROLE_COLORS } from '../../lib/constants'
+import { hasPerm } from '../../lib/permissions'
 
 var RateCardEditor = lazy(function () { return import('../../modules/quote/RateCardEditor') })
 var PendingReview = lazy(function () { return import('../../modules/categories/PendingReview') })
@@ -113,15 +114,31 @@ function TabbedSection({ config, profile, onNavigate, activeSubTab }) {
 }
 
 var ADMIN_TABS = [
-  { key: 'overview', label: 'Overview', icon: 'ti-home' },
-  { key: 'analytics', label: 'Analytics', icon: 'ti-chart-line' },
-  { key: 'inventory', label: 'Inventory', icon: 'ti-package' },
-  { key: 'events', label: 'Events', icon: 'ti-calendar-event' },
-  { key: 'masters', label: 'Masters', icon: 'ti-adjustments' },
-  { key: 'users', label: 'Users', icon: 'ti-users' },
-  { key: 'expenses', label: 'Finance', icon: 'ti-wallet' },
-  { key: 'procurement', label: 'Procurement', icon: 'ti-shopping-cart' },
+  { key: 'overview',    label: 'Overview',    icon: 'ti-home',           perm: 'admin.overview' },
+  { key: 'analytics',   label: 'Analytics',   icon: 'ti-chart-line',     perm: 'admin.analytics' },
+  { key: 'inventory',   label: 'Inventory',   icon: 'ti-package',
+    anyPerm: ['inventory.add','inventory.items','inventory.production','inventory.boxes','inventory.challans','inventory.receive','review.pending'] },
+  { key: 'events',      label: 'Events',      icon: 'ti-calendar-event',
+    anyPerm: ['events.list','events.manpower','events.quote'] },
+  { key: 'masters',     label: 'Masters',     icon: 'ti-adjustments',    perm: 'admin.masters' },
+  { key: 'users',       label: 'Users',       icon: 'ti-users',
+    anyPerm: ['admin.users','hr.employees'] },
+  { key: 'expenses',    label: 'Finance',     icon: 'ti-wallet',
+    anyPerm: ['finance.wallet','finance.expenses','finance.payments','finance.salary_payouts','finance.cost_transfers','finance.ledgers.expense','finance.ledgers.event','finance.ledgers.vendor','finance.ledgers.salary','finance.ledgers.inventory','finance.ledgers.cost_transfer','finance.ledgers.gv'] },
+  { key: 'procurement', label: 'Procurement', icon: 'ti-shopping-cart',
+    anyPerm: ['procurement.requisitions','procurement.purchase_orders','procurement.vendors'] },
 ]
+
+function tabAllowed(tab, permsNew) {
+  if (tab.perm) return hasPerm(permsNew, tab.perm)
+  if (tab.anyPerm) {
+    for (var i = 0; i < tab.anyPerm.length; i++) {
+      if (hasPerm(permsNew, tab.anyPerm[i])) return true
+    }
+    return false
+  }
+  return true
+}
 
 function makeTabbedModule(configKey) {
   return function (props) {
@@ -141,10 +158,15 @@ var MODULES = {
 }
 
 function AdminShell({ profile, onSignOut }) {
-  var [active, setActive] = useState('overview')
+  var permsNew = profile.permsNew || []
+  var visibleTabs = ADMIN_TABS.filter(function (t) { return tabAllowed(t, permsNew) })
+
+  var _defaultTab = visibleTabs.length > 0 ? visibleTabs[0].key : null
+  var [active, setActive] = useState(_defaultTab)
   var [subTab, setSubTab] = useState(null)
 
-  var ActiveModule = MODULES[active] || null
+  var _isVisible = visibleTabs.find(function (t) { return t.key === active }) != null
+  var ActiveModule = _isVisible ? (MODULES[active] || null) : null
   var activeLabel = ADMIN_TABS.find(function (t) { return t.key === active })?.label || ''
 
   return (
@@ -156,7 +178,7 @@ function AdminShell({ profile, onSignOut }) {
           <p className="text-[10px] uppercase tracking-[0.12em] mt-0.5 font-medium" style={{ color: 'rgba(148,163,184,.6)' }}>Admin</p>
         </div>
         <nav className="flex-1 px-2 py-3 space-y-0.5 overflow-y-auto">
-          {ADMIN_TABS.map(function (tab) {
+          {visibleTabs.map(function (tab) {
             var isActive = active === tab.key
             return (
               <button

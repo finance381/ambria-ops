@@ -89,9 +89,11 @@ export var PERM_GROUPS = [
       optional: [{ key: 'hr.employees.salary_view', label: 'See salaries' }] },
   ]},
   { group: 'Admin', icon: '⚙️', scope: 'both', children: [
-    { key: 'admin.dashboard', label: 'Admin Panel',    scope: 'both' },
-    { key: 'admin.masters',   label: 'Manage Masters', scope: 'desktop' },
-    { key: 'admin.users',     label: 'Manage Users',   scope: 'desktop' },
+    { key: 'admin.dashboard', label: 'Admin Panel',        scope: 'both' },
+    { key: 'admin.overview',  label: 'Overview Dashboard', scope: 'desktop' },
+    { key: 'admin.analytics', label: 'Analytics',          scope: 'desktop' },
+    { key: 'admin.masters',   label: 'Manage Masters',     scope: 'desktop' },
+    { key: 'admin.users',     label: 'Manage Users',       scope: 'desktop' },
   ]},
 ]
 
