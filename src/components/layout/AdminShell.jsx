@@ -56,56 +56,81 @@ function SubTabs({ tabs, active, onChange }) {
 
 var SUB_TAB_CONFIG = {
   events: [
-    { key: 'events', label: 'Events', component: Events },
-    { key: 'extra_plates', label: 'Extra Plates', component: ExtraPlateCollect },
+    { key: 'events',       label: 'Events',        component: Events,            perm: 'events.list' },
+    { key: 'extra_plates', label: 'Extra Plates',  component: ExtraPlateCollect, perm: 'events.extra_plate_collect' },
   ],
   inventory: [
-    { key: 'pending', label: 'Pending Review', component: PendingReview },
-    { key: 'items', label: 'All Items', component: AdminItems },
-    { key: 'production', label: 'Production', component: ProductionOrders },
-    { key: 'boxes', label: 'Boxes', component: Boxes },
-    { key: 'challans', label: 'Challans', component: Challans },
+    { key: 'pending',    label: 'Pending Review', component: PendingReview,    perm: 'review.pending' },
+    { key: 'items',      label: 'All Items',      component: AdminItems,       perm: 'inventory.items' },
+    { key: 'production', label: 'Production',     component: ProductionOrders, perm: 'inventory.production' },
+    { key: 'boxes',      label: 'Boxes',          component: Boxes,            perm: 'inventory.boxes' },
+    { key: 'challans',   label: 'Challans',       component: Challans,         perm: 'inventory.challans' },
   ],
   masters: [
-    { key: 'categories', label: 'Categories', component: Categories },
-    { key: 'job_departments', label: 'Job Departments', component: JobDepartments },
-    { key: 'ratecard', label: 'Rate Card', component: RateCardEditor },
-    { key: 'staff_roles', label: 'Staff Roles', component: StaffRoles },
-    { key: 'expense_types', label: 'Expense Types', component: ExpenseTypesMaster },
-    { key: 'employee_doc_types', label: 'Employee Docs', component: EmployeeDocTypes },
+    { key: 'categories',         label: 'Categories',      component: Categories,         perm: 'admin.masters' },
+    { key: 'job_departments',    label: 'Job Departments', component: JobDepartments,     perm: 'admin.masters' },
+    { key: 'ratecard',           label: 'Rate Card',       component: RateCardEditor,     anyPerm: ['admin.masters','events.ratecard'] },
+    { key: 'staff_roles',        label: 'Staff Roles',     component: StaffRoles,         perm: 'admin.masters' },
+    { key: 'expense_types',      label: 'Expense Types',   component: ExpenseTypesMaster, perm: 'admin.masters' },
+    { key: 'employee_doc_types', label: 'Employee Docs',   component: EmployeeDocTypes,   perm: 'admin.masters' },
   ],
   users: [
-    { key: 'users', label: 'Users', component: Users },
-    { key: 'role_templates', label: 'Role Templates', component: RoleTemplates },
-    { key: 'employees', label: 'Employees', component: Employees },
-    { key: 'logs', label: 'Activity Logs', component: ActivityLogs },
+    { key: 'users',          label: 'Users',          component: Users,         perm: 'admin.users' },
+    { key: 'role_templates', label: 'Role Templates', component: RoleTemplates, perm: 'admin.users' },
+    { key: 'employees',      label: 'Employees',      component: Employees,     perm: 'hr.employees' },
+    { key: 'logs',           label: 'Activity Logs',  component: ActivityLogs,  perm: 'admin.users' },
   ],
   procurement: [
-    { key: 'requisitions', label: 'Requisitions', component: Requisitions },
-    { key: 'purchase', label: 'Purchase Orders', component: Purchase },
-    { key: 'vendors', label: 'Vendors', component: Vendors },
+    { key: 'requisitions', label: 'Requisitions',    component: Requisitions, perm: 'procurement.requisitions' },
+    { key: 'purchase',     label: 'Purchase Orders', component: Purchase,     perm: 'procurement.purchase_orders' },
+    { key: 'vendors',      label: 'Vendors',         component: Vendors,      perm: 'procurement.vendors' },
   ],
   expenses: [
-    { key: 'wallet', label: 'Wallet', component: Wallet },
-    { key: 'expenses', label: 'Expenses', component: Expenses },
-    { key: 'payments', label: 'Payments', component: Payments },
-    { key: 'salary_payouts', label: 'Salary Payouts', component: SalaryPayouts },
-    { key: 'ledgers', label: 'Ledgers', component: LedgersHub },
+    { key: 'wallet',         label: 'Wallet',         component: Wallet,         perm: 'finance.wallet' },
+    { key: 'expenses',       label: 'Expenses',       component: Expenses,       perm: 'finance.expenses' },
+    { key: 'payments',       label: 'Payments',       component: Payments,       perm: 'finance.payments' },
+    { key: 'salary_payouts', label: 'Salary Payouts', component: SalaryPayouts,  perm: 'finance.salary_payouts' },
+    { key: 'ledgers',        label: 'Ledgers',        component: LedgersHub,
+      anyPerm: ['finance.ledgers.expense','finance.ledgers.event','finance.ledgers.vendor','finance.ledgers.salary','finance.ledgers.inventory','finance.ledgers.cost_transfer','finance.ledgers.gv'] },
   ],
 }
 
+function subTabAllowed(cfg, permsNew) {
+  if (cfg.perm) return hasPerm(permsNew, cfg.perm)
+  if (cfg.anyPerm) {
+    for (var i = 0; i < cfg.anyPerm.length; i++) {
+      if (hasPerm(permsNew, cfg.anyPerm[i])) return true
+    }
+    return false
+  }
+  return true
+}
+
 function TabbedSection({ config, profile, onNavigate, activeSubTab }) {
-  var [sub, setSub] = useState(activeSubTab || config[0].key)
+  var permsNew = profile.permsNew || []
+  var visibleConfig = config.filter(function (c) { return subTabAllowed(c, permsNew) })
+
+  var _initial = activeSubTab && visibleConfig.find(function (c) { return c.key === activeSubTab })
+    ? activeSubTab
+    : (visibleConfig.length > 0 ? visibleConfig[0].key : null)
+  var [sub, setSub] = useState(_initial)
 
   useEffect(function () {
-    if (activeSubTab && config.find(function (c) { return c.key === activeSubTab })) {
+    if (activeSubTab && visibleConfig.find(function (c) { return c.key === activeSubTab })) {
       setSub(activeSubTab)
     }
   }, [activeSubTab])
-  var Active = config.find(function (c) { return c.key === sub })?.component
+
+  var _isAllowed = visibleConfig.find(function (c) { return c.key === sub }) != null
+  var Active = _isAllowed ? config.find(function (c) { return c.key === sub })?.component : null
+
+  if (visibleConfig.length === 0) {
+    return <div className="bg-white rounded-lg border border-slate-200 p-8 text-center"><p className="text-slate-400 text-sm">No access</p></div>
+  }
+
   return (
     <div>
-      <SubTabs tabs={config} active={sub} onChange={setSub} />
+      <SubTabs tabs={visibleConfig} active={sub} onChange={setSub} />
       <Suspense fallback={<div className="text-center py-8 text-sm text-gray-400">Loading...</div>}>
         {Active && <Active profile={profile} onNavigate={onNavigate} />}
       </Suspense>

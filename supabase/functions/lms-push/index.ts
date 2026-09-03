@@ -21,36 +21,40 @@ const LEGACY_IDX_TO_ID: Record<number, string> = {
   0: "pushpanjali", 1: "emerald_green", 3: "aura", 4: "valencia",
 }
 
-// Walks nested venues config; returns parent's LMS venue id + name for the given leaf
-function resolveVenue(venuesConfig: any[] | null, q: any): { lmsVenueId: string; lmsVenueName: string } {
-  const fallback = { lmsVenueId: "3", lmsVenueName: "Ambria Pushpanjali" }
+// Walks nested venues config; returns parent's LMS venue id + name, plus leafId + parentId for tier-label lookups
+function resolveVenue(venuesConfig: any[] | null, q: any): { lmsVenueId: string; lmsVenueName: string; leafId: string; parentId: string } {
+  const fallback = { lmsVenueId: "3", lmsVenueName: "Ambria Pushpanjali", leafId: "", parentId: "" }
   let venueId: string | null = q.venue_id || null
   if (!venueId && q.venue_idx != null) venueId = LEGACY_IDX_TO_ID[q.venue_idx] || null
-  if (!venueId || !Array.isArray(venuesConfig)) return fallback
+  if (!venueId) return fallback
+  if (!Array.isArray(venuesConfig)) return Object.assign({}, fallback, { leafId: venueId, parentId: venueId })
 
   for (const p of venuesConfig) {
     const hasSubs = Array.isArray(p.sub_venues) && p.sub_venues.length > 0
     if (!hasSubs && p.id === venueId) {
       const id = String(p.lms_venue_id || "3")
-      return { lmsVenueId: id, lmsVenueName: VENUE_NAME_MAP[id] || p.name || fallback.lmsVenueName }
+      return { lmsVenueId: id, lmsVenueName: VENUE_NAME_MAP[id] || p.name || fallback.lmsVenueName, leafId: venueId, parentId: p.id }
     }
     if (hasSubs) {
       for (const s of p.sub_venues) {
         if (s.id === venueId) {
           const id = String(p.lms_venue_id || "3")
-          return { lmsVenueId: id, lmsVenueName: VENUE_NAME_MAP[id] || p.name || fallback.lmsVenueName }
+          return { lmsVenueId: id, lmsVenueName: VENUE_NAME_MAP[id] || p.name || fallback.lmsVenueName, leafId: venueId, parentId: p.id }
         }
       }
     }
   }
-  return fallback
+  return Object.assign({}, fallback, { leafId: venueId, parentId: venueId })
 }
 
 const MENU_ID_MAP: Record<string, string> = {
-  "0-0": "2", "0-1": "3",   // Magnum veg/nv
-  "1-0": "4", "1-1": "5",   // Double Magnum
-  "2-0": "6", "2-1": "7",   // Multi Cuisine
-  "3-0": "8", "3-1": "9",   // Luxury
+  "0-0": "2", "0-1": "3",     // Magnum veg/nv
+  "1-0": "4", "1-1": "5",     // Double Magnum
+  "2-0": "6", "2-1": "7",     // Multi Cuisine
+  "3-0": "8", "3-1": "9",     // Luxury
+  "4-0": "32", "4-1": "33",   // Pearl
+  "5-0": "34", "5-1": "35",   // Sapphire
+  "6-0": "36", "6-1": "37",   // Bliss
 }
 
 const FUNC_TYPE_MAP: Record<string, string> = {
@@ -76,6 +80,37 @@ const DECOR_LABELS: Record<number, string> = {
 
 const DJ_LABELS: Record<number, string> = {
   0: "DJ + LED", 1: "Std DJ - No LED",
+}
+
+// Looks up config.<section>[venueKey].labels[tierIdx]. Returns null if missing/empty.
+function lookupTierLabel(sectionCfg: any, venueKey: string, tierIdx: number): string | null {
+  if (!sectionCfg || !venueKey) return null
+  const sec = sectionCfg[venueKey]
+  if (!sec || !Array.isArray(sec.labels)) return null
+  const label = sec.labels[tierIdx]
+  return (typeof label === "string" && label.length > 0) ? label : null
+}
+
+// Computes per-head rate (rupees) from LMS-variant menu; uses shared menu_formula for sliding menus.
+function computePerHeadLms(menuLms: any, formula: any, menuIdx: number, pax: number, foodPref: number): number {
+  if (!menuLms || !Array.isArray(menuLms.labels) || menuIdx < 0 || menuIdx >= menuLms.labels.length) return 0
+  const nvUp = foodPref === 1 ? (+(menuLms.nv_upgrade || 0)) : 0
+  const isSliding = !!(menuLms.is_sliding && menuLms.is_sliding[menuIdx])
+  let ph = 0
+  if (isSliding && formula) {
+    const resetPax = +(formula.reset_pax || 800)
+    const stepPax = +(formula.step_pax || 100) || 1
+    const step = +(formula.step || 50)
+    if (pax >= resetPax) {
+      ph = Math.max(+(formula.reset_floor || 400), +(formula.reset_rate || 1350) - Math.floor((pax - resetPax) / stepPax) * step)
+    } else {
+      const startPax = +(formula.start_pax || 300)
+      ph = Math.max(+(formula.floor_rate || 800), +(formula.start_rate || 1450) - Math.floor((pax - startPax) / stepPax) * step)
+    }
+  } else {
+    ph = +(menuLms.base_rate ? (menuLms.base_rate[menuIdx] || 0) : 0)
+  }
+  return ph + nvUp
 }
 
 // Converts paise to half-rupees for LMS (stores half the real figure).
@@ -146,19 +181,29 @@ serve(async (req) => {
     const phone = (q.guest_phone || "").replace(/\D/g, "").slice(-10)
     if (!phone || phone.length < 10) throw new Error("Valid 10-digit phone required")
 
-    // Load venues config to resolve leaf → parent LMS venue id/name
-    const { data: cfgRow } = await db
+    // Load quote_config: venues (leaf→parent) + menu_lms/menu_formula (LMS-variant menu split) + decor/dj (live tier labels)
+    const { data: cfgRows } = await db
       .from("quote_config")
-      .select("value")
-      .eq("key", "venues")
-      .single()
-    const venuesConfig = (cfgRow?.value as any[]) || null
+      .select("key, value")
+      .in("key", ["venues", "menu", "menu_lms", "menu_formula", "decor", "dj"])
+    const cfg: Record<string, any> = {}
+    for (const r of (cfgRows || [])) cfg[r.key] = r.value
+    const venuesConfig = (cfg.venues as any[]) || null
+    const menuLms = cfg.menu_lms || cfg.menu || null
+    const menuFormula = cfg.menu_formula || null
+    const decorCfg = cfg.decor || {}
+    const djCfg = cfg.dj || {}
 
     // Build LMS payload
-    const menuKey = (q.menu_idx ?? 3) + "-" + (q.food_pref ?? 0)
+    const menuIdx = q.menu_idx ?? 3
+    const menuKey = menuIdx + "-" + (q.food_pref ?? 0)
     const funcType = FUNC_TYPE_MAP[q.event_type] || "3"
     const slotTiming = SLOT_TIMING[q.slot ?? 0] || "18:00"
-    const { lmsVenueId: venueId, lmsVenueName: venueName } = resolveVenue(venuesConfig, q)
+    const { lmsVenueId: venueId, lmsVenueName: venueName, leafId, parentId } = resolveVenue(venuesConfig, q)
+
+    // Resolve live decor + DJ tier labels (fall back to hardcoded map if config lacks the tier)
+    const decorLabel = lookupTierLabel(decorCfg, leafId, q.decor_idx ?? 0) || DECOR_LABELS[q.decor_idx ?? 0] || "Premium"
+    const djLabel = lookupTierLabel(djCfg, parentId, q.dj_idx ?? 0) || DJ_LABELS[q.dj_idx ?? 0] || "DJ + LED"
 
     // Use deal breakdowns when negotiated, else quote tier
     const hasDeal = q.deal_value_paise != null && q.deal_value_paise > 0
@@ -182,9 +227,10 @@ serve(async (req) => {
 
     // Split V+M into per-person menu rate + venue rental lumpsum when possible.
     // Menu rate feeds fisd_menu_rate (LMS multiplies by pax); leftover goes to fisd_venue_value.
+    // Per-head recomputed from LMS-variant menu (quote_config.menu_lms) — independent of the rate used for customer pricing.
     const pax = q.pax || 0
-    const perHeadPaise = q.per_head_rate || 0
-    const menuRateHalfRupees = (includeMenu && perHeadPaise > 0) ? Math.round(perHeadPaise / 200) : 0
+    const perHeadLmsRupees = computePerHeadLms(menuLms, menuFormula, menuIdx, pax, q.food_pref ?? 0)
+    const menuRateHalfRupees = (includeMenu && perHeadLmsRupees > 0) ? Math.round(perHeadLmsRupees / 2) : 0
     const projMenuValue = menuRateHalfRupees * pax
     const canSplit = includeMenu && projMenuValue > 0 && projMenuValue <= vmHalfRupees
 
@@ -219,10 +265,10 @@ serve(async (req) => {
       fisd_venue_value: venueValueStr,
       fisd_decoration_lumpsum: decorRupees,
       fisd_decor_type: "Enpaneled",
-      fisd_decoration_remarks: DECOR_LABELS[q.decor_idx ?? 0] || "Premium",
+      fisd_decoration_remarks: decorLabel,
       fisd_entertainment_lumpsum: djRupees,
       fisd_entertain_type: "Enpaneled",
-      fisd_entertainment_remarks: DJ_LABELS[q.dj_idx ?? 0] || "DJ + LED",
+      fisd_entertainment_remarks: djLabel,
       fis_guest_name: q.guest_name,
       fis_client_mobile: phone,
       fis_address: q.guest_address || "-",

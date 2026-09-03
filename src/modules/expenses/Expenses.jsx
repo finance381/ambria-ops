@@ -13,6 +13,7 @@ import ExpenseReport from './ExpenseReport'
 import { pushBack, goBack as navBack } from '../../lib/backNav'
 import { hasPerm } from '../../lib/permissions'
 
+
 var PAGE_SIZE = 20
 
 function Expenses({ profile, masterMode }) {

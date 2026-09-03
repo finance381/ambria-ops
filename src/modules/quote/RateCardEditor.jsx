@@ -800,11 +800,24 @@ function MenuEditor({ config, onSave, saving }) {
 
   var nonRestroParents = ((config.venues || []).filter(function (p) { return p.id !== 'restro' }).map(function (p) { return { id: p.id, name: p.name } }))
 
-  var [menu, setMenu] = useState(normalizeMenu(config.menu))
+  var [variant, setVariant] = useState('qc')
+  var [menuQc, setMenuQc] = useState(normalizeMenu(config.menu))
+  var [menuLms, setMenuLms] = useState(normalizeMenu(config.menu_lms || config.menu))
   var [formula, setFormula] = useState(clone(config.menu_formula || FORMULA_DEFAULTS))
+  var menu = variant === 'qc' ? menuQc : menuLms
+  var setMenu = variant === 'qc' ? setMenuQc : setMenuLms
+  var variantKey = variant === 'qc' ? 'menu' : 'menu_lms'
+  var variantLabel = variant === 'qc' ? 'Quote Calc' : 'LMS Push'
 
-  useEffect(function () { setMenu(normalizeMenu(config.menu)) }, [config.menu])
+  useEffect(function () { setMenuQc(normalizeMenu(config.menu)) }, [config.menu])
+  useEffect(function () { setMenuLms(normalizeMenu(config.menu_lms || config.menu)) }, [config.menu_lms, config.menu])
   useEffect(function () { setFormula(clone(config.menu_formula || FORMULA_DEFAULTS)) }, [config.menu_formula])
+
+  function copyFromQc() {
+    if (window.confirm('Copy all menu structure and rates from Quote Calc? Overwrites current LMS Push values (unsaved).')) {
+      setMenuLms(clone(menuQc))
+    }
+  }
 
   function updArr(field, idx, val) { var d = clone(menu); d[field][idx] = val; setMenu(d) }
 
@@ -852,7 +865,30 @@ function MenuEditor({ config, onSave, saving }) {
 
   return (
     <>
-      <Card title="Menu Rates">
+      <Card title={'Menu Rates (' + variantLabel + ')'}>
+        <div style={{ display: 'flex', gap: 6, marginBottom: 12, padding: 4, background: C.bg, borderRadius: 9, border: '1px solid ' + C.border, alignItems: 'center' }}>
+          <button onClick={function () { setVariant('qc') }} style={{
+            flex: 1, padding: '7px 10px', borderRadius: 7, fontSize: 11, fontWeight: 700, cursor: 'pointer',
+            border: 'none', background: variant === 'qc' ? '#fff' : 'transparent',
+            color: variant === 'qc' ? C.maroon2 : C.muted,
+            boxShadow: variant === 'qc' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+            fontFamily: 'inherit',
+          }}>Quote Calc</button>
+          <button onClick={function () { setVariant('lms') }} style={{
+            flex: 1, padding: '7px 10px', borderRadius: 7, fontSize: 11, fontWeight: 700, cursor: 'pointer',
+            border: 'none', background: variant === 'lms' ? '#fff' : 'transparent',
+            color: variant === 'lms' ? C.maroon2 : C.muted,
+            boxShadow: variant === 'lms' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+            fontFamily: 'inherit',
+          }}>LMS Push</button>
+          {variant === 'lms' && (
+            <button onClick={copyFromQc} title="Copy structure + rates from Quote Calc" style={{
+              padding: '7px 10px', borderRadius: 7, fontSize: 11, fontWeight: 700, cursor: 'pointer',
+              border: '1px solid ' + C.gold, background: '#FFF8F0', color: C.gold, fontFamily: 'inherit', whiteSpace: 'nowrap',
+            }}>Copy from QC</button>
+          )}
+        </div>
+
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, padding: 10, borderRadius: 9, background: C.bg, border: '1px solid ' + C.border }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: C.maroon2, flex: 1 }}>NV Upgrade (₹/hd)</div>
           <div style={{ width: 80 }}>
@@ -908,7 +944,7 @@ function MenuEditor({ config, onSave, saving }) {
           )
         })}
         <AddRow label="Add Menu" onClick={addMenu} />
-        <Btn label="Save Menu Rates" variant="primary" onClick={function () { onSave('menu', menu) }} disabled={saving} style={{ width: '100%', marginTop: 12 }} />
+        <Btn label={'Save ' + variantLabel + ' Menu Rates'} variant="primary" onClick={function () { onSave(variantKey, menu) }} disabled={saving} style={{ width: '100%', marginTop: 12 }} />
       </Card>
 
       <Card title="Sliding Scale Formula">
