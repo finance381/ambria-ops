@@ -92,7 +92,7 @@ function Events({ profile }) {
   var [extraPlateSummary, setExtraPlateSummary] = useState(null)
   var [venueMap, setVenueMap] = useState({})
 
-  var isAdmin = profile?.role === 'admin' || profile?.role === 'auditor'
+  var isAdmin = profile?.role === 'admin' || profile?.role === 'auditor' || hasPerm(profile?.permsNew, 'events.list')
   var permsNew = profile?.permsNew || []
 
   useEffect(function () {

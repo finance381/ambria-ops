@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { formatPoints } from '../../lib/format'
 import { pushBack } from '../../lib/backNav'
 import { registerPdfFont } from '../../lib/pdfFont'
+import { hasPerm } from '../../lib/permissions'
 
 var STATUS_LABELS = { recorded: 'Recorded', flagged: 'Flagged', acknowledged: 'Acknowledged', deducted: 'Deducted' }
 var STATUS_COLORS = {
@@ -38,7 +39,7 @@ function getPresetRange(preset) {
 }
 
 function Ledgers({ profile }) {
-  var isAdmin = profile?.role === 'admin' || profile?.role === 'auditor'
+  var isAdmin = profile?.role === 'admin' || profile?.role === 'auditor' || hasPerm(profile?.permsNew, 'finance.ledgers.expense')
   var scopeDeptIds = isAdmin ? null : (profile?.event_dept_ids || [])
   var hasScope = !isAdmin && scopeDeptIds && scopeDeptIds.length > 0
 

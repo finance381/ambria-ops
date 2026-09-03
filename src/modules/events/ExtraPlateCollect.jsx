@@ -5,6 +5,7 @@ import { logActivity } from '../../lib/logger'
 import { prepUpload } from '../../lib/uploadHelper'
 import EventDatePicker from '../../components/ui/EventDatePicker'
 import VoiceInput from '../../components/ui/VoiceInput'
+import { hasPerm } from '../../lib/permissions'
 
 var BANK_SUB_MODES = [
   { value: 'upi', label: 'UPI' },
@@ -23,7 +24,7 @@ var SUB_MODE_LABEL = {
 
 function ExtraPlateCollect({ profile, onBalanceChange }) {
 
-  var isAdmin = profile?.role === 'admin' || profile?.role === 'auditor'
+  var isAdmin = profile?.role === 'admin' || profile?.role === 'auditor' || hasPerm(profile?.permsNew, 'events.extra_plate_collect')
   var [view, setView] = useState('manage')
 
   // Event selection

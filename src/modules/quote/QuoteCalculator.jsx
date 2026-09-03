@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import EventDatePicker from '../../components/ui/EventDatePicker'
 import { useLang } from '../../lib/i18n.jsx'
 import VoiceInput from '../../components/ui/VoiceInput'
+import { hasPerm } from '../../lib/permissions'
 
 /* ═══════════════════════════════════════════════════════
    AMBRIA QUOTE CALCULATOR — Server-Side Pricing
@@ -1028,7 +1029,7 @@ function QuoteCalculator({ profile, onExit, onSignOut }) {
     setTheme(next)
     rememberTheme(next)
   }
-  var isAdmin = profile.role === 'admin' || profile.role === 'auditor'
+  var isAdmin = profile.role === 'admin' || profile.role === 'auditor' || hasPerm(profile.permsNew, 'events.quote')
 
   var [page, setPage] = useState(0)
   var [guestName, setGuestName] = useState('')

@@ -48,7 +48,7 @@ function Employees({ profile }) {
   var [importSummary, setImportSummary] = useState(null)   // { created, skipped, skippedRows }
 
   var permsNew = (profile && profile.permsNew) || []
-  var isAdminOrHR = profile && (profile.role === 'admin' || profile.role === 'auditor')
+  var isAdminOrHR = profile && (profile.role === 'admin' || profile.role === 'auditor' || hasPerm(profile.permsNew, 'hr.employees'))
   var hasEmployeesPerm = isAdminOrHR || hasPerm(permsNew, 'hr.employees')
   var canSeeAll = isAdminOrHR
   var canSeeSalary = isAdminOrHR || hasPerm(permsNew, 'hr.employees.salary_view')

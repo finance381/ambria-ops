@@ -5,6 +5,7 @@ import { formatDate, titleCase } from '../../lib/format'
 import { logActivity } from '../../lib/logger'
 import Modal from '../../components/ui/Modal'
 import InventoryForm from './InventoryForm'
+import { hasPerm } from '../../lib/permissions'
 
 function FilterDropdown({ value, onChange, options, placeholder, multi }) {
   var [open, setOpen] = useState(false)
@@ -70,6 +71,7 @@ function FilterDropdown({ value, onChange, options, placeholder, multi }) {
 }
 
 function AdminItems({ profile }) {
+  var canViewCosts = profile?.role === 'admin' || profile?.role === 'auditor' || hasPerm(profile?.permsNew, 'finance.view_costs')
   var [items, setItems] = useState([])
   var [loading, setLoading] = useState(true)
   var [search, setSearch] = useState('')
@@ -199,7 +201,9 @@ function AdminItems({ profile }) {
   }
 
   function exportItems() {
-    var headers = ['ID', 'Inventory ID', 'Name', 'Name Hindi', 'Category', 'Sub-category', 'Type', 'Qty', 'Unit', 'Department', 'Description', 'Status', 'Source', 'Brand', 'Pack Size Qty', 'Pack Size Unit', 'Min Order / Season Reorder', 'Reorder / Off Season Reorder', 'Rate (₹)', 'Is Asset', 'Dimensions', 'Venue Code', 'Sub-Venue', 'Venue Qty', 'Image URL', 'Date Added']
+    var headers = ['ID', 'Inventory ID', 'Name', 'Name Hindi', 'Category', 'Sub-category', 'Type', 'Qty', 'Unit', 'Department', 'Description', 'Status', 'Source', 'Brand', 'Pack Size Qty', 'Pack Size Unit', 'Min Order / Season Reorder', 'Reorder / Off Season Reorder']
+    if (canViewCosts) headers.push('Rate (₹)')
+    headers = headers.concat(['Is Asset', 'Dimensions', 'Venue Code', 'Sub-Venue', 'Venue Qty', 'Image URL', 'Date Added'])
     var rows = sorted.map(function (i) {
       var allocs = i.venue_allocations || []
       if (venueFilter.length > 0) {
@@ -212,7 +216,7 @@ function AdminItems({ profile }) {
       var venueSubVenues = allocs.map(function (va) { var sv = subVenues.find(function (s) { return s.id === va.sub_venue_id }); return sv?.name || '' }).join('; ')
       var venueQtys = allocs.map(function (va) { return va.qty }).join('; ')
       var imgUrl = i.image_path ? supabase.storage.from('images').getPublicUrl(i.image_path).data?.publicUrl || '' : ''
-      return [
+      var row = [
         i.id, i.inventory_id || '', i.name, i.name_hindi || '',
         i.categories?.name || '', i.sub_categories?.name || '',
         i.type || '', venueFilter.length > 0 ? allocs.reduce(function (sum, va) { return sum + (va.qty || 0) }, 0) : i.qty, i.unit || '', i.department || '',
@@ -220,10 +224,10 @@ function AdminItems({ profile }) {
         i.brand || '', i.pack_size_qty || '', i.pack_size_unit || '',
         i.season_reorder_qty || i.min_order_qty || '',
         i.off_season_reorder_qty || i.reorder_qty || '',
-        i.rate_paise ? (i.rate_paise / 100) : '',
-        i.is_asset || '', formatDimensionsCsv(i.dimensions), venueCodes, venueSubVenues, venueQtys, imgUrl,
-        i.entry_date || (i.created_at ? i.created_at.split('T')[0] : '')
-      ].map(csvEscape).join(',')
+      ]
+      if (canViewCosts) row.push(i.rate_paise ? (i.rate_paise / 100) : '')
+      row.push(i.is_asset || '', formatDimensionsCsv(i.dimensions), venueCodes, venueSubVenues, venueQtys, imgUrl, i.entry_date || (i.created_at ? i.created_at.split('T')[0] : ''))
+      return row.map(csvEscape).join(',')
     })
     var csv = '\uFEFF' + headers.join(',') + '\n' + rows.join('\n')
     var blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
@@ -1004,7 +1008,7 @@ function AdminItems({ profile }) {
                   </td>
                   <td className="px-3 py-2 text-right whitespace-nowrap">
                     <div className="font-medium text-gray-900">{item.qty} <span className="text-[11px] font-normal text-gray-400">{item.unit || ''}</span></div>
-                    {item.rate_paise && (profile?.role === 'admin' || profile?.role === 'auditor') ? <div className="text-[11px] text-gray-400">₹{(item.rate_paise / 100).toFixed(item.rate_paise % 100 ? 2 : 0)}</div> : null}
+                    {item.rate_paise && canViewCosts ? <div className="text-[11px] text-gray-400">₹{(item.rate_paise / 100).toFixed(item.rate_paise % 100 ? 2 : 0)}</div> : null}
                   </td>
                   
                   <td className="px-3 py-2">

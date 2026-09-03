@@ -6,7 +6,7 @@ import { hasPerm } from '../../lib/permissions'
 function GVLog({ profile }) {
   var permsNew = (profile && profile.permsNew) || []
   var isAdmin = profile?.role === 'admin' || hasPerm(permsNew, 'admin.dashboard')
-  var canView = isAdmin || hasPerm(permsNew, 'finance.gv')
+  var canView = isAdmin || hasPerm(permsNew, 'finance.gv') || hasPerm(permsNew, 'finance.ledgers.gv')
 
   var [gvs, setGvs] = useState([])
   var [loading, setLoading] = useState(true)

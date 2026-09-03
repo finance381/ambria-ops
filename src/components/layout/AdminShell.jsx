@@ -144,7 +144,7 @@ var ADMIN_TABS = [
   { key: 'inventory',   label: 'Inventory',   icon: 'ti-package',
     anyPerm: ['inventory.add','inventory.items','inventory.production','inventory.boxes','inventory.challans','inventory.receive','review.pending'] },
   { key: 'events',      label: 'Events',      icon: 'ti-calendar-event',
-    anyPerm: ['events.list','events.manpower','events.quote'] },
+    anyPerm: ['events.list','events.quote'] },
   { key: 'masters',     label: 'Masters',     icon: 'ti-adjustments',    perm: 'admin.masters' },
   { key: 'users',       label: 'Users',       icon: 'ti-users',
     anyPerm: ['admin.users','hr.employees'] },

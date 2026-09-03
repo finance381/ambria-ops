@@ -50,7 +50,6 @@ export var PERM_GROUPS = [
       optional: [{ key: 'events.list.setup_teardown', label: 'Set setup/teardown days' }] },
     { key: 'events.extra_plate_collect', label: 'Extra Plate Collection', scope: 'mobile', dataScope: true,
       note: 'F&B floor staff collecting extra plate revenue on event day' },
-    { key: 'events.manpower',            label: 'Manpower',               scope: 'both' },
     { key: 'events.quote',               label: 'Quote Calculator',       scope: 'both' },
     { key: 'events.ratecard',            label: 'Rate Card Editor',       scope: 'both' },
   ]},
@@ -64,7 +63,10 @@ export var PERM_GROUPS = [
     { key: 'procurement.vendors',         label: 'Vendors Master',  scope: 'both' },
   ]},
   { group: 'Finance', icon: '💰', scope: 'both', children: [
-    { key: 'finance.wallet',         label: 'Wallet',         scope: 'both' },
+    { key: 'finance.wallet',         label: 'Wallet',         scope: 'both',
+      optional: [{ key: 'finance.wallet.admin', label: 'Manage all wallets (cross-user)' }] },
+    { key: 'finance.view_costs',     label: 'View Item Costs', scope: 'both',
+      note: 'See ₹ rates on inventory items across the app' },
     { key: 'finance.expenses',       label: 'Expenses',       scope: 'both', dataScope: true,
       optional: [
         { key: 'finance.expenses.approve', label: 'Approve/reject expenses' },
@@ -119,7 +121,7 @@ export var LEGACY_KEY_MAP = {
   feature_events:              'events.list',
   event_buffer:                'events.list.setup_teardown',
   feature_extra_plate_collect: 'events.extra_plate_collect',
-  feature_manpower:            'events.manpower',
+
   feature_quote:               'events.quote',
   feature_ratecard:            'events.ratecard',
   feature_requisitions:        'procurement.requisitions',

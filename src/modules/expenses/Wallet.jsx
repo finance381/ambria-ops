@@ -2,13 +2,14 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import WalletManager from './WalletManager'
 import { goBack as navBack } from '../../lib/backNav'
+import { hasPerm } from '../../lib/permissions'
 
 function Wallet({ profile }) {
   var [walletBalance, setWalletBalance] = useState(0)
   var [myWallet, setMyWallet] = useState(null)
   var [loading, setLoading] = useState(true)
 
-  var isWalletAdmin = profile?.role === 'admin'
+  var isWalletAdmin = profile?.role === 'admin' || hasPerm(profile?.permsNew, 'finance.wallet.admin')
   var isAuditor = profile?.role === 'auditor'
 
   useEffect(function () {
