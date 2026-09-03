@@ -39,7 +39,7 @@ function getPresetRange(preset) {
 }
 
 function Ledgers({ profile }) {
-  var isAdmin = profile?.role === 'admin' || profile?.role === 'auditor' || hasPerm(profile?.permsNew, 'finance.ledgers.expense')
+  var isAdmin = hasPerm(profile?.permsNew, 'finance.ledgers.expense')
   var scopeDeptIds = isAdmin ? null : (profile?.event_dept_ids || [])
   var hasScope = !isAdmin && scopeDeptIds && scopeDeptIds.length > 0
 

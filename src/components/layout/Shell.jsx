@@ -101,8 +101,8 @@ function Shell({ profile, onSignOut }) {
   var [tab, setTab] = useState(null)
   var [showSuccess, setShowSuccess] = useState(false)
 
-  var isAdmin = profile.role === 'admin' || profile.role === 'auditor'
   var permsNew = profile.permsNew || []
+  var isAdmin = hasPerm(permsNew, 'admin.dashboard')
   var { lang, switchLang } = useLang()
 
   var [badges, setBadges] = useState({})
@@ -200,7 +200,7 @@ function Shell({ profile, onSignOut }) {
 
   async function loadBadges(isStale) {
     var counts = {}
-    var isAdminRole = profile.role === 'admin' || profile.role === 'auditor'
+    var isAdminRole = hasPerm(permsNew, 'admin.dashboard')
     var isDeptAppr = hasPerm(permsNew, 'review.dept.approve')
     var hasExpApprove = hasPerm(permsNew, 'finance.expenses.approve')
 

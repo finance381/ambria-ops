@@ -96,7 +96,7 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved }) {
       supabase.from('sub_categories').select('*').eq('category_id', Number(categoryId)).order('name')
         .then(function ({ data }) {
           var subs = data || []
-          var isAdmin = profile?.role === 'admin' || profile?.role === 'auditor'
+          var isAdmin = hasPerm(profile?.permsNew, 'inventory.items')
           var userSubIds = profile?.sub_category_ids || []
           if (!isAdmin && userSubIds.length > 0) {
             subs = subs.filter(function (s) { return userSubIds.includes(s.id) })
@@ -422,7 +422,7 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved }) {
     }
     if (!isEdit && profile?.id) { payload.submitted_by = profile.id }
     if (!isEdit) {
-      var isAdminRole = profile?.role === 'admin' || profile?.role === 'auditor'
+      var isAdminRole = hasPerm(profile?.permsNew, 'review.pending.approve')
       if (prefill || isAdminRole) {
         payload.status = 'approved'
       } else {

@@ -9,7 +9,7 @@ function Wallet({ profile }) {
   var [myWallet, setMyWallet] = useState(null)
   var [loading, setLoading] = useState(true)
 
-  var isWalletAdmin = profile?.role === 'admin' || hasPerm(profile?.permsNew, 'finance.wallet.admin')
+  var isWalletAdmin = hasPerm(profile?.permsNew, 'finance.wallet.admin')
   var isAuditor = profile?.role === 'auditor'
 
   useEffect(function () {

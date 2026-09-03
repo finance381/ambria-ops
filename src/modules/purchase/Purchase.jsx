@@ -75,7 +75,7 @@ function Purchase({ profile, mode }) {
   var [receivingStatusFilter, setReceivingStatusFilter] = useState('purchased')
 
   var assignLockRef = useRef(false)
-  var isAdmin = profile?.role === 'admin' || profile?.role === 'auditor' || hasPerm(profile?.permsNew, 'procurement.purchase_orders')
+  var isAdmin = hasPerm(profile?.permsNew, 'procurement.purchase_orders')
   var hasPurchase = hasPerm(profile?.permsNew, 'procurement.purchase_orders')
   var hasReceive = hasPerm(profile?.permsNew, 'inventory.receive')
   // mode === 'receive' forces receiver-only view for everyone (incl. admin) — Shell routes here from Receive Items tile

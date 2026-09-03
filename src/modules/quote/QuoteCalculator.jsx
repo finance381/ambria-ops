@@ -1029,7 +1029,7 @@ function QuoteCalculator({ profile, onExit, onSignOut }) {
     setTheme(next)
     rememberTheme(next)
   }
-  var isAdmin = profile.role === 'admin' || profile.role === 'auditor' || hasPerm(profile.permsNew, 'events.quote')
+  var isAdmin = hasPerm(profile?.permsNew, 'events.quote')
 
   var [page, setPage] = useState(0)
   var [guestName, setGuestName] = useState('')

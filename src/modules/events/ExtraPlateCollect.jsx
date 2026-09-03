@@ -24,7 +24,7 @@ var SUB_MODE_LABEL = {
 
 function ExtraPlateCollect({ profile, onBalanceChange }) {
 
-  var isAdmin = profile?.role === 'admin' || profile?.role === 'auditor' || hasPerm(profile?.permsNew, 'events.extra_plate_collect')
+  var isAdmin = hasPerm(profile?.permsNew, 'events.extra_plate_collect')
   var [view, setView] = useState('manage')
 
   // Event selection

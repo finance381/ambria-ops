@@ -65,7 +65,7 @@ function Requisitions({ profile, onBack }) {
   var [userOptions, setUserOptions] = useState([])
   var [venueOptions, setVenueOptions] = useState([])
 
-  var isAdmin = profile?.role === 'admin'
+  var isAdmin = hasPerm(profile?.permsNew, 'procurement.requisitions.admin_approve')
   var isAuditor = profile?.role === 'auditor'
   var isReqDeptApprover = hasPerm(profile?.permsNew, 'procurement.requisitions.dept_approve')
   var isReqAdminApprover = hasPerm(profile?.permsNew, 'procurement.requisitions.admin_approve')
@@ -98,7 +98,7 @@ function Requisitions({ profile, onBack }) {
   useEffect(function () {
     supabase.from('departments').select('id, name').eq('active', true).eq('hide_from_lists', false).then(function (res) {
       var all = res.data || []
-      var isAdminRole = profile?.role === 'admin' || profile?.role === 'auditor'
+      var isAdminRole = hasPerm(profile?.permsNew, 'procurement.requisitions.admin_approve')
       var userDeptIds = profile?.event_dept_ids || []
       var filtered = (isAdminRole || userDeptIds.length === 0) ? all : all.filter(function (d) { return userDeptIds.indexOf(d.id) !== -1 })
       setDepartments(filtered)
@@ -958,12 +958,12 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
   var selectedDept = departments.filter(function (d) { return d.name === department })[0]
   var deptSubDepts = selectedDept ? subDepartments.filter(function (sd) { return sd.department_id === selectedDept.id }) : []
   var userCatIds = profile?.category_ids || []
-  var isUnrestricted = !userCatIds.length || profile?.role === 'admin' || profile?.role === 'auditor'
+  var isUnrestricted = !userCatIds.length || hasPerm(profile?.permsNew, 'procurement.requisitions.admin_approve')
   var subDeptCats = subDeptId ? filterUserCategories(categories, profile).filter(function (c) {
     return c.sub_department_id === Number(subDeptId)
   }) : []
   var catSubCats = categoryId ? subCategories.filter(function (sc) { return sc.category_id === Number(categoryId) }) : []
-  var isAdminEt = profile?.role === 'admin' || profile?.role === 'auditor'
+  var isAdminEt = hasPerm(profile?.permsNew, 'procurement.requisitions.admin_approve')
   var userEtIds = profile?.expense_type_ids || []
   var filteredExpTypes = isAdminEt ? expenseTypes : expenseTypes.filter(function (et) { return userEtIds.indexOf(et.id) !== -1 })
 
@@ -1039,7 +1039,7 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
           try { await logActivity('REQUISITION_EDIT', purpose.trim() + ' | expense | ' + (amtPaise / 100)) } catch (_) {}
         } else {
           var selfIsReqDeptApprover = hasPerm(profile?.permsNew, 'procurement.requisitions.dept_approve')
-          var isAdminRole = profile?.role === 'admin' || profile?.role === 'auditor'
+          var isAdminRole = hasPerm(profile?.permsNew, 'procurement.requisitions.admin_approve')
           var status = 'pending_dept'
           if (isAdminRole) { status = 'approved' }
           else if (selfIsReqDeptApprover) { status = 'pending'; expPayload.dept_approved_by = profile.id; expPayload.dept_approved_at = new Date().toISOString() }
@@ -1111,7 +1111,7 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
       } else {
         // ─── CREATE new requisition ───
         var selfIsReqDeptApprover = hasPerm(profile?.permsNew, 'procurement.requisitions.dept_approve')
-        var isAdminRole = profile?.role === 'admin' || profile?.role === 'auditor'
+        var isAdminRole = hasPerm(profile?.permsNew, 'procurement.requisitions.admin_approve')
 
         var status = 'pending_dept'
         var deptApprovedBy = null
@@ -1568,7 +1568,7 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
             })()}
           </div>
           {expTypeId && (function () {
-            var isAdminEst = profile?.role === 'admin' || profile?.role === 'auditor'
+            var isAdminEst = hasPerm(profile?.permsNew, 'procurement.requisitions.admin_approve')
             var userEstIds = profile?.expense_sub_type_ids || []
             var subTypesForType = expSubTypes.filter(function (st) {
               if (st.expense_type_id !== Number(expTypeId)) return false

@@ -71,7 +71,7 @@ function FilterDropdown({ value, onChange, options, placeholder, multi }) {
 }
 
 function AdminItems({ profile }) {
-  var canViewCosts = profile?.role === 'admin' || profile?.role === 'auditor' || hasPerm(profile?.permsNew, 'finance.view_costs')
+  var canViewCosts = hasPerm(profile?.permsNew, 'finance.view_costs')
   var [items, setItems] = useState([])
   var [loading, setLoading] = useState(true)
   var [search, setSearch] = useState('')

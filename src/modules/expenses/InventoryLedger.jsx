@@ -11,7 +11,7 @@ var PAGE_SIZE = 50
 
 function InventoryLedger({ profile }) {
   var permsNew = (profile && profile.permsNew) || []
-  var isAdmin = profile && (profile.role === 'admin' || profile.role === 'auditor' || hasPerm(profile.permsNew, 'finance.ledgers.inventory'))
+  var isAdmin = hasPerm(profile?.permsNew, 'finance.ledgers.inventory')
   var canView = isAdmin || hasPerm(permsNew, 'finance.ledgers.inventory')
 
   var [items, setItems] = useState([])

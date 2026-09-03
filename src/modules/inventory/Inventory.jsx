@@ -75,7 +75,7 @@ function Inventory({ profile }) {
   async function loadItems(append) {
     if (append) { setLoadingMore(true) } else { setLoading(true) }
     var cursor = append && items.length > 0 ? items[items.length - 1].created_at : null
-    var isAdmin = profile.role === 'admin' || profile.role === 'auditor'
+    var isAdmin = hasPerm(profile?.permsNew, 'inventory.items')
     var myCatIds = profile.category_ids || []
 
     var venueInvIds = null
@@ -162,7 +162,7 @@ function Inventory({ profile }) {
     loadItems(false)
   }
 
-  var showTabs = profile.role === 'admin' || profile.role === 'auditor' || (profile.category_ids || []).length > 0
+  var showTabs = hasPerm(profile?.permsNew, 'inventory.items') || (profile.category_ids || []).length > 0
 
   if (loading && !metaReady) {
     return (
@@ -354,7 +354,7 @@ function Inventory({ profile }) {
 
             {/* Edit button */}
             {(function () {
-              var isAdmin = profile.role === 'admin' || profile.role === 'auditor'
+              var isAdmin = hasPerm(profile?.permsNew, 'inventory.items')
               var isOwner = item.submitted_by === profile.id
               var catIds = profile.category_ids || []
               var itemCatNum = Number(item.category_id)
