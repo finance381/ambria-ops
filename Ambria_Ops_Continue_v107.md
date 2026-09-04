@@ -1,5 +1,15 @@
 # Ambria Ops — v107 Continue Log
 
+## Phase 4 — QuoteCalc
+
+- **4.1** `quotes_update` WITH CHECK hardening — already correct, `USING`/`WITH CHECK` are byte-for-byte identical. No action.
+- **4.2** `menu_cost_paise` save bug — no bug found. Column persists correctly (same atomic write as every other field), no trigger touches it, and it's intentionally write-only — a save-time cost snapshot, correctly not re-read on load since the calculator always recomputes live from current rates.
+- **4.3** Legacy `menu_idx > 3` — already fixed server-side. `calculate_quote()`'s own inline comments document the prior hardcoded `0..3`/`> 3` behavior and its replacement with a dynamic, config-driven range + clamp-to-0 fallback. Minor residual: frontend's `MENU_LABELS` fallback array only covers 4 entries, but it's a transient pre-load fallback, not a functional bug.
+- **4.4** Mobile ActionBar density — fixed. All 6 ActionBar buttons collapse to icon-only below 400px via `max-[400px]:hidden` on text labels. Build-verified, not visually verified in an actual narrow viewport.
+- **4.5** AI Analysis session-token verification — traced the auth flow (session token → Bearer header → `quote-assist` edge function → `supabase.auth.getUser()`), looks correct, but needs a live click-through to actually confirm post-redeploy — **pending user verification**.
+
+Rate calibration items (Pearl/Sapphire/Bliss/Restro TTD/Alstonia) — untouched, per instruction.
+
 ## Phase 1 — Safe autonomous cleanup
 
 - **1.1a** Stripped dead `legacy: r.permissions` read in `Users.jsx` roleDefaultsMap.
