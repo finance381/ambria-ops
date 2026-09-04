@@ -88,7 +88,7 @@ export async function generateCollectionReceiptPdf(data) {
   doc.setFont('helvetica', 'bold'); doc.setFontSize(11)
   doc.text('Receive Receipt', pageW / 2, titleY + 5, { align: 'center' })
 
-  var netAmount = data.amountPaise / 100
+  var netAmount = data.amountRupees / 100
   // Cash uses plain "10000.0" per Sahaj convention; bank keeps en-IN grouping
   var netStr = isBank
     ? netAmount.toLocaleString('en-IN', { minimumFractionDigits: 1, maximumFractionDigits: 2 })
@@ -123,7 +123,7 @@ export async function generateCollectionReceiptPdf(data) {
   autoTable(doc, {
     startY: afterY,
     body: [[{
-      content: 'Net Amount in Words: ' + amountInWordsIndian(data.amountPaise) + ' Only/-',
+      content: 'Net Amount in Words: ' + amountInWordsIndian(data.amountRupees) + ' Only/-',
       styles: { fontStyle: 'bold', halign: 'left' }
     }]],
     theme: 'grid',

@@ -355,7 +355,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
       return
     }
     setIssueSaving(true)
-    var amountPaise = Math.round(Number(issueAmount) * 100)
+    var amountRupees = Math.round(Number(issueAmount) * 100)
     var rpcName = issueType === 'debit' ? 'deduct_money' : 'issue_money'
     var defaultDesc = issueType === 'debit' ? 'Points deducted by admin' : 'Points issued by admin'
     var imagePath = null
@@ -369,7 +369,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     }
     var { error } = await supabase.rpc(rpcName, {
       p_user_id: issueModal.user_id,
-      p_amount_paise: amountPaise,
+      p_amount_paise: amountRupees,
       p_description: issueDesc.trim() || defaultDesc,
     })
     if (error) { alert((issueType === 'debit' ? 'Deduct' : 'Issue') + ' failed: ' + error.message); setIssueSaving(false); return }
@@ -385,7 +385,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
       }
     }
     var logAction = issueType === 'debit' ? 'WALLET_DEDUCT' : 'WALLET_ISSUE'
-    try { await logActivity(logAction, (walletProfiles[issueModal.user_id]?.name || '—') + ' | ' + formatPoints(amountPaise) + ' | ' + (issueDesc.trim() || '—')) } catch (_) {}
+    try { await logActivity(logAction, (walletProfiles[issueModal.user_id]?.name || '—') + ' | ' + formatPoints(amountRupees) + ' | ' + (issueDesc.trim() || '—')) } catch (_) {}
     setIssueModal(null)
     setIssueAmount('')
     setIssueDesc('')
@@ -463,7 +463,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   async function initiateTransfer() {
     if (transferSaving || !transferTo || !transferAmount || Number(transferAmount) <= 0) return
     setTransferSaving(true)
-    var amountPaise = Math.round(Number(transferAmount) * 100)
+    var amountRupees = Math.round(Number(transferAmount) * 100)
     var imagePath = null
     if (transferImage) {
       var tF = await prepUpload(transferImage, 100)
@@ -476,12 +476,12 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     var toName = (transferUsers.find(function (u) { return u.id === transferTo }) || {}).name || '—'
     var { data: tid, error } = await supabase.rpc('initiate_transfer', {
       p_to_user_id: transferTo,
-      p_amount_paise: amountPaise,
+      p_amount_paise: amountRupees,
       p_description: (transferDesc.trim() || 'Cash transfer') + ' → ' + toName,
       p_sender_image: imagePath,
     })
     if (error) { alert('Transfer failed: ' + error.message); setTransferSaving(false); return }
-    try { await logActivity('WALLET_TRANSFER', toName + ' | ' + formatPoints(amountPaise)) } catch (_) {}
+    try { await logActivity('WALLET_TRANSFER', toName + ' | ' + formatPoints(amountRupees)) } catch (_) {}
     setTransferModal(false)
     setTransferSaving(false)
     refreshBalance()
@@ -595,7 +595,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
       await generateCollectionReceiptPdf({
         receiptNo: txn.receipt_no,
         paymentMode: txn.payment_mode,
-        amountPaise: txn.amount_paise,
+        amountRupees: txn.amount_paise,
         description: txn.description,
         createdAt: txn.created_at,
         contractNo: contractNo,
@@ -917,7 +917,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     if (!collectAmount || Number(collectAmount) <= 0) { alert('Enter amount'); return }
     if (collectMode === 'bank' && !collectImage) { alert('Receipt photo is required for bank collections'); return }
     setCollectSaving(true)
-    var amountPaise = Math.round(Number(collectAmount) * 100)
+    var amountRupees = Math.round(Number(collectAmount) * 100)
     var imagePath = null
     if (collectImage) {
       // Upload receipt first — DB write is source of truth
@@ -932,7 +932,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     var { data, error } = await supabase.rpc('fn_wallet_collect', {
       p_event_id: Number(collectEventId),
       p_payment_mode: collectMode,
-      p_amount_paise: amountPaise,
+      p_amount_paise: amountRupees,
       p_description: desc,
       p_receipt_path: imagePath
     })
@@ -940,14 +940,14 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     if (data && data.over_agreed) {
       alert('Warning: this collection exceeds the agreed ' + collectMode + ' amount for the event. Recorded anyway.')
     }
-    try { await logActivity('WALLET_COLLECTION', evtName + ' | ' + collectMode + ' | ' + formatPoints(amountPaise)) } catch (_) {}
+    try { await logActivity('WALLET_COLLECTION', evtName + ' | ' + collectMode + ' | ' + formatPoints(amountRupees)) } catch (_) {}
 
     // Auto-open PDF receipt in new tab
     try {
       await printReceipt({
         receipt_no: data ? data.receipt_no : null,
         payment_mode: collectMode,
-        amount_paise: amountPaise,
+        amount_paise: amountRupees,
         description: desc,
         created_at: new Date().toISOString(),
         reference_id: collectEventId,
@@ -964,7 +964,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     var userIds = Object.keys(bulkSelected).filter(function (k) { return bulkSelected[k] })
     if (bulkSaving || !userIds.length || !bulkAmount || Number(bulkAmount) <= 0) return
     setBulkSaving(true)
-    var amountPaise = Math.round(Number(bulkAmount) * 100)
+    var amountRupees = Math.round(Number(bulkAmount) * 100)
     var desc = bulkDesc.trim() || 'Bulk points issued by admin'
     var succeeded = 0
     var failed = 0
@@ -972,14 +972,14 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     for (var c = 0; c < userIds.length; c += CHUNK) {
       var chunk = userIds.slice(c, c + CHUNK)
       var results = await Promise.allSettled(chunk.map(function (uid) {
-        return supabase.rpc('issue_money', { p_user_id: uid, p_amount_paise: amountPaise, p_description: desc })
+        return supabase.rpc('issue_money', { p_user_id: uid, p_amount_paise: amountRupees, p_description: desc })
       }))
       results.forEach(function (res) {
         if (res.status === 'fulfilled' && !res.value.error) succeeded++
         else failed++
       })
     }
-    try { await logActivity('WALLET_BULK_ISSUE', succeeded + ' users | ' + formatPoints(amountPaise) + ' each | ' + desc) } catch (_) {}
+    try { await logActivity('WALLET_BULK_ISSUE', succeeded + ' users | ' + formatPoints(amountRupees) + ' each | ' + desc) } catch (_) {}
     alert('Done: ' + succeeded + ' issued' + (failed > 0 ? ', ' + failed + ' failed' : ''))
     setBulkSaving(false)
     setBulkMode(false)
