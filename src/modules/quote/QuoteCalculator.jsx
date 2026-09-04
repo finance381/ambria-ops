@@ -961,7 +961,7 @@ function ActionBar({ page, savedId, lmsRef, pushing, saving, analyzing, calcResu
   return (
     <div style={barSt}>
       {!isP0 && (
-        <button onClick={onBack} className="qc-press qc-opt" style={btnSec}><Ic n="back" s={14} /> Back</button>
+        <button onClick={onBack} className="qc-press qc-opt" style={btnSec}><Ic n="back" s={14} /> <span className="max-[400px]:hidden">Back</span></button>
       )}
 
       <div style={{ flex: 1 }} />
@@ -972,14 +972,14 @@ function ActionBar({ page, savedId, lmsRef, pushing, saving, analyzing, calcResu
 
       {!isP0 && (
         <button onClick={onToggleProposal} className="qc-press qc-opt" style={Object.assign({}, btnSec, showProposal ? { backgroundImage: RAMP_SOFT, color: C.violetDeep, borderColor: C.violet } : {})}>
-          <Ic n="doc" s={14} /> {showProposal ? 'Hide proposal' : 'Proposal'}
+          <Ic n="doc" s={14} /> <span className="max-[400px]:hidden">{showProposal ? 'Hide proposal' : 'Proposal'}</span>
         </button>
       )}
 
       {!isP0 && (
         <button onClick={onPrint} disabled={!calcResult} className={calcResult ? 'qc-press qc-opt' : ''}
           style={Object.assign({}, btnSec, { opacity: !calcResult ? 0.5 : 1, cursor: !calcResult ? 'not-allowed' : 'pointer' })}>
-          <Ic n="printer" s={14} /> Print
+          <Ic n="printer" s={14} /> <span className="max-[400px]:hidden">Print</span>
         </button>
       )}
 
@@ -989,7 +989,7 @@ function ActionBar({ page, savedId, lmsRef, pushing, saving, analyzing, calcResu
           style={Object.assign({}, btnSec,
             showAnalysis ? { background: '#EFF6FF', color: '#1D4ED8' } : {},
             { opacity: (analyzing || !calcResult) ? 0.5 : 1, cursor: (analyzing || !calcResult) ? 'not-allowed' : 'pointer' })}>
-          <Ic n="sparkle" s={14} /> {analyzing ? 'Analyzing...' : 'AI'}
+          <Ic n="sparkle" s={14} /> <span className="max-[400px]:hidden">{analyzing ? 'Analyzing...' : 'AI'}</span>
         </button>
       )}
 
@@ -1000,14 +1000,14 @@ function ActionBar({ page, savedId, lmsRef, pushing, saving, analyzing, calcResu
           padding: '10px 18px', fontSize: 13,
           cursor: (saving || pushing || !calcResult) ? 'not-allowed' : 'pointer',
           opacity: (saving || pushing || !calcResult) ? 0.5 : 1,
-        })}><Ic n="check" s={15} /> {saving ? 'Saving...' : savedId ? 'Update quote' : 'Save quote'}</button>
+        })}><Ic n="check" s={15} /> <span className="max-[400px]:hidden">{saving ? 'Saving...' : savedId ? 'Update quote' : 'Save quote'}</span></button>
       )}
 
       {!isP0 && savedId && !lmsRef && (
         <button onClick={onPushLms} disabled={pushing} className={pushing ? '' : 'qc-lift qc-opt'} style={Object.assign({}, btnPri, {
           padding: '10px 18px', fontSize: 13, background: '#1D4ED8',
           cursor: pushing ? 'not-allowed' : 'pointer', opacity: pushing ? 0.5 : 1,
-        })}><Ic n="share" s={15} /> {pushing ? 'Pushing...' : 'Push to LMS'}</button>
+        })}><Ic n="share" s={15} /> <span className="max-[400px]:hidden">{pushing ? 'Pushing...' : 'Push to LMS'}</span></button>
       )}
 
       {isP0 && (
