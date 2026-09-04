@@ -915,15 +915,18 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     if (!collectEventId) { alert('Select a function'); return }
     if (!collectMode) { alert('Select Cash or Bank'); return }
     if (!collectAmount || Number(collectAmount) <= 0) { alert('Enter amount'); return }
-    if (!collectImage) { alert('Receipt photo is required'); return }
+    if (collectMode === 'bank' && !collectImage) { alert('Receipt photo is required for bank collections'); return }
     setCollectSaving(true)
     var amountPaise = Math.round(Number(collectAmount) * 100)
-    // Upload receipt first — DB write is source of truth
-    var cF = await prepUpload(collectImage, 100)
-    var ext = cF.name.split('.').pop()
-    var imagePath = 'wallet/collection/' + profile.id + '_' + Date.now() + '.' + ext
-    var { error: upErr } = await supabase.storage.from('receipts').upload(imagePath, cF, { upsert: true })
-    if (upErr) { alert('Receipt upload failed: ' + upErr.message); setCollectSaving(false); return }
+    var imagePath = null
+    if (collectImage) {
+      // Upload receipt first — DB write is source of truth
+      var cF = await prepUpload(collectImage, 100)
+      var ext = cF.name.split('.').pop()
+      imagePath = 'wallet/collection/' + profile.id + '_' + Date.now() + '.' + ext
+      var { error: upErr } = await supabase.storage.from('receipts').upload(imagePath, cF, { upsert: true })
+      if (upErr) { alert('Receipt upload failed: ' + upErr.message); setCollectSaving(false); return }
+    }
     var evtName = (collectEvents.find(function (e) { return String(e.id) === collectEventId }) || {}).event_name || ''
     var desc = (collectDesc.trim() || 'Collection') + ' — ' + evtName
     var { data, error } = await supabase.rpc('fn_wallet_collect', {
@@ -1282,7 +1285,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     var colCashP = collectBalance ? Number(collectBalance.collected_cash_paise || 0) : 0
     var colBankP = collectBalance ? Number(collectBalance.collected_bank_paise || 0) : 0
     var taxP = collectBalance ? Number(collectBalance.tax_amount_paise || 0) : 0
-    var canSubmit = collectEventId && collectMode && collectAmount && Number(collectAmount) > 0 && collectImage && !collectSaving
+    var canSubmit = collectEventId && collectMode && collectAmount && Number(collectAmount) > 0 && (collectMode === 'cash' || collectImage) && !collectSaving
     return (
       <BottomSheet open={true} onClose={function () { setCollectModal(false) }} title="Collect Payment">
         <div className="space-y-4">
@@ -1436,7 +1439,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
 
           {collectEventId && (
             <div>
-              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">6. Receipt Photo <span className="text-red-500">*</span></label>
+              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">6. Receipt Photo {collectMode === 'bank' && <span className="text-red-500">*</span>}{collectMode === 'cash' && <span className="text-gray-400 normal-case">(optional)</span>}</label>
               {collectImage ? (
                 <div className="flex items-center gap-2 px-3 py-2.5 border border-green-300 bg-green-50 rounded-lg">
                   <span className="text-xs text-green-700 font-medium truncate flex-1">✓ {collectImage.name}</span>
