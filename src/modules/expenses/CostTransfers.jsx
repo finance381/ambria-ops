@@ -210,6 +210,21 @@ function CostTransfers({ profile }) {
     return false
   }
 
+  function validMeta(f, side) {
+    if (f[side + '_party_type'] !== 'expense') return true
+    var subId = Number(f[side + '_expense_sub_type_id']) || 0
+    if (!subId) return true
+    var picked = expSubTypes.find(function (s) { return s.id === subId })
+    if (!picked || !Array.isArray(picked.extra_fields)) return true
+    var meta = f[side + '_meta'] || {}
+    var required = picked.extra_fields.filter(function (ef) { return ef.type === 'lookup' && ef.source && ef.required })
+    for (var i = 0; i < required.length; i++) {
+      var v = meta[required[i].key]
+      if (!v && v !== 0) return false
+    }
+    return true
+  }
+
   function isSameParty(f) {
     if (f.from_party_type !== f.to_party_type) return false
     var t = f.from_party_type
@@ -228,6 +243,8 @@ function CostTransfers({ profile }) {
     if (!form.description.trim()) { setError('Description required'); return }
     if (!validParty(form, 'from')) { setError('Select From party'); return }
     if (!validParty(form, 'to')) { setError('Select To party'); return }
+    if (!validMeta(form, 'from')) { setError('Fill required fields for From party'); return }
+    if (!validMeta(form, 'to')) { setError('Fill required fields for To party'); return }
     if (isSameParty(form)) { setError('From and To cannot be identical'); return }
 
     setSaving(true)
@@ -502,7 +519,29 @@ function PartySection({ side, form, updForm, expTypes, expSubTypes, events, vend
     })
   }
 
+  function lookupItems(field) {
+    var source = field.source
+    if (source === 'vendors') {
+      return vendorPool().map(function (x) { return { value: String(x.id), label: x.name } })
+    }
+    if (source === 'venues') return (venues || []).map(function (x) { return { value: String(x.id), label: (x.code ? x.code + ' — ' + x.name : x.name) } })
+    if (source === 'job_departments') {
+      var allowed = Array.isArray(field.allowed_dept_ids) ? field.allowed_dept_ids : []
+      var pool = employees || []
+      if (allowed.length > 0) {
+        pool = pool.filter(function (e) {
+          var jd = e.job_department_ids || []
+          for (var i = 0; i < jd.length; i++) { if (allowed.indexOf(jd[i]) !== -1) return true }
+          return false
+        })
+      }
+      return pool.map(function (e) { return { value: String(e.id), label: e.full_name + (e.employee_code ? ' (' + e.employee_code + ')' : '') } })
+    }
+    return []
+  }
+
   var picker = null
+  var lookupFields = null
   if (t === 'expense') {
     var etId = Number(form[fld('expense_type_id')]) || 0
     var subs = expSubTypes.filter(function (s) { return s.expense_type_id === etId })
@@ -523,6 +562,36 @@ function PartySection({ side, form, updForm, expTypes, expSubTypes, events, vend
           placeholder={!etId ? 'Pick a type first' : (subs.length === 0 ? 'No sub-types' : 'Sub-type (optional)')} />
       </div>
     )
+
+    // Collect lookup-type extra_fields declared on the picked sub-type (e.g. salary needs employee_id)
+    var subId = Number(form[fld('expense_sub_type_id')]) || 0
+    var picked = subId ? expSubTypes.find(function (s) { return s.id === subId }) : null
+    var lookupExtras = (picked && Array.isArray(picked.extra_fields))
+      ? picked.extra_fields.filter(function (f) { return f.type === 'lookup' && f.source })
+      : []
+    if (lookupExtras.length > 0) {
+      var meta = form[metaKey] || {}
+      lookupFields = (
+        <div className="mt-2 space-y-2 pl-2 border-l-2 border-indigo-100">
+          {lookupExtras.map(function (f) {
+            return (
+              <div key={f.key}>
+                <label className="block text-[10px] font-semibold text-gray-500 mb-1 uppercase tracking-wider">{f.label}{f.required ? ' *' : ''}</label>
+                <SearchDropdown items={lookupItems(f)}
+                  value={meta[f.key] || ''}
+                  onChange={function (v) {
+                    var nextMeta = Object.assign({}, meta)
+                    if (v === '' || v == null) { delete nextMeta[f.key] } else { nextMeta[f.key] = v }
+                    var patch = {}; patch[metaKey] = nextMeta
+                    updForm(patch)
+                  }}
+                  placeholder={f.source === 'job_departments' ? 'Search employees' : ('Search ' + (f.source || ''))} />
+              </div>
+            )
+          })}
+        </div>
+      )
+    }
   }
 
   return (
@@ -543,6 +612,7 @@ function PartySection({ side, form, updForm, expTypes, expSubTypes, events, vend
         })}
       </div>
       {picker}
+      {lookupFields}
     </div>
   )
 }
