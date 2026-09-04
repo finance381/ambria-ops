@@ -22,7 +22,7 @@ var EMPTY_FORM = {
   to_expense_type_id: '', to_expense_sub_type_id: '',
   to_event_id: '', to_vendor_id: '', to_employee_id: '',
   to_meta: {},
-  amount_pts: '', description: '', reason_note: '',
+  amount_pts: '', description: '',
   effective_date: new Date().toISOString().substring(0, 10),
 }
 
@@ -247,7 +247,7 @@ function CostTransfers({ profile }) {
         p_to_vendor_id: form.to_party_type === 'vendor' ? Number(form.to_vendor_id) : null,
         p_to_employee_id: form.to_party_type === 'employee' ? form.to_employee_id : null,
         p_description: form.description.trim(),
-        p_reason_note: form.reason_note.trim() || null,
+        p_reason_note: null,
         p_effective_date: form.effective_date,
         p_from_meta: form.from_meta || {},
         p_to_meta: form.to_meta || {},
@@ -456,13 +456,7 @@ function CostTransfers({ profile }) {
               className="w-full px-2 py-1.5 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-indigo-400" />
           </div>
 
-          <div>
-            <label className="block text-xs font-semibold text-gray-700 mb-1.5">Reason Note (optional)</label>
-            <textarea rows="2" value={form.reason_note}
-              onChange={function (e) { updForm({ reason_note: e.target.value }) }}
-              style={{ fontSize: '16px' }}
-              className="w-full px-2 py-1.5 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-indigo-400" />
-          </div>
+
 
           {error && <p className="text-sm text-red-600">{error}</p>}
 
@@ -604,7 +598,6 @@ function PartySection({ side, form, updForm, expTypes, expSubTypes, events, vend
         })}
       </div>
       {picker}
-      {lookupFields}
     </div>
   )
 }
