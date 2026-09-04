@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import Modal from '../../components/ui/Modal'
 import SearchDropdown from '../../components/ui/SearchDropdown'
 import { logActivity } from '../../lib/logger'
+import { hasPerm } from '../../lib/permissions'
 import VoiceInput from '../../components/ui/VoiceInput'
 
 var PARTY_TYPES = [
@@ -26,6 +27,7 @@ var EMPTY_FORM = {
 }
 
 function CostTransfers({ profile }) {
+  var canCreate = hasPerm(profile?.permsNew, 'finance.cost_transfers')
   var [transfers, setTransfers] = useState([])
   var [loading, setLoading] = useState(true)
   var [showForm, setShowForm] = useState(false)
@@ -279,11 +281,13 @@ function CostTransfers({ profile }) {
     <div>
       <div className="flex items-center justify-between mb-4">
         <p className="text-sm text-gray-500">Move cost between expense types without touching wallet.</p>
-        <button onClick={function () { setForm(EMPTY_FORM); setError(''); setShowForm(true) }}
-          className="px-3 py-1.5 rounded-md bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700">
-          <i className="ti ti-plus" style={{ fontSize: '14px', marginRight: '4px' }} aria-hidden="true"></i>
-          New Transfer
-        </button>
+        {canCreate && (
+          <button onClick={function () { setForm(EMPTY_FORM); setError(''); setShowForm(true) }}
+            className="px-3 py-1.5 rounded-md bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700">
+            <i className="ti ti-plus" style={{ fontSize: '14px', marginRight: '4px' }} aria-hidden="true"></i>
+            New Transfer
+          </button>
+        )}
       </div>
 
       {error && !showForm && (
@@ -387,7 +391,7 @@ function CostTransfers({ profile }) {
               {transfers.map(function (r) {
                 var isReversed = r.reversed_by_id != null
                 var isReversal = r.reversal_of != null
-                var canReverse = !isReversed && !isReversal
+                var canReverse = canCreate && !isReversed && !isReversal
                 return (
                   <tr key={r.id} className={isReversed ? "bg-gray-50 text-gray-400" : ""}>
                     <td className="px-3 py-2 text-xs whitespace-nowrap">{r.effective_date}</td>
@@ -585,6 +589,20 @@ function PartySection({ side, form, updForm, expTypes, expSubTypes, events, vend
   return (
     <div>
       <label className="block text-xs font-semibold text-gray-700 mb-1.5 uppercase tracking-wider">{side}</label>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-1 mb-2">
+        {PARTY_TYPES.map(function (pt) {
+          var isActive = t === pt.key
+          return (
+            <button key={pt.key} type="button"
+              onClick={function () { var patch = {}; patch[side + '_party_type'] = pt.key; updForm(patch) }}
+              className={"px-2 py-1.5 text-xs rounded border " +
+                (isActive ? "bg-indigo-50 border-indigo-500 text-indigo-700 font-semibold" : "bg-white border-gray-200 text-gray-600 hover:border-gray-300")}>
+              <i className={"ti " + pt.icon} style={{ fontSize: '13px', marginRight: '3px' }} aria-hidden="true"></i>
+              {pt.label}
+            </button>
+          )
+        })}
+      </div>
       {picker}
       {lookupFields}
     </div>

@@ -16,6 +16,7 @@ import Expenses from '../../modules/expenses/Expenses'
 import Ledgers from '../../modules/expenses/Ledgers'
 import VendorLedger from '../../modules/expenses/VendorLedger'
 import Payments from '../../modules/expenses/Payments'
+import CostTransfers from '../../modules/expenses/CostTransfers'
 import SalaryPayouts from '../../modules/expenses/SalaryPayouts'
 import SalaryLedger from '../../modules/employees/SalaryLedger'
 import Wallet from '../../modules/expenses/Wallet'
@@ -74,6 +75,7 @@ var GROUPS = [
     key: 'expenses', label: 'Finance', icon: '💰', items: [
       { key: 'finance.wallet', label: 'Wallet', icon: '👛', tab: 'wallet' },
       { key: 'finance.expenses', label: 'PC & Direct Expenses', icon: '💰', tab: 'expenses' },
+      { key: 'finance.cost_transfers', label: 'Cost Transfers', icon: '↔️', tab: 'cost_transfers' },
       { key: 'finance.ledgers.expense', label: 'Expense Ledger', icon: '📒', tab: 'ledgers' },
       { key: 'finance.payments', label: 'Payments', icon: '💳', tab: 'payments' },
       { key: 'finance.salary_payouts', label: 'Salary Payouts', icon: '💵', tab: 'salary_payouts' },
@@ -593,6 +595,9 @@ function Shell({ profile, onSignOut }) {
         )}
         {tab === 'expenses' && (
           <Expenses profile={profile} />
+        )}
+        {tab === 'cost_transfers' && (
+          <CostTransfers profile={profile} />
         )}
         {tab === 'ledgers' && (
           <Ledgers profile={profile} />
