@@ -2024,6 +2024,7 @@ function RequisitionDetail({ req, items, profile, isAdmin, isAuditor, isReqDeptA
         expense_date: req.expense_date || new Date().toISOString().split('T')[0],
         status: 'recorded',
         receipt_path: req.receipt_path || null,
+        event_id: req.event_id || null,
       }).select('id').single()
       if (insErr) throw new Error(insErr.message)
 
