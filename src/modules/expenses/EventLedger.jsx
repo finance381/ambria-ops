@@ -126,19 +126,17 @@ function EventLedger(props) {
   async function loadBalance(ids) {
     if (!ids || ids.length === 0) { setBalance(null); setBalancesByContract({}); return }
     setBalanceLoading(true)
-    var results = await Promise.all(ids.map(function (id) {
-      return supabase.rpc('fn_event_balance', { p_event_id: Number(id) })
-    }))
+    var { data, error } = await supabase.rpc('fn_event_group_balance', { p_event_ids: ids.map(function (id) { return Number(id) }) })
     var agg = { pending_cash_paise: 0, pending_bank_paise: 0, agreed_cash_paise: 0, agreed_bank_paise: 0, collected_cash_paise: 0, collected_bank_paise: 0, spent_paise: 0 }
     var byId = {}
     var any = false
-    results.forEach(function (r, idx) {
-      if (r.error || !r.data || r.data.length === 0) return
-      any = true
-      var row = r.data[0]
-      byId[ids[idx]] = row
-      Object.keys(agg).forEach(function (k) { agg[k] += Number(row[k] || 0) })
-    })
+    if (!error && data) {
+      data.forEach(function (row) {
+        any = true
+        byId[row.event_id] = row
+        Object.keys(agg).forEach(function (k) { agg[k] += Number(row[k] || 0) })
+      })
+    }
     setBalance(any ? agg : null)
     setBalancesByContract(byId)
     setBalanceLoading(false)
