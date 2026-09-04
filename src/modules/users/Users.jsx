@@ -143,7 +143,6 @@ function Users({ profile }) {
         mobile: r.mobile_permissions || [],
         desktop: r.desktop_permissions || [],
         scopes: r.data_scopes || {},
-        legacy: r.permissions || [],
       }
     })
     setRoleDefaultsMap(rdMap)
