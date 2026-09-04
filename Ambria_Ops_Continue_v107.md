@@ -1,5 +1,10 @@
 # Ambria Ops — v107 Continue Log
 
+## Phase 5 — Opened v106 cleanup
+
+- **5.1** Strip `finance.view_costs` dead perm — **not stripped**. Task premise was wrong: this is not dead, it's actively gating three real things in `AdminItems.jsx` (CSV export header, export row data, inline ₹ rate display). Stripping it would have either exposed costs to everyone or silently broken the gate for everyone currently holding it. Left as-is per user decision.
+- **5.2** CostTransfers mobile card-view — shipped. Desktop table kept intact (`hidden sm:block`), new card list added below `sm` (`sm:hidden`) showing party (from → to), amount, date, status badges, and the reverse button gated identically to the desktop table.
+
 ## Phase 4 — QuoteCalc
 
 - **4.1** `quotes_update` WITH CHECK hardening — already correct, `USING`/`WITH CHECK` are byte-for-byte identical. No action.
