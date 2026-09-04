@@ -1745,7 +1745,12 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">Date</label>
                     <input type="date" value={entry.expenseDate} min={effMin} max={today}
-                      onChange={function (e) { updateEntry(idx, 'expenseDate', e.target.value) }}
+                      onChange={function (e) {
+                        var v = e.target.value
+                        if (v && v < effMin) { updateEntry(idx, 'expenseDate', effMin); return }
+                        if (v && v > today) { updateEntry(idx, 'expenseDate', today); return }
+                        updateEntry(idx, 'expenseDate', v)
+                      }}
                       className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-300" style={{ fontSize: '16px' }} />
                     <p className="text-[10px] text-gray-500 mt-1">{isEditing ? 'Any date from the original up to today.' : 'Today or up to 3 days back. For future expenses, raise a requisition instead.'}</p>
                   </div>
