@@ -2030,8 +2030,9 @@ function RequisitionDetail({ req, items, profile, isAdmin, isAuditor, isReqDeptA
 
       // Copy allocations from requisition to expense
       var allocRows = req.expense_alloc_json || []
+      var expAllocs = []
       if (allocRows.length > 0) {
-        var expAllocs = allocRows.map(function (a) {
+        expAllocs = allocRows.map(function (a) {
           return {
             expense_id: newExp.id,
             department: req.department || null,
@@ -2043,9 +2044,14 @@ function RequisitionDetail({ req, items, profile, isAdmin, isAuditor, isReqDeptA
             expense_sub_type_id: a.expense_sub_type_id || req.expense_sub_type_id || null,
           }
         })
-        await supabase.from('expense_allocations').insert(expAllocs)
-      } else if (req.expense_type_id) {
-        // Auto-default from req top-level type so the expense appears in the type/sub-type ledger
+      }
+      // Auto-default from req top-level type for whatever portion of the total wasn't
+      // explicitly allocated, so the whole amount appears in the ledgers (previously only
+      // ran when allocations were empty, silently dropping the remainder whenever a partial
+      // allocation was entered).
+      var reqAllocSum = expAllocs.reduce(function (s, a) { return s + (a.amount_paise || 0) }, 0)
+      var reqRemainderPaise = (req.expense_amount_paise || 0) - reqAllocSum
+      if (reqRemainderPaise > 0 && req.expense_type_id) {
         var defaultDeptId = null
         var { data: expTypeRow } = await supabase.from('expense_types')
           .select('department_id, sub_department_id')
@@ -2058,18 +2064,19 @@ function RequisitionDetail({ req, items, profile, isAdmin, isAuditor, isReqDeptA
             if (sdRow) defaultDeptId = sdRow.department_id
           }
         }
-        await supabase.from('expense_allocations').insert([{
+        expAllocs.push({
           expense_id: newExp.id,
           department: req.department || null,
           department_id: defaultDeptId,
           sub_department_id: req.sub_department_id || null,
           venue_id: null,
-          amount_paise: req.expense_amount_paise,
+          amount_paise: reqRemainderPaise,
           expense_type_id: req.expense_type_id || null,
           expense_sub_type_id: req.expense_sub_type_id || null,
           source: 'auto_default',
-        }])
+        })
       }
+      if (expAllocs.length > 0) await supabase.from('expense_allocations').insert(expAllocs)
 
       try {
         await supabase.rpc('wallet_self_debit', {

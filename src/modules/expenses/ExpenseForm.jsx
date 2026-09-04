@@ -1242,9 +1242,13 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
               remarks: (a.remarks || '').trim() || null
             }
           })
-        // If user cleared all allocations, auto-create default from entry-level type
-        // so the expense still appears in the type/sub-type ledger.
-        if (editAllocRows.length === 0) {
+        // Auto-create a default allocation from the entry-level type for whatever portion of
+        // the total wasn't explicitly allocated, so the whole amount appears in the ledgers
+        // (previously only ran when allocations were empty, silently dropping the remainder
+        // whenever a partial allocation was entered).
+        var editAllocSum = editAllocRows.reduce(function (s, a) { return s + (a.amount_paise || 0) }, 0)
+        var editRemainderPaise = newPaise - editAllocSum
+        if (editRemainderPaise > 0) {
           var editExpType = e0.expenseTypeId ? expenseTypes.find(function (t) { return String(t.id) === String(e0.expenseTypeId) }) : null
           var editDefaultDeptId = null
           var editDefaultDeptName = null
@@ -1266,7 +1270,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
             venue_id: null,
             expense_type_id: e0.expenseTypeId ? Number(e0.expenseTypeId) : null,
             expense_sub_type_id: e0.expenseSubTypeId ? Number(e0.expenseSubTypeId) : null,
-            amount_paise: newPaise,
+            amount_paise: editRemainderPaise,
             remarks: null,
             source: 'auto_default',
           })
@@ -1447,9 +1451,13 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                 remarks: (a.remarks || '').trim() || null
               }
             })
-          // If user recorded no allocation, auto-create one from entry-level type + full amount
-          // so the expense still appears in the type/sub-type ledger.
-          if (allocRows.length === 0) {
+          // Auto-create a default allocation from the entry-level type for whatever portion of
+          // the total wasn't explicitly allocated, so the whole amount appears in the ledgers
+          // (previously only ran when allocations were empty, silently dropping the remainder
+          // whenever a partial allocation was entered).
+          var allocSum = allocRows.reduce(function (s, a) { return s + (a.amount_paise || 0) }, 0)
+          var remainderPaise = paise - allocSum
+          if (remainderPaise > 0) {
             var expType = e.expenseTypeId ? expenseTypes.find(function (t) { return String(t.id) === String(e.expenseTypeId) }) : null
             var defaultDeptId = null
             var defaultDeptName = null
@@ -1471,7 +1479,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
               venue_id: null,
               expense_type_id: e.expenseTypeId ? Number(e.expenseTypeId) : null,
               expense_sub_type_id: e.expenseSubTypeId ? Number(e.expenseSubTypeId) : null,
-              amount_paise: paise,
+              amount_paise: remainderPaise,
               remarks: null,
               source: 'auto_default',
             })
