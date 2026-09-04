@@ -43,3 +43,7 @@
 - Phase 3 (`amountPaise` → `amountRupees` rename)
 - Phase 4 (QuoteCalc)
 - Phase 5 (v106 cleanup: `finance.view_costs`, CostTransfers mobile card-view)
+
+## Phase 3 — `amountPaise` → `amountRupees` rename
+
+Scope confirmed much smaller than the backlog assumed: 2 files (`WalletManager.jsx`, `pdfReceipt.js`), 16 occurrences total. Zero occurrences in SQL migrations or Edge Functions — those already consistently use `amount_paise`. Traced every occurrence back to its source before renaming; all correctly held paise (assigned from `Math.round(rupeeInput * 100)` or divided by 100 before display) — no latent unit bug found. Pure identifier rename, no arithmetic touched, `p_amount_paise`/`amount_paise` snake_case DB/RPC keys left untouched. Done and shipped in one commit.
