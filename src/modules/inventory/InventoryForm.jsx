@@ -356,7 +356,8 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved }) {
     var errs = {}
     if (!categoryId) errs.cat = 'Category is required'
     var hasNameGen = categoryDimFields.some(function (f) { return f.nameGen })
-    if (!name.trim() && hasNameGen) {
+    var effectiveName = name.trim()
+    if (!effectiveName && hasNameGen) {
       var parts = []
       categoryDimFields.filter(function (f) { return f.nameGen }).forEach(function (f) {
         var dim = dimensionValues.find(function (d) { return d.name === f.name })
@@ -367,9 +368,12 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved }) {
         else { val = (dim.value || '').trim() }
         if (val) parts.push(val)
       })
-      if (parts.length > 0) setName(parts.join(' '))
+      if (parts.length > 0) {
+        effectiveName = parts.join(' ')
+        setName(effectiveName)
+      }
     }
-    if (!name.trim() && !hasNameGen) errs.item = 'Item name is required'
+    if (!effectiveName) errs.item = 'Item name is required'
     if (!qty && qty !== 0) errs.qty = 'Quantity is required'
     setErrors(errs); return Object.keys(errs).length === 0
   }
