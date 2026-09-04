@@ -392,50 +392,88 @@ function CostTransfers({ profile }) {
       ) : transfers.length === 0 ? (
         <p className="text-center text-sm text-gray-400 py-8">{activeFilterCount() > 0 ? 'No transfers match filters.' : 'No cost transfers yet.'}</p>
       ) : (
-        <div className="bg-white border border-gray-200 rounded-lg overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 text-[11px] uppercase tracking-wider text-gray-500">
-              <tr>
-                <th className="text-left px-3 py-2">Date</th>
-                <th className="text-left px-3 py-2">From</th>
-                <th className="text-left px-3 py-2">To</th>
-                <th className="text-right px-3 py-2">Amount</th>
-                <th className="text-left px-3 py-2">Description</th>
-                <th className="text-right px-3 py-2">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {transfers.map(function (r) {
-                var isReversed = r.reversed_by_id != null
-                var isReversal = r.reversal_of != null
-                var canReverse = canCreate && !isReversed && !isReversal
-                return (
-                  <tr key={r.id} className={isReversed ? "bg-gray-50 text-gray-400" : ""}>
-                    <td className="px-3 py-2 text-xs whitespace-nowrap">{r.effective_date}</td>
-                    <td className="px-3 py-2 text-xs">{partyLabel(r, 'from')}{partyMeta(r, 'from')}</td>
-                    <td className="px-3 py-2 text-xs">{partyLabel(r, 'to')}{partyMeta(r, 'to')}</td>
-                    <td className="px-3 py-2 text-right font-mono text-xs whitespace-nowrap">
+        <>
+          <div className="hidden sm:block bg-white border border-gray-200 rounded-lg overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 text-[11px] uppercase tracking-wider text-gray-500">
+                <tr>
+                  <th className="text-left px-3 py-2">Date</th>
+                  <th className="text-left px-3 py-2">From</th>
+                  <th className="text-left px-3 py-2">To</th>
+                  <th className="text-right px-3 py-2">Amount</th>
+                  <th className="text-left px-3 py-2">Description</th>
+                  <th className="text-right px-3 py-2">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {transfers.map(function (r) {
+                  var isReversed = r.reversed_by_id != null
+                  var isReversal = r.reversal_of != null
+                  var canReverse = canCreate && !isReversed && !isReversal
+                  return (
+                    <tr key={r.id} className={isReversed ? "bg-gray-50 text-gray-400" : ""}>
+                      <td className="px-3 py-2 text-xs whitespace-nowrap">{r.effective_date}</td>
+                      <td className="px-3 py-2 text-xs">{partyLabel(r, 'from')}{partyMeta(r, 'from')}</td>
+                      <td className="px-3 py-2 text-xs">{partyLabel(r, 'to')}{partyMeta(r, 'to')}</td>
+                      <td className="px-3 py-2 text-right font-mono text-xs whitespace-nowrap">
+                        Rs {(r.amount_paise / 100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      </td>
+                      <td className="px-3 py-2 text-xs">
+                        {r.description}
+                        {isReversal && <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 uppercase">Reversal</span>}
+                        {isReversed && <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded bg-gray-200 text-gray-600 uppercase">Reversed</span>}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        {canReverse ? (
+                          <button onClick={function () { handleReverse(r.id) }} disabled={reversing === r.id}
+                            className="text-xs text-red-600 hover:text-red-800 disabled:text-gray-300">
+                            {reversing === r.id ? 'Reversing...' : 'Reverse'}
+                          </button>
+                        ) : <span className="text-xs text-gray-300">—</span>}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="sm:hidden space-y-2">
+            {transfers.map(function (r) {
+              var isReversed = r.reversed_by_id != null
+              var isReversal = r.reversal_of != null
+              var canReverse = canCreate && !isReversed && !isReversal
+              return (
+                <div key={r.id} className={"bg-white border border-gray-200 rounded-lg p-3 space-y-1.5 " + (isReversed ? "opacity-60" : "")}>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-gray-500">{r.effective_date}</span>
+                    <span className="font-mono text-sm font-semibold text-gray-800">
                       Rs {(r.amount_paise / 100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                    </td>
-                    <td className="px-3 py-2 text-xs">
-                      {r.description}
-                      {isReversal && <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 uppercase">Reversal</span>}
-                      {isReversed && <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded bg-gray-200 text-gray-600 uppercase">Reversed</span>}
-                    </td>
-                    <td className="px-3 py-2 text-right">
-                      {canReverse ? (
-                        <button onClick={function () { handleReverse(r.id) }} disabled={reversing === r.id}
-                          className="text-xs text-red-600 hover:text-red-800 disabled:text-gray-300">
-                          {reversing === r.id ? 'Reversing...' : 'Reverse'}
-                        </button>
-                      ) : <span className="text-xs text-gray-300">—</span>}
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
+                    </span>
+                  </div>
+                  <div className="text-xs text-gray-700">
+                    <span className="font-medium">{partyLabel(r, 'from')}{partyMeta(r, 'from')}</span>
+                    <span className="mx-1 text-gray-400">→</span>
+                    <span className="font-medium">{partyLabel(r, 'to')}{partyMeta(r, 'to')}</span>
+                  </div>
+                  {r.description && <div className="text-xs text-gray-500">{r.description}</div>}
+                  <div className="flex items-center justify-between pt-1">
+                    <div className="flex gap-1">
+                      {isReversal && <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 uppercase">Reversal</span>}
+                      {isReversed && <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-200 text-gray-600 uppercase">Reversed</span>}
+                    </div>
+                    {canReverse && (
+                      <button onClick={function () { handleReverse(r.id) }} disabled={reversing === r.id}
+                        className="text-xs text-red-600 hover:text-red-800 disabled:text-gray-300 font-medium">
+                        {reversing === r.id ? 'Reversing...' : 'Reverse'}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </>
       )}
 
       <Modal open={showForm} onClose={function () { setShowForm(false) }} title="New Cost Transfer">
