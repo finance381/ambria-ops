@@ -99,55 +99,6 @@ export var PERM_GROUPS = [
   ]},
 ]
 
-// ---- Legacy key → new key mapping (compat layer, Phase 1–3) ----
-// Read at runtime by normalizePerms() and hasPerm() so old profiles keep working
-// while role_defaults / profiles get backfilled to new keys in Batch 1.3.
-export var LEGACY_KEY_MAP = {
-  feature_my_profile:          'personal.profile',
-  feature_add:                 'inventory.add',
-  inventory_add:               'inventory.add',
-  feature_items:               'inventory.items',
-  inventory_view:              'inventory.items',
-  inventory_edit:              'inventory.items',
-  inventory_delete:            'inventory.items.delete',
-  feature_production:          'inventory.production',
-  feature_boxes:               'inventory.boxes',
-  feature_challans:            'inventory.challans',
-  feature_receive:             'inventory.receive',
-  feature_dept_review:         'review.dept',
-  dept_approve:                'review.dept.approve',
-  feature_pending:             'review.pending',
-  admin_approve:               'review.pending.approve',
-  feature_events:              'events.list',
-  event_buffer:                'events.list.setup_teardown',
-  feature_extra_plate_collect: 'events.extra_plate_collect',
-
-  feature_quote:               'events.quote',
-  feature_ratecard:            'events.ratecard',
-  feature_requisitions:        'procurement.requisitions',
-  req_dept_approve:            'procurement.requisitions.dept_approve',
-  req_admin_approve:           'procurement.requisitions.admin_approve',
-  feature_purchase:            'procurement.purchase_orders',
-  feature_vendors:             'procurement.vendors',
-  feature_wallet:              'finance.wallet',
-  feature_expenses:            'finance.expenses',
-  expense_submit:              'finance.expenses',
-  expense_approve:             'finance.expenses.approve',
-  finance_gv:                  'finance.gv',
-  feature_payments:            'finance.payments',
-  feature_salary_pay:          'finance.salary_payouts',
-  finance_cost_transfer:       'finance.cost_transfers',
-  feature_ledger_view:         'finance.ledgers.expense',
-  feature_vendor_ledger:       'finance.ledgers.vendor',
-  feature_salary_ledger:       'finance.ledgers.salary',
-  feature_inventory_ledger:    'finance.ledgers.inventory',
-  feature_employees:           'hr.employees',
-  feature_employees_salary:    'hr.employees.salary_view',
-  feature_admin:               'admin.dashboard',
-  admin_masters:               'admin.masters',
-  admin_users:                 'admin.users',
-}
-
 // ---- Helpers ----
 
 // Walk every node in the nested tree (children + optionals).
@@ -187,34 +138,30 @@ export function getScopedKeys(surface) {
   return out
 }
 
-// Normalize a raw perms array (may contain legacy or new keys) into canonical
-// new keys. Runtime callers use this before membership checks.
+// Normalize a raw perms array into a deduped list. Runtime callers use this
+// before membership checks.
 export function normalizePerms(perms) {
   if (!Array.isArray(perms)) return []
   var out = []
   perms.forEach(function (k) {
-    var mapped = LEGACY_KEY_MAP[k] || k
-    if (out.indexOf(mapped) === -1) out.push(mapped)
+    if (out.indexOf(k) === -1) out.push(k)
   })
   return out
 }
 
-// Check a permission key against a scoped perms array. Accepts either the new
-// key or a legacy alias. Callers pass the surface-specific array
-// (mobile_permissions on Shell, desktop_permissions on AdminShell).
+// Check a permission key against a scoped perms array. Callers pass the
+// surface-specific array (mobile_permissions on Shell, desktop_permissions on AdminShell).
 export function hasPerm(scopedPerms, key) {
   if (!Array.isArray(scopedPerms)) return false
-  var wanted = LEGACY_KEY_MAP[key] || key
   var normalized = normalizePerms(scopedPerms)
-  return normalized.indexOf(wanted) !== -1
+  return normalized.indexOf(key) !== -1
 }
 
 // Resolve data scope for a feature key from a merged data_scopes JSONB.
 // Defaults to 'all' when unset (open-by-default; restriction is opt-in).
 export function getDataScope(scopesObj, key, fallback) {
   if (!scopesObj || typeof scopesObj !== 'object') return fallback || 'all'
-  var wanted = LEGACY_KEY_MAP[key] || key
-  var val = scopesObj[wanted]
+  var val = scopesObj[key]
   return val || fallback || 'all'
 }
 
