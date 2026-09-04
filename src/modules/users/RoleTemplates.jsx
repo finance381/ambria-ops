@@ -223,6 +223,11 @@ function RoleTemplates({ profile }) {
                   <span className="text-[11px] text-gray-400">feature{featCount === 1 ? '' : 's'} enabled</span>
                 </div>
                 <p className="text-[10px] text-gray-400 mt-0.5">{(t.mobile_permissions || []).length}m · {(t.desktop_permissions || []).length}d keys</p>
+                {_tVenues.length > 0 && (
+                  <span className="inline-block mt-1.5 text-[9px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-1.5 py-0.5 rounded">
+                    {_tVenues.length} venue{_tVenues.length === 1 ? '' : 's'}
+                  </span>
+                )}
               </div>
 
               <div className="flex gap-2 mt-auto">
