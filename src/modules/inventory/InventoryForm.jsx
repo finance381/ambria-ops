@@ -371,8 +371,6 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved }) {
     }
     if (!name.trim() && !hasNameGen) errs.item = 'Item name is required'
     if (!qty && qty !== 0) errs.qty = 'Quantity is required'
-    var hasAlloc = allocations.some(function (a) { return a.department && a.qty })
-    if (!hasAlloc) errs.dept = 'At least one allocation is required'
     setErrors(errs); return Object.keys(errs).length === 0
   }
 
