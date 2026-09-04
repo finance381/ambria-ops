@@ -632,7 +632,7 @@ function Vendors({ profile }) {
             <h3 className="text-lg font-bold text-gray-900">{editing === 'new' ? 'Add Vendor' : 'Edit Vendor'}</h3>
             <p className="text-xs text-gray-400 mt-0.5">{editing === 'new' ? 'Register a new vendor in the system' : 'Update vendor details'}</p>
           </div>
-          <button onClick={cancelEdit} className="text-sm text-gray-400 hover:text-gray-600 transition-colors">✕ Cancel</button>
+          <button onClick={cancelEdit} disabled={saving} className="text-sm text-gray-400 hover:text-gray-600 transition-colors disabled:opacity-50">✕ Cancel</button>
         </div>
 
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm divide-y divide-gray-100">
@@ -979,8 +979,8 @@ function Vendors({ profile }) {
         </div>
 
         <div className="flex gap-3 mt-5">
-          <button onClick={cancelEdit}
-            className="flex-1 py-3 text-sm text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors font-semibold">Cancel</button>
+          <button onClick={cancelEdit} disabled={saving}
+            className="flex-1 py-3 text-sm text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors font-semibold disabled:opacity-50">Cancel</button>
           <button onClick={saveVendor} disabled={saving}
             className="flex-1 py-3 text-sm text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors font-semibold shadow-sm">
             {saving ? 'Saving...' : (editing === 'new' ? '+ Add Vendor' : 'Save Changes')}
