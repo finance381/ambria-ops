@@ -169,7 +169,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     if (expRefIds.length > 0) {
       var expIdsNum = expRefIds.map(function (x) { return Number(x) }).filter(function (n) { return !isNaN(n) })
       var { data: eData } = await supabase.from('expenses')
-        .select('id, description, amount_paise, expense_date, event_id, expense_types(name), expense_sub_types(name), expense_allocations(department)')
+        .select('id, description, amount_paise, expense_date, event_id, expense_types(name), expense_sub_types(name), expense_allocations(department, amount_paise)')
         .in('id', expIdsNum)
       var eMap = {}
       var evIds = {}
@@ -294,7 +294,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     if (expRefIds.length > 0) {
       var expIdsNum = expRefIds.map(function (x) { return Number(x) }).filter(function (n) { return !isNaN(n) })
       var { data: eData } = await supabase.from('expenses')
-        .select('id, description, amount_paise, expense_date, event_id, expense_types(name), expense_sub_types(name), expense_allocations(department)')
+        .select('id, description, amount_paise, expense_date, event_id, expense_types(name), expense_sub_types(name), expense_allocations(department, amount_paise)')
         .in('id', expIdsNum)
       var eMap = {}
       var evIds = {}
@@ -1057,8 +1057,12 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
           var tn = e.expense_types?.name || ''
           var stn = e.expense_sub_types?.name || ''
           if (tn) parts.push(tn + (stn ? ' > ' + stn : ''))
-          var alloc = (e.expense_allocations && e.expense_allocations[0]) || null
-          if (alloc?.department) parts.push(alloc.department)
+          var allocs = e.expense_allocations || []
+          if (allocs.length > 0) {
+            parts.push(allocs.map(function (a) {
+              return (a.department || 'Unassigned') + ': ' + fmtN(a.amount_paise)
+            }).join(', '))
+          }
           if (e._event_name) parts.push('Event: ' + e._event_name)
           return parts.join(' · ')
         }
@@ -1166,7 +1170,8 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
         },
       })
 
-      doc.save('wallet_' + userName.replace(/\s+/g, '_') + '_' + new Date().toISOString().split('T')[0] + '.pdf')
+      var pdfUrl = doc.output('bloburl')
+      window.open(pdfUrl, '_blank')
       try { await logActivity('WALLET_PDF_EXPORT', userName + ' | ' + chrono.length + ' txns') } catch (_) {}
     } catch (err) {
       alert('PDF export failed: ' + (err.message || err))
