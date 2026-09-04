@@ -169,7 +169,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     if (expRefIds.length > 0) {
       var expIdsNum = expRefIds.map(function (x) { return Number(x) }).filter(function (n) { return !isNaN(n) })
       var { data: eData } = await supabase.from('expenses')
-        .select('id, description, amount_paise, expense_date, event_id, expense_types(name), expense_sub_types(name), expense_allocations(department, amount_paise)')
+        .select('id, description, amount_paise, expense_date, event_id, expense_types(name), expense_sub_types(name), expense_allocations(department, amount_paise, expense_types(name), expense_sub_types(name))')
         .in('id', expIdsNum)
       var eMap = {}
       var evIds = {}
@@ -294,7 +294,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     if (expRefIds.length > 0) {
       var expIdsNum = expRefIds.map(function (x) { return Number(x) }).filter(function (n) { return !isNaN(n) })
       var { data: eData } = await supabase.from('expenses')
-        .select('id, description, amount_paise, expense_date, event_id, expense_types(name), expense_sub_types(name), expense_allocations(department, amount_paise)')
+        .select('id, description, amount_paise, expense_date, event_id, expense_types(name), expense_sub_types(name), expense_allocations(department, amount_paise, expense_types(name), expense_sub_types(name))')
         .in('id', expIdsNum)
       var eMap = {}
       var evIds = {}
@@ -1060,7 +1060,10 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
           var allocs = e.expense_allocations || []
           if (allocs.length > 0) {
             parts.push(allocs.map(function (a) {
-              return (a.department || 'Unassigned') + ': ' + fmtN(a.amount_paise)
+              var atn = a.expense_types?.name || ''
+              var astn = a.expense_sub_types?.name || ''
+              var typeLabel = atn ? (' [' + atn + (astn ? ' > ' + astn : '') + ']') : ''
+              return (a.department || 'Unassigned') + typeLabel + ': ' + fmtN(a.amount_paise)
             }).join(', '))
           }
           if (e._event_name) parts.push('Event: ' + e._event_name)
