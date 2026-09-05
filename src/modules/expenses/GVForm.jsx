@@ -16,6 +16,7 @@ function GVForm({ exp, profile, onCancel, onSaved }) {
   var [reason, setReason] = useState('')
   var [allocations, setAllocations] = useState([])
   var [departments, setDepartments] = useState([])
+  var [subDepartments, setSubDepartments] = useState([])
   var refData = useReferenceData()
   var venues = refData.venues.filter(function (v) { return v.active }).slice().sort(byName)
   var expenseTypes = refData.expenseTypes.filter(function (t) { return t.active }).slice().sort(byName)
@@ -31,14 +32,16 @@ function GVForm({ exp, profile, onCancel, onSaved }) {
   useEffect(function () {
     Promise.all([
       supabase.from('departments').select('id, name').eq('active', true).order('name'),
+      supabase.from('sub_departments').select('id, department_id'),
       supabase.from('expense_allocations')
         .select('id, department, department_id, expense_type_id, expense_sub_type_id, venue_id, sub_venue_id, amount_paise, remarks')
         .eq('expense_id', exp.id)
         .order('id'),
     ]).then(function (res) {
       setDepartments(res[0].data || [])
+      setSubDepartments(res[1].data || [])
       // Prefill from freshly-fetched allocation rows
-      var allocRows = res[1].data || []
+      var allocRows = res[2].data || []
       var prefill = allocRows.map(function (a) {
         return {
           _key: Date.now() + '_' + Math.random().toString(36).slice(2, 8) + '_' + a.id,
@@ -85,17 +88,41 @@ function GVForm({ exp, profile, onCancel, onSaved }) {
     })
   }
 
+  // The parent expense's own type/sub-type doubles as the implicit "everything not
+  // explicitly broken out" bucket — whatever the entered rows fall short of the
+  // expense total auto-attributes there, so the user only has to enter the splits
+  // they actually want to carve out (mirrors the auto_default pattern used when
+  // recording/editing an expense's own allocations).
+  function deriveParentDeptId() {
+    var parentTypeId = exp.expense_type_id ? Number(exp.expense_type_id) : null
+    if (!parentTypeId) return null
+    var parentType = expenseTypes.find(function (t) { return t.id === parentTypeId })
+    if (!parentType) return null
+    if (parentType.department_id) return parentType.department_id
+    if (parentType.sub_department_id) {
+      var sd = subDepartments.find(function (s) { return s.id === parentType.sub_department_id })
+      if (sd && sd.department_id) return sd.department_id
+    }
+    return null
+  }
+
   var totalPaise = allocations.reduce(function (sum, a) { return sum + Math.round((Number(a.amountPts) || 0) * 100) }, 0)
   var expectedPaise = exp.amount_paise || 0
   var diff = totalPaise - expectedPaise
-  var sumOk = diff === 0
+  var overAllocated = diff > 0
+  var remainderPaise = overAllocated ? 0 : -diff
+  var parentDeptId = remainderPaise > 0 ? deriveParentDeptId() : null
+  var remainderNeedsManualEntry = remainderPaise > 0 && (!exp.expense_type_id || !parentDeptId)
+  var sumOk = !overAllocated && !remainderNeedsManualEntry
   var reasonOk = reason.trim().length >= 3
+  var parentTypeName = (expenseTypes.find(function (t) { return t.id === Number(exp.expense_type_id) }) || {}).name || ''
 
   async function submit() {
     if (saving) return
     setError('')
     if (!reasonOk) { setError('Reason must be at least 3 characters'); return }
-    if (!sumOk) { setError('Allocation total must equal expense amount'); return }
+    if (overAllocated) { setError('Allocation total exceeds the expense amount by ' + formatPoints(Math.abs(diff))); return }
+    if (remainderNeedsManualEntry) { setError('Parent expense has no type/department to auto-allocate the remaining ' + formatPoints(remainderPaise) + ' to — add it as an explicit row'); return }
     for (var i = 0; i < allocations.length; i++) {
       var a = allocations[i]
       if (!a.departmentId) { setError('Row ' + (i + 1) + ': department required'); return }
@@ -116,6 +143,21 @@ function GVForm({ exp, profile, onCancel, onSaved }) {
         remarks: (a.remarks || '').trim() || null,
       }
     })
+
+    if (remainderPaise > 0) {
+      var parentDeptRow = departments.find(function (d) { return d.id === parentDeptId })
+      payload.push({
+        department: parentDeptRow ? parentDeptRow.name : null,
+        department_id: parentDeptId,
+        expense_type_id: exp.expense_type_id ? Number(exp.expense_type_id) : null,
+        expense_sub_type_id: exp.expense_sub_type_id ? Number(exp.expense_sub_type_id) : null,
+        venue_id: null,
+        sub_venue_id: null,
+        amount_paise: remainderPaise,
+        remarks: null,
+        source: 'auto_default',
+      })
+    }
 
     // Only submit field updates if the section is expanded AND at least one value changed
     var typeChanged = fieldsExpanded && Number(newTypeId) !== Number(exp.expense_type_id || 0)
@@ -301,9 +343,23 @@ function GVForm({ exp, profile, onCancel, onSaved }) {
         </div>
 
         {/* Running total */}
-        <div className={"mt-3 pt-3 border-t border-gray-100 flex items-center justify-between text-xs font-bold " + (sumOk ? 'text-green-700' : 'text-red-600')}>
-          <span>Total: {formatPoints(totalPaise)}</span>
-          <span>Expected: {formatPoints(expectedPaise)}{!sumOk ? ' · Off by ' + formatPoints(Math.abs(diff)) : ' ✓'}</span>
+        <div className={"mt-3 pt-3 border-t border-gray-100 text-xs font-bold " + (sumOk ? 'text-green-700' : 'text-red-600')}>
+          <div className="flex items-center justify-between">
+            <span>Entered: {formatPoints(totalPaise)}</span>
+            <span>Expected: {formatPoints(expectedPaise)}</span>
+          </div>
+          {overAllocated && (
+            <p className="mt-1 font-normal">Over by {formatPoints(Math.abs(diff))} — reduce an allocation.</p>
+          )}
+          {!overAllocated && remainderPaise > 0 && !remainderNeedsManualEntry && (
+            <p className="mt-1 font-normal text-gray-600">+ {formatPoints(remainderPaise)} auto-allocated to parent{parentTypeName ? ' (' + parentTypeName + ')' : ''}</p>
+          )}
+          {remainderNeedsManualEntry && (
+            <p className="mt-1 font-normal">{formatPoints(remainderPaise)} unallocated — parent has no type/department to auto-fill; add it as a row.</p>
+          )}
+          {!overAllocated && remainderPaise === 0 && (
+            <p className="mt-1 font-normal">✓ Fully allocated</p>
+          )}
         </div>
       </div>
 

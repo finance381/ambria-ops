@@ -1181,8 +1181,11 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
           travel_mode: e0.fieldValues.travel_mode || null,
           receipt_paths: keepPaths,
         }
-        var { error: updErr } = await supabase.from('expenses').update(editPayload).eq('id', editExp.id)
+        var { data: updRows, error: updErr } = await supabase.from('expenses').update(editPayload).eq('id', editExp.id).select('id')
         if (updErr) throw new Error(updErr.message)
+        if (!updRows || updRows.length === 0) {
+          throw new Error('Update blocked — no row returned. Likely RLS: you may not be permitted to edit this expense in its current state. Contact admin if you believe this is a mistake.')
+        }
 
         // Upload new receipts (append via RPC)
         if (e0.receiptFiles && e0.receiptFiles.length > 0) {
