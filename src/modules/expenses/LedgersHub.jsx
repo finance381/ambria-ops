@@ -9,12 +9,14 @@ var InventoryLedger = lazy(function () { return import('./InventoryLedger') })
 var SalaryLedger = lazy(function () { return import('../employees/SalaryLedger') })
 var GVLog = lazy(function () { return import('./GVLog') })
 var CostTransfers = lazy(function () { return import('./CostTransfers') })
+var PaymentsLedger = lazy(function () { return import('./PaymentsLedger') })
 
 // perm keys map 1:1 to PERM_GROUPS finance.ledgers children (permissions.js).
 var LEDGERS = [
   { key: 'expense',       label: 'Expense',        icon: 'ti-receipt',           component: Ledgers,         countTable: 'expenses',          countFilter: function (q) { return q.is('deleted_at', null) },                                                     perm: 'finance.ledgers.expense' },
   { key: 'event',         label: 'Event',          icon: 'ti-calendar-event',    component: EventLedger,     countTable: 'event_ledger',                                                                                                                        perm: 'finance.ledgers.event' },
   { key: 'vendor',        label: 'Vendor',         icon: 'ti-building-store',    component: VendorLedger,    countTable: 'ledger_entries',    countFilter: function (q) { return q.eq('ledger_type', 'vendor').is('deleted_at', null) },                        perm: 'finance.ledgers.vendor' },
+  { key: 'payments',      label: 'Payments',       icon: 'ti-cash-banknote',     component: PaymentsLedger, countTable: 'ledger_entries',    countFilter: function (q) { return q.eq('ledger_type', 'vendor').in('ref_type', ['vendor_payment', 'vendor_deduction']).is('deleted_at', null) }, perm: 'finance.payments' },
   { key: 'inventory',     label: 'Inventory',      icon: 'ti-package',           component: InventoryLedger, countTable: null,                                                                                                                                  perm: 'finance.ledgers.inventory' },
   { key: 'salary',        label: 'Salary',         icon: 'ti-cash',              component: SalaryLedger,    countTable: 'ledger_entries',    countFilter: function (q) { return q.eq('ledger_type', 'user_salary').is('deleted_at', null) },                   perm: 'finance.ledgers.salary' },
   { key: 'cost_transfer', label: 'Cost Transfers', icon: 'ti-arrows-right-left', component: CostTransfers,   countTable: 'cost_transfers',    countFilter: function (q) { return q.is('reversal_of', null).is('reversed_by_id', null) },                        perm: 'finance.ledgers.cost_transfer' },

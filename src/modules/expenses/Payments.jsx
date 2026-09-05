@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../../lib/supabase'
 import { formatPoints, formatDate } from '../../lib/format'
 import { useRealtime } from '../../lib/useRealtime'
@@ -52,16 +52,6 @@ function Payments({ profile }) {
   var [payLockedMode, setPayLockedMode] = useState('')
   var [lightbox, setLightbox] = useState(null)
   var refData = useReferenceData()
-
-  // Payments ledger — full history of money actually paid out (not pending balances),
-  // filterable by mode and date range, independent of the pending-payments load above.
-  var [ledgerRows, setLedgerRows] = useState([])
-  var [ledgerLoading, setLedgerLoading] = useState(false)
-  var [ledgerOpen, setLedgerOpen] = useState(false)
-  var [ledgerFrom, setLedgerFrom] = useState(function () { return new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0] })
-  var [ledgerTo, setLedgerTo] = useState(function () { return new Date().toISOString().split('T')[0] })
-  var [ledgerModeFilter, setLedgerModeFilter] = useState('all') // 'all' | 'cash' | 'bank'
-  var ledgerRef = useRef(null)
 
   function openLightbox(paths, startIdx) {
     var items = (paths || []).map(function (path) {
@@ -176,40 +166,8 @@ function Payments({ profile }) {
     setLoading(false)
   }
 
-  async function loadPaymentsLedger() {
-    if (!canView) return
-    setLedgerLoading(true)
-    var { data: rec } = await supabase
-      .from('ledger_entries')
-      .select('id, party_id, entry_date, description, debit_paise, ref_id, ref_type, metadata')
-      .eq('ledger_type', 'vendor')
-      .in('ref_type', ['vendor_payment', 'vendor_deduction'])
-      .is('deleted_at', null)
-      .gte('entry_date', ledgerFrom)
-      .lte('entry_date', ledgerTo)
-      .order('entry_date', { ascending: false })
-      .limit(1000)
-    var recRows = rec || []
-    // Batch-fetch vendor names not already known from the pending-vendors list
-    var nameMap = {}
-    vendors.forEach(function (v) { nameMap[v.vendor_id] = v.vendor_name })
-    var missingIds = []
-    recRows.forEach(function (r) {
-      if (!nameMap[r.party_id] && missingIds.indexOf(r.party_id) === -1) missingIds.push(r.party_id)
-    })
-    if (missingIds.length > 0) {
-      var { data: extra } = await supabase
-        .from('vendors').select('id, name').in('id', missingIds)
-      ;(extra || []).forEach(function (v) { nameMap[v.id] = v.name })
-    }
-    recRows.forEach(function (r) { r._vendor_name = nameMap[r.party_id] || '—' })
-    setLedgerRows(recRows)
-    setLedgerLoading(false)
-  }
-
   useEffect(function () { loadAll() }, [canView])
-  useEffect(function () { loadPaymentsLedger() }, [canView, ledgerFrom, ledgerTo])
-  useRealtime(['ledger_entries', 'expenses'], function () { loadAll(); loadPaymentsLedger() })
+  useRealtime(['ledger_entries', 'expenses'], function () { loadAll() })
 
   var cards = useMemo(function () {
     // Group purchase rows by vendor+mode, compute per-mode earliest_due + outstanding
@@ -317,21 +275,6 @@ function Payments({ profile }) {
       overdue: Object.keys(overdueVendors).length
     }
   }, [cards])
-
-  var visibleLedgerRows = useMemo(function () {
-    if (ledgerModeFilter === 'all') return ledgerRows
-    return ledgerRows.filter(function (r) { return r.metadata && r.metadata.mode === ledgerModeFilter })
-  }, [ledgerRows, ledgerModeFilter])
-
-  var ledgerTotal = useMemo(function () {
-    return visibleLedgerRows.reduce(function (s, r) { return s + (r.debit_paise || 0) }, 0)
-  }, [visibleLedgerRows])
-
-  function openLedger(mode) {
-    setLedgerModeFilter(mode)
-    setLedgerOpen(true)
-    if (ledgerRef.current) ledgerRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
-  }
 
   function toggleExpand(vendorId, mode) {
     var key = vendorId + '|' + mode
@@ -463,86 +406,15 @@ function Payments({ profile }) {
       {/* Two cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <PaymentCard title="💵 Cash Payments" rows={filtered.cash} total={totals.cash}
-          expanded={expanded} onToggleExpand={toggleExpand} onPay={openPay} onOpenLightbox={openLightbox}
-          onViewLedger={function () { openLedger('cash') }} />
+          expanded={expanded} onToggleExpand={toggleExpand} onPay={openPay} onOpenLightbox={openLightbox} />
         <PaymentCard title="🏦 Bank Transfers" rows={filtered.bank} total={totals.bank}
-          expanded={expanded} onToggleExpand={toggleExpand} onPay={openPay} onOpenLightbox={openLightbox}
-          onViewLedger={function () { openLedger('bank') }} />
+          expanded={expanded} onToggleExpand={toggleExpand} onPay={openPay} onOpenLightbox={openLightbox} />
       </div>
 
       {/* Empty state */}
       {filtered.cash.length === 0 && filtered.bank.length === 0 && (
         <p className="text-gray-400 text-sm text-center py-8">No pending payments match the filters.</p>
       )}
-
-      {/* Payments ledger — full history of payments made, filterable by mode + date range */}
-      <div ref={ledgerRef} className="bg-white border border-gray-200 rounded-xl overflow-hidden print:hidden">
-        <button onClick={function () { setLedgerOpen(!ledgerOpen) }}
-          className="w-full px-4 py-3 flex items-center justify-between bg-gray-50 hover:bg-gray-100 transition-colors">
-          <span className="text-sm font-bold text-gray-900">
-            Payments Ledger <span className="text-xs font-normal text-gray-500 ml-1">· {visibleLedgerRows.length} row{visibleLedgerRows.length !== 1 ? 's' : ''} · {formatPoints(ledgerTotal)}</span>
-          </span>
-          <span className="text-gray-500 text-sm">{ledgerOpen ? '▲' : '▼'}</span>
-        </button>
-        {ledgerOpen && (
-          <div>
-            <div className="px-4 py-3 border-b border-gray-100 flex flex-wrap items-center gap-2">
-              <input type="date" value={ledgerFrom} onChange={function (ev) { setLedgerFrom(ev.target.value) }}
-                className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs bg-white focus:ring-2 focus:ring-indigo-300" style={{ fontSize: '16px' }} />
-              <span className="text-xs text-gray-400">to</span>
-              <input type="date" value={ledgerTo} onChange={function (ev) { setLedgerTo(ev.target.value) }}
-                className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs bg-white focus:ring-2 focus:ring-indigo-300" style={{ fontSize: '16px' }} />
-              <div className="inline-flex bg-gray-100 rounded-lg p-0.5 ml-auto">
-                {[['all', 'All'], ['cash', '💵 Cash'], ['bank', '🏦 Bank']].map(function (opt) {
-                  var active = ledgerModeFilter === opt[0]
-                  return (
-                    <button key={opt[0]} type="button" onClick={function () { setLedgerModeFilter(opt[0]) }}
-                      className={"px-2.5 py-1 text-[11px] font-bold rounded-md transition-colors " + (active ? "bg-white shadow-sm text-gray-900" : "text-gray-500")}>
-                      {opt[1]}
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
-            {ledgerLoading ? (
-              <p className="text-gray-400 text-xs text-center py-6">Loading...</p>
-            ) : visibleLedgerRows.length === 0 ? (
-              <p className="text-gray-400 text-xs text-center py-6">No payments in this range.</p>
-            ) : (
-              <div className="divide-y divide-gray-100">
-                {visibleLedgerRows.map(function (r) {
-                  var isDed = r.ref_type === 'vendor_deduction'
-                  var mode = r.metadata && r.metadata.mode
-                  return (
-                    <div key={r.id} className="px-4 py-2.5 flex items-center justify-between gap-2">
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium text-gray-900 truncate">{r._vendor_name}</p>
-                        <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                          <span className="text-[10px] text-gray-500">{formatDate(r.entry_date)}</span>
-                          {mode && (
-                            <span className="text-[10px] font-semibold px-1.5 py-0.5 border rounded bg-gray-50 text-gray-700 border-gray-200">
-                              {mode === 'cash' ? '💵 Cash' : '🏦 Bank'}
-                            </span>
-                          )}
-                          {isDed && (
-                            <span className="text-[10px] font-semibold px-1.5 py-0.5 border rounded bg-amber-50 text-amber-700 border-amber-200">
-                              Deduction
-                            </span>
-                          )}
-                          {r.description && <span className="text-[10px] text-gray-400 truncate">{r.description}</span>}
-                        </div>
-                      </div>
-                      <p className={"text-sm font-bold flex-shrink-0 " + (isDed ? "text-amber-700" : "text-green-700")}>
-                        {formatPoints(r.debit_paise || 0)}
-                      </p>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
 
       {/* Pay modal */}
             {payTarget && (
@@ -587,21 +459,14 @@ function Payments({ profile }) {
   )
 }
 
-function PaymentCard({ title, rows, total, expanded, onToggleExpand, onPay, onOpenLightbox, onViewLedger }) {
+function PaymentCard({ title, rows, total, expanded, onToggleExpand, onPay, onOpenLightbox }) {
   return (
     <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-      <div className="px-4 py-3 border-b border-gray-100 bg-gray-50 flex items-start justify-between gap-2">
-        <div>
-          <h3 className="text-sm font-bold text-gray-900">{title}</h3>
-          <p className="text-xs text-gray-600 mt-0.5">
-            <span className="font-bold text-gray-900">{formatPoints(total)}</span> pending · {rows.length} vendor{rows.length !== 1 ? 's' : ''}
-          </p>
-        </div>
-        {onViewLedger && (
-          <button onClick={onViewLedger} className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 whitespace-nowrap print:hidden">
-            View ledger →
-          </button>
-        )}
+      <div className="px-4 py-3 border-b border-gray-100 bg-gray-50">
+        <h3 className="text-sm font-bold text-gray-900">{title}</h3>
+        <p className="text-xs text-gray-600 mt-0.5">
+          <span className="font-bold text-gray-900">{formatPoints(total)}</span> pending · {rows.length} vendor{rows.length !== 1 ? 's' : ''}
+        </p>
       </div>
       {rows.length === 0 ? (
         <p className="text-gray-400 text-xs text-center py-6">Nothing pending.</p>
