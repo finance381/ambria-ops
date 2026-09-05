@@ -5,6 +5,7 @@ import { useRealtime } from '../../lib/useRealtime'
 import PayVendorModal from './PayVendorModal'
 import { hasPerm } from '../../lib/permissions'
 import { filterVisibleVendors } from '../../lib/vendorGating'
+import { useReferenceData } from '../../lib/referenceData.jsx'
 
 function daysBetween(d1, d2) {
   var ms = new Date(d2) - new Date(d1)
@@ -52,6 +53,7 @@ function Payments({ profile }) {
   var [recent, setRecent] = useState([])
   var [showRecent, setShowRecent] = useState(false)
   var [lightbox, setLightbox] = useState(null)
+  var refData = useReferenceData()
 
   function openLightbox(paths, startIdx) {
     var items = (paths || []).map(function (path) {
@@ -89,22 +91,20 @@ function Payments({ profile }) {
 
     // Enrich vendors with vendor_type + department chain
     var vendorIds = pendingVendors.map(function (v) { return v.vendor_id })
-    var [vExtRes, catsRes, sdRes, etRes, estRes, dRes] = await Promise.all([
+    var [vExtRes, catsRes, sdRes, dRes] = await Promise.all([
       vendorIds.length > 0 ? supabase.from('vendors').select('id, vendor_type, category_ids, expense_type_ids, expense_sub_type_ids').in('id', vendorIds) : Promise.resolve({ data: [] }),
       supabase.from('categories').select('id, sub_department_id'),
       supabase.from('sub_departments').select('id, department_id'),
-      supabase.from('expense_types').select('id, department_id, sub_department_id'),
-      supabase.from('expense_sub_types').select('id, expense_type_id'),
       supabase.from('departments').select('id, name').eq('active', true).order('name')
     ])
     var catToSd = {}; (catsRes.data || []).forEach(function (c) { catToSd[c.id] = c.sub_department_id })
     var sdToDept = {}; (sdRes.data || []).forEach(function (s) { sdToDept[s.id] = s.department_id })
     var etToDept = {}
-    ;(etRes.data || []).forEach(function (t) {
+    ;refData.expenseTypes.forEach(function (t) {
       if (t.department_id) etToDept[t.id] = t.department_id
       else if (t.sub_department_id && sdToDept[t.sub_department_id]) etToDept[t.id] = sdToDept[t.sub_department_id]
     })
-    var stToType = {}; (estRes.data || []).forEach(function (s) { stToType[s.id] = s.expense_type_id })
+    var stToType = {}; refData.expenseSubTypes.forEach(function (s) { stToType[s.id] = s.expense_type_id })
     var vExtras = {}
     ;(vExtRes.data || []).forEach(function (v) {
       var deptIds = {}

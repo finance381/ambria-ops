@@ -5,6 +5,7 @@ import { formatDate, formatPaise, titleCase } from '../../lib/format'
 import Modal from '../../components/ui/Modal'
 import EventLedger from '../expenses/EventLedger'
 import { hasPerm } from '../../lib/permissions'
+import { useReferenceData } from '../../lib/referenceData.jsx'
 
 var lastSyncTime = 0
 var SYNC_COOLDOWN = 5 * 60 * 1000
@@ -90,7 +91,12 @@ function Events({ profile }) {
   var [perPage, setPerPage] = useState(24)
   var [showLedger, setShowLedger] = useState(false)
   var [extraPlateSummary, setExtraPlateSummary] = useState(null)
-  var [venueMap, setVenueMap] = useState({})
+  var refData = useReferenceData()
+  var venueMap = useMemo(function () {
+    var m = {}
+    refData.venues.filter(function (v) { return v.active }).forEach(function (v) { if (v.name) m[v.name] = v.code })
+    return m
+  }, [refData.venues])
 
   var isAdmin = hasPerm(profile?.permsNew, 'events.list')
   var permsNew = profile?.permsNew || []
@@ -150,7 +156,7 @@ function Events({ profile }) {
     var dateFloor = new Date()
     dateFloor.setDate(dateFloor.getDate() - 5)
     var dateFloorStr = dateFloor.toISOString().split('T')[0]
-    var [eventsRes, deptRes, venueRes] = await Promise.all([
+    var [eventsRes, deptRes] = await Promise.all([
       supabase
         .from('events_safe')
         .select('id, lms_event_id, contract_no, contract_date, function_date, department, contract_type, venue_name, location, contact_person, contact_number, event_name, client_name, session, catering, total_plates, complementary_plates, extra_plates_charge, balance_received, balance_bank, balance_amount, status, synced_at, created_user_name')
@@ -158,13 +164,9 @@ function Events({ profile }) {
         .order('function_date', { ascending: false })
         .limit(2000),
       supabase.from('departments').select('id, name').eq('active', true).eq('hide_from_lists', false),
-      supabase.from('venues').select('code, name').eq('active', true),
     ])
     setDepartments(deptRes.data || [])
     setEvents(eventsRes.data || [])
-    var vMap = {}
-    ;(venueRes.data || []).forEach(function (v) { if (v.name) vMap[v.name] = v.code })
-    setVenueMap(vMap)
     setLoading(false)
   }
 

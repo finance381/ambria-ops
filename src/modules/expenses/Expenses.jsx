@@ -12,6 +12,7 @@ import { useRealtime } from '../../lib/useRealtime'
 import ExpenseReport from './ExpenseReport'
 import { pushBack, goBack as navBack } from '../../lib/backNav'
 import { hasPerm } from '../../lib/permissions'
+import { useReferenceData } from '../../lib/referenceData.jsx'
 
 
 var PAGE_SIZE = 20
@@ -50,7 +51,7 @@ function Expenses({ profile, masterMode }) {
   // Filter lookups
   var [deptOptions, setDeptOptions] = useState([])
   var [subDeptOptions, setSubDeptOptions] = useState([])
-  var [venueOptions, setVenueOptions] = useState([])
+  var venueOptions = useReferenceData().venues.filter(function (v) { return v.active }).slice().sort(function (a, b) { return (a.name || '').localeCompare(b.name || '') })
   var [userOptions, setUserOptions] = useState([])
   var [profileMap, setProfileMap] = useState({})
 
@@ -71,7 +72,6 @@ function Expenses({ profile, masterMode }) {
     Promise.all([
       supabase.from('sub_departments').select('id, name, department_id').order('name'),
       supabase.from('departments').select('id, name').eq('active', true).order('name'),
-      supabase.from('venues').select('id, code, name').eq('active', true).order('name'),
     ]).then(function (res) {
       var sds = res[0].data || []
       var map = {}
@@ -79,7 +79,6 @@ function Expenses({ profile, masterMode }) {
       setSubDeptMap(map)
       setSubDeptOptions(sds)
       setDeptOptions(res[1].data || [])
-      setVenueOptions(res[2].data || [])
     })
     supabase.from('profiles').select('id, name').order('name').then(function (res) {
       var rows = res.data || []

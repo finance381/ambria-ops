@@ -5,6 +5,7 @@ import Modal from '../../components/ui/Modal'
 import InventoryForm from './InventoryForm'
 import { useRealtime } from '../../lib/useRealtime'
 import { hasPerm } from '../../lib/permissions'
+import { useReferenceData } from '../../lib/referenceData.jsx'
 
 
 function Inventory({ profile }) {
@@ -30,7 +31,7 @@ function Inventory({ profile }) {
   var [searchDebounced, setSearchDebounced] = useState('')
   var [allCategories, setAllCategories] = useState([])
   var [allSubCategories, setAllSubCategories] = useState([])
-  var [allVenues, setAllVenues] = useState([])
+  var allVenues = useReferenceData().venues
   var [hasMore, setHasMore] = useState(false)
   var [loadingMore, setLoadingMore] = useState(false)
   var [tab, setTab] = useState('mine')
@@ -59,15 +60,13 @@ function Inventory({ profile }) {
 
   async function loadMeta() {
     setLoading(true)
-    var [catRes, scRes, vRes, svRes] = await Promise.all([
+    var [catRes, scRes, svRes] = await Promise.all([
       supabase.from('categories').select('id, name').order('name'),
       supabase.from('sub_categories').select('id, name, category_id').order('name'),
-      supabase.from('venues').select('id, code, name').order('code'),
       supabase.from('sub_venues').select('id, name, venue_id').eq('active', true),
     ])
     setAllCategories(catRes.data || [])
     setAllSubCategories(scRes.data || [])
-    setAllVenues(vRes.data || [])
     setSubVenues(svRes.data || [])
     setMetaReady(true)
   }

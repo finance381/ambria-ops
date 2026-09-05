@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase, getImageUrl } from '../../lib/supabase'
 import { formatDate, formatPaise, titleCase } from '../../lib/format'
 import { logActivity } from '../../lib/logger'
+import { isPrivilegedRole } from '../../lib/permissions'
 import EventDatePicker from '../../components/ui/EventDatePicker'
 
 var STATUS_LABELS = {
@@ -83,7 +84,7 @@ function ProductionOrders({ profile }) {
   var [activeOrder, setActiveOrder] = useState(null)
   var [qtyInput, setQtyInput] = useState('')
 
-  var isAdmin = profile?.role === 'admin' || profile?.role === 'auditor'
+  var isAdmin = isPrivilegedRole(profile)
 
   useEffect(function () {
     loadOrders()

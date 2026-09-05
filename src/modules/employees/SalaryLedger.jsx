@@ -8,6 +8,7 @@ import AdjustSalaryModal from './AdjustSalaryModal'
 import PaymentProofThumbs from '../../components/ledger/PaymentProofThumbs'
 import LedgerSourceMedia from '../../components/ledger/LedgerSourceMedia'
 import { hasPerm } from '../../lib/permissions'
+import { useReferenceData } from '../../lib/referenceData.jsx'
 
 function SalaryLedger({ profile }) {
   var permsNew = (profile && profile.permsNew) || []
@@ -32,6 +33,7 @@ function SalaryLedger({ profile }) {
   var [showPayModal, setShowPayModal] = useState(false)
   var [showAccrueModal, setShowAccrueModal] = useState(false)  // SL-C4
   var [showAdjustModal, setShowAdjustModal] = useState(false)  // SL-C5
+  var refData = useReferenceData()
 
   useEffect(function () {
     if (canView) loadEmployees()
@@ -42,12 +44,11 @@ function SalaryLedger({ profile }) {
     setLoading(true)
     var res = await Promise.all([
       supabase.from('v_employee_ledger').select('*').order('balance_paise', { ascending: false }),
-      supabase.from('employees').select('id, designation, job_department_ids'),
       supabase.from('job_departments').select('id, name').order('sort_order').order('name')
     ])
     var ledger = (res[0].data) || []
-    var emps = (res[1].data) || []
-    var jds = (res[2].data) || []
+    var emps = refData.employees
+    var jds = (res[1].data) || []
     var empMap = {}
     emps.forEach(function (e) { empMap[e.id] = e })
     var jdM = {}

@@ -4,6 +4,7 @@ import { formatDate, formatPoints } from '../../lib/format'
 import { logActivity } from '../../lib/logger'
 import { APPROVAL_STATUS_COLORS, APPROVAL_STATUS_LABELS } from '../../lib/constants'
 import { hasPerm } from '../../lib/permissions'
+import { useReferenceData } from '../../lib/referenceData.jsx'
 import VoiceInput from '../../components/ui/VoiceInput'
 
 function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdated, onEdit, onRaiseGV }) {
@@ -26,6 +27,7 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
   var [expandedGvId, setExpandedGvId] = useState('')
   var [reversing, setReversing] = useState(false)
   var [gvCreators, setGvCreators] = useState({})
+  var refData = useReferenceData()
 
   useEffect(function () {
     supabase.from('expenses').select('deduction_type').not('deduction_type', 'is', null).neq('deduction_type', '')
@@ -92,8 +94,10 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
     Promise.all(sources.map(function (src) {
       var ids = bySource[src]
       if (src === 'job_departments') {
-        return supabase.from('employees').select('id, full_name, employee_code').in('id', ids)
-          .then(function (r) { return { src: src, rows: (r.data || []).map(function (e) { return { id: String(e.id), label: e.full_name + ' (' + e.employee_code + ')' } }) } })
+        var empIds = ids.map(String)
+        var empRows = refData.employees.filter(function (e) { return empIds.indexOf(String(e.id)) !== -1 })
+          .map(function (e) { return { id: String(e.id), label: e.full_name + ' (' + e.employee_code + ')' } })
+        return Promise.resolve({ src: src, rows: empRows })
       }
       if (src === 'vendors') {
         return supabase.from('vendors').select('id, name').in('id', ids)
@@ -108,8 +112,10 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
           .then(function (r) { return { src: src, rows: (r.data || []).map(function (c) { return { id: String(c.id), label: c.name } }) } })
       }
       if (src === 'venues') {
-        return supabase.from('venues').select('id, code, name').in('id', ids)
-          .then(function (r) { return { src: src, rows: (r.data || []).map(function (v) { return { id: String(v.id), label: v.code + ' — ' + v.name } }) } })
+        var venueIds = ids.map(String)
+        var venueRows = refData.venues.filter(function (v) { return venueIds.indexOf(String(v.id)) !== -1 })
+          .map(function (v) { return { id: String(v.id), label: v.code + ' — ' + v.name } })
+        return Promise.resolve({ src: src, rows: venueRows })
       }
       return Promise.resolve({ src: src, rows: [] })
     })).then(function (results) {
@@ -129,24 +135,18 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
         var rows = res.data || []
         setAllocations(rows)
         if (rows.length > 0) {
-          var vIds = rows.map(function (r) { return r.venue_id }).filter(Boolean)
           var svIds = rows.map(function (r) { return r.sub_venue_id }).filter(Boolean)
           var dIds = rows.map(function (r) { return r.department_id }).filter(Boolean)
-          var etIds = rows.map(function (r) { return r.expense_type_id }).filter(Boolean)
-          var estIds = rows.map(function (r) { return r.expense_sub_type_id }).filter(Boolean)
           Promise.all([
-            vIds.length > 0 ? supabase.from('venues').select('id, code, name').in('id', vIds) : { data: [] },
             svIds.length > 0 ? supabase.from('sub_venues').select('id, name').in('id', svIds) : { data: [] },
             dIds.length > 0 ? supabase.from('departments').select('id, name').in('id', dIds) : { data: [] },
-            etIds.length > 0 ? supabase.from('expense_types').select('id, name').in('id', etIds) : { data: [] },
-            estIds.length > 0 ? supabase.from('expense_sub_types').select('id, name').in('id', estIds) : { data: [] }
           ]).then(function (results) {
             var map = {}
-            ;(results[0].data || []).forEach(function (v) { map['v_' + v.id] = v.code + ' — ' + v.name })
-            ;(results[1].data || []).forEach(function (sv) { map['sv_' + sv.id] = sv.name })
-            ;(results[2].data || []).forEach(function (d) { map['d_' + d.id] = d.name })
-            ;(results[3].data || []).forEach(function (et) { map['et_' + et.id] = et.name })
-            ;(results[4].data || []).forEach(function (est) { map['est_' + est.id] = est.name })
+            refData.venues.forEach(function (v) { map['v_' + v.id] = v.code + ' — ' + v.name })
+            refData.expenseTypes.forEach(function (et) { map['et_' + et.id] = et.name })
+            refData.expenseSubTypes.forEach(function (est) { map['est_' + est.id] = est.name })
+            ;(results[0].data || []).forEach(function (sv) { map['sv_' + sv.id] = sv.name })
+            ;(results[1].data || []).forEach(function (d) { map['d_' + d.id] = d.name })
             setAllocVenues(map)
           })
         }

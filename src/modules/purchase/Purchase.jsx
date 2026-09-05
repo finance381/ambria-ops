@@ -12,6 +12,7 @@ import VoiceInput from '../../components/ui/VoiceInput'
 import { prepUpload } from '../../lib/uploadHelper'
 import { hasPerm } from '../../lib/permissions'
 import { filterVisibleVendors } from '../../lib/vendorGating'
+import { useReferenceData } from '../../lib/referenceData.jsx'
 
 var PO_STATUS_LABELS = {
   draft: 'Draft',
@@ -1324,8 +1325,13 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, ve
     if (it.status === 'returned') returnedCount++
   })
 
-  var [expenseTypes, setExpenseTypes] = useState([])
-  var [expenseSubTypes, setExpenseSubTypes] = useState([])
+  var refData = useReferenceData()
+  var expenseTypes = useMemo(function () {
+    return refData.expenseTypes.filter(function (t) { return t.active })
+  }, [refData.expenseTypes])
+  var expenseSubTypes = useMemo(function () {
+    return refData.expenseSubTypes.filter(function (t) { return t.active })
+  }, [refData.expenseSubTypes])
   var [bulkVendor, setBulkVendor] = useState('')
   var [bulkVendorRate, setBulkVendorRate] = useState('')
   var [expDepartments, setExpDepartments] = useState([])
@@ -1339,15 +1345,11 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, ve
 
   useEffect(function () {
     Promise.all([
-      supabase.from('expense_types').select('id, name, icon, sort_order, department_id, sub_department_id').eq('active', true).order('sort_order').order('name'),
-      supabase.from('expense_sub_types').select('id, expense_type_id, name, active, sort_order').eq('active', true).order('sort_order').order('name'),
       supabase.from('departments').select('id, name').eq('active', true).order('name'),
       supabase.from('sub_departments').select('id, name, department_id').eq('active', true).order('name'),
     ]).then(function (res) {
-      setExpenseTypes(res[0].data || [])
-      setExpenseSubTypes(res[1].data || [])
-      setExpDepartments(res[2].data || [])
-      setExpSubDepartments(res[3].data || [])
+      setExpDepartments(res[0].data || [])
+      setExpSubDepartments(res[1].data || [])
     })
   }, [])
 
@@ -1575,15 +1577,13 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, ve
       receiptPath = fileName
     }
 
-    // Update vendor per item (only if changed) — one round-trip each
+    // Update vendor for items whose vendor changed — one batched round-trip
     var vendorName = (multiForm.vendor || '').trim()
     if (vendorName) {
       var vendorContact = (multiForm.vendorContact || '').trim() || null
-      for (var i = 0; i < selectedItems.length; i++) {
-        var it = selectedItems[i]
-        if (it.vendor_name !== vendorName) {
-          await supabase.from('purchase_order_items').update({ vendor_name: vendorName, vendor_contact: vendorContact }).eq('id', it.id)
-        }
+      var changedIds = selectedItems.filter(function (it) { return it.vendor_name !== vendorName }).map(function (it) { return it.id })
+      if (changedIds.length > 0) {
+        await supabase.from('purchase_order_items').update({ vendor_name: vendorName, vendor_contact: vendorContact }).in('id', changedIds)
       }
     }
 

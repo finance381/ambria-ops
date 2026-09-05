@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { formatPoints } from '../../lib/format'
+import { useReferenceData } from '../../lib/referenceData.jsx'
 
 function ExpenseReport({ onBack }) {
   var [reportData, setReportData] = useState(null)
   var [reportFrom, setReportFrom] = useState(new Date().toISOString().slice(0, 7) + '-01')
   var [reportTo, setReportTo] = useState(new Date().toISOString().split('T')[0])
   var [reportLoading, setReportLoading] = useState(false)
+  var refData = useReferenceData()
 
   useEffect(function () { loadReport() }, [])
 
@@ -15,14 +17,12 @@ function ExpenseReport({ onBack }) {
     // Master maps (small tables, IDs → names)
     var mapRes = await Promise.all([
       supabase.from('departments').select('id, name'),
-      supabase.from('expense_types').select('id, name'),
-      supabase.from('expense_sub_types').select('id, name'),
       supabase.from('profiles').select('id, name'),
     ])
     var deptMap = {}; (mapRes[0].data || []).forEach(function (d) { deptMap[d.id] = d.name })
-    var typeMap = {}; (mapRes[1].data || []).forEach(function (t) { typeMap[t.id] = t.name })
-    var subTypeMap = {}; (mapRes[2].data || []).forEach(function (s) { subTypeMap[s.id] = s.name })
-    var userMap = {}; (mapRes[3].data || []).forEach(function (u) { userMap[u.id] = u.name })
+    var typeMap = {}; refData.expenseTypes.forEach(function (t) { typeMap[t.id] = t.name })
+    var subTypeMap = {}; refData.expenseSubTypes.forEach(function (s) { subTypeMap[s.id] = s.name })
+    var userMap = {}; (mapRes[1].data || []).forEach(function (u) { userMap[u.id] = u.name })
 
     // Paginated v_ledger pull (server caps ~1000/request). View already filters deleted_at.
     var rows = []; var from = 0; var pageSize = 1000

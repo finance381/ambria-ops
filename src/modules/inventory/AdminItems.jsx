@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { prepUpload } from '../../lib/uploadHelper'
 import { supabase, getImageUrl, fetchAll } from '../../lib/supabase'
 import { formatDate, titleCase } from '../../lib/format'
@@ -6,6 +6,7 @@ import { logActivity } from '../../lib/logger'
 import Modal from '../../components/ui/Modal'
 import InventoryForm from './InventoryForm'
 import { hasPerm } from '../../lib/permissions'
+import { useReferenceData } from '../../lib/referenceData.jsx'
 
 function FilterDropdown({ value, onChange, options, placeholder, multi }) {
   var [open, setOpen] = useState(false)
@@ -78,7 +79,7 @@ function AdminItems({ profile }) {
   var [deptFilter, setDeptFilter] = useState([])
   var [statusFilter, setStatusFilter] = useState([])
   var [departments, setDepartments] = useState([])
-  var [venues, setVenues] = useState([])
+  var venues = useReferenceData().venues.filter(function (v) { return v.active })
   var [venueFilter, setVenueFilter] = useState([])
   var [catFilter, setCatFilter] = useState([])
   var [subCatFilter, setSubCatFilter] = useState([])
@@ -116,7 +117,7 @@ function AdminItems({ profile }) {
 
   async function loadData() {
     try {
-      var [invAll, csAll, deptRes, venueRes, profilesRes, catRes, subCatRes, subDeptRes, subVenueRes] = await Promise.all([
+      var [invAll, csAll, deptRes, profilesRes, catRes, subCatRes, subDeptRes, subVenueRes] = await Promise.all([
         fetchAll(supabase.from('inventory_items')
           .select('id, name, name_hindi, inventory_id, qty, blocked, unit, type, status, department, category_id, sub_category_id, rate_paise, min_order_qty, reorder_qty, is_asset, image_path, submitted_by, entry_date, description, dimensions, categories(name, sub_department_id), sub_categories(name), venue_allocations(qty, venues(code, name), sub_venue_id, sub_department_id)')
           .order('created_at', { ascending: false })),
@@ -124,7 +125,6 @@ function AdminItems({ profile }) {
           .select('id, name, name_hindi, inventory_id, qty, unit, type, status, department, category_id, sub_category_id, rate_paise, is_asset, image_path, submitted_by, entry_date, description, dimensions, brand, pack_size_qty, pack_size_unit, season_reorder_qty, off_season_reorder_qty, categories(name, sub_department_id), sub_categories(name), cs_venue_allocations(qty, venues(code, name), sub_venue_id, sub_department_id)')
           .order('created_at', { ascending: false })),
         supabase.from('departments').select('id, name, category_ids, is_inventory_default').eq('active', true).order('name'),
-        supabase.from('venues').select('id, code, name').eq('active', true).order('code'),
         supabase.from('profiles').select('id, name, email'),
         supabase.from('categories').select('id, name, sub_department_id').order('name'),
         supabase.from('sub_categories').select('id, name, category_id').order('name'),
@@ -154,7 +154,6 @@ function AdminItems({ profile }) {
         if (defDept) setMasterDeptFilter([String(defDept.id)])
         setDefaultApplied(true)
       }
-      setVenues(venueRes.data || [])
       setCategories(catRes.data || [])
       setSubCategoriesAll(subCatRes.data || [])
       setSubDepartments(subDeptRes.data || [])
@@ -785,37 +784,39 @@ function AdminItems({ profile }) {
    openHolds(holdItem)
  }
 
-  var searchLower = search.toLowerCase()
-  var filtered = items.filter(function (item) {
-    var matchSearch = !search ||
-      item.name.toLowerCase().includes(searchLower) ||
-      (item.inventory_id || '').toLowerCase().includes(searchLower) ||
-      (item.profiles?.name || '').toLowerCase().includes(searchLower) ||
-      (item.profiles?.email || '').toLowerCase().includes(searchLower) ||
-      (item.description || '').toLowerCase().includes(searchLower) ||
-      (item.name_hindi || '').toLowerCase().includes(searchLower) ||
-      (item.categories?.name || '').toLowerCase().includes(searchLower) ||
-      (item.sub_categories?.name || '').toLowerCase().includes(searchLower) ||
-      (item.department || '').toLowerCase().includes(searchLower) ||
-      (item.brand || '').toLowerCase().includes(searchLower)
-    var matchDept = deptFilter.length === 0 || deptFilter.indexOf(item.department) !== -1
-    var matchStatus = statusFilter.length === 0 || statusFilter.indexOf(item.status) !== -1
-    var matchMasterDept = masterDeptFilter.length === 0 || (function () {
-      var sdId = item.categories?.sub_department_id
-      if (!sdId) return false
-      var sd = subDepartments.find(function (x) { return x.id === sdId })
-      return sd && masterDeptFilter.indexOf(String(sd.department_id)) !== -1
-    })()
-    var matchSubDept = subDeptFilter.length === 0 || (function () {
-      var sdCatIds = categories.filter(function (c) { return subDeptFilter.indexOf(String(c.sub_department_id)) !== -1 }).map(function (c) { return c.id })
-      return sdCatIds.indexOf(item.category_id) !== -1
-    })()
-    var matchVenue = venueFilter.length === 0 || (item.venue_allocations || []).some(function (va) { return venueFilter.indexOf(va.venues?.code) !== -1 })
-    var matchSubVenue = subVenueFilter.length === 0 || (item.venue_allocations || []).some(function (va) { return subVenueFilter.indexOf(String(va.sub_venue_id)) !== -1 })
-    var matchCat = catFilter.length === 0 || catFilter.indexOf(String(item.category_id)) !== -1
-    var matchSubCat = subCatFilter.length === 0 || subCatFilter.indexOf(String(item.sub_category_id)) !== -1
-    return matchSearch && matchMasterDept && matchDept && matchSubDept && matchStatus && matchVenue && matchCat && matchSubCat && matchSubVenue
-  })
+  var filtered = useMemo(function () {
+    var searchLower = search.toLowerCase()
+    return items.filter(function (item) {
+      var matchSearch = !search ||
+        item.name.toLowerCase().includes(searchLower) ||
+        (item.inventory_id || '').toLowerCase().includes(searchLower) ||
+        (item.profiles?.name || '').toLowerCase().includes(searchLower) ||
+        (item.profiles?.email || '').toLowerCase().includes(searchLower) ||
+        (item.description || '').toLowerCase().includes(searchLower) ||
+        (item.name_hindi || '').toLowerCase().includes(searchLower) ||
+        (item.categories?.name || '').toLowerCase().includes(searchLower) ||
+        (item.sub_categories?.name || '').toLowerCase().includes(searchLower) ||
+        (item.department || '').toLowerCase().includes(searchLower) ||
+        (item.brand || '').toLowerCase().includes(searchLower)
+      var matchDept = deptFilter.length === 0 || deptFilter.indexOf(item.department) !== -1
+      var matchStatus = statusFilter.length === 0 || statusFilter.indexOf(item.status) !== -1
+      var matchMasterDept = masterDeptFilter.length === 0 || (function () {
+        var sdId = item.categories?.sub_department_id
+        if (!sdId) return false
+        var sd = subDepartments.find(function (x) { return x.id === sdId })
+        return sd && masterDeptFilter.indexOf(String(sd.department_id)) !== -1
+      })()
+      var matchSubDept = subDeptFilter.length === 0 || (function () {
+        var sdCatIds = categories.filter(function (c) { return subDeptFilter.indexOf(String(c.sub_department_id)) !== -1 }).map(function (c) { return c.id })
+        return sdCatIds.indexOf(item.category_id) !== -1
+      })()
+      var matchVenue = venueFilter.length === 0 || (item.venue_allocations || []).some(function (va) { return venueFilter.indexOf(va.venues?.code) !== -1 })
+      var matchSubVenue = subVenueFilter.length === 0 || (item.venue_allocations || []).some(function (va) { return subVenueFilter.indexOf(String(va.sub_venue_id)) !== -1 })
+      var matchCat = catFilter.length === 0 || catFilter.indexOf(String(item.category_id)) !== -1
+      var matchSubCat = subCatFilter.length === 0 || subCatFilter.indexOf(String(item.sub_category_id)) !== -1
+      return matchSearch && matchMasterDept && matchDept && matchSubDept && matchStatus && matchVenue && matchCat && matchSubCat && matchSubVenue
+    })
+  }, [items, search, deptFilter, statusFilter, masterDeptFilter, subDepartments, subDeptFilter, categories, venueFilter, subVenueFilter, catFilter, subCatFilter])
 
   function handleSort(key) {
     if (sortKey === key) { setSortDir(sortDir === 'asc' ? 'desc' : 'asc') }
@@ -841,12 +842,15 @@ function AdminItems({ profile }) {
     return ''
   }
 
-  var sorted = sortKey ? filtered.slice().sort(function (a, b) {
-    var va = sortValue(a, sortKey), vb = sortValue(b, sortKey)
-    if (va < vb) return sortDir === 'asc' ? -1 : 1
-    if (va > vb) return sortDir === 'asc' ? 1 : -1
-    return 0
-  }) : filtered
+  var sorted = useMemo(function () {
+    if (!sortKey) return filtered
+    return filtered.slice().sort(function (a, b) {
+      var va = sortValue(a, sortKey), vb = sortValue(b, sortKey)
+      if (va < vb) return sortDir === 'asc' ? -1 : 1
+      if (va > vb) return sortDir === 'asc' ? 1 : -1
+      return 0
+    })
+  }, [filtered, sortKey, sortDir, subDepartments, departments])
 
   function sortArrow(key) { return sortKey === key ? (sortDir === 'asc' ? ' ↑' : ' ↓') : '' }
 

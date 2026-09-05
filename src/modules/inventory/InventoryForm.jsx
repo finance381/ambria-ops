@@ -10,6 +10,7 @@ import { useLang } from '../../lib/i18n'
 import { logActivity } from '../../lib/logger'
 import { filterUserCategories } from '../../lib/categories'
 import { hasPerm } from '../../lib/permissions'
+import { useReferenceData } from '../../lib/referenceData.jsx'
 
 var UNITS = [
   'Inches','Pieces', 'Nos', 'Sets', 'Pairs', 'Dozens',
@@ -42,7 +43,7 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved }) {
   var [reorderQty, setReorderQty] = useState(seed?.reorder_qty ?? seed?.off_season_reorder_qty ?? '')
   var [ratePaise, setRatePaise] = useState(seed?.rate_paise ? (seed.rate_paise / 100) : '')
   var [isAsset, setIsAsset] = useState(seed?.is_asset ?? 'unknown')
-  var [venues, setVenues] = useState([])
+  var venues = useReferenceData().venues.filter(function (v) { return v.active })
   var [subVenues, setSubVenues] = useState([])
   var [subDepartments, setSubDepartments] = useState([])
   var [allocations, setAllocations] = useState([{ department: '', sub_department_id: '', venue_id: '', sub_venue_id: '', qty: '' }])
@@ -196,10 +197,9 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved }) {
   }, [subCategoryId, dimensionValues, categoryDimFields])
 
   async function loadLookups() {
-    var [catRes, deptRes, venueRes, subVenueRes, subDeptRes] = await Promise.all([
+    var [catRes, deptRes, subVenueRes, subDeptRes] = await Promise.all([
       supabase.from('categories').select('*').order('name'),
       supabase.from('departments').select('*').eq('active', true).eq('hide_from_lists', false).order('name'),
-      supabase.from('venues').select('*').eq('active', true).order('code'),
       supabase.from('sub_venues').select('id, name, venue_id').eq('active', true).order('name'),
       supabase.from('sub_departments').select('id, name, department_id, active').order('name')
     ])
@@ -209,7 +209,6 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved }) {
    var allCats = filterUserCategories(catRes.data || [], profile)
     setCategories(allCats)
     setDepartments(deptRes.data || [])
-    setVenues(venueRes.data || [])
     setSubVenues(subVenueRes.data || [])
     setSubDepartments(allSubDepts)
     setCateringStoreSubDeptId(cateringStoreId)

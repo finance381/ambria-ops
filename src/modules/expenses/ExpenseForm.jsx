@@ -10,6 +10,9 @@ import EventDatePicker from '../../components/ui/EventDatePicker'
 import { compressImage } from '../../lib/imageCompress'
 import VoiceInput from '../../components/ui/VoiceInput'
 import { hasPerm } from '../../lib/permissions'
+import { useReferenceData } from '../../lib/referenceData.jsx'
+
+function byName(a, b) { return (a.name || '').localeCompare(b.name || '') }
 
 function makeEntry() {
   return {
@@ -202,10 +205,11 @@ function hydrateEntry(exp) {
 
 function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
   var isEditing = !!editExp
-  var [expenseTypes, setExpenseTypes] = useState([])
-  var [expenseSubTypes, setExpenseSubTypes] = useState([])
+  var refData = useReferenceData()
+  var expenseTypes = refData.expenseTypes.filter(function (t) { return t.active })
+  var expenseSubTypes = refData.expenseSubTypes.filter(function (t) { return t.active })
+  var venues = refData.venues.filter(function (v) { return v.active }).slice().sort(byName)
   var [departments, setDepartments] = useState([])
-  var [venues, setVenues] = useState([])
   var [subDepartments, setSubDepartments] = useState([])
   var [itemCategories, setItemCategories] = useState([])
   var [loading, setLoading] = useState(true)
@@ -337,21 +341,15 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
   }
 
   async function loadRefData() {
-    var [etR, estR, dR, vR, sdR, cR] = await Promise.all([
-      supabase.from('expense_types').select('id, name, icon, description, sort_order, department_id').eq('active', true).order('sort_order').order('name'),
-      supabase.from('expense_sub_types').select('id, expense_type_id, name, extra_fields, active, sort_order').eq('active', true).order('sort_order').order('name'),
+    var [dR, sdR, cR] = await Promise.all([
       supabase.from('departments').select('id, name').eq('active', true).eq('hide_from_lists', false).order('name'),
-      supabase.from('venues').select('id, code, name').eq('active', true).order('name'),
       supabase.from('sub_departments').select('id, name, department_id, departments!inner(hide_from_lists)').eq('active', true).eq('departments.hide_from_lists', false).order('name'),
       supabase.from('categories').select('id, name').order('name'),
     ])
-    setExpenseTypes(etR.data || [])
-    setExpenseSubTypes(estR.data || [])
     var allDepts = dR.data || []
     var isAdminRole = hasPerm(profile?.permsNew, 'finance.expenses.approve')
     var userDeptIds = profile?.event_dept_ids || []
     setDepartments((isAdminRole || userDeptIds.length === 0) ? allDepts : allDepts.filter(function (d) { return userDeptIds.indexOf(d.id) !== -1 }))
-    setVenues(vR.data || [])
     setSubDepartments(sdR.data || [])
     setItemCategories(cR.data || [])
     setLoading(false)
@@ -387,11 +385,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
       items = data || []
     } else if (source === 'job_departments') {
       // Fetches employees, not departments — filtered by field.allowed_dept_ids at render time (dept overlap).
-      var { data: empData } = await supabase.from('employees')
-        .select('id, full_name, employee_code, job_department_ids')
-        .in('status', ['probation', 'active', 'on_leave'])
-        .order('full_name')
-      items = empData || []
+      items = refData.employees.filter(function (e) { return ['probation', 'active', 'on_leave'].indexOf(e.status) !== -1 })
     } else if (source === 'staff') {
       var { data: pData } = await supabase.from('profiles').select('id, name').order('name')
       items = (pData || []).map(function (p) { return { label: p.name || '—', value: String(p.id) } })
@@ -399,8 +393,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
       var { data: cData } = await supabase.from('categories').select('id, name').order('name')
       items = (cData || []).map(function (c) { return { label: c.name, value: String(c.id) } })
     } else if (source === 'venues') {
-      var { data: vData } = await supabase.from('venues').select('id, code, name').eq('active', true).order('name')
-      items = (vData || []).map(function (v) { return { label: v.code + ' — ' + v.name, value: String(v.id) } })
+      items = venues.map(function (v) { return { label: v.code + ' — ' + v.name, value: String(v.id) } })
     }
     setLookupCache(function (prev) {
       var next = Object.assign({}, prev)

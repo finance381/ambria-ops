@@ -101,41 +101,9 @@ export var PERM_GROUPS = [
 
 // ---- Helpers ----
 
-// Walk every node in the nested tree (children + optionals).
-function walkNodes(nodes, cb) {
-  if (!Array.isArray(nodes)) return
-  nodes.forEach(function (c) {
-    cb(c)
-    if (c.children) walkNodes(c.children, cb)
-    if (c.optional) c.optional.forEach(function (o) { cb(o) })
-  })
-}
-
-// Flat list of every leaf permission key across the whole catalog.
-export function getAllPermKeys() {
-  var all = []
-  PERM_GROUPS.forEach(function (g) {
-    walkNodes(g.children, function (c) {
-      if (c.key && all.indexOf(c.key) === -1) all.push(c.key)
-    })
-  })
-  return all
-}
-
-// All keys visible on a given surface ('mobile' | 'desktop'). Used to filter
-// the catalog per column in the matrix editor.
-export function getScopedKeys(surface) {
-  var out = []
-  PERM_GROUPS.forEach(function (g) {
-    walkNodes(g.children, function (c) {
-      if (!c.key) return
-      var s = c.scope || 'both'
-      if (s === surface || s === 'both') {
-        if (out.indexOf(c.key) === -1) out.push(c.key)
-      }
-    })
-  })
-  return out
+// True for the two roles that bypass per-row/category/vendor gating everywhere.
+export function isPrivilegedRole(profile) {
+  return !!profile && (profile.role === 'admin' || profile.role === 'auditor')
 }
 
 // Normalize a raw perms array into a deduped list. Runtime callers use this
@@ -156,16 +124,6 @@ export function hasPerm(scopedPerms, key) {
   var normalized = normalizePerms(scopedPerms)
   return normalized.indexOf(key) !== -1
 }
-
-// Resolve data scope for a feature key from a merged data_scopes JSONB.
-// Defaults to 'all' when unset (open-by-default; restriction is opt-in).
-export function getDataScope(scopesObj, key, fallback) {
-  if (!scopesObj || typeof scopesObj !== 'object') return fallback || 'all'
-  var val = scopesObj[key]
-  return val || fallback || 'all'
-}
-
-
 
 // Count distinct feature rows fully on in a scoped perms array. Counts
 // top-level children + their grandchildren; skips optional sub-toggles.

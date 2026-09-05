@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { titleCase } from '../../lib/format'
 import { logActivity } from '../../lib/logger'
+import { isPrivilegedRole } from '../../lib/permissions'
+import { useReferenceData } from '../../lib/referenceData.jsx'
 
 var STATUS_COLORS = {
   stored: 'bg-gray-100 text-gray-600',
@@ -25,8 +27,8 @@ function Boxes({ profile }) {
   var [loading, setLoading] = useState(true)
   var [saving, setSaving] = useState(false)
   var [categories, setCategories] = useState([])
-  var [venues, setVenues] = useState([])
   var [departments, setDepartments] = useState([])
+  var venues = useReferenceData().venues.filter(function (v) { return v.active })
   var [search, setSearch] = useState('')
   var [venueFilter, setVenueFilter] = useState('')
   var [statusFilter, setStatusFilter] = useState('')
@@ -50,7 +52,7 @@ function Boxes({ profile }) {
   var [addQty, setAddQty] = useState('')
   var [selectedItem, setSelectedItem] = useState(null)
 
-  var isAdmin = profile?.role === 'admin' || profile?.role === 'auditor'
+  var isAdmin = isPrivilegedRole(profile)
 
   useEffect(function () {
     loadBoxes()
@@ -60,12 +62,10 @@ function Boxes({ profile }) {
   async function loadRefs() {
     var results = await Promise.allSettled([
       supabase.from('categories').select('id, name').order('name'),
-      supabase.from('venues').select('id, code, name').eq('active', true).order('code'),
       supabase.from('departments').select('id, name').eq('active', true).order('name'),
     ])
     setCategories(results[0].value?.data || [])
-    setVenues(results[1].value?.data || [])
-    setDepartments(results[2].value?.data || [])
+    setDepartments(results[1].value?.data || [])
   }
 
   async function loadBoxes() {

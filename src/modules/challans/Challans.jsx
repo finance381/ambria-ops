@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { formatDate } from '../../lib/format'
 import { logActivity } from '../../lib/logger'
+import { isPrivilegedRole } from '../../lib/permissions'
+import { useReferenceData } from '../../lib/referenceData.jsx'
 import { generateChallanPdf } from '../../lib/pdf'
 import EventDatePicker from '../../components/ui/EventDatePicker'
 
@@ -90,7 +92,7 @@ function Challans({ profile }) {
   var [challans, setChallans] = useState([])
   var [loading, setLoading] = useState(true)
   var [saving, setSaving] = useState(false)
-  var [venues, setVenues] = useState([])
+  var venues = useReferenceData().venues.filter(function (v) { return v.active })
   var [events, setEvents] = useState([])
   var [boxes, setBoxes] = useState([])
 
@@ -146,7 +148,7 @@ function Challans({ profile }) {
   // Dispatch challans for return linking
   var [dispatchChallans, setDispatchChallans] = useState([])
 
-  var isAdmin = profile?.role === 'admin' || profile?.role === 'auditor'
+  var isAdmin = isPrivilegedRole(profile)
 
   useEffect(function () {
     loadChallans()
@@ -155,16 +157,14 @@ function Challans({ profile }) {
 
   async function loadRefs() {
     var results = await Promise.allSettled([
-      supabase.from('venues').select('id, code, name').eq('active', true).order('code'),
       supabase.from('events_safe').select('id, contract_date, function_date, client_name, venue_name, event_name, contract_no')
         .or('function_date.gte.' + new Date(Date.now() - 90 * 86400000).toISOString().split('T')[0] + ',function_date.is.null')
         .order('function_date', { ascending: false, nullsFirst: false }).limit(200),
       supabase.from('boxes').select('id, code, label, venue_id, department, status')
         .in('status', ['stored', 'packed']).order('code'),
     ])
-    setVenues(results[0].value?.data || [])
-    setEvents(results[1].value?.data || [])
-    setBoxes(results[2].value?.data || [])
+    setEvents(results[0].value?.data || [])
+    setBoxes(results[1].value?.data || [])
   }
 
   async function loadEventsByDate(date) {

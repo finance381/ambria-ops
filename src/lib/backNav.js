@@ -29,9 +29,3 @@ export function goBack() {
     fn()
   }
 }
-
-// Call on unmount to clean stale handlers for a specific component
-export function removeHandler(fn) {
-  var idx = stack.indexOf(fn)
-  if (idx !== -1) stack.splice(idx, 1)
-}

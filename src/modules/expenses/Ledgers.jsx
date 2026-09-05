@@ -1,9 +1,10 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { supabase } from '../../lib/supabase'
 import { formatPoints } from '../../lib/format'
 import { pushBack } from '../../lib/backNav'
 import { registerPdfFont } from '../../lib/pdfFont'
 import { hasPerm } from '../../lib/permissions'
+import { useReferenceData } from '../../lib/referenceData.jsx'
 
 var STATUS_LABELS = { recorded: 'Recorded', flagged: 'Flagged', acknowledged: 'Acknowledged', deducted: 'Deducted' }
 var STATUS_COLORS = {
@@ -59,12 +60,21 @@ function Ledgers({ profile }) {
 
   // Master maps
   var [deptMap, setDeptMap] = useState({})
-  var [typeMap, setTypeMap] = useState({})
-  var [subTypeMap, setSubTypeMap] = useState({})
   var [userMap, setUserMap] = useState({})
-  var [venueMap, setVenueMap] = useState({})
   var [users, setUsers] = useState([])
-  var [venues, setVenues] = useState([])
+  var refData = useReferenceData()
+  var typeMap = useMemo(function () {
+    var m = {}; refData.expenseTypes.forEach(function (t) { m[t.id] = t.name }); return m
+  }, [refData.expenseTypes])
+  var subTypeMap = useMemo(function () {
+    var m = {}; refData.expenseSubTypes.forEach(function (s) { m[s.id] = s.name }); return m
+  }, [refData.expenseSubTypes])
+  var venueMap = useMemo(function () {
+    var m = {}; refData.venues.forEach(function (v) { m[v.id] = v.name || v.code }); return m
+  }, [refData.venues])
+  var venues = useMemo(function () {
+    return refData.venues.slice().sort(function (a, b) { return (a.name || a.code || '').localeCompare(b.name || b.code || '') })
+  }, [refData.venues])
 
   // List state
   var [deptGroups, setDeptGroups] = useState([])
@@ -126,19 +136,12 @@ function Ledgers({ profile }) {
   async function loadMaps() {
     var res = await Promise.all([
       supabase.from('departments').select('id, name'),
-      supabase.from('expense_types').select('id, name'),
-      supabase.from('expense_sub_types').select('id, name'),
       supabase.from('profiles').select('id, name'),
-      supabase.from('venues').select('id, name, code'),
     ])
     var dm = {}; (res[0].data || []).forEach(function (d) { dm[d.id] = d.name })
-    var tm = {}; (res[1].data || []).forEach(function (t) { tm[t.id] = t.name })
-    var stm = {}; (res[2].data || []).forEach(function (s) { stm[s.id] = s.name })
-    var um = {}; (res[3].data || []).forEach(function (u) { um[u.id] = u.name })
-    var vm = {}; (res[4].data || []).forEach(function (v) { vm[v.id] = v.name || v.code })
-    setDeptMap(dm); setTypeMap(tm); setSubTypeMap(stm); setUserMap(um); setVenueMap(vm)
-    setUsers((res[3].data || []).slice().sort(function (a, b) { return (a.name || '').localeCompare(b.name || '') }))
-    setVenues((res[4].data || []).slice().sort(function (a, b) { return (a.name || a.code || '').localeCompare(b.name || b.code || '') }))
+    var um = {}; (res[1].data || []).forEach(function (u) { um[u.id] = u.name })
+    setDeptMap(dm); setUserMap(um)
+    setUsers((res[1].data || []).slice().sort(function (a, b) { return (a.name || '').localeCompare(b.name || '') }))
   }
 
   async function loadLedger() {

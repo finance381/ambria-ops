@@ -8,6 +8,16 @@ export function formatPaise(paise) {
   return (paise < 0 ? '-' : '') + '₹' + formatted
 }
 
+// Case/whitespace-insensitive duplicate check against a list, excluding one id (for edit-in-place).
+export function dupExists(list, keyFn, val, excludeId) {
+  var norm = String(val || '').trim().toLowerCase()
+  if (!norm) return false
+  return list.some(function (x) {
+    if (excludeId != null && x.id === excludeId) return false
+    return String(keyFn(x) || '').trim().toLowerCase() === norm
+  })
+}
+
 export function formatDate(dateStr) {
   if (!dateStr) return ''
   var d = new Date(dateStr)

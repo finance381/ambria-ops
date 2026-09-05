@@ -10,42 +10,9 @@ import LedgerSourceMedia from '../../components/ledger/LedgerSourceMedia'
 import { filterVisibleVendors } from '../../lib/vendorGating'
 import { registerPdfFont } from '../../lib/pdfFont'
 import { hasPerm } from '../../lib/permissions'
+import { useReferenceData } from '../../lib/referenceData.jsx'
 
-// Cached Unicode font for jsPDF — loaded once per session on first PDF export.
-var _pdfFontCache = { regular: null, bold: null }
-
-async function _fetchTtfBase64(url) {
-  var r = await fetch(url)
-  if (!r.ok) throw new Error('font ' + url + ' → HTTP ' + r.status)
-  var buf = await r.arrayBuffer()
-  var bytes = new Uint8Array(buf)
-  var chunk = 0x8000
-  var pieces = []
-  for (var i = 0; i < bytes.length; i += chunk) {
-    pieces.push(String.fromCharCode.apply(null, bytes.subarray(i, i + chunk)))
-  }
-  return btoa(pieces.join(''))
-}
-
-async function _registerPdfFont(doc) {
-  try {
-    if (!_pdfFontCache.regular || !_pdfFontCache.bold) {
-      var REG_URL = 'https://cdn.jsdelivr.net/gh/googlefonts/noto-fonts@main/hinted/ttf/NotoSans/NotoSans-Regular.ttf'
-      var BLD_URL = 'https://cdn.jsdelivr.net/gh/googlefonts/noto-fonts@main/hinted/ttf/NotoSans/NotoSans-Bold.ttf'
-      var results = await Promise.all([_fetchTtfBase64(REG_URL), _fetchTtfBase64(BLD_URL)])
-      _pdfFontCache.regular = results[0]
-      _pdfFontCache.bold = results[1]
-    }
-    doc.addFileToVFS('NotoSans-Regular.ttf', _pdfFontCache.regular)
-    doc.addFont('NotoSans-Regular.ttf', 'NotoSans', 'normal')
-    doc.addFileToVFS('NotoSans-Bold.ttf', _pdfFontCache.bold)
-    doc.addFont('NotoSans-Bold.ttf', 'NotoSans', 'bold')
-    return true
-  } catch (e) {
-    console.warn('PDF font load failed, using helvetica fallback:', e.message)
-    return false
-  }
-}
+function byName(a, b) { return (a.name || '').localeCompare(b.name || '') }
 
 function VendorLedger({ profile }) {
   var permsNew = (profile && profile.permsNew) || []
@@ -63,8 +30,9 @@ function VendorLedger({ profile }) {
   var [fExpSubType, setFExpSubType] = useState('')
   var [fCategory, setFCategory] = useState('')
   var [fSubCategory, setFSubCategory] = useState('')
-  var [expenseTypes, setExpenseTypes] = useState([])
-  var [expenseSubTypes, setExpenseSubTypes] = useState([])
+  var refData = useReferenceData()
+  var expenseTypes = refData.expenseTypes.slice().sort(byName)
+  var expenseSubTypes = refData.expenseSubTypes.slice().sort(byName)
   var [categories, setCategories] = useState([])
   var [subCategories, setSubCategories] = useState([])
   // vendorTags: { [vendor_id]: { types:[], subTypes:[], cats:[], subCats:[] } }
@@ -132,101 +100,23 @@ function VendorLedger({ profile }) {
 
   async function loadFilterData() {
     // Reference tables for the 4 dropdowns
-    var [rTypes, rSubTypes, rCats, rSubCats] = await Promise.all([
-      supabase.from('expense_types').select('id, name').order('name'),
-      supabase.from('expense_sub_types').select('id, name, expense_type_id').order('name'),
+    var [rCats, rSubCats] = await Promise.all([
       supabase.from('categories').select('id, name').order('name'),
       supabase.from('sub_categories').select('id, name, category_id').order('name')
     ])
-    setExpenseTypes(rTypes.data || [])
-    setExpenseSubTypes(rSubTypes.data || [])
     setCategories(rCats.data || [])
     setSubCategories(rSubCats.data || [])
 
-    // ── Build vendor→tags map ──
-    // 1. Vendor ↔ expense linkage via ledger_entries
-    var { data: entriesRaw } = await supabase.from('ledger_entries')
-      .select('party_id, ref_id')
-      .eq('ledger_type', 'vendor')
-      .eq('ref_type', 'expense')
-      .not('ref_id', 'is', null)
-      .limit(50000)
-    var vendorExpMap = {}  // vendor_id → [expense_id]
-    var allExpIds = []
-    ;(entriesRaw || []).forEach(function (le) {
-      if (!/^[0-9]+$/.test(String(le.ref_id))) return
-      var eid = Number(le.ref_id)
-      var vid = String(le.party_id)
-      if (!vendorExpMap[vid]) vendorExpMap[vid] = []
-      if (vendorExpMap[vid].indexOf(eid) === -1) vendorExpMap[vid].push(eid)
-      if (allExpIds.indexOf(eid) === -1) allExpIds.push(eid)
-    })
-    // 2. Fetch type/sub-type for those expenses (chunked)
-    var expTagMap = {}  // expense_id → { t, st }
-    var i, chunk, exps
-    for (i = 0; i < allExpIds.length; i += 500) {
-      chunk = allExpIds.slice(i, i + 500)
-      var r1 = await supabase.from('expenses')
-        .select('id, expense_type_id, expense_sub_type_id')
-        .in('id', chunk)
-      exps = r1.data || []
-      exps.forEach(function (e) { expTagMap[e.id] = { t: e.expense_type_id, st: e.expense_sub_type_id } })
-    }
-    // 3. PO items → vendor_name, category_id, item_id (for sub-category lookup)
-    var { data: poItems } = await supabase.from('purchase_order_items')
-      .select('vendor_name, category_id, item_id')
-      .not('vendor_name', 'is', null)
-      .limit(50000)
-    // 4. Sub-cat via inventory_items for referenced item_ids
-    var itemIds = []
-    ;(poItems || []).forEach(function (pi) {
-      if (pi.item_id && itemIds.indexOf(pi.item_id) === -1) itemIds.push(pi.item_id)
-    })
-    var itemSubCatMap = {}
-    for (i = 0; i < itemIds.length; i += 500) {
-      chunk = itemIds.slice(i, i + 500)
-      var r2 = await supabase.from('inventory_items')
-        .select('id, sub_category_id')
-        .in('id', chunk)
-      ;(r2.data || []).forEach(function (it) { if (it.sub_category_id) itemSubCatMap[it.id] = it.sub_category_id })
-    }
-    // Build vendor_name (lowercased) → { cats, subCats }
-    var vendorNameTagMap = {}
-    ;(poItems || []).forEach(function (pi) {
-      var nm = (pi.vendor_name || '').trim().toLowerCase()
-      if (!nm) return
-      if (!vendorNameTagMap[nm]) vendorNameTagMap[nm] = { cats: [], subCats: [] }
-      if (pi.category_id && vendorNameTagMap[nm].cats.indexOf(pi.category_id) === -1) vendorNameTagMap[nm].cats.push(pi.category_id)
-      var sc = itemSubCatMap[pi.item_id]
-      if (sc && vendorNameTagMap[nm].subCats.indexOf(sc) === -1) vendorNameTagMap[nm].subCats.push(sc)
-    })
-    // 5. Merge into final vendor_id → tags. Cats/subCats matched by vendor_name via the vendors list.
-    var { data: vListForName } = await supabase.from('v_vendor_ledger')
-      .select('vendor_id, vendor_name')
-    var vidToName = {}
-    ;(vListForName || []).forEach(function (v) { vidToName[String(v.vendor_id)] = (v.vendor_name || '').trim().toLowerCase() })
+    // Vendor → expense-type/sub-type/category/sub-category tags, computed server-side
+    // (was a multi-step, 50000-row-capped client join across 4 tables).
+    var { data: tagRows } = await supabase.from('v_vendor_tags').select('*')
     var finalMap = {}
-    Object.keys(vendorExpMap).forEach(function (vid) {
-      var types = [], subTypes = []
-      vendorExpMap[vid].forEach(function (eid) {
-        var t = expTagMap[eid]
-        if (t) {
-          if (t.t && types.indexOf(t.t) === -1) types.push(t.t)
-          if (t.st && subTypes.indexOf(t.st) === -1) subTypes.push(t.st)
-        }
-      })
-      var nameKey = vidToName[vid] || ''
-      var poTags = vendorNameTagMap[nameKey] || { cats: [], subCats: [] }
-      finalMap[vid] = { types: types, subTypes: subTypes, cats: poTags.cats, subCats: poTags.subCats }
-    })
-    // Also populate empty tags for vendors that have PO items but no expenses
-    ;(vListForName || []).forEach(function (v) {
-      var vid = String(v.vendor_id)
-      if (finalMap[vid]) return
-      var nameKey = vidToName[vid] || ''
-      var poTags = vendorNameTagMap[nameKey] || { cats: [], subCats: [] }
-      if (poTags.cats.length > 0 || poTags.subCats.length > 0) {
-        finalMap[vid] = { types: [], subTypes: [], cats: poTags.cats, subCats: poTags.subCats }
+    ;(tagRows || []).forEach(function (r) {
+      finalMap[String(r.vendor_id)] = {
+        types: r.expense_type_ids || [],
+        subTypes: r.expense_sub_type_ids || [],
+        cats: r.category_ids || [],
+        subCats: r.sub_category_ids || [],
       }
     })
     setVendorTags(finalMap)
@@ -324,10 +214,7 @@ function VendorLedger({ profile }) {
       })
     })
     var venueNameById = {}
-    if (venueIds.length > 0) {
-      var { data: vRows } = await supabase.from('venues').select('id, name').in('id', venueIds)
-      ;(vRows || []).forEach(function (v) { venueNameById[v.id] = v.name })
-    }
+    refData.venues.forEach(function (v) { venueNameById[v.id] = v.name })
 
     // Creator name lookup — resolves ledger_entries.created_by across expense + purchase + all row types
     var creatorIds = []

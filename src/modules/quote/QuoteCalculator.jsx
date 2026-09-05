@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { supabase } from '../../lib/supabase'
 import EventDatePicker from '../../components/ui/EventDatePicker'
 import { useLang } from '../../lib/i18n.jsx'
@@ -1175,32 +1175,38 @@ function QuoteCalculator({ profile, onExit, onSignOut }) {
   var calcCache = useRef({})
   var lastSig = useRef('')
 
-  // Venues — build parents + flat leaves side-by-side
-  var venues = []
-  var parents = []
-  ;(venueList || []).forEach(function (p) {
-    var hasSubs = Array.isArray(p.sub_venues) && p.sub_venues.length > 0
-    var liveSubs = hasSubs ? p.sub_venues.filter(function (s) { return s.status !== 'placeholder' }) : []
-    parents.push({
-      id: p.id, name: p.name, location: p.location, status: p.status,
-      lms_venue_id: p.lms_venue_id, has_subs: hasSubs, live_subs: liveSubs
-    })
-    if (hasSubs) {
-      p.sub_venues.forEach(function (s) {
-        venues.push({
-          id: s.id, name: s.name, location: p.location, status: s.status,
-          parent_id: p.id, parent_name: p.name, lms_venue_id: p.lms_venue_id,
-          decor_mode: s.decor_mode
-        })
-      })
-    } else {
-      venues.push({
+  // Venues — build parents + flat leaves side-by-side. venueList only changes
+  // on initial load, so this is memoized rather than rebuilt on every keystroke.
+  var venueData = useMemo(function () {
+    var venues = []
+    var parents = []
+    ;(venueList || []).forEach(function (p) {
+      var hasSubs = Array.isArray(p.sub_venues) && p.sub_venues.length > 0
+      var liveSubs = hasSubs ? p.sub_venues.filter(function (s) { return s.status !== 'placeholder' }) : []
+      parents.push({
         id: p.id, name: p.name, location: p.location, status: p.status,
-        parent_id: p.id, parent_name: p.name, lms_venue_id: p.lms_venue_id,
-        decor_mode: p.decor_mode
+        lms_venue_id: p.lms_venue_id, has_subs: hasSubs, live_subs: liveSubs
       })
-    }
-  })
+      if (hasSubs) {
+        p.sub_venues.forEach(function (s) {
+          venues.push({
+            id: s.id, name: s.name, location: p.location, status: s.status,
+            parent_id: p.id, parent_name: p.name, lms_venue_id: p.lms_venue_id,
+            decor_mode: s.decor_mode
+          })
+        })
+      } else {
+        venues.push({
+          id: p.id, name: p.name, location: p.location, status: p.status,
+          parent_id: p.id, parent_name: p.name, lms_venue_id: p.lms_venue_id,
+          decor_mode: p.decor_mode
+        })
+      }
+    })
+    return { venues: venues, parents: parents }
+  }, [venueList])
+  var venues = venueData.venues
+  var parents = venueData.parents
   var currentParent = null
   for (var _pi = 0; _pi < parents.length; _pi++) { if (parents[_pi].id === parentId) { currentParent = parents[_pi]; break } }
 

@@ -4,6 +4,7 @@ import Modal from '../../components/ui/Modal'
 import { logActivity } from '../../lib/logger'
 import { prepUpload } from '../../lib/uploadHelper'
 import { DEFAULT_ROLES } from '../../lib/permissions'
+import { useReferenceData } from '../../lib/referenceData.jsx'
 import PermMatrix from '../../components/PermMatrix'
 
 function Users({ profile }) {
@@ -27,11 +28,8 @@ function Users({ profile }) {
   var [editSubCatIds, setEditSubCatIds] = useState([])
   var [editExpenseTypeIds, setEditExpenseTypeIds] = useState([])
   var [editExpenseSubTypeIds, setEditExpenseSubTypeIds] = useState([])
-  var [expenseTypes, setExpenseTypes] = useState([])
-  var [expenseSubTypes, setExpenseSubTypes] = useState([])
 
   // Employee link
-  var [employees, setEmployees] = useState([])
   var [editEmployeeId, setEditEmployeeId] = useState('')
   var [originalEmployeeId, setOriginalEmployeeId] = useState('')
 
@@ -62,7 +60,6 @@ function Users({ profile }) {
   var [editSubDeptIds, setEditSubDeptIds] = useState([])
   var [editEventDeptIds, setEditEventDeptIds] = useState([])
   var [departments, setDepartments] = useState([])
-  var [venues, setVenues] = useState([])
   var [roles, setRoles] = useState(DEFAULT_ROLES)
   var [roleSearch, setRoleSearch] = useState('')
   var [roleDropOpen, setRoleDropOpen] = useState(false)
@@ -70,15 +67,15 @@ function Users({ profile }) {
   // Role → default permissions template (from public.role_defaults)
   var [roleDefaultsMap, setRoleDefaultsMap] = useState({})
 
-  useEffect(function () { loadUsers(); loadLookups(); loadEmployees() }, [])
+  // Shared master-data cache — venues/expense types/sub-types/employees are
+  // fetched once app-wide instead of re-queried per screen.
+  var refData = useReferenceData()
+  var venues = refData.venues.filter(function (v) { return v.active })
+  var expenseTypes = refData.expenseTypes.filter(function (t) { return t.active })
+  var expenseSubTypes = refData.expenseSubTypes.filter(function (t) { return t.active })
+  var employees = refData.employees.filter(function (e) { return ['active', 'probation', 'on_leave'].indexOf(e.status) !== -1 })
 
-  async function loadEmployees() {
-    var { data, error: err } = await supabase.from('employees')
-      .select('id, employee_code, full_name, designation, status, profile_id')
-      .in('status', ['active', 'probation', 'on_leave'])
-      .order('full_name')
-    if (!err) setEmployees(data || [])
-  }
+  useEffect(function () { loadUsers(); loadLookups() }, [])
 
   async function loadUsers() {
     var [profRes, pendRes] = await Promise.all([
@@ -120,23 +117,17 @@ function Users({ profile }) {
   }
 
   async function loadLookups() {
-    var [catRes, subCatRes, subDeptRes, deptRes, etRes, estRes, rdRes, venueRes] = await Promise.all([
+    var [catRes, subCatRes, subDeptRes, deptRes, rdRes] = await Promise.all([
       supabase.from('categories').select('id, name, sub_department_id').order('name'),
       supabase.from('sub_categories').select('id, name, category_id').order('name'),
       supabase.from('sub_departments').select('id, name, department_id, active').order('name'),
       supabase.from('departments').select('id, name').eq('active', true).order('name'),
-      supabase.from('expense_types').select('id, name, icon, department_id, sub_department_id').eq('active', true).order('sort_order').order('name'),
-      supabase.from('expense_sub_types').select('id, name, expense_type_id').eq('active', true).order('sort_order').order('name'),
       supabase.from('role_defaults').select('role, mobile_permissions, desktop_permissions, data_scopes'),
-      supabase.from('venues').select('id, code, name, active').eq('active', true).order('id'),
     ])
     setCategories(catRes.data || [])
     setSubCategories(subCatRes.data || [])
     setSubDepartments(subDeptRes.data || [])
     setDepartments(deptRes.data || [])
-    setExpenseTypes(etRes.data || [])
-    setExpenseSubTypes(estRes.data || [])
-    setVenues(venueRes.data || [])
     var rdMap = {}
     ;(rdRes.data || []).forEach(function (r) {
       rdMap[r.role] = {

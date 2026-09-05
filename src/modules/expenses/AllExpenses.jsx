@@ -1,9 +1,12 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../../lib/supabase'
 import { formatDate, formatPoints } from '../../lib/format'
 import { APPROVAL_STATUS_COLORS, APPROVAL_STATUS_LABELS } from '../../lib/constants'
 import FilterDropdown from '../../components/ui/FilterDropdown'
 import { registerPdfFont } from '../../lib/pdfFont'
+import { useReferenceData } from '../../lib/referenceData.jsx'
+
+function byName(a, b) { return (a.name || '').localeCompare(b.name || '') }
 
 var PAGE_SIZE = 20
 
@@ -55,13 +58,26 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds }) {
 
   // Filter lookups
   var [deptOptions, setDeptOptions] = useState([])
-  var [expTypeOptions, setExpTypeOptions] = useState([])
-  var [expSubTypeOptions, setExpSubTypeOptions] = useState([])
-  var [expTypeMap, setExpTypeMap] = useState({})
-  var [expSubTypeMap, setExpSubTypeMap] = useState({})
-  var [venueOptions, setVenueOptions] = useState([])
-  var [venueMap, setVenueMap] = useState({})
   var [userOptions, setUserOptions] = useState([])
+  var refData = useReferenceData()
+  var expTypeOptions = useMemo(function () {
+    return refData.expenseTypes.filter(function (t) { return t.active }).slice().sort(byName)
+  }, [refData.expenseTypes])
+  var expSubTypeOptions = useMemo(function () {
+    return refData.expenseSubTypes.filter(function (t) { return t.active }).slice().sort(byName)
+  }, [refData.expenseSubTypes])
+  var venueOptions = useMemo(function () {
+    return refData.venues.filter(function (v) { return v.active }).slice().sort(byName)
+  }, [refData.venues])
+  var expTypeMap = useMemo(function () {
+    var m = {}; expTypeOptions.forEach(function (t) { m[t.id] = t.name }); return m
+  }, [expTypeOptions])
+  var expSubTypeMap = useMemo(function () {
+    var m = {}; expSubTypeOptions.forEach(function (s) { m[s.id] = s.name }); return m
+  }, [expSubTypeOptions])
+  var venueMap = useMemo(function () {
+    var m = {}; venueOptions.forEach(function (v) { m[v.id] = v.code || v.name }); return m
+  }, [venueOptions])
 
   useEffect(function () {
     var timer = setTimeout(function () { setAllExpSearchD(allExpSearch) }, 400)
@@ -79,29 +95,11 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds }) {
 
   useEffect(function () {
     Promise.all([
-      supabase.from('expense_types').select('id, name, department_id').eq('active', true).order('name'),
       supabase.from('departments').select('id, name').eq('active', true).order('name'),
-      supabase.from('venues').select('id, code, name').eq('active', true).order('name'),
       supabase.from('profiles').select('id, name').order('name'),
-      supabase.from('expense_sub_types').select('id, name, expense_type_id').eq('active', true).order('name'),
     ]).then(function (res) {
-      var ets = res[0].data || []
-      var etMap = {}
-      ets.forEach(function (t) { etMap[t.id] = t.name })
-      setExpTypeMap(etMap)
-      setExpTypeOptions(ets)
-      setDeptOptions(res[1].data || [])
-      var vs = res[2].data || []
-      setVenueOptions(vs)
-      var vMap = {}
-      vs.forEach(function (v) { vMap[v.id] = v.code || v.name })
-      setVenueMap(vMap)
-      setUserOptions(res[3].data || [])
-      var ests = res[4].data || []
-      var estMap = {}
-      ests.forEach(function (s) { estMap[s.id] = s.name })
-      setExpSubTypeMap(estMap)
-      setExpSubTypeOptions(ests)
+      setDeptOptions(res[0].data || [])
+      setUserOptions(res[1].data || [])
     })
   }, [])
 

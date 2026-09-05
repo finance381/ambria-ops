@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import Modal from '../../components/ui/Modal'
 import { logActivity } from '../../lib/logger'
 import { DEFAULT_ROLES, countActiveFeatures, normalizePerms } from '../../lib/permissions'
+import { useReferenceData } from '../../lib/referenceData.jsx'
 import PermMatrix from '../../components/PermMatrix'
 
 var ROLE_COLORS = {
@@ -25,7 +26,7 @@ function RoleTemplates({ profile }) {
   var [editRole, setEditRole] = useState(null)
   var [editValue, setEditValue] = useState({ mobile: [], desktop: [], scopes: {} })
   var [editVenueIds, setEditVenueIds] = useState([])
-  var [venues, setVenues] = useState([])
+  var venues = useReferenceData().venues.filter(function (v) { return v.active })
 
   // Add-role modal
   var [addOpen, setAddOpen] = useState(false)
@@ -39,12 +40,10 @@ function RoleTemplates({ profile }) {
 
   async function load() {
     setLoading(true); setError('')
-    var [rdRes, profRes, venueRes] = await Promise.all([
+    var [rdRes, profRes] = await Promise.all([
       supabase.from('role_defaults').select('role, mobile_permissions, desktop_permissions, data_scopes, venue_ids, updated_at, updated_by'),
       supabase.from('profiles').select('role, active'),
-      supabase.from('venues').select('id, code, name, active').eq('active', true).order('id'),
     ])
-    setVenues(venueRes.data || [])
     if (rdRes.error) { setError(rdRes.error.message); setLoading(false); return }
 
     // Distinct roles across role_defaults + profiles + DEFAULT_ROLES

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { logActivity } from '../../lib/logger'
 import { useRealtime } from '../../lib/useRealtime'
+import { dupExists } from '../../lib/format'
 
 function JobDepartments() {
   var [rows, setRows] = useState([])
@@ -26,15 +27,6 @@ function JobDepartments() {
       .select('*').order('sort_order').order('name')
     if (err) { setError(err.message) } else { setRows(data || []) }
     setLoading(false)
-  }
-
-  function dupExists(list, keyFn, val, excludeId) {
-    var norm = String(val || '').trim().toLowerCase()
-    if (!norm) return false
-    return list.some(function (x) {
-      if (excludeId != null && x.id === excludeId) return false
-      return String(keyFn(x) || '').trim().toLowerCase() === norm
-    })
   }
 
   async function addRow(e) {

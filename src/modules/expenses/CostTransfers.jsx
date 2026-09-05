@@ -4,7 +4,10 @@ import Modal from '../../components/ui/Modal'
 import SearchDropdown from '../../components/ui/SearchDropdown'
 import { logActivity } from '../../lib/logger'
 import { hasPerm } from '../../lib/permissions'
+import { useReferenceData } from '../../lib/referenceData.jsx'
 import VoiceInput from '../../components/ui/VoiceInput'
+
+function byName(a, b) { return (a.name || '').localeCompare(b.name || '') }
 
 var PARTY_TYPES = [
   { key: 'expense', label: 'Expense Type', icon: 'ti-receipt' },
@@ -35,13 +38,14 @@ function CostTransfers({ profile }) {
   var [reversing, setReversing] = useState(null)
   var [error, setError] = useState('')
 
-  var [expTypes, setExpTypes] = useState([])
-  var [expSubTypes, setExpSubTypes] = useState([])
   var [events, setEvents] = useState([])
   var [vendors, setVendors] = useState([])
-  var [employees, setEmployees] = useState([])
-  var [venues, setVenues] = useState([])
   var [jobDepts, setJobDepts] = useState([])
+  var refData = useReferenceData()
+  var employees = refData.employees
+  var expTypes = refData.expenseTypes.filter(function (t) { return t.active }).slice().sort(byName)
+  var expSubTypes = refData.expenseSubTypes.filter(function (t) { return t.active }).slice().sort(byName)
+  var venues = refData.venues.filter(function (v) { return v.active }).slice().sort(byName)
   var [categories, setCategories] = useState([])
 
   var [form, setForm] = useState(EMPTY_FORM)
@@ -77,23 +81,15 @@ function CostTransfers({ profile }) {
   async function loadLookups() {
     try {
       var results = await Promise.all([
-        supabase.from('expense_types').select('id, name, department_id, sub_department_id').eq('active', true).order('name'),
-        supabase.from('expense_sub_types').select('id, name, expense_type_id, extra_fields').eq('active', true).order('name'),
         supabase.from('events').select('id, function_date, event_name, client_name').order('function_date', { ascending: false }).limit(500),
         supabase.from('vendors').select('id, name, category_ids').eq('active', true).order('name'),
-        supabase.from('employees').select('id, full_name, employee_code, job_department_ids').order('full_name').limit(1000),
-        supabase.from('venues').select('id, code, name').eq('active', true).order('name'),
         supabase.from('job_departments').select('id, name').order('name'),
         supabase.from('categories').select('id, sub_department_id').order('id'),
       ])
-      setExpTypes(results[0].data || [])
-      setExpSubTypes(results[1].data || [])
-      setEvents(results[2].data || [])
-      setVendors(results[3].data || [])
-      setEmployees(results[4].data || [])
-      setVenues(results[5].data || [])
-      setJobDepts(results[6].data || [])
-      setCategories(results[7].data || [])
+      setEvents(results[0].data || [])
+      setVendors(results[1].data || [])
+      setJobDepts(results[2].data || [])
+      setCategories(results[3].data || [])
     } catch (_) { setError('Lookup load failed') }
   }
 

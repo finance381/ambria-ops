@@ -2,19 +2,24 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { logActivity } from '../../lib/logger'
 import { formatPoints } from '../../lib/format'
+import { isPrivilegedRole } from '../../lib/permissions'
+import { useReferenceData } from '../../lib/referenceData.jsx'
+
+function byName(a, b) { return (a.name || '').localeCompare(b.name || '') }
 
 function makeAlloc() {
   return { _key: Date.now() + '_' + Math.random().toString(36).slice(2, 8), departmentId: '', expenseTypeId: '', expenseSubTypeId: '', venueId: '', subVenueId: '', amountPts: '', remarks: '' }
 }
 
 function GVForm({ exp, profile, onCancel, onSaved }) {
-  var isAdmin = profile && (profile.role === 'admin' || profile.role === 'auditor')
+  var isAdmin = isPrivilegedRole(profile)
   var [reason, setReason] = useState('')
   var [allocations, setAllocations] = useState([])
   var [departments, setDepartments] = useState([])
-  var [venues, setVenues] = useState([])
-  var [expenseTypes, setExpenseTypes] = useState([])
-  var [expenseSubTypes, setExpenseSubTypes] = useState([])
+  var refData = useReferenceData()
+  var venues = refData.venues.filter(function (v) { return v.active }).slice().sort(byName)
+  var expenseTypes = refData.expenseTypes.filter(function (t) { return t.active }).slice().sort(byName)
+  var expenseSubTypes = refData.expenseSubTypes.filter(function (t) { return t.active }).slice().sort(byName)
   var [loading, setLoading] = useState(true)
   var [saving, setSaving] = useState(false)
   var [error, setError] = useState('')
@@ -26,20 +31,14 @@ function GVForm({ exp, profile, onCancel, onSaved }) {
   useEffect(function () {
     Promise.all([
       supabase.from('departments').select('id, name').eq('active', true).order('name'),
-      supabase.from('venues').select('id, code, name').eq('active', true).order('name'),
-      supabase.from('expense_types').select('id, name, department_id').eq('active', true).order('name'),
-      supabase.from('expense_sub_types').select('id, expense_type_id, name').eq('active', true).order('name'),
       supabase.from('expense_allocations')
         .select('id, department, department_id, expense_type_id, expense_sub_type_id, venue_id, sub_venue_id, amount_paise, remarks')
         .eq('expense_id', exp.id)
         .order('id'),
     ]).then(function (res) {
       setDepartments(res[0].data || [])
-      setVenues(res[1].data || [])
-      setExpenseTypes(res[2].data || [])
-      setExpenseSubTypes(res[3].data || [])
       // Prefill from freshly-fetched allocation rows
-      var allocRows = res[4].data || []
+      var allocRows = res[1].data || []
       var prefill = allocRows.map(function (a) {
         return {
           _key: Date.now() + '_' + Math.random().toString(36).slice(2, 8) + '_' + a.id,
@@ -57,7 +56,7 @@ function GVForm({ exp, profile, onCancel, onSaved }) {
         // Legacy expense with no allocations — seed one row from the parent expense's type/sub-type
         var seed = makeAlloc()
         var parentTypeId = exp.expense_type_id ? Number(exp.expense_type_id) : null
-        var parentType = parentTypeId ? (res[2].data || []).find(function (t) { return t.id === parentTypeId }) : null
+        var parentType = parentTypeId ? expenseTypes.find(function (t) { return t.id === parentTypeId }) : null
         seed.departmentId = parentType && parentType.department_id ? String(parentType.department_id) : ''
         seed.expenseTypeId = parentTypeId ? String(parentTypeId) : ''
         seed.expenseSubTypeId = exp.expense_sub_type_id ? String(exp.expense_sub_type_id) : ''

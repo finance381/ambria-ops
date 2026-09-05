@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import Modal from '../../components/ui/Modal'
 import { logActivity } from '../../lib/logger'
 import { useRealtime } from '../../lib/useRealtime'
+import { dupExists } from '../../lib/format'
 
 function Categories() {
   var [tab, setTab] = useState('departments')
@@ -90,14 +91,6 @@ function Categories() {
   }
 
   // ═══ DEPARTMENT CRUD ═══
-  function dupExists(list, keyFn, val, excludeId) {
-    var norm = String(val || '').trim().toLowerCase()
-    if (!norm) return false
-    return list.some(function (x) {
-      if (excludeId != null && x.id === excludeId) return false
-      return String(keyFn(x) || '').trim().toLowerCase() === norm
-    })
-  }
 
   async function addDepartment(e) {
     e.preventDefault()
@@ -177,11 +170,11 @@ function Categories() {
     var oldCatIds = categories.filter(function (c) { return c.sub_department_id === editingSubDept.id }).map(function (c) { return c.id })
     var toRemove = oldCatIds.filter(function (id) { return !editSubDeptCatIds.includes(id) })
     var toAdd = editSubDeptCatIds.filter(function (id) { return !oldCatIds.includes(id) })
-    for (var i = 0; i < toRemove.length; i++) {
-      await supabase.from('categories').update({ sub_department_id: null }).eq('id', toRemove[i])
+    if (toRemove.length > 0) {
+      await supabase.from('categories').update({ sub_department_id: null }).in('id', toRemove)
     }
-    for (var i = 0; i < toAdd.length; i++) {
-      await supabase.from('categories').update({ sub_department_id: editingSubDept.id }).eq('id', toAdd[i])
+    if (toAdd.length > 0) {
+      await supabase.from('categories').update({ sub_department_id: editingSubDept.id }).in('id', toAdd)
     }
     logActivity('SUB_DEPT_UPDATE', editSubDeptName.trim() + ' | ' + editSubDeptCatIds.length + ' categories')
     setEditingSubDept(null)

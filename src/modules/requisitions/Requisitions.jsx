@@ -14,6 +14,9 @@ import { prepUpload } from '../../lib/uploadHelper'
 import { filterUserCategories } from '../../lib/categories'
 import { pushBack, goBack as navBack } from '../../lib/backNav'
 import { hasPerm } from '../../lib/permissions'
+import { useReferenceData } from '../../lib/referenceData.jsx'
+
+function byName(a, b) { return (a.name || '').localeCompare(b.name || '') }
 
 var PAGE_SIZE = 20
 var URGENCY_COLORS = {
@@ -63,7 +66,8 @@ function Requisitions({ profile, onBack }) {
   // Filter lookups
   var [subDeptOptions, setSubDeptOptions] = useState([])
   var [userOptions, setUserOptions] = useState([])
-  var [venueOptions, setVenueOptions] = useState([])
+  var refData = useReferenceData()
+  var venueOptions = refData.venues.filter(function (v) { return v.active }).slice().sort(byName)
 
   var isAdmin = hasPerm(profile?.permsNew, 'procurement.requisitions.admin_approve')
   var isAuditor = profile?.role === 'auditor'
@@ -105,9 +109,6 @@ function Requisitions({ profile, onBack }) {
     })
     supabase.from('sub_departments').select('id, name, department_id').order('name').then(function (res) {
       setSubDeptOptions(res.data || [])
-    })
-    supabase.from('venues').select('id, code, name').eq('active', true).order('name').then(function (res) {
-      setVenueOptions(res.data || [])
     })
     if (hasReqApprove) {
       supabase.from('profiles').select('id, name').order('name').then(function (res) {
@@ -276,18 +277,16 @@ function Requisitions({ profile, onBack }) {
     if (req.req_type === 'expense') {
       var allocRows = req.expense_alloc_json || []
       if (allocRows.length > 0) {
-        var vIds = allocRows.map(function (r) { return r.venue_id }).filter(Boolean)
         var dIds = allocRows.map(function (r) { return r.department_id }).filter(Boolean)
         var sdIds = allocRows.map(function (r) { return r.sub_department_id }).filter(Boolean)
         Promise.all([
-          vIds.length > 0 ? supabase.from('venues').select('id, code, name').in('id', vIds) : { data: [] },
           dIds.length > 0 ? supabase.from('departments').select('id, name').in('id', dIds) : { data: [] },
           sdIds.length > 0 ? supabase.from('sub_departments').select('id, name').in('id', sdIds) : { data: [] }
         ]).then(function (results) {
           var nameMap = {}
-          ;(results[0].data || []).forEach(function (v) { nameMap['v_' + v.id] = v.code || v.name })
-          ;(results[1].data || []).forEach(function (d) { nameMap['d_' + d.id] = d.name })
-          ;(results[2].data || []).forEach(function (sd) { nameMap['sd_' + sd.id] = sd.name })
+          refData.venues.forEach(function (v) { nameMap['v_' + v.id] = v.code || v.name })
+          ;(results[0].data || []).forEach(function (d) { nameMap['d_' + d.id] = d.name })
+          ;(results[1].data || []).forEach(function (sd) { nameMap['sd_' + sd.id] = sd.name })
           setDetailItems(allocRows.map(function (r) { return Object.assign({}, r, { _names: nameMap }) }))
         })
       } else {
@@ -633,7 +632,6 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
   var [subDepartments, setSubDepartments] = useState([])
   var [categories, setCategories] = useState([])
   var [subCategories, setSubCategories] = useState([])
-  var [venues, setVenues] = useState([])
   var [inventoryItems, setInventoryItems] = useState([])
   var [department, setDepartment] = useState(editReq ? editReq.department : '')
   var [subDeptId, setSubDeptId] = useState(editReq?.sub_department_id ? String(editReq.sub_department_id) : '')
@@ -652,14 +650,16 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
   var [eventsLoading, setEventsLoading] = useState(false)
   var [isFunction, setIsFunction] = useState(!!editReq?.event_id)
   var [reqType, setReqType] = useState(editReq?.req_type || '')
-  var [expenseTypes, setExpenseTypes] = useState([])
+  var refData = useReferenceData()
+  var venues = refData.venues.slice().sort(byName)
+  var expenseTypes = refData.expenseTypes.filter(function (t) { return t.active }).slice().sort(byName)
+  var expSubTypes = refData.expenseSubTypes.filter(function (t) { return t.active })
   var [expTypeId, setExpTypeId] = useState(editReq?.expense_type_id ? String(editReq.expense_type_id) : '')
   var [expAmount, setExpAmount] = useState(editReq?.expense_amount_paise ? String(editReq.expense_amount_paise / 100) : '')
   var [expDate, setExpDate] = useState(editReq?.expense_date || new Date().toISOString().slice(0, 10))
   var [expReceipt, setExpReceipt] = useState(null)
   var [expReceiptZoom, setExpReceiptZoom] = useState('')
   var [expSubTypeId, setExpSubTypeId] = useState(editReq?.expense_sub_type_id ? String(editReq.expense_sub_type_id) : '')
-  var [expSubTypes, setExpSubTypes] = useState([])
   var [expSubTypeFields, setExpSubTypeFields] = useState([])
   var [expFieldValues, setExpFieldValues] = useState({})
   var [expTypeSearch, setExpTypeSearch] = useState('')
@@ -767,14 +767,11 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
   }
 
   async function loadLookups() {
-    var [deptRes, subDeptRes, catRes, subCatRes, venueRes, expTypeRes, expSubTypeRes, invRes, csRes] = await Promise.all([
+    var [deptRes, subDeptRes, catRes, subCatRes, invRes, csRes] = await Promise.all([
       supabase.from('departments').select('id, name').eq('active', true).eq('hide_from_lists', false).order('name'),
       supabase.from('sub_departments').select('id, name, department_id, departments!inner(hide_from_lists)').eq('active', true).eq('departments.hide_from_lists', false).order('name'),
       supabase.from('categories').select('id, name, sub_department_id').order('name'),
       supabase.from('sub_categories').select('id, name, category_id').order('name'),
-      supabase.from('venues').select('id, code, name').order('name'),
-      supabase.from('expense_types').select('id, name, department_id').eq('active', true).order('name'),
-      supabase.from('expense_sub_types').select('id, expense_type_id, name, extra_fields, active, sort_order').eq('active', true).order('sort_order').order('name'),
       supabase.from('inventory_items')
         .select('id, name, unit, qty, category_id, status, categories(name)')
         .in('status', ['approved', 'pending', 'pending_dept'])
@@ -790,9 +787,6 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
     setSubDepartments(subDeptRes.data || [])
     setCategories(catRes.data || [])
     setSubCategories(subCatRes.data || [])
-    setVenues(venueRes.data || [])
-    setExpenseTypes(expTypeRes.data || [])
-    setExpSubTypes(expSubTypeRes.data || [])
 
     // If editing, pre-load the linked event's date
     if (editReq?.event_id) {
@@ -1849,6 +1843,7 @@ function RequisitionDetail({ req, items, profile, isAdmin, isAuditor, isReqDeptA
   var [confirmAction, setConfirmAction] = useState(null)
   var [deleteMode, setDeleteMode] = useState(false)
   var [deleteReason, setDeleteReason] = useState('')
+  var refData = useReferenceData()
 
   useEffect(function () {
     // Fetch PO status for items that have po_item_id
@@ -2052,9 +2047,7 @@ function RequisitionDetail({ req, items, profile, isAdmin, isAuditor, isReqDeptA
       var reqRemainderPaise = (req.expense_amount_paise || 0) - reqAllocSum
       if (reqRemainderPaise > 0 && req.expense_type_id) {
         var defaultDeptId = null
-        var { data: expTypeRow } = await supabase.from('expense_types')
-          .select('department_id, sub_department_id')
-          .eq('id', req.expense_type_id).single()
+        var expTypeRow = refData.expenseTypes.find(function (t) { return t.id === req.expense_type_id })
         if (expTypeRow) {
           if (expTypeRow.department_id) defaultDeptId = expTypeRow.department_id
           else if (expTypeRow.sub_department_id) {

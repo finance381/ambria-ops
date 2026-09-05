@@ -5,6 +5,8 @@ import AdminShell from './components/layout/AdminShell'
 import PublicEmployeeForm from './pages/PublicEmployeeForm'
 import { LangProvider } from './lib/i18n.jsx'
 import UpdateBanner from './components/UpdateBanner'
+import { isPrivilegedRole } from './lib/permissions'
+import { ReferenceDataProvider } from './lib/referenceData.jsx'
 
 
 // Safety net: if a lazy chunk 404s (stale bundle after deploy), reload once.
@@ -51,13 +53,13 @@ function App() {
     })
   }
 
-  var _isPrivileged = profile.role === 'admin' || profile.role === 'auditor'
+  var _isPrivileged = isPrivilegedRole(profile)
   var _hasDesktopPerms = (profile.desktop_permissions || []).some(function (k) { return k !== 'personal.profile' })
   if (params.get('view') === 'admin' && (_isPrivileged || _hasDesktopPerms)) {
-    return <LangProvider><AdminShell profile={surfaceProfile(profile, 'desktop')} onSignOut={signOut} /><UpdateBanner /></LangProvider>
+    return <LangProvider><ReferenceDataProvider><AdminShell profile={surfaceProfile(profile, 'desktop')} onSignOut={signOut} /><UpdateBanner /></ReferenceDataProvider></LangProvider>
   }
 
-  return <LangProvider><Shell profile={surfaceProfile(profile, 'mobile')} onSignOut={signOut} /><UpdateBanner /></LangProvider>
+  return <LangProvider><ReferenceDataProvider><Shell profile={surfaceProfile(profile, 'mobile')} onSignOut={signOut} /><UpdateBanner /></ReferenceDataProvider></LangProvider>
 }
 
 export default App
