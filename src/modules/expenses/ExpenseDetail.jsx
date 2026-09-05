@@ -157,9 +157,7 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
   var isAuditor = profile?.role === 'auditor'
   var canReview = !isDeleted && (isAdmin || isDeptApprover) && (exp.status === 'recorded' || exp.status === 'flagged') && exp.user_id !== profile?.id
   var canDelete = !isDeleted && ((exp.user_id === profile?.id && (exp.status === 'recorded' || exp.status === 'flagged')) || isAdmin)
-  // Admins use "Raise JV" instead of direct Edit (audit trail via Journal Voucher).
-  // Only the owner (non-admin) can still directly edit their own recorded/flagged expenses.
-  var canEdit = !isDeleted && exp.user_id === profile?.id && !isAdmin && (exp.status === 'recorded' || exp.status === 'flagged')
+  var canEdit = !isDeleted && exp.user_id === profile?.id && (exp.status === 'recorded' || exp.status === 'flagged')
   var canResubmit = !isDeleted && exp.user_id === profile?.id && exp.status === 'flagged'
   // GV rules:
   //  • recorded / flagged / deducted → admin OR anyone with finance_gv permission
