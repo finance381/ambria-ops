@@ -9,7 +9,6 @@ import AllExpenses from './AllExpenses'
 import ExpenseDetail from './ExpenseDetail'
 import GVForm from './GVForm'
 import { useRealtime } from '../../lib/useRealtime'
-import ExpenseReport from './ExpenseReport'
 import { pushBack, goBack as navBack } from '../../lib/backNav'
 import { hasPerm } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
@@ -32,12 +31,10 @@ function Expenses({ profile, masterMode }) {
   var [dateTo, setDateTo] = useState('')
   var [expSearch, setExpSearch] = useState('')
   var [expSearchDebounced, setExpSearchDebounced] = useState('')
-  var [reportView, setReportView] = useState(false)
   var [editExp, setEditExp] = useState(null)
   var [walletBalance, setWalletBalance] = useState(0)
   var [detailRefresh, setDetailRefresh] = useState(0)
   var [subDeptMap, setSubDeptMap] = useState({})
-  var [typesModal, setTypesModal] = useState(false)
 
   // Filter panel state
   var [filtersOpen, setFiltersOpen] = useState(false)
@@ -262,9 +259,6 @@ function Expenses({ profile, masterMode }) {
   if (masterMode) {
     return <ExpenseTypeMaster />
   }
-  if (reportView && (isAdmin || isAuditor)) {
-    return <ExpenseReport onBack={function () { setReportView(false) }} />
-  }
 
   if (loading) {
     return <p className="text-gray-400 text-sm text-center py-8">Loading...</p>
@@ -322,13 +316,6 @@ function Expenses({ profile, masterMode }) {
 
 
   // ═══════════════════════════════════════════════
-  // EXPENSE TYPES — Admin config
-  // ═══════════════════════════════════════════════
-  if (typesModal) {
-    return <ExpenseTypeMaster onBack={function () { setTypesModal(false) }} />
-  }
-
-  // ═══════════════════════════════════════════════
   // LIST / APPROVE VIEW
   // ═══════════════════════════════════════════════
   return (
@@ -360,21 +347,6 @@ function Expenses({ profile, masterMode }) {
         </div>
       </div>
 
-      {/* Admin shortcuts — Reports / Types */}
-      {(isAdmin || isAuditor) && (
-        <div className="flex gap-2 md:max-w-md">
-          <button onClick={function () { setReportView(true) }}
-            className="flex-1 py-2.5 text-xs font-bold text-amber-600 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 transition-colors">
-            📊 Reports
-          </button>
-          {hasPerm(profile?.permsNew, 'admin.masters') && (
-            <button onClick={function () { setTypesModal(true) }}
-              className="flex-1 py-2.5 text-xs font-bold text-purple-600 bg-purple-50 border border-purple-200 rounded-lg hover:bg-purple-100 transition-colors">
-              ⚙ Types
-            </button>
-          )}
-        </div>
-      )}
 
       {/* Tabs */}
       {showApproveTab && (
