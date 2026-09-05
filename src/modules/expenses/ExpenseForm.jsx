@@ -426,7 +426,12 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
     }
   }
 
-  function addEntry() { setEntries(entries.concat([makeEntry()])) }
+  function addEntry() {
+    var next = makeEntry()
+    var prev = entries[entries.length - 1]
+    if (prev && prev.expenseDate) next.expenseDate = prev.expenseDate
+    setEntries(entries.concat([next]))
+  }
 
   function removeEntry(idx) {
     if (entries.length <= 1) return
@@ -1680,6 +1685,29 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
             </div>
 
             <div className="p-4 space-y-3">
+              {/* Date — new expenses gated to today − 3 days; edits may widen the window to preserve the original date */}
+              {(function () {
+                var toYMD = function (d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') }
+                var today = toYMD(new Date())
+                var minDate = toYMD(new Date(Date.now() - 3 * 86400000))
+                // On edit, widen `min` back to the original expense date so users can keep or restore it.
+                var effMin = (isEditing && editExp && editExp.expense_date && editExp.expense_date < minDate) ? editExp.expense_date : minDate
+                return (
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Date</label>
+                    <input type="date" value={entry.expenseDate} min={effMin} max={today}
+                      onChange={function (e) {
+                        var v = e.target.value
+                        if (v && v < effMin) { updateEntry(idx, 'expenseDate', effMin); return }
+                        if (v && v > today) { updateEntry(idx, 'expenseDate', today); return }
+                        updateEntry(idx, 'expenseDate', v)
+                      }}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-300" style={{ fontSize: '16px' }} />
+                    <p className="text-[10px] text-gray-500 mt-1">{isEditing ? 'Any date from the original up to today.' : 'Today or up to 3 days back. For future expenses, raise a requisition instead.'}</p>
+                  </div>
+                )
+              })()}
+
               {/* Expense Type */}
               {(function () {
                 var isAdminEt = hasPerm(profile?.permsNew, 'finance.expenses.approve')
@@ -1737,29 +1765,6 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                   updateFieldValue(idx, field.key, val)
                 }, entry)
               })}
-
-              {/* Date — new expenses gated to today − 3 days; edits may widen the window to preserve the original date */}
-              {(function () {
-                var toYMD = function (d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') }
-                var today = toYMD(new Date())
-                var minDate = toYMD(new Date(Date.now() - 3 * 86400000))
-                // On edit, widen `min` back to the original expense date so users can keep or restore it.
-                var effMin = (isEditing && editExp && editExp.expense_date && editExp.expense_date < minDate) ? editExp.expense_date : minDate
-                return (
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Date</label>
-                    <input type="date" value={entry.expenseDate} min={effMin} max={today}
-                      onChange={function (e) {
-                        var v = e.target.value
-                        if (v && v < effMin) { updateEntry(idx, 'expenseDate', effMin); return }
-                        if (v && v > today) { updateEntry(idx, 'expenseDate', today); return }
-                        updateEntry(idx, 'expenseDate', v)
-                      }}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-300" style={{ fontSize: '16px' }} />
-                    <p className="text-[10px] text-gray-500 mt-1">{isEditing ? 'Any date from the original up to today.' : 'Today or up to 3 days back. For future expenses, raise a requisition instead.'}</p>
-                  </div>
-                )
-              })()}
 
               {/* Item purchase toggle + fields */}
               <div className={"border rounded-lg p-3 transition-colors " + (entry.isItemPurchase ? "border-indigo-200 bg-indigo-50/40" : "border-gray-100 bg-gray-50")}>
