@@ -28,6 +28,22 @@ export function formatDate(dateStr) {
   })
 }
 
+// System-captured timestamp (date + time) — distinct from the user-entered business
+// date (formatDate), used wherever a ledger needs to show "when this was actually
+// logged" alongside "what date it's for".
+export function formatDateTime(dateStr) {
+  if (!dateStr) return ''
+  var d = new Date(dateStr)
+  return d.toLocaleDateString('en-IN', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  }) + ', ' + d.toLocaleTimeString('en-IN', {
+    hour: 'numeric',
+    minute: '2-digit',
+  })
+}
+
 export function titleCase(str) {
   if (!str) return ''
   return str.toLowerCase().replace(/(?:^|\s)\S/g, function (c) { return c.toUpperCase() })

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
-import { formatDate, formatPoints } from '../../lib/format'
+import { formatDate, formatDateTime, formatPoints } from '../../lib/format'
 import { hasPerm } from '../../lib/permissions'
 import { useExpenseDetailModal } from '../../hooks/useExpenseDetailModal.jsx'
 
@@ -30,7 +30,7 @@ function GVLog({ profile }) {
   async function loadGvs() {
     setLoading(true)
     var query = supabase.from('general_vouchers')
-      .select('id, gv_number, expense_id, fiscal_year, created_by, created_at, reason, before_allocations, after_allocations, is_reversal, reverses_gv_id, reversed_by_gv_id')
+      .select('id, gv_number, expense_id, fiscal_year, created_by, created_at, snapshot_expense_date, reason, before_allocations, after_allocations, is_reversal, reverses_gv_id, reversed_by_gv_id')
       .order('created_at', { ascending: false })
       .limit(500)
     if (dateFrom) query = query.gte('created_at', dateFrom)
@@ -187,7 +187,12 @@ function GVLog({ profile }) {
                       <span className="text-sm font-bold text-gray-800 flex-shrink-0">{formatPoints(e.amount_paise)}</span>
                     )}
                   </div>
-                  <p className="text-[11px] text-gray-500 mt-0.5">{creator} · {formatDate(gv.created_at)}{e.description ? ' · ' + e.description : ''}</p>
+                  <p className="text-[11px] text-gray-500 mt-0.5">
+                    {creator}
+                    {gv.snapshot_expense_date && ' · Expense date ' + formatDate(gv.snapshot_expense_date)}
+                    {e.description ? ' · ' + e.description : ''}
+                  </p>
+                  <p className="text-[10px] text-gray-400 mt-0.5">Logged {formatDateTime(gv.created_at)}</p>
                   <p className="text-[11px] text-gray-600 mt-0.5 line-clamp-2">{gv.reason}</p>
                 </button>
                 {isExpanded && (

@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import Modal from '../../components/ui/Modal'
 import SearchDropdown from '../../components/ui/SearchDropdown'
 import { logActivity } from '../../lib/logger'
+import { formatDate, formatDateTime } from '../../lib/format'
 import { hasPerm } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
 import VoiceInput from '../../components/ui/VoiceInput'
@@ -408,7 +409,10 @@ function CostTransfers({ profile }) {
                   var canReverse = canCreate && !isReversed && !isReversal
                   return (
                     <tr key={r.id} className={isReversed ? "bg-gray-50 text-gray-400" : ""}>
-                      <td className="px-3 py-2 text-xs whitespace-nowrap">{r.effective_date}</td>
+                      <td className="px-3 py-2 text-xs whitespace-nowrap">
+                        {formatDate(r.effective_date)}
+                        <div className="text-[10px] text-gray-400">Logged {formatDateTime(r.created_at)}</div>
+                      </td>
                       <td className="px-3 py-2 text-xs">{partyLabel(r, 'from')}{partyMeta(r, 'from')}</td>
                       <td className="px-3 py-2 text-xs">{partyLabel(r, 'to')}{partyMeta(r, 'to')}</td>
                       <td className="px-3 py-2 text-right font-mono text-xs whitespace-nowrap">
@@ -442,11 +446,12 @@ function CostTransfers({ profile }) {
               return (
                 <div key={r.id} className={"bg-white border border-gray-200 rounded-lg p-3 space-y-1.5 " + (isReversed ? "opacity-60" : "")}>
                   <div className="flex items-center justify-between">
-                    <span className="text-xs text-gray-500">{r.effective_date}</span>
+                    <span className="text-xs text-gray-500">{formatDate(r.effective_date)}</span>
                     <span className="font-mono text-sm font-semibold text-gray-800">
                       Rs {(r.amount_paise / 100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                     </span>
                   </div>
+                  <div className="text-[10px] text-gray-400">Logged {formatDateTime(r.created_at)}</div>
                   <div className="text-xs text-gray-700">
                     <span className="font-medium">{partyLabel(r, 'from')}{partyMeta(r, 'from')}</span>
                     <span className="mx-1 text-gray-400">→</span>

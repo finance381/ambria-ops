@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { supabase } from '../../lib/supabase'
-import { formatPoints } from '../../lib/format'
+import { formatPoints, formatDate, formatDateTime } from '../../lib/format'
 import { pushBack } from '../../lib/backNav'
 import { registerPdfFont } from '../../lib/pdfFont'
 import { hasPerm } from '../../lib/permissions'
@@ -449,6 +449,7 @@ function Ledgers({ profile }) {
       var vName = venueMap[a.venue_id] || '—'
       return [
         a.expense_date || '—',
+        a.created_at ? formatDate(a.created_at) : '—',
         a._vendorName,
         (a.description || a.remarks || '—'),
         uName,
@@ -461,7 +462,7 @@ function Ledgers({ profile }) {
       ]
     })
     body.push([
-      { content: 'Subtotal (' + allocs.length + ')', colSpan: 7, styles: { fontStyle: 'bold', fillColor: [235, 240, 250] } },
+      { content: 'Subtotal (' + allocs.length + ')', colSpan: 8, styles: { fontStyle: 'bold', fillColor: [235, 240, 250] } },
       { content: _fmtPts(subCommitted), styles: { fontStyle: 'bold', fillColor: [235, 240, 250], halign: 'right', textColor: [20, 100, 60] } },
       { content: _fmtPts(subPending), styles: { fontStyle: 'bold', fillColor: [235, 240, 250], halign: 'right', textColor: [140, 90, 20] } },
       { content: _fmtPts(subTotal), styles: { fontStyle: 'bold', fillColor: [235, 240, 250], halign: 'right' } },
@@ -471,14 +472,14 @@ function Ledgers({ profile }) {
     doc.setTextColor(0)
     autoTable(doc, {
       startY: ctx.startY + 3,
-      head: [['Date', 'Vendor', 'Description', 'User', 'Venue', 'Status', 'Payment', 'Committed', 'Pending', 'Total']],
+      head: [['Date', 'Logged', 'Vendor', 'Description', 'User', 'Venue', 'Status', 'Payment', 'Committed', 'Pending', 'Total']],
       body: body,
       styles: { font: FONT, fontSize: 7, cellPadding: 1.2, overflow: 'linebreak' },
       headStyles: { font: FONT, fillColor: [50, 50, 50], textColor: 255, fontStyle: 'bold', halign: 'center', fontSize: 7 },
       columnStyles: {
-        0: { cellWidth: 20 }, 1: { cellWidth: 34 }, 2: { cellWidth: 50 }, 3: { cellWidth: 24 },
-        4: { cellWidth: 22 }, 5: { cellWidth: 20 }, 6: { cellWidth: 24 },
-        7: { cellWidth: 22, halign: 'right' }, 8: { cellWidth: 22, halign: 'right' }, 9: { cellWidth: 24, halign: 'right' },
+        0: { cellWidth: 18 }, 1: { cellWidth: 18 }, 2: { cellWidth: 32 }, 3: { cellWidth: 44 }, 4: { cellWidth: 22 },
+        5: { cellWidth: 20 }, 6: { cellWidth: 18 }, 7: { cellWidth: 22 },
+        8: { cellWidth: 20, halign: 'right' }, 9: { cellWidth: 20, halign: 'right' }, 10: { cellWidth: 22, halign: 'right' },
       },
       margin: { left: 10, right: 10 },
       didDrawPage: function () {
@@ -692,7 +693,8 @@ function Ledgers({ profile }) {
                   <div className="flex items-start justify-between">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-xs text-gray-500">{r.expense_date}</span>
+                        <span className="text-xs text-gray-500">{formatDate(r.expense_date)}</span>
+                        <span className="text-[10px] text-gray-400">· logged {formatDateTime(r.created_at)}</span>
                         <span className="text-xs font-semibold text-gray-700">{userMap[r.user_id] || '—'}</span>
                         <span className={"text-[10px] px-1.5 py-0.5 rounded font-semibold " + (STATUS_COLORS[r.status] || 'bg-gray-100 text-gray-600')}>
                           {STATUS_LABELS[r.status] || r.status}

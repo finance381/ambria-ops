@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { logActivity } from '../../lib/logger'
-import { formatPoints } from '../../lib/format'
+import { formatPoints, formatDate, formatDateTime } from '../../lib/format'
 import PayVendorModal from './PayVendorModal'
 import PaymentProofThumbs from '../../components/ledger/PaymentProofThumbs'
 import SearchDropdown from '../../components/ui/SearchDropdown'
@@ -572,7 +572,8 @@ function VendorLedger({ profile }) {
         var isCredit = (e.credit_paise || 0) > 0
         running += (e.credit_paise || 0) - (e.debit_paise || 0)
         var dt = e.created_at ? new Date(e.created_at) : null
-        var dateCell = dt ? fmtD(e.created_at.split('T')[0]) + '\n' + dt.toTimeString().slice(0, 5) : ''
+        var loggedCell = dt ? 'Logged ' + fmtD(e.created_at.split('T')[0]) + ' ' + dt.toTimeString().slice(0, 5) : ''
+        var dateCell = (e.entry_date ? fmtD(e.entry_date) : '—') + (loggedCell ? '\n' + loggedCell : '')
         var cr = (e.credit_paise || 0)
         var db = (e.debit_paise || 0)
         return [
@@ -592,8 +593,8 @@ function VendorLedger({ profile }) {
         styles: { font: FONT, fontSize: 8, cellPadding: 1.5, overflow: 'linebreak', valign: 'top' },
         headStyles: { font: FONT, fillColor: [50, 50, 50], textColor: 255, fontStyle: 'bold', halign: 'center' },
         columnStyles: {
-          0: { cellWidth: 22, fontSize: 7 },
-          1: { cellWidth: 24, fontSize: 7 },
+          0: { cellWidth: 28, fontSize: 6.5 },
+          1: { cellWidth: 22, fontSize: 7 },
           2: { cellWidth: 'auto' },
           3: { cellWidth: 22, halign: 'right', textColor: [140, 90, 20] },
           4: { cellWidth: 22, halign: 'right', textColor: [16, 128, 60] },
@@ -743,10 +744,11 @@ function VendorLedger({ profile }) {
                     {e.description || (isCredit ? 'Credit' : 'Debit')}
                   </p>
                   <p className="text-[11px] text-gray-500 mt-0.5">
-                    {e.entry_date} · {kind} #{e.ref_id}
+                    {formatDate(e.entry_date)} · {kind} #{e.ref_id}
                     {e._creatorName && ' · by ' + e._creatorName}
                     {isDeleted && ' · deleted'}
                   </p>
+                  <p className="text-[10px] text-gray-400 mt-0.5">Logged {formatDateTime(e.created_at)}</p>
                   {(e._submitterName || e._acknowledgerName) && (
                     <p className="text-[11px] text-gray-400 mt-0.5">
                       {e._submitterName && 'Submitted by ' + e._submitterName}

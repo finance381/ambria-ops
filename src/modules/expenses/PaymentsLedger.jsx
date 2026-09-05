@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../../lib/supabase'
-import { formatPoints, formatDate } from '../../lib/format'
+import { formatPoints, formatDate, formatDateTime } from '../../lib/format'
 import { useRealtime } from '../../lib/useRealtime'
 import { hasPerm } from '../../lib/permissions'
 
@@ -22,7 +22,7 @@ function PaymentsLedger({ profile }) {
     setLoading(true)
     var { data: rec } = await supabase
       .from('ledger_entries')
-      .select('id, party_id, entry_date, description, debit_paise, ref_id, ref_type, metadata')
+      .select('id, party_id, entry_date, created_at, description, debit_paise, ref_id, ref_type, metadata')
       .eq('ledger_type', 'vendor')
       .in('ref_type', ['vendor_payment', 'vendor_deduction'])
       .is('deleted_at', null)
@@ -123,6 +123,7 @@ function PaymentsLedger({ profile }) {
                       )}
                       {r.description && <span className="text-[10px] text-gray-400 truncate">{r.description}</span>}
                     </div>
+                    <p className="text-[10px] text-gray-400 mt-0.5">Logged {formatDateTime(r.created_at)}</p>
                   </div>
                   <p className={"text-sm font-bold flex-shrink-0 " + (isDed ? "text-amber-700" : "text-green-700")}>
                     {formatPoints(r.debit_paise || 0)}

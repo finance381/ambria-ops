@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { logActivity } from '../../lib/logger'
-import { formatPoints } from '../../lib/format'
+import { formatPoints, formatDate, formatDateTime } from '../../lib/format'
 import PaySalaryModal from './PaySalaryModal'
 import AccrueSalariesModal from './AccrueSalariesModal'
 import AdjustSalaryModal from './AdjustSalaryModal'
@@ -460,10 +460,11 @@ function SalaryLedger({ profile }) {
                     {e.description || (isCredit ? 'Credit' : 'Debit')}
                   </p>
                   <p className="text-[11px] text-gray-500 mt-0.5">
-                    {e.entry_date} · {kind}
+                    {formatDate(e.entry_date)} · {kind}
                     {meta.salary_month ? ' · ' + meta.salary_month : ''}
                     {isDeleted && ' · deleted'}
                   </p>
+                  <p className="text-[10px] text-gray-400 mt-0.5">Logged {formatDateTime(e.created_at)}</p>
                   {(meta.mode || meta.reason) && (
                     <div className="flex gap-1.5 mt-1 flex-wrap">
                       {meta.mode && (

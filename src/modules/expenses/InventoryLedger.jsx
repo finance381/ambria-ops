@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { supabase, fetchAll } from '../../lib/supabase'
-import { formatDate, formatPaise } from '../../lib/format'
+import { formatDate, formatDateTime, formatPaise } from '../../lib/format'
 import { useRealtime } from '../../lib/useRealtime'
 import { registerPdfFont } from '../../lib/pdfFont'
 import { useExpenseDetailModal } from '../../hooks/useExpenseDetailModal.jsx'
@@ -80,15 +80,17 @@ function InventoryLedger({ profile }) {
         }
       })
       var userIdBySource = {}  // key: source_type + ':' + source_id → user_id
+      var loggedAtBySource = {}  // key: source_type + ':' + source_id → system timestamp
       var allUserIds = []
       function addUid(u) { if (u && allUserIds.indexOf(u) === -1) allUserIds.push(u) }
       if (expIds.length > 0) {
         var CHUNK = 500
         for (var i = 0; i < expIds.length; i += CHUNK) {
           var eChunk = expIds.slice(i, i + CHUNK)
-          var eRes = await supabase.from('expenses').select('id, user_id').in('id', eChunk)
+          var eRes = await supabase.from('expenses').select('id, user_id, created_at').in('id', eChunk)
           ;(eRes.data || []).forEach(function (r) {
             userIdBySource['expense:' + r.id] = r.user_id
+            loggedAtBySource['expense:' + r.id] = r.created_at
             addUid(r.user_id)
           })
         }
@@ -97,22 +99,26 @@ function InventoryLedger({ profile }) {
         var poIdSet = []
         for (var j = 0; j < poItemIds.length; j += 500) {
           var iChunk = poItemIds.slice(j, j + 500)
-          var iRes = await supabase.from('purchase_order_items').select('id, po_id').in('id', iChunk)
+          var iRes = await supabase.from('purchase_order_items').select('id, po_id, purchased_at').in('id', iChunk)
           ;(iRes.data || []).forEach(function (pi) {
             userIdBySource['po_item_map:' + pi.id] = pi.po_id  // temp store po_id
+            if (pi.purchased_at) loggedAtBySource['po:' + pi.id] = pi.purchased_at
             if (pi.po_id && poIdSet.indexOf(pi.po_id) === -1) poIdSet.push(pi.po_id)
           })
         }
         var poCreatorById = {}
+        var poCreatedAtById = {}
         for (var k = 0; k < poIdSet.length; k += 500) {
           var pChunk = poIdSet.slice(k, k + 500)
-          var pRes = await supabase.from('purchase_orders').select('id, created_by').in('id', pChunk)
-          ;(pRes.data || []).forEach(function (po) { poCreatorById[po.id] = po.created_by; addUid(po.created_by) })
+          var pRes = await supabase.from('purchase_orders').select('id, created_by, created_at').in('id', pChunk)
+          ;(pRes.data || []).forEach(function (po) { poCreatorById[po.id] = po.created_by; poCreatedAtById[po.id] = po.created_at; addUid(po.created_by) })
         }
         // Resolve po_item_map → final creator user_id under po:<source_id>
         poItemIds.forEach(function (piId) {
           var poId = userIdBySource['po_item_map:' + piId]
           if (poId && poCreatorById[poId]) userIdBySource['po:' + piId] = poCreatorById[poId]
+          // Fall back to the PO's own created_at if the item was never marked purchased
+          if (!loggedAtBySource['po:' + piId] && poId && poCreatedAtById[poId]) loggedAtBySource['po:' + piId] = poCreatedAtById[poId]
           delete userIdBySource['po_item_map:' + piId]
         })
       }
@@ -125,7 +131,8 @@ function InventoryLedger({ profile }) {
         var key = h.source_type + ':' + h.source_id
         var uid = userIdBySource[key]
         var nm = uid ? nameById[uid] : null
-        return nm ? Object.assign({}, h, { _creatorName: nm }) : h
+        var loggedAt = loggedAtBySource[key] || null
+        return Object.assign({}, h, { _creatorName: nm || null, _loggedAt: loggedAt })
       })
 
       var merged = []
@@ -474,7 +481,10 @@ function InventoryLedger({ profile }) {
                   <div key={i} onClick={handleRowClick}
                     className={"grid grid-cols-[90px_1fr_70px_100px_30px_100px_100px] gap-2 px-4 py-2 text-xs border-b border-gray-50 items-center " +
                       (isExp ? "cursor-pointer hover:bg-indigo-50/40 transition-colors" : "")}>
-                    <div className="text-gray-600">{h.txn_date ? formatDate(h.txn_date) : '—'}</div>
+                    <div className="text-gray-600">
+                      {h.txn_date ? formatDate(h.txn_date) : '—'}
+                      {h._loggedAt && <div className="text-[9px] text-gray-400">Logged {formatDateTime(h._loggedAt)}</div>}
+                    </div>
                     <div className="min-w-0">
                       <p className="font-semibold text-gray-900 truncate">{h.vendor_name || '—'}</p>
                       {h._creatorName && <p className="text-[10px] text-gray-400 truncate">by {h._creatorName}</p>}

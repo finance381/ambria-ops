@@ -1132,7 +1132,11 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
       // Main ledger
       var body = chrono.map(function (t) {
         var dt = t.created_at ? new Date(t.created_at) : null
-        var dateCell = dt ? fmtD(t.created_at.split('T')[0]) + '\n' + dt.toTimeString().slice(0, 5) : ''
+        var loggedLine = dt ? 'Logged ' + fmtD(t.created_at.split('T')[0]) + ' ' + dt.toTimeString().slice(0, 5) : ''
+        var expRef = (t.reference_type === 'expense' || t.reference_type === 'expense_refund') && t.reference_id ? expenseRefs[t.reference_id] : null
+        var dateCell = expRef && expRef.expense_date
+          ? fmtD(expRef.expense_date) + (loggedLine ? '\n' + loggedLine : '')
+          : loggedLine
         var refLabel = REF_TYPE_LABELS[t.reference_type] || (t.reference_type || '')
         var refNo = t.reference_id ? String(t.reference_id).slice(0, 10) : ''
         var refCell = refLabel + (refNo ? '\n#' + refNo : '')
@@ -1157,12 +1161,12 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
         styles: { font: FONT, fontSize: 8, cellPadding: 1.5, overflow: 'linebreak', valign: 'top' },
         headStyles: { font: FONT, fillColor: [50, 50, 50], textColor: 255, fontStyle: 'bold', halign: 'center' },
         columnStyles: {
-          0: { cellWidth: 22, fontSize: 7 },
-          1: { cellWidth: 22, fontSize: 7 },
+          0: { cellWidth: 28, fontSize: 6.5 },
+          1: { cellWidth: 20, fontSize: 7 },
           2: { cellWidth: 'auto' },
-          3: { cellWidth: 24, halign: 'right', textColor: [180, 30, 30] },
-          4: { cellWidth: 24, halign: 'right', textColor: [16, 128, 60] },
-          5: { cellWidth: 24, halign: 'right', fontStyle: 'bold' },
+          3: { cellWidth: 22, halign: 'right', textColor: [180, 30, 30] },
+          4: { cellWidth: 22, halign: 'right', textColor: [16, 128, 60] },
+          5: { cellWidth: 22, halign: 'right', fontStyle: 'bold' },
         },
         margin: { left: 10, right: 10 },
         didDrawPage: function () {

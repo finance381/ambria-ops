@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
-import { formatPoints, formatDate } from '../../lib/format'
+import { formatPoints, formatDate, formatDateTime } from '../../lib/format'
 import EventDatePicker from '../../components/ui/EventDatePicker'
 import { hasPerm } from '../../lib/permissions'
 import { useExpenseDetailModal } from '../../hooks/useExpenseDetailModal.jsx'
@@ -164,7 +164,25 @@ function EventLedger(props) {
       var { data: profRows } = await supabase.from('profiles').select('id, name').in('id', creatorIds)
       ;(profRows || []).forEach(function (p) { nameById[p.id] = p.name || null })
     }
-    rows = rows.map(function (r) { r._creatorName = nameById[r.created_by] || null; return r })
+    // Expense-linked entries carry their own user-entered date (expenses.expense_date),
+    // distinct from created_at (when the ledger row was actually logged).
+    var expIds = []
+    rows.forEach(function (r) {
+      if (r.entry_type === 'expense' && r.reference_id && /^[0-9]+$/.test(String(r.reference_id))) {
+        var eid = Number(r.reference_id)
+        if (expIds.indexOf(eid) === -1) expIds.push(eid)
+      }
+    })
+    var expenseDateById = {}
+    if (expIds.length > 0) {
+      var { data: expRows } = await supabase.from('expenses').select('id, expense_date').in('id', expIds)
+      ;(expRows || []).forEach(function (e) { expenseDateById[e.id] = e.expense_date })
+    }
+    rows = rows.map(function (r) {
+      r._creatorName = nameById[r.created_by] || null
+      r._entryDate = r.entry_type === 'expense' ? (expenseDateById[Number(r.reference_id)] || null) : null
+      return r
+    })
     setEntries(rows)
     setEntriesLoading(false)
   }
@@ -453,7 +471,10 @@ function EventLedger(props) {
                       <tr key={e.id}
                         onClick={function () { if (isExpRow) openExpenseDetail(Number(e.reference_id)) }}
                         className={"border-b border-gray-100 last:border-b-0" + (isExpRow ? " cursor-pointer hover:bg-indigo-50/40 transition-colors" : "")}>
-                        <td className="px-3 py-2 text-xs text-gray-600 whitespace-nowrap">{formatDate(e.created_at)}</td>
+                        <td className="px-3 py-2 text-xs text-gray-600 whitespace-nowrap">
+                          {e._entryDate ? formatDate(e._entryDate) : formatDate(e.created_at)}
+                          <div className="text-[10px] text-gray-400">Logged {formatDateTime(e.created_at)}</div>
+                        </td>
                         <td className="px-3 py-2">
                           <span className={"inline-block px-2 py-0.5 rounded text-xs font-medium " + badgeClass(e.entry_type, e.direction)}>
                             {e.entry_type}

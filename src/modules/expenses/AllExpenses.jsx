@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../../lib/supabase'
-import { formatDate, formatPoints } from '../../lib/format'
+import { formatDate, formatDateTime, formatPoints } from '../../lib/format'
 import { APPROVAL_STATUS_COLORS, APPROVAL_STATUS_LABELS } from '../../lib/constants'
 import FilterDropdown from '../../components/ui/FilterDropdown'
 import { registerPdfFont } from '../../lib/pdfFont'
@@ -380,7 +380,7 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds }) {
         if (e.status && e.status !== 'recorded') lines.push('(' + e.status + ')')
 
         body.push([
-          e.expense_date || '',
+          (e.expense_date ? formatDate(e.expense_date) : '') + (e.created_at ? '\nLogged ' + formatDateTime(e.created_at) : ''),
           '#' + e.id,
           nameMap[e.user_id] || '—',
           lines.join('\n'),
@@ -407,12 +407,12 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds }) {
         styles: { font: FONT, fontSize: 8, cellPadding: 1.5, overflow: 'linebreak' },
         headStyles: { font: FONT, fillColor: [50, 50, 50], textColor: 255, fontStyle: 'bold', halign: 'center' },
         columnStyles: {
-          0: { cellWidth: 22 },
+          0: { cellWidth: 28, fontSize: 7 },
           1: { cellWidth: 18 },
-          2: { cellWidth: 35 },
+          2: { cellWidth: 32 },
           3: { cellWidth: 'auto' },
-          4: { cellWidth: 30, halign: 'right' },
-          5: { cellWidth: 30, halign: 'right' },
+          4: { cellWidth: 28, halign: 'right' },
+          5: { cellWidth: 28, halign: 'right' },
         },
         margin: { left: 10, right: 10 },
         didDrawPage: function (data) {
