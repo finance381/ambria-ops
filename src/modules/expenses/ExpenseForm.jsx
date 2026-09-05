@@ -1286,23 +1286,33 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
           ? (editExp.payment_cash_paise || 0)
           : (editExp.amount_paise || 0)
         var walletDiff = newWalletSpend - oldWalletSpend
+        var walletDiffFailed = false
         if (walletDiff !== 0) {
           var wRpc = walletDiff > 0 ? 'wallet_self_debit' : 'wallet_self_credit'
           var wAmt = Math.abs(walletDiff)
           var wRef = walletDiff > 0 ? 'expense' : 'expense_refund'
           var wDesc = 'Expense edited: ' + (walletDiff > 0 ? '+' : '-') + (wAmt / 100).toLocaleString('en-IN', { maximumFractionDigits: 2 }) + ' pts'
-          try {
-            await supabase.rpc(wRpc, { p_amount_paise: wAmt, p_description: wDesc, p_ref_type: wRef, p_ref_id: String(editExp.id) })
-          } catch (_) {}
+          var { error: wDiffErr } = await supabase.rpc(wRpc, { p_amount_paise: wAmt, p_description: wDesc, p_ref_type: wRef, p_ref_id: String(editExp.id) })
+          // Don't fail the whole edit over this — the expense fields are already saved —
+          // but a swallowed error here previously meant the wallet silently went out of
+          // sync with no trace at all. Surface it instead.
+          if (wDiffErr) { console.error('WALLET_DIFF_FAIL', wDiffErr); walletDiffFailed = true }
         }
 
         try { await logActivity('EXPENSE_EDIT', e0.description.trim() + ' | ' + (newPaise / 100) + ' pts') } catch (_) {}
 
-        setSuccess('Expense updated')
-        // Keep the form locked (saving stays true) until onDone actually navigates away —
-        // otherwise the button re-enables for ~1s with the same edits still loaded, and a
-        // stray second click re-applies the same update (double wallet diff, etc.).
-        setTimeout(function () { setSaving(false); if (onDone) onDone() }, 1000)
+        if (walletDiffFailed) {
+          // Stay on screen (don't auto-navigate away) — this needs to be seen and acted on,
+          // not flash past in the same 1s window the success path uses.
+          setError('Expense updated, but the wallet adjustment failed — balance may be out of sync. Flag for admin correction.')
+          setSaving(false)
+        } else {
+          setSuccess('Expense updated')
+          // Keep the form locked (saving stays true) until onDone actually navigates away —
+          // otherwise the button re-enables for ~1s with the same edits still loaded, and a
+          // stray second click re-applies the same update (double wallet diff, etc.).
+          setTimeout(function () { setSaving(false); if (onDone) onDone() }, 1000)
+        }
       } catch (err) {
         setError('Update failed: ' + (err.message || err))
         setSaving(false)
@@ -1323,6 +1333,9 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
           : Math.round(Number(e.amount) * 100)
         var taxPaise = e.taxAmount ? Math.round(Number(e.taxAmount) * 100) : 0
         var paise = basePaise + taxPaise
+        // Reset each iteration — `var` is function-scoped, and a throw before this
+        // entry's own insert must not see a stale `exp` left over from a prior entry.
+        var exp = null
 
         try {
           var meta = Object.assign({}, e.fieldValues)
@@ -1514,6 +1527,22 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
         } catch (err) {
           console.error('EXPENSE_SUBMIT_FAIL entry', i, err)
           var msg = (err && err.message) ? err.message : String(err)
+          // The expense row (and possibly its allocations) may already have been inserted
+          // before whatever step just threw — e.g. the wallet debit failing after the
+          // expense was created. Without a real DB transaction across these separate calls,
+          // that leaves an orphaned expense with no wallet entry. Compensate by deleting
+          // whatever was already committed for this entry so a failed submit leaves no trace.
+          if (exp && exp.id) {
+            try {
+              await supabase.from('expense_allocations').delete().eq('expense_id', exp.id)
+              var { data: cleanupRows, error: cleanupErr } = await supabase.from('expenses').delete().eq('id', exp.id).select('id')
+              if (cleanupErr || !cleanupRows || cleanupRows.length === 0) {
+                msg += ' (also: could not auto-remove the partially-created expense #' + exp.id + ' — flag for admin cleanup)'
+              }
+            } catch (_) {
+              msg += ' (also: could not auto-remove the partially-created expense #' + exp.id + ' — flag for admin cleanup)'
+            }
+          }
           failedMsgs.push('#' + (i + 1) + ': ' + msg)
           try { logActivity('EXPENSE_SUBMIT_FAIL', 'entry ' + i + ' | ' + msg.slice(0, 200)) } catch (_) {}
           failed++
