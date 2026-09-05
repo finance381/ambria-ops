@@ -1090,8 +1090,15 @@ function QuoteCalculator({ profile, onExit, onSignOut }) {
   var [loadingQuotes, setLoadingQuotes] = useState(false)
   var [saveMsg, setSaveMsg] = useState('')
   var [isDesktop, setIsDesktop] = useState(typeof window !== 'undefined' ? window.innerWidth >= 1024 : false)
+  // isWide: a second, higher breakpoint for the fixed-width side-by-side splits
+  // (322px Live Preview column, 340px Pricing columns in menu/decor/dj). Those
+  // are safe once there's genuinely spare width (laptop/desktop), but at tablet
+  // widths (>=1024 already satisfies isDesktop) the sidebar + those fixed columns
+  // leave the flexible content almost no room, causing text/cards to overlap.
+  // Below isWide, those splits stack to a single column instead.
+  var [isWide, setIsWide] = useState(typeof window !== 'undefined' ? window.innerWidth >= 1366 : false)
   useEffect(function () {
-    function onResize() { setIsDesktop(window.innerWidth >= 1024) }
+    function onResize() { setIsDesktop(window.innerWidth >= 1024); setIsWide(window.innerWidth >= 1366) }
     window.addEventListener('resize', onResize)
     return function () { window.removeEventListener('resize', onResize) }
   }, [])
@@ -1849,7 +1856,7 @@ function QuoteCalculator({ profile, onExit, onSignOut }) {
       <div className={isDesktop ? 'qc-main-scroll' : ''} style={isDesktop
         ? {
           flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', overscrollBehavior: 'contain',
-          display: 'grid', gridTemplateColumns: '1fr 322px', gap: 18,
+          display: 'grid', gridTemplateColumns: isWide ? '1fr 322px' : '1fr', gap: 18,
           alignItems: 'start', padding: page === 0 ? '16px 22px 0' : '18px 22px 0',
         }
         : {}}>
@@ -2425,7 +2432,7 @@ function QuoteCalculator({ profile, onExit, onSignOut }) {
               and the tiles are narrow, so stacking them wasted the width. */}
           <div style={{
             display: 'grid',
-            gridTemplateColumns: isDesktop ? 'minmax(0,1fr) 340px' : '1fr',
+            gridTemplateColumns: isWide ? 'minmax(0,1fr) 340px' : '1fr',
             columnGap: 16, rowGap: 14, alignItems: 'start',
           }}>
             <div style={{ minWidth: 0 }}>
@@ -2514,7 +2521,7 @@ function QuoteCalculator({ profile, onExit, onSignOut }) {
             </div>
           </div>
           <div style={{
-            display: 'grid', gridTemplateColumns: isDesktop ? 'minmax(0,1fr) 340px' : '1fr',
+            display: 'grid', gridTemplateColumns: isWide ? 'minmax(0,1fr) 340px' : '1fr',
             columnGap: 16, rowGap: 10, alignItems: 'start',
           }}>
             <div style={{ minWidth: 0, opacity: includeDecor ? 1 : 0.3, pointerEvents: includeDecor ? 'auto' : 'none' }}>
@@ -2553,7 +2560,7 @@ function QuoteCalculator({ profile, onExit, onSignOut }) {
             </div>
           </div>
           <div style={{
-            display: 'grid', gridTemplateColumns: isDesktop ? 'minmax(0,1fr) 340px' : '1fr',
+            display: 'grid', gridTemplateColumns: isWide ? 'minmax(0,1fr) 340px' : '1fr',
             columnGap: 16, rowGap: 10, alignItems: 'start',
           }}>
             <div style={{ minWidth: 0, opacity: includeDj ? 1 : 0.3, pointerEvents: includeDj ? 'auto' : 'none' }}>
@@ -2824,7 +2831,7 @@ function QuoteCalculator({ profile, onExit, onSignOut }) {
             scroll covers the calculator step, where the panel gets taller than
             the viewport. The floating CTA overlaps this column's tail on the
             guest step, so that keeps its own clearance. */}
-        <div className={isDesktop ? 'qc-noscroll' : undefined} style={isDesktop
+        <div className={isWide ? 'qc-noscroll' : undefined} style={isWide
           ? {
             minWidth: 0, position: 'sticky', top: 0, alignSelf: 'start',
             maxHeight: 'calc(100dvh - 96px)', overflowY: 'auto',
@@ -2849,7 +2856,7 @@ function QuoteCalculator({ profile, onExit, onSignOut }) {
           savedId={savedId}
           lmsRef={lmsRef}
           discountAmt={discountAmt}
-          isDesktop={isDesktop}
+          isDesktop={isWide}
         />
         </div>
       </div>
