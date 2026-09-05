@@ -1144,9 +1144,11 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
             throw new Error('Update returned mismatched values (expected ' + e0.expenseTypeId + '/' + e0.expenseSubTypeId + ', got ' + row.expense_type_id + '/' + row.expense_sub_type_id + ')')
           }
           try { await logActivity('EXPENSE_ADMIN_RETYPE', 'exp #' + editExp.id + ' | type=' + e0.expenseTypeId + '/' + e0.expenseSubTypeId) } catch (_) {}
-          setSaving(false)
           setSuccess('Type updated')
-          setTimeout(function () { if (onDone) onDone() }, 800)
+          // Keep the form locked (saving stays true) until onDone actually navigates away —
+          // otherwise the button re-enables for ~1s with the same data still loaded, and a
+          // stray second click resubmits it.
+          setTimeout(function () { setSaving(false); if (onDone) onDone() }, 800)
         } catch (err) {
           console.error('ADMIN_RETYPE_FAIL', err, { expenseId: editExp.id, targetType: e0.expenseTypeId, targetSubType: e0.expenseSubTypeId })
           setError('Retype failed: ' + (err.message || err))
@@ -1296,9 +1298,11 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
 
         try { await logActivity('EXPENSE_EDIT', e0.description.trim() + ' | ' + (newPaise / 100) + ' pts') } catch (_) {}
 
-        setSaving(false)
         setSuccess('Expense updated')
-        setTimeout(function () { if (onDone) onDone() }, 1000)
+        // Keep the form locked (saving stays true) until onDone actually navigates away —
+        // otherwise the button re-enables for ~1s with the same edits still loaded, and a
+        // stray second click re-applies the same update (double wallet diff, etc.).
+        setTimeout(function () { setSaving(false); if (onDone) onDone() }, 1000)
       } catch (err) {
         setError('Update failed: ' + (err.message || err))
         setSaving(false)
@@ -1312,8 +1316,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
     var failedMsgs = []
     var batchId = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : null
 
-    try {
-      for (var i = 0; i < entries.length; i++) {
+    for (var i = 0; i < entries.length; i++) {
         var e = entries[i]
         var basePaise = e.isItemPurchase
           ? Math.round(computeItemsTotal(e) * 100)
@@ -1516,16 +1519,20 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
           failed++
         }
       }
-    } finally { setSaving(false) }
 
     if (failed > 0 && submitted > 0) {
+      setSaving(false)
       setError(failed + ' failed, ' + submitted + ' submitted\n' + failedMsgs.join('\n'))
     } else if (failed > 0) {
+      setSaving(false)
       setError('All ' + failed + ' entries failed to submit\n' + failedMsgs.join('\n'))
     } else {
       setSuccess(submitted + ' expense' + (submitted > 1 ? 's' : '') + ' submitted')
       clearDraftAfterSubmit()
-      setTimeout(function () { setEntries([makeEntry()]); if (onDone) onDone() }, 1500)
+      // Keep the form locked (saving stays true) until the reset below actually clears the
+      // entries — otherwise the button re-enables for 1.5s with the same entries still
+      // loaded, and a stray second click resubmits them as genuine duplicate expenses.
+      setTimeout(function () { setEntries([makeEntry()]); setSaving(false); if (onDone) onDone() }, 1500)
     }
   }
 
@@ -2411,6 +2418,11 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                     <button type="button" onClick={function () { removeAudio(idx) }}
                       className="w-6 h-6 bg-red-500 text-white rounded-full text-xs flex items-center justify-center shadow-sm hover:bg-red-600 flex-shrink-0">✕</button>
                   </div>
+                ) : entry.recording ? (
+                  <button type="button" onClick={function () { stopRecording(idx) }}
+                    className="w-full py-3 rounded-lg bg-red-500 text-white text-sm font-medium animate-pulse flex items-center justify-center gap-2">
+                    <span className="w-2.5 h-2.5 bg-white rounded-full" />Recording... Tap to stop
+                  </button>
                 ) : (entry.receiptFilesMeta && entry.receiptFilesMeta.length > 0) || entry.audioBlobMeta ? (
                   <div className="p-2.5 rounded-lg bg-amber-50 border border-amber-300 text-amber-800 text-[11px] mb-2">
                     <div className="font-bold mb-0.5">🔗 Please re-attach — restored from draft</div>
@@ -2437,11 +2449,6 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                       </button>
                     </div>
                   </div>
-                ) : entry.recording ? (
-                  <button type="button" onClick={function () { stopRecording(idx) }}
-                    className="w-full py-3 rounded-lg bg-red-500 text-white text-sm font-medium animate-pulse flex items-center justify-center gap-2">
-                    <span className="w-2.5 h-2.5 bg-white rounded-full" />Recording... Tap to stop
-                  </button>
                 ) : (
                   <div className="flex gap-2">
                     <label className="flex-1 flex items-center justify-center gap-1.5 py-3 rounded-lg border-2 border-dashed border-gray-300 text-sm text-gray-500 hover:border-amber-400 hover:text-amber-600 cursor-pointer transition-colors">
