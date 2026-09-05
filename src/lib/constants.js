@@ -26,7 +26,7 @@ export var APPROVAL_STATUS_LABELS = {
   rejected: 'Rejected',
   recorded: 'Recorded',
   acknowledged: 'Acknowledged',
-  flagged: 'Flagged',
+  flagged: 'Resubmit',
   penalized: 'Penalized',
   fulfilled: 'Fulfilled',
   deleted: 'Deleted',

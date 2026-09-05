@@ -2,11 +2,13 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { formatDate, formatPoints } from '../../lib/format'
 import { hasPerm } from '../../lib/permissions'
+import { useExpenseDetailModal } from '../../hooks/useExpenseDetailModal.jsx'
 
 function GVLog({ profile }) {
   var permsNew = (profile && profile.permsNew) || []
   var isAdmin = profile?.role === 'admin' || hasPerm(permsNew, 'admin.dashboard')
   var canView = isAdmin || hasPerm(permsNew, 'finance.gv') || hasPerm(permsNew, 'finance.ledgers.gv')
+  var { openExpenseDetail, expenseDetailModal } = useExpenseDetailModal(profile, isAdmin, function () { loadGvs() })
 
   var [gvs, setGvs] = useState([])
   var [loading, setLoading] = useState(true)
@@ -172,7 +174,8 @@ function GVLog({ profile }) {
                       <span className="text-xs">{isExpanded ? '▼' : '▶'}</span>
                       <span className="text-sm font-bold text-purple-800">{gv.gv_number}</span>
                       <span className="text-xs text-gray-500">·</span>
-                      <span className="text-xs font-medium text-gray-700">Expense #{gv.expense_id}</span>
+                      <span onClick={function (ev) { ev.stopPropagation(); openExpenseDetail(gv.expense_id) }}
+                        className="text-xs font-medium text-indigo-700 hover:text-indigo-900 hover:underline">Expense #{gv.expense_id}</span>
                       {gv.is_reversal && (
                         <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-gray-200 text-gray-700">Reversal</span>
                       )}
@@ -223,6 +226,7 @@ function GVLog({ profile }) {
           })}
         </div>
       )}
+      {expenseDetailModal}
     </div>
   )
 }

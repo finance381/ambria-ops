@@ -640,7 +640,7 @@ function Expenses({ profile, masterMode }) {
               )}
               {exp.status === 'flagged' && exp.flag_reason && (
                 <div className="mt-1.5 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
-                  <p className="text-[11px] text-amber-600 font-medium">⚠ Flagged</p>
+                  <p className="text-[11px] text-amber-600 font-medium">⚠ Resubmit</p>
                   <p className="text-[11px] text-amber-500 mt-0.5 line-clamp-2">{exp.flag_reason}</p>
                   {exp.reviewed_by && (
                     <p className="text-[10px] text-amber-400 mt-0.5">By {profileMap[exp.reviewed_by] || '—'}{exp.reviewed_at ? ' · ' + formatDate(exp.reviewed_at) : ''}</p>

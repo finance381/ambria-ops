@@ -5,8 +5,9 @@ import { pushBack } from '../../lib/backNav'
 import { registerPdfFont } from '../../lib/pdfFont'
 import { hasPerm } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
+import { useExpenseDetailModal } from '../../hooks/useExpenseDetailModal.jsx'
 
-var STATUS_LABELS = { recorded: 'Recorded', flagged: 'Flagged', acknowledged: 'Acknowledged', deducted: 'Deducted' }
+var STATUS_LABELS = { recorded: 'Recorded', flagged: 'Resubmit', acknowledged: 'Acknowledged', deducted: 'Deducted' }
 var STATUS_COLORS = {
   recorded: 'bg-amber-100 text-amber-700',
   flagged: 'bg-orange-100 text-orange-700',
@@ -43,6 +44,7 @@ function Ledgers({ profile }) {
   var isAdmin = hasPerm(profile?.permsNew, 'finance.ledgers.expense')
   var scopeDeptIds = isAdmin ? null : (profile?.event_dept_ids || [])
   var hasScope = !isAdmin && scopeDeptIds && scopeDeptIds.length > 0
+  var { openExpenseDetail, expenseDetailModal } = useExpenseDetailModal(profile, isAdmin, function () { loadDrill(false) })
 
   // Date state
   var [datePreset, setDatePreset] = useState('month')
@@ -665,7 +667,7 @@ function Ledgers({ profile }) {
               className="px-2 py-1.5 text-xs border border-gray-200 rounded-md" style={{ fontSize: '16px' }}>
               <option value="">All Status</option>
               <option value="recorded">Recorded</option>
-              <option value="flagged">Flagged</option>
+              <option value="flagged">Resubmit</option>
               <option value="acknowledged">Acknowledged</option>
               <option value="deducted">Deducted</option>
             </select>
@@ -685,7 +687,8 @@ function Ledgers({ profile }) {
           <div className="space-y-2">
             {drillRows.map(function (r) {
               return (
-                <div key={r.allocation_id} className="bg-white border border-gray-200 rounded-xl p-3">
+                <div key={r.allocation_id} onClick={function () { openExpenseDetail(r.expense_id) }}
+                  className="bg-white border border-gray-200 rounded-xl p-3 cursor-pointer hover:bg-indigo-50/40 transition-colors">
                   <div className="flex items-start justify-between">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
@@ -720,6 +723,7 @@ function Ledgers({ profile }) {
             )}
           </div>
         )}
+        {expenseDetailModal}
       </div>
     )
   }
@@ -792,7 +796,7 @@ function Ledgers({ profile }) {
             className="px-2 py-1 text-[11px] border border-gray-200 rounded-md flex-1 min-w-[100px]" style={{ fontSize: '16px' }}>
             <option value="">All status</option>
             <option value="recorded">Recorded</option>
-            <option value="flagged">Flagged</option>
+            <option value="flagged">Resubmit</option>
             <option value="acknowledged">Acknowledged</option>
             <option value="deducted">Deducted</option>
           </select>

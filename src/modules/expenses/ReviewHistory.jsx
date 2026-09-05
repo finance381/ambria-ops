@@ -127,7 +127,7 @@ function ReviewHistory({ profile, onBack, onOpenDetail }) {
         </div>
         <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-center">
           <p className="text-xl font-bold text-amber-700">{stats.flagged}</p>
-          <p className="text-[10px] font-bold text-amber-600 uppercase">Flagged</p>
+          <p className="text-[10px] font-bold text-amber-600 uppercase">Resubmit</p>
         </div>
         <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-center">
           <p className="text-xl font-bold text-red-700">{stats.deducted}</p>

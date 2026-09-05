@@ -9,6 +9,7 @@ import PaymentProofThumbs from '../../components/ledger/PaymentProofThumbs'
 import LedgerSourceMedia from '../../components/ledger/LedgerSourceMedia'
 import { hasPerm } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
+import { useExpenseDetailModal } from '../../hooks/useExpenseDetailModal.jsx'
 
 function SalaryLedger({ profile }) {
   var permsNew = (profile && profile.permsNew) || []
@@ -29,6 +30,9 @@ function SalaryLedger({ profile }) {
   var [entries, setEntries] = useState([])
   var [entriesLoading, setEntriesLoading] = useState(false)
   var [showDeleted, setShowDeleted] = useState(false)
+  var { openExpenseDetail, expenseDetailModal } = useExpenseDetailModal(profile, isAdmin, function () {
+    if (selectedEmp) loadEntries(selectedEmp, showDeleted)
+  })
 
   var [showPayModal, setShowPayModal] = useState(false)
   var [showAccrueModal, setShowAccrueModal] = useState(false)  // SL-C4
@@ -442,11 +446,14 @@ function SalaryLedger({ profile }) {
             var kind = e.metadata && e.metadata.kind ? e.metadata.kind : e.ref_type
             var dotColor = isDeleted ? 'bg-gray-300' : isCredit ? 'bg-amber-500' : 'bg-green-500'
             var meta = e.metadata || {}
+            var isExpRow = e.ref_type === 'expense' && e.ref_id && /^[0-9]+$/.test(String(e.ref_id)) && !isDeleted
             return (
               <div key={e.id}
+                onClick={function () { if (isExpRow) openExpenseDetail(Number(e.ref_id)) }}
                 className={"flex items-start gap-3 px-3 py-3 " +
                   (idx < displayEntries.length - 1 ? "border-b border-gray-100 " : "") +
-                  (isDeleted ? "opacity-50" : "")}>
+                  (isDeleted ? "opacity-50" : "") +
+                  (isExpRow ? " cursor-pointer hover:bg-indigo-50/40 transition-colors" : "")}>
                 <div className={"w-2 h-2 rounded-full mt-1.5 flex-shrink-0 " + dotColor}></div>
                 <div className="flex-1 min-w-0">
                   <p className={"text-sm font-medium text-gray-900 " + (isDeleted ? "line-through" : "")}>
@@ -471,9 +478,13 @@ function SalaryLedger({ profile }) {
                       )}
                     </div>
                   )}
-                  <PaymentProofThumbs meta={meta} />
+                  <div onClick={function (ev) { ev.stopPropagation() }}>
+                    <PaymentProofThumbs meta={meta} />
+                  </div>
                   {e._sourceReceipts && e._sourceReceipts.length > 0 && (
-                    <LedgerSourceMedia paths={e._sourceReceipts} />
+                    <div onClick={function (ev) { ev.stopPropagation() }}>
+                      <LedgerSourceMedia paths={e._sourceReceipts} />
+                    </div>
                   )}
                 </div>
                 <div className="text-right flex-shrink-0">
@@ -484,7 +495,7 @@ function SalaryLedger({ profile }) {
                     <p className="text-[10px] text-gray-400">Bal: {formatPoints(e.runningBalance)}</p>
                   )}
                   {isAdmin && !isDeleted && (
-                    <button onClick={function () { reverseEntry(e.id) }}
+                    <button onClick={function (ev) { ev.stopPropagation(); reverseEntry(e.id) }}
                       className="text-[10px] text-red-500 hover:text-red-700 mt-1 font-medium">
                       ↩ Reverse
                     </button>
@@ -495,6 +506,7 @@ function SalaryLedger({ profile }) {
           })}
         </div>
       )}
+      {expenseDetailModal}
     </div>
   )
 }

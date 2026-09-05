@@ -695,7 +695,7 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds }) {
                         return <p className="text-[11px] text-orange-600 mt-0.5">⚠️ Deducted by <span className="font-semibold">{exp._penalizerName}</span></p>
                       }
                       if (exp.status === 'flagged' && exp._reviewerName) {
-                        return <p className="text-[11px] text-red-600 mt-0.5">🚩 Flagged by <span className="font-semibold">{exp._reviewerName}</span></p>
+                        return <p className="text-[11px] text-red-600 mt-0.5">🚩 Resubmit requested by <span className="font-semibold">{exp._reviewerName}</span></p>
                       }
                       if (exp.status === 'acknowledged' && exp._acknowledgerName) {
                         return <p className="text-[11px] text-green-700 mt-0.5">✓ Acknowledged by <span className="font-semibold">{exp._acknowledgerName}</span></p>

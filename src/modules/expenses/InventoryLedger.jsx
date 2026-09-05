@@ -3,7 +3,7 @@ import { supabase, fetchAll } from '../../lib/supabase'
 import { formatDate, formatPaise } from '../../lib/format'
 import { useRealtime } from '../../lib/useRealtime'
 import { registerPdfFont } from '../../lib/pdfFont'
-import ExpenseDetail from './ExpenseDetail'
+import { useExpenseDetailModal } from '../../hooks/useExpenseDetailModal.jsx'
 import MultiSearchDropdown from '../../components/ui/MultiSearchDropdown'
 import { hasPerm } from '../../lib/permissions'
 
@@ -36,8 +36,7 @@ function InventoryLedger({ profile }) {
     return String(rounded)
   }
 
-  var [expenseDetailTarget, setExpenseDetailTarget] = useState(null)
-  var [expenseDetailLoading, setExpenseDetailLoading] = useState(false)
+  var { openExpenseDetail, expenseDetailModal } = useExpenseDetailModal(profile, isAdmin, function () { loadAll() })
 
   useEffect(function () {
     if (canView) loadAll()
@@ -321,40 +320,6 @@ function InventoryLedger({ profile }) {
     return sum
   }, [filteredItems, historyByItem, vendorFilters])
 
-  async function openExpenseDetail(expenseId) {
-    if (!expenseId) return
-    setExpenseDetailLoading(true)
-    setExpenseDetailTarget({ _placeholder: true, id: expenseId })
-    var { data: row, error } = await supabase.from('expenses')
-      .select('id, user_id, batch_id, expense_type_id, expense_sub_type_id, amount_paise, tax_paise, description, status, expense_date, receipt_path, receipt_paths, created_at, rejection_reason, flag_reason, penalty_paise, penalized_at, penalized_by, reviewed_at, reviewed_by, acknowledged_at, acknowledged_by, deduction_type, vendor_name, travel_from, travel_to, travel_mode, metadata, event_id, deleted_at, expense_types(name, extra_fields), expense_sub_types(name, extra_fields), events(event_name), expense_allocations(department, department_id, venue_id, amount_paise)')
-      .eq('id', Number(expenseId)).maybeSingle()
-    setExpenseDetailLoading(false)
-    if (error || !row) { alert('Expense not found: ' + (error?.message || 'missing')); setExpenseDetailTarget(null); return }
-    setExpenseDetailTarget(row)
-  }
-
-  function closeExpenseDetail() { setExpenseDetailTarget(null) }
-
-  function renderExpenseDetailModal() {
-    if (!expenseDetailTarget) return null
-    return (
-      <div className="fixed inset-0 z-50 bg-black/70 flex items-start sm:items-center justify-center p-0 sm:p-4 overflow-y-auto"
-        onClick={closeExpenseDetail}>
-        <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-2xl p-4 sm:p-5 min-h-screen sm:min-h-0 sm:max-h-[92vh] overflow-y-auto"
-          onClick={function (ev) { ev.stopPropagation() }}>
-          {expenseDetailLoading || expenseDetailTarget._placeholder ? (
-            <div className="py-16 text-center text-sm text-gray-500">Loading expense…</div>
-          ) : (
-            <ExpenseDetail key={expenseDetailTarget.id} exp={expenseDetailTarget} profile={profile} isAdmin={isAdmin} isDeptApprover={false}
-              onBack={closeExpenseDetail} onUpdated={closeExpenseDetail}
-              onEdit={function () { alert('To edit this expense, please open the Expenses tab.'); closeExpenseDetail() }}
-              onRaiseGV={function () { alert('To raise a General Voucher, please open the Expenses tab.'); closeExpenseDetail() }} />
-          )}
-        </div>
-      </div>
-    )
-  }
-
   function exportCSV() {
     var esc = function (v) { if (v == null) return ''; var s = String(v); return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s }
     var lines = ['Item,Code,Category,Sub-category,Source,Live Qty,Master Rate (₹),Value (₹),Vendors,Transactions,Total Spend (₹),Total Qty Purchased,Avg Rate (₹),Best Rate (₹),Best Avg Vendor,Best Avg Rate (₹)']
@@ -525,7 +490,7 @@ function InventoryLedger({ profile }) {
             </div>
           )}
         </div>
-        {renderExpenseDetailModal()}
+        {expenseDetailModal}
       </div>
     )
   }

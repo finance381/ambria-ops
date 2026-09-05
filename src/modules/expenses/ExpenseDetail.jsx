@@ -246,7 +246,7 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
       reviewed_by: profile.id,
       reviewed_at: new Date().toISOString(),
     }).eq('id', exp.id)
-    if (error) { alert('Flag failed: ' + error.message); setSaving(false); return }
+    if (error) { alert('Resubmit failed: ' + error.message); setSaving(false); return }
     if (exp.status === 'recorded') {
       try {
         await supabase.rpc('wallet_admin_credit', {
@@ -378,7 +378,7 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
       {(exp.status === 'flagged' || exp.status === 'deducted') && exp.flag_reason && (
         <div className={"border rounded-lg p-3 " + (exp.status === 'deducted' ? "bg-red-50 border-red-200" : "bg-amber-50 border-amber-200")}>
           <p className={"text-xs font-bold mb-0.5 " + (exp.status === 'deducted' ? "text-red-700" : "text-amber-700")}>
-            {exp.status === 'deducted' ? '💰 Deducted' : '⚠ Flagged — Fix & Resubmit'}
+            {exp.status === 'deducted' ? '💰 Deducted' : '⚠ Resubmit — Fix & Resend'}
           </p>
           <p className={"text-sm " + (exp.status === 'deducted' ? "text-red-600" : "text-amber-600")}>{exp.flag_reason}</p>
           {exp.deduction_type && (
@@ -792,7 +792,7 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
             {exp.status !== 'flagged' && (
               <button onClick={function () { setRejectMode('flag') }} disabled={saving}
                 className="flex-1 py-3 text-sm font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 disabled:opacity-50 transition-colors">
-                ⚠ Flag
+                ⚠ Resubmit
               </button>
             )}
             <button onClick={function () { setRejectMode('deduct') }} disabled={saving}
@@ -813,7 +813,7 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
         <div className="space-y-3">
           <div className={"border rounded-lg p-3 " + (rejectMode === 'deduct' ? "bg-red-50 border-red-200" : "bg-amber-50 border-amber-200")}>
             <label className={"block text-sm font-medium mb-1 " + (rejectMode === 'deduct' ? "text-red-700" : "text-amber-700")}>
-              {rejectMode === 'deduct' ? 'Deduction Reason' : 'Flag Reason'} <span className="text-red-500">*</span>
+              {rejectMode === 'deduct' ? 'Deduction Reason' : 'Resubmit Reason'} <span className="text-red-500">*</span>
             </label>
             <textarea value={rejectReason}
               onChange={function (e) { setRejectReason(e.target.value) }}
@@ -867,7 +867,7 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
             ) : (
               <button onClick={flag} disabled={saving || !rejectReason.trim()}
                 className="flex-1 py-3 text-sm text-white bg-amber-600 rounded-lg hover:bg-amber-700 disabled:opacity-50 transition-colors font-medium">
-                {saving ? 'Flagging...' : '⚠ Confirm Flag'}
+                {saving ? 'Sending...' : '⚠ Confirm Resubmit'}
               </button>
             )}
           </div>

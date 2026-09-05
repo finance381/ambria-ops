@@ -5,7 +5,7 @@ import { formatPoints } from '../../lib/format'
 import PayVendorModal from './PayVendorModal'
 import PaymentProofThumbs from '../../components/ledger/PaymentProofThumbs'
 import SearchDropdown from '../../components/ui/SearchDropdown'
-import ExpenseDetail from './ExpenseDetail'
+import { useExpenseDetailModal } from '../../hooks/useExpenseDetailModal.jsx'
 import LedgerSourceMedia from '../../components/ledger/LedgerSourceMedia'
 import { filterVisibleVendors } from '../../lib/vendorGating'
 import { registerPdfFont } from '../../lib/pdfFont'
@@ -41,53 +41,10 @@ function VendorLedger({ profile }) {
   var [selectedVendor, setSelectedVendor] = useState(null)
   var [entries, setEntries] = useState([])
   var [entriesLoading, setEntriesLoading] = useState(false)
-  var [expenseDetailTarget, setExpenseDetailTarget] = useState(null)  // hydrated expense row for overlay
-  var [expenseDetailLoading, setExpenseDetailLoading] = useState(false)
-
-  async function openExpenseDetail(expenseId) {
-    if (!expenseId) return
-    setExpenseDetailLoading(true)
-    setExpenseDetailTarget({ _placeholder: true, id: expenseId })
-    var { data: row, error } = await supabase.from('expenses')
-      .select('id, user_id, batch_id, expense_type_id, expense_sub_type_id, amount_paise, tax_paise, description, status, expense_date, receipt_path, receipt_paths, created_at, rejection_reason, flag_reason, penalty_paise, penalized_at, penalized_by, reviewed_at, reviewed_by, acknowledged_at, acknowledged_by, deduction_type, vendor_name, travel_from, travel_to, travel_mode, metadata, event_id, deleted_at, expense_types(name, extra_fields), expense_sub_types(name, extra_fields), events(event_name), expense_allocations(department, department_id, venue_id, amount_paise)')
-      .eq('id', Number(expenseId)).maybeSingle()
-    setExpenseDetailLoading(false)
-    if (error || !row) { alert('Expense not found: ' + (error?.message || 'missing')); setExpenseDetailTarget(null); return }
-    setExpenseDetailTarget(row)
-  }
-
-  function closeExpenseDetail(refresh) {
-    setExpenseDetailTarget(null)
-    if (refresh && selectedVendor) { loadEntries(selectedVendor, showDeleted) }
-  }
-
-  function renderExpenseDetailModal() {
-    if (!expenseDetailTarget) return null
-    return (
-      <div className="fixed inset-0 z-50 bg-black/70 flex items-start sm:items-center justify-center p-0 sm:p-4 overflow-y-auto"
-        onClick={function () { closeExpenseDetail(false) }}>
-        <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-2xl p-4 sm:p-5 min-h-screen sm:min-h-0 sm:max-h-[92vh] overflow-y-auto"
-          onClick={function (ev) { ev.stopPropagation() }}>
-          {expenseDetailLoading || expenseDetailTarget._placeholder ? (
-            <div className="py-16 text-center text-sm text-gray-500">Loading expense…</div>
-          ) : (
-            <ExpenseDetail
-              key={expenseDetailTarget.id}
-              exp={expenseDetailTarget}
-              profile={profile}
-              isAdmin={isAdmin}
-              isDeptApprover={false}
-              onBack={function () { closeExpenseDetail(false) }}
-              onUpdated={function () { closeExpenseDetail(true) }}
-              onEdit={function () { alert('To edit this expense, please open the Expenses tab.'); closeExpenseDetail(false) }}
-              onRaiseGV={function () { alert('To raise a Journal Voucher, please open the Expenses tab.'); closeExpenseDetail(false) }}
-            />
-          )}
-        </div>
-      </div>
-    )
-  }
   var [showDeleted, setShowDeleted] = useState(false)
+  var { openExpenseDetail, expenseDetailModal } = useExpenseDetailModal(profile, isAdmin, function () {
+    if (selectedVendor) loadEntries(selectedVendor, showDeleted)
+  })
 
   useEffect(function () {
     if (canView) { loadVendors(); loadFilterData() }
@@ -189,9 +146,11 @@ function VendorLedger({ profile }) {
 
     var receiptsByExpId = {}
     var breakdownByExpId = {}  // { [expId]: { amount_paise, tax_paise, allocations: [...] } }
+    var submitterIdByExpId = {}
+    var acknowledgerIdByExpId = {}
     if (expIds.length > 0) {
       var { data: exps } = await supabase.from('expenses')
-        .select('id, receipt_paths, receipt_path, amount_paise, tax_paise, expense_allocations(department, department_id, venue_id, amount_paise, remarks)')
+        .select('id, receipt_paths, receipt_path, amount_paise, tax_paise, user_id, acknowledged_by, expense_allocations(department, department_id, venue_id, amount_paise, remarks)')
         .in('id', expIds)
       ;(exps || []).forEach(function (ex) {
         var paths = Array.isArray(ex.receipt_paths) && ex.receipt_paths.length > 0
@@ -203,6 +162,8 @@ function VendorLedger({ profile }) {
           tax_paise: ex.tax_paise || 0,
           allocations: ex.expense_allocations || []
         }
+        if (ex.user_id) submitterIdByExpId[ex.id] = ex.user_id
+        if (ex.acknowledged_by) acknowledgerIdByExpId[ex.id] = ex.acknowledged_by
       })
     }
 
@@ -216,20 +177,29 @@ function VendorLedger({ profile }) {
     var venueNameById = {}
     refData.venues.forEach(function (v) { venueNameById[v.id] = v.name })
 
-    // Creator name lookup — resolves ledger_entries.created_by across expense + purchase + all row types
-    var creatorIds = []
+    // Profile name lookup — resolves ledger_entries.created_by plus, for expense-linked
+    // rows, the submitter (expenses.user_id) and acknowledger (expenses.acknowledged_by).
+    var profileIds = []
     rows.forEach(function (r) {
-      if (r.created_by && creatorIds.indexOf(r.created_by) === -1) creatorIds.push(r.created_by)
+      if (r.created_by && profileIds.indexOf(r.created_by) === -1) profileIds.push(r.created_by)
     })
-    var creatorNameById = {}
-    if (creatorIds.length > 0) {
-      var { data: pRows } = await supabase.from('profiles').select('id, name').in('id', creatorIds)
-      ;(pRows || []).forEach(function (p) { creatorNameById[p.id] = p.name || null })
+    Object.keys(submitterIdByExpId).forEach(function (eid) {
+      var id = submitterIdByExpId[eid]
+      if (profileIds.indexOf(id) === -1) profileIds.push(id)
+    })
+    Object.keys(acknowledgerIdByExpId).forEach(function (eid) {
+      var id = acknowledgerIdByExpId[eid]
+      if (profileIds.indexOf(id) === -1) profileIds.push(id)
+    })
+    var profileNameById = {}
+    if (profileIds.length > 0) {
+      var { data: pRows } = await supabase.from('profiles').select('id, name').in('id', profileIds)
+      ;(pRows || []).forEach(function (p) { profileNameById[p.id] = p.name || null })
     }
 
     var merged = rows.map(function (r) {
       var patch = {}
-      if (r.created_by && creatorNameById[r.created_by]) patch._creatorName = creatorNameById[r.created_by]
+      if (r.created_by && profileNameById[r.created_by]) patch._creatorName = profileNameById[r.created_by]
       if (r.ref_type === 'expense' && r.ref_id) {
         var id = Number(r.ref_id)
         if (receiptsByExpId[id]) patch._sourceReceipts = receiptsByExpId[id]
@@ -237,6 +207,8 @@ function VendorLedger({ profile }) {
           patch._breakdown = breakdownByExpId[id]
           patch._venueNames = venueNameById
         }
+        if (submitterIdByExpId[id] && profileNameById[submitterIdByExpId[id]]) patch._submitterName = profileNameById[submitterIdByExpId[id]]
+        if (acknowledgerIdByExpId[id] && profileNameById[acknowledgerIdByExpId[id]]) patch._acknowledgerName = profileNameById[acknowledgerIdByExpId[id]]
       }
       if (Object.keys(patch).length > 0) return Object.assign({}, r, patch)
       return r
@@ -775,6 +747,13 @@ function VendorLedger({ profile }) {
                     {e._creatorName && ' · by ' + e._creatorName}
                     {isDeleted && ' · deleted'}
                   </p>
+                  {(e._submitterName || e._acknowledgerName) && (
+                    <p className="text-[11px] text-gray-400 mt-0.5">
+                      {e._submitterName && 'Submitted by ' + e._submitterName}
+                      {e._submitterName && e._acknowledgerName && ' · '}
+                      {e._acknowledgerName && 'Acknowledged by ' + e._acknowledgerName}
+                    </p>
+                  )}
                   {(function () {
                     var meta = e.metadata || {}
                     var m = meta.mode
@@ -869,7 +848,7 @@ function VendorLedger({ profile }) {
           })}
         </div>
       )}
-      {renderExpenseDetailModal()}
+      {expenseDetailModal}
     </div>
   )
 }

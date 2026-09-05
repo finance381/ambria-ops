@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { formatPoints, formatDate } from '../../lib/format'
 import EventDatePicker from '../../components/ui/EventDatePicker'
+import { hasPerm } from '../../lib/permissions'
+import { useExpenseDetailModal } from '../../hooks/useExpenseDetailModal.jsx'
 
 var ENTRY_TYPES = [
   { key: 'all', label: 'All' },
@@ -56,6 +58,10 @@ function _buildGroups(rows) {
 }
 
 function EventLedger(props) {
+  var profile = props && props.profile
+  var isAdmin = hasPerm(profile?.permsNew, 'finance.ledgers.event')
+  var [currentEventIds, setCurrentEventIds] = useState([])
+  var { openExpenseDetail, expenseDetailModal } = useExpenseDetailModal(profile, isAdmin, function () { loadEntries(currentEventIds) })
   var propEventId = props && props.eventId ? String(props.eventId) : null
   var [date, setDate] = useState('')
   var [functions, setFunctions] = useState([])
@@ -94,11 +100,12 @@ function EventLedger(props) {
 
   function selectGroup(g) {
     if (!g) {
-      setEventId(''); setEventDetail(null); setBalance(null); setBalancesByContract({}); setEntries([]); setPlateEvents([])
+      setEventId(''); setEventDetail(null); setBalance(null); setBalancesByContract({}); setEntries([]); setPlateEvents([]); setCurrentEventIds([])
       return
     }
     setEventId(String(g.event_ids[0]))  // legacy anchor: any contract in this group
     setEventDetail(g.contracts[0])
+    setCurrentEventIds(g.event_ids)
     loadBalance(g.event_ids)
     loadEntries(g.event_ids)
     loadPlateEvents(g.event_ids)
@@ -441,8 +448,11 @@ function EventLedger(props) {
                 </thead>
                 <tbody>
                   {filteredEntries().map(function (e) {
+                    var isExpRow = e.entry_type === 'expense' && !!e.reference_id
                     return (
-                      <tr key={e.id} className="border-b border-gray-100 last:border-b-0">
+                      <tr key={e.id}
+                        onClick={function () { if (isExpRow) openExpenseDetail(Number(e.reference_id)) }}
+                        className={"border-b border-gray-100 last:border-b-0" + (isExpRow ? " cursor-pointer hover:bg-indigo-50/40 transition-colors" : "")}>
                         <td className="px-3 py-2 text-xs text-gray-600 whitespace-nowrap">{formatDate(e.created_at)}</td>
                         <td className="px-3 py-2">
                           <span className={"inline-block px-2 py-0.5 rounded text-xs font-medium " + badgeClass(e.entry_type, e.direction)}>
@@ -474,6 +484,7 @@ function EventLedger(props) {
           )}
         </div>
       )}
+      {expenseDetailModal}
     </div>
   )
 }
