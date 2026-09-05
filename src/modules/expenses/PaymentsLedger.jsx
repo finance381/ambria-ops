@@ -3,6 +3,8 @@ import { supabase } from '../../lib/supabase'
 import { formatPoints, formatDate, formatDateTime } from '../../lib/format'
 import { useRealtime } from '../../lib/useRealtime'
 import { hasPerm } from '../../lib/permissions'
+import { useExpenseDetailModal } from '../../hooks/useExpenseDetailModal.jsx'
+import PaymentProofThumbs from '../../components/ledger/PaymentProofThumbs'
 
 // Every real cash/bank movement in the system, from whichever source recorded it:
 // money paid out (vendor payments/deductions, salary payments/adjustments, wallet-funded
@@ -23,6 +25,7 @@ var TYPE_META = {
 function PaymentsLedger({ profile }) {
   var permsNew = (profile && profile.permsNew) || []
   var canView = hasPerm(permsNew, 'finance.payments')
+  var isAdmin = hasPerm(permsNew, 'admin.dashboard')
 
   var [rows, setRows] = useState([])
   var [loading, setLoading] = useState(true)
@@ -31,6 +34,8 @@ function PaymentsLedger({ profile }) {
   var [modeFilter, setModeFilter] = useState('all') // 'all' | 'cash' | 'bank'
   var [dirFilter, setDirFilter] = useState('all') // 'all' | 'in' | 'out'
   var [search, setSearch] = useState('')
+  var [detailTarget, setDetailTarget] = useState(null) // { row, event, collectorName, loading } — vendor/salary/collection rows
+  var { openExpenseDetail, expenseDetailModal } = useExpenseDetailModal(profile, isAdmin, function () { load() })
 
   async function load() {
     if (!canView) { setLoading(false); return }
@@ -61,7 +66,7 @@ function PaymentsLedger({ profile }) {
       // the moment the expense is submitted, funded from the submitter's own wallet float.
       supabase
         .from('wallet_transactions')
-        .select('id, wallet_id, amount_paise, description, reference_type, created_at')
+        .select('id, wallet_id, amount_paise, description, reference_type, reference_id, created_at')
         .in('reference_type', ['expense', 'expense_refund'])
         .gte('created_at', dateFrom)
         .lte('created_at', dateTo + 'T23:59:59')
@@ -92,7 +97,7 @@ function PaymentsLedger({ profile }) {
       vendorIds.length > 0 ? supabase.from('vendors').select('id, name').in('id', vendorIds) : Promise.resolve({ data: [] }),
       walletIdsForOwners.length > 0 ? supabase.from('wallets').select('id, user_id').in('id', walletIdsForOwners) : Promise.resolve({ data: [] }),
       // EPC back-links so collections can be split from plain event collections
-      collectIds.length > 0 ? supabase.from('extra_plate_collections').select('id, event_id, wallet_tx_id').in('wallet_tx_id', collectIds) : Promise.resolve({ data: [] }),
+      collectIds.length > 0 ? supabase.from('extra_plate_collections').select('id, event_id, wallet_tx_id, extras_charged, plates_returned, discount_paise').in('wallet_tx_id', collectIds) : Promise.resolve({ data: [] }),
     ])
     var vendorNames = {}; (vRes.data || []).forEach(function (v) { vendorNames[v.id] = v.name })
     var walletOwnerMap = {}; (walletOwnersRes.data || []).forEach(function (w) { walletOwnerMap[w.id] = w.user_id })
@@ -124,6 +129,7 @@ function PaymentsLedger({ profile }) {
       var partyName = r.ledger_type === 'vendor' ? (vendorNames[r.party_id] || '—') : (profileNames[r.party_id] || '—')
       combined.push({
         key: 'le:' + r.id,
+        source: r.ledger_type === 'vendor' ? 'vendor' : 'salary',
         date: r.entry_date,
         logged_at: r.created_at,
         direction: meta.direction,
@@ -133,6 +139,7 @@ function PaymentsLedger({ profile }) {
         description: r.description || '',
         type_label: meta.label,
         type_cls: meta.cls,
+        _metadata: r.metadata,
       })
     })
     collectRows.forEach(function (w) {
@@ -143,6 +150,7 @@ function PaymentsLedger({ profile }) {
       var partyName = (evId && eventNames[evId]) || '—'
       combined.push({
         key: 'wt:' + w.id,
+        source: 'collection',
         date: w.created_at ? w.created_at.split('T')[0] : '',
         logged_at: w.created_at,
         direction: meta.direction,
@@ -152,6 +160,11 @@ function PaymentsLedger({ profile }) {
         description: w.description || (w.receipt_no ? '#' + w.receipt_no : ''),
         type_label: meta.label,
         type_cls: meta.cls,
+        _eventId: evId,
+        _isEpc: isEpc,
+        _epc: epc || null,
+        _receiptNo: w.receipt_no,
+        _performedBy: w.performed_by,
       })
     })
     expWalletRows.forEach(function (r) {
@@ -160,6 +173,7 @@ function PaymentsLedger({ profile }) {
       var partyName = (uid && profileNames[uid]) || '—'
       combined.push({
         key: 'we:' + r.id,
+        source: 'expense',
         date: r.created_at ? r.created_at.split('T')[0] : '',
         logged_at: r.created_at,
         direction: meta.direction,
@@ -169,6 +183,7 @@ function PaymentsLedger({ profile }) {
         description: r.description || '',
         type_label: meta.label,
         type_cls: meta.cls,
+        _expenseId: r.reference_id,
       })
     })
 
@@ -179,6 +194,25 @@ function PaymentsLedger({ profile }) {
 
   useEffect(function () { load() }, [canView, dateFrom, dateTo])
   useRealtime(['ledger_entries', 'wallet_transactions', 'extra_plate_collections', 'wallets'], function () { load() })
+
+  function openRow(r) {
+    if (r.source === 'expense') { openExpenseDetail(Number(r._expenseId)); return }
+    setDetailTarget({ row: r, event: null, collectorName: '', loading: r.source === 'collection' })
+    if (r.source === 'collection' && (r._eventId || r._performedBy)) {
+      Promise.all([
+        r._eventId
+          ? supabase.from('events').select('id, contract_no, event_name, client_name, function_date, venue_name').eq('id', r._eventId).maybeSingle()
+          : Promise.resolve({ data: null }),
+        r._performedBy
+          ? supabase.from('profiles').select('name').eq('id', r._performedBy).maybeSingle()
+          : Promise.resolve({ data: null }),
+      ]).then(function (res) {
+        setDetailTarget({ row: r, event: res[0].data || null, collectorName: (res[1].data && res[1].data.name) || '', loading: false })
+      })
+    }
+  }
+
+  function closeDetail() { setDetailTarget(null) }
 
   var visible = useMemo(function () {
     var searchLower = search.trim().toLowerCase()
@@ -258,7 +292,8 @@ function PaymentsLedger({ profile }) {
             {visible.map(function (r) {
               var isIn = r.direction === 'in'
               return (
-                <div key={r.key} className="px-4 py-2.5 flex items-center justify-between gap-2">
+                <div key={r.key} onClick={function () { openRow(r) }}
+                  className="px-4 py-2.5 flex items-center justify-between gap-2 cursor-pointer hover:bg-indigo-50/40 transition-colors">
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium text-gray-900 truncate">{r.party_name}</p>
                     <div className="flex items-center gap-2 mt-0.5 flex-wrap">
@@ -282,6 +317,66 @@ function PaymentsLedger({ profile }) {
           </div>
         )}
       </div>
+
+      {detailTarget && (function () {
+        var r = detailTarget.row
+        var meta = r._metadata || {}
+        return (
+          <div className="fixed inset-0 z-50 bg-black/60 flex items-end sm:items-center justify-center p-0 sm:p-4"
+            onClick={closeDetail}>
+            <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md p-5 space-y-3 max-h-[90vh] overflow-y-auto"
+              onClick={function (ev) { ev.stopPropagation() }}>
+              <div className="flex items-start justify-between gap-2">
+                <h3 className="text-base font-bold text-gray-900">{r.type_label}</h3>
+                <button onClick={closeDetail} className="text-gray-400 hover:text-gray-600 text-lg leading-none">✕</button>
+              </div>
+              <p className={"text-2xl font-bold " + (r.direction === 'in' ? "text-green-700" : "text-gray-900")}>
+                {r.direction === 'in' ? '+' : '-'}{formatPoints(r.amount_paise || 0)}
+              </p>
+              <div className="space-y-1.5 text-sm">
+                <div className="flex justify-between"><span className="text-gray-500">Party</span><span className="font-medium text-gray-800">{r.party_name}</span></div>
+                <div className="flex justify-between"><span className="text-gray-500">Date</span><span className="font-medium text-gray-800">{formatDate(r.date)}</span></div>
+                <div className="flex justify-between"><span className="text-gray-500">Mode</span><span className="font-medium text-gray-800">{r.mode === 'cash' ? '💵 Cash' : '🏦 Bank'}</span></div>
+                {r.description && (
+                  <div className="flex justify-between gap-3"><span className="text-gray-500 flex-shrink-0">Description</span><span className="font-medium text-gray-800 text-right">{r.description}</span></div>
+                )}
+                {meta.reason && (
+                  <div className="flex justify-between gap-3"><span className="text-gray-500 flex-shrink-0">Reason</span><span className="font-medium text-gray-800 text-right">{meta.reason}</span></div>
+                )}
+                {meta.salary_month && (
+                  <div className="flex justify-between"><span className="text-gray-500">Salary month</span><span className="font-medium text-gray-800">{meta.salary_month}</span></div>
+                )}
+                {r.source === 'collection' && r._receiptNo && (
+                  <div className="flex justify-between"><span className="text-gray-500">Receipt #</span><span className="font-medium text-gray-800">{r._receiptNo}</span></div>
+                )}
+                {r.source === 'collection' && (
+                  <div className="flex justify-between"><span className="text-gray-500">Collected by</span><span className="font-medium text-gray-800">{detailTarget.loading ? '…' : (detailTarget.collectorName || '—')}</span></div>
+                )}
+                {r.source === 'collection' && r._isEpc && r._epc && (
+                  <div className="flex justify-between"><span className="text-gray-500">Extra plates</span><span className="font-medium text-gray-800">{r._epc.extras_charged}</span></div>
+                )}
+                {r.source === 'collection' && detailTarget.event && (
+                  <>
+                    <div className="flex justify-between"><span className="text-gray-500">Contract #</span><span className="font-medium text-gray-800">{detailTarget.event.contract_no || '—'}</span></div>
+                    <div className="flex justify-between"><span className="text-gray-500">Client</span><span className="font-medium text-gray-800">{detailTarget.event.client_name || '—'}</span></div>
+                    <div className="flex justify-between"><span className="text-gray-500">Function date</span><span className="font-medium text-gray-800">{formatDate(detailTarget.event.function_date)}</span></div>
+                    <div className="flex justify-between"><span className="text-gray-500">Venue</span><span className="font-medium text-gray-800">{detailTarget.event.venue_name || '—'}</span></div>
+                  </>
+                )}
+              </div>
+              {(meta.payment_images || meta.deduction_image) && (
+                <div>
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Proof</p>
+                  <PaymentProofThumbs meta={meta} />
+                </div>
+              )}
+              <p className="text-[10px] text-gray-400 pt-1">Logged {formatDateTime(r.logged_at)}</p>
+            </div>
+          </div>
+        )
+      })()}
+
+      {expenseDetailModal}
     </div>
   )
 }
