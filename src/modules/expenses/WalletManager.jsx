@@ -81,6 +81,8 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   var [transferConfirmSaving, setTransferConfirmSaving] = useState(false)
   var [transferParties, setTransferParties] = useState({})
   var [expenseRefs, setExpenseRefs] = useState({})
+  // Resolved display labels for lookup-type sub-type extra fields, keyed 'source:id' → label.
+  var [expLookupLabels, setExpLookupLabels] = useState({})
   // EPC back-links: wallet_tx_id → { epc, isCancel }. Populated by loadRecentTxns / openWalletTxns.
   var [epcRefs, setEpcRefs] = useState({})
   var [cancelTarget, setCancelTarget] = useState(null)  // { txn, kind: 'collection' | 'epc' }
@@ -136,6 +138,54 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     }
   }
 
+  // Resolve lookup-type extra fields (vendor/staff/category/venue/job-department pickers)
+  // defined on each expense's sub-type into display labels, keyed 'source:id'.
+  function resolveExpenseLookups(eMap) {
+    var bySource = {}
+    Object.keys(eMap).forEach(function (eid) {
+      var e = eMap[eid]
+      var fields = (e.expense_sub_types && e.expense_sub_types.extra_fields) || []
+      var meta = e.metadata || {}
+      fields.forEach(function (f) {
+        if (f.type !== 'lookup' || !f.source) return
+        var v = meta[f.key]
+        if (!v) return
+        if (!bySource[f.source]) bySource[f.source] = []
+        if (bySource[f.source].indexOf(v) === -1) bySource[f.source].push(v)
+      })
+    })
+    var sources = Object.keys(bySource)
+    if (sources.length === 0) return
+    Promise.all(sources.map(function (src) {
+      var ids = bySource[src]
+      if (src === 'vendors') {
+        return supabase.from('vendors').select('id, name').in('id', ids)
+          .then(function (r) { return { src: src, rows: (r.data || []).map(function (v) { return { id: String(v.id), label: v.name } }) } })
+      }
+      if (src === 'staff') {
+        return supabase.from('profiles').select('id, name').in('id', ids)
+          .then(function (r) { return { src: src, rows: (r.data || []).map(function (p) { return { id: String(p.id), label: p.name || '—' } }) } })
+      }
+      if (src === 'job_departments') {
+        return supabase.from('employees').select('id, full_name, employee_code').in('id', ids)
+          .then(function (r) { return { src: src, rows: (r.data || []).map(function (e) { return { id: String(e.id), label: e.full_name + ' (' + e.employee_code + ')' } } ) } })
+      }
+      if (src === 'categories') {
+        return supabase.from('categories').select('id, name').in('id', ids)
+          .then(function (r) { return { src: src, rows: (r.data || []).map(function (c) { return { id: String(c.id), label: c.name } }) } })
+      }
+      if (src === 'venues') {
+        return supabase.from('venues').select('id, code, name').in('id', ids)
+          .then(function (r) { return { src: src, rows: (r.data || []).map(function (v) { return { id: String(v.id), label: v.code + ' — ' + v.name } }) } })
+      }
+      return Promise.resolve({ src: src, rows: [] })
+    })).then(function (results) {
+      var next = {}
+      results.forEach(function (res) { res.rows.forEach(function (row) { next[res.src + ':' + row.id] = row.label }) })
+      setExpLookupLabels(function (prev) { return Object.assign({}, prev, next) })
+    }).catch(function () {})
+  }
+
   async function loadRecentTxns(wallet) {
     if (!wallet) return
     var { data } = await supabase.from('wallet_transactions')
@@ -169,7 +219,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     if (expRefIds.length > 0) {
       var expIdsNum = expRefIds.map(function (x) { return Number(x) }).filter(function (n) { return !isNaN(n) })
       var { data: eData } = await supabase.from('expenses')
-        .select('id, description, amount_paise, expense_date, event_id, expense_types(name), expense_sub_types(name), expense_allocations(department, amount_paise, expense_types(name), expense_sub_types(name))')
+        .select('id, description, amount_paise, expense_date, event_id, vendor_name, metadata, expense_types(name, icon), expense_sub_types(name, extra_fields), expense_allocations(department, amount_paise, expense_types(name), expense_sub_types(name))')
         .in('id', expIdsNum)
       var eMap = {}
       var evIds = {}
@@ -188,6 +238,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
         })
       }
       setExpenseRefs(function (prev) { return Object.assign({}, prev, eMap) })
+      resolveExpenseLookups(eMap)
     }
     // EPC back-links: any wallet_txn whose id matches extra_plate_collections.wallet_tx_id OR .cancel_wallet_tx_id
     var txnIds = txns.map(function (tt) { return tt.id })
@@ -294,7 +345,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     if (expRefIds.length > 0) {
       var expIdsNum = expRefIds.map(function (x) { return Number(x) }).filter(function (n) { return !isNaN(n) })
       var { data: eData } = await supabase.from('expenses')
-        .select('id, description, amount_paise, expense_date, event_id, expense_types(name), expense_sub_types(name), expense_allocations(department, amount_paise, expense_types(name), expense_sub_types(name))')
+        .select('id, description, amount_paise, expense_date, event_id, vendor_name, metadata, expense_types(name, icon), expense_sub_types(name, extra_fields), expense_allocations(department, amount_paise, expense_types(name), expense_sub_types(name))')
         .in('id', expIdsNum)
       var eMap = {}
       var evIds = {}
@@ -313,6 +364,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
         })
       }
       setExpenseRefs(eMap)
+      resolveExpenseLookups(eMap)
     } else {
       setExpenseRefs({})
     }
@@ -2228,20 +2280,44 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                     {isCancelled && t.cancelled_reason && (
                       <p className="text-[10px] text-rose-600 italic mt-0.5">Reason: {t.cancelled_reason}</p>
                     )}
-                    {/* Enrichment: expense/refund → type › sub-type · dept · event · (refund amount + date) */}
+                    {/* Enrichment: expense/refund → type › sub-type · event · vendor · extra fields · (refund amount + date) · per-allocation breakdown */}
                     {(t.reference_type === 'expense' || t.reference_type === 'expense_refund') && t.reference_id && expenseRefs[t.reference_id] && (function () {
                       var e = expenseRefs[t.reference_id]
                       var typeName = e.expense_types?.name || ''
                       var subTypeName = e.expense_sub_types?.name || ''
-                      var alloc = (e.expense_allocations && e.expense_allocations[0]) || null
-                      var dept = alloc?.department || ''
+                      var allocs = e.expense_allocations || []
                       var parts = []
                       if (typeName) parts.push((e.expense_types?.icon ? e.expense_types.icon + ' ' : '') + typeName + (subTypeName ? ' › ' + subTypeName : ''))
-                      if (dept) parts.push(dept)
                       if (e._event_name) parts.push('🎯 ' + e._event_name)
+                      if (e.vendor_name) parts.push('Vendor: ' + e.vendor_name)
+                      var subFields = (e.expense_sub_types && e.expense_sub_types.extra_fields) || []
+                      var meta = e.metadata || {}
+                      subFields.forEach(function (f) {
+                        var val = meta[f.key]
+                        if (val == null || val === '') return
+                        var display = val
+                        if (f.type === 'lookup' && f.source) display = expLookupLabels[f.source + ':' + String(val)] || val
+                        parts.push((f.label || f.key) + ': ' + display)
+                      })
                       if (t.reference_type === 'expense_refund' && e.amount_paise) parts.push('orig ' + formatPoints(e.amount_paise) + ' on ' + formatDate(e.expense_date))
-                      if (parts.length === 0) return null
-                      return <p className="text-[11px] text-indigo-600 mt-0.5">{parts.join(' · ')}</p>
+                      return (
+                        <>
+                          {parts.length > 0 && <p className="text-[11px] text-indigo-600 mt-0.5">{parts.join(' · ')}</p>}
+                          {allocs.length > 0 && (
+                            <div className="mt-0.5 space-y-0.5">
+                              {allocs.map(function (a, ai) {
+                                var allocType = a.expense_types?.name || ''
+                                var allocSubType = a.expense_sub_types?.name || ''
+                                return (
+                                  <p key={ai} className="text-[10px] text-gray-500">
+                                    {(a.department || 'Unassigned')}{allocType ? ' · ' + allocType + (allocSubType ? ' › ' + allocSubType : '') : ''} — {formatPoints(a.amount_paise)}
+                                  </p>
+                                )
+                              })}
+                            </div>
+                          )}
+                        </>
+                      )
                     })()}
                     <p className="text-[11px] text-gray-400">
                       {formatDate(t.created_at)}
