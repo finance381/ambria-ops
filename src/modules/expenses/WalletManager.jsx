@@ -2289,16 +2289,23 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                       var parts = []
                       if (typeName) parts.push((e.expense_types?.icon ? e.expense_types.icon + ' ' : '') + typeName + (subTypeName ? ' › ' + subTypeName : ''))
                       if (e._event_name) parts.push('🎯 ' + e._event_name)
-                      if (e.vendor_name) parts.push('Vendor: ' + e.vendor_name)
                       var subFields = (e.expense_sub_types && e.expense_sub_types.extra_fields) || []
                       var meta = e.metadata || {}
+                      var extraFieldParts = []
+                      var extraFieldValues = []
                       subFields.forEach(function (f) {
                         var val = meta[f.key]
                         if (val == null || val === '') return
                         var display = val
                         if (f.type === 'lookup' && f.source) display = expLookupLabels[f.source + ':' + String(val)] || val
-                        parts.push((f.label || f.key) + ': ' + display)
+                        extraFieldParts.push((f.label || f.key) + ': ' + display)
+                        extraFieldValues.push(String(display))
                       })
+                      // The plain vendor_name column is a fallback shown to the same
+                      // value a sub-type "vendor" lookup field already surfaces — skip
+                      // it here when that's the case so the vendor name isn't repeated.
+                      if (e.vendor_name && extraFieldValues.indexOf(e.vendor_name) === -1) parts.push('Vendor: ' + e.vendor_name)
+                      parts = parts.concat(extraFieldParts)
                       if (t.reference_type === 'expense_refund' && e.amount_paise) parts.push('orig ' + formatPoints(e.amount_paise) + ' on ' + formatDate(e.expense_date))
                       return (
                         <>
