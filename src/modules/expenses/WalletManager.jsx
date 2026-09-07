@@ -11,6 +11,7 @@ import { generateCollectionReceiptPdf } from '../../lib/pdfReceipt'
 import { registerPdfFont } from '../../lib/pdfFont'
 import ExpenseDetail from './ExpenseDetail'
 import VoiceInput from '../../components/ui/VoiceInput'
+import { pushBack, goBack } from '../../lib/backNav'
 
 
 
@@ -396,7 +397,28 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
       }
     }
     setWalletTxns(txns)
-    if (wallet) setWalletView('transactions')
+    if (wallet) {
+      // Register the mobile back-gesture's undo for this navigation — mirrors handleBack's
+      // transactions→(dashboard|wallets) logic, but computed off the fresh `wallet` param
+      // rather than component state (which hasn't committed the new view yet at this point).
+      var isOwnWalletNav = wallet.user_id === profile.id
+      var walletForUndo = wallet
+      pushBack(function () {
+        if (isOwnWalletNav) {
+          setWalletView('dashboard')
+          setTxnFrom('')
+          setTxnTo('')
+          loadRecentTxns(walletForUndo)
+        } else {
+          setWalletView('wallets')
+          setSelectedWallet(null)
+          setWalletTxns([])
+          setTxnFrom('')
+          setTxnTo('')
+        }
+      })
+      setWalletView('transactions')
+    }
   }
 
   async function issuePoints() {
@@ -2079,7 +2101,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     return (
       <div className="space-y-4">
         <div>
-          <button onClick={handleBack}
+          <button onClick={goBack}
             className="text-sm text-indigo-600 font-medium hover:text-indigo-800 transition-colors mb-1">{(isAdmin || isAuditor) ? '← Back to Wallets' : '← Back'}</button>
           <div className="flex items-center justify-between">
             <div>
