@@ -17,17 +17,19 @@ var PARTY_TYPES = [
   { key: 'employee', label: 'Employee', icon: 'ti-user' },
 ]
 
-var EMPTY_FORM = {
-  from_party_type: 'expense',
-  from_expense_type_id: '', from_expense_sub_type_id: '',
-  from_event_id: '', from_vendor_id: '', from_employee_id: '',
-  from_meta: {},
-  to_party_type: 'expense',
-  to_expense_type_id: '', to_expense_sub_type_id: '',
-  to_event_id: '', to_vendor_id: '', to_employee_id: '',
-  to_meta: {},
-  amount_pts: '', description: '',
-  effective_date: new Date().toISOString().substring(0, 10),
+// Transfers only ever move cost between expense types now (no event/vendor/employee
+// parties for new transfers) — one From, and one-or-many To rows so a single source
+// can be split across several destination types in one go.
+function makeToRow() {
+  return { _key: Date.now() + '_' + Math.random().toString(36).slice(2, 8), expense_type_id: '', expense_sub_type_id: '', meta: {}, amount_pts: '' }
+}
+function makeEmptyForm() {
+  return {
+    from: { expense_type_id: '', expense_sub_type_id: '', meta: {} },
+    to_rows: [makeToRow()],
+    description: '',
+    effective_date: new Date().toISOString().substring(0, 10),
+  }
 }
 
 function CostTransfers({ profile }) {
@@ -49,7 +51,7 @@ function CostTransfers({ profile }) {
   var venues = refData.venues.filter(function (v) { return v.active }).slice().sort(byName)
   var [categories, setCategories] = useState([])
 
-  var [form, setForm] = useState(EMPTY_FORM)
+  var [form, setForm] = useState(makeEmptyForm)
 
   // Filters
   var [fromPartyFilter, setFromPartyFilter] = useState('')
@@ -197,83 +199,101 @@ function CostTransfers({ profile }) {
   function updForm(patch) {
     setForm(function (p) { return Object.assign({}, p, patch) })
   }
-
-  function validParty(f, side) {
-    var t = f[side + '_party_type']
-    if (t === 'expense') return !!f[side + '_expense_type_id']
-    if (t === 'event') return !!f[side + '_event_id']
-    if (t === 'vendor') return !!f[side + '_vendor_id']
-    if (t === 'employee') return !!f[side + '_employee_id']
-    return false
+  function updFrom(patch) {
+    setForm(function (p) { return Object.assign({}, p, { from: Object.assign({}, p.from, patch) }) })
+  }
+  function updToRow(idx, patch) {
+    setForm(function (p) {
+      var rows = p.to_rows.map(function (r, i) { return i === idx ? Object.assign({}, r, patch) : r })
+      return Object.assign({}, p, { to_rows: rows })
+    })
+  }
+  function addToRow() {
+    setForm(function (p) { return Object.assign({}, p, { to_rows: p.to_rows.concat([makeToRow()]) }) })
+  }
+  function removeToRow(idx) {
+    setForm(function (p) {
+      if (p.to_rows.length <= 1) return p
+      return Object.assign({}, p, { to_rows: p.to_rows.filter(function (_, i) { return i !== idx }) })
+    })
   }
 
-  function validMeta(f, side) {
-    if (f[side + '_party_type'] !== 'expense') return true
-    var subId = Number(f[side + '_expense_sub_type_id']) || 0
+  function validExpense(v) { return !!v.expense_type_id }
+
+  function validMeta(v) {
+    var subId = Number(v.expense_sub_type_id) || 0
     if (!subId) return true
     var picked = expSubTypes.find(function (s) { return s.id === subId })
     if (!picked || !Array.isArray(picked.extra_fields)) return true
-    var meta = f[side + '_meta'] || {}
+    var meta = v.meta || {}
     var required = picked.extra_fields.filter(function (ef) { return ef.type === 'lookup' && ef.source && ef.required })
     for (var i = 0; i < required.length; i++) {
-      var v = meta[required[i].key]
-      if (!v && v !== 0) return false
+      var val = meta[required[i].key]
+      if (!val && val !== 0) return false
     }
     return true
   }
 
-  function isSameParty(f) {
-    if (f.from_party_type !== f.to_party_type) return false
-    var t = f.from_party_type
-    if (t === 'expense') return f.from_expense_type_id === f.to_expense_type_id && (f.from_expense_sub_type_id || '') === (f.to_expense_sub_type_id || '')
-    if (t === 'event') return f.from_event_id === f.to_event_id
-    if (t === 'vendor') return f.from_vendor_id === f.to_vendor_id
-    if (t === 'employee') return f.from_employee_id === f.to_employee_id
-    return false
+  function sameExpense(a, b) {
+    return String(a.expense_type_id) === String(b.expense_type_id) && String(a.expense_sub_type_id || '') === String(b.expense_sub_type_id || '')
   }
+
+  var toTotalPaise = form.to_rows.reduce(function (s, r) { return s + Math.round((Number(r.amount_pts) || 0) * 100) }, 0)
 
   async function handleSave() {
     if (saving) return
     setError('')
-    var amt = Number(form.amount_pts)
-    if (!amt || amt <= 0) { setError('Amount must be positive'); return }
     if (!form.description.trim()) { setError('Description required'); return }
-    if (!validParty(form, 'from')) { setError('Select From party'); return }
-    if (!validParty(form, 'to')) { setError('Select To party'); return }
-    if (!validMeta(form, 'from')) { setError('Fill required fields for From party'); return }
-    if (!validMeta(form, 'to')) { setError('Fill required fields for To party'); return }
-    if (isSameParty(form)) { setError('From and To cannot be identical'); return }
+    if (!validExpense(form.from)) { setError('Select a From expense type'); return }
+    if (!validMeta(form.from)) { setError('Fill required fields for From'); return }
+    for (var i = 0; i < form.to_rows.length; i++) {
+      var row = form.to_rows[i]
+      if (!validExpense(row)) { setError('Row ' + (i + 1) + ': select an expense type'); return }
+      if (!validMeta(row)) { setError('Row ' + (i + 1) + ': fill required fields'); return }
+      if (!Number(row.amount_pts) || Number(row.amount_pts) <= 0) { setError('Row ' + (i + 1) + ': amount must be positive'); return }
+      if (sameExpense(form.from, row)) { setError('Row ' + (i + 1) + ': To cannot be the same as From'); return }
+    }
 
     setSaving(true)
-    try {
-      var res = await supabase.rpc('fn_create_cost_transfer', {
-        p_amount_paise: Math.round(amt * 100),
-        p_from_party_type: form.from_party_type,
-        p_from_expense_type_id: form.from_party_type === 'expense' ? Number(form.from_expense_type_id) : null,
-        p_from_expense_sub_type_id: form.from_party_type === 'expense' && form.from_expense_sub_type_id ? Number(form.from_expense_sub_type_id) : null,
-        p_from_event_id: form.from_party_type === 'event' ? Number(form.from_event_id) : null,
-        p_from_vendor_id: form.from_party_type === 'vendor' ? Number(form.from_vendor_id) : null,
-        p_from_employee_id: form.from_party_type === 'employee' ? form.from_employee_id : null,
-        p_to_party_type: form.to_party_type,
-        p_to_expense_type_id: form.to_party_type === 'expense' ? Number(form.to_expense_type_id) : null,
-        p_to_expense_sub_type_id: form.to_party_type === 'expense' && form.to_expense_sub_type_id ? Number(form.to_expense_sub_type_id) : null,
-        p_to_event_id: form.to_party_type === 'event' ? Number(form.to_event_id) : null,
-        p_to_vendor_id: form.to_party_type === 'vendor' ? Number(form.to_vendor_id) : null,
-        p_to_employee_id: form.to_party_type === 'employee' ? form.to_employee_id : null,
-        p_description: form.description.trim(),
-        p_reason_note: null,
-        p_effective_date: form.effective_date,
-        p_from_meta: form.from_meta || {},
-        p_to_meta: form.to_meta || {},
-      })
-      if (res.error) throw res.error
-      try { logActivity('COST_TRANSFER_CREATE', '#' + res.data + ' Rs ' + amt.toFixed(2)) } catch (_) {}
-      setShowForm(false)
-      setForm(EMPTY_FORM)
-      loadTransfers()
-    } catch (err) {
-      setError(err.message || 'Save failed')
+    var okCount = 0
+    for (var j = 0; j < form.to_rows.length; j++) {
+      var r = form.to_rows[j]
+      var amt = Number(r.amount_pts)
+      try {
+        var res = await supabase.rpc('fn_create_cost_transfer', {
+          p_amount_paise: Math.round(amt * 100),
+          p_from_party_type: 'expense',
+          p_from_expense_type_id: Number(form.from.expense_type_id),
+          p_from_expense_sub_type_id: form.from.expense_sub_type_id ? Number(form.from.expense_sub_type_id) : null,
+          p_from_event_id: null,
+          p_from_vendor_id: null,
+          p_from_employee_id: null,
+          p_to_party_type: 'expense',
+          p_to_expense_type_id: Number(r.expense_type_id),
+          p_to_expense_sub_type_id: r.expense_sub_type_id ? Number(r.expense_sub_type_id) : null,
+          p_to_event_id: null,
+          p_to_vendor_id: null,
+          p_to_employee_id: null,
+          p_description: form.description.trim(),
+          p_reason_note: null,
+          p_effective_date: form.effective_date,
+          p_from_meta: form.from.meta || {},
+          p_to_meta: r.meta || {},
+        })
+        if (res.error) throw res.error
+        try { logActivity('COST_TRANSFER_CREATE', '#' + res.data + ' Rs ' + amt.toFixed(2)) } catch (_) {}
+        okCount++
+      } catch (err) {
+        setError((okCount > 0 ? okCount + ' of ' + form.to_rows.length + ' transfers were created before this failed — ' : '') +
+          'Row ' + (j + 1) + ': ' + (err.message || 'Save failed'))
+        setSaving(false)
+        loadTransfers()
+        return
+      }
     }
+    setShowForm(false)
+    setForm(makeEmptyForm())
+    loadTransfers()
     setSaving(false)
   }
 
@@ -296,7 +316,7 @@ function CostTransfers({ profile }) {
       <div className="flex items-center justify-between mb-4">
         <p className="text-sm text-gray-500">Move cost between expense types without touching wallet.</p>
         {canCreate && (
-          <button onClick={function () { setForm(EMPTY_FORM); setError(''); setShowForm(true) }}
+          <button onClick={function () { setForm(makeEmptyForm()); setError(''); setShowForm(true) }}
             className="px-3 py-1.5 rounded-md bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700">
             <i className="ti ti-plus" style={{ fontSize: '14px', marginRight: '4px' }} aria-hidden="true"></i>
             New Transfer
@@ -479,29 +499,51 @@ function CostTransfers({ profile }) {
 
       <Modal open={showForm} onClose={function () { setShowForm(false) }} title="New Cost Transfer">
         <div className="space-y-4">
-          <PartySection side="from" form={form} updForm={updForm}
-            expTypes={expTypes} expSubTypes={expSubTypes} events={events} vendors={vendors} employees={employees}
-            venues={venues} jobDepts={jobDepts} categories={categories} />
-          <PartySection side="to" form={form} updForm={updForm}
-            expTypes={expTypes} expSubTypes={expSubTypes} events={events} vendors={vendors} employees={employees}
-            venues={venues} jobDepts={jobDepts} categories={categories} />
+          <div>
+            <label className="block text-xs font-semibold text-gray-700 mb-1.5 uppercase tracking-wider">From</label>
+            <ExpenseTypeFields value={form.from} onChange={updFrom}
+              expTypes={expTypes} expSubTypes={expSubTypes} vendors={vendors} venues={venues} employees={employees} categories={categories} />
+          </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-semibold text-gray-700 mb-1.5">Amount (Rs)</label>
-              <input type="number" step="0.01" min="0"
-                value={form.amount_pts}
-                onChange={function (e) { updForm({ amount_pts: e.target.value }) }}
-                style={{ fontSize: '16px' }}
-                className="w-full px-2 py-1.5 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-indigo-400" />
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-xs font-semibold text-gray-700 uppercase tracking-wider">To</label>
+              <button type="button" onClick={addToRow} className="text-xs font-bold text-indigo-600 hover:text-indigo-800">+ Add Row</button>
             </div>
-            <div>
-              <label className="block text-xs font-semibold text-gray-700 mb-1.5">Effective Date</label>
-              <input type="date" value={form.effective_date}
-                onChange={function (e) { updForm({ effective_date: e.target.value }) }}
-                style={{ fontSize: '16px' }}
-                className="w-full px-2 py-1.5 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-indigo-400" />
+            <div className="space-y-3">
+              {form.to_rows.map(function (row, idx) {
+                return (
+                  <div key={row._key} className="flex gap-2 items-start border-t border-gray-100 pt-3 first:border-0 first:pt-0">
+                    <div className="flex-1 space-y-1.5">
+                      <ExpenseTypeFields value={row} onChange={function (patch) { updToRow(idx, patch) }}
+                        expTypes={expTypes} expSubTypes={expSubTypes} vendors={vendors} venues={venues} employees={employees} categories={categories} />
+                      <input type="number" step="0.01" min="0" inputMode="decimal"
+                        value={row.amount_pts}
+                        onChange={function (e) { updToRow(idx, { amount_pts: e.target.value }) }}
+                        placeholder="Amount (Rs) *"
+                        style={{ fontSize: '16px' }}
+                        className="w-full px-2 py-1.5 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-indigo-400" />
+                    </div>
+                    {form.to_rows.length > 1 && (
+                      <button type="button" onClick={function () { removeToRow(idx) }}
+                        className="text-red-400 hover:text-red-600 text-xs mt-1">✕</button>
+                    )}
+                  </div>
+                )
+              })}
             </div>
+            <div className="mt-2 pt-2 border-t border-gray-100 text-xs font-bold text-gray-700 flex justify-between">
+              <span>Total</span>
+              <span>Rs {(toTotalPaise / 100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-gray-700 mb-1.5">Effective Date</label>
+            <input type="date" value={form.effective_date}
+              onChange={function (e) { updForm({ effective_date: e.target.value }) }}
+              style={{ fontSize: '16px' }}
+              className="w-full px-2 py-1.5 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-indigo-400" />
           </div>
 
           <div>
@@ -512,15 +554,13 @@ function CostTransfers({ profile }) {
               className="w-full px-2 py-1.5 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-indigo-400" />
           </div>
 
-
-
           {error && <p className="text-sm text-red-600">{error}</p>}
 
           <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
             <button onClick={function () { setShowForm(false) }} className="px-3 py-1.5 text-sm text-gray-600 hover:text-gray-800">Cancel</button>
             <button onClick={handleSave} disabled={saving}
               className="px-4 py-1.5 rounded-md bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 disabled:bg-indigo-300">
-              {saving ? 'Saving...' : 'Save Transfer'}
+              {saving ? 'Saving...' : (form.to_rows.length > 1 ? 'Save ' + form.to_rows.length + ' Transfers' : 'Save Transfer')}
             </button>
           </div>
         </div>
@@ -529,14 +569,14 @@ function CostTransfers({ profile }) {
   )
 }
 
-function PartySection({ side, form, updForm, expTypes, expSubTypes, events, vendors, employees, venues, jobDepts, categories }) {
-  var t = form[side + '_party_type']
-  function fld(name) { return side + '_' + name }
-  var metaKey = side + '_meta'
+// Expense type + sub-type picker, plus whatever lookup extra_fields the picked
+// sub-type declares (e.g. vendor/venue/employee) — shared by the From field and
+// every To row. `value` is { expense_type_id, expense_sub_type_id, meta }.
+function ExpenseTypeFields({ value, onChange, expTypes, expSubTypes, vendors, venues, employees, categories }) {
+  var etId = Number(value.expense_type_id) || 0
 
   // Vendors filtered by currently-selected expense type's sub_department (or dept fallback)
   function vendorPool() {
-    var etId = Number(form[fld('expense_type_id')]) || 0
     if (!etId) return vendors || []
     var et = (expTypes || []).find(function (x) { return x.id === etId })
     if (!et) return vendors || []
@@ -579,38 +619,31 @@ function PartySection({ side, form, updForm, expTypes, expSubTypes, events, vend
     return []
   }
 
-  var picker = null
-  var lookupFields = null
-  if (t === 'expense') {
-    var etId = Number(form[fld('expense_type_id')]) || 0
-    var subs = expSubTypes.filter(function (s) { return s.expense_type_id === etId })
-    var etItems = expTypes.map(function (x) { return { value: String(x.id), label: x.name } })
-    var subItems = subs.map(function (x) { return { value: String(x.id), label: x.name } })
-    picker = (
+  var subs = expSubTypes.filter(function (s) { return s.expense_type_id === etId })
+  var etItems = expTypes.map(function (x) { return { value: String(x.id), label: x.name } })
+  var subItems = subs.map(function (x) { return { value: String(x.id), label: x.name } })
+
+  // Collect lookup-type extra_fields declared on the picked sub-type (e.g. salary needs employee_id)
+  var subId = Number(value.expense_sub_type_id) || 0
+  var picked = subId ? expSubTypes.find(function (s) { return s.id === subId }) : null
+  var lookupExtras = (picked && Array.isArray(picked.extra_fields))
+    ? picked.extra_fields.filter(function (f) { return f.type === 'lookup' && f.source })
+    : []
+  var meta = value.meta || {}
+
+  return (
+    <div>
       <div className="grid grid-cols-2 gap-2">
         <SearchDropdown items={etItems}
-          value={form[fld('expense_type_id')]}
-          onChange={function (v) {
-            var patch = {}; patch[fld('expense_type_id')] = v; patch[fld('expense_sub_type_id')] = ''; patch[metaKey] = {}
-            updForm(patch)
-          }}
+          value={value.expense_type_id}
+          onChange={function (v) { onChange({ expense_type_id: v, expense_sub_type_id: '', meta: {} }) }}
           placeholder="Search expense type" />
         <SearchDropdown items={subItems}
-          value={form[fld('expense_sub_type_id')]}
-          onChange={function (v) { var patch = {}; patch[fld('expense_sub_type_id')] = v; patch[metaKey] = {}; updForm(patch) }}
+          value={value.expense_sub_type_id}
+          onChange={function (v) { onChange({ expense_sub_type_id: v, meta: {} }) }}
           placeholder={!etId ? 'Pick a type first' : (subs.length === 0 ? 'No sub-types' : 'Sub-type (optional)')} />
       </div>
-    )
-
-    // Collect lookup-type extra_fields declared on the picked sub-type (e.g. salary needs employee_id)
-    var subId = Number(form[fld('expense_sub_type_id')]) || 0
-    var picked = subId ? expSubTypes.find(function (s) { return s.id === subId }) : null
-    var lookupExtras = (picked && Array.isArray(picked.extra_fields))
-      ? picked.extra_fields.filter(function (f) { return f.type === 'lookup' && f.source })
-      : []
-    if (lookupExtras.length > 0) {
-      var meta = form[metaKey] || {}
-      lookupFields = (
+      {lookupExtras.length > 0 && (
         <div className="mt-2 space-y-2 pl-2 border-l-2 border-indigo-100">
           {lookupExtras.map(function (f) {
             return (
@@ -621,37 +654,14 @@ function PartySection({ side, form, updForm, expTypes, expSubTypes, events, vend
                   onChange={function (v) {
                     var nextMeta = Object.assign({}, meta)
                     if (v === '' || v == null) { delete nextMeta[f.key] } else { nextMeta[f.key] = v }
-                    var patch = {}; patch[metaKey] = nextMeta
-                    updForm(patch)
+                    onChange({ meta: nextMeta })
                   }}
                   placeholder={f.source === 'job_departments' ? 'Search employees' : ('Search ' + (f.source || ''))} />
               </div>
             )
           })}
         </div>
-      )
-    }
-  }
-
-  return (
-    <div>
-      <label className="block text-xs font-semibold text-gray-700 mb-1.5 uppercase tracking-wider">{side}</label>
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-1 mb-2">
-        {PARTY_TYPES.map(function (pt) {
-          var isActive = t === pt.key
-          return (
-            <button key={pt.key} type="button"
-              onClick={function () { var patch = {}; patch[side + '_party_type'] = pt.key; updForm(patch) }}
-              className={"px-2 py-1.5 text-xs rounded border " +
-                (isActive ? "bg-indigo-50 border-indigo-500 text-indigo-700 font-semibold" : "bg-white border-gray-200 text-gray-600 hover:border-gray-300")}>
-              <i className={"ti " + pt.icon} style={{ fontSize: '13px', marginRight: '3px' }} aria-hidden="true"></i>
-              {pt.label}
-            </button>
-          )
-        })}
-      </div>
-      {picker}
-      {lookupFields}
+      )}
     </div>
   )
 }
