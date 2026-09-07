@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { logActivity } from '../../lib/logger'
 import { compressImage } from '../../lib/imageCompress'
+import { formatDate, formatPoints } from '../../lib/format'
 import VoiceInput from '../../components/ui/VoiceInput'
 
 function PayVendorModal({ vendor, profile, onClose, onSuccess }) {
@@ -18,6 +19,31 @@ function PayVendorModal({ vendor, profile, onClose, onSuccess }) {
   var [dedImgBusy, setDedImgBusy] = useState(false)
   var [paySaving, setPaySaving] = useState(false)
   var [payError, setPayError] = useState('')
+
+  // Bills this vendor has been billed against — so a deduction/discount can be
+  // credited back to whichever expense-type/department it actually belongs to,
+  // split by that bill's own allocation ratio, instead of just vanishing from
+  // what's owed to the vendor.
+  var [sourceBills, setSourceBills] = useState([])
+  var [sourceBillsLoading, setSourceBillsLoading] = useState(true)
+  var [sourceExpenseId, setSourceExpenseId] = useState('')
+
+  useEffect(function () {
+    var cancelled = false
+    setSourceBillsLoading(true)
+    supabase.from('expenses')
+      .select('id, description, amount_paise, expense_date')
+      .eq('vendor_id', vendor.vendor_id)
+      .is('deleted_at', null)
+      .order('expense_date', { ascending: false })
+      .limit(50)
+      .then(function (res) {
+        if (cancelled) return
+        setSourceBills(res.data || [])
+        setSourceBillsLoading(false)
+      })
+    return function () { cancelled = true }
+  }, [vendor.vendor_id])
 
   function chooseMode(mode, bal) {
     setPayMode(mode)
@@ -76,6 +102,7 @@ function PayVendorModal({ vendor, profile, onClose, onSuccess }) {
       if (!isFinite(dedR) || dedR < 0) { setPayError('Enter a valid deduction amount'); return }
       dedReason = (deductionReason || '').trim()
       if (dedR > 0 && !dedReason) { setPayError('Deduction reason required'); return }
+      if (dedR > 0 && sourceBills.length > 0 && !sourceExpenseId) { setPayError('Select which bill this deduction is against'); return }
     }
     if (!payImages || payImages.length === 0) { setPayError('At least one payment proof image is required'); return }
     if (!profile || !profile.id) { setPayError('Session error — please refresh'); return }
@@ -129,6 +156,7 @@ function PayVendorModal({ vendor, profile, onClose, onSuccess }) {
       rpcArgs.p_deduction_paise = Math.round(dedR * 100)
       rpcArgs.p_deduction_reason = dedReason
       if (dedUploadedPath) rpcArgs.p_deduction_image_path = dedUploadedPath
+      if (sourceExpenseId) rpcArgs.p_source_expense_id = Number(sourceExpenseId)
     }
 
     var { error } = await supabase.rpc('pay_vendor', rpcArgs)
@@ -223,6 +251,24 @@ function PayVendorModal({ vendor, profile, onClose, onSuccess }) {
                 onChange={function (ev) { setDeductionReason(ev.target.value) }}
                 placeholder="Reason (required)"
                 className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm bg-amber-50 focus:ring-2 focus:ring-amber-300" />
+              <div>
+                <label className="block text-[11px] font-medium text-amber-800 mb-1">
+                  Which bill is this discount against?
+                  {sourceBills.length === 0 && !sourceBillsLoading && <span className="text-[10px] font-normal text-amber-600 ml-1">(no bills found — deduction won't be credited to an expense type)</span>}
+                </label>
+                {sourceBillsLoading ? (
+                  <p className="text-xs text-amber-600">Loading bills...</p>
+                ) : sourceBills.length > 0 ? (
+                  <select value={sourceExpenseId} onChange={function (ev) { setSourceExpenseId(ev.target.value) }}
+                    className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm bg-amber-50 focus:ring-2 focus:ring-amber-300"
+                    style={{ fontSize: '16px' }}>
+                    <option value="">Select bill...</option>
+                    {sourceBills.map(function (b) {
+                      return <option key={b.id} value={b.id}>{formatDate(b.expense_date)} — {b.description || 'Expense #' + b.id} ({formatPoints(b.amount_paise)})</option>
+                    })}
+                  </select>
+                ) : null}
+              </div>
               <div>
                 <label className="block text-[11px] font-medium text-amber-800 mb-1">
                   Updated Bill / Deduction Proof
