@@ -7,6 +7,7 @@ import { formatDate, formatDateTime } from '../../lib/format'
 import { hasPerm } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
 import VoiceInput from '../../components/ui/VoiceInput'
+import EventDatePicker from '../../components/ui/EventDatePicker'
 
 function byName(a, b) { return (a.name || '').localeCompare(b.name || '') }
 
@@ -21,7 +22,7 @@ var PARTY_TYPES = [
 // parties for new transfers) — one From, and one-or-many To rows so a single source
 // can be split across several destination types in one go.
 function makeToRow() {
-  return { _key: Date.now() + '_' + Math.random().toString(36).slice(2, 8), expense_type_id: '', expense_sub_type_id: '', meta: {}, amount_pts: '' }
+  return { _key: Date.now() + '_' + Math.random().toString(36).slice(2, 8), expense_type_id: '', expense_sub_type_id: '', meta: {}, amount_pts: '', remarks: '' }
 }
 function makeEmptyForm() {
   return {
@@ -52,6 +53,33 @@ function CostTransfers({ profile }) {
   var [categories, setCategories] = useState([])
 
   var [form, setForm] = useState(makeEmptyForm)
+
+  // "For a Function?" — optional event tag applied to the whole transfer (both From and
+  // every To row), mirroring the toggle on the expense submit form.
+  var [isFunction, setIsFunction] = useState(false)
+  var [eventDate, setEventDate] = useState('')
+  var [eventId, setEventId] = useState('')
+  var [formEvents, setFormEvents] = useState([])
+  var [eventsLoading, setEventsLoading] = useState(false)
+
+  async function loadEventsByDate(dateStr) {
+    if (!dateStr) { setFormEvents([]); setEventId(''); return }
+    setEventsLoading(true)
+    var { data } = await supabase.from('events')
+      .select('id, event_name, function_date, contract_type, venue_name, session, client_name, department, contract_no, created_user_name')
+      .eq('function_date', dateStr)
+      .order('event_name')
+    var rows = data || []
+    setFormEvents(rows)
+    setEventsLoading(false)
+    if (rows.length === 1) setEventId(String(rows[0].id))
+    else if (!rows.some(function (r) { return String(r.id) === eventId })) setEventId('')
+  }
+
+  function toggleFunction(val) {
+    setIsFunction(val)
+    if (!val) { setEventId(''); setEventDate(''); setFormEvents([]) }
+  }
 
   // Filters
   var [fromPartyFilter, setFromPartyFilter] = useState('')
@@ -160,28 +188,29 @@ function CostTransfers({ profile }) {
   function partyMeta(row, side) {
     if (row[side + '_party_type'] !== 'expense') return null
     var meta = row[side + '_meta'] || {}
-    var subId = row[side + '_expense_sub_type_id']
-    if (!subId) return null
-    var picked = expSubTypes.find(function (x) { return x.id === subId })
-    if (!picked || !Array.isArray(picked.extra_fields)) return null
     var items = []
-    picked.extra_fields.forEach(function (f) {
-      if (f.type !== 'lookup' || !f.source) return
-      var val = meta[f.key]
-      if (val === '' || val == null) return
-      var label = ''
-      if (f.source === 'vendors') {
-        var vd = vendors.find(function (x) { return String(x.id) === String(val) })
-        label = vd ? vd.name : ('#' + val)
-      } else if (f.source === 'venues') {
-        var vn = venues.find(function (x) { return String(x.id) === String(val) })
-        label = vn ? (vn.code ? vn.code + ' — ' + vn.name : vn.name) : ('#' + val)
-      } else if (f.source === 'job_departments') {
-        var emp = employees.find(function (x) { return String(x.id) === String(val) })
-        label = emp ? emp.full_name : ('#' + val)
-      }
-      if (label) items.push({ label: f.label, value: label })
-    })
+    if (meta._event_name) items.push({ label: 'Event', value: '🎯 ' + meta._event_name })
+    var subId = row[side + '_expense_sub_type_id']
+    var picked = subId ? expSubTypes.find(function (x) { return x.id === subId }) : null
+    if (picked && Array.isArray(picked.extra_fields)) {
+      picked.extra_fields.forEach(function (f) {
+        if (f.type !== 'lookup' || !f.source) return
+        var val = meta[f.key]
+        if (val === '' || val == null) return
+        var label = ''
+        if (f.source === 'vendors') {
+          var vd = vendors.find(function (x) { return String(x.id) === String(val) })
+          label = vd ? vd.name : ('#' + val)
+        } else if (f.source === 'venues') {
+          var vn = venues.find(function (x) { return String(x.id) === String(val) })
+          label = vn ? (vn.code ? vn.code + ' — ' + vn.name : vn.name) : ('#' + val)
+        } else if (f.source === 'job_departments') {
+          var emp = employees.find(function (x) { return String(x.id) === String(val) })
+          label = emp ? emp.full_name : ('#' + val)
+        }
+        if (label) items.push({ label: f.label, value: label })
+      })
+    }
     if (items.length === 0) return null
     return (
       <div className="mt-1 space-y-0.5">
@@ -255,10 +284,16 @@ function CostTransfers({ profile }) {
     }
 
     setSaving(true)
+    var selEvent = (isFunction && eventId) ? formEvents.find(function (e) { return String(e.id) === eventId }) : null
+    var eventTag = selEvent ? { _event_id: selEvent.id, _event_name: selEvent.event_name } : null
+    var fromMetaOut = eventTag ? Object.assign({}, form.from.meta || {}, eventTag) : (form.from.meta || {})
+
     var okCount = 0
     for (var j = 0; j < form.to_rows.length; j++) {
       var r = form.to_rows[j]
       var amt = Number(r.amount_pts)
+      var toMetaOut = eventTag ? Object.assign({}, r.meta || {}, eventTag) : (r.meta || {})
+      var rowDesc = form.description.trim() + (r.remarks && r.remarks.trim() ? ' — ' + r.remarks.trim() : '')
       try {
         var res = await supabase.rpc('fn_create_cost_transfer', {
           p_amount_paise: Math.round(amt * 100),
@@ -274,11 +309,11 @@ function CostTransfers({ profile }) {
           p_to_event_id: null,
           p_to_vendor_id: null,
           p_to_employee_id: null,
-          p_description: form.description.trim(),
+          p_description: rowDesc,
           p_reason_note: null,
           p_effective_date: form.effective_date,
-          p_from_meta: form.from.meta || {},
-          p_to_meta: r.meta || {},
+          p_from_meta: fromMetaOut,
+          p_to_meta: toMetaOut,
         })
         if (res.error) throw res.error
         try { logActivity('COST_TRANSFER_CREATE', '#' + res.data + ' Rs ' + amt.toFixed(2)) } catch (_) {}
@@ -293,6 +328,7 @@ function CostTransfers({ profile }) {
     }
     setShowForm(false)
     setForm(makeEmptyForm())
+    toggleFunction(false)
     loadTransfers()
     setSaving(false)
   }
@@ -316,7 +352,7 @@ function CostTransfers({ profile }) {
       <div className="flex items-center justify-between mb-4">
         <p className="text-sm text-gray-500">Move cost between expense types without touching wallet.</p>
         {canCreate && (
-          <button onClick={function () { setForm(makeEmptyForm()); setError(''); setShowForm(true) }}
+          <button onClick={function () { setForm(makeEmptyForm()); toggleFunction(false); setError(''); setShowForm(true) }}
             className="px-3 py-1.5 rounded-md bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700">
             <i className="ti ti-plus" style={{ fontSize: '14px', marginRight: '4px' }} aria-hidden="true"></i>
             New Transfer
@@ -517,12 +553,20 @@ function CostTransfers({ profile }) {
                     <div className="flex-1 space-y-1.5">
                       <ExpenseTypeFields value={row} onChange={function (patch) { updToRow(idx, patch) }}
                         expTypes={expTypes} expSubTypes={expSubTypes} vendors={vendors} venues={venues} employees={employees} categories={categories} />
-                      <input type="number" step="0.01" min="0" inputMode="decimal"
-                        value={row.amount_pts}
-                        onChange={function (e) { updToRow(idx, { amount_pts: e.target.value }) }}
-                        placeholder="Amount (Rs) *"
-                        style={{ fontSize: '16px' }}
-                        className="w-full px-2 py-1.5 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-indigo-400" />
+                      <div className="grid grid-cols-2 gap-2">
+                        <input type="number" step="0.01" min="0" inputMode="decimal"
+                          value={row.amount_pts}
+                          onChange={function (e) { updToRow(idx, { amount_pts: e.target.value }) }}
+                          placeholder="Amount (Rs) *"
+                          style={{ fontSize: '16px' }}
+                          className="px-2 py-1.5 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-indigo-400" />
+                        <input type="text" value={row.remarks}
+                          onChange={function (e) { updToRow(idx, { remarks: e.target.value }) }}
+                          placeholder="Remarks"
+                          maxLength={200}
+                          style={{ fontSize: '16px' }}
+                          className="px-2 py-1.5 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-indigo-400" />
+                      </div>
                     </div>
                     {form.to_rows.length > 1 && (
                       <button type="button" onClick={function () { removeToRow(idx) }}
@@ -536,6 +580,54 @@ function CostTransfers({ profile }) {
               <span>Total</span>
               <span>Rs {(toTotalPaise / 100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
             </div>
+          </div>
+
+          {/* For a Function? */}
+          <div className="border border-gray-200 rounded-xl bg-white p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium text-gray-700">For a Function?</label>
+              <button type="button" onClick={function () { toggleFunction(!isFunction) }} className="flex items-center gap-2">
+                <div className={"relative w-9 h-5 rounded-full transition-colors " + (isFunction ? "bg-indigo-500" : "bg-gray-300")}>
+                  <div className={"absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform " + (isFunction ? "translate-x-4" : "translate-x-0.5")} />
+                </div>
+              </button>
+            </div>
+            {isFunction && (
+              <div className="space-y-2">
+                <EventDatePicker label="Function Date" value={eventDate}
+                  onChange={function (dateStr) { setEventDate(dateStr); loadEventsByDate(dateStr) }} />
+                {eventsLoading && <p className="text-xs text-gray-400">Loading events...</p>}
+                {eventDate && !eventsLoading && formEvents.length === 0 && <p className="text-xs text-gray-400">No events on this date</p>}
+                {formEvents.length > 0 && (
+                  <select value={eventId} onChange={function (e) { setEventId(e.target.value) }}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-amber-300" style={{ fontSize: '16px' }}>
+                    <option value="">Select event...</option>
+                    {formEvents.map(function (ev) {
+                      var deptTag = ev.department ? ' [' + ev.department + ']' : ''
+                      var ctNo = ev.contract_no ? ' #' + ev.contract_no : ''
+                      var by = ev.created_user_name ? ' · by ' + ev.created_user_name : ''
+                      return <option key={ev.id} value={String(ev.id)}>{ev.event_name + (ev.client_name ? ' — ' + ev.client_name : '') + ' · ' + (ev.venue_name || '') + deptTag + ctNo + by}</option>
+                    })}
+                  </select>
+                )}
+                {(function () {
+                  var sel = eventId ? formEvents.find(function (ev) { return String(ev.id) === eventId }) : null
+                  if (!sel) return null
+                  return (
+                    <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-3 space-y-1">
+                      <p className="text-xs font-bold text-indigo-700">{sel.event_name}</p>
+                      <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-[11px] text-indigo-600">
+                        {sel.function_date && <span>📅 {sel.function_date}</span>}
+                        {sel.contract_type && <span>🎉 {sel.contract_type}</span>}
+                        {sel.venue_name && <span>📍 {sel.venue_name}</span>}
+                        {sel.session && <span>🕐 {sel.session}</span>}
+                        {sel.client_name && <span>👤 {sel.client_name}</span>}
+                      </div>
+                    </div>
+                  )
+                })()}
+              </div>
+            )}
           </div>
 
           <div>
