@@ -12,6 +12,7 @@ import { registerPdfFont } from '../../lib/pdfFont'
 import ExpenseDetail from './ExpenseDetail'
 import VoiceInput from '../../components/ui/VoiceInput'
 import { pushBack, goBack } from '../../lib/backNav'
+import PaymentProofThumbs from '../../components/ledger/PaymentProofThumbs'
 
 
 
@@ -24,6 +25,10 @@ var REF_TYPE_LABELS = {
   collection: 'Collection',
   collection_cancel: 'Cancel',
   opening: 'Opening',
+  vendor_payment: 'Vendor Payment',
+  vendor_deduction: 'Vendor Deduction',
+  salary_payment: 'Salary Payment',
+  salary_adjustment: 'Salary Adjustment',
 }
 
 var REF_TYPE_STYLES = {
@@ -35,7 +40,15 @@ var REF_TYPE_STYLES = {
   collection: 'bg-emerald-50 text-emerald-700 border-emerald-200',
   collection_cancel: 'bg-rose-50 text-rose-700 border-rose-200',
   opening: 'bg-gray-100 text-gray-700 border-gray-300',
+  vendor_payment: 'bg-red-50 text-red-700 border-red-200',
+  vendor_deduction: 'bg-amber-50 text-amber-700 border-amber-200',
+  salary_payment: 'bg-red-50 text-red-700 border-red-200',
+  salary_adjustment: 'bg-amber-50 text-amber-700 border-amber-200',
 }
+
+// wallet_transactions rows created by pay_vendor/pay_employee — reference_id points at
+// the ledger_entries row for that specific payment (proof images, deduction reason, etc.)
+var PAYMENT_REF_TYPES = ['vendor_payment', 'vendor_deduction', 'salary_payment', 'salary_adjustment']
 
 function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, onClose, onBalanceChange, onOpenExpense }) {
   var [walletView, setWalletView] = useState(null)
@@ -763,6 +776,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   var [expenseDetailTarget, setExpenseDetailTarget] = useState(null)  // full expense row for ExpenseDetail
   var [expenseDetailLoading, setExpenseDetailLoading] = useState(false)
   var [detailTarget, setDetailTarget] = useState(null)  // { txn, kind, event, collectorName, imgUrl, loading }
+  var [payDetailTarget, setPayDetailTarget] = useState(null)  // { txn, entry, partyName, loading }
 
   async function openExpenseDetail(expenseId) {
     if (!expenseId) return
@@ -979,6 +993,96 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
               Close
             </button>
           </div>
+        </div>
+      </div>
+    )
+  }
+
+  async function openPaymentDetail(t) {
+    setPayDetailTarget({ txn: t, entry: null, partyName: '', loading: true })
+    if (!t.reference_id) { setPayDetailTarget({ txn: t, entry: null, partyName: '', loading: false }); return }
+    var { data: entry } = await supabase.from('ledger_entries')
+      .select('id, ledger_type, party_id, entry_date, created_at, description, debit_paise, ref_type, metadata')
+      .eq('id', t.reference_id).maybeSingle()
+    if (!entry) { setPayDetailTarget({ txn: t, entry: null, partyName: '', loading: false }); return }
+    var partyName = ''
+    if (entry.ledger_type === 'vendor') {
+      var { data: v } = await supabase.from('vendors').select('name').eq('id', entry.party_id).maybeSingle()
+      partyName = (v && v.name) || ''
+    } else {
+      var { data: p } = await supabase.from('profiles').select('name').eq('id', entry.party_id).maybeSingle()
+      partyName = (p && p.name) || ''
+    }
+    setPayDetailTarget({ txn: t, entry: entry, partyName: partyName, loading: false })
+  }
+
+  function renderPaymentDetailModal() {
+    if (!payDetailTarget) return null
+    var t = payDetailTarget.txn
+    var entry = payDetailTarget.entry
+    var meta = (entry && entry.metadata) || {}
+    return (
+      <div className="fixed inset-0 z-50 bg-black/60 flex items-end sm:items-center justify-center p-0 sm:p-4"
+        onClick={function () { setPayDetailTarget(null) }}>
+        <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md p-5 space-y-3 max-h-[90vh] overflow-y-auto"
+          onClick={function (ev) { ev.stopPropagation() }}>
+          <div className="flex items-start justify-between gap-2">
+            <h3 className="text-base font-bold text-gray-900">{REF_TYPE_LABELS[t.reference_type] || t.reference_type}</h3>
+            <button type="button" onClick={function () { setPayDetailTarget(null) }}
+              className="w-7 h-7 rounded-full bg-gray-100 text-gray-500 flex items-center justify-center flex-shrink-0">✕</button>
+          </div>
+          {payDetailTarget.loading ? (
+            <p className="text-sm text-gray-400 text-center py-6">Loading...</p>
+          ) : (
+            <>
+              <p className="text-2xl font-bold text-red-700">−{formatPoints(t.amount_paise)}</p>
+              <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
+                <div>
+                  <p className="text-[10px] uppercase text-gray-500">{entry && entry.ledger_type === 'vendor' ? 'Vendor' : 'Employee'}</p>
+                  <p className="font-medium text-gray-800">{payDetailTarget.partyName || '—'}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] uppercase text-gray-500">Date</p>
+                  <p className="font-medium text-gray-800">{formatDate((entry && entry.entry_date) || t.created_at)}</p>
+                </div>
+                {meta.mode && (
+                  <div>
+                    <p className="text-[10px] uppercase text-gray-500">Mode</p>
+                    <p className="font-medium text-gray-800">{meta.mode === 'cash' ? '💵 Cash' : '🏦 Bank'}</p>
+                  </div>
+                )}
+                {meta.salary_month && (
+                  <div>
+                    <p className="text-[10px] uppercase text-gray-500">Salary Month</p>
+                    <p className="font-medium text-gray-800">{meta.salary_month}</p>
+                  </div>
+                )}
+              </div>
+              {(t.description || (entry && entry.description)) && (
+                <div>
+                  <p className="text-[10px] uppercase text-gray-500 mb-0.5">Description</p>
+                  <p className="text-sm text-gray-800">{t.description || entry.description}</p>
+                </div>
+              )}
+              {meta.reason && (
+                <div>
+                  <p className="text-[10px] uppercase text-gray-500 mb-0.5">Reason</p>
+                  <p className="text-sm text-gray-800">{meta.reason}</p>
+                </div>
+              )}
+              {(meta.payment_images || meta.deduction_image) && (
+                <div>
+                  <p className="text-[10px] uppercase text-gray-500 mb-1">Proof</p>
+                  <PaymentProofThumbs meta={meta} />
+                </div>
+              )}
+              <p className="text-[10px] text-gray-400 pt-1">Logged {formatDate(t.created_at)}</p>
+              <button type="button" onClick={function () { setPayDetailTarget(null) }}
+                className="w-full py-2 text-xs font-bold text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200">
+                Close
+              </button>
+            </>
+          )}
         </div>
       </div>
     )
@@ -1808,7 +1912,8 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                 var epcCancellable = isEpc && epcHit.epc.status !== 'cancelled' && (isAdmin || epcHit.epc.collected_by === profile.id)
                 var collCancellable = t.reference_type === 'collection' && !isCancelled && (isAdmin || t.performed_by === profile.id)
                 var isExpRow = (t.reference_type === 'expense' || t.reference_type === 'expense_refund') && t.reference_id
-                var rowIsClickable = isExpRow || t.reference_type === 'collection' || isEpc
+                var isPayRow = PAYMENT_REF_TYPES.indexOf(t.reference_type) !== -1
+                var rowIsClickable = isExpRow || t.reference_type === 'collection' || isEpc || isPayRow
                 function handleRowClick() {
                   if (!rowIsClickable) return
                   if (isExpRow) {
@@ -1818,6 +1923,8 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                     openCollectionDetail(t, 'collection')
                   } else if (isEpc) {
                     openCollectionDetail(t, 'epc')
+                  } else if (isPayRow) {
+                    openPaymentDetail(t)
                   }
                 }
                 return (
@@ -1889,6 +1996,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
         {renderTransferConfirmModal()}
         {renderCancelModal()}
         {renderCollectionDetailModal()}
+        {renderPaymentDetailModal()}
         {renderExpenseDetailModal()}
         {renderEnlargedImg()}
       </div>
@@ -2269,7 +2377,8 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             var epcCancellable = isEpc && epcHit.epc.status !== 'cancelled' && (isAdmin || epcHit.epc.collected_by === profile.id)
             var collCancellable = t.reference_type === 'collection' && !isCancelled && (isAdmin || t.performed_by === profile.id)
             var isExpRow = (t.reference_type === 'expense' || t.reference_type === 'expense_refund') && t.reference_id
-            var rowIsClickable = isExpRow || t.reference_type === 'collection' || isEpc
+            var isPayRow = PAYMENT_REF_TYPES.indexOf(t.reference_type) !== -1
+            var rowIsClickable = isExpRow || t.reference_type === 'collection' || isEpc || isPayRow
             function handleRowClick() {
               if (!rowIsClickable) return
               if (isExpRow) {
@@ -2279,6 +2388,8 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                 openCollectionDetail(t, 'collection')
               } else if (isEpc) {
                 openCollectionDetail(t, 'epc')
+              } else if (isPayRow) {
+                openPaymentDetail(t)
               }
             }
             var rowBorderClass = isCancelled
@@ -2441,6 +2552,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
         {renderTransferConfirmModal()}
         {renderCancelModal()}
         {renderCollectionDetailModal()}
+        {renderPaymentDetailModal()}
         {renderExpenseDetailModal()}
         {renderEnlargedImg()}
       </div>

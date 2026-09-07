@@ -535,53 +535,6 @@ function CostTransfers({ profile }) {
 
       <Modal open={showForm} onClose={function () { setShowForm(false) }} title="New Cost Transfer">
         <div className="space-y-4">
-          <div>
-            <label className="block text-xs font-semibold text-gray-700 mb-1.5 uppercase tracking-wider">From</label>
-            <ExpenseTypeFields value={form.from} onChange={updFrom}
-              expTypes={expTypes} expSubTypes={expSubTypes} vendors={vendors} venues={venues} employees={employees} categories={categories} />
-          </div>
-
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <label className="text-xs font-semibold text-gray-700 uppercase tracking-wider">To</label>
-              <button type="button" onClick={addToRow} className="text-xs font-bold text-indigo-600 hover:text-indigo-800">+ Add Row</button>
-            </div>
-            <div className="space-y-3">
-              {form.to_rows.map(function (row, idx) {
-                return (
-                  <div key={row._key} className="flex gap-2 items-start border-t border-gray-100 pt-3 first:border-0 first:pt-0">
-                    <div className="flex-1 space-y-1.5">
-                      <ExpenseTypeFields value={row} onChange={function (patch) { updToRow(idx, patch) }}
-                        expTypes={expTypes} expSubTypes={expSubTypes} vendors={vendors} venues={venues} employees={employees} categories={categories} />
-                      <div className="grid grid-cols-2 gap-2">
-                        <input type="number" step="0.01" min="0" inputMode="decimal"
-                          value={row.amount_pts}
-                          onChange={function (e) { updToRow(idx, { amount_pts: e.target.value }) }}
-                          placeholder="Amount (Rs) *"
-                          style={{ fontSize: '16px' }}
-                          className="px-2 py-1.5 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-indigo-400" />
-                        <input type="text" value={row.remarks}
-                          onChange={function (e) { updToRow(idx, { remarks: e.target.value }) }}
-                          placeholder="Remarks"
-                          maxLength={200}
-                          style={{ fontSize: '16px' }}
-                          className="px-2 py-1.5 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-indigo-400" />
-                      </div>
-                    </div>
-                    {form.to_rows.length > 1 && (
-                      <button type="button" onClick={function () { removeToRow(idx) }}
-                        className="text-red-400 hover:text-red-600 text-xs mt-1">✕</button>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-            <div className="mt-2 pt-2 border-t border-gray-100 text-xs font-bold text-gray-700 flex justify-between">
-              <span>Total</span>
-              <span>Rs {(toTotalPaise / 100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
-            </div>
-          </div>
-
           {/* For a Function? */}
           <div className="border border-gray-200 rounded-xl bg-white p-4 space-y-3">
             <div className="flex items-center justify-between">
@@ -628,6 +581,53 @@ function CostTransfers({ profile }) {
                 })()}
               </div>
             )}
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-gray-700 mb-1.5 uppercase tracking-wider">From</label>
+            <ExpenseTypeFields value={form.from} onChange={updFrom}
+              expTypes={expTypes} expSubTypes={expSubTypes} vendors={vendors} venues={venues} employees={employees} categories={categories} />
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-xs font-semibold text-gray-700 uppercase tracking-wider">To</label>
+              <button type="button" onClick={addToRow} className="text-xs font-bold text-indigo-600 hover:text-indigo-800">+ Add Row</button>
+            </div>
+            <div className="space-y-3">
+              {form.to_rows.map(function (row, idx) {
+                return (
+                  <div key={row._key} className="flex gap-2 items-start border-t border-gray-100 pt-3 first:border-0 first:pt-0">
+                    <div className="flex-1 space-y-1.5">
+                      <ExpenseTypeFields value={row} onChange={function (patch) { updToRow(idx, patch) }}
+                        expTypes={expTypes} expSubTypes={expSubTypes} vendors={vendors} venues={venues} employees={employees} categories={categories} />
+                      <div className="grid grid-cols-2 gap-2">
+                        <input type="number" step="0.01" min="0" inputMode="decimal"
+                          value={row.amount_pts}
+                          onChange={function (e) { updToRow(idx, { amount_pts: e.target.value }) }}
+                          placeholder="Amount (Rs) *"
+                          style={{ fontSize: '16px' }}
+                          className="px-2 py-1.5 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-indigo-400" />
+                        <input type="text" value={row.remarks}
+                          onChange={function (e) { updToRow(idx, { remarks: e.target.value }) }}
+                          placeholder="Remarks"
+                          maxLength={200}
+                          style={{ fontSize: '16px' }}
+                          className="px-2 py-1.5 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-indigo-400" />
+                      </div>
+                    </div>
+                    {form.to_rows.length > 1 && (
+                      <button type="button" onClick={function () { removeToRow(idx) }}
+                        className="text-red-400 hover:text-red-600 text-xs mt-1">✕</button>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+            <div className="mt-2 pt-2 border-t border-gray-100 text-xs font-bold text-gray-700 flex justify-between">
+              <span>Total</span>
+              <span>Rs {(toTotalPaise / 100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+            </div>
           </div>
 
           <div>
