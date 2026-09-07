@@ -196,7 +196,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     var txns = data || []
     var tRefIds = txns.filter(function (t) { return t.reference_type === 'transfer' && t.reference_id }).map(function (t) { return t.reference_id })
     if (tRefIds.length > 0) {
-      var { data: tData } = await supabase.from('wallet_transfers').select('id, from_user_id, to_user_id').in('id', tRefIds)
+      var { data: tData } = await supabase.from('wallet_transfers').select('*').in('id', tRefIds)
       var tMap = {}
       var cpIds = {}
       ;(tData || []).forEach(function (tr) {
@@ -327,7 +327,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     var cpIds = {}
     var tRefIds = txns.filter(function (t) { return t.reference_type === 'transfer' && t.reference_id }).map(function (t) { return t.reference_id })
     if (tRefIds.length > 0) {
-      var { data: tData } = await supabase.from('wallet_transfers').select('id, from_user_id, to_user_id').in('id', tRefIds)
+      var { data: tData } = await supabase.from('wallet_transfers').select('*').in('id', tRefIds)
       var tMap = {}
       ;(tData || []).forEach(function (tr) {
         tMap[tr.id] = tr
@@ -1670,13 +1670,15 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     var balBg = bal < 0 ? 'bg-red-50 border-red-200' : bal === 0 ? 'bg-gray-50 border-gray-200' : 'bg-green-50 border-green-200'
     var lastTxn = walletTxns[0]
     var lastActivity = lastTxn ? formatDate(lastTxn.created_at) : 'none yet'
-    var showIssueTile = isAdmin || isAuditor
     var receiveCount = pendingIncoming.length + pendingIssues.length
+    // Pending confirmations take priority over the Issue shortcut — otherwise an admin/
+    // auditor's own incoming transfers never surface on their dashboard at all.
+    var showIssueTile = (isAdmin || isAuditor) && receiveCount === 0
     return (
       <div className="@container">
       <div className="space-y-4 max-w-2xl mx-auto @3xl:max-w-none">
         <div>
-          <button onClick={onClose}
+          <button onClick={handleBack}
             className="text-sm text-indigo-600 font-medium hover:text-indigo-800 transition-colors mb-1">← Back</button>
           <h2 className="text-lg font-bold text-gray-900">Wallet</h2>
           <p className="text-xs text-gray-400">{profile.name || '—'} · <span className={"font-bold " + balColor}>{formatPoints(bal)}</span></p>
@@ -2229,6 +2231,13 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             var isCredit = t.type === 'credit'
             var issuedUrl = t.issued_image_path ? supabase.storage.from('receipts').getPublicUrl(t.issued_image_path).data?.publicUrl : null
             var receivedUrl = t.received_image_path ? supabase.storage.from('receipts').getPublicUrl(t.received_image_path).data?.publicUrl : null
+            var transferRow = t.reference_type === 'transfer' && t.reference_id ? transferParties[t.reference_id] : null
+            if (transferRow) {
+              var transferSenderPath = transferRow.sender_image_path
+              var transferReceiverPath = transferRow.receiver_image_path || transferRow.received_image_path
+              if (transferSenderPath) issuedUrl = supabase.storage.from('receipts').getPublicUrl(transferSenderPath).data?.publicUrl
+              if (transferReceiverPath) receivedUrl = supabase.storage.from('receipts').getPublicUrl(transferReceiverPath).data?.publicUrl
+            }
             var isOwnWallet = selectedWallet && selectedWallet.user_id === profile.id
             var canConfirm = isCredit && t.status === 'pending' && isOwnWallet
             var epcHit = epcRefs[t.id] || null
