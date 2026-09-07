@@ -654,9 +654,8 @@ function VendorLedger({ profile }) {
             </div>
             <p className="text-[11px] text-gray-500 mt-1">Vendor #{vs.vendor_id}</p>
           </div>
-          <button onClick={payVendor} disabled={currentBalance <= 0}
-            className={"px-3 py-2 text-xs font-bold rounded-lg transition-colors flex-shrink-0 " +
-              (currentBalance > 0 ? "bg-indigo-600 text-white hover:bg-indigo-700" : "bg-gray-200 text-gray-400 cursor-not-allowed")}>
+          <button onClick={payVendor}
+            className="px-3 py-2 text-xs font-bold rounded-lg transition-colors flex-shrink-0 bg-indigo-600 text-white hover:bg-indigo-700">
             💸 Pay Vendor
           </button>
           {vs._phone && (
