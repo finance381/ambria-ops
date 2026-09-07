@@ -427,15 +427,22 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
   }
 
   function addEntry() {
-    var next = makeEntry()
-    var prev = entries[entries.length - 1]
-    if (prev && prev.expenseDate) next.expenseDate = prev.expenseDate
-    setEntries(entries.concat([next]))
+    // Build off `prev` inside the updater (not the outer `entries` closure) — reading the
+    // closure var here raced against very recent edits (e.g. an allocation row just filled
+    // in) under React 18 batching, silently reverting them when both landed in the same tick.
+    setEntries(function (prev) {
+      var next = makeEntry()
+      var last = prev[prev.length - 1]
+      if (last && last.expenseDate) next.expenseDate = last.expenseDate
+      return prev.concat([next])
+    })
   }
 
   function removeEntry(idx) {
-    if (entries.length <= 1) return
-    setEntries(entries.filter(function (_, i) { return i !== idx }))
+    setEntries(function (prev) {
+      if (prev.length <= 1) return prev
+      return prev.filter(function (_, i) { return i !== idx })
+    })
   }
 
   async function addReceipts(idx, fileList) {
@@ -692,17 +699,21 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
   }
 
   function duplicateEntry(idx) {
-    var src = entries[idx]
-    var dup = Object.assign({}, src, {
-      _key: Date.now() + '_' + Math.random().toString(36).slice(2, 8),
-      receiptFiles: [], receiptPreviews: [], audioBlob: null, audioUrl: '', recording: false,
-      fieldValues: Object.assign({}, src.fieldValues),
-      allocations: src.allocations.map(function (a) { return Object.assign({}, a) }),
-      items: (src.items || []).map(function (it) {
-        return Object.assign({}, it, { _key: Date.now() + '_' + Math.random().toString(36).slice(2, 8) })
-      })
-    })
+    // Read the source entry from `prev` inside the updater too — the same stale-closure
+    // race as addEntry/removeEntry could otherwise duplicate an outdated snapshot of the
+    // entry being duplicated (e.g. missing the allocation row just added to it).
     setEntries(function (prev) {
+      var src = prev[idx]
+      if (!src) return prev
+      var dup = Object.assign({}, src, {
+        _key: Date.now() + '_' + Math.random().toString(36).slice(2, 8),
+        receiptFiles: [], receiptPreviews: [], audioBlob: null, audioUrl: '', recording: false,
+        fieldValues: Object.assign({}, src.fieldValues),
+        allocations: src.allocations.map(function (a) { return Object.assign({}, a) }),
+        items: (src.items || []).map(function (it) {
+          return Object.assign({}, it, { _key: Date.now() + '_' + Math.random().toString(36).slice(2, 8) })
+        })
+      })
       var next = prev.slice()
       next.splice(idx + 1, 0, dup)
       return next
