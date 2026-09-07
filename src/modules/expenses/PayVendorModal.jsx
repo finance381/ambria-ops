@@ -31,15 +31,30 @@ function PayVendorModal({ vendor, profile, onClose, onSuccess }) {
   useEffect(function () {
     var cancelled = false
     setSourceBillsLoading(true)
-    supabase.from('expenses')
-      .select('id, description, amount_paise, expense_date')
-      .eq('vendor_id', vendor.vendor_id)
+    // Expenses don't carry a vendor_id column — the vendor↔expense link lives on
+    // the ledger_entries row posted when the bill was recorded against the vendor
+    // (ledger_type='vendor', ref_type='expense', ref_id=expense.id), same as VendorLedger.jsx.
+    supabase.from('ledger_entries')
+      .select('ref_id')
+      .eq('ledger_type', 'vendor')
+      .eq('party_id', vendor.vendor_id)
+      .eq('ref_type', 'expense')
       .is('deleted_at', null)
-      .order('expense_date', { ascending: false })
-      .limit(50)
-      .then(function (res) {
+      .limit(200)
+      .then(async function (res) {
         if (cancelled) return
-        setSourceBills(res.data || [])
+        var expIds = (res.data || [])
+          .map(function (r) { return r.ref_id })
+          .filter(function (id) { return /^[0-9]+$/.test(String(id)) })
+          .map(Number)
+        if (expIds.length === 0) { setSourceBills([]); setSourceBillsLoading(false); return }
+        var { data: exps } = await supabase.from('expenses')
+          .select('id, description, amount_paise, expense_date')
+          .in('id', expIds)
+          .is('deleted_at', null)
+        if (cancelled) return
+        var rows = (exps || []).slice().sort(function (a, b) { return (b.expense_date || '').localeCompare(a.expense_date || '') })
+        setSourceBills(rows)
         setSourceBillsLoading(false)
       })
     return function () { cancelled = true }
