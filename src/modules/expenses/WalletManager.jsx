@@ -1105,21 +1105,42 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
         if (t.reference_type === 'expense' || t.reference_type === 'expense_refund') {
           var e = t.reference_id ? expenseRefs[t.reference_id] : null
           if (!e) return ''
-          var parts = []
+          var lines = []
           var tn = e.expense_types?.name || ''
           var stn = e.expense_sub_types?.name || ''
-          if (tn) parts.push(tn + (stn ? ' > ' + stn : ''))
+          if (tn) lines.push(tn + (stn ? ' > ' + stn : ''))
+
+          // Sub-type custom fields (vendor, employee, casual type, slip no, etc.), resolving
+          // lookup fields to their display names — mirrors the on-screen transaction list.
+          var subFields = (e.expense_sub_types && e.expense_sub_types.extra_fields) || []
+          var meta = e.metadata || {}
+          var fieldBits = []
+          subFields.forEach(function (f) {
+            var val = meta[f.key]
+            if (val == null || val === '') return
+            var display = val
+            if (f.type === 'lookup' && f.source) display = expLookupLabels[f.source + ':' + String(val)] || val
+            fieldBits.push((f.label || f.key) + ': ' + display)
+          })
+          if (e.vendor_name && fieldBits.indexOf('Vendor: ' + e.vendor_name) === -1 && !fieldBits.some(function (b) { return b.slice(b.indexOf(': ') + 2) === e.vendor_name })) {
+            fieldBits.unshift('Vendor: ' + e.vendor_name)
+          }
+          if (fieldBits.length > 0) lines.push(fieldBits.join(' · '))
+
           var allocs = e.expense_allocations || []
-          if (allocs.length > 0) {
-            parts.push(allocs.map(function (a) {
+          if (allocs.length > 1) {
+            lines.push(allocs.map(function (a) {
               var atn = a.expense_types?.name || ''
               var astn = a.expense_sub_types?.name || ''
-              var typeLabel = atn ? (' [' + atn + (astn ? ' > ' + astn : '') + ']') : ''
+              var differs = atn && (atn !== tn || astn !== stn)
+              var typeLabel = differs ? (' [' + atn + (astn ? ' > ' + astn : '') + ']') : ''
               return (a.department || 'Unassigned') + typeLabel + ': ' + fmtN(a.amount_paise)
             }).join(', '))
+          } else if (allocs.length === 1 && allocs[0].department) {
+            lines.push(allocs[0].department)
           }
-          if (e._event_name) parts.push('Event: ' + e._event_name)
-          return parts.join(' · ')
+          if (e._event_name) lines.push('Event: ' + e._event_name)
+          return lines.join('\n')
         }
         if (t.reference_type === 'transfer' && t.reference_id) {
           var tr = transferParties[t.reference_id]
