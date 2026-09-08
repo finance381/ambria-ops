@@ -62,6 +62,17 @@ export var PERM_GROUPS = [
     { key: 'procurement.purchase_orders', label: 'Purchase Orders', scope: 'both', dataScope: true },
     { key: 'procurement.vendors',         label: 'Vendors Master',  scope: 'both' },
   ]},
+  { group: 'Projects', icon: '🏗️', scope: 'both', children: [
+    { key: 'projects.view',         label: 'Projects',            scope: 'both', dataScope: true },
+    { key: 'projects.create',       label: 'Create Projects',     scope: 'both' },
+    { key: 'projects.edit',         label: 'Edit Projects',       scope: 'both', dataScope: true },
+    { key: 'projects.approve',      label: 'Approve Projects',    scope: 'both',
+      note: 'Gates moving a project from Pending to Approved' },
+    { key: 'projects.ledger.view',  label: 'Project Ledger',      scope: 'both', dataScope: true },
+    { key: 'projects.ledger.write', label: 'Post Ledger Entries', scope: 'both' },
+    { key: 'projects.delete',       label: 'Delete Projects',     scope: 'both',
+      note: 'Admin-only in practice — enforced at the database level regardless of this toggle' },
+  ]},
   { group: 'Finance', icon: '💰', scope: 'both', children: [
     { key: 'finance.wallet',         label: 'Wallet',         scope: 'both',
       optional: [{ key: 'finance.wallet.admin', label: 'Manage all wallets (cross-user)' }] },
