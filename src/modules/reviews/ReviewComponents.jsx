@@ -1,6 +1,9 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { formatDate, formatPoints } from '../../lib/format'
+import { hasPerm } from '../../lib/permissions'
+import Modal from '../../components/ui/Modal'
+import InventoryForm from '../inventory/InventoryForm'
 import { getAdapter } from './adapters/index.jsx'
 import useReviewActions from './useReviewActions'
 
@@ -10,6 +13,8 @@ var DOMAIN_META = {
   expense:        { label: 'Expenses',        icon: 'ti-receipt' },
   requisition:    { label: 'Requisitions',    icon: 'ti-clipboard-list' },
   vendor_payment: { label: 'Vendor Payments', icon: 'ti-credit-card' },
+  category:       { label: 'Categories',      icon: 'ti-folder' },
+  sub_category:   { label: 'Sub-categories',  icon: 'ti-folders' },
 }
 
 var PRIORITY_CLS = {
@@ -24,7 +29,12 @@ var KIND_LABELS = {
 
 var ACTION_LABELS = { approve: 'Approve', reject: 'Reject', request_changes: 'Request Changes', reopen: 'Reopen' }
 var ACTION_NEEDS_NOTES = { reject: true, request_changes: true }
+// Full lifecycle (dept tier, request-changes, reopen) — categories/sub-categories
+// don't have a dept tier or a persistent rejected state (reject hard-deletes them).
 var WORKFLOW_DOMAINS = ['inventory', 'item_receipt', 'requisition']
+var APPROVABLE_DOMAINS = ['inventory', 'item_receipt', 'requisition', 'category', 'sub_category']
+var EDITABLE_DOMAINS = ['inventory', 'item_receipt']
+var EDIT_SOURCE_TABLE = { inventory: 'inventory', item_receipt: 'catering_store' }
 
 // ---- PriorityPill ----
 function PriorityPill({ priority }) {
@@ -184,23 +194,34 @@ function ActionConfirmSheet({ action, item, onConfirm, onCancel, saving }) {
 
 // ---- ReviewDetailSheet ----
 // Force-detail-before-approve lives here: this is the ONLY place approve/reject/
-// request_changes buttons render — list rows never carry action buttons directly.
-function ReviewDetailSheet({ item, onClose, onActioned, isMobile }) {
+// request_changes/reopen buttons render — list rows never carry action buttons.
+function ReviewDetailSheet({ item, onClose, onActioned, isMobile, profile }) {
   var adapter = getAdapter(item.domain)
+  var permsNew = (profile && profile.permsNew) || []
   var [detail, setDetail] = useState(null)
   var [loading, setLoading] = useState(true)
   var [confirmAction, setConfirmAction] = useState(null)
+  var [editingOpen, setEditingOpen] = useState(false)
   var [timelineKey, setTimelineKey] = useState(0)
   var actions = useReviewActions(function () { if (onActioned) onActioned() })
-  var isWorkflow = WORKFLOW_DOMAINS.indexOf(item.domain) !== -1
 
-  useEffect(function () {
-    var cancelled = false
+  var canApproveReject = APPROVABLE_DOMAINS.indexOf(item.domain) !== -1
+  var canRequestChanges = WORKFLOW_DOMAINS.indexOf(item.domain) !== -1 && (item.status === 'pending' || item.status === 'changes_requested')
+  var canEdit = EDITABLE_DOMAINS.indexOf(item.domain) !== -1
+  var canReopen = WORKFLOW_DOMAINS.indexOf(item.domain) !== -1 && (item.status === 'rejected' || item.status === 'approved') && hasPerm(permsNew, 'review.reopen')
+
+  function loadDetail(cancelledRef) {
     setLoading(true)
     adapter.fetchDetail(item.source_id).then(function (row) {
-      if (!cancelled) { setDetail(row); setLoading(false) }
-    }).catch(function () { if (!cancelled) setLoading(false) })
-    return function () { cancelled = true }
+      if (cancelledRef && cancelledRef.current) return
+      setDetail(row); setLoading(false)
+    }).catch(function () { if (!cancelledRef || !cancelledRef.current) setLoading(false) })
+  }
+
+  useEffect(function () {
+    var cancelledRef = { current: false }
+    loadDetail(cancelledRef)
+    return function () { cancelledRef.current = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [item.domain, item.source_id])
 
@@ -209,6 +230,7 @@ function ReviewDetailSheet({ item, onClose, onActioned, isMobile }) {
       if (kind === 'approve') await actions.approve(item.domain, item.source_id, notes || null)
       else if (kind === 'reject') await actions.reject(item.domain, item.source_id, notes)
       else if (kind === 'request_changes') await actions.requestChanges(item.domain, item.source_id, notes)
+      else if (kind === 'reopen') await actions.reopen(item.domain, item.source_id, notes || null)
       setConfirmAction(null)
       onClose()
     } catch (err) {
@@ -231,9 +253,21 @@ function ReviewDetailSheet({ item, onClose, onActioned, isMobile }) {
         </div>
       </div>
       <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
-        <div className="flex items-center gap-2">
-          <p className="text-base font-bold text-gray-900">{item.title || ('#' + item.source_id)}</p>
-          <PriorityPill priority={item.priority} />
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <p className="text-base font-bold text-gray-900">{item.title || ('#' + item.source_id)}</p>
+            <PriorityPill priority={item.priority} />
+          </div>
+          <div className="flex gap-2 shrink-0">
+            {canEdit && (
+              <button onClick={function () { setEditingOpen(true) }}
+                className="px-2.5 py-1 text-xs font-bold text-indigo-600 border border-indigo-200 rounded-lg hover:bg-indigo-50">✎ Edit</button>
+            )}
+            {canReopen && (
+              <button onClick={function () { setConfirmAction('reopen') }}
+                className="px-2.5 py-1 text-xs font-bold text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50">↺ Reopen</button>
+            )}
+          </div>
         </div>
         {loading ? <p className="text-sm text-gray-400">Loading...</p> : (adapter ? adapter.renderDetailBody(detail) : null)}
         {actions.error && <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{actions.error}</p>}
@@ -243,10 +277,12 @@ function ReviewDetailSheet({ item, onClose, onActioned, isMobile }) {
         </div>
         <CommentComposer domain={item.domain} sourceId={item.source_id} onPost={handleCommentPosted} />
       </div>
-      {isWorkflow && (
+      {canApproveReject && (
         <div className="sticky bottom-0 bg-white border-t border-gray-100 px-4 py-3 flex gap-2 shrink-0">
           <button onClick={function () { setConfirmAction('reject') }} className="flex-1 py-2.5 text-sm font-bold text-red-600 bg-red-50 rounded-lg">Reject</button>
-          <button onClick={function () { setConfirmAction('request_changes') }} className="flex-1 py-2.5 text-sm font-bold text-amber-700 bg-amber-50 rounded-lg">Request Changes</button>
+          {canRequestChanges && (
+            <button onClick={function () { setConfirmAction('request_changes') }} className="flex-1 py-2.5 text-sm font-bold text-amber-700 bg-amber-50 rounded-lg">Request Changes</button>
+          )}
           <button onClick={function () { setConfirmAction('approve') }} className="flex-1 py-2.5 text-sm font-bold text-white bg-indigo-600 rounded-lg">Approve</button>
         </div>
       )}
@@ -255,11 +291,23 @@ function ReviewDetailSheet({ item, onClose, onActioned, isMobile }) {
           onCancel={function () { setConfirmAction(null) }}
           onConfirm={function (notes) { runAction(confirmAction, notes) }} />
       )}
+      {canEdit && (
+        <Modal open={editingOpen} onClose={function () { setEditingOpen(false) }} title={'Edit: ' + (item.title || '')} wide>
+          {editingOpen && detail && (
+            <InventoryForm
+              item={Object.assign({}, detail, { _source: EDIT_SOURCE_TABLE[item.domain] })}
+              profile={profile}
+              onClose={function () { setEditingOpen(false) }}
+              onSaved={function () { setEditingOpen(false); loadDetail(); if (onActioned) onActioned() }}
+            />
+          )}
+        </Modal>
+      )}
     </div>
   )
 }
 
 export {
-  DOMAIN_META, WORKFLOW_DOMAINS,
+  DOMAIN_META, WORKFLOW_DOMAINS, APPROVABLE_DOMAINS, EDITABLE_DOMAINS,
   PriorityPill, DomainIcon, ReviewCard, ReviewTimeline, CommentComposer, ActionConfirmSheet, ReviewDetailSheet,
 }

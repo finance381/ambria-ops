@@ -1,18 +1,23 @@
 import { useState, useEffect } from 'react'
+import { supabase } from '../../lib/supabase'
 import { hasPerm } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
-import useReviewQueue, { selectionKey } from './useReviewQueue'
+import useReviewQueue, { selectionKey, STATUS_BROWSABLE_DOMAINS } from './useReviewQueue'
 import useReviewActions from './useReviewActions'
 import { DOMAIN_META, DomainIcon, ReviewCard, ReviewDetailSheet, ActionConfirmSheet } from './ReviewComponents.jsx'
 import { getAdapter } from './adapters/index.jsx'
 import ReviewsHistory from './ReviewsHistory.jsx'
 
-var TAB_ORDER = ['inventory', 'item_receipt', 'expense', 'requisition', 'vendor_payment']
+var TAB_ORDER = ['inventory', 'item_receipt', 'expense', 'requisition', 'vendor_payment', 'category', 'sub_category']
 var TAB_PERM = {
   inventory: 'review.inventory', item_receipt: 'review.item_receipts', expense: 'review.expenses',
   requisition: 'review.requisitions', vendor_payment: 'review.vendor_payments',
+  category: 'review.masters', sub_category: 'review.masters',
 }
 var AUDIT_DOMAINS = ['expense', 'vendor_payment']
+// Full filter row (venue/age/tags/search/category/sub-category/department/status) —
+// only meaningful for the 3 domains with real tag/venue/status semantics.
+var FULL_FILTER_DOMAINS = ['inventory', 'item_receipt', 'requisition']
 
 function applyAgeFilter(items, ageFilter) {
   if (!ageFilter) return items
@@ -28,6 +33,21 @@ function Reviews({ profile }) {
   var [view, setView] = useState('inbox') // 'inbox' | 'history'
 
   var refData = useReferenceData()
+  var [categories, setCategories] = useState([])
+  var [subCategories, setSubCategories] = useState([])
+  var [departments, setDepartments] = useState([])
+  useEffect(function () {
+    Promise.all([
+      supabase.from('categories').select('id, name').order('name'),
+      supabase.from('sub_categories').select('id, name, category_id').order('name'),
+      supabase.from('departments').select('id, name').eq('active', true).order('name'),
+    ]).then(function (res) {
+      setCategories(res[0].data || [])
+      setSubCategories(res[1].data || [])
+      setDepartments(res[2].data || [])
+    })
+  }, [])
+
   var [isDesktop, setIsDesktop] = useState(typeof window !== 'undefined' ? window.innerWidth >= 768 : true)
   useEffect(function () {
     function onResize() { setIsDesktop(window.innerWidth >= 768) }
@@ -45,6 +65,8 @@ function Reviews({ profile }) {
   var bulkActions = useReviewActions(null)
 
   var isAuditDomain = AUDIT_DOMAINS.indexOf(queueApi.domain) !== -1
+  var showFullFilters = FULL_FILTER_DOMAINS.indexOf(queueApi.domain) !== -1
+  var showStatusFilter = STATUS_BROWSABLE_DOMAINS.indexOf(queueApi.domain) !== -1
 
   useEffect(function () {
     if (visibleTabs.length > 0 && visibleTabs.indexOf(queueApi.domain) === -1) {
@@ -71,6 +93,10 @@ function Reviews({ profile }) {
   var displayItems = isAuditDomain ? auditItems : applyAgeFilter(queueApi.items, ageFilter)
   var displayLoading = isAuditDomain ? auditLoading : queueApi.pending.loading
   var totalCount = visibleTabs.reduce(function (s, d) { return s + (queueApi.counts[d] || 0) }, 0)
+
+  var subCategoryOptions = subCategories.filter(function (sc) {
+    return !queueApi.categoryFilter || String(sc.category_id) === queueApi.categoryFilter
+  })
 
   function handleToggleSelect(item) { queueApi.toggleSelect(item) }
   function handleOpen(item) { if (!selectMode) setOpenItem(item) }
@@ -107,8 +133,26 @@ function Reviews({ profile }) {
 
   var filterRow = (
     <div className="flex flex-wrap items-center gap-2">
-      {!isAuditDomain && (
+      {showFullFilters && (
         <>
+          <input type="text" value={queueApi.search} onChange={function (ev) { queueApi.setSearch(ev.target.value) }}
+            placeholder="Search item, submitter..."
+            className="min-w-[180px] px-2 py-1.5 text-xs border border-gray-200 rounded-md bg-white" style={{ fontSize: '16px' }} />
+          <select value={queueApi.departmentFilter} onChange={function (ev) { queueApi.setDepartmentFilter(ev.target.value) }}
+            className="px-2 py-1.5 text-xs border border-gray-200 rounded-md bg-white" style={{ fontSize: '16px' }}>
+            <option value="">All departments</option>
+            {departments.map(function (d) { return <option key={d.id} value={d.name}>{d.name}</option> })}
+          </select>
+          <select value={queueApi.categoryFilter} onChange={function (ev) { queueApi.setCategoryFilter(ev.target.value); queueApi.setSubCategoryFilter('') }}
+            className="px-2 py-1.5 text-xs border border-gray-200 rounded-md bg-white" style={{ fontSize: '16px' }}>
+            <option value="">All categories</option>
+            {categories.map(function (c) { return <option key={c.id} value={String(c.id)}>{c.name}</option> })}
+          </select>
+          <select value={queueApi.subCategoryFilter} onChange={function (ev) { queueApi.setSubCategoryFilter(ev.target.value) }}
+            className="px-2 py-1.5 text-xs border border-gray-200 rounded-md bg-white" style={{ fontSize: '16px' }}>
+            <option value="">All sub-categories</option>
+            {subCategoryOptions.map(function (sc) { return <option key={sc.id} value={String(sc.id)}>{sc.name}</option> })}
+          </select>
           <select value={queueApi.venueFilter} onChange={function (ev) { queueApi.setVenueFilter(ev.target.value) }}
             className="px-2 py-1.5 text-xs border border-gray-200 rounded-md bg-white" style={{ fontSize: '16px' }}>
             <option value="">All venues</option>
@@ -120,6 +164,14 @@ function Reviews({ profile }) {
             <option value="aging">Aging+</option>
             <option value="urgent">Urgent only</option>
           </select>
+          {showStatusFilter && (
+            <select value={queueApi.statusFilter} onChange={function (ev) { queueApi.setStatusFilter(ev.target.value) }}
+              className="px-2 py-1.5 text-xs border border-gray-200 rounded-md bg-white" style={{ fontSize: '16px' }}>
+              <option value="pending">Pending</option>
+              <option value="rejected">Rejected</option>
+              <option value="approved">Approved</option>
+            </select>
+          )}
           <label className="flex items-center gap-1.5 text-xs text-gray-600">
             <input type="checkbox" checked={queueApi.myTagsOnly} onChange={function (ev) { queueApi.setMyTagsOnly(ev.target.checked) }} />
             My tags only
@@ -149,7 +201,10 @@ function Reviews({ profile }) {
 
   var detailAndConfirm = (
     <>
-      {openItem && <ReviewDetailSheet item={openItem} onClose={function () { setOpenItem(null) }} onActioned={handleActioned} isMobile={!isDesktop} />}
+      {openItem && (
+        <ReviewDetailSheet item={openItem} onClose={function () { setOpenItem(null) }} onActioned={handleActioned}
+          isMobile={!isDesktop} profile={profile} />
+      )}
       {bulkConfirm && (
         <ActionConfirmSheet action={bulkConfirm} item={null} saving={bulkActions.saving}
           onCancel={function () { setBulkConfirm(null) }}
@@ -179,13 +234,13 @@ function Reviews({ profile }) {
           </div>
         </div>
 
-        <div className="flex gap-1.5 border-b border-gray-200">
+        <div className="flex gap-1.5 border-b border-gray-200 overflow-x-auto">
           {visibleTabs.map(function (d) {
             var meta = DOMAIN_META[d]
             var active = queueApi.domain === d
             return (
               <button key={d} onClick={function () { queueApi.setDomain(d) }}
-                className={"px-3 py-2 text-sm font-semibold flex items-center gap-1.5 border-b-2 transition-colors " + (active ? "border-indigo-600 text-indigo-600" : "border-transparent text-gray-500 hover:text-gray-700")}>
+                className={"px-3 py-2 text-sm font-semibold flex items-center gap-1.5 border-b-2 transition-colors whitespace-nowrap " + (active ? "border-indigo-600 text-indigo-600" : "border-transparent text-gray-500 hover:text-gray-700")}>
                 <DomainIcon domain={d} /> {meta.label}
                 {queueApi.counts[d] > 0 && <span className="text-[10px] bg-gray-100 text-gray-600 rounded-full px-1.5">{queueApi.counts[d]}</span>}
               </button>
@@ -193,7 +248,7 @@ function Reviews({ profile }) {
           })}
         </div>
 
-        {filterRow}
+        {showFullFilters && filterRow}
         {listBody}
 
         {selectMode && queueApi.selection.size > 0 && (
@@ -227,7 +282,7 @@ function Reviews({ profile }) {
               <p className="text-[10px] text-gray-400">{displayItems.length} item{displayItems.length !== 1 ? 's' : ''}</p>
             </div>
             <div className="flex items-center gap-2">
-              {!isAuditDomain && (
+              {showFullFilters && (
                 <label className="flex items-center gap-1 text-[10px] text-gray-500">
                   <input type="checkbox" checked={queueApi.myTagsOnly} onChange={function (ev) { queueApi.setMyTagsOnly(ev.target.checked) }} /> mine
                 </label>
@@ -243,19 +298,39 @@ function Reviews({ profile }) {
         )}
       </div>
 
-      {!isAuditDomain && !selectMode && (
-        <div className="flex gap-2 px-0.5">
-          <select value={queueApi.venueFilter} onChange={function (ev) { queueApi.setVenueFilter(ev.target.value) }}
-            className="flex-1 px-2 py-1.5 text-xs border border-gray-200 rounded-md bg-white" style={{ fontSize: '16px' }}>
-            <option value="">All venues</option>
-            {(refData.venues || []).map(function (v) { return <option key={v.id} value={v.id}>{v.code ? v.code + ' — ' + v.name : v.name}</option> })}
-          </select>
-          <select value={ageFilter} onChange={function (ev) { setAgeFilter(ev.target.value) }}
-            className="flex-1 px-2 py-1.5 text-xs border border-gray-200 rounded-md bg-white" style={{ fontSize: '16px' }}>
-            <option value="">Any age</option>
-            <option value="aging">Aging+</option>
-            <option value="urgent">Urgent only</option>
-          </select>
+      {showFullFilters && !selectMode && (
+        <div className="space-y-1.5 px-0.5">
+          <input type="text" value={queueApi.search} onChange={function (ev) { queueApi.setSearch(ev.target.value) }}
+            placeholder="Search item, submitter..."
+            className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-md bg-white" style={{ fontSize: '16px' }} />
+          <div className="flex gap-2">
+            <select value={queueApi.categoryFilter} onChange={function (ev) { queueApi.setCategoryFilter(ev.target.value); queueApi.setSubCategoryFilter('') }}
+              className="flex-1 px-2 py-1.5 text-xs border border-gray-200 rounded-md bg-white" style={{ fontSize: '16px' }}>
+              <option value="">All categories</option>
+              {categories.map(function (c) { return <option key={c.id} value={String(c.id)}>{c.name}</option> })}
+            </select>
+            <select value={queueApi.venueFilter} onChange={function (ev) { queueApi.setVenueFilter(ev.target.value) }}
+              className="flex-1 px-2 py-1.5 text-xs border border-gray-200 rounded-md bg-white" style={{ fontSize: '16px' }}>
+              <option value="">All venues</option>
+              {(refData.venues || []).map(function (v) { return <option key={v.id} value={v.id}>{v.code ? v.code + ' — ' + v.name : v.name}</option> })}
+            </select>
+          </div>
+          <div className="flex gap-2">
+            <select value={ageFilter} onChange={function (ev) { setAgeFilter(ev.target.value) }}
+              className="flex-1 px-2 py-1.5 text-xs border border-gray-200 rounded-md bg-white" style={{ fontSize: '16px' }}>
+              <option value="">Any age</option>
+              <option value="aging">Aging+</option>
+              <option value="urgent">Urgent only</option>
+            </select>
+            {showStatusFilter && (
+              <select value={queueApi.statusFilter} onChange={function (ev) { queueApi.setStatusFilter(ev.target.value) }}
+                className="flex-1 px-2 py-1.5 text-xs border border-gray-200 rounded-md bg-white" style={{ fontSize: '16px' }}>
+                <option value="pending">Pending</option>
+                <option value="rejected">Rejected</option>
+                <option value="approved">Approved</option>
+              </select>
+            )}
+          </div>
         </div>
       )}
 
@@ -269,14 +344,14 @@ function Reviews({ profile }) {
             className="flex-1 py-2.5 text-sm font-bold text-white bg-indigo-600 rounded-lg disabled:opacity-50">Approve all</button>
         </div>
       ) : (
-        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 flex z-40" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 flex z-40 overflow-x-auto" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
           {visibleTabs.map(function (d) {
             var meta = DOMAIN_META[d]
             var active = queueApi.domain === d
             var count = queueApi.counts[d] || 0
             return (
               <button key={d} onClick={function () { queueApi.setDomain(d) }}
-                className={"flex-1 flex flex-col items-center py-2 relative " + (active ? "text-indigo-600" : "text-gray-400")}>
+                className={"flex-1 flex flex-col items-center py-2 relative min-w-[52px] " + (active ? "text-indigo-600" : "text-gray-400")}>
                 <DomainIcon domain={d} className="text-[18px]" />
                 <span className="text-[9px] font-semibold mt-0.5">{meta.label.split(' ')[0]}</span>
                 {count > 0 && (

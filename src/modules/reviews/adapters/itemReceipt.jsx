@@ -1,4 +1,4 @@
-import { supabase } from '../../../lib/supabase'
+import { supabase, getImageUrl } from '../../../lib/supabase'
 import { formatDate } from '../../../lib/format'
 
 async function fetchDetail(sourceId) {
@@ -12,17 +12,26 @@ async function fetchDetail(sourceId) {
 function renderDetailBody(row) {
   if (!row) return null
   var allocs = row.cs_venue_allocations || []
+  var imgUrl = getImageUrl(row.image_path)
   return (
     <div className="space-y-3">
-      {row.image_path && (
-        <img src={row.image_path} alt={row.name} className="w-full max-h-64 object-contain rounded-lg border border-gray-200 bg-gray-50" />
+      {imgUrl && (
+        <img src={imgUrl} alt={row.name} onClick={function () { window.open(imgUrl, '_blank') }}
+          className="w-full max-h-64 object-contain rounded-lg border border-gray-200 bg-gray-50 cursor-pointer hover:opacity-90 transition-opacity" />
       )}
+      <div>
+        <p className="text-sm font-bold text-gray-900">{row.name}</p>
+        {row.name_hindi && <p className="text-xs text-gray-500">{row.name_hindi}</p>}
+        <p className="text-[11px] text-gray-400 font-mono">{row.inventory_id || '—'}</p>
+      </div>
       <div className="grid grid-cols-2 gap-3 text-sm">
         <div><p className="text-[10px] font-bold text-gray-400 uppercase">Category</p><p className="text-gray-900">{row.categories ? row.categories.name : '—'}{row.sub_categories ? ' / ' + row.sub_categories.name : ''}</p></div>
-        <div><p className="text-[10px] font-bold text-gray-400 uppercase">Qty</p><p className="text-gray-900">{row.qty}</p></div>
+        <div><p className="text-[10px] font-bold text-gray-400 uppercase">Qty</p><p className="text-gray-900">{row.qty} {(row.unit || '').toLowerCase()}</p></div>
         <div><p className="text-[10px] font-bold text-gray-400 uppercase">Brand / Pack</p><p className="text-gray-900">{row.brand || '—'} {row.pack_size_qty ? '· ' + row.pack_size_qty + ' ' + (row.pack_size_unit || '') : ''}</p></div>
+        <div><p className="text-[10px] font-bold text-gray-400 uppercase">Department</p><p className="text-gray-900">{row.department || '—'}</p></div>
         <div><p className="text-[10px] font-bold text-gray-400 uppercase">Submitted by</p><p className="text-gray-900">{row.profiles ? row.profiles.name : '—'}</p></div>
       </div>
+      {row.notes && <p className="text-sm text-gray-500 italic">"{row.notes}"</p>}
       {allocs.length > 0 && (
         <div>
           <p className="text-[10px] font-bold text-gray-400 uppercase mb-1">Venue allocations</p>
@@ -45,7 +54,7 @@ function renderDetailBody(row) {
 
 function renderListMeta(item) {
   var tags = item.tags || {}
-  return <span>Catering store item · category #{tags.category_id || '—'}</span>
+  return <span>{tags.department || 'Catering store item'} · category #{tags.category_id || '—'}</span>
 }
 
-export default { fetchDetail: fetchDetail, renderDetailBody: renderDetailBody, renderListMeta: renderListMeta }
+export default { fetchDetail: fetchDetail, renderDetailBody: renderDetailBody, renderListMeta: renderListMeta, editableTable: 'catering_store_items' }
