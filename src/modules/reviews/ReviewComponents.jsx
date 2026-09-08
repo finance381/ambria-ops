@@ -211,7 +211,11 @@ function ReviewDetailSheet({ item, onClose, onActioned, isMobile }) {
       else if (kind === 'request_changes') await actions.requestChanges(item.domain, item.source_id, notes)
       setConfirmAction(null)
       onClose()
-    } catch (err) { /* actions.error stays set, ActionConfirmSheet's caller re-renders with it visible */ }
+    } catch (err) {
+      // Dismiss the confirm overlay on failure too — otherwise it covers the
+      // actions.error message rendered in the detail body underneath it.
+      setConfirmAction(null)
+    }
   }
 
   function handleCommentPosted() {
