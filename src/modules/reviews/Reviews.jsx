@@ -5,6 +5,7 @@ import useReviewQueue, { selectionKey } from './useReviewQueue'
 import useReviewActions from './useReviewActions'
 import { DOMAIN_META, DomainIcon, ReviewCard, ReviewDetailSheet, ActionConfirmSheet } from './ReviewComponents.jsx'
 import { getAdapter } from './adapters/index.jsx'
+import ReviewsHistory from './ReviewsHistory.jsx'
 
 var TAB_ORDER = ['inventory', 'item_receipt', 'expense', 'requisition', 'vendor_payment']
 var TAB_PERM = {
@@ -23,6 +24,8 @@ function Reviews({ profile }) {
   var permsNew = (profile && profile.permsNew) || []
   var visibleTabs = TAB_ORDER.filter(function (d) { return hasPerm(permsNew, TAB_PERM[d]) })
   var canBulk = hasPerm(permsNew, 'review.bulk')
+  var canSeeHistory = hasPerm(permsNew, 'review.history')
+  var [view, setView] = useState('inbox') // 'inbox' | 'history'
 
   var refData = useReferenceData()
   var [isDesktop, setIsDesktop] = useState(typeof window !== 'undefined' ? window.innerWidth >= 768 : true)
@@ -87,6 +90,15 @@ function Reviews({ profile }) {
     setSelectMode(false)
     queueApi.clearSelection()
     queueApi.refresh()
+  }
+
+  if (view === 'history') {
+    return (
+      <div className="space-y-3">
+        <button onClick={function () { setView('inbox') }} className="text-sm text-indigo-600 font-medium hover:text-indigo-800 transition-colors">← Back to Reviews</button>
+        <ReviewsHistory profile={profile} />
+      </div>
+    )
   }
 
   if (visibleTabs.length === 0) {
@@ -154,12 +166,17 @@ function Reviews({ profile }) {
             <h2 className="text-lg font-bold text-gray-900">Reviews</h2>
             <p className="text-xs text-gray-400">{totalCount} pending across {visibleTabs.length} domain{visibleTabs.length !== 1 ? 's' : ''}</p>
           </div>
-          {canBulk && !isAuditDomain && (
-            <button onClick={function () { setSelectMode(!selectMode); queueApi.clearSelection() }}
-              className={"px-3 py-1.5 text-xs font-bold rounded-lg " + (selectMode ? "bg-indigo-600 text-white" : "bg-gray-100 text-gray-700")}>
-              {selectMode ? 'Cancel Select' : 'Select'}
-            </button>
-          )}
+          <div className="flex gap-2">
+            {canSeeHistory && (
+              <button onClick={function () { setView('history') }} className="px-3 py-1.5 text-xs font-bold text-gray-700 bg-gray-100 rounded-lg">History</button>
+            )}
+            {canBulk && !isAuditDomain && (
+              <button onClick={function () { setSelectMode(!selectMode); queueApi.clearSelection() }}
+                className={"px-3 py-1.5 text-xs font-bold rounded-lg " + (selectMode ? "bg-indigo-600 text-white" : "bg-gray-100 text-gray-700")}>
+                {selectMode ? 'Cancel Select' : 'Select'}
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="flex gap-1.5 border-b border-gray-200">
@@ -214,6 +231,9 @@ function Reviews({ profile }) {
                 <label className="flex items-center gap-1 text-[10px] text-gray-500">
                   <input type="checkbox" checked={queueApi.myTagsOnly} onChange={function (ev) { queueApi.setMyTagsOnly(ev.target.checked) }} /> mine
                 </label>
+              )}
+              {canSeeHistory && (
+                <button onClick={function () { setView('history') }} className="text-xs font-bold text-gray-500">History</button>
               )}
               {canBulk && !isAuditDomain && (
                 <button onClick={function () { setSelectMode(true) }} className="text-xs font-bold text-indigo-600">Select</button>

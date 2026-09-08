@@ -27,6 +27,7 @@ function PendingReview({ profile }) {
   var PAGE_SIZE = 50
 
   useEffect(function () { loadPending() }, [])
+  useEffect(function () { logActivity('legacy_review_open', 'PendingReview.jsx').catch(function () {}) }, [])
 
   async function loadPending() {
     var [pendCat, pendSub, pendItem, pendCsItem, deptRes, catRes, subCatRes, subDeptRes] = await Promise.all([
@@ -228,6 +229,9 @@ function PendingReview({ profile }) {
 
   return (
     <div className="space-y-6">
+      <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-800">
+        This page will be removed in the next release. Use the new <strong>Reviews</strong> inbox from the main menu instead.
+      </div>
       <div className="text-sm text-gray-400">
         {totalCount} pending item{totalCount !== 1 ? 's' : ''}
       </div>
