@@ -33,6 +33,7 @@ var SalaryLedger = lazy(function () { return import('../../modules/employees/Sal
 var SalaryPayouts = lazy(function () { return import('../../modules/expenses/SalaryPayouts') })
 var LedgersHub = lazy(function () { return import('../../modules/expenses/LedgersHub') })
 var Projects = lazy(function () { return import('../../modules/projects/Projects') })
+var Reviews = lazy(function () { return import('../../modules/reviews/Reviews') })
 
 function ExpenseTypesMaster(props) {
   return <Expenses profile={props.profile} masterMode={true} />
@@ -150,6 +151,8 @@ var ADMIN_TABS = [
   { key: 'users',       label: 'Users',       icon: 'ti-users',
     anyPerm: ['admin.users','hr.employees'] },
   { key: 'projects',    label: 'Projects',    icon: 'ti-building-community', perm: 'projects.view' },
+  { key: 'reviews',     label: 'Reviews',     icon: 'ti-checklist',
+    anyPerm: ['review.inventory','review.item_receipts','review.expenses','review.requisitions','review.vendor_payments'] },
   { key: 'expenses',    label: 'Finance',     icon: 'ti-wallet',
     anyPerm: ['finance.wallet','finance.expenses','finance.payments','finance.salary_payouts','finance.cost_transfers','finance.ledgers.expense','finance.ledgers.event','finance.ledgers.vendor','finance.ledgers.salary','finance.ledgers.inventory','finance.ledgers.cost_transfer','finance.ledgers.gv'] },
   { key: 'procurement', label: 'Procurement', icon: 'ti-shopping-cart',
@@ -183,6 +186,7 @@ var MODULES = {
   expenses: makeTabbedModule('expenses'),
   procurement: makeTabbedModule('procurement'),
   projects: Projects,
+  reviews: Reviews,
 }
 
 function AdminShell({ profile, onSignOut }) {

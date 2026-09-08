@@ -29,6 +29,7 @@ import Employees from '../../modules/employees/Employees'
 import AdminMobile from '../../modules/categories/AdminMobile.jsx'
 import MyProfile from '../../modules/employees/MyProfile'
 import Projects from '../../modules/projects/Projects'
+import Reviews from '../../modules/reviews/Reviews'
 import { hasPerm } from '../../lib/permissions'
 
 var GROUPS = [
@@ -46,9 +47,17 @@ var GROUPS = [
     ]
   },
   {
+    // All 5 items point at the same unified 'reviews' tab — the group is visible if the
+    // user has ANY one of the 5 domain permissions (existing visibleGroups filter already
+    // does this "union" for free), and however many are visible, Reviews.jsx itself decides
+    // which domain tab to open first. The old review.dept/review.pending tabs (dept_review/
+    // pending_review) are left rendering below, unreached from this nav, until Phase 8.
     key: 'review', label: 'Review', icon: '✅', items: [
-      { key: 'review.dept', label: 'Dept Review', icon: '✅', tab: 'dept_review' },
-      { key: 'review.pending', label: 'Pending Review', icon: '⏳', tab: 'pending_review' },
+      { key: 'review.inventory',       label: 'Inventory Review',       icon: '✅', tab: 'reviews' },
+      { key: 'review.item_receipts',   label: 'Item Receipts Review',   icon: '✅', tab: 'reviews' },
+      { key: 'review.expenses',        label: 'Expenses Review',        icon: '✅', tab: 'reviews' },
+      { key: 'review.requisitions',    label: 'Requisitions Review',    icon: '✅', tab: 'reviews' },
+      { key: 'review.vendor_payments', label: 'Vendor Payments Review', icon: '✅', tab: 'reviews' },
     ]
   },
   {
@@ -214,26 +223,19 @@ function Shell({ profile, onSignOut }) {
 
     var promises = []
 
-    // Dept Review badge
-    if (hasPerm(permsNew, 'review.dept')) {
+    // Reviews badge — one query against v_review_queue (RLS-scoped to what this user
+    // can see), split back out per domain key so groupBadge's per-item sum lands on
+    // whichever of the 5 review.* keys this user actually holds. expense/vendor_payment
+    // never appear in v_review_queue (read-only audit domains, no pending state) so
+    // their keys are left at 0 deliberately, not fetched.
+    if (hasPerm(permsNew, 'review.inventory') || hasPerm(permsNew, 'review.item_receipts') || hasPerm(permsNew, 'review.requisitions')) {
       promises.push(
-        Promise.all([
-          supabase.from('inventory_items').select('id', { count: 'exact', head: true }).eq('status', 'pending_dept'),
-          supabase.from('catering_store_items').select('id', { count: 'exact', head: true }).eq('status', 'pending_dept'),
-        ]).then(function (res) {
-          counts['review.dept'] = (res[0].count || 0) + (res[1].count || 0)
-        })
-      )
-    }
-
-    // Pending Review badge
-    if (hasPerm(permsNew, 'review.pending')) {
-      promises.push(
-        Promise.all([
-          supabase.from('inventory_items').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
-          supabase.from('catering_store_items').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
-        ]).then(function (res) {
-          counts['review.pending'] = (res[0].count || 0) + (res[1].count || 0)
+        supabase.from('v_review_queue').select('domain').then(function (res) {
+          var byDomain = { inventory: 0, item_receipt: 0, requisition: 0 }
+          ;(res.data || []).forEach(function (r) { if (byDomain[r.domain] != null) byDomain[r.domain] += 1 })
+          counts['review.inventory'] = byDomain.inventory
+          counts['review.item_receipts'] = byDomain.item_receipt
+          counts['review.requisitions'] = byDomain.requisition
         })
       )
     }
@@ -600,6 +602,9 @@ function Shell({ profile, onSignOut }) {
         )}
         {tab === 'pending_review' && (
           <AdminReview profile={profile} />
+        )}
+        {tab === 'reviews' && (
+          <Reviews profile={profile} />
         )}
         {tab === 'requisitions' && (
           <Requisitions profile={profile} onBack={goBack} />

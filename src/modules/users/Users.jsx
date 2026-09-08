@@ -28,6 +28,13 @@ function Users({ profile }) {
   var [editSubCatIds, setEditSubCatIds] = useState([])
   var [editExpenseTypeIds, setEditExpenseTypeIds] = useState([])
   var [editExpenseSubTypeIds, setEditExpenseSubTypeIds] = useState([])
+  // Reviews module — per-domain tag filters for review.* permissions (separate from the
+  // generic data_scopes/editValue.scopes chip mechanism; see profiles.review_scopes).
+  // departments holds NAME strings (requisitions.department is free text, not an FK) —
+  // every other key here holds integer ids.
+  var [editReviewScopes, setEditReviewScopes] = useState({ expense_types: [], categories: [], departments: [], vendor_ids: [] })
+  var [reviewExpTypeSearch, setReviewExpTypeSearch] = useState('')
+  var [reviewVendorSearch, setReviewVendorSearch] = useState('')
 
   // Employee link
   var [editEmployeeId, setEditEmployeeId] = useState('')
@@ -60,6 +67,7 @@ function Users({ profile }) {
   var [editSubDeptIds, setEditSubDeptIds] = useState([])
   var [editEventDeptIds, setEditEventDeptIds] = useState([])
   var [departments, setDepartments] = useState([])
+  var [vendors, setVendors] = useState([])
   var [roles, setRoles] = useState(DEFAULT_ROLES)
   var [roleSearch, setRoleSearch] = useState('')
   var [roleDropOpen, setRoleDropOpen] = useState(false)
@@ -117,17 +125,19 @@ function Users({ profile }) {
   }
 
   async function loadLookups() {
-    var [catRes, subCatRes, subDeptRes, deptRes, rdRes] = await Promise.all([
+    var [catRes, subCatRes, subDeptRes, deptRes, rdRes, vendorRes] = await Promise.all([
       supabase.from('categories').select('id, name, sub_department_id').order('name'),
       supabase.from('sub_categories').select('id, name, category_id').order('name'),
       supabase.from('sub_departments').select('id, name, department_id, active').order('name'),
       supabase.from('departments').select('id, name').eq('active', true).order('name'),
       supabase.from('role_defaults').select('role, mobile_permissions, desktop_permissions, data_scopes'),
+      supabase.from('vendors').select('id, name').eq('active', true).order('name'),
     ])
     setCategories(catRes.data || [])
     setSubCategories(subCatRes.data || [])
     setSubDepartments(subDeptRes.data || [])
     setDepartments(deptRes.data || [])
+    setVendors(vendorRes.data || [])
     var rdMap = {}
     ;(rdRes.data || []).forEach(function (r) {
       rdMap[r.role] = {
@@ -176,6 +186,8 @@ function Users({ profile }) {
     setEditEventDeptIds(user.event_dept_ids || [])
     setEditExpenseTypeIds(user.expense_type_ids || [])
     setEditExpenseSubTypeIds(user.expense_sub_type_ids || [])
+    setEditReviewScopes(Object.assign({ expense_types: [], categories: [], departments: [], vendor_ids: [] }, user.review_scopes || {}))
+    setReviewExpTypeSearch(''); setReviewVendorSearch('')
     setActivePanel('identity')
     setExpTypeSearch(''); setExpSubTypeSearch(''); setCatFilter(''); setSubCatFilter('')
     setError('')
@@ -268,6 +280,19 @@ function Users({ profile }) {
     setEditSubCatIds(function (prev) {
       if (prev.includes(id)) return prev.filter(function (c) { return c !== id })
       return [...prev, id]
+    })
+  }
+
+  // Reviews module — toggles one value in/out of one review_scopes array (key is
+  // 'expense_types' | 'categories' | 'departments' | 'vendor_ids'). departments compares
+  // by name string, the rest by integer id — the caller passes whichever value type matches.
+  function toggleReviewScopeValue(key, value) {
+    setEditReviewScopes(function (prev) {
+      var arr = prev[key] || []
+      var next = arr.indexOf(value) !== -1 ? arr.filter(function (v) { return v !== value }) : arr.concat([value])
+      var patch = {}
+      patch[key] = next
+      return Object.assign({}, prev, patch)
     })
   }
 
@@ -435,6 +460,7 @@ function Users({ profile }) {
         event_dept_ids: editEventDeptIds,
         expense_type_ids: editExpenseTypeIds,
         expense_sub_type_ids: editExpenseSubTypeIds,
+        review_scopes: editReviewScopes,
       }).eq('email', editUser._email_key)
       err = res.error
     } else {
@@ -452,6 +478,7 @@ function Users({ profile }) {
         event_dept_ids: editEventDeptIds,
         expense_type_ids: editExpenseTypeIds,
         expense_sub_type_ids: editExpenseSubTypeIds,
+        review_scopes: editReviewScopes,
         email: editEmail.trim().toLowerCase() || null,
       }).eq('id', editUser.id)
       err = res.error
@@ -711,6 +738,7 @@ function Users({ profile }) {
                 { key: 'event', label: 'Event', icon: '📅', count: editEventDeptIds.length },
                 { key: 'expense', label: 'Expense', icon: '💰', count: editSubDeptIds.length + editExpenseTypeIds.length + editExpenseSubTypeIds.length },
                 { key: 'inventory', label: 'Inventory', icon: '📦', count: editCatIds.length + editSubCatIds.length },
+                { key: 'reviewScopes', label: 'Review Scopes', icon: '🔍', count: (editReviewScopes.expense_types.length + editReviewScopes.categories.length + editReviewScopes.departments.length + editReviewScopes.vendor_ids.length) },
                 { key: 'permissions', label: 'Permissions', icon: '🔑', count: (editValue.mobile.length + editValue.desktop.length) },
               ].map(function (nav) {
                 var isActive = activePanel === nav.key
@@ -1193,6 +1221,126 @@ function Users({ profile }) {
                 )
               })()}
             </div>
+            </div>)}
+
+                {activePanel === 'reviewScopes' && (<div className="space-y-4">
+            <p className="text-[11px] text-gray-400">
+              Narrows what this user sees in the Reviews inbox for domains they hold a review.* permission for.
+              Leave a picker empty to see everything in that dimension — these are additive filters, not required fields.
+            </p>
+
+            {/* Expense types */}
+            {expenseTypes.length > 0 && (
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-sm font-medium text-gray-700">Expense Types</label>
+                  <span className="text-[11px] text-gray-500">{editReviewScopes.expense_types.length === 0 ? 'All' : editReviewScopes.expense_types.length + ' selected'}</span>
+                </div>
+                <input type="text" value={reviewExpTypeSearch} onChange={function (e) { setReviewExpTypeSearch(e.target.value) }}
+                  placeholder={"Search " + expenseTypes.length + " types..."}
+                  className="w-full mb-2 px-2 py-1.5 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                {(function () {
+                  var visible = expenseTypes.filter(function (et) { return !reviewExpTypeSearch || et.name.toLowerCase().indexOf(reviewExpTypeSearch.toLowerCase()) !== -1 })
+                  return (
+                    <div className="bg-gray-50 rounded-lg p-3 max-h-40 overflow-y-auto">
+                      {visible.length === 0 && <p className="text-xs text-gray-400">No matches</p>}
+                      <div className="grid grid-cols-2 gap-2">
+                        {visible.map(function (et) {
+                          var isChecked = editReviewScopes.expense_types.indexOf(et.id) !== -1
+                          return (
+                            <label key={et.id} className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                              <input type="checkbox" checked={isChecked} onChange={function () { toggleReviewScopeValue('expense_types', et.id) }}
+                                className="w-4 h-4 accent-indigo-600" />
+                              <span>{et.icon ? et.icon + ' ' : ''}{et.name}</span>
+                            </label>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )
+                })()}
+              </div>
+            )}
+
+            {/* Categories */}
+            {categories.length > 0 && (
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-sm font-medium text-gray-700">Categories</label>
+                  <span className="text-[11px] text-gray-500">{editReviewScopes.categories.length === 0 ? 'All' : editReviewScopes.categories.length + ' selected'}</span>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-3 max-h-40 overflow-y-auto">
+                  <div className="grid grid-cols-2 gap-2">
+                    {categories.map(function (c) {
+                      var isChecked = editReviewScopes.categories.indexOf(c.id) !== -1
+                      return (
+                        <label key={c.id} className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                          <input type="checkbox" checked={isChecked} onChange={function () { toggleReviewScopeValue('categories', c.id) }}
+                            className="w-4 h-4 accent-indigo-600" />
+                          <span>{c.name}</span>
+                        </label>
+                      )
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Departments — stored as name strings, not ids */}
+            {departments.length > 0 && (
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-xs font-semibold text-gray-700">Departments</label>
+                  <span className="text-[10px] text-gray-400">{editReviewScopes.departments.length === 0 ? 'All' : editReviewScopes.departments.length + ' selected'}</span>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {departments.map(function (d) {
+                    var on = editReviewScopes.departments.indexOf(d.name) !== -1
+                    return (
+                      <button key={d.id} type="button" onClick={function () { toggleReviewScopeValue('departments', d.name) }}
+                        className={"px-2 py-0.5 rounded-md border transition-colors " +
+                          (on ? "bg-indigo-100 border-indigo-300 text-indigo-800 font-semibold" : "bg-white border-gray-200 text-gray-500 hover:bg-gray-50")}
+                        style={{ fontSize: '11px' }}>
+                        {d.name}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Vendors */}
+            {vendors.length > 0 && (
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-sm font-medium text-gray-700">Vendors</label>
+                  <span className="text-[11px] text-gray-500">{editReviewScopes.vendor_ids.length === 0 ? 'All' : editReviewScopes.vendor_ids.length + ' selected'}</span>
+                </div>
+                <input type="text" value={reviewVendorSearch} onChange={function (e) { setReviewVendorSearch(e.target.value) }}
+                  placeholder={"Search " + vendors.length + " vendors..."}
+                  className="w-full mb-2 px-2 py-1.5 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                {(function () {
+                  var visible = vendors.filter(function (v) { return !reviewVendorSearch || v.name.toLowerCase().indexOf(reviewVendorSearch.toLowerCase()) !== -1 })
+                  return (
+                    <div className="bg-gray-50 rounded-lg p-3 max-h-40 overflow-y-auto">
+                      {visible.length === 0 && <p className="text-xs text-gray-400">No matches</p>}
+                      <div className="grid grid-cols-2 gap-2">
+                        {visible.map(function (v) {
+                          var isChecked = editReviewScopes.vendor_ids.indexOf(v.id) !== -1
+                          return (
+                            <label key={v.id} className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                              <input type="checkbox" checked={isChecked} onChange={function () { toggleReviewScopeValue('vendor_ids', v.id) }}
+                                className="w-4 h-4 accent-indigo-600" />
+                              <span>{v.name}</span>
+                            </label>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )
+                })()}
+              </div>
+            )}
             </div>)}
 
                 {activePanel === 'permissions' && (<div>
