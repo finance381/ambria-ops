@@ -10,6 +10,7 @@ import {
   BasicsSection, SiteSection, PeopleSection, VendorsSection,
   TimelineBudgetSection, EstimationSection, AttachmentsSection, LinkedEventSection,
 } from './ProjectFormShared'
+import ProjectLedger from './ProjectLedger'
 
 var STATUS_CLS = {
   draft: 'bg-gray-100 text-gray-600',
@@ -47,7 +48,7 @@ function Projects({ profile }) {
     return function () { window.removeEventListener('resize', onResize) }
   }, [])
 
-  var [view, setView] = useState('list') // 'list' | 'form'
+  var [view, setView] = useState('list') // 'list' | 'form' | 'ledger'
   var [rows, setRows] = useState([])
   var [loading, setLoading] = useState(true)
   var [venueFilter, setVenueFilter] = useState('')
@@ -114,6 +115,17 @@ function Projects({ profile }) {
 
   if (!canView) return <p className="text-gray-400 text-sm text-center py-12">You don't have access to Projects.</p>
 
+  // ═══ LEDGER VIEW ═══
+  if (view === 'ledger') {
+    return <ProjectLedger profile={profile} project={{
+      id: formApi.project.id,
+      project_code: formApi.project.project_code,
+      name: formApi.project.name,
+      status: formApi.project.status,
+      approved_budget_paise: formApi.project.approved_budget_rupees ? Math.round(Number(formApi.project.approved_budget_rupees) * 100) : 0,
+    }} onBack={function () { setView('form') }} />
+  }
+
   // ═══ FORM VIEW ═══
   if (view === 'form') {
     var p = formApi.project
@@ -134,6 +146,12 @@ function Projects({ profile }) {
             </div>
             <div className="flex gap-2">
               {formApi.error && <span className="text-xs text-red-600 self-center max-w-md">{formApi.error}</span>}
+              {p.id && hasPerm(permsNew, 'projects.ledger.view') && (
+                <button onClick={function () { setView('ledger') }}
+                  className="px-3 py-2 text-sm font-bold text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200">
+                  📒 Ledger
+                </button>
+              )}
               {!readOnly && (
                 <button onClick={submitApi.submit} disabled={submitApi.saving}
                   className="px-4 py-2 text-sm font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50">
@@ -266,6 +284,9 @@ function Projects({ profile }) {
         </div>
         {canApprove && p.status === 'pending' && (
           <button onClick={approveProject} disabled={submitApi.saving} className="w-full py-2.5 text-sm font-bold text-white bg-green-600 rounded-lg disabled:opacity-50">✓ Approve Project</button>
+        )}
+        {p.id && hasPerm(permsNew, 'projects.ledger.view') && (
+          <button onClick={function () { setView('ledger') }} className="w-full py-2.5 text-sm font-bold text-gray-700 bg-gray-100 rounded-lg">📒 Open Ledger</button>
         )}
       </div>
     )
