@@ -15,6 +15,14 @@ var TAB_PERM = {
   category: 'review.masters', sub_category: 'review.masters',
 }
 var AUDIT_DOMAINS = ['expense', 'vendor_payment']
+// Short forms for the mobile bottom tab bar — with 7 domains crammed into one row,
+// DOMAIN_META's full label (or its first word) is too wide for domains that are
+// either a single hyphenated word ("Sub-categories" won't split on a space) or
+// just long ("Requisitions").
+var MOBILE_TAB_LABEL = {
+  inventory: 'Inventory', item_receipt: 'Item', expense: 'Expenses',
+  requisition: 'Reqs', vendor_payment: 'Vendor', category: 'Category', sub_category: 'Sub-cat',
+}
 // Full filter row (venue/age/tags/search/category/sub-category/department/status) —
 // only meaningful for the 3 domains with real tag/venue/status semantics.
 var FULL_FILTER_DOMAINS = ['inventory', 'item_receipt', 'requisition']
@@ -351,12 +359,14 @@ function Reviews({ profile }) {
             var count = queueApi.counts[d] || 0
             return (
               <button key={d} onClick={function () { queueApi.setDomain(d) }}
-                className={"flex-1 flex flex-col items-center py-2 relative min-w-[52px] " + (active ? "text-indigo-600" : "text-gray-400")}>
-                <DomainIcon domain={d} className="text-[18px]" />
-                <span className="text-[9px] font-semibold mt-0.5">{meta.label.split(' ')[0]}</span>
-                {count > 0 && (
-                  <span className="absolute top-1 right-[calc(50%-18px)] bg-red-500 text-white text-[8px] font-bold rounded-full w-3.5 h-3.5 flex items-center justify-center">{count > 9 ? '9+' : count}</span>
-                )}
+                className={"flex-1 flex flex-col items-center py-2 min-w-[44px] " + (active ? "text-indigo-600" : "text-gray-400")}>
+                <span className="relative inline-block">
+                  <DomainIcon domain={d} className="text-[18px]" />
+                  {count > 0 && (
+                    <span className="absolute -top-1.5 -right-2.5 bg-red-500 text-white text-[8px] font-bold rounded-full min-w-[14px] h-3.5 px-0.5 flex items-center justify-center">{count > 9 ? '9+' : count}</span>
+                  )}
+                </span>
+                <span className="text-[9px] font-semibold mt-0.5 whitespace-nowrap">{MOBILE_TAB_LABEL[d] || meta.label}</span>
               </button>
             )
           })}

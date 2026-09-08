@@ -58,6 +58,7 @@ var GROUPS = [
       { key: 'review.expenses',        label: 'Expenses Review',        icon: '✅', tab: 'reviews' },
       { key: 'review.requisitions',    label: 'Requisitions Review',    icon: '✅', tab: 'reviews' },
       { key: 'review.vendor_payments', label: 'Vendor Payments Review', icon: '✅', tab: 'reviews' },
+      { key: 'review.masters',         label: 'Category/Sub-category Review', icon: '✅', tab: 'reviews' },
     ]
   },
   {
@@ -200,7 +201,12 @@ function Shell({ profile, onSignOut }) {
 
   // Header title
   var headerTitle = 'Ambria Ops'
-  if (tab && currentGroup) {
+  if (tab === 'reviews') {
+    // The 'review' group's items all point at this one tab (domain switching now happens
+    // inside Reviews.jsx itself), so picking a per-item label here would be arbitrary —
+    // just label the page for what it is.
+    headerTitle = 'Reviews'
+  } else if (tab && currentGroup) {
     var currentItem = currentGroup.items.find(function (f) { return f.tab === tab })
     headerTitle = currentItem?.label || currentGroup.label
   } else if (activeGroup && currentGroup) {
