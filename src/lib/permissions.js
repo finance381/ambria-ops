@@ -48,6 +48,8 @@ export var PERM_GROUPS = [
     { key: 'review.requisitions',    label: 'Requisitions Review',    scope: 'both' },
     { key: 'review.vendor_payments', label: 'Vendor Payments Review', scope: 'both',
       note: 'Read-only audit — anyone with Finance → Payments can also raise a concern on their own view' },
+    { key: 'review.masters', label: 'Category/Sub-category Review', scope: 'both',
+      note: 'Approve/reject new category and sub-category name submissions — reject permanently deletes the pending entry, matching the old Pending Review screen' },
     { key: 'review.bulk',    label: 'Bulk Approve/Reject', scope: 'both',
       note: 'Gates the multi-select bulk action bar within a single domain' },
     { key: 'review.reopen',  label: 'Reopen Reviewed Items', scope: 'both' },
