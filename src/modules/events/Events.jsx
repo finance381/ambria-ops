@@ -91,6 +91,7 @@ function Events({ profile }) {
   var [perPage, setPerPage] = useState(24)
   var [showLedger, setShowLedger] = useState(false)
   var [extraPlateSummary, setExtraPlateSummary] = useState(null)
+  var [linkedProjects, setLinkedProjects] = useState([])
   var refData = useReferenceData()
   var venueMap = useMemo(function () {
     var m = {}
@@ -137,6 +138,12 @@ function Events({ profile }) {
       })
       setExtraPlateSummary(eps)
     })
+  }, [selectedFunction])
+
+  useEffect(function () {
+    if (!selectedFunction) { setLinkedProjects([]); return }
+    supabase.from('projects').select('id, project_code, name, status').eq('event_id', selectedFunction.id)
+      .then(function (res) { setLinkedProjects(res.data || []) })
   }, [selectedFunction])
   var userEventDeptNames = (profile?.event_dept_ids || []).map(function (id) {
     var dept = departments.find(function (d) { return d.id === id })
@@ -502,6 +509,26 @@ function Events({ profile }) {
                 </div>
               )
             })()}
+
+            {/* Linked Projects — construction/renovation work tied to this event */}
+            {linkedProjects.length > 0 && (
+              <div className="bg-white border border-gray-200 rounded-lg p-3">
+                <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">🏗️ Linked Projects</h4>
+                <div className="space-y-1.5">
+                  {linkedProjects.map(function (p) {
+                    return (
+                      <div key={p.id} className="flex items-center justify-between text-sm">
+                        <div className="min-w-0">
+                          <span className="font-medium text-gray-800 truncate">{p.name}</span>
+                          <span className="text-[10px] text-gray-400 font-mono ml-2">{p.project_code}</span>
+                        </div>
+                        <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-gray-100 text-gray-600">{(p.status || '').replace(/_/g, ' ')}</span>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
 
             {/* Financial details — hidden by default */}
             <div>
