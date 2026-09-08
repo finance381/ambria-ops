@@ -23,6 +23,7 @@ function DeptReview({ profile }) {
   var [statusTab, setStatusTab] = useState('pending_dept')
 
   useEffect(function () { loadItems() }, [])
+  useEffect(function () { logActivity('legacy_review_open', 'DeptReview.jsx').catch(function () {}) }, [])
 
   async function loadItems() {
     var catIds = profile?.category_ids || []
@@ -156,6 +157,9 @@ function DeptReview({ profile }) {
 
   return (
     <div className="space-y-3">
+      <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-800">
+        This page will be removed in the next release. Use the new <strong>Reviews</strong> inbox from the main menu instead.
+      </div>
       {/* Status tabs */}
       <div className="flex gap-0 bg-white border border-gray-200 rounded-lg overflow-hidden">
         <button onClick={function () { setStatusTab('pending_dept') }}

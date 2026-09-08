@@ -33,6 +33,7 @@ function AdminReview({ profile }) {
   var PAGE_SIZE = 50
 
   useEffect(function () { loadMeta() }, [])
+  useEffect(function () { logActivity('legacy_review_open', 'AdminReview.jsx').catch(function () {}) }, [])
   useEffect(function () {
     var t = setTimeout(function () { setSearchDebounced(search) }, 400)
     return function () { clearTimeout(t) }
@@ -232,6 +233,9 @@ function AdminReview({ profile }) {
 
   return (
     <div className="space-y-4">
+      <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-800">
+        This page will be removed in the next release. Use the new <strong>Reviews</strong> inbox from the main menu instead.
+      </div>
       <div className="text-sm text-gray-400">
         {pendingItems.length + ' loaded' + (hasMore ? '+' : '') + ' of ' + totalPendingCount + ' pending'}
       </div>
