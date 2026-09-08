@@ -26,7 +26,14 @@ function RoleTemplates({ profile }) {
   var [editRole, setEditRole] = useState(null)
   var [editValue, setEditValue] = useState({ mobile: [], desktop: [], scopes: {} })
   var [editVenueIds, setEditVenueIds] = useState([])
-  var venues = useReferenceData().venues.filter(function (v) { return v.active })
+  var [editReviewScopes, setEditReviewScopes] = useState({ expense_types: [], categories: [], departments: [], vendor_ids: [] })
+  var refData = useReferenceData()
+  var venues = refData.venues.filter(function (v) { return v.active })
+  var expenseTypes = refData.expenseTypes.filter(function (t) { return t.active })
+  // Reviews module lookups — not part of the shared referenceData cache.
+  var [categories, setCategories] = useState([])
+  var [departments, setDepartments] = useState([])
+  var [vendors, setVendors] = useState([])
 
   // Add-role modal
   var [addOpen, setAddOpen] = useState(false)
@@ -36,12 +43,25 @@ function RoleTemplates({ profile }) {
   var [bulkTarget, setBulkTarget] = useState(null)   // { role, permissions, user_count }
   var [bulkResult, setBulkResult] = useState('')
 
-  useEffect(function () { if (isAdmin) load() }, [])
+  useEffect(function () {
+    if (!isAdmin) return
+    load()
+    Promise.all([
+      supabase.from('categories').select('id, name').order('name'),
+      supabase.from('departments').select('id, name').eq('active', true).order('name'),
+      supabase.from('vendors').select('id, name').eq('active', true).order('name'),
+    ]).then(function (res) {
+      setCategories(res[0].data || [])
+      setDepartments(res[1].data || [])
+      setVendors(res[2].data || [])
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   async function load() {
     setLoading(true); setError('')
     var [rdRes, profRes] = await Promise.all([
-      supabase.from('role_defaults').select('role, mobile_permissions, desktop_permissions, data_scopes, venue_ids, updated_at, updated_by'),
+      supabase.from('role_defaults').select('role, mobile_permissions, desktop_permissions, data_scopes, review_scopes, venue_ids, updated_at, updated_by'),
       supabase.from('profiles').select('role, active'),
     ])
     if (rdRes.error) { setError(rdRes.error.message); setLoading(false); return }
@@ -64,7 +84,7 @@ function RoleTemplates({ profile }) {
     Object.keys(counts).forEach(function (r) { if (allRoles.indexOf(r) === -1) allRoles.push(r) })
 
     var rows = allRoles.map(function (role) {
-      var t = byRole[role] || { role: role, mobile_permissions: [], desktop_permissions: [], data_scopes: {}, updated_at: null, updated_by: null }
+      var t = byRole[role] || { role: role, mobile_permissions: [], desktop_permissions: [], data_scopes: {}, review_scopes: {}, updated_at: null, updated_by: null }
       var c = counts[role] || { total: 0, active: 0 }
       return Object.assign({}, t, {
         user_count: c.total,
@@ -86,7 +106,18 @@ function RoleTemplates({ profile }) {
       scopes: Object.assign({}, row.data_scopes || {}),
     })
     setEditVenueIds((row.venue_ids || []).slice())
+    setEditReviewScopes(Object.assign({ expense_types: [], categories: [], departments: [], vendor_ids: [] }, row.review_scopes || {}))
     setError('')
+  }
+
+  function toggleReviewScopeValue(key, value) {
+    setEditReviewScopes(function (prev) {
+      var arr = prev[key] || []
+      var next = arr.indexOf(value) !== -1 ? arr.filter(function (v) { return v !== value }) : arr.concat([value])
+      var patch = {}
+      patch[key] = next
+      return Object.assign({}, prev, patch)
+    })
   }
 
   async function saveTemplate() {
@@ -98,13 +129,14 @@ function RoleTemplates({ profile }) {
       mobile_permissions: editValue.mobile,
       desktop_permissions: editValue.desktop,
       data_scopes: editValue.scopes,
+      review_scopes: editReviewScopes,
       venue_ids: editVenueIds,
       updated_by: profile.id,
       updated_at: new Date().toISOString(),
     }, { onConflict: 'role' }).select()
     if (res.error) { setError(res.error.message); setSaving(false); return }
     try { await logActivity('ROLE_TEMPLATE_UPDATE', editRole + ' → ' + editValue.mobile.length + 'm/' + editValue.desktop.length + 'd perms, ' + editVenueIds.length + ' venues') } catch (_) {}
-    setEditRole(null); setEditValue({ mobile: [], desktop: [], scopes: {} }); setEditVenueIds([])
+    setEditRole(null); setEditValue({ mobile: [], desktop: [], scopes: {} }); setEditVenueIds([]); setEditReviewScopes({ expense_types: [], categories: [], departments: [], vendor_ids: [] })
     load()
     setSaving(false)
   }
@@ -123,6 +155,7 @@ function RoleTemplates({ profile }) {
         mobile_permissions: _bMob,
         desktop_permissions: _bDsk,
         data_scopes: bulkTarget.data_scopes || {},
+        review_scopes: bulkTarget.review_scopes || {},
         venue_ids: bulkTarget.venue_ids || [],
       })
       .eq('role', bulkTarget.role)
@@ -247,7 +280,7 @@ function RoleTemplates({ profile }) {
       </div>
 
       {/* ═══ EDIT MODAL ═══ */}
-      <Modal open={!!editRole} onClose={function () { setEditRole(null); setEditPerms([]) }}
+      <Modal open={!!editRole} onClose={function () { setEditRole(null); setEditReviewScopes({ expense_types: [], categories: [], departments: [], vendor_ids: [] }) }}
         title={'Edit template: ' + (editRole || '')} wide>
         {editRole && (
           <form onSubmit={function (e) { e.preventDefault(); saveTemplate() }} className="flex flex-col" style={{ minHeight: '400px' }}>
@@ -287,6 +320,78 @@ function RoleTemplates({ profile }) {
                   </p>
                 </div>
               )}
+              <div className="mb-3 bg-gray-50 border border-gray-200 rounded-lg p-2.5 space-y-2.5">
+                <label className="block text-xs font-semibold text-gray-700">Default review scopes</label>
+                <p className="text-[10px] text-gray-400">Applied to users on "Apply to all" bulk sync. Empty = no filter in that dimension.</p>
+                {expenseTypes.length > 0 && (
+                  <div>
+                    <p className="text-[10px] text-gray-500 mb-1">Expense types</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {expenseTypes.map(function (et) {
+                        var on = editReviewScopes.expense_types.indexOf(et.id) !== -1
+                        return (
+                          <button key={et.id} type="button" onClick={function () { toggleReviewScopeValue('expense_types', et.id) }}
+                            className={"px-2 py-0.5 rounded-md border transition-colors " + (on ? "bg-indigo-100 border-indigo-300 text-indigo-800 font-semibold" : "bg-white border-gray-200 text-gray-500 hover:bg-gray-50")}
+                            style={{ fontSize: '11px' }}>
+                            {et.name}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+                {categories.length > 0 && (
+                  <div>
+                    <p className="text-[10px] text-gray-500 mb-1">Categories</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {categories.map(function (c) {
+                        var on = editReviewScopes.categories.indexOf(c.id) !== -1
+                        return (
+                          <button key={c.id} type="button" onClick={function () { toggleReviewScopeValue('categories', c.id) }}
+                            className={"px-2 py-0.5 rounded-md border transition-colors " + (on ? "bg-indigo-100 border-indigo-300 text-indigo-800 font-semibold" : "bg-white border-gray-200 text-gray-500 hover:bg-gray-50")}
+                            style={{ fontSize: '11px' }}>
+                            {c.name}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+                {departments.length > 0 && (
+                  <div>
+                    <p className="text-[10px] text-gray-500 mb-1">Departments</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {departments.map(function (d) {
+                        var on = editReviewScopes.departments.indexOf(d.name) !== -1
+                        return (
+                          <button key={d.id} type="button" onClick={function () { toggleReviewScopeValue('departments', d.name) }}
+                            className={"px-2 py-0.5 rounded-md border transition-colors " + (on ? "bg-indigo-100 border-indigo-300 text-indigo-800 font-semibold" : "bg-white border-gray-200 text-gray-500 hover:bg-gray-50")}
+                            style={{ fontSize: '11px' }}>
+                            {d.name}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+                {vendors.length > 0 && (
+                  <div>
+                    <p className="text-[10px] text-gray-500 mb-1">Vendors</p>
+                    <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
+                      {vendors.map(function (v) {
+                        var on = editReviewScopes.vendor_ids.indexOf(v.id) !== -1
+                        return (
+                          <button key={v.id} type="button" onClick={function () { toggleReviewScopeValue('vendor_ids', v.id) }}
+                            className={"px-2 py-0.5 rounded-md border transition-colors " + (on ? "bg-indigo-100 border-indigo-300 text-indigo-800 font-semibold" : "bg-white border-gray-200 text-gray-500 hover:bg-gray-50")}
+                            style={{ fontSize: '11px' }}>
+                            {v.name}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
               <PermMatrix value={editValue} onChange={setEditValue} />
             </div>
 
@@ -300,7 +405,7 @@ function RoleTemplates({ profile }) {
                 {' '}{countActiveFeatures(editValue.mobile.concat(editValue.desktop.filter(function (k) { return editValue.mobile.indexOf(k) === -1 })))} features
               </span>
               <div className="flex gap-2">
-                <button type="button" onClick={function () { setEditRole(null); setEditValue({ mobile: [], desktop: [], scopes: {} }); setEditVenueIds([]) }}
+                <button type="button" onClick={function () { setEditRole(null); setEditValue({ mobile: [], desktop: [], scopes: {} }); setEditVenueIds([]); setEditReviewScopes({ expense_types: [], categories: [], departments: [], vendor_ids: [] }) }}
                   className="px-4 py-2 text-sm text-gray-600 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors">
                   Cancel
                 </button>
