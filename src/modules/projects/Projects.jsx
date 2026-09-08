@@ -231,19 +231,57 @@ function Projects({ profile }) {
       formApi.updateProject({ status: 'draft' })
       await submitApi.submit()
     }
+    async function submitForApproval() {
+      formApi.updateProject({ status: 'pending' })
+      await submitApi.submit()
+    }
+    function editLink(step) {
+      return <button onClick={function () { setWizardStep(step) }} className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800">Edit</button>
+    }
+    var venueRef = (refs.venues || []).find(function (v) { return String(v.id) === String(p.venue_id) })
+    var pmRef = (refs.employees || []).find(function (e) { return e.id === p.project_manager_id })
+    var supRef = (refs.employees || []).find(function (e) { return e.id === p.site_supervisor_id })
+    var filledVendors = formApi.vendorLines.filter(function (v) { return v.vendor_id })
+    function vendorRefName(id) {
+      var v = (refs.vendors || []).find(function (x) { return String(x.id) === String(id) })
+      return v ? v.name : '—'
+    }
     return (
       <div className="space-y-3 pb-4">
-        <button onClick={backToList} className="text-sm text-indigo-600 font-medium hover:text-indigo-800 transition-colors">← Back to Projects</button>
-        <div className="flex items-center gap-1.5">
-          {WIZARD_STEPS.map(function (s, i) {
-            var done = i < wizardStep
-            var active = i === wizardStep
-            return (
-              <div key={s.key} className={"flex-1 h-1.5 rounded-full " + (done || active ? "bg-indigo-500" : "bg-gray-200")} title={s.label} />
-            )
-          })}
+        <div className="flex items-center justify-between">
+          <button onClick={backToList} className="text-sm text-indigo-600 font-medium hover:text-indigo-800 transition-colors">← Back to Projects</button>
+          {!readOnly && (
+            <button onClick={saveDraft} disabled={submitApi.saving}
+              className="text-xs font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5 disabled:opacity-50">
+              {submitApi.saving ? 'Saving...' : 'Save & exit'}
+            </button>
+          )}
         </div>
-        <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">Step {wizardStep + 1} of {WIZARD_STEPS.length} · {WIZARD_STEPS[wizardStep].label}</p>
+
+        <div className="space-y-1">
+          <div className="flex items-center gap-1.5">
+            {WIZARD_STEPS.map(function (s, i) {
+              var done = i < wizardStep
+              var active = i === wizardStep
+              return (
+                <div key={s.key} className={"flex-1 h-1.5 rounded-full " + (done || active ? "bg-indigo-500" : "bg-gray-200")} />
+              )
+            })}
+          </div>
+          <div className="flex items-start gap-1.5">
+            {WIZARD_STEPS.map(function (s, i) {
+              var done = i < wizardStep
+              var active = i === wizardStep
+              return (
+                <div key={s.key} className="flex-1 text-center">
+                  <span className={"text-[9px] font-bold leading-tight " + (active ? "text-indigo-600" : done ? "text-gray-500" : "text-gray-300")}>
+                    {done ? '✓ ' : ''}{s.label}
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+        </div>
 
         {formApi.error && <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{formApi.error}</p>}
 
@@ -263,6 +301,49 @@ function Projects({ profile }) {
         )}
         {stepKey === 'review' && (
           <>
+            <div className="bg-white border border-gray-200 rounded-xl p-3 space-y-3">
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Review</p>
+
+              <div className="flex items-start justify-between border-b border-gray-100 pb-2">
+                <div>
+                  <p className="text-xs font-bold text-gray-700">Basics</p>
+                  <p className="text-xs text-gray-500">{p.name || '—'} · {(p.project_type || '').replace(/_/g, ' ')} · {p.priority} priority</p>
+                </div>
+                {editLink(0)}
+              </div>
+
+              <div className="flex items-start justify-between border-b border-gray-100 pb-2">
+                <div>
+                  <p className="text-xs font-bold text-gray-700">Site</p>
+                  <p className="text-xs text-gray-500">
+                    {venueRef ? (venueRef.code ? venueRef.code + ' — ' + venueRef.name : venueRef.name) : '—'}
+                    {p.sub_venue ? ' · ' + p.sub_venue : ''}
+                  </p>
+                </div>
+                {editLink(1)}
+              </div>
+
+              <div className="flex items-start justify-between border-b border-gray-100 pb-2">
+                <div>
+                  <p className="text-xs font-bold text-gray-700">People & Vendors</p>
+                  <p className="text-xs text-gray-500">PM: {pmRef ? pmRef.full_name : '—'}{supRef ? ' · Supervisor: ' + supRef.full_name : ''}</p>
+                  {filledVendors.length > 0 && (
+                    <p className="text-xs text-gray-500 mt-0.5">{filledVendors.map(function (v) { return vendorRefName(v.vendor_id) }).join(', ')}</p>
+                  )}
+                </div>
+                {editLink(2)}
+              </div>
+
+              <div className="flex items-start justify-between">
+                <div>
+                  <p className="text-xs font-bold text-gray-700">Timeline & Budget</p>
+                  <p className="text-xs text-gray-500">{p.start_date ? formatDate(p.start_date) : '—'} → {p.estimated_end_date ? formatDate(p.estimated_end_date) : '—'}</p>
+                  <p className="text-xs text-gray-500">{p.approved_budget_rupees ? formatPoints(Math.round(Number(p.approved_budget_rupees) * 100)) : 'No budget set'}</p>
+                </div>
+                {editLink(3)}
+              </div>
+            </div>
+
             <EstimationSection formApi={formApi} readOnly={readOnly} />
             <AttachmentsSection formApi={formApi} readOnly={readOnly} isAdmin={isAdmin} />
           </>
@@ -272,14 +353,11 @@ function Projects({ profile }) {
           {wizardStep > 0 && (
             <button onClick={function () { setWizardStep(wizardStep - 1) }} className="flex-1 py-2.5 text-sm font-bold text-gray-600 bg-gray-100 rounded-lg">← Back</button>
           )}
-          {!readOnly && (
-            <button onClick={saveDraft} disabled={submitApi.saving} className="flex-1 py-2.5 text-sm font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg disabled:opacity-50">Save Draft</button>
-          )}
           {wizardStep < WIZARD_STEPS.length - 1 ? (
             <button onClick={function () { if (stepValid()) setWizardStep(wizardStep + 1) }} className="flex-1 py-2.5 text-sm font-bold text-white bg-indigo-600 rounded-lg">Next →</button>
           ) : !readOnly ? (
-            <button onClick={submitApi.submit} disabled={submitApi.saving} className="flex-1 py-2.5 text-sm font-bold text-white bg-indigo-600 rounded-lg disabled:opacity-50">
-              {submitApi.saving ? 'Submitting...' : 'Submit'}
+            <button onClick={submitForApproval} disabled={submitApi.saving} className="flex-1 py-2.5 text-sm font-bold text-white bg-indigo-600 rounded-lg disabled:opacity-50">
+              {submitApi.saving ? 'Submitting...' : 'Submit for approval'}
             </button>
           ) : null}
         </div>
