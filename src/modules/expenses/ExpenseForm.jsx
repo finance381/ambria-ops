@@ -1541,18 +1541,16 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
           // The expense row (and possibly its allocations) may already have been inserted
           // before whatever step just threw — e.g. the wallet debit failing after the
           // expense was created. Without a real DB transaction across these separate calls,
-          // that leaves an orphaned expense with no wallet entry. Compensate by deleting
-          // whatever was already committed for this entry so a failed submit leaves no trace.
+          // that leaves an orphaned expense with no allocation/wallet entry.
+          // The allocations delete below is a genuine best-effort cleanup (their RLS allows
+          // the owner to remove their own rows). The expenses row itself is NOT deletable
+          // here — its RLS delete policy only allows status='pending', but this row was just
+          // inserted with status='recorded', so a delete attempt would always silently no-op
+          // (0 rows affected, no error) rather than actually removing it. So don't bother
+          // attempting it — just say plainly that the row needs manual admin correction.
           if (exp && exp.id) {
-            try {
-              await supabase.from('expense_allocations').delete().eq('expense_id', exp.id)
-              var { data: cleanupRows, error: cleanupErr } = await supabase.from('expenses').delete().eq('id', exp.id).select('id')
-              if (cleanupErr || !cleanupRows || cleanupRows.length === 0) {
-                msg += ' (also: could not auto-remove the partially-created expense #' + exp.id + ' — flag for admin cleanup)'
-              }
-            } catch (_) {
-              msg += ' (also: could not auto-remove the partially-created expense #' + exp.id + ' — flag for admin cleanup)'
-            }
+            try { await supabase.from('expense_allocations').delete().eq('expense_id', exp.id) } catch (_) {}
+            msg += ' (expense #' + exp.id + ' was already recorded and could NOT be auto-removed — an admin must add its missing allocation/wallet entry, or delete it manually)'
           }
           failedMsgs.push('#' + (i + 1) + ': ' + msg)
           try { logActivity('EXPENSE_SUBMIT_FAIL', 'entry ' + i + ' | ' + msg.slice(0, 200)) } catch (_) {}
