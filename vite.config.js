@@ -11,6 +11,13 @@ export default defineConfig({
     VitePWA({
       registerType: 'prompt',
       includeAssets: ['favicon.svg'],
+      // Default 2 MiB precache limit — the main bundle (Shell.jsx eagerly imports every
+      // mobile module, including the new Projects module) now exceeds that. Bumped rather
+      // than lazy-loading Projects there, since every other module in Shell.jsx is already
+      // eager and singling one out would be an inconsistent, unrequested architecture change.
+      workbox: {
+        maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
+      },
       manifest: {
           "name": "Ambria Ops",
           "short_name": "Ambria Ops",

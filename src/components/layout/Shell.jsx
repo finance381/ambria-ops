@@ -28,6 +28,7 @@ import Vendors from '../../modules/vendors/Vendors'
 import Employees from '../../modules/employees/Employees'
 import AdminMobile from '../../modules/categories/AdminMobile.jsx'
 import MyProfile from '../../modules/employees/MyProfile'
+import Projects from '../../modules/projects/Projects'
 import { hasPerm } from '../../lib/permissions'
 
 var GROUPS = [
@@ -69,6 +70,11 @@ var GROUPS = [
     key: 'logistics', label: 'Logistics', icon: '🚛', items: [
       { key: 'inventory.receive', label: 'Receive Items', icon: '📦', tab: 'receive' },
       { key: 'inventory.challans', label: 'Challans', icon: '🚛', tab: 'challans' },
+    ]
+  },
+  {
+    key: 'projects', label: 'Projects', icon: '🏗️', items: [
+      { key: 'projects.view', label: 'Projects', icon: '🏗️', tab: 'projects' },
     ]
   },
   {
@@ -329,6 +335,14 @@ function Shell({ profile, onSignOut }) {
           .select('vendor_id', { count: 'exact', head: true })
           .gt('overdue_count', 0)
           .then(function (res) { counts['finance.payments'] = res.count || 0 })
+      )
+    }
+
+    // Projects badge (pending approval — only nudge users who can actually approve)
+    if (hasPerm(permsNew, 'projects.approve')) {
+      promises.push(
+        supabase.from('projects').select('id', { count: 'exact', head: true }).eq('status', 'pending')
+          .then(function (res) { counts['projects.view'] = res.count || 0 })
       )
     }
 
@@ -643,6 +657,9 @@ function Shell({ profile, onSignOut }) {
         )}
         {tab === 'my_profile' && (
           <MyProfile profile={profile} />
+        )}
+        {tab === 'projects' && (
+          <Projects profile={profile} />
         )}
       </main>
 
