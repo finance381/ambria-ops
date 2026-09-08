@@ -584,6 +584,35 @@ BEGIN
 END;
 $$;
 
+-- ============================================================================
+-- 1.7b Extend SELECT visibility on the 2 source tables that need it
+--
+-- v_review_queue is a plain view — it runs under the QUERYING USER's RLS on the
+-- underlying tables, not under fn_review_scope_visible (that only governs
+-- review_events). Without this, a reviewer granted ONLY the new review.inventory /
+-- review.requisitions permission (with a review_scopes tag but no matching
+-- profiles.category_ids, which is the OLD, separate scoping array DeptReview.jsx
+-- uses) would be unable to see anyone else's pending item at all — making the new
+-- permission a no-op for anyone but admin/auditor. Adding an OR-branch, not
+-- replacing the existing logic, so nothing already relying on these policies changes.
+--
+-- catering_store_items_select is already `USING (true)` (wide open) — no change needed.
+-- ============================================================================
+
+ALTER POLICY inventory_select ON inventory_items USING (
+  (user_role() = ANY (ARRAY['admin'::text, 'auditor'::text]))
+  OR (submitted_by = auth.uid())
+  OR (EXISTS (SELECT 1 FROM profiles p WHERE p.id = auth.uid() AND inventory_items.category_id = ANY (p.category_ids)))
+  OR (user_can('review.inventory'::text) AND fn_review_scope_visible('inventory'::review_domain_e, id))
+);
+
+ALTER POLICY req_select ON requisitions USING (
+  (requested_by = auth.uid())
+  OR fn_is_admin_only()
+  OR ((fn_can_view_user(requested_by) OR user_can('review.dept.approve'::text)) AND fn_requisitions_scope_visible(id))
+  OR (user_can('review.requisitions'::text) AND fn_review_scope_visible('requisition'::review_domain_e, id))
+);
+
 COMMIT;
 
 NOTIFY pgrst, 'reload schema';
