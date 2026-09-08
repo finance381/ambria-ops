@@ -399,7 +399,13 @@ export function EstimationSection({ formApi, readOnly }) {
 }
 
 // ═══ ATTACHMENTS ═══
-export function AttachmentsSection({ formApi, readOnly }) {
+// Removing an *existing* (already-uploaded) attachment is admin-only — both
+// project_attachments' and the storage bucket's DELETE policies are admin-only by
+// design (RLS), so showing this button to any editor would silently no-op the delete
+// (0 rows affected, no error) while the UI optimistically removed it from the list —
+// it would just reappear on next load. Queued (not-yet-uploaded) attachments are pure
+// local state and can always be removed by whoever is editing.
+export function AttachmentsSection({ formApi, readOnly, isAdmin }) {
   var nonPhotoQueue = formApi.attachmentsQueue.filter(function (a) { return a.kind !== 'photo' })
 
   async function handleFileAdd(ev) {
@@ -419,7 +425,7 @@ export function AttachmentsSection({ formApi, readOnly }) {
               <div key={a.id} className="flex items-center gap-2 text-sm">
                 <a href={url} target="_blank" rel="noopener noreferrer" className="flex-1 truncate text-indigo-600 hover:underline">{a.caption || a.file_path.split('/').pop()}</a>
                 <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 uppercase">{a.kind}</span>
-                {!readOnly && <button type="button" onClick={function () { formApi.removeExistingAttachment(a.id) }} className="text-red-400 hover:text-red-600 text-sm">✕</button>}
+                {!readOnly && isAdmin && <button type="button" onClick={function () { formApi.removeExistingAttachment(a.id) }} className="text-red-400 hover:text-red-600 text-sm">✕</button>}
               </div>
             )
           })}

@@ -35,6 +35,7 @@ function Projects({ profile }) {
   var canView = hasPerm(permsNew, 'projects.view')
   var canCreate = hasPerm(permsNew, 'projects.create')
   var canApprove = hasPerm(permsNew, 'projects.approve')
+  var isAdmin = hasPerm(permsNew, 'admin.dashboard')
   var canSeeLedgerCost = hasPerm(permsNew, 'projects.ledger.view')
 
   var refData = useReferenceData()
@@ -169,7 +170,7 @@ function Projects({ profile }) {
               <VendorsSection formApi={formApi} readOnly={readOnly} refs={refs} />
               <TimelineBudgetSection formApi={formApi} readOnly={readOnly} refs={refs} />
               <EstimationSection formApi={formApi} readOnly={readOnly} />
-              <AttachmentsSection formApi={formApi} readOnly={readOnly} />
+              <AttachmentsSection formApi={formApi} readOnly={readOnly} isAdmin={isAdmin} />
               <LinkedEventSection formApi={formApi} readOnly={readOnly} />
             </div>
             <div className="space-y-4 sticky" style={{ top: '16px' }}>
@@ -263,7 +264,7 @@ function Projects({ profile }) {
         {stepKey === 'review' && (
           <>
             <EstimationSection formApi={formApi} readOnly={readOnly} />
-            <AttachmentsSection formApi={formApi} readOnly={readOnly} />
+            <AttachmentsSection formApi={formApi} readOnly={readOnly} isAdmin={isAdmin} />
           </>
         )}
 
