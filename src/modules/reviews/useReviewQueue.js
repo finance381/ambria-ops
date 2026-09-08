@@ -16,8 +16,8 @@ var STATUS_BROWSABLE_DOMAINS = ['inventory', 'item_receipt', 'requisition']
 // job — the action queue). Browsing 'rejected'/'approved' bypasses the view and
 // queries the base table directly, normalized into the same item shape.
 var BASE_TABLE = {
-  inventory: { table: 'inventory_items', titleCol: 'name', submittedByCol: 'submitted_by', tagCols: 'category_id, sub_category_id, department' },
-  item_receipt: { table: 'catering_store_items', titleCol: 'name', submittedByCol: 'submitted_by', tagCols: 'category_id, sub_category_id, department' },
+  inventory: { table: 'inventory_items', titleCol: 'name', submittedByCol: 'submitted_by', tagCols: 'category_id, sub_category_id, department, image_path' },
+  item_receipt: { table: 'catering_store_items', titleCol: 'name', submittedByCol: 'submitted_by', tagCols: 'category_id, sub_category_id, department, image_path' },
   requisition: { table: 'requisitions', titleCol: 'purpose', submittedByCol: 'requested_by', tagCols: 'category_id, sub_category_id, department, expense_type_id, expense_sub_type_id, req_type, expense_amount_paise' },
 }
 
@@ -121,7 +121,7 @@ function useReviewQueue(profile) {
           amount_paise: domain === 'requisition' && r.req_type === 'expense' ? r.expense_amount_paise : null,
           vendor_name: null,
           primary_tag: r.category_id != null ? r.category_id : null,
-          tags: { category_id: r.category_id, sub_category_id: r.sub_category_id, department: r.department, expense_type_id: r.expense_type_id, expense_sub_type_id: r.expense_sub_type_id },
+          tags: { category_id: r.category_id, sub_category_id: r.sub_category_id, department: r.department, expense_type_id: r.expense_type_id, expense_sub_type_id: r.expense_sub_type_id, image_path: r.image_path },
           submitted_by: r[cfg.submittedByCol],
           submitted_at: r.created_at,
           venue_id: null,

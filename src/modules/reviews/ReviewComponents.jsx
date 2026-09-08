@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { supabase } from '../../lib/supabase'
+import { supabase, getImageUrl } from '../../lib/supabase'
 import { formatDate, formatPoints } from '../../lib/format'
 import { hasPerm } from '../../lib/permissions'
 import Modal from '../../components/ui/Modal'
@@ -53,6 +53,7 @@ function DomainIcon({ domain, className }) {
 // by the caller) and a mobile stacked card — the row itself doesn't know which.
 function ReviewCard({ item, onOpen, onToggleSelect, selected, selectMode }) {
   var adapter = getAdapter(item.domain)
+  var imgUrl = getImageUrl((item.tags || {}).image_path)
   function handleClick() {
     if (selectMode) { onToggleSelect(item); return }
     onOpen(item)
@@ -64,9 +65,13 @@ function ReviewCard({ item, onOpen, onToggleSelect, selected, selectMode }) {
         <input type="checkbox" checked={!!selected} onChange={function () { onToggleSelect(item) }}
           onClick={function (ev) { ev.stopPropagation() }} className="w-4 h-4 shrink-0" />
       )}
-      <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center text-gray-500 shrink-0">
-        <DomainIcon domain={item.domain} className="text-[15px]" />
-      </div>
+      {imgUrl ? (
+        <img src={imgUrl} alt="" className="w-8 h-8 rounded-lg object-cover shrink-0 border border-gray-200 bg-gray-50" />
+      ) : (
+        <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center text-gray-500 shrink-0">
+          <DomainIcon domain={item.domain} className="text-[15px]" />
+        </div>
+      )}
       <div className="min-w-0 flex-1">
         <p className="text-sm font-medium text-gray-900 truncate">{item.title || ('#' + item.source_id)}</p>
         <p className="text-xs text-gray-500 truncate">{adapter ? adapter.renderListMeta(item) : null}</p>

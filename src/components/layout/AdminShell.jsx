@@ -196,37 +196,42 @@ function AdminShell({ profile, onSignOut }) {
   var _defaultTab = visibleTabs.length > 0 ? visibleTabs[0].key : null
   var [active, setActive] = useState(_defaultTab)
   var [subTab, setSubTab] = useState(null)
+  var [navOpen, setNavOpen] = useState(false)
 
   var _isVisible = visibleTabs.find(function (t) { return t.key === active }) != null
   var ActiveModule = _isVisible ? (MODULES[active] || null) : null
   var activeLabel = ADMIN_TABS.find(function (t) { return t.key === active })?.label || ''
 
+  function renderNavItems(closeOnClick) {
+    return visibleTabs.map(function (tab) {
+      var isActive = active === tab.key
+      return (
+        <button
+          key={tab.key}
+          onClick={function () { setActive(tab.key); setSubTab(null); if (closeOnClick) setNavOpen(false) }}
+          className={"w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-[13px] text-left transition-colors " +
+            (isActive
+              ? "text-white font-semibold"
+              : "text-slate-300 hover:bg-white/5")}
+          style={isActive ? { background: 'rgba(16,185,129,.15)' } : {}}
+        >
+          <i className={"ti " + tab.icon + " text-[16px] leading-none"} style={{ color: isActive ? '#6EE7B7' : 'rgba(156,163,175,.7)' }} aria-hidden="true" />
+          <span>{tab.label}</span>
+        </button>
+      )
+    })
+  }
+
   return (
     <div className="flex min-h-screen bg-slate-50">
-      {/* Sidebar */}
-      <aside className="w-56 shrink-0 flex flex-col sticky top-0 h-screen z-40" style={{ background: '#111827', boxShadow: '1px 0 0 #1F2937' }}>
+      {/* Sidebar — desktop only; collapses to a drawer below md so the page never gets wider than the viewport on mobile */}
+      <aside className="hidden md:flex w-56 shrink-0 flex-col sticky top-0 h-screen z-40" style={{ background: '#111827', boxShadow: '1px 0 0 #1F2937' }}>
         <div className="px-4 py-4 border-b border-white/8">
           <h1 className="text-white text-sm font-bold tracking-tight">Ambria Ops</h1>
           <p className="text-[10px] uppercase tracking-[0.12em] mt-0.5 font-medium" style={{ color: 'rgba(148,163,184,.6)' }}>Admin</p>
         </div>
         <nav className="flex-1 px-2 py-3 space-y-0.5 overflow-y-auto">
-          {visibleTabs.map(function (tab) {
-            var isActive = active === tab.key
-            return (
-              <button
-                key={tab.key}
-                onClick={function () { setActive(tab.key); setSubTab(null) }}
-                className={"w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-[13px] text-left transition-colors " +
-                  (isActive
-                    ? "text-white font-semibold"
-                    : "text-slate-300 hover:bg-white/5")}
-                style={isActive ? { background: 'rgba(16,185,129,.15)' } : {}}
-              >
-                <i className={"ti " + tab.icon + " text-[16px] leading-none"} style={{ color: isActive ? '#6EE7B7' : 'rgba(156,163,175,.7)' }} aria-hidden="true" />
-                <span>{tab.label}</span>
-              </button>
-            )
-          })}
+          {renderNavItems(false)}
         </nav>
         <div className="px-4 py-3 border-t border-white/8">
           <div className="text-[13px] truncate" style={{ color: 'rgba(226,232,240,.9)' }}>{profile.name}</div>
@@ -240,8 +245,48 @@ function AdminShell({ profile, onSignOut }) {
         </div>
       </aside>
 
+      {/* Mobile top bar */}
+      <div className="md:hidden fixed top-0 left-0 right-0 z-40 flex items-center justify-between px-4 py-3" style={{ background: '#111827' }}>
+        <button onClick={function () { setNavOpen(true) }} className="text-white text-xl leading-none px-1">
+          <i className="ti ti-menu-2" aria-hidden="true" />
+        </button>
+        <span className="text-white text-sm font-bold truncate">{activeLabel || 'Ambria Ops'}</span>
+        <span className="w-6" />
+      </div>
+
+      {/* Mobile off-canvas nav drawer */}
+      {navOpen && (
+        <div className="md:hidden fixed inset-0 z-50 flex">
+          <div className="w-64 max-w-[80vw] h-full flex flex-col" style={{ background: '#111827' }}>
+            <div className="px-4 py-4 border-b border-white/8 flex items-center justify-between">
+              <div>
+                <h1 className="text-white text-sm font-bold tracking-tight">Ambria Ops</h1>
+                <p className="text-[10px] uppercase tracking-[0.12em] mt-0.5 font-medium" style={{ color: 'rgba(148,163,184,.6)' }}>Admin</p>
+              </div>
+              <button onClick={function () { setNavOpen(false) }} className="text-white text-xl leading-none px-1">
+                <i className="ti ti-x" aria-hidden="true" />
+              </button>
+            </div>
+            <nav className="flex-1 px-2 py-3 space-y-0.5 overflow-y-auto">
+              {renderNavItems(true)}
+            </nav>
+            <div className="px-4 py-3 border-t border-white/8">
+              <div className="text-[13px] truncate" style={{ color: 'rgba(226,232,240,.9)' }}>{profile.name}</div>
+              <button
+                onClick={onSignOut}
+                className="mt-1 text-[11px] transition-colors hover:text-white"
+                style={{ color: 'rgba(148,163,184,.6)' }}
+              >
+                Sign out
+              </button>
+            </div>
+          </div>
+          <div className="flex-1 bg-black/40" onClick={function () { setNavOpen(false) }} />
+        </div>
+      )}
+
       {/* Content */}
-      <main className="flex-1 min-w-0 px-8 py-6">
+      <main className="flex-1 min-w-0 px-4 py-4 pt-20 md:px-8 md:py-6 md:pt-6">
         {active !== 'overview' && <h2 className="text-xl font-bold mb-5" style={{ color: '#0F172A' }}>{activeLabel}</h2>}
         {ActiveModule && (
           <Suspense fallback={<div className="text-center py-8 text-sm text-gray-400">Loading...</div>}>
