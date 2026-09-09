@@ -212,7 +212,7 @@ function SearchDropdown({ items, value, onChange, onAdd, onInputChange, placehol
         {open && (filtered.length > 0 || showAddOption) && (
           <div
             ref={listRef}
-            className="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-md shadow-lg max-h-48 overflow-y-auto"
+            className="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-md shadow-lg max-h-72 overflow-y-auto"
           >
             {filtered.map(function (item, idx) {
               return (
