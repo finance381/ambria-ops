@@ -31,10 +31,11 @@ function Toggle(props) {
 
 function ScopeChip(props) {
   var [open, setOpen] = useState(false)
+  var options = props.options || DATA_SCOPE_OPTIONS
   if (props.inherited) {
     return <span className="text-[10px] text-gray-400 italic">inherits</span>
   }
-  var pick = DATA_SCOPE_OPTIONS.find(function (o) { return o.value === props.value }) || DATA_SCOPE_OPTIONS[0]
+  var pick = options.find(function (o) { return o.value === props.value }) || options[0]
   return (
     <span className="relative inline-block">
       <button type="button" onClick={function () { if (!props.readOnly) setOpen(!open) }} disabled={props.readOnly}
@@ -46,7 +47,7 @@ function ScopeChip(props) {
       </button>
       {open && (
         <div className="absolute right-0 top-full mt-1 z-30 bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-[150px]">
-          {DATA_SCOPE_OPTIONS.map(function (o) {
+          {options.map(function (o) {
             return (
               <button key={o.value} type="button"
                 onClick={function () { props.onChange(o.value); setOpen(false) }}
@@ -134,7 +135,7 @@ function NodeRow(props) {
         </div>
         <div className="text-center">
           {node.dataScope ? (
-            <ScopeChip value={scopeValue} inherited={inheritsScope} readOnly={readOnly} onChange={setNodeScope} />
+            <ScopeChip value={scopeValue} inherited={inheritsScope} readOnly={readOnly} onChange={setNodeScope} options={node.scopeOptions} />
           ) : null}
         </div>
         <div className="text-center">

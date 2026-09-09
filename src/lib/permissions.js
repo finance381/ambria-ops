@@ -16,6 +16,17 @@ export var DATA_SCOPE_OPTIONS = [
   { value: 'own',       label: 'Mine only', icon: 'ti-user',     note: 'created_by = auth.uid()' },
 ]
 
+// Finance dataScope rows (Expenses, Payments, Salary Payouts, Cost Transfers,
+// Ledgers) use this set instead — venue-based scoping doesn't fit finance
+// rows the way sub-department/expense-type restriction does, and those
+// restriction lists already exist on profiles (edited in Users.jsx > Expense tab).
+export var FINANCE_SCOPE_OPTIONS = [
+  { value: 'all',            label: 'All',            icon: 'ti-world',    note: 'No restriction' },
+  { value: 'own',            label: 'Mine',           icon: 'ti-user',     note: 'created_by = auth.uid()' },
+  { value: 'own_sub_dept',   label: 'Sub-Dept',       icon: 'ti-sitemap',  note: 'profiles.sub_department_ids' },
+  { value: 'own_expense_type', label: 'Expense Type', icon: 'ti-tag',      note: 'profiles.expense_type_ids' },
+]
+
 // ---- Nested feature catalog (mirrors Shell.jsx + AdminShell.jsx UI) ----
 // Node fields:
 //   key        — new namespaced identifier (finance.wallet, finance.ledgers.expense)
@@ -88,23 +99,23 @@ export var PERM_GROUPS = [
       optional: [{ key: 'finance.wallet.admin', label: 'Manage all wallets (cross-user)' }] },
     { key: 'finance.view_costs',     label: 'View Item Costs', scope: 'both',
       note: 'See ₹ rates on inventory items across the app' },
-    { key: 'finance.expenses',       label: 'Expenses',       scope: 'both', dataScope: true,
+    { key: 'finance.expenses',       label: 'Expenses',       scope: 'both', dataScope: true, scopeOptions: FINANCE_SCOPE_OPTIONS,
       optional: [
         { key: 'finance.expenses.approve', label: 'Approve/reject expenses' },
         { key: 'finance.gv',               label: 'Raise/reverse JVs (General Vouchers)' },
       ]},
-    { key: 'finance.payments',       label: 'Payments',       scope: 'both', dataScope: true },
-    { key: 'finance.salary_payouts', label: 'Salary Payouts', scope: 'both', dataScope: true,
+    { key: 'finance.payments',       label: 'Payments',       scope: 'both', dataScope: true, scopeOptions: FINANCE_SCOPE_OPTIONS },
+    { key: 'finance.salary_payouts', label: 'Salary Payouts', scope: 'both', dataScope: true, scopeOptions: FINANCE_SCOPE_OPTIONS,
       note: 'Also grant "See salaries" in HR → Employees' },
-    { key: 'finance.cost_transfers', label: 'Cost Transfers', scope: 'both', dataScope: true },
+    { key: 'finance.cost_transfers', label: 'Cost Transfers', scope: 'both', dataScope: true, scopeOptions: FINANCE_SCOPE_OPTIONS },
     { key: 'finance.ledgers',        label: 'Ledgers',        scope: 'both', children: [
-      { key: 'finance.ledgers.expense',       label: 'Expense Ledger',       scope: 'both', dataScope: true },
-      { key: 'finance.ledgers.event',         label: 'Event Ledger',         scope: 'both', dataScope: true },
-      { key: 'finance.ledgers.vendor',        label: 'Vendor Ledger',        scope: 'both', dataScope: true },
-      { key: 'finance.ledgers.salary',        label: 'Salary Ledger',        scope: 'both', dataScope: true },
-      { key: 'finance.ledgers.inventory',     label: 'Inventory Ledger',     scope: 'both', dataScope: true },
-      { key: 'finance.ledgers.cost_transfer', label: 'Cost Transfer Ledger', scope: 'both', dataScope: true },
-      { key: 'finance.ledgers.gv',            label: 'JV Log',               scope: 'both', dataScope: true },
+      { key: 'finance.ledgers.expense',       label: 'Expense Ledger',       scope: 'both', dataScope: true, scopeOptions: FINANCE_SCOPE_OPTIONS },
+      { key: 'finance.ledgers.event',         label: 'Event Ledger',         scope: 'both', dataScope: true, scopeOptions: FINANCE_SCOPE_OPTIONS },
+      { key: 'finance.ledgers.vendor',        label: 'Vendor Ledger',        scope: 'both', dataScope: true, scopeOptions: FINANCE_SCOPE_OPTIONS },
+      { key: 'finance.ledgers.salary',        label: 'Salary Ledger',        scope: 'both', dataScope: true, scopeOptions: FINANCE_SCOPE_OPTIONS },
+      { key: 'finance.ledgers.inventory',     label: 'Inventory Ledger',     scope: 'both', dataScope: true, scopeOptions: FINANCE_SCOPE_OPTIONS },
+      { key: 'finance.ledgers.cost_transfer', label: 'Cost Transfer Ledger', scope: 'both', dataScope: true, scopeOptions: FINANCE_SCOPE_OPTIONS },
+      { key: 'finance.ledgers.gv',            label: 'JV Log',               scope: 'both', dataScope: true, scopeOptions: FINANCE_SCOPE_OPTIONS },
     ]},
   ]},
   { group: 'API Marketing', icon: '📣', scope: 'both', children: [
