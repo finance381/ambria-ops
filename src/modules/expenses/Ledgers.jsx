@@ -80,7 +80,7 @@ function Ledgers({ profile }) {
 
   // List state
   var [deptGroups, setDeptGroups] = useState([])
-  var [totals, setTotals] = useState({ total: 0, pending: 0, committed: 0, allocs: 0 })
+  var [totals, setTotals] = useState({ total: 0, pending: 0, committed: 0, credit: 0, allocs: 0 })
   var [loading, setLoading] = useState(false)
   var [collapsedDepts, setCollapsedDepts] = useState({})
   var [collapsedTypes, setCollapsedTypes] = useState({})
@@ -170,45 +170,45 @@ function Ledgers({ profile }) {
     }
 
     var byDept = {}
-    var total = 0, pending = 0, committed = 0
+    var total = 0, pending = 0, committed = 0, credit = 0
     rows.forEach(function (r) {
       var deptKey = r.department_id != null ? String(r.department_id) : '__unassigned__'
       var typeKey = r.expense_type_id != null ? String(r.expense_type_id) : '__untyped__'
       var subKey = r.expense_sub_type_id != null ? String(r.expense_sub_type_id) : '__no_sub__'
+      // Cost-transfer-out rows come through with a negative amount_paise (see v_ledger) —
+      // those are credits against this dept/type/sub-type, not debits. Everything else
+      // (real expense allocations + cost-transfer-in) is a debit, split acknowledged/pending.
+      var isCredit = (r.amount_paise || 0) < 0
       if (!byDept[deptKey]) {
-        byDept[deptKey] = { key: deptKey, deptId: r.department_id, total: 0, pending: 0, committed: 0, allocs: 0, typeMap: {} }
+        byDept[deptKey] = { key: deptKey, deptId: r.department_id, total: 0, pending: 0, committed: 0, credit: 0, allocs: 0, typeMap: {} }
       }
       var g = byDept[deptKey]
       g.total += r.amount_paise || 0
-      g.pending += r.pending_paise || 0
-      g.committed += r.committed_paise || 0
+      if (isCredit) { g.credit += -(r.amount_paise || 0) } else { g.pending += r.pending_paise || 0; g.committed += r.committed_paise || 0 }
       g.allocs += 1
       if (!g.typeMap[typeKey]) {
-        g.typeMap[typeKey] = { typeKey: typeKey, typeId: r.expense_type_id, total: 0, pending: 0, committed: 0, allocs: 0, subMap: {} }
+        g.typeMap[typeKey] = { typeKey: typeKey, typeId: r.expense_type_id, total: 0, pending: 0, committed: 0, credit: 0, allocs: 0, subMap: {} }
       }
       var t = g.typeMap[typeKey]
       t.total += r.amount_paise || 0
-      t.pending += r.pending_paise || 0
-      t.committed += r.committed_paise || 0
+      if (isCredit) { t.credit += -(r.amount_paise || 0) } else { t.pending += r.pending_paise || 0; t.committed += r.committed_paise || 0 }
       t.allocs += 1
       if (!t.subMap[subKey]) {
-        t.subMap[subKey] = { typeId: r.expense_type_id, subTypeId: r.expense_sub_type_id, total: 0, pending: 0, committed: 0, allocs: 0 }
+        t.subMap[subKey] = { typeId: r.expense_type_id, subTypeId: r.expense_sub_type_id, total: 0, pending: 0, committed: 0, credit: 0, allocs: 0 }
       }
       var s = t.subMap[subKey]
       s.total += r.amount_paise || 0
-      s.pending += r.pending_paise || 0
-      s.committed += r.committed_paise || 0
+      if (isCredit) { s.credit += -(r.amount_paise || 0) } else { s.pending += r.pending_paise || 0; s.committed += r.committed_paise || 0 }
       s.allocs += 1
       total += r.amount_paise || 0
-      pending += r.pending_paise || 0
-      committed += r.committed_paise || 0
+      if (isCredit) { credit += -(r.amount_paise || 0) } else { pending += r.pending_paise || 0; committed += r.committed_paise || 0 }
     })
     var groups = Object.values(byDept).map(function (g) {
       var typeGroups = Object.values(g.typeMap).map(function (t) {
         var subRows = Object.values(t.subMap).sort(function (a, b) { return b.total - a.total })
-        return { typeKey: t.typeKey, typeId: t.typeId, total: t.total, pending: t.pending, committed: t.committed, allocs: t.allocs, subRows: subRows }
+        return { typeKey: t.typeKey, typeId: t.typeId, total: t.total, pending: t.pending, committed: t.committed, credit: t.credit, allocs: t.allocs, subRows: subRows }
       }).sort(function (a, b) { return b.total - a.total })
-      return { key: g.key, deptId: g.deptId, total: g.total, pending: g.pending, committed: g.committed, allocs: g.allocs, typeGroups: typeGroups }
+      return { key: g.key, deptId: g.deptId, total: g.total, pending: g.pending, committed: g.committed, credit: g.credit, allocs: g.allocs, typeGroups: typeGroups }
     })
     groups.sort(function (a, b) { return b.total - a.total })
 
@@ -227,7 +227,7 @@ function Ledgers({ profile }) {
     }
     setDeptDelta(newDeltas)
     setDeptGroups(groups)
-    setTotals({ total: total, pending: pending, committed: committed, allocs: rows.length })
+    setTotals({ total: total, pending: pending, committed: committed, credit: credit, allocs: rows.length })
     // On first load only, default all dept groups to collapsed.
     if (!collapseInitializedRef.current && groups.length > 0) {
       var allDeptCollapsed = {}
@@ -443,16 +443,16 @@ function Ledgers({ profile }) {
   function exportListCSV() {
     if (!deptGroups.length) return
     function esc(v) { var s = String(v == null ? '' : v); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s }
-    var lines = ['Department,Type,Sub-Type,Total (pts),Committed (pts),Pending (pts),Allocations']
+    var lines = ['Department,Type,Sub-Type,Net Total (pts),Debits Acknowledged (pts),Debits Pending (pts),Credit (pts),Allocations']
     deptGroups.forEach(function (g) {
       var d = g.deptId ? (deptMap[g.deptId] || 'Unassigned') : 'Unallocated'
-      lines.push(esc(d) + ' (subtotal),,,' + (g.total / 100) + ',' + (g.committed / 100) + ',' + (g.pending / 100) + ',' + g.allocs)
+      lines.push(esc(d) + ' (subtotal),,,' + (g.total / 100) + ',' + (g.committed / 100) + ',' + (g.pending / 100) + ',' + (g.credit / 100) + ',' + g.allocs)
       g.typeGroups.forEach(function (t) {
         var tn = t.typeId ? (typeMap[t.typeId] || 'Untyped') : 'Untyped'
-        lines.push(esc(d) + ',' + esc(tn) + ' (subtotal),,' + (t.total / 100) + ',' + (t.committed / 100) + ',' + (t.pending / 100) + ',' + t.allocs)
+        lines.push(esc(d) + ',' + esc(tn) + ' (subtotal),,' + (t.total / 100) + ',' + (t.committed / 100) + ',' + (t.pending / 100) + ',' + (t.credit / 100) + ',' + t.allocs)
         t.subRows.forEach(function (r) {
           var s = r.subTypeId ? (subTypeMap[r.subTypeId] || '—') : '—'
-          lines.push(esc(d) + ',' + esc(tn) + ',' + esc(s) + ',' + (r.total / 100) + ',' + (r.committed / 100) + ',' + (r.pending / 100) + ',' + r.allocs)
+          lines.push(esc(d) + ',' + esc(tn) + ',' + esc(s) + ',' + (r.total / 100) + ',' + (r.committed / 100) + ',' + (r.pending / 100) + ',' + (r.credit / 100) + ',' + r.allocs)
         })
       })
     })
@@ -812,18 +812,22 @@ function Ledgers({ profile }) {
       </div>
 
       <div className="sticky top-0 z-10 bg-gray-50 pt-1 pb-3 border-b border-gray-200 space-y-2">
-        <div className="grid grid-cols-3 gap-3">
-          <div className="bg-indigo-50 border border-indigo-200 rounded-xl px-3 py-2 text-center">
-            <p className="text-[9px] font-bold text-indigo-400 uppercase">Total</p>
-            <p className="text-base font-bold text-indigo-700">{formatPoints(totals.total)}</p>
-          </div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <div className="bg-green-50 border border-green-200 rounded-xl px-3 py-2 text-center">
-            <p className="text-[9px] font-bold text-green-500 uppercase">Committed</p>
+            <p className="text-[9px] font-bold text-green-500 uppercase">Debits Acknowledged</p>
             <p className="text-base font-bold text-green-700">{formatPoints(totals.committed)}</p>
           </div>
           <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 text-center">
-            <p className="text-[9px] font-bold text-amber-500 uppercase">Pending</p>
+            <p className="text-[9px] font-bold text-amber-500 uppercase">Debits Pending</p>
             <p className="text-base font-bold text-amber-700">{formatPoints(totals.pending)}</p>
+          </div>
+          <div className="bg-rose-50 border border-rose-200 rounded-xl px-3 py-2 text-center">
+            <p className="text-[9px] font-bold text-rose-500 uppercase">Total Credits</p>
+            <p className="text-base font-bold text-rose-700">{formatPoints(totals.credit)}</p>
+          </div>
+          <div className="bg-indigo-50 border border-indigo-200 rounded-xl px-3 py-2 text-center">
+            <p className="text-[9px] font-bold text-indigo-400 uppercase">Net Total</p>
+            <p className="text-base font-bold text-indigo-700">{formatPoints(totals.total)}</p>
           </div>
         </div>
 
@@ -886,6 +890,17 @@ function Ledgers({ profile }) {
         <p className="text-center text-sm text-gray-400 py-8">No matches in this range</p>
       ) : (
         <div className="space-y-1.5">
+          <div className="flex items-stretch px-1">
+            <div className="flex-1 grid grid-cols-[1fr_80px_80px_80px_100px_36px] gap-2 px-3 pb-1">
+              <span></span>
+              <span className="text-[9px] font-bold text-gray-400 uppercase text-right">Acknowledged</span>
+              <span className="text-[9px] font-bold text-gray-400 uppercase text-right">Pending</span>
+              <span className="text-[9px] font-bold text-gray-400 uppercase text-right">Credit</span>
+              <span className="text-[9px] font-bold text-gray-400 uppercase text-right">Net Total</span>
+              <span className="text-[9px] font-bold text-gray-400 uppercase text-right">#</span>
+            </div>
+            <span className="px-2 text-[9px] font-bold text-gray-400 uppercase">Export</span>
+          </div>
           {visibleGroups.map(function (g) {
             var deptCollapsed = collapsedDepts[g.key]
             var delta = deptDelta[g.key] || 0
@@ -893,7 +908,7 @@ function Ledgers({ profile }) {
               <div key={g.key} className="bg-white border border-gray-200 rounded-lg overflow-hidden">
                 <div className="flex items-stretch hover:bg-gray-50 transition-colors">
                   <button onClick={function () { toggleDept(g.key, g.allocs) }}
-                    className="flex-1 grid grid-cols-[1fr_100px_100px_120px_40px] gap-2 items-center px-3 py-2 text-left">
+                    className="flex-1 grid grid-cols-[1fr_80px_80px_80px_100px_36px] gap-2 items-center px-3 py-2 text-left">
                     <div className="flex items-center gap-2 min-w-0">
                       <span className="text-xs text-gray-400 flex-shrink-0">{deptCollapsed ? '▸' : '▾'}</span>
                       <span className="text-sm font-bold text-gray-900 truncate">{g.deptName}</span>
@@ -906,6 +921,7 @@ function Ledgers({ profile }) {
                     </div>
                     <span className="text-xs text-right text-green-700 tabular-nums whitespace-nowrap">{formatPoints(g.committed)}</span>
                     <span className="text-xs text-right text-amber-700 tabular-nums whitespace-nowrap">{formatPoints(g.pending)}</span>
+                    <span className="text-xs text-right text-rose-700 tabular-nums whitespace-nowrap">{g.credit > 0 ? formatPoints(g.credit) : '—'}</span>
                     <span className="text-xs text-right font-bold text-gray-900 tabular-nums whitespace-nowrap">{formatPoints(g.total)}</span>
                     <span className="text-[10px] text-right text-gray-400">{g.allocs}</span>
                   </button>
@@ -924,7 +940,7 @@ function Ledgers({ profile }) {
                     <div key={t.typeKey}>
                       <div className="flex items-stretch border-t border-gray-100 bg-gray-50 hover:bg-gray-100 transition-colors">
                         <button onClick={function () { toggleType(g.key, t.typeKey) }}
-                          className="flex-1 grid grid-cols-[1fr_100px_100px_120px_40px] gap-2 items-center px-3 py-1.5 pl-9 text-left">
+                          className="flex-1 grid grid-cols-[1fr_80px_80px_80px_100px_36px] gap-2 items-center px-3 py-1.5 pl-9 text-left">
                           <div className="flex items-center gap-2 min-w-0">
                             <span className="text-[10px] text-gray-400 flex-shrink-0">{typeCollapsed ? '▸' : '▾'}</span>
                             <span className="text-xs font-semibold text-gray-800 truncate">{typeName}</span>
@@ -932,6 +948,7 @@ function Ledgers({ profile }) {
                           </div>
                           <span className="text-[11px] text-right text-green-700 tabular-nums whitespace-nowrap">{formatPoints(t.committed)}</span>
                           <span className="text-[11px] text-right text-amber-700 tabular-nums whitespace-nowrap">{formatPoints(t.pending)}</span>
+                          <span className="text-[11px] text-right text-rose-700 tabular-nums whitespace-nowrap">{t.credit > 0 ? formatPoints(t.credit) : '—'}</span>
                           <span className="text-[11px] text-right font-bold text-gray-800 tabular-nums whitespace-nowrap">{formatPoints(t.total)}</span>
                           <span className="text-[10px] text-right text-gray-400">{t.allocs}</span>
                         </button>
@@ -947,12 +964,13 @@ function Ledgers({ profile }) {
                         return (
                           <div key={i} className="flex items-stretch border-t border-gray-100 hover:bg-indigo-50 transition-colors">
                             <button onClick={function () { openRow(g, r) }}
-                              className="flex-1 grid grid-cols-[1fr_100px_100px_120px_40px] gap-2 items-center px-3 py-2 pl-14 text-left">
+                              className="flex-1 grid grid-cols-[1fr_80px_80px_80px_100px_36px] gap-2 items-center px-3 py-2 pl-14 text-left">
                               <div className="min-w-0">
                                 <p className="text-xs text-gray-700 truncate">{subTypeName}</p>
                               </div>
                               <span className="text-xs text-right text-green-700 tabular-nums whitespace-nowrap">{formatPoints(r.committed)}</span>
                               <span className="text-xs text-right text-amber-700 tabular-nums whitespace-nowrap">{formatPoints(r.pending)}</span>
+                              <span className="text-xs text-right text-rose-700 tabular-nums whitespace-nowrap">{r.credit > 0 ? formatPoints(r.credit) : '—'}</span>
                               <span className="text-xs text-right font-bold text-gray-800 tabular-nums whitespace-nowrap">{formatPoints(r.total)}</span>
                               <span className="text-[10px] text-right text-gray-400">{r.allocs}</span>
                             </button>
