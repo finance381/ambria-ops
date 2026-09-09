@@ -249,20 +249,6 @@ function CostTransfers({ profile }) {
 
   function validExpense(v) { return !!v.expense_type_id }
 
-  function validMeta(v) {
-    var subId = Number(v.expense_sub_type_id) || 0
-    if (!subId) return true
-    var picked = expSubTypes.find(function (s) { return s.id === subId })
-    if (!picked || !Array.isArray(picked.extra_fields)) return true
-    var meta = v.meta || {}
-    var required = picked.extra_fields.filter(function (ef) { return ef.type === 'lookup' && ef.source && ef.required })
-    for (var i = 0; i < required.length; i++) {
-      var val = meta[required[i].key]
-      if (!val && val !== 0) return false
-    }
-    return true
-  }
-
   function sameExpense(a, b) {
     return String(a.expense_type_id) === String(b.expense_type_id) && String(a.expense_sub_type_id || '') === String(b.expense_sub_type_id || '')
   }
@@ -274,11 +260,9 @@ function CostTransfers({ profile }) {
     setError('')
     if (!form.description.trim()) { setError('Description required'); return }
     if (!validExpense(form.from)) { setError('Select a From expense type'); return }
-    if (!validMeta(form.from)) { setError('Fill required fields for From'); return }
     for (var i = 0; i < form.to_rows.length; i++) {
       var row = form.to_rows[i]
       if (!validExpense(row)) { setError('Row ' + (i + 1) + ': select an expense type'); return }
-      if (!validMeta(row)) { setError('Row ' + (i + 1) + ': fill required fields'); return }
       if (!Number(row.amount_pts) || Number(row.amount_pts) <= 0) { setError('Row ' + (i + 1) + ': amount must be positive'); return }
       if (sameExpense(form.from, row)) { setError('Row ' + (i + 1) + ': To cannot be the same as From'); return }
     }
@@ -608,11 +592,10 @@ function CostTransfers({ profile }) {
                           placeholder="Amount (Rs) *"
                           style={{ fontSize: '16px' }}
                           className="px-2 py-1.5 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-indigo-400" />
-                        <input type="text" value={row.remarks}
+                        <VoiceInput type="text" value={row.remarks}
                           onChange={function (e) { updToRow(idx, { remarks: e.target.value }) }}
                           placeholder="Remarks"
                           maxLength={200}
-                          style={{ fontSize: '16px' }}
                           className="px-2 py-1.5 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-indigo-400" />
                       </div>
                     </div>
@@ -661,99 +644,28 @@ function CostTransfers({ profile }) {
   )
 }
 
-// Expense type + sub-type picker, plus whatever lookup extra_fields the picked
-// sub-type declares (e.g. vendor/venue/employee) — shared by the From field and
-// every To row. `value` is { expense_type_id, expense_sub_type_id, meta }.
-function ExpenseTypeFields({ value, onChange, expTypes, expSubTypes, vendors, venues, employees, categories }) {
+// Expense type + sub-type picker — shared by the From field and every To row.
+// `value` is { expense_type_id, expense_sub_type_id, meta }. A cost transfer just
+// reclassifies which department/type bucket an amount sits in, so it deliberately
+// does NOT render the sub-type's lookup extra_fields (e.g. "Employee Name" on a
+// salary sub-type) the way a real expense entry (ExpenseForm.jsx) does — those
+// identify who/what a fresh expense is for, which doesn't apply to a reclassification.
+function ExpenseTypeFields({ value, onChange, expTypes, expSubTypes }) {
   var etId = Number(value.expense_type_id) || 0
-
-  // Vendors filtered by currently-selected expense type's sub_department (or dept fallback)
-  function vendorPool() {
-    if (!etId) return vendors || []
-    var et = (expTypes || []).find(function (x) { return x.id === etId })
-    if (!et) return vendors || []
-    var sdId = et.sub_department_id || null
-    var dId = et.department_id || null
-    var catList = categories || []
-    var relevantCatIds = catList.filter(function (c) {
-      if (sdId && c.sub_department_id === sdId) return true
-      if (!sdId && dId) { // fallback: any cat under any sub_dept of this dept — punt: use all cats without sub_dept filter
-        return true
-      }
-      return false
-    }).map(function (c) { return c.id })
-    if (relevantCatIds.length === 0) return vendors || []
-    return (vendors || []).filter(function (v) {
-      var vc = v.category_ids || []
-      for (var i = 0; i < vc.length; i++) { if (relevantCatIds.indexOf(vc[i]) !== -1) return true }
-      return false
-    })
-  }
-
-  function lookupItems(field) {
-    var source = field.source
-    if (source === 'vendors') {
-      return vendorPool().map(function (x) { return { value: String(x.id), label: x.name } })
-    }
-    if (source === 'venues') return (venues || []).map(function (x) { return { value: String(x.id), label: (x.code ? x.code + ' — ' + x.name : x.name) } })
-    if (source === 'job_departments') {
-      var allowed = Array.isArray(field.allowed_dept_ids) ? field.allowed_dept_ids : []
-      var pool = employees || []
-      if (allowed.length > 0) {
-        pool = pool.filter(function (e) {
-          var jd = e.job_department_ids || []
-          for (var i = 0; i < jd.length; i++) { if (allowed.indexOf(jd[i]) !== -1) return true }
-          return false
-        })
-      }
-      return pool.map(function (e) { return { value: String(e.id), label: e.full_name + (e.employee_code ? ' (' + e.employee_code + ')' : '') } })
-    }
-    return []
-  }
-
   var subs = expSubTypes.filter(function (s) { return s.expense_type_id === etId })
   var etItems = expTypes.map(function (x) { return { value: String(x.id), label: x.name } })
   var subItems = subs.map(function (x) { return { value: String(x.id), label: x.name } })
 
-  // Collect lookup-type extra_fields declared on the picked sub-type (e.g. salary needs employee_id)
-  var subId = Number(value.expense_sub_type_id) || 0
-  var picked = subId ? expSubTypes.find(function (s) { return s.id === subId }) : null
-  var lookupExtras = (picked && Array.isArray(picked.extra_fields))
-    ? picked.extra_fields.filter(function (f) { return f.type === 'lookup' && f.source })
-    : []
-  var meta = value.meta || {}
-
   return (
-    <div>
-      <div className="grid grid-cols-2 gap-2">
-        <SearchDropdown items={etItems}
-          value={value.expense_type_id}
-          onChange={function (v) { onChange({ expense_type_id: v, expense_sub_type_id: '', meta: {} }) }}
-          placeholder="Search expense type" />
-        <SearchDropdown items={subItems}
-          value={value.expense_sub_type_id}
-          onChange={function (v) { onChange({ expense_sub_type_id: v, meta: {} }) }}
-          placeholder={!etId ? 'Pick a type first' : (subs.length === 0 ? 'No sub-types' : 'Sub-type (optional)')} />
-      </div>
-      {lookupExtras.length > 0 && (
-        <div className="mt-2 space-y-2 pl-2 border-l-2 border-indigo-100">
-          {lookupExtras.map(function (f) {
-            return (
-              <div key={f.key}>
-                <label className="block text-[10px] font-semibold text-gray-500 mb-1 uppercase tracking-wider">{f.label}{f.required ? ' *' : ''}</label>
-                <SearchDropdown items={lookupItems(f)}
-                  value={meta[f.key] || ''}
-                  onChange={function (v) {
-                    var nextMeta = Object.assign({}, meta)
-                    if (v === '' || v == null) { delete nextMeta[f.key] } else { nextMeta[f.key] = v }
-                    onChange({ meta: nextMeta })
-                  }}
-                  placeholder={f.source === 'job_departments' ? 'Search employees' : ('Search ' + (f.source || ''))} />
-              </div>
-            )
-          })}
-        </div>
-      )}
+    <div className="grid grid-cols-2 gap-2">
+      <SearchDropdown items={etItems}
+        value={value.expense_type_id}
+        onChange={function (v) { onChange({ expense_type_id: v, expense_sub_type_id: '' }) }}
+        placeholder="Search expense type" />
+      <SearchDropdown items={subItems}
+        value={value.expense_sub_type_id}
+        onChange={function (v) { onChange({ expense_sub_type_id: v }) }}
+        placeholder={!etId ? 'Pick a type first' : (subs.length === 0 ? 'No sub-types' : 'Sub-type (optional)')} />
     </div>
   )
 }
