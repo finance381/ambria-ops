@@ -50,6 +50,16 @@ var REF_TYPE_STYLES = {
 // the ledger_entries row for that specific payment (proof images, deduction reason, etc.)
 var PAYMENT_REF_TYPES = ['vendor_payment', 'vendor_deduction', 'salary_payment', 'salary_adjustment']
 
+// expenses.status — mirrors Ledgers.jsx's drill-view badges so an expense's
+// acknowledgment state is visible here too, not just after drilling into the ledger.
+var EXP_STATUS_LABELS = { recorded: 'Recorded', flagged: 'Resubmit', acknowledged: 'Acknowledged', deducted: 'Deducted' }
+var EXP_STATUS_COLORS = {
+  recorded: 'bg-amber-100 text-amber-700',
+  flagged: 'bg-orange-100 text-orange-700',
+  acknowledged: 'bg-green-100 text-green-700',
+  deducted: 'bg-indigo-100 text-indigo-700',
+}
+
 function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, onClose, onBalanceChange, onOpenExpense }) {
   var [walletView, setWalletView] = useState(null)
   var [allWallets, setAllWallets] = useState([])
@@ -97,6 +107,9 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   var [expenseRefs, setExpenseRefs] = useState({})
   // Resolved display labels for lookup-type sub-type extra fields, keyed 'source:id' → label.
   var [expLookupLabels, setExpLookupLabels] = useState({})
+  // ledger_entries rows for PAYMENT_REF_TYPES txns, keyed by ledger_entries.id (== t.reference_id)
+  // — carries .metadata (payment_images / deduction_image) for inline proof thumbnails.
+  var [paymentRefs, setPaymentRefs] = useState({})
   // EPC back-links: wallet_tx_id → { epc, isCancel }. Populated by loadRecentTxns / openWalletTxns.
   var [epcRefs, setEpcRefs] = useState({})
   var [cancelTarget, setCancelTarget] = useState(null)  // { txn, kind: 'collection' | 'epc' }
@@ -359,7 +372,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     if (expRefIds.length > 0) {
       var expIdsNum = expRefIds.map(function (x) { return Number(x) }).filter(function (n) { return !isNaN(n) })
       var { data: eData } = await supabase.from('expenses')
-        .select('id, description, amount_paise, expense_date, event_id, vendor_name, metadata, expense_types(name, icon), expense_sub_types(name, extra_fields), expense_allocations(department, amount_paise, expense_types(name), expense_sub_types(name))')
+        .select('id, description, amount_paise, expense_date, event_id, vendor_name, metadata, status, expense_types(name, icon), expense_sub_types(name, extra_fields), expense_allocations(department, amount_paise, expense_types(name), expense_sub_types(name))')
         .in('id', expIdsNum)
       var eMap = {}
       var evIds = {}
@@ -381,6 +394,20 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
       resolveExpenseLookups(eMap)
     } else {
       setExpenseRefs({})
+    }
+    // Vendor/salary payment proof images live on ledger_entries.metadata, not on the
+    // wallet_transactions row itself — batch-fetch so the list can show a thumbnail
+    // inline instead of only after opening the detail modal.
+    var payRefIds = txns.filter(function (tt) {
+      return PAYMENT_REF_TYPES.indexOf(tt.reference_type) !== -1 && tt.reference_id
+    }).map(function (tt) { return tt.reference_id })
+    if (payRefIds.length > 0) {
+      var { data: leData } = await supabase.from('ledger_entries').select('id, metadata').in('id', payRefIds)
+      var leMap = {}
+      ;(leData || []).forEach(function (le) { leMap[le.id] = le })
+      setPaymentRefs(leMap)
+    } else {
+      setPaymentRefs({})
     }
     // EPC back-links: any wallet_txn whose id matches extra_plate_collections.wallet_tx_id OR .cancel_wallet_tx_id
     var txnIds = txns.map(function (tt) { return tt.id })
@@ -2439,6 +2466,11 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                       {isCancelled && (
                         <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 bg-rose-100 text-rose-700 rounded">Cancelled</span>
                       )}
+                      {(t.reference_type === 'expense' || t.reference_type === 'expense_refund') && t.reference_id && expenseRefs[t.reference_id] && expenseRefs[t.reference_id].status && (
+                        <span className={"text-[9px] font-bold uppercase px-1.5 py-0.5 rounded " + (EXP_STATUS_COLORS[expenseRefs[t.reference_id].status] || 'bg-gray-100 text-gray-600')}>
+                          {EXP_STATUS_LABELS[expenseRefs[t.reference_id].status] || expenseRefs[t.reference_id].status}
+                        </span>
+                      )}
                     </div>
                     {isCancelled && t.cancelled_reason && (
                       <p className="text-[10px] text-rose-600 italic mt-0.5">Reason: {t.cancelled_reason}</p>
@@ -2515,6 +2547,11 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                         </div>
                       )}
                     </div>
+                    {isPayRow && t.reference_id && paymentRefs[t.reference_id] && (
+                      <div onClick={function (ev) { ev.stopPropagation() }}>
+                        <PaymentProofThumbs meta={paymentRefs[t.reference_id].metadata} />
+                      </div>
+                    )}
                   </div>
                   <div className="text-right flex-shrink-0 ml-2">
                     <p className={"text-sm font-bold " + (isCredit ? "text-green-600" : "text-red-600")}>
