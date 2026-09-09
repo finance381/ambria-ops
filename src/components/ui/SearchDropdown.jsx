@@ -162,6 +162,19 @@ function SearchDropdown({ items, value, onChange, onAdd, onInputChange, placehol
     }
   }, [hlIdx])
 
+  // The list is absolutely-positioned, so opening it doesn't push a
+  // scrollable ancestor's scrollbar the way normal content would — if it
+  // opens near the bottom of a scrollable modal/drawer, the modal just
+  // clips it with no indication there's more below. Nudge any scrollable
+  // ancestor to bring the freshly-opened list fully into view.
+  useEffect(function () {
+    if (!open || !listRef.current) return
+    var id = requestAnimationFrame(function () {
+      if (listRef.current) listRef.current.scrollIntoView({ block: 'nearest' })
+    })
+    return function () { cancelAnimationFrame(id) }
+  }, [open])
+
   return (
     <div>
       {label && (
