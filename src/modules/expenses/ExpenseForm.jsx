@@ -1335,6 +1335,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
     var submitted = 0
     var failed = 0
     var failedMsgs = []
+    var entryWarnings = []
     var batchId = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : null
 
     for (var i = 0; i < entries.length; i++) {
@@ -1441,9 +1442,14 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
               if (updErr) uploadErrors.push('Save paths failed: ' + updErr.message)
             }
             if (uploadErrors.length > 0) {
-              setError('Expense saved but ' + uploadErrors.length + ' receipt(s) failed to attach:\n' + uploadErrors.join('\n') + '\n\nEdit the expense to re-attach.')
-              setSaving(false)
-              return
+              // The expense row is already committed at this point — don't abort the whole
+              // submission here. Doing so used to leave this entry's data sitting untouched
+              // in state, which the draft autosave effect then silently re-persisted as an
+              // "unsaved draft" (since it only skips saving while `saving` is true), inviting
+              // a genuine duplicate expense on the next Restore + Submit. Keep going instead —
+              // allocations/wallet debit still need to run for this real expense — and surface
+              // the caveat in the end-of-batch summary.
+              entryWarnings.push('#' + (i + 1) + ' (exp #' + exp.id + '): ' + uploadErrors.join('; '))
             }
           }
 
@@ -1451,14 +1457,13 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
             var aPath = profile.id + '/' + exp.id + '_voice_' + Date.now() + '.webm'
             var { error: aErr } = await supabase.storage.from('receipts').upload(aPath, e.audioBlob, { contentType: 'audio/webm', upsert: true })
             if (aErr) {
-              setError('Voice upload failed: ' + aErr.message); setSaving(false); return
-            }
-            var { error: aRpcErr } = await supabase.rpc('attach_expense_receipts', {
-              p_expense_id: exp.id,
-              p_paths: [aPath]
-            })
-            if (aRpcErr) {
-              setError('Voice attach failed: ' + aRpcErr.message); setSaving(false); return
+              entryWarnings.push('#' + (i + 1) + ' (exp #' + exp.id + '): voice upload failed — ' + aErr.message)
+            } else {
+              var { error: aRpcErr } = await supabase.rpc('attach_expense_receipts', {
+                p_expense_id: exp.id,
+                p_paths: [aPath]
+              })
+              if (aRpcErr) entryWarnings.push('#' + (i + 1) + ' (exp #' + exp.id + '): voice attach failed — ' + aRpcErr.message)
             }
           }
 
@@ -1565,7 +1570,11 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
       setSaving(false)
       setError('All ' + failed + ' entries failed to submit\n' + failedMsgs.join('\n'))
     } else {
-      setSuccess(submitted + ' expense' + (submitted > 1 ? 's' : '') + ' submitted')
+      var successMsg = submitted + ' expense' + (submitted > 1 ? 's' : '') + ' submitted'
+      if (entryWarnings.length > 0) {
+        successMsg += '\n\n' + entryWarnings.length + ' receipt/voice attachment issue(s) — edit the expense to re-attach:\n' + entryWarnings.join('\n')
+      }
+      setSuccess(successMsg)
       clearDraftAfterSubmit()
       // Keep the form locked (saving stays true) until the reset below actually clears the
       // entries — otherwise the button re-enables for 1.5s with the same entries still
@@ -1608,7 +1617,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
         </div>
       )}
       {/* Error banner moved next to the Submit button below — screenshot-friendly, one-tap Copy */}
-      {success && <div className="p-3 rounded-lg bg-green-50 border border-green-200 text-green-700 text-sm">{success}</div>}
+      {success && <div className="p-3 rounded-lg bg-green-50 border border-green-200 text-green-700 text-sm whitespace-pre-wrap">{success}</div>}
       {isAdminEdit && (
         <div className="p-3 rounded-lg bg-purple-50 border border-purple-200 text-purple-700 text-sm">
           🔧 Admin retype — only expense type & sub-type will be saved. Amount, receipts, allocations, wallet remain unchanged.
