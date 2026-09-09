@@ -20,6 +20,8 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
   var [allocations, setAllocations] = useState([])
   var [allocVenues, setAllocVenues] = useState({})
   var [imgFullscreen, setImgFullscreen] = useState('')
+  var [fullscreenIdx, setFullscreenIdx] = useState(-1)
+  var [imgRotations, setImgRotations] = useState({})
   var [lookupLabels, setLookupLabels] = useState({})
   var [reviewerName, setReviewerName] = useState('')
   var [penalizerName, setPenalizerName] = useState('')
@@ -195,6 +197,16 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
       isImage: /\.(jpg|jpeg|png|gif|webp)$/i.test(path)
     }
   })
+
+  // Rotation is view-only (not persisted) — just for checking a wrong-orientation upload.
+  function rotateImg(key, e) {
+    if (e) e.stopPropagation()
+    setImgRotations(function (prev) {
+      var next = Object.assign({}, prev)
+      next[key] = ((prev[key] || 0) + 90) % 360
+      return next
+    })
+  }
 
   async function reverseGv(gv) {
     if (reversing) return
@@ -448,12 +460,17 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
               }
               if (r.isImage) {
                 return (
-                  <div key={rIdx}>
+                  <div key={rIdx} className="relative">
                     <img
                       src={r.url} alt={"Receipt " + (rIdx + 1)}
-                      onClick={function () { setImgFullscreen(r.url) }}
+                      onClick={function () { setImgFullscreen(r.url); setFullscreenIdx(rIdx) }}
+                      style={{ transform: 'rotate(' + (imgRotations[r.path] || 0) + 'deg)', transition: 'transform 0.2s' }}
                       className="w-full max-h-64 @3xl:max-h-[520px] object-contain rounded-lg border border-gray-100 bg-gray-50 cursor-pointer active:opacity-80"
                     />
+                    <button type="button" onClick={function (e) { rotateImg(r.path, e) }} title="Rotate"
+                      className="absolute top-2 right-2 w-8 h-8 bg-black/50 hover:bg-black/70 text-white rounded-full flex items-center justify-center text-base">
+                      ⟳
+                    </button>
                     {receipts.length === 1 && <p className="text-[10px] text-gray-400 text-center mt-1">Tap to enlarge</p>}
                   </div>
                 )
@@ -479,15 +496,35 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
 
       {imgFullscreen && (
         <div
-          onClick={function () { setImgFullscreen('') }}
+          onClick={function () { setImgFullscreen(''); setFullscreenIdx(-1) }}
           className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4"
           style={{ margin: 0 }}
         >
           <button
-            onClick={function () { setImgFullscreen('') }}
+            onClick={function () { setImgFullscreen(''); setFullscreenIdx(-1) }}
             className="absolute top-4 right-4 w-10 h-10 bg-white/20 text-white rounded-full text-xl flex items-center justify-center hover:bg-white/30"
           >✕</button>
-          <img src={imgFullscreen} alt="Receipt" className="max-w-full max-h-full object-contain rounded-lg" />
+          <button
+            onClick={function (e) { rotateImg(receipts[fullscreenIdx] ? receipts[fullscreenIdx].path : fullscreenIdx, e) }}
+            title="Rotate"
+            className="absolute top-4 right-16 w-10 h-10 bg-white/20 text-white rounded-full text-xl flex items-center justify-center hover:bg-white/30"
+          >⟳</button>
+          {(function () {
+            var rotKey = receipts[fullscreenIdx] ? receipts[fullscreenIdx].path : fullscreenIdx
+            var rot = imgRotations[rotKey] || 0
+            var rotated90 = rot === 90 || rot === 270
+            return (
+              <img src={imgFullscreen} alt="Receipt"
+                onClick={function (e) { e.stopPropagation() }}
+                style={{
+                  transform: 'rotate(' + rot + 'deg)',
+                  transition: 'transform 0.2s',
+                  maxWidth: rotated90 ? '85vh' : '100%',
+                  maxHeight: rotated90 ? '85vw' : '100%',
+                }}
+                className="object-contain rounded-lg" />
+            )
+          })()}
         </div>
       )}
 
