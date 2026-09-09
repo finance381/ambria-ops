@@ -334,6 +334,58 @@ function Ledgers({ profile }) {
     var rows = data || []
     var hasMore = rows.length > PAGE_SIZE
     if (hasMore) rows = rows.slice(0, PAGE_SIZE)
+
+    // Enrich with this sub-type's custom field values (e.g. which employee a
+    // salary-type expense was paid to) — v_ledger doesn't expose expenses.metadata.
+    var subType = drillGroup.subTypeId ? refData.expenseSubTypes.find(function (s) { return s.id === drillGroup.subTypeId }) : null
+    var extraFields = (subType && subType.extra_fields) || []
+    if (extraFields.length > 0 && rows.length > 0) {
+      var eIds = Array.from(new Set(rows.map(function (r) { return r.expense_id }).filter(function (v) { return v != null })))
+      var metaRes = await supabase.from('expenses').select('id, metadata').in('id', eIds)
+      var metaMap = {}
+      ;(metaRes.data || []).forEach(function (e) { metaMap[e.id] = e.metadata || {} })
+
+      // job_departments/venues are already preloaded in refData; vendors aren't.
+      var vendorLookupFields = extraFields.filter(function (f) { return f.type === 'lookup' && f.source === 'vendors' })
+      var vendorMap = {}
+      if (vendorLookupFields.length > 0) {
+        var vendorIds = new Set()
+        rows.forEach(function (r) {
+          var meta = metaMap[r.expense_id] || {}
+          vendorLookupFields.forEach(function (f) { if (meta[f.key]) vendorIds.add(meta[f.key]) })
+        })
+        if (vendorIds.size > 0) {
+          var vRes = await supabase.from('vendors').select('id, name').in('id', Array.from(vendorIds))
+          ;(vRes.data || []).forEach(function (v) { vendorMap[v.id] = v.name })
+        }
+      }
+
+      var resolveField = function (field, rawValue) {
+        if (rawValue == null || rawValue === '') return null
+        if (field.type === 'lookup') {
+          if (field.source === 'job_departments') {
+            var emp = refData.employees.find(function (e) { return String(e.id) === String(rawValue) })
+            return emp ? emp.full_name : ('#' + rawValue)
+          }
+          if (field.source === 'venues') {
+            var ven = refData.venues.find(function (v) { return String(v.id) === String(rawValue) })
+            return ven ? (ven.name || ven.code) : ('#' + rawValue)
+          }
+          if (field.source === 'vendors') return vendorMap[rawValue] || ('#' + rawValue)
+        }
+        return String(rawValue)
+      }
+
+      rows = rows.map(function (r) {
+        var meta = metaMap[r.expense_id] || {}
+        var chips = extraFields.map(function (f) {
+          var resolved = resolveField(f, meta[f.key])
+          return resolved ? { label: f.label, value: resolved } : null
+        }).filter(Boolean)
+        return Object.assign({}, r, { _fieldChips: chips })
+      })
+    }
+
     if (append) setDrillRows(function (prev) { return prev.concat(rows) })
     else setDrillRows(rows)
     setDrillHasMore(hasMore)
@@ -711,6 +763,17 @@ function Ledgers({ profile }) {
                       <p className="text-sm text-gray-800 truncate mt-1">{r.description || '—'}</p>
                       {r.remarks && <p className="text-xs italic text-gray-500 mt-0.5">"{r.remarks}"</p>}
                       {r.venue_id && <p className="text-[10px] text-gray-400 mt-0.5">Venue: {venueMap[r.venue_id] || '—'}</p>}
+                      {r._fieldChips && r._fieldChips.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 mt-1">
+                          {r._fieldChips.map(function (c, i) {
+                            return (
+                              <span key={i} className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-100">
+                                {c.label}: <b>{c.value}</b>
+                              </span>
+                            )
+                          })}
+                        </div>
+                      )}
                     </div>
                     <span className="text-sm font-bold text-gray-800 ml-3 flex-shrink-0">{formatPoints(r.amount_paise)}</span>
                   </div>
