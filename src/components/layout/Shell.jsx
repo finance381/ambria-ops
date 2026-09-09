@@ -30,6 +30,7 @@ import AdminMobile from '../../modules/categories/AdminMobile.jsx'
 import MyProfile from '../../modules/employees/MyProfile'
 import Projects from '../../modules/projects/Projects'
 import Reviews from '../../modules/reviews/Reviews'
+import BroadcastHub from '../../modules/broadcast/BroadcastHub.jsx'
 import { hasPerm } from '../../lib/permissions'
 
 var GROUPS = [
@@ -102,6 +103,18 @@ var GROUPS = [
     key: 'hr', label: 'HR', icon: '👔', items: [
       { key: 'hr.employees', label: 'Employees', icon: '👤', tab: 'employees' },
       { key: 'finance.ledgers.salary', label: 'Salary Ledger', icon: '📒', tab: 'salary_ledger' },
+    ]
+  },
+  {
+    // All 4 view perms point at the same 'broadcast' tab — BroadcastHub.jsx
+    // decides sub-nav internally, same pattern as the Review group above.
+    // broadcast.quicksend is deliberately NOT listed here — sales-only users
+    // shouldn't see this tile; they reach QuickSend from inline contexts only.
+    key: 'broadcast', label: 'API Marketing', icon: '📣', items: [
+      { key: 'broadcast.templates.view', label: 'Templates', icon: '📣', tab: 'broadcast' },
+      { key: 'broadcast.contacts.view',  label: 'Contacts',  icon: '📣', tab: 'broadcast' },
+      { key: 'broadcast.campaigns.view', label: 'Campaigns', icon: '📣', tab: 'broadcast' },
+      { key: 'broadcast.inbox.view',     label: 'Inbox',     icon: '📣', tab: 'broadcast' },
     ]
   },
   {
@@ -206,6 +219,9 @@ function Shell({ profile, onSignOut }) {
     // inside Reviews.jsx itself), so picking a per-item label here would be arbitrary —
     // just label the page for what it is.
     headerTitle = 'Reviews'
+  } else if (tab === 'broadcast') {
+    // Same situation as 'reviews' above — all 4 items share this tab, sub-nav is internal.
+    headerTitle = 'API Marketing'
   } else if (tab && currentGroup) {
     var currentItem = currentGroup.items.find(function (f) { return f.tab === tab })
     headerTitle = currentItem?.label || currentGroup.label
@@ -611,6 +627,9 @@ function Shell({ profile, onSignOut }) {
         )}
         {tab === 'reviews' && (
           <Reviews profile={profile} />
+        )}
+        {tab === 'broadcast' && (
+          <BroadcastHub profile={profile} />
         )}
         {tab === 'requisitions' && (
           <Requisitions profile={profile} onBack={goBack} />

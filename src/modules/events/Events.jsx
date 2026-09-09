@@ -6,6 +6,7 @@ import Modal from '../../components/ui/Modal'
 import EventLedger from '../expenses/EventLedger'
 import { hasPerm } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
+import QuickSendDrawer from '../../components/broadcast/QuickSendDrawer'
 
 var lastSyncTime = 0
 var SYNC_COOLDOWN = 5 * 60 * 1000
@@ -101,6 +102,8 @@ function Events({ profile }) {
 
   var isAdmin = hasPerm(profile?.permsNew, 'events.list')
   var permsNew = profile?.permsNew || []
+  var canQuickSend = hasPerm(permsNew, 'broadcast.quicksend')
+  var [quickSendGroup, setQuickSendGroup] = useState(null)
 
   useEffect(function () {
     if (!selectedFunction) { setExtraPlateSummary(null); return }
@@ -390,8 +393,22 @@ function Events({ profile }) {
                 {selectedGroup.contact_person && <span><strong>Contact:</strong> {selectedGroup.contact_person}</span>}
                 {selectedGroup.contact_number && <span><strong>Phone:</strong> {selectedGroup.contact_number}</span>}
                 {selectedGroup.location && <span><strong>Location:</strong> {selectedGroup.location}</span>}
+                {canQuickSend && selectedGroup.contact_number && (
+                  <button onClick={function () { setQuickSendGroup(selectedGroup) }}
+                    className="text-xs font-bold text-emerald-600">Send WhatsApp</button>
+                )}
               </div>
             </div>
+
+            {quickSendGroup && quickSendGroup === selectedGroup && (
+              <QuickSendDrawer
+                contact={{
+                  phone: '+91' + String(selectedGroup.contact_number).replace(/\D/g, '').slice(-10),
+                  name: selectedGroup.contact_person || selectedGroup.client_name,
+                }}
+                onClose={function () { setQuickSendGroup(null) }}
+              />
+            )}
 
             <div>
               <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">

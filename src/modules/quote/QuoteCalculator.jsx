@@ -4,6 +4,7 @@ import EventDatePicker from '../../components/ui/EventDatePicker'
 import { useLang } from '../../lib/i18n.jsx'
 import VoiceInput from '../../components/ui/VoiceInput'
 import { hasPerm } from '../../lib/permissions'
+import QuickSendDrawer from '../../components/broadcast/QuickSendDrawer'
 
 /* ═══════════════════════════════════════════════════════
    AMBRIA QUOTE CALCULATOR — Server-Side Pricing
@@ -1030,6 +1031,8 @@ function QuoteCalculator({ profile, onExit, onSignOut }) {
     rememberTheme(next)
   }
   var isAdmin = hasPerm(profile?.permsNew, 'events.quote')
+  var canQuickSend = hasPerm(profile?.permsNew, 'broadcast.quicksend')
+  var [quickSendOpen, setQuickSendOpen] = useState(false)
 
   var [page, setPage] = useState(0)
   var [guestName, setGuestName] = useState('')
@@ -1946,6 +1949,11 @@ function QuoteCalculator({ profile, onExit, onSignOut }) {
               <input type="tel" value={guestPhone} placeholder="+91 98765 43210"
                 onChange={function (e) { setGuestPhone(e.target.value.replace(/[^0-9+\- ]/g, '').slice(0, 16)) }}
                 style={inputSt(true, !!guestPhone)} />
+              {canQuickSend && guestPhone && (
+                <button onClick={function () { setQuickSendOpen(true) }} style={{
+                  marginTop: 6, fontSize: 11, fontWeight: 700, color: '#059669', background: 'none', border: 'none', cursor: 'pointer', padding: 0,
+                }}>Send WhatsApp</button>
+              )}
             </Field>
             <Field label="Address" icon="pin">
               <input type="text" value={guestAddress} placeholder="Locality / Area"
@@ -1953,6 +1961,13 @@ function QuoteCalculator({ profile, onExit, onSignOut }) {
                 style={inputSt(true, !!guestAddress)} />
             </Field>
           </div>
+
+          {quickSendOpen && (
+            <QuickSendDrawer
+              contact={{ phone: '+91' + guestPhone.replace(/\D/g, '').slice(-10), name: guestName }}
+              onClose={function () { setQuickSendOpen(false) }}
+            />
+          )}
 
           <div style={{ display: 'grid', gridTemplateColumns: isDesktop ? 'repeat(3, 1fr)' : '1fr', gap: 14, alignItems: 'start' }}>
             <div>

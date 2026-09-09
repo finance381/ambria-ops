@@ -34,6 +34,11 @@ var SalaryPayouts = lazy(function () { return import('../../modules/expenses/Sal
 var LedgersHub = lazy(function () { return import('../../modules/expenses/LedgersHub') })
 var Projects = lazy(function () { return import('../../modules/projects/Projects') })
 var Reviews = lazy(function () { return import('../../modules/reviews/Reviews') })
+var BroadcastTemplates = lazy(function () { return import('../../modules/broadcast/Templates') })
+var BroadcastContacts = lazy(function () { return import('../../modules/broadcast/Contacts') })
+var BroadcastCampaigns = lazy(function () { return import('../../modules/broadcast/Campaigns') })
+var BroadcastInbox = lazy(function () { return import('../../modules/broadcast/Inbox') })
+var BroadcastSettings = lazy(function () { return import('../../modules/broadcast/Settings') })
 
 function ExpenseTypesMaster(props) {
   return <Expenses profile={props.profile} masterMode={true} />
@@ -86,6 +91,13 @@ var SUB_TAB_CONFIG = {
     { key: 'requisitions', label: 'Requisitions',    component: Requisitions, perm: 'procurement.requisitions' },
     { key: 'purchase',     label: 'Purchase Orders', component: Purchase,     perm: 'procurement.purchase_orders' },
     { key: 'vendors',      label: 'Vendors',         component: Vendors,      perm: 'procurement.vendors' },
+  ],
+  broadcast: [
+    { key: 'templates', label: 'Templates', component: BroadcastTemplates, perm: 'broadcast.templates.view' },
+    { key: 'contacts',  label: 'Contacts',  component: BroadcastContacts,  perm: 'broadcast.contacts.view' },
+    { key: 'campaigns', label: 'Campaigns', component: BroadcastCampaigns, perm: 'broadcast.campaigns.view' },
+    { key: 'inbox',     label: 'Inbox',     component: BroadcastInbox,     perm: 'broadcast.inbox.view' },
+    { key: 'settings',  label: 'Settings',  component: BroadcastSettings,  perm: 'broadcast.settings' },
   ],
   expenses: [
     { key: 'wallet',         label: 'Wallet',         component: Wallet,         perm: 'finance.wallet' },
@@ -150,6 +162,8 @@ var ADMIN_TABS = [
   { key: 'masters',     label: 'Masters',     icon: 'ti-adjustments',    perm: 'admin.masters' },
   { key: 'users',       label: 'Users',       icon: 'ti-users',
     anyPerm: ['admin.users','hr.employees'] },
+  { key: 'broadcast',   label: 'API Marketing', icon: 'ti-brand-whatsapp',
+    anyPerm: ['broadcast.templates.view','broadcast.contacts.view','broadcast.campaigns.view','broadcast.inbox.view'] },
   { key: 'projects',    label: 'Projects',    icon: 'ti-building-community', perm: 'projects.view' },
   { key: 'reviews',     label: 'Reviews',     icon: 'ti-checklist',
     anyPerm: ['review.inventory','review.item_receipts','review.expenses','review.requisitions','review.vendor_payments'] },
@@ -187,6 +201,7 @@ var MODULES = {
   procurement: makeTabbedModule('procurement'),
   projects: Projects,
   reviews: Reviews,
+  broadcast: makeTabbedModule('broadcast'),
 }
 
 function AdminShell({ profile, onSignOut }) {
