@@ -25,6 +25,7 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
   var [lookupLabels, setLookupLabels] = useState({})
   var [reviewerName, setReviewerName] = useState('')
   var [penalizerName, setPenalizerName] = useState('')
+  var [acknowledgerName, setAcknowledgerName] = useState('')
   var [gvs, setGvs] = useState([])
   var [expandedGvId, setExpandedGvId] = useState('')
   var [reversing, setReversing] = useState(false)
@@ -49,14 +50,16 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
     var ids = []
     if (exp.reviewed_by) ids.push(exp.reviewed_by)
     if (exp.penalized_by && ids.indexOf(exp.penalized_by) === -1) ids.push(exp.penalized_by)
-    if (ids.length === 0) { setReviewerName(''); setPenalizerName(''); return }
+    if (exp.acknowledged_by && ids.indexOf(exp.acknowledged_by) === -1) ids.push(exp.acknowledged_by)
+    if (ids.length === 0) { setReviewerName(''); setPenalizerName(''); setAcknowledgerName(''); return }
     supabase.from('profiles').select('id, name').in('id', ids).then(function (res) {
       var map = {}
       ;(res.data || []).forEach(function (p) { map[p.id] = p.name || '' })
       setReviewerName(exp.reviewed_by ? (map[exp.reviewed_by] || '—') : '')
       setPenalizerName(exp.penalized_by ? (map[exp.penalized_by] || '—') : '')
+      setAcknowledgerName(exp.acknowledged_by ? (map[exp.acknowledged_by] || '—') : '')
     })
-  }, [exp.id, exp.reviewed_by, exp.penalized_by])
+  }, [exp.id, exp.reviewed_by, exp.penalized_by, exp.acknowledged_by])
 
   useEffect(function () {
     supabase.from('general_vouchers')
@@ -362,9 +365,16 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
               {exp.profiles?.name || '—'} · {formatDate(exp.expense_date)}
             </p>
           </div>
-          <span className={"text-[10px] font-bold uppercase px-2 py-0.5 rounded-full " + (APPROVAL_STATUS_COLORS[exp.status] || 'bg-gray-100 text-gray-600')}>
-            {APPROVAL_STATUS_LABELS[exp.status] || exp.status}
-          </span>
+          <div className="text-right">
+            <span className={"text-[10px] font-bold uppercase px-2 py-0.5 rounded-full " + (APPROVAL_STATUS_COLORS[exp.status] || 'bg-gray-100 text-gray-600')}>
+              {APPROVAL_STATUS_LABELS[exp.status] || exp.status}
+            </span>
+            {exp.status === 'acknowledged' && acknowledgerName && (
+              <p className="text-[10px] text-gray-400 mt-1">
+                By <span className="font-semibold text-gray-600">{acknowledgerName}</span>{exp.acknowledged_at ? ' · ' + formatDate(exp.acknowledged_at) : ''}
+              </p>
+            )}
+          </div>
         </div>
       </div>
 
