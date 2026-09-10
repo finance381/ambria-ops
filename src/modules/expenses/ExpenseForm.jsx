@@ -217,6 +217,10 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
 
   var [entries, setEntries] = useState(function () { return [editExp ? hydrateEntry(editExp) : makeEntry()] })
   var [saving, setSaving] = useState(false)
+  // `saving` (React state) doesn't close the window between two rapid clicks landing in
+  // the same tick and the next re-render — a plain ref mutation is synchronous and closes
+  // it, guarding against a fast double-tap submitting the same entries twice.
+  var submitLockRef = useRef(false)
   var [isFunction, setIsFunction] = useState(!!(editExp && editExp.event_id))
   var [eventDate, setEventDate] = useState(editExp && editExp.event_id ? (editExp.expense_date || '') : '')
   var [eventId, setEventId] = useState(editExp && editExp.event_id ? String(editExp.event_id) : '')
@@ -1101,7 +1105,17 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
         if (computeItemsTotal(e) <= 0) return 'Entry ' + (i + 1) + ': Items total must be > 0'
       }
       var hasExistingReceipt = isEditing && existingReceipts.some(function (p) { return removedReceipts.indexOf(p) === -1 })
-      if (e.receiptFiles.length === 0 && !e.audioBlob && !hasExistingReceipt) return 'Entry ' + (i + 1) + ': Receipt image or voice note is required'
+      if (e.receiptFiles.length === 0 && !e.audioBlob && !hasExistingReceipt) {
+        // Nothing has been sent to the server yet at this point — validateEntries runs
+        // before any insert. A restored draft shows the OLD file name as a reminder
+        // (receiptFilesMeta), but the actual file/blob can't survive a browser reload, so
+        // this trips even though the name is right there — make that explicit instead of
+        // just repeating "required", which reads like the attachment was silently lost.
+        var restoredNote = ((e.receiptFilesMeta && e.receiptFilesMeta.length > 0) || e.audioBlobMeta)
+          ? ' — this entry was restored from a draft; the file shown above could not be kept in the browser and needs to be re-attached (nothing has been submitted yet)'
+          : ''
+        return 'Entry ' + (i + 1) + ': Receipt image or voice note is required' + restoredNote
+      }
       var _entrySplit = getEntrySplit(e)
       if (_entrySplit.creditPaise > 0) {
         if (!e.payWithCash && !e.payWithBank) return 'Entry ' + (i + 1) + ': Select Cash and/or Bank for credit payment'
@@ -1127,7 +1141,9 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
 
   // ── Submit ──
   async function handleSubmit() {
-    if (saving) return
+    if (saving || submitLockRef.current) return
+    submitLockRef.current = true
+    try {
     setError('')
     setSuccess('')
     var valErr = validateEntries()
@@ -1253,7 +1269,8 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
               expense_type_id: aTypeId,
               expense_sub_type_id: aSubTypeId,
               amount_paise: a.amountRupees ? Math.round(Number(a.amountRupees) * 100) : 0,
-              remarks: (a.remarks || '').trim() || null
+              remarks: (a.remarks || '').trim() || null,
+              source: 'allocation',
             }
           })
         // Auto-create a default allocation from the entry-level type for whatever portion of
@@ -1289,7 +1306,10 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
             source: 'auto_default',
           })
         }
-        if (editAllocRows.length > 0) await supabase.from('expense_allocations').insert(editAllocRows)
+        if (editAllocRows.length > 0) {
+          var { error: editAllocErr } = await supabase.from('expense_allocations').insert(editAllocRows)
+          if (editAllocErr) throw new Error('Allocations failed: ' + editAllocErr.message)
+        }
 
         // Wallet diff — use actual wallet exposure (cash portion + tax if credit), not gross amount
         var newWalletSpend = _editSplit.walletSpendPaise
@@ -1481,7 +1501,15 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                 expense_type_id: aTypeId,
                 expense_sub_type_id: aSubTypeId,
                 amount_paise: a.amountRupees ? Math.round(Number(a.amountRupees) * 100) : 0,
-                remarks: (a.remarks || '').trim() || null
+                remarks: (a.remarks || '').trim() || null,
+                // expense_allocations.source is NOT NULL (allocation | auto_default). Omitting
+                // it here works fine when every row in the batch omits it (the column default
+                // applies), but as soon as the auto-default remainder row below is also present
+                // — which sets source explicitly — PostgREST sends a literal NULL for every row
+                // missing the key instead of deferring to the column default, and the whole
+                // multi-row insert fails the NOT NULL constraint (losing every row in the batch,
+                // not just the unlabeled ones).
+                source: 'allocation',
               }
             })
           // Auto-create a default allocation from the entry-level type for whatever portion of
@@ -1580,6 +1608,9 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
       // entries — otherwise the button re-enables for 1.5s with the same entries still
       // loaded, and a stray second click resubmits them as genuine duplicate expenses.
       setTimeout(function () { setEntries([makeEntry()]); setSaving(false); if (onDone) onDone() }, 1500)
+    }
+    } finally {
+      submitLockRef.current = false
     }
   }
 
