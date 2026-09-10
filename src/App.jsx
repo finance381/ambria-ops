@@ -20,6 +20,20 @@ if (typeof window !== 'undefined' && !window.__ambriaChunkReloadTried) {
   })
 }
 
+// Browsers change a focused <input type="number">'s value when the mouse wheel scrolls
+// over it (a native spinner behavior) — since the pointer is often resting over a numeric
+// field while the page scrolls, this silently decrements amounts by 1 (reported as e.g.
+// 1000 momentarily becoming 999). Blur any focused number input on wheel so scrolling the
+// page never changes it. Applies app-wide rather than patching each of the ~90 number
+// inputs individually.
+if (typeof window !== 'undefined' && !window.__ambriaNumberWheelGuardAdded) {
+  window.__ambriaNumberWheelGuardAdded = true
+  document.addEventListener('wheel', function () {
+    var el = document.activeElement
+    if (el && el.tagName === 'INPUT' && el.type === 'number') el.blur()
+  }, { passive: true })
+}
+
 function App() {
   var params = new URLSearchParams(window.location.search)
   if (params.get('form') === 'employee') {

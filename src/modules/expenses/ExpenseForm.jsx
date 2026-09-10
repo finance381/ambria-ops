@@ -1837,7 +1837,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
 
               {/* Description */}
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Description</label>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Description <span className="text-red-500">*</span></label>
                 <VoiceInput as="textarea" value={entry.description}
                   onChange={function (e) { updateEntry(idx, 'description', e.target.value) }}
                   placeholder="What was this expense for..." rows={2}
