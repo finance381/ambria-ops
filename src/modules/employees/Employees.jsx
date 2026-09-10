@@ -33,6 +33,11 @@ function Employees({ profile }) {
   var [sortKey, setSortKey] = useState('employee_code')
   var [sortDir, setSortDir] = useState('asc')
 
+  // Pagination
+  var PAGE_SIZE = 25
+  var [page, setPage] = useState(1)
+  useEffect(function () { setPage(1) }, [search, statusFilter, deptFilter, showExited])
+
   // Modals
   var [editRow, setEditRow] = useState(null)
   var [viewRow, setViewRow] = useState(null)
@@ -201,6 +206,10 @@ function Employees({ profile }) {
     if (va > vb) return sortDir === 'asc' ? 1 : -1
     return 0
   })
+
+  var totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  var pageClamped = Math.min(page, totalPages)
+  var pageRows = filtered.slice((pageClamped - 1) * PAGE_SIZE, pageClamped * PAGE_SIZE)
 
   var jdMap = {}
   jobDepartments.forEach(function (d) { jdMap[d.id] = d.name })
@@ -579,7 +588,7 @@ function Employees({ profile }) {
                     : 'No matches for current filters.'}
                 </td></tr>
               )}
-              {filtered.map(function (r) {
+              {pageRows.map(function (r) {
                 var st = STATUS_STYLES[r.status] || { label: r.status, cls: 'bg-gray-100 text-gray-500' }
                 return (
                   <tr key={r.id} className="hover:bg-gray-50">
@@ -648,6 +657,25 @@ function Employees({ profile }) {
           </table>
         </div>
       </div>
+
+      {filtered.length > 0 && (
+        <div className="flex items-center justify-between text-xs text-gray-500">
+          <span>
+            Showing {(pageClamped - 1) * PAGE_SIZE + 1}–{Math.min(pageClamped * PAGE_SIZE, filtered.length)} of {filtered.length}
+          </span>
+          <div className="flex items-center gap-1">
+            <button type="button" onClick={function () { setPage(1) }} disabled={pageClamped === 1}
+              className="px-2 py-1 rounded border border-gray-200 hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-white">« First</button>
+            <button type="button" onClick={function () { setPage(function (p) { return Math.max(1, p - 1) }) }} disabled={pageClamped === 1}
+              className="px-2 py-1 rounded border border-gray-200 hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-white">‹ Prev</button>
+            <span className="px-2 font-medium text-gray-700">Page {pageClamped} of {totalPages}</span>
+            <button type="button" onClick={function () { setPage(function (p) { return Math.min(totalPages, p + 1) }) }} disabled={pageClamped === totalPages}
+              className="px-2 py-1 rounded border border-gray-200 hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-white">Next ›</button>
+            <button type="button" onClick={function () { setPage(totalPages) }} disabled={pageClamped === totalPages}
+              className="px-2 py-1 rounded border border-gray-200 hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-white">Last »</button>
+          </div>
+        </div>
+      )}
 
       <p className="text-[11px] text-gray-400">
         🔒 Bank details, salary, Aadhaar, PAN, and documents are only visible inside the edit form and detail view.
