@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { supabase } from '../../lib/supabase'
 import { formatDate, formatPoints } from '../../lib/format'
 import { logActivity } from '../../lib/logger'
@@ -504,10 +505,10 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
         </div>
       )}
 
-      {imgFullscreen && (
+      {imgFullscreen && createPortal((
         <div
           onClick={function () { setImgFullscreen(''); setFullscreenIdx(-1) }}
-          className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4"
+          className="fixed inset-0 z-[9998] bg-black/90 flex items-center justify-center p-4"
           style={{ margin: 0 }}
         >
           <button
@@ -536,7 +537,7 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
             )
           })()}
         </div>
-      )}
+      ), document.body)}
 
         </div>
         <div className="@3xl:col-span-6 space-y-4">

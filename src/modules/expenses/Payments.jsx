@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
+import { createPortal } from 'react-dom'
 import { supabase } from '../../lib/supabase'
 import { formatPoints, formatDate } from '../../lib/format'
 import { useRealtime } from '../../lib/useRealtime'
@@ -427,8 +428,8 @@ function Payments({ profile }) {
         />
       )}
 
-      {lightbox && (
-        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4"
+      {lightbox && createPortal((
+        <div className="fixed inset-0 z-[9998] bg-black/80 flex items-center justify-center p-4"
           onClick={closeLightbox}>
           <button onClick={function (e) { e.stopPropagation(); closeLightbox() }}
             className="absolute top-4 right-4 text-white text-2xl w-10 h-10 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20">✕</button>
@@ -454,7 +455,7 @@ function Payments({ profile }) {
             )}
           </div>
         </div>
-      )}
+      ), document.body)}
     </div>
   )
 }

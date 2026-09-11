@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
+import { createPortal } from 'react-dom'
 import { supabase } from '../../lib/supabase'
 import { formatPoints, formatDate, formatDateTime } from '../../lib/format'
 import { useRealtime } from '../../lib/useRealtime'
@@ -321,8 +322,8 @@ function PaymentsLedger({ profile }) {
       {detailTarget && (function () {
         var r = detailTarget.row
         var meta = r._metadata || {}
-        return (
-          <div className="fixed inset-0 z-50 bg-black/60 flex items-end sm:items-center justify-center p-0 sm:p-4"
+        return createPortal((
+          <div className="fixed inset-0 z-[9998] bg-black/60 flex items-end sm:items-center justify-center p-0 sm:p-4"
             onClick={closeDetail}>
             <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md p-5 space-y-3 max-h-[90vh] overflow-y-auto"
               onClick={function (ev) { ev.stopPropagation() }}>
@@ -373,7 +374,7 @@ function PaymentsLedger({ profile }) {
               <p className="text-[10px] text-gray-400 pt-1">Logged {formatDateTime(r.logged_at)}</p>
             </div>
           </div>
-        )
+        ), document.body)
       })()}
 
       {expenseDetailModal}

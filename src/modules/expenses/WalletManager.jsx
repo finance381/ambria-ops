@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { supabase } from '../../lib/supabase'
 import { formatDate, formatPoints } from '../../lib/format'
 import { logActivity } from '../../lib/logger'
@@ -765,8 +766,8 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     var kind = cancelTarget.kind
     var isEpc = kind === 'epc'
     var epcRow = isEpc ? (epcRefs[t.id] || {}).epc : null
-    return (
-      <div className="fixed inset-0 z-50 bg-black/60 flex items-end sm:items-center justify-center p-0 sm:p-4"
+    return createPortal((
+      <div className="fixed inset-0 z-[9998] bg-black/60 flex items-end sm:items-center justify-center p-0 sm:p-4"
         onClick={function () { if (!cancelSaving) { setCancelTarget(null); setCancelReason('') } }}>
         <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md p-5 space-y-3 max-h-[90vh] overflow-y-auto"
           onClick={function (ev) { ev.stopPropagation() }}>
@@ -796,7 +797,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
           </div>
         </div>
       </div>
-    )
+    ), document.body)
   }
 
   // ── Detail overlays: expense (ExpenseDetail reused) + collection (self-contained modal) ──
@@ -828,8 +829,8 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
 
   function renderExpenseDetailModal() {
     if (!expenseDetailTarget) return null
-    return (
-      <div className="fixed inset-0 z-50 bg-black/70 flex items-start sm:items-center justify-center p-0 sm:p-4 overflow-y-auto"
+    return createPortal((
+      <div className="fixed inset-0 z-[9998] bg-black/70 flex items-start sm:items-center justify-center p-0 sm:p-4 overflow-y-auto"
         onClick={function () { closeExpenseDetail(false) }}>
         <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-2xl p-4 sm:p-5 min-h-screen sm:min-h-0 sm:max-h-[92vh] overflow-y-auto"
           onClick={function (ev) { ev.stopPropagation() }}>
@@ -850,7 +851,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
           )}
         </div>
       </div>
-    )
+    ), document.body)
   }
 
   async function openCollectionDetail(txn, kind) {
@@ -893,8 +894,8 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
       (kind === 'collection' && (isAdmin || t.performed_by === profile.id)) ||
       (isEpc && epcRow && (isAdmin || epcRow.collected_by === profile.id))
     )
-    return (
-      <div className="fixed inset-0 z-50 bg-black/60 flex items-end sm:items-center justify-center p-0 sm:p-4"
+    return createPortal((
+      <div className="fixed inset-0 z-[9998] bg-black/60 flex items-end sm:items-center justify-center p-0 sm:p-4"
         onClick={function () { setDetailTarget(null) }}>
         <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md p-5 space-y-3 max-h-[90vh] overflow-y-auto"
           onClick={function (ev2) { ev2.stopPropagation() }}>
@@ -1022,7 +1023,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
           </div>
         </div>
       </div>
-    )
+    ), document.body)
   }
 
   async function openPaymentDetail(t) {
@@ -1048,8 +1049,8 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     var t = payDetailTarget.txn
     var entry = payDetailTarget.entry
     var meta = (entry && entry.metadata) || {}
-    return (
-      <div className="fixed inset-0 z-50 bg-black/60 flex items-end sm:items-center justify-center p-0 sm:p-4"
+    return createPortal((
+      <div className="fixed inset-0 z-[9998] bg-black/60 flex items-end sm:items-center justify-center p-0 sm:p-4"
         onClick={function () { setPayDetailTarget(null) }}>
         <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md p-5 space-y-3 max-h-[90vh] overflow-y-auto"
           onClick={function (ev) { ev.stopPropagation() }}>
@@ -1112,7 +1113,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
           )}
         </div>
       </div>
-    )
+    ), document.body)
   }
 
   async function submitCollection() {
@@ -1807,11 +1808,11 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
 
   function renderEnlargedImg() {
     if (!enlargedWalletImg) return null
-    return (
-      <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4" onClick={function () { setEnlargedWalletImg(null) }}>
+    return createPortal((
+      <div className="fixed inset-0 bg-black/80 z-[9998] flex items-center justify-center p-4" onClick={function () { setEnlargedWalletImg(null) }}>
         <img src={enlargedWalletImg} alt="" className="max-w-full max-h-[80vh] rounded-lg" />
       </div>
-    )
+    ), document.body)
   }
 
   // ═══════════════════════════════════════════════

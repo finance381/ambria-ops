@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { createPortal } from 'react-dom'
 import { supabase } from '../lib/supabase'
 import ExpenseDetail from '../modules/expenses/ExpenseDetail'
 
@@ -28,8 +29,11 @@ export function useExpenseDetailModal(profile, isAdmin, onRefresh) {
     if (refresh && onRefresh) onRefresh()
   }
 
-  var expenseDetailModal = !target ? null : (
-    <div className="fixed inset-0 z-50 bg-black/70 flex items-start sm:items-center justify-center p-0 sm:p-4 overflow-y-auto"
+  // Portalled to <body> — the admin shell wraps each page in `relative isolate`,
+  // which traps any z-index inside it, so an in-place fixed overlay here would
+  // have the sidebar showing through its left ~250px. Matches Modal.jsx's fix.
+  var expenseDetailModal = !target ? null : createPortal((
+    <div className="fixed inset-0 z-[9998] bg-black/70 flex items-start sm:items-center justify-center p-0 sm:p-4 overflow-y-auto"
       onClick={function () { closeExpenseDetail(false) }}>
       <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-2xl p-4 sm:p-5 min-h-screen sm:min-h-0 sm:max-h-[92vh] overflow-y-auto"
         onClick={function (ev) { ev.stopPropagation() }}>
@@ -50,7 +54,7 @@ export function useExpenseDetailModal(profile, isAdmin, onRefresh) {
         )}
       </div>
     </div>
-  )
+  ), document.body)
 
   return { openExpenseDetail: openExpenseDetail, expenseDetailModal: expenseDetailModal }
 }

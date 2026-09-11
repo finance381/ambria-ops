@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { supabase } from '../../lib/supabase'
 import { titleCase, formatDate, formatPaise } from '../../lib/format'
 import { logActivity } from '../../lib/logger'
@@ -2196,8 +2197,8 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, ve
         )}
 
         {/* Multi-purchase modal */}
-        {multiOpen && (
-          <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={function () { if (!multiProcessing) setMultiOpen(false) }}>
+        {multiOpen && createPortal((
+          <div className="fixed inset-0 z-[9998] bg-black/50 flex items-center justify-center p-4" onClick={function () { if (!multiProcessing) setMultiOpen(false) }}>
             <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col" onClick={function (e) { e.stopPropagation() }}>
               <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
                 <h3 className="text-base font-bold text-gray-900">Mark {selectedForPurchase.length} Items Purchased</h3>
@@ -2305,7 +2306,7 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, ve
               </div>
             </div>
           </div>
-        )}
+        ), document.body)}
 
         {/* ═══ RIGHT: Summary sidebar ═══ */}
         <div className="w-full lg:w-80 lg:flex-shrink-0">

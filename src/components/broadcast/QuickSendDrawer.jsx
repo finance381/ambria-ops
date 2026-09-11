@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { supabase } from '../../lib/supabase'
 
 // contact: { phone, name, external_ids?, venue_id? } — a not-yet-tracked lead/guest,
@@ -98,8 +99,8 @@ function QuickSendDrawer({ contact, contactId, defaultTemplateId, onClose, onSen
     setTimeout(onClose, 2000)
   }
 
-  return (
-    <div className="fixed inset-0 z-[60] bg-white flex flex-col sm:inset-y-0 sm:right-0 sm:left-auto sm:w-[420px] sm:shadow-2xl sm:border-l sm:border-gray-200">
+  return createPortal((
+    <div className="fixed inset-0 z-[9998] bg-white flex flex-col sm:inset-y-0 sm:right-0 sm:left-auto sm:w-[420px] sm:shadow-2xl sm:border-l sm:border-gray-200">
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 shrink-0">
         <button onClick={onClose} className="text-sm text-indigo-600 font-medium">← Close</button>
         <span className="text-sm font-bold text-gray-900">Send WhatsApp{resolvedContact ? ' to ' + (resolvedContact.name || '') : ''}</span>
@@ -167,7 +168,7 @@ function QuickSendDrawer({ contact, contactId, defaultTemplateId, onClose, onSen
         </div>
       )}
     </div>
-  )
+  ), document.body)
 }
 
 export default QuickSendDrawer

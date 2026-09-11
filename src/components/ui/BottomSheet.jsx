@@ -1,5 +1,12 @@
 import { useEffect } from 'react'
+import { createPortal } from 'react-dom'
 
+// Portalled to <body>, not rendered in place. The admin shell wraps each page
+// in `relative isolate`, which makes a stacking context: everything inside it
+// competes with the sidebar at one level, so no z-index on a sheet in that
+// subtree can paint over the sidebar. In place, a sheet opened from an admin
+// page had the sidebar showing through its left ~250px. Matches Modal.jsx's
+// fix for the identical bug.
 function BottomSheet({ open, onClose, title, children }) {
   useEffect(function () {
     if (open) document.body.style.overflow = 'hidden'
@@ -8,8 +15,8 @@ function BottomSheet({ open, onClose, title, children }) {
 
   if (!open) return null
 
-  return (
-    <div className="fixed inset-0 z-50" onClick={onClose}>
+  return createPortal((
+    <div className="fixed inset-0 z-[9998]" onClick={onClose}>
       <div className="absolute inset-0 bg-black/40 transition-opacity" />
       <div
         className="absolute bottom-0 left-0 right-0 bg-white rounded-t-2xl max-h-[85vh] flex flex-col shadow-2xl"
@@ -32,7 +39,7 @@ function BottomSheet({ open, onClose, title, children }) {
         </div>
       </div>
     </div>
-  )
+  ), document.body)
 }
 
 export default BottomSheet

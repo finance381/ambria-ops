@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { supabase } from '../../lib/supabase'
 import { logActivity } from '../../lib/logger'
 import { formatPoints } from '../../lib/format'
@@ -2627,14 +2628,14 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
         </p>
       )}
 
-      {zoomImg && (
+      {zoomImg && createPortal((
         <div onClick={function () { setZoomImg('') }}
-          className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4" style={{ margin: 0 }}>
+          className="fixed inset-0 z-[9998] bg-black/90 flex items-center justify-center p-4" style={{ margin: 0 }}>
           <button onClick={function () { setZoomImg('') }}
             className="absolute top-4 right-4 w-10 h-10 bg-white/20 text-white rounded-full text-xl flex items-center justify-center hover:bg-white/30">✕</button>
           <img src={zoomImg} alt="Receipt" className="max-w-full max-h-full object-contain rounded-lg" />
         </div>
-      )}
+      ), document.body)}
     </div>
   )
 }

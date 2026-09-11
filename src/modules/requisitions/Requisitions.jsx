@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { supabase } from '../../lib/supabase'
 import { titleCase, formatDate, formatPoints } from '../../lib/format'
 import { logActivity } from '../../lib/logger'
@@ -1815,14 +1816,14 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
         </button>
       </div>
 
-      {expReceiptZoom && (
+      {expReceiptZoom && createPortal((
         <div onClick={function () { setExpReceiptZoom('') }}
-          className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4" style={{ margin: 0 }}>
+          className="fixed inset-0 z-[9998] bg-black/90 flex items-center justify-center p-4" style={{ margin: 0 }}>
           <button onClick={function () { setExpReceiptZoom('') }}
             className="absolute top-4 right-4 w-10 h-10 bg-white/20 text-white rounded-full text-xl flex items-center justify-center hover:bg-white/30">✕</button>
           <img src={expReceiptZoom} alt="Receipt" className="max-w-full max-h-full object-contain rounded-lg" />
         </div>
-      )}
+      ), document.body)}
     </div>
   )
 }
@@ -2397,8 +2398,8 @@ function RequisitionDetail({ req, items, profile, isAdmin, isAuditor, isReqDeptA
         </button>
       )}
 
-      {confirmAction === 'expense' && (
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" style={{ margin: 0 }}>
+      {confirmAction === 'expense' && createPortal((
+        <div className="fixed inset-0 z-[9998] bg-black/50 flex items-center justify-center p-4" style={{ margin: 0 }}>
           <div className="bg-white rounded-2xl w-full max-w-sm shadow-xl overflow-hidden">
             <div className="p-5 text-center">
               <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-3">
@@ -2421,7 +2422,7 @@ function RequisitionDetail({ req, items, profile, isAdmin, isAuditor, isReqDeptA
             </div>
           </div>
         </div>
-      )}
+      ), document.body)}
 
       {/* Edit button for owner on pending */}
       {canEdit && (
@@ -2516,14 +2517,14 @@ function RequisitionDetail({ req, items, profile, isAdmin, isAuditor, isReqDeptA
         </div>
       )}
 
-      {zoomImg && (
+      {zoomImg && createPortal((
         <div onClick={function () { setZoomImg('') }}
-          className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4" style={{ margin: 0 }}>
+          className="fixed inset-0 z-[9998] bg-black/90 flex items-center justify-center p-4" style={{ margin: 0 }}>
           <button onClick={function () { setZoomImg('') }}
             className="absolute top-4 right-4 w-10 h-10 bg-white/20 text-white rounded-full text-xl flex items-center justify-center hover:bg-white/30">✕</button>
           <img src={zoomImg} alt="Receipt" className="max-w-full max-h-full object-contain rounded-lg" />
         </div>
-      )}
+      ), document.body)}
     </div>
   )
 }

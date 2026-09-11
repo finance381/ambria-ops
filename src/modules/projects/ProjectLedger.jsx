@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { supabase } from '../../lib/supabase'
 import { formatPoints, formatDate, formatDateTime } from '../../lib/format'
 import { hasPerm } from '../../lib/permissions'
@@ -203,8 +204,8 @@ function ProjectLedger({ profile, project, onBack }) {
         )}
       </div>
 
-      {showAdd && (
-        <div className="fixed inset-0 z-50 bg-black/60 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={function () { if (!saving) setShowAdd(false) }}>
+      {showAdd && createPortal((
+        <div className="fixed inset-0 z-[9998] bg-black/60 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={function () { if (!saving) setShowAdd(false) }}>
           <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md p-5 space-y-3 max-h-[90vh] overflow-y-auto" onClick={function (ev) { ev.stopPropagation() }}>
             <div className="flex items-center justify-between">
               <h3 className="text-base font-bold text-gray-900">Add Ledger Entry</h3>
@@ -258,7 +259,7 @@ function ProjectLedger({ profile, project, onBack }) {
             </div>
           </div>
         </div>
-      )}
+      ), document.body)}
     </div>
   )
 }

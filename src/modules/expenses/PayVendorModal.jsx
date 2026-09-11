@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { supabase } from '../../lib/supabase'
 import { logActivity } from '../../lib/logger'
 import { compressImage } from '../../lib/imageCompress'
@@ -187,8 +188,8 @@ function PayVendorModal({ vendor, profile, onClose, onSuccess }) {
     if (onSuccess) onSuccess()
   }
 
-  return (
-    <div className="fixed inset-0 z-50 bg-black/60 flex items-end sm:items-center justify-center p-0 sm:p-4"
+  return createPortal((
+    <div className="fixed inset-0 z-[9998] bg-black/60 flex items-end sm:items-center justify-center p-0 sm:p-4"
       onClick={function () { if (!paySaving) onClose() }}>
       <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md p-5 space-y-3 max-h-[90vh] overflow-y-auto"
         onClick={function (ev) { ev.stopPropagation() }}>
@@ -355,7 +356,7 @@ function PayVendorModal({ vendor, profile, onClose, onSuccess }) {
         </div>
       </div>
     </div>
-  )
+  ), document.body)
 }
 
 export default PayVendorModal

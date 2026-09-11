@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { supabase, getImageUrl } from '../../lib/supabase'
 import { formatDate, formatPoints } from '../../lib/format'
 import { hasPerm } from '../../lib/permissions'
@@ -176,8 +177,8 @@ function ActionConfirmSheet({ action, item, onConfirm, onCancel, saving }) {
     onConfirm(notes.trim())
   }
 
-  return (
-    <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center bg-black/40 px-4 pb-4 sm:pb-0" onClick={onCancel}>
+  return createPortal((
+    <div className="fixed inset-0 z-[9998] flex items-end sm:items-center justify-center bg-black/40 px-4 pb-4 sm:pb-0" onClick={onCancel}>
       <div className="bg-white rounded-xl w-full max-w-sm p-4 space-y-3" onClick={function (ev) { ev.stopPropagation() }}>
         <p className="text-sm font-bold text-gray-900">{ACTION_LABELS[action] || action}{item ? ' — ' + (item.title || ('#' + item.source_id)) : ''}</p>
         {needsNotes && (
@@ -194,7 +195,7 @@ function ActionConfirmSheet({ action, item, onConfirm, onCancel, saving }) {
         </div>
       </div>
     </div>
-  )
+  ), document.body)
 }
 
 // ---- ReviewDetailSheet ----
@@ -249,8 +250,8 @@ function ReviewDetailSheet({ item, onClose, onActioned, isMobile, profile }) {
     setTimelineKey(function (k) { return k + 1 })
   }
 
-  return (
-    <div className={"fixed inset-0 z-[60] bg-white flex flex-col " + (isMobile ? "" : "sm:inset-y-0 sm:right-0 sm:left-auto sm:w-[480px] sm:shadow-2xl sm:border-l sm:border-gray-200")}>
+  return createPortal((
+    <div className={"fixed inset-0 z-[9998] bg-white flex flex-col " + (isMobile ? "" : "sm:inset-y-0 sm:right-0 sm:left-auto sm:w-[480px] sm:shadow-2xl sm:border-l sm:border-gray-200")}>
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 shrink-0">
         <button onClick={onClose} className="text-sm text-indigo-600 font-medium">← Back</button>
         <div className="flex items-center gap-1.5 text-xs text-gray-400">
@@ -309,7 +310,7 @@ function ReviewDetailSheet({ item, onClose, onActioned, isMobile, profile }) {
         </Modal>
       )}
     </div>
-  )
+  ), document.body)
 }
 
 export {
