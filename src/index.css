@@ -1,14 +1,298 @@
-/* Global stylesheet: the self-hosted Inter faces the quote screen renders in,
-   then the Tailwind layer.
+/* Global stylesheet: the self-hosted type, then the Tailwind layer, then the
+   app's typographic and colour foundation.
+
+   Two faces, on purpose:
+
+     Plus Jakarta Sans for headings and anything set in bold. It is the face
+     in the design, and its rounder, more geometric letterforms are what give
+     a title its weight without going up a size.
+
+     Inter for running text, numbers and every control. It was built for UI at
+     small sizes — taller x-height, wider apertures, real tabular figures —
+     and a 10px uppercase label or a column of amounts in Jakarta is measurably
+     harder to read. Display face for display, text face for text.
 
    Self-hosted rather than a CDN link so the PWA keeps its typography with no
-   network round-trip. Only the latin subsets are imported — Inter carries no
-   Devanagari, so Hindi copy falls through to the system stack declared in
-   QuoteCalculator's FONT constant. */
+   network round-trip. Only the latin subsets are imported — neither face
+   carries Devanagari, so Hindi copy falls through to the system faces named
+   in the stacks below. */
 
 @import "@fontsource/inter/latin-400.css";
 @import "@fontsource/inter/latin-500.css";
 @import "@fontsource/inter/latin-600.css";
 @import "@fontsource/inter/latin-700.css";
 @import "@fontsource/inter/latin-800.css";
+@import "@fontsource/plus-jakarta-sans/latin-600.css";
+@import "@fontsource/plus-jakarta-sans/latin-700.css";
+@import "@fontsource/plus-jakarta-sans/latin-800.css";
 @import "tailwindcss";
+
+@theme {
+  /* Inter was already being downloaded but only the quote screen actually used
+     it; every other screen fell back to the system face. Promoting it to
+     --font-sans hands it to the whole app, Tailwind utilities included.
+     Nirmala UI / Noto Sans Devanagari catch the Hindi that Inter cannot draw. */
+  --font-sans: 'Inter', 'Nirmala UI', 'Noto Sans Devanagari', 'Segoe UI', system-ui, -apple-system, sans-serif;
+
+  /* The display face. Exposed as a token so `font-display` is a Tailwind
+     utility, which is what headings use — nothing hardcodes the family. */
+  --font-display: 'Plus Jakarta Sans', 'Inter', 'Nirmala UI', 'Noto Sans Devanagari', system-ui, sans-serif;
+
+  /* Page ground. A hair warmer and deeper than slate-50 so white cards read as
+     raised surfaces rather than dissolving into the background — the difference
+     is what stops a phone screen at low brightness looking like a flat sheet. */
+  --color-canvas: #F1F4F8;
+}
+
+@layer base {
+  /* How far below the viewport top a sticky element inside the page has to sit
+     to clear the app chrome. The staff shell has a 3.5rem sticky header; the
+     admin shell has a side rail and no top bar, so 0 is the right default and
+     the shell that owns a header sets its own value. Anything sticky in a
+     module reads this instead of hardcoding a height it cannot see. */
+  :root { --app-header-h: 0px; }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    /* Stops the whole page rubber-banding when a list is flung on Android. */
+    overscroll-behavior-y: none;
+  }
+
+  body {
+    background-color: var(--color-canvas);
+    color: var(--color-slate-900);
+    /* Inter needs antialiasing to keep its 11–13px sizes from looking chalky. */
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    /* Inter's disambiguation set: 1, l and I stop reading alike, which matters
+       on a challan number or an amount. Deliberately not text-rendering:
+       optimizeLegibility, which costs scroll performance on long lists. */
+    font-feature-settings: 'ss02';
+  }
+
+  /* Browsers hand form controls the system face by default, which would leave
+     every input and dropdown in a different typeface from the labels above it. */
+  input, select, textarea, button {
+    font-family: inherit;
+    font-feature-settings: inherit;
+  }
+
+  /* A visible ring for keyboard users, nothing for mouse and touch. */
+  :focus-visible {
+    outline: 2px solid var(--color-indigo-500);
+    outline-offset: 2px;
+  }
+
+  /* Money and counts must not jitter as digits change. */
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+
+  ::selection {
+    background-color: var(--color-indigo-100);
+    color: var(--color-indigo-900);
+  }
+
+  /* Panel switch inside the expense entry card. The incoming panel slides in
+     from the side you swiped towards, which is what makes a tab change read as
+     a swipe rather than a redraw. Motion is skipped for anyone who asked for
+     less of it. */
+  @keyframes ambria-slide-from-right {
+    from { opacity: 0; transform: translateX(14px); }
+    to   { opacity: 1; transform: translateX(0); }
+  }
+  @keyframes ambria-slide-from-left {
+    from { opacity: 0; transform: translateX(-14px); }
+    to   { opacity: 1; transform: translateX(0); }
+  }
+  .ambria-slide-left  { animation: ambria-slide-from-right .22s cubic-bezier(.22,.61,.36,1) both; }
+  .ambria-slide-right { animation: ambria-slide-from-left  .22s cubic-bezier(.22,.61,.36,1) both; }
+
+  /* Cards entering the page: a new expense entry, a new item, a new allocation
+     row. The lift is small on purpose -- its job is to show you WHAT just
+     appeared, not to perform. */
+  @keyframes ambria-rise {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .ambria-rise { animation: ambria-rise .2s cubic-bezier(.22,.61,.36,1) backwards; }
+
+  /* A frosted chip. Where .ambria-glass tints toward the canvas so a full-width
+     bar reads as page furniture, this leans white: a small pill has to read as
+     a raised object, not a hole in the page. The three shadows do the work a
+     border cannot — a 1px inner highlight for a lit top edge, a soft drop for
+     lift, and a hairline ring instead of a hard border, which at this size
+     would flatten the whole thing back into a rectangle. */
+  .ambria-glass-chip {
+    background-color: color-mix(in oklab, #fff 72%, transparent);
+    -webkit-backdrop-filter: blur(10px) saturate(180%);
+    backdrop-filter: blur(10px) saturate(180%);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.9),
+      0 1px 2px rgba(15, 23, 42, 0.06),
+      0 0 0 1px rgba(15, 23, 42, 0.06);
+  }
+
+  /* The frosted submit bar. backdrop-saturate keeps colour under the bar from
+     going grey, which plain blur does on a light ground. */
+  .ambria-glass {
+    background-color: color-mix(in oklab, var(--color-canvas) 72%, transparent);
+    /* Prefixed first, unprefixed last, so the standard property wins wherever
+       it is understood. The other order let the minifier drop the unprefixed
+       declaration entirely, which left Firefox with no blur at all. */
+    -webkit-backdrop-filter: blur(14px) saturate(180%);
+    backdrop-filter: blur(14px) saturate(180%);
+  }
+  /* Browsers without backdrop-filter get an opaque bar rather than unreadable
+     text over scrolling content. */
+  @supports not (backdrop-filter: blur(1px)) {
+    .ambria-glass { background-color: var(--color-canvas); }
+  }
+
+  /* An overlay scrollbar for panels that scroll inside the page. The default
+     Windows scrollbar is ~17px of grey trough with stepper arrows at both
+     ends, which next to a rounded card reads as a browser chrome artefact
+     rather than part of the panel.
+
+     Firefox gets the two standard properties; WebKit/Blink still needs the
+     -webkit- pseudo-elements, where the arrows are their own element and have
+     to be removed explicitly. The thumb is transparent-bordered rather than
+     narrow so its hit area stays a comfortable target while it *looks* thin. */
+  .ambria-thin-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(100, 116, 139, 0.35) transparent;
+  }
+  .ambria-thin-scroll::-webkit-scrollbar { width: 10px; height: 10px; }
+  .ambria-thin-scroll::-webkit-scrollbar-track { background: transparent; }
+  .ambria-thin-scroll::-webkit-scrollbar-thumb {
+    background-color: rgba(100, 116, 139, 0.3);
+    border: 3px solid transparent;
+    background-clip: content-box;
+    border-radius: 9999px;
+  }
+  .ambria-thin-scroll::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(100, 116, 139, 0.5);
+  }
+  /* The stepper arrows, and the little square where two bars meet. */
+  .ambria-thin-scroll::-webkit-scrollbar-button { display: none; }
+  .ambria-thin-scroll::-webkit-scrollbar-corner { background: transparent; }
+
+  /* Number fields carry a stepper in every browser and it earns nothing on
+     the values this app collects — nobody raises a bill one rupee at a time.
+     It eats the right padding a currency field needs, it puts a click target
+     next to the digits that silently edits them, and in Firefox it appears
+     only on hover, so the text shifts under the cursor.
+
+     The field stays type=number: that is what brings up the numeric keypad on
+     a phone and what gives the browser its own numeric validation. Only the
+     spinner goes. */
+  input[type="number"] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+  }
+  input[type="number"]::-webkit-outer-spin-button,
+  input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+
+  /* The drifting header waves.
+
+     One direction, continuously. Each band is 200% wide and holds its tile
+     twice, and the animation slides it exactly 50% — one whole tile — so the
+     last frame is pixel-identical to the first and the restart is invisible.
+     That is also why the wave paths leave the left edge at the height they
+     arrive at the right: without that the seam shows as a step every cycle.
+
+     linear, not ease: an eased loop speeds up and slows down once per cycle,
+     which is exactly the tell that gives away that it is a loop.
+
+     transform only, so it composites on the GPU and never triggers layout.
+
+     Two durations, both forward, so the bands slide past each other instead
+     of moving as one drawing — that difference is what reads as water rather
+     than as a picture being dragged. */
+  @keyframes ambria-wave-flow {
+    from { transform: translate3d(0, 0, 0); }
+    to { transform: translate3d(-50%, 0, 0); }
+  }
+  .ambria-wave-slow {
+    animation: ambria-wave-flow 12s linear infinite;
+    will-change: transform;
+  }
+  .ambria-wave-fast {
+    animation: ambria-wave-flow 8s linear infinite;
+    will-change: transform;
+  }
+
+  /* The header band's horizontal falloff.
+
+     It cannot be one ramp for every screen. A phone column is about a quarter
+     the width of a laptop one, so the same transparent-to-opaque ramp leaves
+     most of the band inside its faded half and the waves all but vanish.
+     Below sm the ramp starts part-way up and reaches full sooner; from sm it
+     is the original, which is what gives a wide header its clean empty left
+     side.
+
+     A mask rather than a gradient in the fill: the bands travel, and a
+     gradient that travels with them makes the header brighten and dim on a
+     loop. */
+  .ambria-wave-mask {
+    -webkit-mask-image: linear-gradient(90deg, rgba(0, 0, 0, 0.32) 0%, rgba(0, 0, 0, 0.8) 38%, rgba(0, 0, 0, 1) 100%);
+    mask-image: linear-gradient(90deg, rgba(0, 0, 0, 0.32) 0%, rgba(0, 0, 0, 0.8) 38%, rgba(0, 0, 0, 1) 100%);
+  }
+  @media (min-width: 640px) {
+    .ambria-wave-mask {
+      -webkit-mask-image: linear-gradient(90deg, rgba(0, 0, 0, 0) 0%, rgba(0, 0, 0, 0.5) 45%, rgba(0, 0, 0, 1) 100%);
+      mask-image: linear-gradient(90deg, rgba(0, 0, 0, 0) 0%, rgba(0, 0, 0, 0.5) 45%, rgba(0, 0, 0, 1) 100%);
+    }
+  }
+
+  /* The sidebar artwork, drifting along its own diagonal.
+
+     alternate, so it needs no seam: the bands are strokes that already run
+     off both sides of the rail, and reversing at each end means no frame has
+     to match any other. The travel is a fraction of the stroke spacing —
+     enough that the rail is never quite still, not enough to notice as
+     movement while you are reading a nav label. */
+  @keyframes ambria-rail-drift {
+    from { transform: translate3d(0, 0, 0); }
+    to { transform: translate3d(-16px, -24px, 0); }
+  }
+  .ambria-rail-drift {
+    animation: ambria-rail-drift 11s ease-in-out infinite alternate;
+    will-change: transform;
+  }
+
+  /* One pass of light across the active nav pill, played once when it becomes
+     active. It is a confirmation, not decoration: the pill is the only thing
+     that says which section you are in, and a sweep at the moment of the
+     click is what ties the new highlight to the tap that caused it. */
+  @keyframes ambria-sheen {
+    from { transform: translateX(-140%); }
+    to { transform: translateX(240%); }
+  }
+  .ambria-sheen {
+    animation: ambria-sheen 0.8s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+  }
+
+  /* The glow behind the header. It has no edge anywhere, so this one can
+     ease and reverse without giving anything away — there is no shape whose
+     restart you could catch. Slow and small: it is depth, not movement. */
+  @keyframes ambria-glow-drift {
+    0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+    50% { transform: translate3d(-3rem, 1.5rem, 0) scale(1.12); }
+  }
+  .ambria-glow-drift {
+    animation: ambria-glow-drift 10s ease-in-out infinite;
+    will-change: transform;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ambria-slide-left, .ambria-slide-right, .ambria-rise { animation: none; }
+    /* Decoration is the first thing to stop when someone asks for less
+       motion — nothing is communicated by it. */
+    .ambria-wave-slow, .ambria-wave-fast, .ambria-glow-drift,
+    .ambria-rail-drift, .ambria-sheen { animation: none; }
+  }
+}

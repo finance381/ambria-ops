@@ -2,17 +2,65 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { hasPerm } from '../../lib/permissions'
 import { formatDate } from '../../lib/format'
+import Icon from '../../components/ui/Icon'
 import CampaignBuilder from './CampaignBuilder.jsx'
+import { BTN_PRIMARY, TH, TD, Chip, EmptyState, CHIP_GOOD, CHIP_WARN, CHIP_BAD, CHIP_INFO, CHIP_NEUTRAL } from './ui'
 
-var STATUS_CLS = {
-  draft: 'bg-gray-100 text-gray-600', scheduled: 'bg-amber-100 text-amber-700',
-  sending: 'bg-indigo-100 text-indigo-700', sent: 'bg-emerald-100 text-emerald-700',
-  partial: 'bg-amber-100 text-amber-700', failed: 'bg-red-100 text-red-700',
-  cancelled: 'bg-gray-100 text-gray-500',
+// Every status the send pipeline can leave a campaign in. `partial` means some
+// recipients failed, which is a warning and not a success — it used to share
+// amber with `scheduled`, so a half-failed send read as one that had not left
+// yet.
+var STATUS_TONE = {
+  draft: CHIP_NEUTRAL,
+  scheduled: CHIP_WARN,
+  sending: CHIP_INFO,
+  sent: CHIP_GOOD,
+  partial: CHIP_WARN,
+  failed: CHIP_BAD,
+  cancelled: CHIP_NEUTRAL,
 }
 
-function StatPill({ label, value }) {
-  return <span className="text-[10px] text-gray-500">{label} <b className="text-gray-800">{value}</b></span>
+// Four counts on one line. Failed goes red as soon as it is non-zero — the
+// number nobody wants to hunt for was printing in the same grey as the rest.
+function StatCell({ campaign }) {
+  var items = [
+    { label: 'Sent', value: campaign.sent_count },
+    { label: 'Delivered', value: campaign.delivered_count },
+    { label: 'Read', value: campaign.read_count },
+    { label: 'Failed', value: campaign.failed_count, bad: true },
+  ]
+  var anyValue = items.some(function (it) { return it.value })
+  if (!anyValue) return <span className="text-slate-300">—</span>
+  return (
+    <span className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5">
+      {items.map(function (it) {
+        var hot = it.bad && it.value > 0
+        return (
+          <span key={it.label} className="text-[10.5px] text-slate-400 whitespace-nowrap">
+            {it.label}{' '}
+            <b className={'text-[11.5px] tabular-nums ' + (hot ? 'text-red-600' : 'text-slate-800')} data-notranslate>
+              {it.value || 0}
+            </b>
+          </span>
+        )
+      })}
+    </span>
+  )
+}
+
+// Icon-only, because three text links per row turned the Actions column into
+// the widest thing in the table. title + aria-label carry the name.
+function RowAction({ icon, label, tone, onClick }) {
+  return (
+    <button type="button" title={label} aria-label={label}
+      onClick={function (ev) { ev.stopPropagation(); onClick() }}
+      className={'inline-flex items-center justify-center w-8 h-8 rounded-lg transition-colors ' +
+        (tone === 'danger'
+          ? 'text-slate-400 hover:text-red-600 hover:bg-red-50'
+          : 'text-slate-400 hover:text-indigo-600 hover:bg-indigo-50')}>
+      <Icon name={icon} size={14} />
+    </button>
+  )
 }
 
 function Campaigns({ profile }) {
@@ -67,61 +115,79 @@ function Campaigns({ profile }) {
     )
   }
 
+  var countLine = loading ? 'Loading…'
+    : campaigns.length + (campaigns.length === 1 ? ' campaign' : ' campaigns')
+
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-bold text-gray-900">Campaigns</h2>
+      <div className="flex items-end justify-between flex-wrap gap-3">
+        <div className="min-w-0">
+          <h2 className="font-display text-[17px] font-extrabold text-slate-900 leading-tight tracking-[-0.015em]">Campaigns</h2>
+          <p className="text-[11.5px] text-slate-500 mt-0.5">{countLine}</p>
+        </div>
         {canCreate && (
-          <button onClick={function () { setOpenId(null) }} className="px-3 py-1.5 text-xs font-bold text-white bg-indigo-600 rounded-lg">+ New Campaign</button>
+          <button onClick={function () { setOpenId(null) }} className={BTN_PRIMARY}>
+            <Icon name="plus" size={14} strokeWidth={2.4} />
+            New Campaign
+          </button>
         )}
       </div>
 
-      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-gray-100 text-left">
-              <th className="px-3 py-2 text-[10px] font-bold text-gray-400 uppercase">Name</th>
-              <th className="px-3 py-2 text-[10px] font-bold text-gray-400 uppercase">Template</th>
-              <th className="px-3 py-2 text-[10px] font-bold text-gray-400 uppercase">Stats</th>
-              <th className="px-3 py-2 text-[10px] font-bold text-gray-400 uppercase">Status</th>
-              <th className="px-3 py-2 text-[10px] font-bold text-gray-400 uppercase">Sent At</th>
-              <th className="px-3 py-2 text-[10px] font-bold text-gray-400 uppercase">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading ? (
-              <tr><td colSpan={6} className="text-center text-xs text-gray-400 py-6">Loading...</td></tr>
-            ) : campaigns.length === 0 ? (
-              <tr><td colSpan={6} className="text-center text-xs text-gray-400 py-6">No campaigns yet</td></tr>
-            ) : campaigns.map(function (c) {
-              return (
-                <tr key={c.id} className="border-b border-gray-50 last:border-b-0">
-                  <td className="px-3 py-2 font-medium text-gray-900 cursor-pointer" onClick={function () { setOpenId(c.id) }}>{c.name}</td>
-                  <td className="px-3 py-2 text-gray-500">{templateNames[c.template_id] || '—'}</td>
-                  <td className="px-3 py-2">
-                    <div className="flex gap-2 flex-wrap">
-                      <StatPill label="Sent" value={c.sent_count} />
-                      <StatPill label="Delivered" value={c.delivered_count} />
-                      <StatPill label="Read" value={c.read_count} />
-                      <StatPill label="Failed" value={c.failed_count} />
-                    </div>
-                  </td>
-                  <td className="px-3 py-2"><span className={"text-[10px] font-bold uppercase px-1.5 py-0.5 rounded " + (STATUS_CLS[c.status] || '')}>{c.status}</span></td>
-                  <td className="px-3 py-2 text-gray-500">{c.sent_at ? formatDate(c.sent_at) : '—'}</td>
-                  <td className="px-3 py-2">
-                    <div className="flex gap-2">
-                      <button onClick={function () { setOpenId(c.id) }} className="text-[11px] font-bold text-indigo-600">View</button>
-                      {canCreate && <button onClick={function () { duplicateCampaign(c) }} className="text-[11px] font-bold text-gray-500">Duplicate</button>}
-                      {canCancel && (c.status === 'draft' || c.status === 'scheduled') && (
-                        <button onClick={function () { cancelCampaign(c) }} className="text-[11px] font-bold text-red-600">Cancel</button>
-                      )}
-                    </div>
+      {/* overflow-hidden rounds the card, overflow-x-auto scrolls the table.
+          Both on one element makes the other axis compute to auto too, which
+          is where the stray vertical scrollbar arrows came from. */}
+      <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-[0_1px_2px_rgba(15,23,42,0.05)]">
+        <div className="overflow-x-auto ambria-thin-scroll">
+          <table className="w-full border-collapse">
+            <thead>
+              <tr className="bg-slate-50 border-b border-slate-200">
+                <th className={TH}>Name</th>
+                <th className={TH}>Template</th>
+                <th className={TH}>Stats</th>
+                <th className={TH}>Status</th>
+                <th className={TH}>Sent At</th>
+                <th className={TH + ' text-right'}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr><td colSpan={6} className="text-center text-[12px] text-slate-400 py-8">Loading…</td></tr>
+              ) : campaigns.length === 0 ? (
+                <tr>
+                  <td colSpan={6}>
+                    <EmptyState icon="send" title="No campaigns yet"
+                      hint="A campaign sends one approved template to a filtered set of contacts." />
                   </td>
                 </tr>
-              )
-            })}
-          </tbody>
-        </table>
+              ) : campaigns.map(function (c) {
+                var cancellable = canCancel && (c.status === 'draft' || c.status === 'scheduled')
+                return (
+                  // The whole row opens the builder, not just the name cell —
+                  // the name was the only hit target and nothing said so.
+                  <tr key={c.id} onClick={function () { setOpenId(c.id) }}
+                    className="group border-b border-slate-100 last:border-b-0 cursor-pointer hover:bg-slate-50 transition-colors">
+                    <td className={TD + ' font-semibold text-slate-900'}>{c.name}</td>
+                    <td className={TD + ' text-slate-500 whitespace-nowrap'}>
+                      {templateNames[c.template_id] || <span className="text-slate-300">—</span>}
+                    </td>
+                    <td className={TD}><StatCell campaign={c} /></td>
+                    <td className={TD}><Chip tone={STATUS_TONE[c.status]}>{c.status}</Chip></td>
+                    <td className={TD + ' text-slate-500 whitespace-nowrap'}>
+                      {c.sent_at ? formatDate(c.sent_at) : <span className="text-slate-300">—</span>}
+                    </td>
+                    <td className={TD + ' text-right whitespace-nowrap'}>
+                      <span className="inline-flex items-center gap-0.5">
+                        <RowAction icon="eye" label="View campaign" onClick={function () { setOpenId(c.id) }} />
+                        {canCreate && <RowAction icon="copy" label="Duplicate as a new draft" onClick={function () { duplicateCampaign(c) }} />}
+                        {cancellable && <RowAction icon="close" label="Cancel campaign" tone="danger" onClick={function () { cancelCampaign(c) }} />}
+                      </span>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   )

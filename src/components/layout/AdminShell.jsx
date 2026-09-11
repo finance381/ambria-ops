@@ -39,6 +39,7 @@ var BroadcastContacts = lazy(function () { return import('../../modules/broadcas
 var BroadcastCampaigns = lazy(function () { return import('../../modules/broadcast/Campaigns') })
 var BroadcastInbox = lazy(function () { return import('../../modules/broadcast/Inbox') })
 var BroadcastSettings = lazy(function () { return import('../../modules/broadcast/Settings') })
+var BroadcastHub = lazy(function () { return import('../../modules/broadcast/BroadcastHub') })
 
 function ExpenseTypesMaster(props) {
   return <Expenses profile={props.profile} masterMode={true} />
@@ -201,7 +202,7 @@ var MODULES = {
   procurement: makeTabbedModule('procurement'),
   projects: Projects,
   reviews: Reviews,
-  broadcast: makeTabbedModule('broadcast'),
+  broadcast: BroadcastHub,
 }
 
 function AdminShell({ profile, onSignOut }) {
@@ -302,7 +303,9 @@ function AdminShell({ profile, onSignOut }) {
 
       {/* Content */}
       <main className="flex-1 min-w-0 px-4 py-4 pt-20 md:px-8 md:py-6 md:pt-6">
-        {active !== 'overview' && <h2 className="text-xl font-bold mb-5" style={{ color: '#0F172A' }}>{activeLabel}</h2>}
+        {active !== 'overview' && active !== 'broadcast' && (
+          <h2 className="text-xl font-bold mb-5" style={{ color: '#0F172A' }}>{activeLabel}</h2>
+        )}
         {ActiveModule && (
           <Suspense fallback={<div className="text-center py-8 text-sm text-gray-400">Loading...</div>}>
             <ActiveModule profile={profile} onNavigate={function (tab, sub) { setActive(tab); setSubTab(sub || null) }} activeSubTab={subTab} />
