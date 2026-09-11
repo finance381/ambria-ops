@@ -37,7 +37,7 @@ var _savedFilters = {
   dept: '', expType: '', expSubType: '', venue: '', user: '', amountMin: '', amountMax: ''
 }
 
-function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds }) {
+function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds, glass }) {
   var [allExps, setAllExps] = useState([])
   var [allExpHasMore, setAllExpHasMore] = useState(false)
   var [allExpStatus, setAllExpStatus] = useState(function () { return _savedFilters.status })
@@ -531,7 +531,7 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds }) {
               </div>
             </div>
             {filtersOpen && (
-              <div className="bg-white border border-slate-200 rounded-2xl p-3.5 space-y-3.5 shadow-[0_1px_2px_rgba(15,23,42,0.05)]">
+              <div className={(glass ? "ambria-glass-card" : "bg-white border border-slate-200 shadow-[0_1px_2px_rgba(15,23,42,0.05)]") + " rounded-2xl p-3.5 space-y-3.5"}>
                 <div>
                   <label className="block text-[10.5px] font-bold uppercase tracking-[0.08em] text-slate-500 mb-1.5">Status</label>
                   <div className="flex gap-1.5 flex-wrap">
@@ -636,7 +636,7 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds }) {
       {allExpLoading && <p className="text-slate-500 text-sm text-center py-4">Loading...</p>}
 
       {!allExpLoading && allExps.length === 0 && (
-        <div className="bg-white border border-slate-200 rounded-xl p-8 text-center">
+        <div className={(glass ? "ambria-glass-card" : "bg-white border border-slate-200") + " rounded-xl p-8 text-center"}>
           <p className="text-slate-500 text-sm">No expenses found</p>
         </div>
       )}
@@ -649,7 +649,8 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds }) {
               <div key={exp.id}
                 onClick={function () { onOpenDetail(exp) }}
                 style={{ animationDelay: (Math.min(ei, 8) * 25) + 'ms' }}
-                className="ambria-rise relative overflow-hidden bg-white border border-slate-200 rounded-2xl pl-4 pr-3.5 py-3 transform-gpu hover:shadow-lg hover:border-indigo-200 hover:-translate-y-px hover:scale-[1.006] active:scale-100 active:bg-slate-50 cursor-pointer transition-all duration-150">
+                className={"ambria-rise relative overflow-hidden rounded-2xl pl-4 pr-3.5 py-3 transform-gpu hover:shadow-lg hover:-translate-y-px hover:scale-[1.006] active:scale-100 cursor-pointer transition-all duration-150 " +
+                  (glass ? "ambria-glass-card" : "bg-white border border-slate-200 hover:border-indigo-200 active:bg-slate-50")}>
                 {/* 3px rail: status reads before a single word does and costs
                     no height, so the pill no longer has to shout from the
                     amount column. */}

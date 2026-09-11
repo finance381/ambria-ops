@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { formatDate, formatPoints } from '../../lib/format'
 import ExpenseFormMulti from './ExpenseForm'
-import PageBackdrop from '../../components/ui/PageBackdrop'
 import { APPROVAL_STATUS_COLORS, APPROVAL_STATUS_LABELS } from '../../lib/constants'
 import ExpenseTypeMaster from './ExpenseTypeMaster'
 import FilterDropdown from '../../components/ui/FilterDropdown'
@@ -311,7 +310,6 @@ function Expenses({ profile, masterMode, inAdmin }) {
       // itself. No overflow-hidden here: the submit bar inside is sticky, and
       // overflow on an ancestor would pin it to a box that scrolls away.
       <div className={"relative isolate space-y-3" + (inAdmin ? "" : " -mx-4 px-4 -mt-4 pt-4 -mb-8 pb-8 min-h-[calc(100dvh-3.5rem)]")}>
-        {!inAdmin && <PageBackdrop />}
         {/* Which mode you are in, and the way out. It was a 10px caps line and
             a text link — the smallest type on the page carrying the only exit. */}
         <div className="flex items-center justify-between gap-3 px-3.5 py-2.5 sm:py-3 rounded-2xl bg-white/70 border border-indigo-100 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
@@ -375,6 +373,12 @@ function Expenses({ profile, masterMode, inAdmin }) {
   }
 
 
+  // The phone shell draws artwork behind this screen, so its surfaces are
+  // frosted rather than solid white — seven opaque rectangles would blank out
+  // the thing they are sitting on. Admin keeps solid cards: the ground there
+  // is different and a table of amounts should not be read through glass.
+  var glass = !inAdmin
+
   // Whether anything is narrowing the list. An empty list means two very
   // different things — nothing logged yet, or nothing matching — and offering
   // "log your first one" to someone whose filters simply exclude everything
@@ -394,7 +398,6 @@ function Expenses({ profile, masterMode, inAdmin }) {
        there is deliberately no overflow-hidden — the stat strip and any sticky
        child would be pinned to a box that scrolls away. */
     <div className={"relative isolate space-y-3 pb-24" + (inAdmin ? "" : " -mx-4 px-4 -mt-4 pt-4 -mb-8 min-h-[calc(100dvh-3.5rem)]")}>
-      {!inAdmin && <PageBackdrop />}
 
       {/* Tabs */}
       {showApproveTab && (function () {
@@ -403,7 +406,7 @@ function Expenses({ profile, masterMode, inAdmin }) {
         var activeIdx = tabs.findIndex(function (t) { return t.v === view })
         if (activeIdx < 0) activeIdx = 0
         return (
-          <div className="relative flex h-10 bg-white border border-slate-200 rounded-xl p-1 shadow-[0_1px_2px_rgba(15,23,42,0.05)]">
+          <div className={"relative flex h-10 rounded-xl p-1 " + (glass ? "ambria-glass-card" : "bg-white border border-slate-200 shadow-[0_1px_2px_rgba(15,23,42,0.05)]")}>
             {/* The tabs sit flush inside a p-1 tray with no gaps, so the pill is
                 exactly one nth of the inner width and moves a whole pill per
                 step. */}
@@ -441,7 +444,14 @@ function Expenses({ profile, masterMode, inAdmin }) {
 
       {/* Stat strip — what the deleted page heading used to say, on one line */}
       {(view === 'list' || view === 'approve') && (
-        <div className="flex items-center justify-between gap-2 -mb-0.5">
+        /* px-0.5 so the line does not start flush against the card edges
+           below it, and no negative margin: -mb-0.5 was pulling it into the
+           search row, which read as the two touching.
+
+           A plain block comment rather than a braced JSX one: inside
+           cond && ( ... ) only a single expression is allowed, and a braced
+           comment counts as a second one. */
+        <div className="flex items-center justify-between gap-2 px-0.5">
           <p className={T.meta + " min-w-0 truncate"}>
             {view === 'approve' ? (
               approvalExpenses.length === 0 ? 'Nothing pending review' : (
@@ -470,6 +480,7 @@ function Expenses({ profile, masterMode, inAdmin }) {
       {view === 'all' && (isAdmin || isAuditor || isDeptApprover) && (
         <AllExpenses
           embedded
+          glass={glass}
           scopeDeptIds={(isAdmin || isAuditor) ? null : (profile?.event_dept_ids || [])}
           onOpenDetail={function (exp) { openDetail(Object.assign({}, exp, { _fromAll: true })) }}
         />
@@ -510,7 +521,7 @@ function Expenses({ profile, masterMode, inAdmin }) {
                   value={expSearch}
                   onChange={function (e) { setExpSearch(e.target.value) }}
                   placeholder="Search expenses"
-                  className={FIELD_SEARCH}
+                  className={FIELD_SEARCH + (glass ? " ambria-glass-chip !border-white/60" : "")}
                   style={{ fontSize: '16px' }}
                 />
               </div>
@@ -647,7 +658,7 @@ function Expenses({ profile, masterMode, inAdmin }) {
 
       {/* List */}
       {view !== 'all' && displayList.length === 0 && (
-        <div className={CARD + " px-6 py-14 text-center"}>
+        <div className={(glass ? "ambria-glass-card rounded-2xl" : CARD) + " px-6 py-14 text-center"}>
           {/* Two rings behind the glyph rather than one flat circle: at this
               size a 44px disc in the middle of a large card reads as a
               missing image. */}
@@ -697,7 +708,7 @@ function Expenses({ profile, masterMode, inAdmin }) {
               // more than that and the edges swing as the pointer runs down
               // the list.
               <div key={gk}
-                className={CARD + " ambria-rise overflow-hidden transform-gpu transition-all duration-150 hover:shadow-lg hover:border-indigo-200 hover:-translate-y-px hover:scale-[1.006] active:scale-100"}
+                className={(glass ? "ambria-glass-card rounded-2xl" : CARD) + " ambria-rise overflow-hidden transform-gpu transition-all duration-150 hover:shadow-lg hover:-translate-y-px hover:scale-[1.006] active:scale-100" + (glass ? "" : " hover:border-indigo-200")}
                 style={{ animationDelay: (Math.min(gi, 8) * 25) + 'ms' }}>
                 {/* A one-entry batch used to print this bar AND the row below
                     it, saying the same thing twice. Only real batches get it. */}

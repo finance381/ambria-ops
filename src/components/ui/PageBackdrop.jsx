@@ -7,17 +7,24 @@ import pcBg from '../../assets/pc-bg.png'
 // The import also gets it a content hash, so a new backdrop is never served
 // from a stale cache.
 //
-// Absolute, and it expects its parent to be `relative isolate` and to already
-// be at least a screen tall:
+// Fixed, so it stays put while the page scrolls over it. It was absolute until
+// the shell took it over, and absolute meant it covered the whole document and
+// travelled with the content — on a long expense list the artwork scrolled off
+// the top and the page ran out of ground.
 //
-//   - absolute, because a `fixed` copy inside an isolated parent paints as one
-//     unit ON TOP of every sibling before it. In the admin shell that hid the
-//     section heading and the tab row, which read as a large empty gap.
+// It expects its parent to be `relative isolate`:
+//
 //   - isolate, because -z-10 without a stacking context falls behind the opaque
 //     body background and disappears.
-//   - and NOT overflow-hidden on the parent: sticky children (the expense
-//     form's submit bar, the Items/Split tabs) get pinned to a box that scrolls
-//     away. The img clips itself to its own inset-0 box instead.
+//   - and NOT overflow-hidden on the parent: sticky children (the shell header,
+//     the expense form's submit bar, the Items/Split tabs) get pinned to a box
+//     that scrolls away. The img clips itself to its own inset-0 box instead.
+//
+// One caveat that cost an afternoon in the admin shell: a stacking context
+// paints as a single unit, above every sibling that precedes it. So this has
+// to live in a parent that comes BEFORE the chrome it must sit behind — at the
+// shell root, not inside the page area — or it hides the header rather than
+// sitting under it.
 //
 // `veil` overrides the scrim. How much the artwork can show through depends
 // on how wide the page is: behind one 540px column of cards on a phone the
@@ -25,7 +32,7 @@ import pcBg from '../../assets/pc-bg.png'
 // same diagonals cut straight through tables and card borders.
 function PageBackdrop({ veil }) {
   return (
-    <div aria-hidden="true" className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
+    <div aria-hidden="true" className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
       <img src={pcBg} alt="" className="w-full h-full object-cover object-center" />
       {/* A white scrim: the artwork is busiest at the corners and the cards
           need a calm ground to sit on, or every border competes with a

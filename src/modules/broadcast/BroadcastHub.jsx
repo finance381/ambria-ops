@@ -1,7 +1,6 @@
 import { useState, useEffect, lazy, Suspense } from 'react'
 import { hasPerm } from '../../lib/permissions'
 import Icon from '../../components/ui/Icon'
-import PageWave from '../../components/ui/PageWave'
 
 // Shell.jsx (mobile) renders one component per tab, unlike AdminShell's
 // TabbedSection mechanism — this wrapper gives the mobile shell the same
@@ -27,7 +26,7 @@ var SUB_TABS = [
 ]
 
 
-function BroadcastHub({ profile, activeSubTab, inAdmin }) {
+function BroadcastHub({ profile, activeSubTab }) {
   var permsNew = (profile && profile.permsNew) || []
   var visible = SUB_TABS.filter(function (t) { return hasPerm(permsNew, t.perm) })
   var _initial = activeSubTab && visible.find(function (t) { return t.key === activeSubTab })
@@ -50,10 +49,6 @@ function BroadcastHub({ profile, activeSubTab, inAdmin }) {
     // is re-applied inside, so the wash reaches the edges while the content
     // keeps its gutters.
     <div className="relative isolate flex flex-col space-y-4 -mx-4 px-4 -mt-4 pt-4 md:-mx-8 md:px-8 md:-mt-6 md:pt-6 lg:h-[calc(100dvh-var(--app-header-h,0px)-2rem)]">
-      {/* The admin shell draws this one column-wide, so it reaches behind the
-          top bar as well. The phone shell has no such bar and this section is
-          the whole page there, so it draws its own. */}
-      {!inAdmin && <PageWave />}
       {/* The page header for this module, in both shells: admin suppresses
           its own generic heading for broadcast so this is the only one. It
           carries the icon and the line of context that a bare section title
@@ -77,13 +72,14 @@ function BroadcastHub({ profile, activeSubTab, inAdmin }) {
       </div>
 
       {/* Scrolls sideways rather than wrapping: a wrapped second row of tabs
-          moves the content down and back up as you switch. */}
+          moves the content down and back up as you switch. On a phone it no
+          longer has anything to scroll — see the icon rule below. */}
       <div className="shrink-0 flex gap-1 border-b border-slate-200 overflow-x-auto overflow-y-hidden sm:overflow-x-visible sm:overflow-y-visible">
         {visible.map(function (t) {
           var on = sub === t.key
           return (
             <button key={t.key} onClick={function () { setSub(t.key) }}
-              className={"shrink-0 sm:flex-1 sm:shrink sm:justify-center inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-2.5 text-[12.5px] sm:text-[13px] font-semibold border-b-2 -mb-px whitespace-nowrap origin-bottom transform-gpu transition-all duration-150 " +
+              className={"flex-1 justify-center inline-flex items-center gap-1.5 px-1.5 sm:px-3 py-2.5 text-[11.5px] sm:text-[13px] font-semibold border-b-2 -mb-px whitespace-nowrap origin-bottom transform-gpu transition-all duration-150 " +
                 (on
                   ? "border-indigo-600 text-indigo-700"
                   // Rounded on the top corners only: the bottom edge carries
@@ -91,7 +87,9 @@ function BroadcastHub({ profile, activeSubTab, inAdmin }) {
                   // the rule the row is aligned to. origin-bottom keeps that
                   // border on the rule while the label grows upward.
                   : "border-transparent text-slate-500 rounded-t-lg hover:text-slate-900 hover:border-slate-300 hover:bg-slate-900/[0.04] hover:scale-[1.05]")}>
-              <Icon name={t.icon} size={14} />
+              {/* Hidden on a phone: five icons are the ~90px that pushed this
+                  row off the screen, and the labels alone say the same thing. */}
+              <span className="hidden sm:inline-flex"><Icon name={t.icon} size={14} /></span>
               {t.label}
             </button>
           )
