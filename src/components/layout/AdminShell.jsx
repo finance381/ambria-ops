@@ -375,10 +375,7 @@ function AdminShell({ profile, onSignOut }) {
         <SidebarArt />
         <div className="relative z-10 shrink-0 flex items-center gap-2.5 px-4 pt-4 pb-3.5 border-b border-white/10">
           <Logo size={32} />
-          <span className="min-w-0">
-            <span className="block font-display text-white text-[15px] font-extrabold tracking-[-0.02em] leading-tight">Ambria Ops</span>
-            <span className="block text-[10px] uppercase tracking-[0.14em] font-semibold text-slate-500">Admin</span>
-          </span>
+          <span className="font-display text-white text-[15px] font-extrabold tracking-[-0.02em] truncate">Ambria Ops</span>
         </div>
         <nav className="relative z-10 flex-1 min-h-0 px-2.5 py-3 space-y-1 overflow-y-auto ambria-thin-scroll">
           {renderNavItems(false)}
@@ -405,10 +402,7 @@ function AdminShell({ profile, onSignOut }) {
             <div className="relative z-10 shrink-0 px-4 pt-4 pb-3.5 border-b border-white/10 flex items-start justify-between gap-2">
               <div className="flex items-center gap-2.5 min-w-0">
                 <Logo size={32} />
-                <span className="min-w-0">
-                  <span className="block font-display text-white text-[15px] font-extrabold tracking-[-0.02em] leading-tight">Ambria Ops</span>
-                  <span className="block text-[10px] uppercase tracking-[0.14em] font-semibold text-slate-500">Admin</span>
-                </span>
+                <span className="font-display text-white text-[15px] font-extrabold tracking-[-0.02em] truncate">Ambria Ops</span>
               </div>
               <button onClick={function () { setNavOpen(false) }} aria-label="Close menu"
                 className="shrink-0 -mr-1 inline-flex items-center justify-center w-8 h-8 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors">
@@ -460,14 +454,6 @@ function AdminShell({ profile, onSignOut }) {
             <span className="text-slate-300" aria-hidden="true">/</span>
             <span className="font-semibold text-slate-900 truncate">{activeLabel}</span>
           </nav>
-          <div className="flex items-center gap-2 shrink-0">
-            <span className="hidden lg:block text-[12px] text-slate-500 truncate max-w-[220px]">{profile.name}</span>
-            <span aria-hidden="true" data-notranslate
-              className="inline-flex items-center justify-center w-8 h-8 rounded-full text-[11px] font-bold text-white"
-              style={AVATAR_TILE}>
-              {initialsOf(profile.name)}
-            </span>
-          </div>
         </div>
 
       {/* Content. relative isolate + a full-height flex item is what
