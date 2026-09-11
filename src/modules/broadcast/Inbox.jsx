@@ -200,7 +200,7 @@ function Inbox({ profile }) {
     // page scrolls normally, so a min height keeps them usable instead of
     // collapsing to their content.
     <div className="grid grid-cols-1 md:grid-cols-[300px_1fr] gap-3 lg:h-full lg:min-h-0">
-      <div className={CARD + ' flex flex-col overflow-hidden min-h-[420px] lg:min-h-0'}>
+      <div className={CARD + ' flex-col overflow-hidden min-h-[420px] lg:min-h-0 md:flex ' + (activeConv ? 'hidden' : 'flex')}>
         <div className="shrink-0 p-2.5 space-y-2 border-b border-slate-200">
           <SearchField value={search} onChange={setSearch} placeholder="Search name or phone..." />
           <div className="grid grid-cols-2 gap-1.5">
@@ -237,7 +237,7 @@ function Inbox({ profile }) {
         </div>
       </div>
 
-      <div className={CARD + ' flex flex-col overflow-hidden min-h-[420px] lg:min-h-0'}>
+      <div className={CARD + ' flex-col overflow-hidden min-h-[420px] lg:min-h-0 md:flex ' + (activeConv ? 'flex' : 'hidden')}>
         {!activeConv ? (
           <div className="flex-1 flex items-center justify-center">
             <EmptyState icon="inbox" title="Select a conversation"
@@ -247,6 +247,13 @@ function Inbox({ profile }) {
           <>
             <div className="shrink-0 px-3.5 py-2.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between gap-3">
               <div className="flex items-center gap-2.5 min-w-0">
+                {/* md:hidden — from md the list is still beside this, so there
+                    is nothing to go back to. */}
+                <button type="button" onClick={function () { setActiveConv(null) }}
+                  aria-label="Back to conversations"
+                  className="md:hidden shrink-0 -ml-1 inline-flex items-center justify-center w-8 h-8 rounded-lg text-slate-500 hover:bg-white hover:text-slate-900 transition-colors">
+                  <Icon name="arrowLeft" size={17} />
+                </button>
                 <span aria-hidden="true" data-notranslate
                   className="shrink-0 inline-flex items-center justify-center w-9 h-9 rounded-full bg-indigo-100 text-indigo-700 text-[12px] font-bold">
                   {initialsOf(activeConv.wa_contacts.name, activeConv.wa_contacts.phone_e164)}

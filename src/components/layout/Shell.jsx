@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { supabase } from '../../lib/supabase'
 import { ROLE_COLORS } from '../../lib/constants'
 import Inventory from '../../modules/inventory/Inventory'
@@ -107,14 +108,15 @@ var GROUPS = [
   },
   {
     // All 4 view perms point at the same 'broadcast' tab — BroadcastHub.jsx
-    // decides sub-nav internally, same pattern as the Review group above.
+    // owns the sub-nav, same pattern as the Review group above. `sub` is which
+    // of its pages the tile means; without it every tile landed on Templates.
     // broadcast.quicksend is deliberately NOT listed here — sales-only users
     // shouldn't see this tile; they reach QuickSend from inline contexts only.
     key: 'broadcast', label: 'API Marketing', icon: 'send', items: [
-      { key: 'broadcast.templates.view', label: 'Templates', icon: 'fileText', tab: 'broadcast' },
-      { key: 'broadcast.contacts.view',  label: 'Contacts',  icon: 'users', tab: 'broadcast' },
-      { key: 'broadcast.campaigns.view', label: 'Campaigns', icon: 'send', tab: 'broadcast' },
-      { key: 'broadcast.inbox.view',     label: 'Inbox',     icon: 'inbox', tab: 'broadcast' },
+      { key: 'broadcast.templates.view', label: 'Templates', icon: 'fileText', tab: 'broadcast', sub: 'templates' },
+      { key: 'broadcast.contacts.view',  label: 'Contacts',  icon: 'users', tab: 'broadcast', sub: 'contacts' },
+      { key: 'broadcast.campaigns.view', label: 'Campaigns', icon: 'send', tab: 'broadcast', sub: 'campaigns' },
+      { key: 'broadcast.inbox.view',     label: 'Inbox',     icon: 'inbox', tab: 'broadcast', sub: 'inbox' },
     ]
   },
   {
@@ -127,10 +129,16 @@ var GROUPS = [
 import { pushBack, goBack as navBack } from '../../lib/backNav'
 import { formatPoints } from '../../lib/format'
 import Icon from '../ui/Icon'
+import PageBackdrop from '../ui/PageBackdrop'
+import PageWave from '../ui/PageWave'
 
 function Shell({ profile, onSignOut }) {
   var [activeGroup, setActiveGroup] = useState(null)
   var [tab, setTab] = useState(null)
+  // Which page inside a tab a tile asked for. Only the API Marketing group
+  // uses it today; a tile without `sub` clears it, so the module falls back to
+  // its own first page.
+  var [subTab, setSubTab] = useState(null)
   var [menuOpen, setMenuOpen] = useState(false)
   var [showSuccess, setShowSuccess] = useState(false)
 
@@ -213,8 +221,9 @@ function Shell({ profile, onSignOut }) {
   }
 
   function openModule(item) {
-    pushBack(function () { setTab(null) })
+    pushBack(function () { setTab(null); setSubTab(null) })
     setTab(item.tab)
+    setSubTab(item.sub || null)
   }
 
   // Current group object
@@ -405,15 +414,24 @@ function Shell({ profile, onSignOut }) {
 
   // No background colour on the root div: body owns the canvas now, so every
   // screen agrees on one ground instead of each hard-coding its own hex.
+  // Every menu page — the home grid and each group's tile page — plus the
+  // PC & Direct Expenses screen, which was designed against this backdrop.
+  // Opening any other tile sets `tab` and the artwork stops: those screens are
+  // dense lists, where a calm ground matters more than a patterned one.
+  var pageArt = !tab || tab === 'expenses'
+  var waveArt = tab === 'broadcast'
+
   return (
-    <div className={tab === 'quote' ? "min-h-screen lg:h-screen lg:overflow-hidden" : "min-h-screen"}
+    <div className={"relative isolate " + (tab === 'quote' ? "min-h-screen lg:h-screen lg:overflow-hidden" : "min-h-screen")}
       style={{ '--app-header-h': tab !== 'quote' ? '3.5rem' : '0px' }}>
+      {pageArt && <PageBackdrop />}
+      {waveArt && <PageWave />}
       {/* Header — hidden on the quote screen, which carries its own topbar */}
-      {/* No backdrop-blur on the header: backdrop-filter makes an element a
-          containing block for fixed children, which would shrink the menu's
-          click-outside overlay down to the header itself. */}
+      {/* backdrop-blur is safe here now: the menu's click-outside overlay is
+          portalled to <body>, so it is no longer a fixed child of this header
+          for backdrop-filter's containing block to capture. */}
       {tab !== 'quote' && (
-      <header className="sticky top-0 z-40 bg-white border-b border-slate-200">
+      <header className={"sticky top-0 z-40 border-b " + (pageArt || waveArt ? "bg-white/70 backdrop-blur-md border-white/60" : "bg-white border-slate-200")}>
         <div className="max-w-[540px] mx-auto h-14 flex items-center gap-2 px-3">
           {(activeGroup || tab) && (
             <button
@@ -469,7 +487,10 @@ function Shell({ profile, onSignOut }) {
             </button>
             {menuOpen && (
               <>
-                <div className="fixed inset-0 z-40" onClick={function () { setMenuOpen(false) }} />
+                {createPortal(
+                  <div className="fixed inset-0 z-30" onClick={function () { setMenuOpen(false) }} />,
+                  document.body
+                )}
                 <div className="absolute right-0 top-full mt-1.5 z-50 w-48 py-1 bg-white border border-slate-200 rounded-xl shadow-[0_8px_24px_rgba(15,23,42,0.12)] overflow-hidden">
                   {/* The landing site, not the app root. href="/" happened to
                       reach it on GitHub Pages, where the app is served from
@@ -519,7 +540,7 @@ function Shell({ profile, onSignOut }) {
           are, and the card cost ~60px of the phone's first screenful. */}
       {!activeGroup && !tab && (
       <div className="max-w-[540px] mx-auto px-4 pt-3">
-        <div className="bg-white border border-slate-200 rounded-2xl px-3.5 py-2.5 flex items-center gap-3 shadow-[0_1px_2px_rgba(15,23,42,0.05)]">
+        <div className="ambria-glass-card rounded-2xl px-3.5 py-2.5 flex items-center gap-3">
           <div className="w-9 h-9 shrink-0 rounded-full bg-slate-900 flex items-center justify-center text-[13px] font-bold text-white">
             {profile.name?.charAt(0) || '?'}
           </div>
@@ -572,14 +593,14 @@ function Shell({ profile, onSignOut }) {
                 )}
               </button>
             )}
-          <div className="grid grid-cols-2 gap-3 pt-2">
+          <div className="grid grid-cols-2 auto-rows-fr gap-3 pt-2">
             {visibleGroups.map(function (g) {
               var badge = groupBadge(g)
               return (
                 <button
                   key={g.key}
                   onClick={function () { openGroup(g) }}
-                  className="relative bg-white border border-slate-200 rounded-2xl p-5 flex flex-col items-center gap-2 shadow-[0_1px_2px_rgba(15,23,42,0.05)] hover:border-indigo-200 hover:shadow-[0_4px_16px_rgba(79,70,229,0.10)] active:scale-[0.98] transition-all"
+                  className="relative ambria-glass-card rounded-2xl p-5 flex flex-col items-center justify-center gap-2 hover:bg-white/70 hover:shadow-[0_6px_20px_rgba(79,70,229,0.12)] active:scale-[0.98] transition-all"
                 >
                   {badge > 0 && (
                     <span className="absolute top-2 right-2 min-w-[20px] h-5 px-1.5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
@@ -602,7 +623,11 @@ function Shell({ profile, onSignOut }) {
 
         {/* Level 1: Sub-Cards within a group */}
         {activeGroup && !tab && currentGroup && (
-          <div className="grid grid-cols-2 gap-3 pt-2">
+          /* auto-rows-fr: every row takes the height of the tallest tile in
+             the grid, so a two-line label or an extra stat line does not make
+             one row taller than the next. No fixed height — the tiles resize
+             themselves if a label or a figure ever grows. */
+          <div className="grid grid-cols-2 auto-rows-fr gap-3 pt-2">
             {currentGroup.items.map(function (f) {
               var extra = null
               if (f.key === 'finance.wallet' && walletBalance !== null) {
@@ -616,7 +641,11 @@ function Shell({ profile, onSignOut }) {
                 <button
                   key={f.key}
                   onClick={function () { openModule(f) }}
-                  className="relative bg-white border border-slate-200 rounded-2xl p-5 flex flex-col items-center gap-2 shadow-[0_1px_2px_rgba(15,23,42,0.05)] hover:border-indigo-200 hover:shadow-[0_4px_16px_rgba(79,70,229,0.10)] active:scale-[0.98] transition-all"
+                  /* Frosted: every menu page has artwork behind it now, and
+                     opaque white cards would blank it out in rectangles. Hover
+                     deepens the glass rather than adding a border, which on a
+                     patterned ground reads as noise. */
+                  className="relative ambria-glass-card rounded-2xl p-5 flex flex-col items-center justify-center gap-2 hover:bg-white/70 hover:shadow-[0_6px_20px_rgba(79,70,229,0.12)] active:scale-[0.98] transition-all"
                 >
                   {badges[f.key] > 0 && (
                     <span className="absolute top-2 right-2 min-w-[20px] h-5 px-1.5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
@@ -663,7 +692,7 @@ function Shell({ profile, onSignOut }) {
           <Reviews profile={profile} />
         )}
         {tab === 'broadcast' && (
-          <BroadcastHub profile={profile} />
+          <BroadcastHub profile={profile} activeSubTab={subTab} />
         )}
         {tab === 'requisitions' && (
           <Requisitions profile={profile} onBack={goBack} />
@@ -730,7 +759,9 @@ function Shell({ profile, onSignOut }) {
       {/* Footer — home screen only. Inside a module it is decoration that sits
           below the action bar and reads as a gap. */}
       {!activeGroup && !tab && (
-      <footer className="text-center py-4 text-[11px] text-slate-300 tracking-wider">
+      /* slate-400, not 300: the home screen has artwork behind it now, and
+         the lightest grey in the scale disappeared into the pattern. */
+      <footer className="text-center py-4 text-[11px] text-slate-400 tracking-wider">
         Ambria <span className="text-amber-400">●</span> Ops
       </footer>
       )}

@@ -420,7 +420,7 @@ function Templates({ profile }) {
           {CATEGORY_OPTIONS.map(function (c) { return <option key={c} value={c}>{c}</option> })}
         </select>
 
-        <div className="border border-slate-200 rounded-xl overflow-hidden flex-1 min-h-[140px]">
+        <div className="border border-slate-200 rounded-xl flex-1 min-h-[140px] max-h-[45vh] overflow-y-auto ambria-thin-scroll lg:max-h-none lg:overflow-hidden">
           {loading ? (
             <p className="text-center text-[12px] text-slate-400 py-8">Loading…</p>
           ) : filtered.length === 0 ? (
