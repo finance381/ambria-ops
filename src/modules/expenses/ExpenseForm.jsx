@@ -1713,10 +1713,10 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
       }
       setSuccess(successMsg)
       clearDraftAfterSubmit()
-      // Keep the form locked (saving stays true) until the reset below actually clears the
-      // entries — otherwise the button re-enables for 1.5s with the same entries still
-      // loaded, and a stray second click resubmits them as genuine duplicate expenses.
-      setTimeout(function () { setEntries([makeEntry()]); setSaving(false); if (onDone) onDone() }, 1500)
+      // Keep the form locked (saving stays true) for a beat so the success message is
+      // seen, then hand off to onDone — which always navigates away (unmounting this
+      // form), so there's no need to reset `entries` here first.
+      setTimeout(function () { setSaving(false); if (onDone) onDone() }, 1500)
     }
     } finally {
       submitLockRef.current = false
