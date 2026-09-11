@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import Modal from '../../components/ui/Modal'
 import SearchDropdown from '../../components/ui/SearchDropdown'
@@ -41,6 +41,11 @@ function CostTransfers({ profile }) {
   var [saving, setSaving] = useState(false)
   var [reversing, setReversing] = useState(null)
   var [error, setError] = useState('')
+  var [expandedBatches, setExpandedBatches] = useState({})
+  var [editTarget, setEditTarget] = useState(null) // the cost_transfers row being edited
+  var [editForm, setEditForm] = useState(null)
+  var [editSaving, setEditSaving] = useState(false)
+  var [editError, setEditError] = useState('')
 
   var [events, setEvents] = useState([])
   var [vendors, setVendors] = useState([])
@@ -271,6 +276,9 @@ function CostTransfers({ profile }) {
     var selEvent = (isFunction && eventId) ? formEvents.find(function (e) { return String(e.id) === eventId }) : null
     var eventTag = selEvent ? { _event_id: selEvent.id, _event_name: selEvent.event_name } : null
     var fromMetaOut = eventTag ? Object.assign({}, form.from.meta || {}, eventTag) : (form.from.meta || {})
+    // One id shared by every leg created in this submission, so a multi-row split
+    // (several To rows off one From) groups back into a single expandable entry.
+    var batchId = (crypto.randomUUID ? crypto.randomUUID() : (Date.now() + '-' + Math.random().toString(36).slice(2)))
 
     var okCount = 0
     for (var j = 0; j < form.to_rows.length; j++) {
@@ -298,6 +306,7 @@ function CostTransfers({ profile }) {
           p_effective_date: form.effective_date,
           p_from_meta: fromMetaOut,
           p_to_meta: toMetaOut,
+          p_batch_id: batchId,
         })
         if (res.error) throw res.error
         try { logActivity('COST_TRANSFER_CREATE', '#' + res.data + ' Rs ' + amt.toFixed(2)) } catch (_) {}
@@ -329,6 +338,153 @@ function CostTransfers({ profile }) {
       loadTransfers()
     } catch (err) { setError(err.message || 'Reverse failed') }
     setReversing(null)
+  }
+
+  function toggleBatch(batchId) {
+    setExpandedBatches(function (p) { return Object.assign({}, p, { [batchId]: !p[batchId] }) })
+  }
+
+  // Multi-row splits (one From, several To rows) share a batch_id from creation —
+  // group them back into one expandable entry. A batch_id shared by only one row
+  // (the normal case, and every legacy pre-batching row) just renders as itself.
+  function groupedTransfers() {
+    var order = []
+    var byBatch = {}
+    transfers.forEach(function (r) {
+      var key = r.batch_id || ('single_' + r.id)
+      if (!byBatch[key]) { byBatch[key] = []; order.push(key) }
+      byBatch[key].push(r)
+    })
+    return order.map(function (key) {
+      var rows = byBatch[key]
+      return { batchId: key, rows: rows, totalPaise: rows.reduce(function (s, r) { return s + (r.amount_paise || 0) }, 0) }
+    })
+  }
+
+  function canEditRow(r) {
+    return canCreate && r.from_party_type === 'expense' && r.to_party_type === 'expense' &&
+      r.reversed_by_id == null && r.reversal_of == null
+  }
+
+  function openEdit(r) {
+    setEditError('')
+    setEditTarget(r)
+    setEditForm({
+      from: { expense_type_id: String(r.from_expense_type_id || ''), expense_sub_type_id: String(r.from_expense_sub_type_id || '') },
+      to: { expense_type_id: String(r.to_expense_type_id || ''), expense_sub_type_id: String(r.to_expense_sub_type_id || '') },
+      amount_pts: r.amount_paise != null ? (r.amount_paise / 100).toString() : '',
+      description: r.description || '',
+      effective_date: r.effective_date || '',
+    })
+  }
+
+  async function handleEditSave() {
+    if (editSaving || !editTarget || !editForm) return
+    setEditError('')
+    if (!editForm.description.trim()) { setEditError('Description required'); return }
+    if (!editForm.from.expense_type_id) { setEditError('Select a From expense type'); return }
+    if (!editForm.to.expense_type_id) { setEditError('Select a To expense type'); return }
+    if (!Number(editForm.amount_pts) || Number(editForm.amount_pts) <= 0) { setEditError('Amount must be positive'); return }
+    setEditSaving(true)
+    try {
+      var res = await supabase.rpc('fn_edit_cost_transfer', {
+        p_id: editTarget.id,
+        p_amount_paise: Math.round(Number(editForm.amount_pts) * 100),
+        p_from_expense_type_id: Number(editForm.from.expense_type_id),
+        p_from_expense_sub_type_id: editForm.from.expense_sub_type_id ? Number(editForm.from.expense_sub_type_id) : null,
+        p_to_expense_type_id: Number(editForm.to.expense_type_id),
+        p_to_expense_sub_type_id: editForm.to.expense_sub_type_id ? Number(editForm.to.expense_sub_type_id) : null,
+        p_description: editForm.description.trim(),
+        p_effective_date: editForm.effective_date || null,
+      })
+      if (res.error) throw res.error
+      try { logActivity('COST_TRANSFER_EDIT', '#' + editTarget.id) } catch (_) {}
+      setEditTarget(null)
+      setEditForm(null)
+      loadTransfers()
+    } catch (err) { setEditError(err.message || 'Save failed') }
+    setEditSaving(false)
+  }
+
+  // Nested so they close over partyLabel/partyMeta/canEditRow/handleReverse/openEdit —
+  // all of which need the reference-data lookups (expTypes, vendors, etc.) in scope here.
+  function DesktopRow({ r, indent }) {
+    var isReversed = r.reversed_by_id != null
+    var isReversal = r.reversal_of != null
+    var canReverse = canCreate && !isReversed && !isReversal
+    var canEdit = canEditRow(r)
+    return (
+      <tr className={isReversed ? "bg-gray-50 text-gray-400" : ""}>
+        <td className={"px-3 py-2 text-xs whitespace-nowrap" + (indent ? " pl-8" : "")}>
+          {formatDate(r.effective_date)}
+          <div className="text-[10px] text-gray-400">Logged {formatDateTime(r.created_at)}</div>
+        </td>
+        <td className="px-3 py-2 text-xs">{partyLabel(r, 'from')}{partyMeta(r, 'from')}</td>
+        <td className="px-3 py-2 text-xs">{partyLabel(r, 'to')}{partyMeta(r, 'to')}</td>
+        <td className="px-3 py-2 text-right font-mono text-xs whitespace-nowrap">
+          Rs {(r.amount_paise / 100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+        </td>
+        <td className="px-3 py-2 text-xs">
+          {r.description}
+          {isReversal && <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 uppercase">Reversal</span>}
+          {isReversed && <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded bg-gray-200 text-gray-600 uppercase">Reversed</span>}
+          {r.edited_at && <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 uppercase">Edited</span>}
+        </td>
+        <td className="px-3 py-2 text-right whitespace-nowrap">
+          {canEdit && (
+            <button onClick={function () { openEdit(r) }} className="text-xs text-indigo-600 hover:text-indigo-800 mr-3">Edit</button>
+          )}
+          {canReverse ? (
+            <button onClick={function () { handleReverse(r.id) }} disabled={reversing === r.id}
+              className="text-xs text-red-600 hover:text-red-800 disabled:text-gray-300">
+              {reversing === r.id ? 'Reversing...' : 'Reverse'}
+            </button>
+          ) : (!canEdit && <span className="text-xs text-gray-300">—</span>)}
+        </td>
+      </tr>
+    )
+  }
+
+  function MobileCard({ r }) {
+    var isReversed = r.reversed_by_id != null
+    var isReversal = r.reversal_of != null
+    var canReverse = canCreate && !isReversed && !isReversal
+    var canEdit = canEditRow(r)
+    return (
+      <div className={"bg-white border border-gray-200 rounded-lg p-3 space-y-1.5 " + (isReversed ? "opacity-60" : "")}>
+        <div className="flex items-center justify-between">
+          <span className="text-xs text-gray-500">{formatDate(r.effective_date)}</span>
+          <span className="font-mono text-sm font-semibold text-gray-800">
+            Rs {(r.amount_paise / 100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+          </span>
+        </div>
+        <div className="text-[10px] text-gray-400">Logged {formatDateTime(r.created_at)}</div>
+        <div className="text-xs text-gray-700">
+          <span className="font-medium">{partyLabel(r, 'from')}{partyMeta(r, 'from')}</span>
+          <span className="mx-1 text-gray-400">→</span>
+          <span className="font-medium">{partyLabel(r, 'to')}{partyMeta(r, 'to')}</span>
+        </div>
+        {r.description && <div className="text-xs text-gray-500">{r.description}</div>}
+        <div className="flex items-center justify-between pt-1">
+          <div className="flex gap-1">
+            {isReversal && <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 uppercase">Reversal</span>}
+            {isReversed && <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-200 text-gray-600 uppercase">Reversed</span>}
+            {r.edited_at && <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 uppercase">Edited</span>}
+          </div>
+          <div className="flex gap-3">
+            {canEdit && (
+              <button onClick={function () { openEdit(r) }} className="text-xs text-indigo-600 hover:text-indigo-800 font-medium">Edit</button>
+            )}
+            {canReverse && (
+              <button onClick={function () { handleReverse(r.id) }} disabled={reversing === r.id}
+                className="text-xs text-red-600 hover:text-red-800 disabled:text-gray-300 font-medium">
+                {reversing === r.id ? 'Reversing...' : 'Reverse'}
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -443,35 +599,26 @@ function CostTransfers({ profile }) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {transfers.map(function (r) {
-                  var isReversed = r.reversed_by_id != null
-                  var isReversal = r.reversal_of != null
-                  var canReverse = canCreate && !isReversed && !isReversal
+                {groupedTransfers().map(function (g) {
+                  if (g.rows.length === 1) return <DesktopRow key={g.batchId} r={g.rows[0]} />
+                  var expanded = !!expandedBatches[g.batchId]
                   return (
-                    <tr key={r.id} className={isReversed ? "bg-gray-50 text-gray-400" : ""}>
-                      <td className="px-3 py-2 text-xs whitespace-nowrap">
-                        {formatDate(r.effective_date)}
-                        <div className="text-[10px] text-gray-400">Logged {formatDateTime(r.created_at)}</div>
-                      </td>
-                      <td className="px-3 py-2 text-xs">{partyLabel(r, 'from')}{partyMeta(r, 'from')}</td>
-                      <td className="px-3 py-2 text-xs">{partyLabel(r, 'to')}{partyMeta(r, 'to')}</td>
-                      <td className="px-3 py-2 text-right font-mono text-xs whitespace-nowrap">
-                        Rs {(r.amount_paise / 100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                      </td>
-                      <td className="px-3 py-2 text-xs">
-                        {r.description}
-                        {isReversal && <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 uppercase">Reversal</span>}
-                        {isReversed && <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded bg-gray-200 text-gray-600 uppercase">Reversed</span>}
-                      </td>
-                      <td className="px-3 py-2 text-right">
-                        {canReverse ? (
-                          <button onClick={function () { handleReverse(r.id) }} disabled={reversing === r.id}
-                            className="text-xs text-red-600 hover:text-red-800 disabled:text-gray-300">
-                            {reversing === r.id ? 'Reversing...' : 'Reverse'}
-                          </button>
-                        ) : <span className="text-xs text-gray-300">—</span>}
-                      </td>
-                    </tr>
+                    <React.Fragment key={g.batchId}>
+                      <tr className="bg-indigo-50/40 cursor-pointer" onClick={function () { toggleBatch(g.batchId) }}>
+                        <td className="px-3 py-2 text-xs whitespace-nowrap">
+                          {formatDate(g.rows[0].effective_date)}
+                          <div className="text-[10px] text-gray-400">Logged {formatDateTime(g.rows[0].created_at)}</div>
+                        </td>
+                        <td className="px-3 py-2 text-xs">{partyLabel(g.rows[0], 'from')}{partyMeta(g.rows[0], 'from')}</td>
+                        <td className="px-3 py-2 text-xs text-indigo-700 font-semibold">{expanded ? '▾' : '▸'} {g.rows.length} allocations</td>
+                        <td className="px-3 py-2 text-right font-mono text-xs whitespace-nowrap">
+                          Rs {(g.totalPaise / 100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        </td>
+                        <td className="px-3 py-2 text-xs">{g.rows[0].description}</td>
+                        <td className="px-3 py-2 text-right text-xs text-indigo-600 font-medium">{expanded ? 'Collapse' : 'Expand'}</td>
+                      </tr>
+                      {expanded && g.rows.map(function (r) { return <DesktopRow key={r.id} r={r} indent /> })}
+                    </React.Fragment>
                   )
                 })}
               </tbody>
@@ -479,37 +626,26 @@ function CostTransfers({ profile }) {
           </div>
 
           <div className="sm:hidden space-y-2">
-            {transfers.map(function (r) {
-              var isReversed = r.reversed_by_id != null
-              var isReversal = r.reversal_of != null
-              var canReverse = canCreate && !isReversed && !isReversal
+            {groupedTransfers().map(function (g) {
+              if (g.rows.length === 1) return <MobileCard key={g.batchId} r={g.rows[0]} />
+              var expanded = !!expandedBatches[g.batchId]
               return (
-                <div key={r.id} className={"bg-white border border-gray-200 rounded-lg p-3 space-y-1.5 " + (isReversed ? "opacity-60" : "")}>
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-gray-500">{formatDate(r.effective_date)}</span>
-                    <span className="font-mono text-sm font-semibold text-gray-800">
-                      Rs {(r.amount_paise / 100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                    </span>
-                  </div>
-                  <div className="text-[10px] text-gray-400">Logged {formatDateTime(r.created_at)}</div>
-                  <div className="text-xs text-gray-700">
-                    <span className="font-medium">{partyLabel(r, 'from')}{partyMeta(r, 'from')}</span>
-                    <span className="mx-1 text-gray-400">→</span>
-                    <span className="font-medium">{partyLabel(r, 'to')}{partyMeta(r, 'to')}</span>
-                  </div>
-                  {r.description && <div className="text-xs text-gray-500">{r.description}</div>}
-                  <div className="flex items-center justify-between pt-1">
-                    <div className="flex gap-1">
-                      {isReversal && <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 uppercase">Reversal</span>}
-                      {isReversed && <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-200 text-gray-600 uppercase">Reversed</span>}
+                <div key={g.batchId} className="space-y-2">
+                  <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-3 space-y-1.5 cursor-pointer" onClick={function () { toggleBatch(g.batchId) }}>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-gray-500">{formatDate(g.rows[0].effective_date)}</span>
+                      <span className="font-mono text-sm font-semibold text-gray-800">
+                        Rs {(g.totalPaise / 100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      </span>
                     </div>
-                    {canReverse && (
-                      <button onClick={function () { handleReverse(r.id) }} disabled={reversing === r.id}
-                        className="text-xs text-red-600 hover:text-red-800 disabled:text-gray-300 font-medium">
-                        {reversing === r.id ? 'Reversing...' : 'Reverse'}
-                      </button>
-                    )}
+                    <div className="text-xs font-semibold text-indigo-700">{expanded ? '▾' : '▸'} {g.rows.length} allocations from {partyLabel(g.rows[0], 'from')}</div>
+                    {g.rows[0].description && <div className="text-xs text-gray-500">{g.rows[0].description}</div>}
                   </div>
+                  {expanded && (
+                    <div className="pl-3 space-y-2 border-l-2 border-indigo-200">
+                      {g.rows.map(function (r) { return <MobileCard key={r.id} r={r} /> })}
+                    </div>
+                  )}
                 </div>
               )
             })}
@@ -639,6 +775,56 @@ function CostTransfers({ profile }) {
             </button>
           </div>
         </div>
+      </Modal>
+
+      <Modal open={!!editTarget} onClose={function () { setEditTarget(null); setEditForm(null) }} title={'Edit Transfer' + (editTarget ? ' #' + editTarget.id : '')}>
+        {editForm && (
+          <div className="space-y-4">
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 mb-1.5 uppercase tracking-wider">From</label>
+              <ExpenseTypeFields value={editForm.from}
+                onChange={function (patch) { setEditForm(function (p) { return Object.assign({}, p, { from: Object.assign({}, p.from, patch) }) }) }}
+                expTypes={expTypes} expSubTypes={expSubTypes} vendors={vendors} venues={venues} employees={employees} categories={categories} />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 mb-1.5 uppercase tracking-wider">To</label>
+              <ExpenseTypeFields value={editForm.to}
+                onChange={function (patch) { setEditForm(function (p) { return Object.assign({}, p, { to: Object.assign({}, p.to, patch) }) }) }}
+                expTypes={expTypes} expSubTypes={expSubTypes} vendors={vendors} venues={venues} employees={employees} categories={categories} />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 mb-1.5">Amount (Rs) *</label>
+              <input type="number" step="0.01" min="0" inputMode="decimal"
+                value={editForm.amount_pts}
+                onChange={function (e) { setEditForm(function (p) { return Object.assign({}, p, { amount_pts: e.target.value }) }) }}
+                style={{ fontSize: '16px' }}
+                className="w-full px-2 py-1.5 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-indigo-400" />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 mb-1.5">Effective Date</label>
+              <input type="date" value={editForm.effective_date}
+                onChange={function (e) { setEditForm(function (p) { return Object.assign({}, p, { effective_date: e.target.value }) }) }}
+                style={{ fontSize: '16px' }}
+                className="w-full px-2 py-1.5 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-indigo-400" />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 mb-1.5">Description *</label>
+              <VoiceInput type="text" value={editForm.description}
+                onChange={function (e) { setEditForm(function (p) { return Object.assign({}, p, { description: e.target.value }) }) }}
+                className="w-full px-2 py-1.5 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-indigo-400" />
+            </div>
+
+            {editError && <p className="text-sm text-red-600">{editError}</p>}
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
+              <button onClick={function () { setEditTarget(null); setEditForm(null) }} className="px-3 py-1.5 text-sm text-gray-600 hover:text-gray-800">Cancel</button>
+              <button onClick={handleEditSave} disabled={editSaving}
+                className="px-4 py-1.5 rounded-md bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 disabled:bg-indigo-300">
+                {editSaving ? 'Saving...' : 'Save Changes'}
+              </button>
+            </div>
+          </div>
+        )}
       </Modal>
     </div>
   )
