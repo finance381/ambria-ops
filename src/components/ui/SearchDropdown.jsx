@@ -1,6 +1,13 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useId } from 'react'
+import Icon from './Icon'
 
-function SearchDropdown({ items, value, onChange, onAdd, onInputChange, placeholder, allowAdd, label, required, error, voiceLang }) {
+function SearchDropdown({ items, value, onChange, onAdd, onInputChange, placeholder, allowAdd, label, labelIcon, required, error, voiceLang, id }) {
+  // Tie the label to the input so tapping the label focuses the field, and so a
+  // screen reader announces which field it is reading. Nothing was associated
+  // before, which on a phone is a daily miss -- the label is a big, obvious
+  // target that simply did nothing.
+  var autoId = useId()
+  var inputId = id || autoId
   var [query, setQuery] = useState('')
   var [open, setOpen] = useState(false)
   var [hlIdx, setHlIdx] = useState(-1)
@@ -178,7 +185,8 @@ function SearchDropdown({ items, value, onChange, onAdd, onInputChange, placehol
   return (
     <div>
       {label && (
-        <label className="block text-sm font-medium text-gray-700 mb-1">
+        <label htmlFor={inputId} className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-600 mb-1">
+          {labelIcon && <span className="shrink-0 w-5 h-5 rounded-md bg-slate-100 text-slate-500 inline-flex items-center justify-center"><Icon name={labelIcon} size={11} /></span>}
           {label}{required && <span className="text-red-500 ml-0.5">*</span>}
         </label>
       )}
@@ -187,6 +195,7 @@ function SearchDropdown({ items, value, onChange, onAdd, onInputChange, placehol
           <div className="relative flex-1">
             <input
               ref={inputRef}
+              id={inputId}
               type="text"
               value={query}
               onChange={handleInputChange}
@@ -194,17 +203,19 @@ function SearchDropdown({ items, value, onChange, onAdd, onInputChange, placehol
               onKeyDown={handleKeyDown}
               placeholder={placeholder || 'Search or select...'}
               className={
-                "w-full pl-3 pr-8 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 " +
-                (error ? "border-red-300" : "border-gray-300")
+                "w-full pl-3 pr-9 py-2.5 bg-white border rounded-xl text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 transition-shadow " +
+                (error ? "border-red-400 focus:border-red-500 focus:ring-red-500/20"
+                       : "border-slate-300 focus:border-indigo-500 focus:ring-indigo-500/20")
               }
             />
             {query && (
               <button
                 type="button"
                 onClick={handleClear}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-lg leading-none"
+                aria-label="Clear"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 w-5 h-5 flex items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors"
               >
-                ×
+                <Icon name="close" size={12} />
               </button>
             )}
           </div>
@@ -212,20 +223,22 @@ function SearchDropdown({ items, value, onChange, onAdd, onInputChange, placehol
             type="button"
             onClick={startVoice}
             className={
-              "px-2.5 py-2 rounded-md text-sm transition-colors flex-shrink-0 " +
+              "w-11 shrink-0 rounded-xl border flex items-center justify-center transition-colors " +
               (listening
-                ? "bg-red-500 text-white animate-pulse"
-                : "bg-gray-100 text-gray-600 hover:bg-gray-200")
+                ? "bg-red-500 border-red-500 text-white animate-pulse"
+                : "bg-white border-slate-300 text-slate-500 hover:border-indigo-400 hover:text-indigo-600")
             }
+            aria-label={listening ? 'Stop voice input' : 'Voice input'}
+            title="Voice input"
           >
-            🎙️
+            <Icon name="mic" className="w-[18px] h-[18px]" />
           </button>
         </div>
 
         {open && (filtered.length > 0 || showAddOption) && (
           <div
             ref={listRef}
-            className="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-md shadow-lg max-h-72 overflow-y-auto"
+            className="absolute z-50 mt-1.5 w-full bg-white border border-slate-200 rounded-xl shadow-[0_8px_24px_rgba(15,23,42,0.12)] max-h-72 overflow-y-auto py-1"
           >
             {filtered.map(function (item, idx) {
               return (
@@ -233,8 +246,8 @@ function SearchDropdown({ items, value, onChange, onAdd, onInputChange, placehol
                   key={item.value}
                   onClick={function () { handleSelect(item) }}
                   className={
-                    "px-3 py-2 text-sm cursor-pointer transition-colors " +
-                    (idx === hlIdx ? "bg-indigo-50 text-indigo-700" : "text-gray-700 hover:bg-gray-50")
+                    "px-3 py-2 text-[13px] cursor-pointer transition-colors " +
+                    (idx === hlIdx ? "bg-indigo-50 text-indigo-700 font-medium" : "text-slate-700 hover:bg-slate-50")
                   }
                 >
                   {item.label}
@@ -247,17 +260,17 @@ function SearchDropdown({ items, value, onChange, onAdd, onInputChange, placehol
               )
             })}
             {filtered.length === 0 && !showAddOption && (
-              <div className="px-3 py-2 text-sm text-gray-400">No results</div>
+              <div className="px-3 py-2 text-[13px] text-slate-500">No results</div>
             )}
             {showAddOption && (
               <div
                 onClick={handleAdd}
                 className={
-                  "px-3 py-2 text-sm cursor-pointer font-medium transition-colors " +
-                  (hlIdx === filtered.length ? "bg-green-50 text-green-700" : "text-green-600 hover:bg-green-50")
+                  "px-3 py-2 text-[13px] cursor-pointer font-semibold transition-colors " +
+                  (hlIdx === filtered.length ? "bg-emerald-50 text-emerald-700" : "text-emerald-600 hover:bg-emerald-50")
                 }
               >
-                ➕ Add "{query.trim()}"
+                + Add "{query.trim()}"
               </div>
             )}
           </div>

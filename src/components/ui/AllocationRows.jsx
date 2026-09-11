@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import Icon from './Icon'
 
 // Shared allocation rows UI with collapse-when-complete UX.
 // Rows where isComplete(row) is true render as a compact chip; incomplete rows
@@ -15,42 +16,43 @@ import { useState, useEffect } from 'react'
 //   headerWarning     JSX. Optional banner above rows (e.g. dept mismatch).
 //   title             string, default 'Allocations'.
 //   accent            'amber' | 'indigo' | 'gray', default 'amber'.
-//   minRows           number, default 1. Remove disabled at this count.
+//   onRemove          fn(idx) → void. Called for the last row too; the caller
+//                     is expected to reset that row rather than drop it, so the
+//                     list never goes empty.
 
+// The shell is neutral in every variant -- a mustard card in the middle of a
+// white form read as an error state. `accent` now only tints the row you are
+// actually editing, which is the one thing on this card worth colouring.
 var THEMES = {
-  amber: {
-    outer: 'border-amber-200 bg-amber-50/40',
-    header: 'bg-amber-100/60 text-amber-800',
-    btn: 'bg-amber-200/60 hover:bg-amber-200 text-amber-700 hover:text-amber-900',
-    edit: 'border-amber-300',
-  },
-  indigo: {
-    outer: 'border-indigo-200 bg-indigo-50/40',
-    header: 'bg-indigo-100/60 text-indigo-800',
-    btn: 'bg-indigo-200/60 hover:bg-indigo-200 text-indigo-700 hover:text-indigo-900',
-    edit: 'border-indigo-300',
-  },
-  gray: {
-    outer: 'border-gray-200 bg-gray-50',
-    header: 'bg-gray-100 text-gray-700',
-    btn: 'bg-gray-200 hover:bg-gray-300 text-gray-700 hover:text-gray-900',
-    edit: 'border-indigo-300',
-  },
+  amber:  { edit: 'border-indigo-300 ring-1 ring-indigo-100' },
+  indigo: { edit: 'border-indigo-300 ring-1 ring-indigo-100' },
+  gray:   { edit: 'border-slate-400' },
 }
 
 function AllocationRows(props) {
   var t = THEMES[props.accent || 'amber'] || THEMES.amber
   var allocations = props.allocations || []
-  var minRows = props.minRows || 1
-  var [manualExpandedIdx, setManualExpandedIdx] = useState(-1)
+  // -1 means every row is collapsed. Row 0 starts open so a fresh list does not
+  // greet you with a collapsed chip that has nothing in it yet.
+  var [manualExpandedIdx, setManualExpandedIdx] = useState(0)
 
   useEffect(function () {
     if (manualExpandedIdx >= allocations.length) setManualExpandedIdx(-1)
   }, [allocations.length])
 
-  function isExpanded(idx, alloc) {
-    if (!props.isComplete(alloc)) return true
+  // Exactly one row is open at a time, and only because the user opened it.
+  // Two earlier rules are deliberately gone:
+  //   - collapsing as soon as the last field validated, which yanked the card
+  //     away mid-keystroke while you typed the amount;
+  //   - force-expanding every incomplete row, which made an unfinished row
+  //     impossible to fold. Incomplete rows now collapse like any other and
+  //     carry an "Incomplete" badge on the chip so nothing hides silently.
+  function isExpanded(idx) {
     return idx === manualExpandedIdx
+  }
+
+  function claim(idx) {
+    if (manualExpandedIdx !== idx) setManualExpandedIdx(idx)
   }
 
   function handleAdd() {
@@ -68,26 +70,36 @@ function AllocationRows(props) {
 
   function handleRemove(idx) {
     props.onRemove(idx)
+    // With one row left the caller resets it in place rather than dropping it,
+    // so keep it open -- folding a freshly-blanked row away is not what you
+    // asked for when you tapped delete.
+    if (allocations.length <= 1) { setManualExpandedIdx(0); return }
     if (manualExpandedIdx === idx) setManualExpandedIdx(-1)
     else if (manualExpandedIdx > idx) setManualExpandedIdx(manualExpandedIdx - 1)
   }
 
   function handleDone(idx) {
-    if (idx === manualExpandedIdx) setManualExpandedIdx(-1)
+    setManualExpandedIdx(-1)
   }
 
   return (
-    <div className={"border rounded-lg overflow-hidden " + t.outer}>
-      <div className={"flex items-center justify-between px-3 py-2 " + t.header}>
-        <span className="text-[11px] font-bold uppercase tracking-wide">{props.title || 'Allocations'}</span>
-        <div className="flex gap-1.5">
+    <div className="border border-slate-200 rounded-xl bg-slate-50 overflow-hidden">
+      <div className="flex items-center justify-between gap-2 px-3 py-2 bg-white border-b border-slate-200">
+        <span className="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-500">{props.title || 'Allocations'}</span>
+        <div className="flex items-center gap-1.5">
           {props.onDuplicate && allocations.length > 0 && (
             <button type="button" onClick={handleDuplicate}
-              className={"text-[11px] font-bold px-2 py-0.5 rounded " + t.btn}
-              title="Duplicate current row">⧉ Duplicate</button>
+              className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-lg text-slate-600 hover:bg-slate-100 hover:text-indigo-600 transition-colors"
+              title="Duplicate current row">
+              <Icon name="copy" className="w-3.5 h-3.5" />
+              Duplicate
+            </button>
           )}
           <button type="button" onClick={handleAdd}
-            className={"text-[11px] font-bold px-2 py-0.5 rounded " + t.btn}>+ Row</button>
+            className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-lg text-slate-600 hover:bg-slate-100 hover:text-indigo-600 transition-colors">
+            <Icon name="plus" className="w-3.5 h-3.5" />
+            Row
+          </button>
         </div>
       </div>
 
@@ -95,24 +107,33 @@ function AllocationRows(props) {
 
       <div className="p-2 space-y-1.5">
         {allocations.map(function (alloc, aIdx) {
-          var expanded = isExpanded(aIdx, alloc)
+          var expanded = isExpanded(aIdx)
           var complete = props.isComplete(alloc)
-          var canRemove = allocations.length > minRows
 
           if (expanded) {
             return (
-              <div key={aIdx} className={"border rounded-lg bg-white p-2.5 " + t.edit}>
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Row {aIdx + 1} · editing</span>
-                  <div className="flex items-center gap-3">
-                    {complete && (
-                      <button type="button" onClick={function () { handleDone(aIdx) }}
-                        className="text-[11px] font-semibold text-gray-500 hover:text-gray-800">Done ▲</button>
-                    )}
-                    {canRemove && (
-                      <button type="button" onClick={function () { handleRemove(aIdx) }}
-                        className="text-red-400 hover:text-red-600 text-sm" title="Remove">✕</button>
-                    )}
+              <div key={aIdx} className={"ambria-rise border rounded-xl bg-white p-2.5 " + t.edit}
+                onFocusCapture={function () { claim(aIdx) }}>
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  {/* Number kept out of the translated node: "Row 3" can never
+                      be a dictionary key, and the fallback translated it as
+                      "area chart". */}
+                  <span className="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-400">
+                    Row<span data-notranslate>{' ' + (aIdx + 1)}</span>
+                  </span>
+                  <div className="flex items-center gap-1">
+                    {/* Always offered: an unfinished row was previously stuck open. */}
+                    <button type="button" onClick={function () { handleDone(aIdx) }}
+                      className={"inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-lg border transition-colors " +
+                        (complete
+                          ? "text-emerald-700 bg-emerald-50 border-emerald-300 hover:bg-emerald-100"
+                          : "text-slate-600 bg-white border-slate-300 hover:bg-slate-50 hover:text-slate-900")}>
+                      <Icon name="chevronUp" className="w-3.5 h-3.5" />
+                      {complete ? 'Done' : 'Collapse'}
+                    </button>
+                    <button type="button" onClick={function () { handleRemove(aIdx) }}
+                      className="w-6 h-6 flex items-center justify-center rounded-lg text-red-500 hover:bg-red-50 hover:text-red-600 transition-colors"
+                      title="Delete row" aria-label="Delete row"><Icon name="trash" className="w-4 h-4" /></button>
                   </div>
                 </div>
                 {props.renderExpanded(alloc, aIdx)}
@@ -122,17 +143,20 @@ function AllocationRows(props) {
 
           var chip = props.renderChip(alloc, aIdx)
           return (
-            <div key={aIdx} className="flex items-center gap-2 px-3 py-2 border border-gray-200 rounded-lg bg-white hover:border-gray-300 hover:bg-gray-50 transition-colors">
+            <div key={aIdx} className={"flex items-center gap-2 px-3 py-2 border rounded-xl bg-white transition-colors " + (complete ? "border-slate-200 hover:border-slate-300" : "border-amber-300")}>
               <button type="button" onClick={function () { setManualExpandedIdx(aIdx) }}
                 className="flex items-center justify-between gap-2 min-w-0 flex-1 text-left">
-                <div className="flex items-center gap-1.5 min-w-0 flex-1 text-xs">{chip.left}</div>
-                <div className="text-xs font-semibold text-gray-700 shrink-0">{chip.right}</div>
+                <div className="flex items-center gap-1.5 min-w-0 flex-1 text-[12px] text-slate-700">{chip.left}</div>
+                {complete ? (
+                  <div className="text-[13px] font-semibold text-slate-900 tabular-nums shrink-0">{chip.right}</div>
+                ) : (
+                  <span className="shrink-0 text-[9.5px] font-bold uppercase tracking-[0.08em] px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 ring-1 ring-amber-300/70">Incomplete</span>
+                )}
+                <Icon name="edit" className="w-3.5 h-3.5 shrink-0 text-slate-300" />
               </button>
-              <span className="text-gray-300 text-xs shrink-0" aria-hidden="true">✎</span>
-              {canRemove && (
-                <button type="button" onClick={function () { handleRemove(aIdx) }}
-                  className="text-red-300 hover:text-red-500 text-sm shrink-0" title="Remove">✕</button>
-              )}
+              <button type="button" onClick={function () { handleRemove(aIdx) }}
+                className="shrink-0 w-6 h-6 flex items-center justify-center rounded-lg text-red-500 hover:bg-red-50 hover:text-red-600 transition-colors"
+                title="Delete row" aria-label="Delete row"><Icon name="trash" className="w-4 h-4" /></button>
             </div>
           )
         })}

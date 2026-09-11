@@ -7,6 +7,7 @@ import { formatDate, formatDateTime } from '../../lib/format'
 import { hasPerm } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
 import VoiceInput from '../../components/ui/VoiceInput'
+import SearchField from '../../components/ui/SearchField'
 import EventDatePicker from '../../components/ui/EventDatePicker'
 
 function byName(a, b) { return (a.name || '').localeCompare(b.name || '') }
@@ -506,10 +507,12 @@ function CostTransfers({ profile }) {
 
       {/* ─── FILTERS ─────────────────────────────────── */}
       <div className="mb-3 space-y-2">
-        <input type="text" value={searchRaw} onChange={function (e) { setSearchRaw(e.target.value) }}
+        <SearchField
+          value={searchRaw}
+          onChange={function (v) { setSearchRaw(v) }}
           placeholder="Search description..."
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-          style={{ fontSize: '16px' }} />
+          className="w-full"
+        />
         <div className="flex gap-2">
           <button onClick={function () { setFiltersOpen(!filtersOpen) }}
             className={"flex-1 py-2 text-xs font-bold rounded-lg border transition-colors " + (filtersOpen ? "bg-indigo-50 border-indigo-300 text-indigo-700" : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50")}>

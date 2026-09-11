@@ -11,6 +11,7 @@ import { filterVisibleVendors } from '../../lib/vendorGating'
 import { registerPdfFont } from '../../lib/pdfFont'
 import { hasPerm } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
+import SearchField from '../../components/ui/SearchField'
 
 function byName(a, b) { return (a.name || '').localeCompare(b.name || '') }
 
@@ -351,10 +352,12 @@ function VendorLedger({ profile }) {
 
         {/* Filter row */}
         <div className="flex flex-col sm:flex-row gap-2">
-          <input type="text" value={search} onChange={function (e) { setSearch(e.target.value) }}
+          <SearchField
+            value={search}
+            onChange={function (v) { setSearch(v) }}
             placeholder="Search vendors..."
-            className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-300 bg-white"
-            style={{ fontSize: '16px' }} />
+            className="flex-1"
+          />
           <div className="flex gap-1 bg-gray-100 rounded-lg p-0.5 self-start">
             {[
               { key: 'all', label: 'All' },

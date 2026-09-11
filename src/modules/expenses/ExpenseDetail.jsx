@@ -7,8 +7,22 @@ import { APPROVAL_STATUS_COLORS, APPROVAL_STATUS_LABELS } from '../../lib/consta
 import { hasPerm } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
 import VoiceInput from '../../components/ui/VoiceInput'
+import Icon from '../../components/ui/Icon'
 
-function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdated, onEdit, onRaiseGV }) {
+// Label left, value right, hairline between. A py-2 row plus a divider costs
+// ~34px where the old space-y-3 pair cost ~44px, and the rule makes a long
+// stack of facts scannable instead of soupy.
+function Row({ label, value, money }) {
+  if (value === null || value === undefined || value === '') return null
+  return (
+    <div className="flex items-baseline justify-between gap-3 py-2">
+      <span className="shrink-0 text-[11.5px] font-medium text-slate-500">{label}</span>
+      <span className={"min-w-0 text-right text-[13px] text-slate-900" + (money ? " font-semibold tabular-nums" : "")}>{value}</span>
+    </div>
+  )
+}
+
+function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onUpdated, onEdit, onRaiseGV }) {
   var [saving, setSaving] = useState(false)
   var [rejectMode, setRejectMode] = useState(false)
   var [rejectReason, setRejectReason] = useState('')
@@ -356,27 +370,33 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
   }
 
   return (
-    <div className="@container space-y-4">
-      <div>
-        <button onClick={onBack} className="text-sm text-indigo-600 font-medium hover:text-indigo-800 transition-colors mb-2">← Back</button>
-        <div className="flex items-start justify-between">
-          <div>
-            <h2 className="text-lg font-bold text-gray-900">{exp.description || 'Expense'}</h2>
-            <p className="text-xs text-gray-400 mt-0.5">
-              {exp.profiles?.name || '—'} · {formatDate(exp.expense_date)}
+    <div className="@container space-y-3 pb-4">
+      {/* No "Back" link here: the Shell header already carries a back arrow,
+          and the duplicate cost a whole row above the fold. The amount leads
+          instead -- it is the one fact you open this screen to check. */}
+      <div className="bg-white border border-slate-200 rounded-2xl px-4 py-3.5 shadow-[0_1px_2px_rgba(15,23,42,0.05)]">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-500">Total</p>
+            <p className="mt-1 text-[26px] font-bold text-slate-900 tabular-nums leading-none tracking-[-0.02em]">
+              {formatPoints(exp.amount_paise)}
             </p>
           </div>
-          <div className="text-right">
-            <span className={"text-[10px] font-bold uppercase px-2 py-0.5 rounded-full " + (APPROVAL_STATUS_COLORS[exp.status] || 'bg-gray-100 text-gray-600')}>
+          <div className="shrink-0 text-right">
+            <span className={"text-[9.5px] font-bold uppercase tracking-[0.08em] px-2 py-1 rounded-full " + (APPROVAL_STATUS_COLORS[exp.status] || 'bg-slate-100 text-slate-600')}>
               {APPROVAL_STATUS_LABELS[exp.status] || exp.status}
             </span>
             {exp.status === 'acknowledged' && acknowledgerName && (
-              <p className="text-[10px] text-gray-400 mt-1">
-                By <span className="font-semibold text-gray-600">{acknowledgerName}</span>{exp.acknowledged_at ? ' · ' + formatDate(exp.acknowledged_at) : ''}
+              <p className="text-[10px] text-slate-400 mt-1">
+                By <span className="font-semibold text-slate-600">{acknowledgerName}</span>{exp.acknowledged_at ? ' · ' + formatDate(exp.acknowledged_at) : ''}
               </p>
             )}
           </div>
         </div>
+        <p className="mt-3 text-[14px] font-semibold text-slate-900 leading-snug">{exp.description || 'Expense'}</p>
+        <p className="mt-0.5 text-[11.5px] font-medium text-slate-500">
+          {exp.profiles?.name || '—'} · {formatDate(exp.expense_date)}
+        </p>
       </div>
 
       {exp.status === 'rejected' && exp.rejection_reason && (
@@ -387,10 +407,13 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
       )}
 
       {isDeleted && (
-        <div className="bg-gray-100 border border-gray-300 rounded-lg p-3">
-          <p className="text-xs font-bold text-gray-700 mb-0.5">🗑 Deleted by user</p>
-          {exp.delete_reason && <p className="text-sm text-gray-600">{exp.delete_reason}</p>}
-          <p className="text-[11px] text-gray-500 mt-1">
+        <div className="bg-slate-100 border border-slate-300 rounded-lg p-3">
+          <p className="flex items-center gap-1.5 text-xs font-bold text-slate-700 mb-0.5">
+            <Icon name="trash" size={13} />
+            Deleted by user
+          </p>
+          {exp.delete_reason && <p className="text-sm text-slate-600">{exp.delete_reason}</p>}
+          <p className="text-[11px] text-slate-500 mt-1">
             {exp.deleted_at ? new Date(exp.deleted_at).toLocaleString() : ''}
           </p>
         </div>
@@ -398,8 +421,9 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
 
       {(exp.status === 'flagged' || exp.status === 'deducted') && exp.flag_reason && (
         <div className={"border rounded-lg p-3 " + (exp.status === 'deducted' ? "bg-red-50 border-red-200" : "bg-amber-50 border-amber-200")}>
-          <p className={"text-xs font-bold mb-0.5 " + (exp.status === 'deducted' ? "text-red-700" : "text-amber-700")}>
-            {exp.status === 'deducted' ? '💰 Deducted' : '⚠ Resubmit — Fix & Resend'}
+          <p className={"flex items-center gap-1.5 text-xs font-bold mb-0.5 " + (exp.status === 'deducted' ? "text-red-700" : "text-amber-700")}>
+            <Icon name={exp.status === 'deducted' ? 'banknote' : 'alert'} size={13} />
+            {exp.status === 'deducted' ? 'Deducted' : 'Resubmit — Fix & Resend'}
           </p>
           <p className={"text-sm " + (exp.status === 'deducted' ? "text-red-600" : "text-amber-600")}>{exp.flag_reason}</p>
           {exp.deduction_type && (
@@ -428,9 +452,9 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
         <div className="@3xl:col-span-6">
 
       {receipts.length > 0 ? (
-        <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-          <div className="px-4 py-2 bg-gray-50 border-b border-gray-200">
-            <p className="text-xs font-bold text-gray-500 uppercase tracking-wider">
+        <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-[0_1px_2px_rgba(15,23,42,0.05)]">
+          <div className="px-4 py-2 bg-slate-50 border-b border-slate-200">
+            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.1em]">
               {receipts.length === 1 && receipts[0].isVoice ? '🎙 Voice Receipt' : (receipts.length > 1 ? '📎 Receipts (' + receipts.length + ')' : '📎 Receipt')}
             </p>
           </div>
@@ -463,7 +487,7 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
                       Your browser cannot play this audio.
                     </audio>
                     <a href={r.url} download target="_blank" rel="noopener noreferrer"
-                      className="text-[10px] text-gray-400 hover:text-indigo-600 underline">
+                      className="text-[10px] text-slate-500 hover:text-indigo-600 underline">
                       ⬇ Download if playback fails
                     </a>
                   </div>
@@ -476,13 +500,13 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
                       src={r.url} alt={"Receipt " + (rIdx + 1)}
                       onClick={function () { setImgFullscreen(r.url); setFullscreenIdx(rIdx) }}
                       style={{ transform: 'rotate(' + (imgRotations[r.path] || 0) + 'deg)', transition: 'transform 0.2s' }}
-                      className="w-full max-h-64 @3xl:max-h-[520px] object-contain rounded-lg border border-gray-100 bg-gray-50 cursor-pointer active:opacity-80"
+                      className="w-full max-h-64 @3xl:max-h-[520px] object-contain rounded-lg border border-slate-100 bg-slate-50 cursor-pointer active:opacity-80"
                     />
-                    <button type="button" onClick={function (e) { rotateImg(r.path, e) }} title="Rotate"
-                      className="absolute top-2 right-2 w-8 h-8 bg-black/50 hover:bg-black/70 text-white rounded-full flex items-center justify-center text-base">
-                      ⟳
+                    <button type="button" onClick={function (e) { rotateImg(r.path, e) }} title="Rotate" aria-label="Rotate receipt"
+                      className="absolute top-2 right-2 w-8 h-8 bg-black/50 hover:bg-black/70 text-white rounded-full flex items-center justify-center">
+                      <Icon name="refresh" size={15} />
                     </button>
-                    {receipts.length === 1 && <p className="text-[10px] text-gray-400 text-center mt-1">Tap to enlarge</p>}
+                    {receipts.length === 1 && <p className="text-[10px] text-slate-500 text-center mt-1">Tap to enlarge</p>}
                   </div>
                 )
               }
@@ -494,14 +518,14 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
               )
             })}
             {receipts.length > 1 && receipts.some(function (r) { return r.isImage }) && (
-              <p className="text-[10px] text-gray-400 text-center pt-1">Tap any image to enlarge</p>
+              <p className="text-[10px] text-slate-500 text-center pt-1">Tap any image to enlarge</p>
             )}
           </div>
         </div>
       ) : (
-        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-center gap-2">
-          <span className="text-amber-500 text-lg">⚠</span>
-          <p className="text-sm text-amber-700 font-medium">No receipt attached</p>
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-center gap-2">
+          <span className="shrink-0 text-amber-600"><Icon name="alert" size={16} /></span>
+          <p className="text-[13px] font-semibold text-amber-800">No receipt attached</p>
         </div>
       )}
 
@@ -513,13 +537,14 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
         >
           <button
             onClick={function () { setImgFullscreen(''); setFullscreenIdx(-1) }}
-            className="absolute top-4 right-4 w-10 h-10 bg-white/20 text-white rounded-full text-xl flex items-center justify-center hover:bg-white/30"
-          >✕</button>
+            aria-label="Close"
+            className="absolute top-4 right-4 w-10 h-10 bg-white/20 text-white rounded-full flex items-center justify-center hover:bg-white/30"
+          ><Icon name="close" size={20} /></button>
           <button
             onClick={function (e) { rotateImg(receipts[fullscreenIdx] ? receipts[fullscreenIdx].path : fullscreenIdx, e) }}
-            title="Rotate"
-            className="absolute top-4 right-16 w-10 h-10 bg-white/20 text-white rounded-full text-xl flex items-center justify-center hover:bg-white/30"
-          >⟳</button>
+            title="Rotate" aria-label="Rotate receipt"
+            className="absolute top-4 right-16 w-10 h-10 bg-white/20 text-white rounded-full flex items-center justify-center hover:bg-white/30"
+          ><Icon name="refresh" size={18} /></button>
           {(function () {
             var rotKey = receipts[fullscreenIdx] ? receipts[fullscreenIdx].path : fullscreenIdx
             var rot = imgRotations[rotKey] || 0
@@ -542,47 +567,22 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
         </div>
         <div className="@3xl:col-span-6 space-y-4">
 
-      <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-3">
-        <div className="flex justify-between">
-          <span className="text-sm text-gray-500">Base Amount</span>
-          <span className="text-sm text-gray-800">{formatPoints((exp.amount_paise || 0) - (exp.tax_paise || 0))}</span>
-        </div>
-        <div className="flex justify-between">
-          <span className="text-sm text-gray-500">GST</span>
-          <span className="text-sm text-gray-800">{formatPoints(exp.tax_paise || 0)}</span>
-        </div>
-        <div className="flex justify-between border-t border-gray-100 pt-2">
-          <span className="text-sm font-semibold text-gray-700">Total</span>
-          <span className="text-sm font-bold text-gray-900">{formatPoints(exp.amount_paise)}</span>
-        </div>
-        <div className="flex justify-between">
-          <span className="text-sm text-gray-500">Date</span>
-          <span className="text-sm text-gray-800">{formatDate(exp.expense_date)}</span>
-        </div>
+      <div className="bg-white border border-slate-200 rounded-2xl px-4 divide-y divide-slate-100 shadow-[0_1px_2px_rgba(15,23,42,0.05)]">
+        {/* Base and GST only earn their rows when there is actually tax to
+            split out; the total already leads the screen. */}
+        {(exp.tax_paise || 0) > 0 && (
+          <Row label="Base" money value={formatPoints((exp.amount_paise || 0) - (exp.tax_paise || 0))} />
+        )}
+        {(exp.tax_paise || 0) > 0 && <Row label="GST" money value={formatPoints(exp.tax_paise)} />}
+        <Row label="Date" value={formatDate(exp.expense_date)} />
         {exp.expense_types?.name && (
-          <div className="flex justify-between">
-            <span className="text-sm text-gray-500">Type</span>
-            <span className="text-sm text-gray-800">{exp.expense_types.name}{exp.expense_sub_types?.name ? ' > ' + exp.expense_sub_types.name : ''}</span>
-          </div>
+          <Row label="Type" value={exp.expense_types.name + (exp.expense_sub_types?.name ? ' › ' + exp.expense_sub_types.name : '')} />
         )}
-        {exp.vendor_name && (
-          <div className="flex justify-between">
-            <span className="text-sm text-gray-500">Vendor</span>
-            <span className="text-sm text-gray-800">{exp.vendor_name}</span>
-          </div>
-        )}
+        {exp.vendor_name && <Row label="Vendor" value={exp.vendor_name} />}
         {exp.travel_from && (
-          <div className="flex justify-between">
-            <span className="text-sm text-gray-500">Travel</span>
-            <span className="text-sm text-gray-800">{exp.travel_from}{exp.travel_to ? ' → ' + exp.travel_to : ''}{exp.travel_mode ? ' (' + exp.travel_mode + ')' : ''}</span>
-          </div>
+          <Row label="Travel" value={exp.travel_from + (exp.travel_to ? ' → ' + exp.travel_to : '') + (exp.travel_mode ? ' (' + exp.travel_mode + ')' : '')} />
         )}
-        {exp.events?.event_name && (
-          <div className="flex justify-between">
-            <span className="text-sm text-gray-500">Event</span>
-            <span className="text-sm text-gray-800">{exp.events.event_name}</span>
-          </div>
-        )}
+        {exp.events?.event_name && <Row label="Event" value={exp.events.event_name} />}
         {exp.expense_sub_types?.extra_fields && exp.expense_sub_types.extra_fields.map(function (field) {
           var val = (exp.metadata && exp.metadata[field.key]) || exp[field.key] || null
           if (!val) return null
@@ -590,22 +590,9 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
           if (field.type === 'lookup' && field.source) {
             display = lookupLabels[field.source + ':' + String(val)] || val
           }
-          return (
-            <div key={field.key} className="flex justify-between">
-              <span className="text-sm text-gray-500">{field.label}</span>
-              <span className="text-sm text-gray-800">{display}</span>
-            </div>
-          )
+          return <Row key={field.key} label={field.label} value={display} />
         })}
-        {exp.description && (
-          <div className="border-t border-gray-100 pt-3">
-            <span className="text-xs font-medium text-gray-500 uppercase tracking-wider">Description</span>
-            <p className="text-sm text-gray-800 mt-1">{exp.description}</p>
-          </div>
-        )}
-        <div className="border-t border-gray-100 pt-2">
-          <p className="text-[10px] text-gray-400">Submitted {exp.created_at ? formatDate(exp.created_at) : '—'}</p>
-        </div>
+        <Row label="Submitted" value={exp.created_at ? formatDate(exp.created_at) : '—'} />
       </div>
 
       {(function () {
@@ -613,7 +600,7 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
         if (items.length === 0) return null
         var itemsTotal = items.reduce(function (s, it) { return s + ((Number(it.qty) || 0) * (Number(it.rate_paise) || 0)) }, 0)
         return (
-          <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+          <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-[0_1px_2px_rgba(15,23,42,0.05)]">
             <div className="px-4 py-2 bg-indigo-50 border-b border-indigo-100 flex items-center justify-between">
               <div className="flex items-center gap-2 flex-wrap">
                 <p className="text-xs font-bold text-indigo-700 uppercase tracking-wider">Items ({items.length})</p>
@@ -623,9 +610,9 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
                   </span>
                 )}
               </div>
-              {itemsTotal > 0 && <p className="text-xs font-bold text-gray-700">{formatPoints(itemsTotal)}</p>}
+              {itemsTotal > 0 && <p className="text-xs font-bold text-slate-700">{formatPoints(itemsTotal)}</p>}
             </div>
-            <div className="divide-y divide-gray-100">
+            <div className="divide-y divide-slate-100">
               {items.map(function (it, i) {
                 var qty = Number(it.qty) || 0
                 var rate = Number(it.rate_paise) || 0
@@ -634,10 +621,10 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
                   <div key={i} className="px-4 py-2.5">
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium text-gray-800 truncate">{it.query || '—'}</p>
+                        <p className="text-sm font-medium text-slate-800 truncate">{it.query || '—'}</p>
                         <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                          <span className="text-[11px] text-gray-500">{qty} {it.unit || ''}</span>
-                          {rate > 0 && <span className="text-[11px] text-gray-400">× {formatPoints(rate)}</span>}
+                          <span className="text-[11px] text-slate-500">{qty} {it.unit || ''}</span>
+                          {rate > 0 && <span className="text-[11px] text-slate-500">× {formatPoints(rate)}</span>}
                           {it.matched_item_id && it.matched_source && (
                             <span className="text-[10px] font-semibold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded">
                               {it.matched_source === 'catering_store' ? 'Catering match' : 'Inventory match'}
@@ -648,10 +635,10 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
                           )}
                         </div>
                         {it.notes && (
-                          <p className="text-[11px] text-gray-500 italic mt-0.5 truncate">"{it.notes}"</p>
+                          <p className="text-[11px] text-slate-500 italic mt-0.5 truncate">"{it.notes}"</p>
                         )}
                       </div>
-                      {subtotal > 0 && <span className="text-sm font-bold text-gray-900 shrink-0">{formatPoints(subtotal)}</span>}
+                      {subtotal > 0 && <span className="text-sm font-bold text-slate-900 shrink-0">{formatPoints(subtotal)}</span>}
                     </div>
                   </div>
                 )
@@ -665,12 +652,12 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
         var shownAllocations = allocations.filter(function (a) { return a.source !== 'auto_default' })
         if (shownAllocations.length === 0) return null
         return (
-        <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-          <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
-            <p className="text-xs font-bold text-gray-500 uppercase tracking-wider">Allocations</p>
-            <p className="text-xs font-bold text-gray-700">{formatPoints(shownAllocations.reduce(function (s, a) { return s + (a.amount_paise || 0) }, 0))}</p>
+        <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-[0_1px_2px_rgba(15,23,42,0.05)]">
+          <div className="px-4 py-2 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.1em]">Allocations</p>
+            <p className="text-xs font-bold text-slate-700">{formatPoints(shownAllocations.reduce(function (s, a) { return s + (a.amount_paise || 0) }, 0))}</p>
           </div>
-          <div className="divide-y divide-gray-100">
+          <div className="divide-y divide-slate-100">
             {shownAllocations.map(function (a) {
               var deptLabel = a.department_id && allocVenues['d_' + a.department_id] ? allocVenues['d_' + a.department_id] : a.department || '—'
               var typeLabel = a.expense_type_id && allocVenues['et_' + a.expense_type_id] ? allocVenues['et_' + a.expense_type_id] : null
@@ -680,17 +667,17 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
               return (
                 <div key={a.id} className="px-4 py-2.5">
                   <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium text-gray-800">{deptLabel}</span>
-                    {a.amount_paise > 0 && <span className="text-sm font-bold text-gray-900">{formatPoints(a.amount_paise)}</span>}
+                    <span className="text-sm font-medium text-slate-800">{deptLabel}</span>
+                    {a.amount_paise > 0 && <span className="text-sm font-bold text-slate-900">{formatPoints(a.amount_paise)}</span>}
                   </div>
                   {(typeLabel || subTypeLabel) && (
                     <p className="text-[11px] text-indigo-600 font-medium mt-0.5">{typeLabel || '—'}{subTypeLabel ? ' › ' + subTypeLabel : ''}</p>
                   )}
                   {venueLabel && (
-                    <p className="text-[11px] text-gray-500 mt-0.5">{venueLabel}{subVenueLabel ? ' › ' + subVenueLabel : ''}</p>
+                    <p className="text-[11px] text-slate-500 mt-0.5">{venueLabel}{subVenueLabel ? ' › ' + subVenueLabel : ''}</p>
                   )}
                   {a.remarks && (
-                    <p className="text-[11px] text-gray-500 italic mt-0.5">"{a.remarks}"</p>
+                    <p className="text-[11px] text-slate-500 italic mt-0.5">"{a.remarks}"</p>
                   )}
                 </div>
               )
@@ -701,11 +688,11 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
       })()}
 
       {gvs.length > 0 && (
-        <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+        <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-[0_1px_2px_rgba(15,23,42,0.05)]">
           <div className="px-4 py-2 bg-purple-50 border-b border-purple-100">
             <p className="text-xs font-bold text-purple-700 uppercase tracking-wider">Journal Vouchers ({gvs.length})</p>
           </div>
-          <div className="divide-y divide-gray-100">
+          <div className="divide-y divide-slate-100">
             {gvs.map(function (gv, gvIdx) {
               var isNewest = gvIdx === 0
               var canReverse = canRaiseGV && isNewest && !gv.is_reversal && !gv.reversed_by_gv_id
@@ -719,14 +706,14 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
                         <span className="text-xs">{isExpanded ? '▼' : '▶'}</span>
                         <span className="text-sm font-bold text-purple-800">{gv.gv_number}</span>
                         {gv.is_reversal && (
-                          <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-gray-200 text-gray-700">Reversal</span>
+                          <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-slate-200 text-slate-700">Reversal</span>
                         )}
                         {gv.reversed_by_gv_id && (
                           <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-red-100 text-red-700">Reversed</span>
                         )}
                       </div>
-                      <p className="text-[11px] text-gray-500 mt-0.5">{creator} · {formatDate(gv.created_at)}</p>
-                      <p className="text-[11px] text-gray-600 mt-0.5 line-clamp-2">{gv.reason}</p>
+                      <p className="text-[11px] text-slate-500 mt-0.5">{creator} · {formatDate(gv.created_at)}</p>
+                      <p className="text-[11px] text-slate-600 mt-0.5 line-clamp-2">{gv.reason}</p>
                     </button>
                     {canReverse && (
                       <button onClick={function () { reverseGv(gv) }} disabled={reversing}
@@ -751,12 +738,12 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
                           if (bf.expense_sub_type_id !== af.expense_sub_type_id) {
                             rows.push({ label: 'Sub-Type', before: bf.expense_sub_type_name || '—', after: af.expense_sub_type_name || '—' })
                           }
-                          if (rows.length === 0) return <p className="text-[11px] text-gray-500 italic">No visible field changes.</p>
+                          if (rows.length === 0) return <p className="text-[11px] text-slate-500 italic">No visible field changes.</p>
                           return rows.map(function (r, ri) {
                             return (
                               <div key={ri} className="grid grid-cols-[70px_1fr_16px_1fr] gap-2 items-center text-[11px]">
-                                <span className="font-bold text-gray-600 uppercase text-[10px]">{r.label}</span>
-                                <span className="line-through text-gray-500 truncate">{r.before}</span>
+                                <span className="font-bold text-slate-600 uppercase text-[10px]">{r.label}</span>
+                                <span className="line-through text-slate-500 truncate">{r.before}</span>
                                 <span className="text-purple-600 font-bold text-center">→</span>
                                 <span className="font-semibold text-purple-800 truncate">{r.after}</span>
                               </div>
@@ -771,23 +758,23 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
                       {[{ label: 'Before', arr: gv.before_allocations }, { label: 'After', arr: gv.after_allocations }].map(function (side) {
                         var rows = Array.isArray(side.arr) ? side.arr : []
                         return (
-                          <div key={side.label} className="bg-gray-50 border border-gray-200 rounded-lg overflow-hidden">
-                            <div className="px-2 py-1 bg-gray-100 border-b border-gray-200">
-                              <span className="text-[10px] font-bold text-gray-600 uppercase">{side.label}</span>
+                          <div key={side.label} className="bg-slate-50 border border-slate-200 rounded-lg overflow-hidden">
+                            <div className="px-2 py-1 bg-slate-100 border-b border-slate-200">
+                              <span className="text-[10px] font-bold text-slate-600 uppercase">{side.label}</span>
                             </div>
-                            <div className="divide-y divide-gray-100">
-                              {rows.length === 0 && <p className="p-2 text-[11px] text-gray-400 italic">—</p>}
+                            <div className="divide-y divide-slate-100">
+                              {rows.length === 0 && <p className="p-2 text-[11px] text-slate-500 italic">—</p>}
                               {rows.map(function (r, ri) {
                                 return (
                                   <div key={ri} className="px-2 py-1.5">
                                     <div className="flex items-center justify-between">
-                                      <span className="text-[12px] font-medium text-gray-800">{r.department || ('Dept #' + (r.department_id || '?'))}</span>
-                                      <span className="text-[12px] font-bold text-gray-900">{formatPoints(r.amount_paise || 0)}</span>
+                                      <span className="text-[12px] font-medium text-slate-800">{r.department || ('Dept #' + (r.department_id || '?'))}</span>
+                                      <span className="text-[12px] font-bold text-slate-900">{formatPoints(r.amount_paise || 0)}</span>
                                     </div>
                                     {r.venue_id && (
-                                      <p className="text-[10px] text-gray-500">Venue #{r.venue_id}{r.sub_venue_id ? ' › SV#' + r.sub_venue_id : ''}</p>
+                                      <p className="text-[10px] text-slate-500">Venue #{r.venue_id}{r.sub_venue_id ? ' › SV#' + r.sub_venue_id : ''}</p>
                                     )}
-                                    {r.remarks && <p className="text-[10px] text-gray-500 italic">"{r.remarks}"</p>}
+                                    {r.remarks && <p className="text-[10px] text-slate-500 italic">"{r.remarks}"</p>}
                                   </div>
                                 )
                               })}
@@ -804,85 +791,95 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
         </div>
       )}
 
-      {canRaiseGV && (
-        <button onClick={onRaiseGV} disabled={saving}
-          className="w-full py-3 text-sm font-bold text-purple-700 bg-purple-50 border border-purple-200 rounded-lg hover:bg-purple-100 disabled:opacity-50 transition-colors">
-          📋 Raise JV
-        </button>
-      )}
-
-      {canEdit && (
-        <div className="flex gap-2">
-          <button onClick={onEdit} disabled={saving}
-            className="flex-1 py-3 text-sm font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 disabled:opacity-50 transition-colors">
-            ✎ Edit Expense
-          </button>
-          {canResubmit && (
-            <button onClick={resubmit} disabled={saving}
-              className="flex-1 py-3 text-sm font-bold text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors">
-              {saving ? 'Submitting...' : '↻ Resubmit'}
-            </button>
-          )}
-        </div>
-      )}
-
+      {/* Decide */}
       {canReview && !rejectMode && (
         <div className="space-y-2">
           {exp.status === 'recorded' && (
             <button onClick={acknowledge} disabled={saving}
-              className="w-full py-3 text-sm font-bold text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors">
-              {saving ? 'Saving...' : '✓ Acknowledge'}
+              className="w-full inline-flex items-center justify-center gap-2 py-3 text-[13px] font-bold text-white bg-emerald-600 rounded-xl hover:bg-emerald-700 active:scale-[0.99] disabled:opacity-50 disabled:active:scale-100 transition-all">
+              <Icon name="checkCircle" size={16} />
+              {saving ? 'Saving...' : 'Acknowledge'}
             </button>
           )}
           <div className="flex gap-2">
+            {exp.status === 'flagged' && (
+              <button onClick={acknowledge} disabled={saving}
+                className="flex-1 inline-flex items-center justify-center gap-2 py-3 text-[13px] font-bold text-white bg-emerald-600 rounded-xl hover:bg-emerald-700 active:scale-[0.99] disabled:opacity-50 disabled:active:scale-100 transition-all">
+                <Icon name="checkCircle" size={16} />
+                {saving ? '...' : 'Accept'}
+              </button>
+            )}
             {exp.status !== 'flagged' && (
               <button onClick={function () { setRejectMode('flag') }} disabled={saving}
-                className="flex-1 py-3 text-sm font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 disabled:opacity-50 transition-colors">
-                ⚠ Resubmit
+                className="flex-1 inline-flex items-center justify-center gap-2 py-3 text-[13px] font-semibold text-slate-700 bg-white border border-slate-300 rounded-xl hover:bg-slate-50 active:scale-[0.99] disabled:opacity-50 transition-all">
+                <Icon name="undo" size={15} />
+                Send back
               </button>
             )}
             <button onClick={function () { setRejectMode('deduct') }} disabled={saving}
-              className="flex-1 py-3 text-sm font-bold text-red-600 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 disabled:opacity-50 transition-colors">
-              💰 Deduct
+              className="flex-1 inline-flex items-center justify-center gap-2 py-3 text-[13px] font-semibold text-red-700 bg-white border border-red-200 rounded-xl hover:bg-red-50 active:scale-[0.99] disabled:opacity-50 transition-all">
+              <Icon name="banknote" size={15} />
+              Deduct
             </button>
-            {exp.status === 'flagged' && (
-              <button onClick={acknowledge} disabled={saving}
-                className="flex-1 py-3 text-sm font-bold text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors">
-                {saving ? '...' : '✓ Accept'}
-              </button>
-            )}
           </div>
         </div>
       )}
 
+      {/* Own it */}
+      {canEdit && (
+        <div className="flex gap-2">
+          <button onClick={onEdit} disabled={saving}
+            className="flex-1 inline-flex items-center justify-center gap-2 py-3 text-[13px] font-semibold text-slate-700 bg-white border border-slate-300 rounded-xl hover:bg-slate-50 active:scale-[0.99] disabled:opacity-50 transition-all">
+            <Icon name="edit" size={15} />
+            Edit
+          </button>
+          {canResubmit && (
+            <button onClick={resubmit} disabled={saving}
+              className="flex-1 inline-flex items-center justify-center gap-2 py-3 text-[13px] font-bold text-white bg-emerald-600 rounded-xl hover:bg-emerald-700 active:scale-[0.99] disabled:opacity-50 disabled:active:scale-100 transition-all">
+              <Icon name="refresh" size={15} />
+              {saving ? 'Submitting...' : 'Resubmit'}
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Bookkeeping — a side errand, not a verdict on this expense */}
+      {canRaiseGV && (
+        <button onClick={onRaiseGV} disabled={saving}
+          className="w-full inline-flex items-center justify-center gap-2 py-2.5 text-[12.5px] font-semibold text-slate-600 bg-white border border-slate-300 rounded-xl hover:bg-slate-50 active:scale-[0.99] disabled:opacity-50 transition-all">
+          <Icon name="fileText" size={15} />
+          Raise JV
+        </button>
+      )}
+
       {rejectMode && (
         <div className="space-y-3">
-          <div className={"border rounded-lg p-3 " + (rejectMode === 'deduct' ? "bg-red-50 border-red-200" : "bg-amber-50 border-amber-200")}>
-            <label className={"block text-sm font-medium mb-1 " + (rejectMode === 'deduct' ? "text-red-700" : "text-amber-700")}>
-              {rejectMode === 'deduct' ? 'Deduction Reason' : 'Resubmit Reason'} <span className="text-red-500">*</span>
+          <div className={"border rounded-xl p-3 " + (rejectMode === 'deduct' ? "bg-red-50 border-red-200" : "bg-amber-50 border-amber-200")}>
+            <label className={"block text-[11px] font-bold uppercase tracking-[0.08em] mb-1.5 " + (rejectMode === 'deduct' ? "text-red-700" : "text-amber-700")}>
+              {rejectMode === 'deduct' ? 'Deduction reason' : 'Reason to send back'} <span className="text-red-500">*</span>
             </label>
             <textarea value={rejectReason}
               onChange={function (e) { setRejectReason(e.target.value) }}
               rows="3" maxLength="500" placeholder={rejectMode === 'deduct' ? 'Reason for deduction...' : 'What is the issue? User will see this.'}
-              className={"w-full px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 resize-none " + (rejectMode === 'deduct' ? "border-red-300 focus:ring-red-500" : "border-amber-300 focus:ring-amber-500")}
+              className={"w-full px-3 py-2.5 bg-white border rounded-xl text-[13px] text-slate-900 focus:outline-none focus:ring-2 resize-none " + (rejectMode === 'deduct' ? "border-red-300 focus:border-red-500 focus:ring-red-500/20" : "border-amber-300 focus:border-amber-500 focus:ring-amber-500/20")}
               style={{ fontSize: '16px' }} />
             {rejectMode === 'deduct' && (
               <div className="mt-2 relative">
-                <label className="block text-sm font-medium text-red-700 mb-1">Deduction Type</label>
+                <label className="block text-[11px] font-bold uppercase tracking-[0.08em] text-red-700 mb-1.5">Deduction type</label>
                 <input type="text" value={deductionType}
                   onChange={function (e) { setDeductionType(e.target.value); setShowTypeSuggestions(true) }}
                   onFocus={function () { setShowTypeSuggestions(true) }}
                   onBlur={function () { setTimeout(function () { setShowTypeSuggestions(false) }, 200) }}
                   placeholder="e.g. Late submission, Policy violation..."
-                  className="w-full px-3 py-2 border border-red-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+                  className="w-full px-3 py-2.5 bg-white border border-red-300 rounded-xl text-[13px] text-slate-900 focus:outline-none focus:border-red-500 focus:ring-2 focus:ring-red-500/20"
                   style={{ fontSize: '16px' }} />
                 {showTypeSuggestions && deductionTypes.length > 0 && (
-                  <div className="absolute z-10 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-40 overflow-y-auto">
+                  <div className="absolute z-10 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-40 overflow-y-auto">
                     {deductionTypes.filter(function (t) { return !deductionType || t.toLowerCase().indexOf(deductionType.toLowerCase()) !== -1 }).map(function (t) {
                       return (
                         <button key={t} type="button"
                           onMouseDown={function (e) { e.preventDefault(); setDeductionType(t); setShowTypeSuggestions(false) }}
-                          className="w-full text-left px-3 py-2 text-sm hover:bg-red-50 text-gray-700">
+                          className="w-full text-left px-3 py-2 text-sm hover:bg-red-50 text-slate-700">
                           {t}
                         </button>
                       )
@@ -893,27 +890,29 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
             )}
             {rejectMode === 'deduct' && (
               <div className="mt-2">
-                <label className="block text-sm font-medium text-red-700 mb-1">Deduction Amount (Points) <span className="text-red-500">*</span></label>
+                <label className="block text-[11px] font-bold uppercase tracking-[0.08em] text-red-700 mb-1.5">Deduction amount (points) <span className="text-red-500">*</span></label>
                 <input type="number" min="1" step="any" inputMode="decimal" value={deductionAmount}
                   onChange={function (e) { setDeductionAmount(e.target.value) }}
                   placeholder="0"
-                  className="w-full px-3 py-2 border border-red-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+                  className="w-full px-3 py-2.5 bg-white border border-red-300 rounded-xl text-[13px] text-slate-900 tabular-nums focus:outline-none focus:border-red-500 focus:ring-2 focus:ring-red-500/20"
                   style={{ fontSize: '16px' }} />
               </div>
             )}
           </div>
           <div className="flex gap-3">
             <button onClick={function () { setRejectMode(false); setRejectReason(''); setDeductionAmount(''); setDeductionType('') }}
-              className="flex-1 py-3 text-sm text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors font-medium">Cancel</button>
+              className="flex-1 py-3 text-[13px] font-semibold text-slate-700 bg-white border border-slate-300 rounded-xl hover:bg-slate-50 active:scale-[0.99] transition-all">Cancel</button>
             {rejectMode === 'deduct' ? (
               <button onClick={deduct} disabled={saving || !rejectReason.trim() || !deductionAmount || Number(deductionAmount) <= 0}
-                className="flex-1 py-3 text-sm text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors font-medium">
-                {saving ? 'Deducting...' : '💰 Confirm Deduction'}
+                className="flex-1 inline-flex items-center justify-center gap-2 py-3 text-[13px] font-bold text-white bg-red-600 rounded-xl hover:bg-red-700 active:scale-[0.99] disabled:opacity-50 disabled:active:scale-100 transition-all">
+                <Icon name="banknote" size={15} />
+                {saving ? 'Deducting...' : 'Confirm deduction'}
               </button>
             ) : (
               <button onClick={flag} disabled={saving || !rejectReason.trim()}
-                className="flex-1 py-3 text-sm text-white bg-amber-600 rounded-lg hover:bg-amber-700 disabled:opacity-50 transition-colors font-medium">
-                {saving ? 'Sending...' : '⚠ Confirm Resubmit'}
+                className="flex-1 inline-flex items-center justify-center gap-2 py-3 text-[13px] font-bold text-white bg-amber-600 rounded-xl hover:bg-amber-700 active:scale-[0.99] disabled:opacity-50 disabled:active:scale-100 transition-all">
+                <Icon name="undo" size={15} />
+                {saving ? 'Sending...' : 'Confirm send back'}
               </button>
             )}
           </div>
@@ -921,27 +920,31 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onBack, onUpdate
       )}
 
       {canDelete && !deleteMode && (
-        <button onClick={function () { setDeleteMode(true) }} disabled={saving}
-          className="w-full py-3 text-sm font-bold text-red-500 bg-white border border-red-200 rounded-lg hover:bg-red-50 disabled:opacity-50 transition-colors">
-          Delete Expense
-        </button>
+        <div className="pt-2 border-t border-slate-200">
+          <button onClick={function () { setDeleteMode(true) }} disabled={saving}
+            className="w-full inline-flex items-center justify-center gap-2 py-2.5 text-[12.5px] font-semibold text-red-600 rounded-xl hover:bg-red-50 disabled:opacity-50 transition-colors">
+            <Icon name="trash" size={14} />
+            Delete expense
+          </button>
+        </div>
       )}
 
       {deleteMode && (
         <div className="space-y-3">
-          <div className="bg-red-50 border border-red-200 rounded-lg p-3">
-            <label className="block text-sm font-medium text-red-700 mb-1">Reason for Deletion <span className="text-red-500">*</span></label>
+          <div className="bg-red-50 border border-red-200 rounded-xl p-3">
+            <label className="block text-[11px] font-bold uppercase tracking-[0.08em] text-red-700 mb-1.5">Reason for deletion <span className="text-red-500">*</span></label>
             <VoiceInput as="textarea" value={deleteReason}
               onChange={function (e) { setDeleteReason(e.target.value) }}
               rows="2" maxLength="300" placeholder="Why is this expense being deleted..."
-              className="w-full px-3 py-2 border border-red-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-red-500 resize-none" />
+              className="w-full px-3 py-2.5 bg-white border border-red-300 rounded-xl text-[13px] text-slate-900 focus:outline-none focus:border-red-500 focus:ring-2 focus:ring-red-500/20 resize-none" />
           </div>
           <div className="flex gap-3">
             <button onClick={function () { setDeleteMode(false); setDeleteReason('') }}
-              className="flex-1 py-3 text-sm text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors font-medium">Cancel</button>
+              className="flex-1 py-3 text-[13px] font-semibold text-slate-700 bg-white border border-slate-300 rounded-xl hover:bg-slate-50 active:scale-[0.99] transition-all">Cancel</button>
             <button onClick={deleteExp} disabled={saving || !deleteReason.trim()}
-              className="flex-1 py-3 text-sm text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors font-medium">
-              {saving ? 'Deleting...' : 'Confirm Delete'}
+              className="flex-1 inline-flex items-center justify-center gap-2 py-3 text-[13px] font-bold text-white bg-red-600 rounded-xl hover:bg-red-700 active:scale-[0.99] disabled:opacity-50 disabled:active:scale-100 transition-all">
+              <Icon name="trash" size={15} />
+              {saving ? 'Deleting...' : 'Confirm delete'}
             </button>
           </div>
         </div>

@@ -35,74 +35,74 @@ import { hasPerm } from '../../lib/permissions'
 
 var GROUPS = [
   {
-    key: 'me', label: 'My Profile', icon: '🪪', items: [
-      { key: 'personal.profile', label: 'My Profile', icon: '🪪', tab: 'my_profile' },
+    key: 'me', label: 'My Profile', icon: 'idCard', items: [
+      { key: 'personal.profile', label: 'My Profile', icon: 'idCard', tab: 'my_profile' },
     ]
   },
   {
-    key: 'inventory', label: 'Inventory', icon: '📦', items: [
-      { key: 'inventory.add', label: 'Add Item', icon: '📝', tab: 'add' },
-      { key: 'inventory.items', label: 'Item List', icon: '📋', tab: 'my' },
-      { key: 'inventory.production', label: 'Production', icon: '🔧', tab: 'production' },
-      { key: 'inventory.boxes', label: 'Boxes', icon: '🗃️', tab: 'boxes' },
+    key: 'inventory', label: 'Inventory', icon: 'box', items: [
+      { key: 'inventory.add', label: 'Add Item', icon: 'edit', tab: 'add' },
+      { key: 'inventory.items', label: 'Item List', icon: 'fileText', tab: 'my' },
+      { key: 'inventory.production', label: 'Production', icon: 'wrench', tab: 'production' },
+      { key: 'inventory.boxes', label: 'Boxes', icon: 'box', tab: 'boxes' },
     ]
   },
   {
-    // All 5 items point at the same unified 'reviews' tab — the group is visible if the
-    // user has ANY one of the 5 domain permissions (existing visibleGroups filter already
+    // All 6 items point at the same unified 'reviews' tab — the group is visible if the
+    // user has ANY one of the domain permissions (the existing visibleGroups filter already
     // does this "union" for free), and however many are visible, Reviews.jsx itself decides
     // which domain tab to open first. The old review.dept/review.pending tabs (dept_review/
     // pending_review) are left rendering below, unreached from this nav, until Phase 8.
-    key: 'review', label: 'Review', icon: '✅', items: [
-      { key: 'review.inventory',       label: 'Inventory Review',       icon: '✅', tab: 'reviews' },
-      { key: 'review.item_receipts',   label: 'Item Receipts Review',   icon: '✅', tab: 'reviews' },
-      { key: 'review.expenses',        label: 'Expenses Review',        icon: '✅', tab: 'reviews' },
-      { key: 'review.requisitions',    label: 'Requisitions Review',    icon: '✅', tab: 'reviews' },
-      { key: 'review.vendor_payments', label: 'Vendor Payments Review', icon: '✅', tab: 'reviews' },
-      { key: 'review.masters',         label: 'Category/Sub-category Review', icon: '✅', tab: 'reviews' },
+    key: 'review', label: 'Review', icon: 'checkCircle', items: [
+      { key: 'review.inventory',       label: 'Inventory Review',       icon: 'box', tab: 'reviews' },
+      { key: 'review.item_receipts',   label: 'Item Receipts Review',   icon: 'receipt', tab: 'reviews' },
+      { key: 'review.expenses',        label: 'Expenses Review',        icon: 'banknote', tab: 'reviews' },
+      { key: 'review.requisitions',    label: 'Requisitions Review',    icon: 'inbox', tab: 'reviews' },
+      { key: 'review.vendor_payments', label: 'Vendor Payments Review', icon: 'creditCard', tab: 'reviews' },
+      { key: 'review.masters',         label: 'Category/Sub-category Review', icon: 'tag', tab: 'reviews' },
     ]
   },
   {
-    key: 'events', label: 'Events', icon: '📅', items: [
-      { key: 'events.list', label: 'Events', icon: '📅', tab: 'events' },
-      { key: 'events.quote', label: 'Quote Calc', icon: '🧮', tab: 'quote' },
-      { key: 'events.ratecard', label: 'Rate Card', icon: '💲', tab: 'ratecard' },
-      { key: 'events.extra_plate_collect', label: 'Extra Plates', icon: '🍽️', tab: 'extra_plates' },
+    key: 'events', label: 'Events', icon: 'calendar', items: [
+      { key: 'events.list', label: 'Events', icon: 'calendar', tab: 'events' },
+      { key: 'events.quote', label: 'Quote Calc', icon: 'calculator', tab: 'quote' },
+      { key: 'events.ratecard', label: 'Rate Card', icon: 'tag', tab: 'ratecard' },
+      { key: 'events.extra_plate_collect', label: 'Extra Plates', icon: 'utensils', tab: 'extra_plates' },
     ]
   },
   {
-    key: 'procurement', label: 'Procurement', icon: '🛒', items: [
-      { key: 'procurement.requisitions', label: 'Requisitions', icon: '📋', tab: 'requisitions' },
-      { key: 'procurement.purchase_orders', label: 'Purchase Orders', icon: '🛒', tab: 'purchase' },
-      { key: 'procurement.vendors', label: 'Vendors', icon: '🏭', tab: 'vendors' },
+    key: 'procurement', label: 'Procurement', icon: 'cart', items: [
+      { key: 'procurement.requisitions', label: 'Requisitions', icon: 'inbox', tab: 'requisitions' },
+      { key: 'procurement.purchase_orders', label: 'Purchase Orders', icon: 'cart', tab: 'purchase' },
+      { key: 'procurement.vendors', label: 'Vendors', icon: 'building', tab: 'vendors' },
     ]
   },
   {
-    key: 'logistics', label: 'Logistics', icon: '🚛', items: [
-      { key: 'inventory.receive', label: 'Receive Items', icon: '📦', tab: 'receive' },
-      { key: 'inventory.challans', label: 'Challans', icon: '🚛', tab: 'challans' },
+    key: 'logistics', label: 'Logistics', icon: 'truck', items: [
+      { key: 'inventory.receive', label: 'Receive Items', icon: 'download', tab: 'receive' },
+      { key: 'inventory.challans', label: 'Challans', icon: 'truck', tab: 'challans' },
     ]
   },
   {
-    key: 'projects', label: 'Projects', icon: '🏗️', items: [
-      { key: 'projects.view', label: 'Projects', icon: '🏗️', tab: 'projects' },
+    key: 'projects', label: 'Projects', icon: 'wrench', items: [
+      { key: 'projects.view', label: 'Projects', icon: 'wrench', tab: 'projects' },
     ]
   },
   {
-    key: 'expenses', label: 'Finance', icon: '💰', items: [
-      { key: 'finance.wallet', label: 'Wallet', icon: '👛', tab: 'wallet' },
-      { key: 'finance.expenses', label: 'PC & Direct Expenses', icon: '💰', tab: 'expenses' },
-      { key: 'finance.cost_transfers', label: 'Cost Transfers', icon: '↔️', tab: 'cost_transfers' },
-      { key: 'finance.ledgers.expense', label: 'Expense Ledger', icon: '📒', tab: 'ledgers' },
-      { key: 'finance.payments', label: 'Payments', icon: '💳', tab: 'payments' },
-      { key: 'finance.salary_payouts', label: 'Salary Payouts', icon: '💵', tab: 'salary_payouts' },
-      { key: 'finance.ledgers.vendor', label: 'Vendor Ledger', icon: '🏭', tab: 'vendor_ledger' },
+    key: 'expenses', label: 'Finance', icon: 'wallet', items: [
+      { key: 'finance.wallet', label: 'Wallet', icon: 'wallet', tab: 'wallet' },
+      { key: 'finance.expenses', label: 'PC & Direct Expenses', icon: 'banknote', tab: 'expenses' },
+      { key: 'finance.cost_transfers', label: 'Cost Transfers', icon: 'transfer', tab: 'cost_transfers' },
+      { key: 'finance.ledgers.expense', label: 'Expense Ledger', icon: 'fileText', tab: 'ledgers' },
+      { key: 'finance.payments', label: 'Payments', icon: 'creditCard', tab: 'payments' },
+      { key: 'finance.salary_payouts', label: 'Salary Payouts', icon: 'bank', tab: 'salary_payouts' },
+      { key: 'finance.ledgers.vendor', label: 'Vendor Ledger', icon: 'building', tab: 'vendor_ledger' },
     ]
   },
   {
-    key: 'hr', label: 'HR', icon: '👔', items: [
-      { key: 'hr.employees', label: 'Employees', icon: '👤', tab: 'employees' },
-      { key: 'finance.ledgers.salary', label: 'Salary Ledger', icon: '📒', tab: 'salary_ledger' },
+    key: 'hr', label: 'HR', icon: 'users', items: [
+      { key: 'hr.employees', label: 'Employees', icon: 'user', tab: 'employees' },
+      { key: 'finance.ledgers.salary', label: 'Salary Ledger', icon: 'fileText', tab: 'salary_ledger' },
     ]
   },
   {
@@ -110,26 +110,28 @@ var GROUPS = [
     // decides sub-nav internally, same pattern as the Review group above.
     // broadcast.quicksend is deliberately NOT listed here — sales-only users
     // shouldn't see this tile; they reach QuickSend from inline contexts only.
-    key: 'broadcast', label: 'API Marketing', icon: '📣', items: [
-      { key: 'broadcast.templates.view', label: 'Templates', icon: '📣', tab: 'broadcast' },
-      { key: 'broadcast.contacts.view',  label: 'Contacts',  icon: '📣', tab: 'broadcast' },
-      { key: 'broadcast.campaigns.view', label: 'Campaigns', icon: '📣', tab: 'broadcast' },
-      { key: 'broadcast.inbox.view',     label: 'Inbox',     icon: '📣', tab: 'broadcast' },
+    key: 'broadcast', label: 'API Marketing', icon: 'send', items: [
+      { key: 'broadcast.templates.view', label: 'Templates', icon: 'fileText', tab: 'broadcast' },
+      { key: 'broadcast.contacts.view',  label: 'Contacts',  icon: 'users', tab: 'broadcast' },
+      { key: 'broadcast.campaigns.view', label: 'Campaigns', icon: 'send', tab: 'broadcast' },
+      { key: 'broadcast.inbox.view',     label: 'Inbox',     icon: 'inbox', tab: 'broadcast' },
     ]
   },
   {
-    key: 'admin', label: 'Admin', icon: '⚙️', items: [
-      { key: 'admin.dashboard', label: 'Admin', icon: '⚙️', tab: 'admin' },
+    key: 'admin', label: 'Admin', icon: 'settings', items: [
+      { key: 'admin.dashboard', label: 'Admin', icon: 'settings', tab: 'admin' },
     ]
   },
 ]
 
 import { pushBack, goBack as navBack } from '../../lib/backNav'
 import { formatPoints } from '../../lib/format'
+import Icon from '../ui/Icon'
 
 function Shell({ profile, onSignOut }) {
   var [activeGroup, setActiveGroup] = useState(null)
   var [tab, setTab] = useState(null)
+  var [menuOpen, setMenuOpen] = useState(false)
   var [showSuccess, setShowSuccess] = useState(false)
 
   var permsNew = profile.permsNew || []
@@ -145,7 +147,13 @@ function Shell({ profile, onSignOut }) {
   useEffect(function () {
     if (!profile?.id) return
     supabase.from('wallets').select('balance_paise').eq('user_id', profile.id).maybeSingle()
-      .then(function (res) { setWalletBalance(res.data?.balance_paise || 0) })
+      .then(function (res) {
+        // Leaving walletBalance null hides the card entirely, which is honest:
+        // showing "0 pts" for a failed read or a missing wallet row was not.
+        if (res.error) { console.error('WALLET_FETCH_FAIL', res.error); setWalletBalance(null); return }
+        if (!res.data) { console.warn('WALLET_MISSING for user', profile.id); setWalletBalance(null); return }
+        setWalletBalance(res.data.balance_paise || 0)
+      })
     supabase.from('wallet_transfers').select('id', { count: 'exact', head: true })
       .eq('to_user_id', profile.id).eq('status', 'pending')
       .then(function (res) { setWalletPending(res.count || 0) })
@@ -395,99 +403,129 @@ function Shell({ profile, onSignOut }) {
     setTimeout(function () { setShowSuccess(false) }, 3000)
   }
 
+  // No background colour on the root div: body owns the canvas now, so every
+  // screen agrees on one ground instead of each hard-coding its own hex.
   return (
-    <div className={tab === 'quote' ? "min-h-screen lg:h-screen lg:overflow-hidden" : "min-h-screen"} style={{ background: '#F8FAFC' }}>
+    <div className={tab === 'quote' ? "min-h-screen lg:h-screen lg:overflow-hidden" : "min-h-screen"}
+      style={{ '--app-header-h': tab !== 'quote' ? '3.5rem' : '0px' }}>
       {/* Header — hidden on the quote screen, which carries its own topbar */}
+      {/* No backdrop-blur on the header: backdrop-filter makes an element a
+          containing block for fixed children, which would shrink the menu's
+          click-outside overlay down to the header itself. */}
       {tab !== 'quote' && (
-      <header className="sticky top-0 z-40 bg-white border-b border-gray-200" style={{ boxShadow: '0 1px 3px rgba(0,0,0,.06)' }}>
-        <div className="max-w-[540px] mx-auto flex items-center justify-between px-4 py-3">
-          <div className="flex items-center gap-3">
-            {(activeGroup || tab) && (
-              <button
-                onClick={goBack}
-                className="w-8 h-8 flex items-center justify-center rounded-lg transition-colors"
-                style={{ color: '#94A3B8' }}
-                onMouseEnter={function(e){ e.currentTarget.style.background='#F3F4F6'; e.currentTarget.style.color='#111827' }}
-                onMouseLeave={function(e){ e.currentTarget.style.background='transparent'; e.currentTarget.style.color='#9CA3AF' }}
-              >
-                ←
-              </button>
-            )}
-            <div>
-              <div className="text-base font-bold leading-tight" style={{ color: '#0F172A' }}>
-                {headerTitle}
-              </div>
-              <div className="text-[11px] font-medium" style={{ color: '#94A3B8' }}>Ambria</div>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="flex bg-white border border-slate-200 rounded-full overflow-hidden">
-              <button
-                onClick={function () { switchLang('en') }}
-                className={"px-2.5 py-1 text-[11px] font-bold transition-colors " +
-                  (lang === 'en' ? "text-white" : "text-slate-400")}
-                style={lang === 'en' ? { background: '#0F172A' } : {}}
-              >
-                EN
-              </button>
-              <button
-                onClick={function () { switchLang('hi') }}
-                className={"px-2.5 py-1 text-[11px] font-bold transition-colors " +
-                  (lang === 'hi' ? "text-white" : "text-slate-400")}
-                style={lang === 'hi' ? { background: '#0F172A' } : {}}
-              >
-                हि
-              </button>
-            </div>
-            <a href="/"
-              className="text-[11px] px-2 py-1 border border-slate-200 rounded-lg transition-colors no-underline"
-              style={{ color: '#94A3B8' }}
-              onMouseEnter={function(e){ e.currentTarget.style.color='#0284C7'; e.currentTarget.style.borderColor='#BAE6FD' }}
-              onMouseLeave={function(e){ e.currentTarget.style.color='#94A3B8'; e.currentTarget.style.borderColor='#E2E8F0' }}
-            >
-              ⌂
-            </a>
-            {(function () {
-              var canDesktop = profile.role === 'admin'
-                            || profile.role === 'auditor'
-                            || (profile.desktop_permissions || []).some(function (k) { return k !== 'personal.profile' })
-              if (!canDesktop) return null
-              return (
-                <a href="?view=admin"
-                  className="text-[11px] px-2 py-1 border border-slate-200 rounded-lg transition-colors no-underline"
-                  style={{ color: '#94A3B8' }}
-                  title="Switch to desktop view"
-                  onMouseEnter={function(e){ e.currentTarget.style.color='#7C3AED'; e.currentTarget.style.borderColor='#DDD6FE' }}
-                  onMouseLeave={function(e){ e.currentTarget.style.color='#94A3B8'; e.currentTarget.style.borderColor='#E2E8F0' }}
-                >
-                  🖥
-                </a>
-              )
-            })()}
+      <header className="sticky top-0 z-40 bg-white border-b border-slate-200">
+        <div className="max-w-[540px] mx-auto h-14 flex items-center gap-2 px-3">
+          {(activeGroup || tab) && (
             <button
-              onClick={onSignOut}
-              className="text-[11px] px-2 py-1 border border-slate-200 rounded-lg transition-colors"
-              style={{ color: '#94A3B8' }}
-              onMouseEnter={function(e){ e.currentTarget.style.color='#DC2626'; e.currentTarget.style.borderColor='#FECACA' }}
-              onMouseLeave={function(e){ e.currentTarget.style.color='#94A3B8'; e.currentTarget.style.borderColor='#E2E8F0' }}
+              onClick={goBack}
+              aria-label="Back"
+              className="-ml-1 w-9 h-9 shrink-0 flex items-center justify-center rounded-xl text-slate-600 hover:bg-slate-100 hover:text-slate-900 active:scale-95 transition-all"
             >
-              Sign Out
+              <Icon name="arrowLeft" className="w-[18px] h-[18px]" />
             </button>
+          )}
+
+          {/* min-w-0 + truncate is what stops a long label like "PC & Direct
+              Expenses" from wrapping the header onto a second line */}
+          <div className="flex-1 min-w-0">
+            <h1 className="text-[15px] font-bold text-slate-900 leading-tight tracking-[-0.01em] truncate">
+              {headerTitle}
+            </h1>
+            {!activeGroup && !tab && (
+              <p className="text-[11px] font-medium text-slate-500 leading-tight">Ambria</p>
+            )}
+          </div>
+
+          {/* Language stays on the bar — it is toggled often enough to earn the width */}
+          <div className="flex h-8 shrink-0 bg-slate-100 rounded-lg p-0.5">
+            {[{ code: 'en', label: 'EN' }, { code: 'hi', label: 'हिं' }].map(function (l) {
+              var on = lang === l.code
+              return (
+                <button
+                  key={l.code}
+                  onClick={function () { switchLang(l.code) }}
+                  aria-pressed={on}
+                  className={"px-2 rounded-md text-[11.5px] font-bold leading-none transition-colors " +
+                    (on ? "bg-slate-900 text-white" : "text-slate-500 hover:text-slate-900")}
+                  style={l.code === 'hi' ? { fontFamily: '"Nirmala UI","Noto Sans Devanagari",sans-serif' } : {}}
+                >
+                  {l.label}
+                </button>
+              )
+            })}
+          </div>
+
+          {/* Home / desktop / sign-out fold into one menu. Four separate
+              controls ate the width the title needed. */}
+          <div className="relative shrink-0">
+            <button
+              onClick={function () { setMenuOpen(!menuOpen) }}
+              aria-label="More options"
+              aria-expanded={menuOpen}
+              className={"w-9 h-9 flex items-center justify-center rounded-xl transition-all active:scale-95 " +
+                (menuOpen ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900")}
+            >
+              <Icon name="more" className="w-[18px] h-[18px]" />
+            </button>
+            {menuOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={function () { setMenuOpen(false) }} />
+                <div className="absolute right-0 top-full mt-1.5 z-50 w-48 py-1 bg-white border border-slate-200 rounded-xl shadow-[0_8px_24px_rgba(15,23,42,0.12)] overflow-hidden">
+                  {/* The landing site, not the app root. href="/" happened to
+                      reach it on GitHub Pages, where the app is served from
+                      /ambria-ops/ under the same user site — but it broke on a
+                      dev server and would break again behind any other host or
+                      a custom domain. Absolute, so it means the same thing
+                      everywhere. */}
+                  <a
+                    href="https://finance381.github.io/"
+                    className="flex items-center gap-2.5 px-3 py-2.5 text-[13px] font-medium text-slate-700 hover:bg-slate-50 no-underline"
+                  >
+                    <Icon name="home" className="w-4 h-4 text-slate-400" />
+                    Home
+                  </a>
+                  {(function () {
+                    var canDesktop = profile.role === 'admin'
+                                  || profile.role === 'auditor'
+                                  || (profile.desktop_permissions || []).some(function (k) { return k !== 'personal.profile' })
+                    if (!canDesktop) return null
+                    return (
+                      <a
+                        href="?view=admin"
+                        className="flex items-center gap-2.5 px-3 py-2.5 text-[13px] font-medium text-slate-700 hover:bg-slate-50 no-underline"
+                      >
+                        <Icon name="monitor" className="w-4 h-4 text-slate-400" />
+                        Desktop view
+                      </a>
+                    )
+                  })()}
+                  <div className="h-px bg-slate-100 my-1" />
+                  <button
+                    onClick={function () { setMenuOpen(false); onSignOut() }}
+                    className="w-full flex items-center gap-2.5 px-3 py-2.5 text-[13px] font-medium text-red-600 hover:bg-red-50"
+                  >
+                    <Icon name="logout" className="w-4 h-4" />
+                    Sign out
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       </header>
       )}
 
-      {/* User bar */}
-      {tab !== 'quote' && (
+      {/* User bar — home screen only. Inside a module you already know who you
+          are, and the card cost ~60px of the phone's first screenful. */}
+      {!activeGroup && !tab && (
       <div className="max-w-[540px] mx-auto px-4 pt-3">
-        <div className="bg-white border border-gray-200 rounded-xl px-4 py-2.5 flex items-center gap-3" style={{ boxShadow: '0 1px 3px rgba(0,0,0,.06)' }}>
-          <div className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold text-white" style={{ background: '#111827' }}>
+        <div className="bg-white border border-slate-200 rounded-2xl px-3.5 py-2.5 flex items-center gap-3 shadow-[0_1px_2px_rgba(15,23,42,0.05)]">
+          <div className="w-9 h-9 shrink-0 rounded-full bg-slate-900 flex items-center justify-center text-[13px] font-bold text-white">
             {profile.name?.charAt(0) || '?'}
           </div>
           <div className="flex-1 min-w-0">
-            <div className="text-sm font-semibold truncate" style={{ color: '#0F172A' }}>{profile.name}</div>
-            <div className="text-[11px] truncate" style={{ color: '#94A3B8' }}>{profile.email || ''}</div>
+            <div className="text-[13.5px] font-semibold text-slate-900 leading-snug truncate">{profile.name}</div>
+            <div className="text-[11.5px] font-medium text-slate-500 leading-snug truncate">{profile.email || ''}</div>
           </div>
           <span className={"text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider " + (ROLE_COLORS[profile.role] || '')}>
             {profile.role}
@@ -499,9 +537,9 @@ function Shell({ profile, onSignOut }) {
       {/* Success banner */}
       {showSuccess && (
         <div className="max-w-[540px] mx-auto px-4 pt-3">
-          <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-3 flex items-center gap-2">
-            <span className="text-green-600 text-lg">✓</span>
-            <span className="text-sm text-green-700 font-medium">Item submitted successfully</span>
+          <div className="bg-emerald-50 border border-emerald-200 rounded-2xl px-3.5 py-2.5 flex items-center gap-2.5">
+            <Icon name="checkCircle" className="w-[18px] h-[18px] shrink-0 text-emerald-600" />
+            <span className="text-[13px] font-semibold text-emerald-800">Item submitted successfully</span>
           </div>
         </div>
       )}
@@ -517,12 +555,14 @@ function Shell({ profile, onSignOut }) {
             {hasPerm(permsNew, 'finance.wallet') && walletBalance !== null && (
               <button
                 onClick={function () { setActiveGroup('expenses'); setTab('wallet') }}
-                className={"relative w-full mb-3 rounded-xl p-3 flex items-center justify-between border shadow-sm active:scale-[0.99] transition-all " + (walletBalance < 0 ? "bg-red-50 border-red-200" : "bg-green-50 border-green-200")}>
+                className={"relative w-full mb-3 rounded-2xl p-3 flex items-center justify-between border active:scale-[0.99] transition-all " + (walletBalance < 0 ? "bg-red-50 border-red-200" : "bg-emerald-50 border-emerald-200")}>
                 <div className="flex items-center gap-3">
-                  <span className="text-2xl">💰</span>
+                  <span className={"w-9 h-9 shrink-0 rounded-full flex items-center justify-center " + (walletBalance < 0 ? "bg-red-100 text-red-600" : "bg-emerald-100 text-emerald-600")}>
+                    <Icon name="wallet" className="w-[18px] h-[18px]" />
+                  </span>
                   <div className="text-left">
-                    <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Wallet Balance</p>
-                    <p className={"text-lg font-bold " + (walletBalance < 0 ? "text-red-700" : "text-green-700")}>{formatPoints(walletBalance)}</p>
+                    <p className={"text-[10px] font-bold uppercase tracking-[0.08em] " + (walletBalance < 0 ? "text-red-500" : "text-emerald-600")}>Wallet Balance</p>
+                    <p className={"text-[17px] font-bold tabular-nums tracking-[-0.01em] " + (walletBalance < 0 ? "text-red-700" : "text-emerald-800")}>{formatPoints(walletBalance)}</p>
                   </div>
                 </div>
                 {walletPending > 0 && (
@@ -539,23 +579,20 @@ function Shell({ profile, onSignOut }) {
                 <button
                   key={g.key}
                   onClick={function () { openGroup(g) }}
-                  className="relative bg-white border border-slate-200 rounded-xl p-5 flex flex-col items-center gap-2 active:scale-[0.98] transition-all"
-                  style={{ boxShadow: '0 1px 4px rgba(14,165,233,.06)' }}
-                  onMouseEnter={function(e){ e.currentTarget.style.borderColor='#BAE6FD'; e.currentTarget.style.boxShadow='0 4px 14px rgba(14,165,233,.12)' }}
-                  onMouseLeave={function(e){ e.currentTarget.style.borderColor='#E2E8F0'; e.currentTarget.style.boxShadow='0 1px 4px rgba(14,165,233,.06)' }}
+                  className="relative bg-white border border-slate-200 rounded-2xl p-5 flex flex-col items-center gap-2 shadow-[0_1px_2px_rgba(15,23,42,0.05)] hover:border-indigo-200 hover:shadow-[0_4px_16px_rgba(79,70,229,0.10)] active:scale-[0.98] transition-all"
                 >
                   {badge > 0 && (
                     <span className="absolute top-2 right-2 min-w-[20px] h-5 px-1.5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
                       {badge > 99 ? '99+' : badge}
                     </span>
                   )}
-                  <span className="text-2xl">{g.icon}</span>
-                  <span className="text-sm font-semibold" style={{ color: '#0F172A' }}>{g.label}</span>
+                  <Icon name={g.icon} className="w-6 h-6 text-slate-700" strokeWidth={1.7} />
+                  <span className="text-[13px] font-semibold text-slate-900 text-center leading-snug">{g.label}</span>
                 </button>
               )
             })}
             {visibleGroups.length === 0 && (
-              <div className="col-span-2 text-center py-12 text-sm" style={{ color: '#94A3B8' }}>
+              <div className="col-span-2 text-center py-12 text-[13px] font-medium text-slate-500">
                 No features assigned. Contact admin.
               </div>
             )}
@@ -571,26 +608,23 @@ function Shell({ profile, onSignOut }) {
               if (f.key === 'finance.wallet' && walletBalance !== null) {
                 extra = <span className={"text-xs font-bold " + (walletBalance < 0 ? "text-red-600" : "text-green-700")}>{formatPoints(walletBalance)}</span>
               } else if (f.key === 'finance.expenses' && financeStats.expMonthCount > 0) {
-                extra = <span className="text-xs font-medium" style={{ color: '#64748B' }}>{financeStats.expMonthCount + ' · ' + formatPoints(financeStats.expMonthTotal)}</span>
+                extra = <span className="text-[11.5px] font-medium text-slate-500 tabular-nums">{financeStats.expMonthCount + ' · ' + formatPoints(financeStats.expMonthTotal)}</span>
               } else if (f.key === 'finance.ledgers.expense' && financeStats.ledgerMonthTotal > 0) {
-                extra = <span className="text-xs font-medium" style={{ color: '#64748B' }}>{formatPoints(financeStats.ledgerMonthTotal) + ' this month'}</span>
+                extra = <span className="text-[11.5px] font-medium text-slate-500 tabular-nums">{formatPoints(financeStats.ledgerMonthTotal) + ' this month'}</span>
               }
               return (
                 <button
                   key={f.key}
                   onClick={function () { openModule(f) }}
-                  className="relative bg-white border border-slate-200 rounded-xl p-5 flex flex-col items-center gap-2 active:scale-[0.98] transition-all"
-                  style={{ boxShadow: '0 1px 4px rgba(14,165,233,.06)' }}
-                  onMouseEnter={function(e){ e.currentTarget.style.borderColor='#BAE6FD'; e.currentTarget.style.boxShadow='0 4px 14px rgba(14,165,233,.12)' }}
-                  onMouseLeave={function(e){ e.currentTarget.style.borderColor='#E2E8F0'; e.currentTarget.style.boxShadow='0 1px 4px rgba(14,165,233,.06)' }}
+                  className="relative bg-white border border-slate-200 rounded-2xl p-5 flex flex-col items-center gap-2 shadow-[0_1px_2px_rgba(15,23,42,0.05)] hover:border-indigo-200 hover:shadow-[0_4px_16px_rgba(79,70,229,0.10)] active:scale-[0.98] transition-all"
                 >
                   {badges[f.key] > 0 && (
                     <span className="absolute top-2 right-2 min-w-[20px] h-5 px-1.5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
                       {badges[f.key] > 99 ? '99+' : badges[f.key]}
                     </span>
                   )}
-                  <span className="text-2xl">{f.icon}</span>
-                  <span className="text-sm font-semibold" style={{ color: '#0F172A' }}>{f.label}</span>
+                  <Icon name={f.icon} className="w-6 h-6 text-slate-700" strokeWidth={1.7} />
+                  <span className="text-[13px] font-semibold text-slate-900 text-center leading-snug">{f.label}</span>
                   {extra}
                 </button>
               )
@@ -693,9 +727,10 @@ function Shell({ profile, onSignOut }) {
         )}
       </main>
 
-      {/* Footer */}
-      {tab !== 'quote' && (
-      <footer className="text-center py-4 text-[11px] text-gray-300 tracking-wider">
+      {/* Footer — home screen only. Inside a module it is decoration that sits
+          below the action bar and reads as a gap. */}
+      {!activeGroup && !tab && (
+      <footer className="text-center py-4 text-[11px] text-slate-300 tracking-wider">
         Ambria <span className="text-amber-400">●</span> Ops
       </footer>
       )}

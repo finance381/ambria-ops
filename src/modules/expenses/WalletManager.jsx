@@ -12,6 +12,8 @@ import { generateCollectionReceiptPdf } from '../../lib/pdfReceipt'
 import { registerPdfFont } from '../../lib/pdfFont'
 import ExpenseDetail from './ExpenseDetail'
 import VoiceInput from '../../components/ui/VoiceInput'
+import { DeptChip } from '../../components/ui/Badge'
+import SearchField from '../../components/ui/SearchField'
 import { pushBack, goBack } from '../../lib/backNav'
 import PaymentProofThumbs from '../../components/ledger/PaymentProofThumbs'
 
@@ -1528,7 +1530,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     return (
       <BottomSheet open={true} onClose={function () { setCollectModal(false) }} title="Collect Payment">
         <div className="space-y-4">
-          <EventDatePicker label="1. Event Date" value={collectDate}
+          <EventDatePicker label="1. Event Date" value={collectDate} collapsible
             onChange={function (dateStr) { loadFunctionsForDate(dateStr) }} />
 
           {collectDate && (
@@ -1556,9 +1558,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                         </div>
                         {(ev.department || ev.contract_no) && (
                           <div className="flex items-center gap-1.5 mt-1">
-                            {ev.department && (
-                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200">{ev.department}</span>
-                            )}
+                            <DeptChip name={ev.department} />
                             {ev.contract_no && (
                               <span className="text-[10px] font-mono text-gray-500">#{ev.contract_no}</span>
                             )}
@@ -2093,10 +2093,12 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             </div>
           </div>
         </div>
-        <input type="text" value={walletSearch} onChange={function (e) { setWalletSearch(e.target.value) }}
+        <SearchField
+          value={walletSearch}
+          onChange={function (v) { setWalletSearch(v) }}
           placeholder="Search name, email, role..."
-          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-          style={{ fontSize: '16px' }} />
+          className="w-full"
+        />
 
         <div className="flex flex-wrap items-center gap-2">
           <select value={walletRoleFilter} onChange={function (e) { setWalletRoleFilter(e.target.value) }}
