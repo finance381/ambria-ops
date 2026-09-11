@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabase'
 import { formatPoints, formatDate, formatDateTime } from '../../lib/format'
 import { useRealtime } from '../../lib/useRealtime'
 import { hasPerm } from '../../lib/permissions'
+import SearchField from '../../components/ui/SearchField'
 import { useExpenseDetailModal } from '../../hooks/useExpenseDetailModal.jsx'
 import PaymentProofThumbs from '../../components/ledger/PaymentProofThumbs'
 
@@ -248,10 +249,12 @@ function PaymentsLedger({ profile }) {
       </div>
 
       <div className="bg-white border border-gray-200 rounded-xl p-3 space-y-2">
-        <input type="text" value={search} onChange={function (ev) { setSearch(ev.target.value) }}
+        <SearchField
+          value={search}
+          onChange={function (v) { setSearch(v) }}
           placeholder="Search vendor, employee, event, or description..."
-          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-indigo-300"
-          style={{ fontSize: '16px' }} />
+          className="w-full"
+        />
         <div className="flex flex-wrap items-center gap-2">
           <input type="date" value={dateFrom} onChange={function (ev) { setDateFrom(ev.target.value) }}
             className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs bg-white focus:ring-2 focus:ring-indigo-300" style={{ fontSize: '16px' }} />

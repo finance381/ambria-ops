@@ -7,6 +7,7 @@ import PayVendorModal from './PayVendorModal'
 import { hasPerm } from '../../lib/permissions'
 import { filterVisibleVendors } from '../../lib/vendorGating'
 import { useReferenceData } from '../../lib/referenceData.jsx'
+import SearchField from '../../components/ui/SearchField'
 
 function daysBetween(d1, d2) {
   var ms = new Date(d2) - new Date(d1)
@@ -337,11 +338,12 @@ function Payments({ profile }) {
 
       {/* Filters */}
       <div className="bg-white border border-gray-200 rounded-xl p-3 space-y-2 print:hidden">
-        <input type="text" value={search}
-          onChange={function (ev) { setSearch(ev.target.value) }}
+        <SearchField
+          value={search}
+          onChange={function (v) { setSearch(v) }}
           placeholder="Search vendor name..."
-          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-indigo-300"
-          style={{ fontSize: '16px' }} />
+          className="w-full"
+        />
 
         <div className="flex flex-wrap items-center gap-2">
           <select value={vendorTypeFilter}

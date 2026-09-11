@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { formatDate, formatDateTime, formatPoints } from '../../lib/format'
 import { hasPerm } from '../../lib/permissions'
 import { useExpenseDetailModal } from '../../hooks/useExpenseDetailModal.jsx'
+import SearchField from '../../components/ui/SearchField'
 
 function GVLog({ profile }) {
   var permsNew = (profile && profile.permsNew) || []
@@ -127,10 +128,12 @@ function GVLog({ profile }) {
 
       {/* Filters */}
       <div className="bg-white border border-gray-200 rounded-xl p-3 space-y-2">
-        <input type="text" value={search} onChange={function (e) { setSearch(e.target.value) }}
+        <SearchField
+          value={search}
+          onChange={function (v) { setSearch(v) }}
           placeholder="Search by JV #, expense ID, or reason..."
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-          style={{ fontSize: '16px' }} />
+          className="w-full"
+        />
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
           <input type="date" value={dateFrom} onChange={function (e) { setDateFrom(e.target.value) }}
             className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs" style={{ fontSize: '16px' }} />

@@ -35,10 +35,22 @@ export function useExpenseDetailModal(profile, isAdmin, onRefresh) {
   var expenseDetailModal = !target ? null : createPortal((
     <div className="fixed inset-0 z-[9998] bg-black/70 flex items-start sm:items-center justify-center p-0 sm:p-4 overflow-y-auto"
       onClick={function () { closeExpenseDetail(false) }}>
-      <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-2xl p-4 sm:p-5 min-h-screen sm:min-h-0 sm:max-h-[92vh] overflow-y-auto"
+      <div className="relative bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-2xl p-4 sm:p-5 min-h-screen sm:min-h-0 sm:max-h-[92vh] overflow-y-auto"
         onClick={function (ev) { ev.stopPropagation() }}>
+        {/* The overlay owns its close control. It used to lean on the Back link
+            inside ExpenseDetail, which left no way out on a phone, where the
+            sheet is full-bleed and there is no backdrop left to tap. */}
+        <div className="flex justify-end mb-1">
+          <button
+            onClick={function () { closeExpenseDetail(false) }}
+            aria-label="Close"
+            className="-mr-1 -mt-1 w-9 h-9 flex items-center justify-center rounded-xl text-[17px] leading-none text-slate-500 hover:bg-slate-100 hover:text-slate-900 active:scale-95 transition-all"
+          >
+            ✕
+          </button>
+        </div>
         {loading || target._placeholder ? (
-          <div className="py-16 text-center text-sm text-gray-500">Loading expense…</div>
+          <div className="py-16 text-center text-[13px] font-medium text-slate-500">Loading expense…</div>
         ) : (
           <ExpenseDetail
             key={target.id}
@@ -46,7 +58,6 @@ export function useExpenseDetailModal(profile, isAdmin, onRefresh) {
             profile={profile}
             isAdmin={isAdmin}
             isDeptApprover={false}
-            onBack={function () { closeExpenseDetail(false) }}
             onUpdated={function () { closeExpenseDetail(true) }}
             onEdit={function () { alert('To edit this expense, please open the Expenses tab.'); closeExpenseDetail(false) }}
             onRaiseGV={function () { alert('To raise a Journal Voucher, please open the Expenses tab.'); closeExpenseDetail(false) }}

@@ -10,10 +10,50 @@ import { useVoice } from '../../hooks/useVoice'
 import EventDatePicker from '../../components/ui/EventDatePicker'
 import { compressImage } from '../../lib/imageCompress'
 import VoiceInput from '../../components/ui/VoiceInput'
+import Icon from '../../components/ui/Icon'
 import { hasPerm } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
+import { deptInk, deptOrder } from '../../lib/ui'
 
 function byName(a, b) { return (a.name || '').localeCompare(b.name || '') }
+
+// One evening at one venue is booked as up to four contracts — one per
+// department — and every one of them carries the same client, venue and
+// session. Listed flat, or grouped under department headers, the picker repeats
+// "ENGAGEMENT — Rao Yashvardhan · Ambria Pushpanjali" once per department and
+// the operator scrolls past four near-identical lines to find the right one.
+//
+// So the picker lists each function once and hangs its contracts off it as
+// department chips — the function reads once, and the departments read as
+// colours on a single row.
+//
+// Not a silent merge: event_id lands on the expense row, so which contract the
+// cost is tagged to has to stay a deliberate tap.
+function funcKeyOf(r) {
+  return [r.client_name || '', r.venue_name || '', r.session || '', (r.event_name || '').trim().toLowerCase()].join('|')
+}
+
+function groupFunctions(rows) {
+  var byKey = {}
+  var order = []
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i]
+    var k = funcKeyOf(r)
+    if (!byKey[k]) {
+      byKey[k] = {
+        key: k,
+        label: r.event_name + (r.client_name ? ' — ' + r.client_name : '') + ' · ' + (r.venue_name || '') + (r.session ? ' · ' + r.session : ''),
+        contracts: [],
+      }
+      order.push(k)
+    }
+    byKey[k].contracts.push(r)
+  }
+  order.forEach(function (k) {
+    byKey[k].contracts.sort(function (a, b) { return deptOrder(a.department) - deptOrder(b.department) })
+  })
+  return order.map(function (k) { return byKey[k] })
+}
 
 function makeEntry() {
   return {
@@ -247,6 +287,8 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
   var [draftSavedAt, setDraftSavedAt] = useState(null)
   var [draftTick, setDraftTick] = useState(0)  // forces "Xs ago" refresh
   var draftSaveTimer = useRef(null)
+  // Scroll target for the submit-failure card.
+  var errorRef = useRef(null)
   var draftKey = profile ? DRAFT_KEY_PREFIX + profile.id : null
 
   useEffect(function () { loadRefData(); ensureLookupData('vendors') }, [])
@@ -338,6 +380,14 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
     try { if (draftKey) localStorage.removeItem(draftKey) } catch (_) {}
     setDraftRestorable(null)
     setDraftSavedAt(null)
+  }
+
+  // The "clear" link sits one tap away from destroying everything typed so far,
+  // with no undo. The restore banner's "Start fresh" is already a deliberate
+  // choice between two buttons, so only this one asks.
+  function confirmDiscardDraft() {
+    if (!window.confirm('Clear the saved draft? Anything typed but not submitted will be lost.')) return
+    discardDraft()
   }
 
   function clearDraftAfterSubmit() {
@@ -439,7 +489,10 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
       var next = makeEntry()
       var last = prev[prev.length - 1]
       if (last && last.expenseDate) next.expenseDate = last.expenseDate
-      return prev.concat([next])
+      // Fold everything already on screen. Four open expense cards is four
+      // screens of scrolling to reach the one field you came here to type, and
+      // the card you just asked for is the one at the bottom.
+      return prev.map(function (e) { return Object.assign({}, e, { _collapsed: true }) }).concat([next])
     })
   }
 
@@ -598,8 +651,15 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
     setEntries(function (prev) {
       return prev.map(function (e, i) {
         if (i !== entryIdx) return e
-        if (e.items.length <= 1) return e
-        var cur = e._editingItemIdx == null ? -1 : e._editingItemIdx
+        // Item Select needs at least one row, so deleting the last one wipes it
+        // back to blank rather than refusing. Refusing left the button hidden
+        // and no way to clear a wrongly-filled item.
+        if (e.items.length <= 1) {
+          return Object.assign({}, e, { items: [makeItem()], _editingItemIdx: 0 })
+        }
+        // Same default as the render path, so deleting a row does not silently
+        // collapse an item that was visibly open.
+        var cur = e._editingItemIdx == null ? 0 : e._editingItemIdx
         var next = cur === itemIdx ? -1 : (cur > itemIdx ? cur - 1 : cur)
         return Object.assign({}, e, {
           items: e.items.filter(function (_, j) { return j !== itemIdx }),
@@ -616,6 +676,17 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
       return prev.map(function (e, i) {
         if (i !== entryIdx) return e
         return Object.assign({}, e, { _editingItemIdx: itemIdx })
+      })
+    })
+  }
+
+  // Closing an item is now an explicit act. Auto-folding it the moment the last
+  // field validated used to snatch the card away mid-typing.
+  function setItemDone(entryIdx) {
+    setEntries(function (prev) {
+      return prev.map(function (e, i) {
+        if (i !== entryIdx) return e
+        return Object.assign({}, e, { _editingItemIdx: -1 })
       })
     })
   }
@@ -717,9 +788,12 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
         allocations: src.allocations.map(function (a) { return Object.assign({}, a) }),
         items: (src.items || []).map(function (it) {
           return Object.assign({}, it, { _key: Date.now() + '_' + Math.random().toString(36).slice(2, 8) })
-        })
+        }),
+        // The copy opens; it is the one you are about to change.
+        _collapsed: false
       })
-      var next = prev.slice()
+      // ...and the rest fold, for the same reason as addEntry.
+      var next = prev.map(function (e) { return Object.assign({}, e, { _collapsed: true }) })
       next.splice(idx + 1, 0, dup)
       return next
     })
@@ -759,7 +833,9 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
     setEntries(function (prev) {
       return prev.map(function (e, i) {
         if (i !== entryIdx) return e
-        if (e.allocations.length <= 1) return e
+        // Deleting the last row clears it instead of refusing: an entry needs
+        // one allocation, but refusing left no way to empty a wrong one.
+        if (e.allocations.length <= 1) return Object.assign({}, e, { allocations: [makeAllocation()] })
         return Object.assign({}, e, { allocations: e.allocations.filter(function (_, j) { return j !== allocIdx }) })
       })
     })
@@ -954,7 +1030,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
   }
 
   function renderDynamicField(field, value, onChange, entry) {
-    var cls = 'w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-300 focus:border-amber-400'
+    var cls = 'w-full px-3 py-2.5 bg-white border border-slate-300 rounded-xl text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-shadow'
     var sty = { fontSize: '16px' }
 
     if (field.type === 'lookup') {
@@ -1023,7 +1099,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
     if (field.type === 'select') {
       return (
         <div key={field.key}>
-          <label className="block text-xs font-medium text-gray-600 mb-1">{field.label}{field.required && <span className="text-red-500"> *</span>}</label>
+          <label className="block text-[11px] font-semibold text-slate-600 mb-1">{field.label}{field.required && <span className="text-red-500"> *</span>}</label>
           <select value={value || ''} onChange={function (e) { onChange(e.target.value) }} className={cls + ' bg-white'} style={sty}>
             <option value="">Select...</option>
             {(field.options || []).map(function (opt) { return <option key={opt} value={opt}>{opt}</option> })}
@@ -1034,7 +1110,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
     if (field.type === 'textarea') {
       return (
         <div key={field.key}>
-          <label className="block text-xs font-medium text-gray-600 mb-1">{field.label}{field.required && <span className="text-red-500"> *</span>}</label>
+          <label className="block text-[11px] font-semibold text-slate-600 mb-1">{field.label}{field.required && <span className="text-red-500"> *</span>}</label>
           <textarea value={value || ''} onChange={function (e) { onChange(e.target.value) }} rows={2} className={cls + ' resize-none'} style={sty} />
         </div>
       )
@@ -1042,7 +1118,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
     if (field.type === 'date') {
       return (
         <div key={field.key}>
-          <label className="block text-xs font-medium text-gray-600 mb-1">{field.label}{field.required && <span className="text-red-500"> *</span>}</label>
+          <label className="block text-[11px] font-semibold text-slate-600 mb-1">{field.label}{field.required && <span className="text-red-500"> *</span>}</label>
           <input type="date" value={value || ''} onChange={function (e) { onChange(e.target.value) }} className={cls} style={sty} />
         </div>
       )
@@ -1050,14 +1126,14 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
     if (field.type === 'number') {
       return (
         <div key={field.key}>
-          <label className="block text-xs font-medium text-gray-600 mb-1">{field.label}{field.required && <span className="text-red-500"> *</span>}</label>
+          <label className="block text-[11px] font-semibold text-slate-600 mb-1">{field.label}{field.required && <span className="text-red-500"> *</span>}</label>
           <input type="number" inputMode="numeric" value={value || ''} onChange={function (e) { onChange(e.target.value) }} placeholder={field.label} className={cls} style={sty} />
         </div>
       )
     }
     return (
       <div key={field.key}>
-        <label className="block text-xs font-medium text-gray-600 mb-1">{field.label}{field.required && <span className="text-red-500"> *</span>}</label>
+        <label className="block text-[11px] font-semibold text-slate-600 mb-1">{field.label}{field.required && <span className="text-red-500"> *</span>}</label>
         <input type="text" value={value || ''} onChange={function (e) { onChange(e.target.value) }} placeholder={field.label} className={cls} style={sty} />
       </div>
     )
@@ -1140,6 +1216,26 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
     return null
   }
 
+  // Items can now be collapsed while unfinished, so a message naming "Item 2"
+  // is useless if Item 2 is folded away. Open the first incomplete item in each
+  // entry and bring that entry's Items panel forward.
+  function revealProblems() {
+    setEntries(function (prev) {
+      return prev.map(function (e) {
+        // Unfold first, whatever else is wrong: "Expense 2 needs an amount" is
+        // no use while Expense 2 is a one-line header.
+        e = e._collapsed ? Object.assign({}, e, { _collapsed: false }) : e
+        if (!e.isItemPurchase || !e.items || e.items.length === 0) return e
+        var bad = -1
+        for (var i = 0; i < e.items.length; i++) {
+          if (!isItemComplete(e.items[i])) { bad = i; break }
+        }
+        if (bad === -1) return e
+        return Object.assign({}, e, { _editingItemIdx: bad, _panel: 'items' })
+      })
+    })
+  }
+
   // ── Submit ──
   async function handleSubmit() {
     if (saving || submitLockRef.current) return
@@ -1148,7 +1244,19 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
     setError('')
     setSuccess('')
     var valErr = validateEntries()
-    if (valErr) { setError(valErr); return }
+    if (valErr) {
+      setError(valErr)
+      revealProblems()
+      // The submit bar is sticky, so a failure can be triggered from the top of
+      // a multi-screen form. Without this the error card renders far below the
+      // fold and the tap looks like it did nothing.
+      setTimeout(function () {
+        if (errorRef.current && errorRef.current.scrollIntoView) {
+          errorRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        }
+      }, 0)
+      return
+    }
 
     setSaving(true)
 
@@ -1617,33 +1725,73 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
 
   var isAdminEdit = isEditing && editExp && profile && editExp.user_id !== profile.id
 
-  if (loading) return <div className="text-center py-8 text-gray-500">Loading...</div>
+  if (loading) return <div className="text-center py-8 text-slate-500">Loading...</div>
 
   return (
-    <div className="space-y-4">
+    /* Flex column with a viewport-height floor. The entry card below carries
+       flex-1, so on a short form it grows and pushes the sticky action bar down
+       to the bottom of the screen -- no reserved padding, and therefore no band
+       of empty page to scroll into. The 9rem offset is the Shell header plus the
+       page padding above this point; dvh, not vh, so mobile browser chrome
+       counts. Erring slightly tall is safe: the bar stays pinned either way. */
+    <div className="flex flex-col space-y-3 -mb-8 min-h-[calc(100dvh-8rem)]">
       {/* Draft-restore banner — shows only if a saved draft was found on mount */}
+      {/* The old paragraph explained that receipts cannot be restored, but the
+          receipt field already says exactly that, with the file names, right
+          where you have to act on it. Here it was just a wall of text between
+          you and two buttons. */}
       {draftRestorable && (
-        <div className="p-3 rounded-lg bg-indigo-50 border-2 border-indigo-300 text-indigo-900 text-sm shadow-sm">
-          <div className="flex items-center justify-between gap-3 mb-1.5">
-            <div className="flex items-center gap-2">
-              <span className="text-lg">💾</span>
-              <span className="font-bold">Unsaved draft found</span>
-            </div>
-            <span className="text-[11px] text-indigo-600">
+        <div className="ambria-rise p-3 rounded-xl bg-indigo-50 border border-indigo-200">
+          <div className="flex items-baseline justify-between gap-3">
+            <p className="text-[13px] font-semibold text-indigo-900">Restore your previous data?</p>
+            <span className="shrink-0 text-[11px] font-medium text-indigo-500 tabular-nums">
               {formatDraftAge(draftRestorable.savedAt)} · {(draftRestorable.entries || []).length} entr{(draftRestorable.entries || []).length === 1 ? 'y' : 'ies'}
             </span>
           </div>
-          <p className="text-[12px] text-indigo-700 mb-2">
-            Your last session ended without submitting. Restore your typed details? (Receipts and voice notes will need to be re-attached — files can't be saved in the browser.)
-          </p>
-          <div className="flex gap-2">
+          <div className="flex gap-2 mt-2.5">
             <button type="button" onClick={restoreDraft}
-              className="flex-1 py-2 text-xs font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors">
-              ↺ Restore
+              className="flex-1 inline-flex items-center justify-center gap-1.5 py-2 text-[12.5px] font-semibold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 active:scale-[0.98] transition-all">
+              <Icon name="undo" className="w-3.5 h-3.5" />
+              Restore
             </button>
             <button type="button" onClick={discardDraft}
-              className="flex-1 py-2 text-xs font-bold text-indigo-700 bg-white border border-indigo-300 rounded-lg hover:bg-indigo-100 transition-colors">
-              Start Fresh
+              className="flex-1 py-2 text-[12.5px] font-semibold text-slate-600 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 hover:text-slate-900 active:scale-[0.98] transition-all">
+              Start fresh
+            </button>
+          </div>
+        </div>
+      )}
+      {/* Autosave status, top right, as one bordered pill rather than two runs
+          of loose text. Floating bare like that it had no edge of its own, so
+          it read as a stray caption belonging to the card underneath — and the
+          negative margin that pulled it closer made the collision worse.
+          Clear lives inside the pill, behind a divider: near the thing it acts
+          on, and no longer a red link sitting under the Submit button where a
+          mis-tap costs you the whole form. */}
+      {!isEditing && draftSavedAt && (
+        <div className="flex justify-end">
+          <div className="ambria-glass-chip ambria-rise inline-flex items-center h-7 rounded-full overflow-hidden text-[11px]">
+            <span className="inline-flex items-center gap-1.5 pl-2.5 pr-2 font-semibold text-slate-700 whitespace-nowrap">
+              {/* Two pulses per save, then still. Keyed on draftSavedAt so a
+                  new save remounts the halo and replays it — a timer would not
+                  do, draftTick only ticks every 15s. A dot pinging forever is
+                  noise; a dot that moves the moment your work is safe is the
+                  whole point. */}
+              <span className="relative flex w-1.5 h-1.5">
+                <span key={draftSavedAt}
+                  style={{ animationIterationCount: 2 }}
+                  className="absolute inset-0 rounded-full bg-emerald-500 opacity-60 animate-ping motion-reduce:hidden" />
+                <span className="relative w-1.5 h-1.5 rounded-full bg-emerald-500" />
+              </span>
+              Draft saved
+              <span className="font-medium text-slate-400 tabular-nums">{formatDraftAge(draftSavedAt + draftTick * 0)}</span>
+            </span>
+            <span aria-hidden="true" className="w-px h-3.5 bg-slate-900/10" />
+            <button type="button" onClick={confirmDiscardDraft}
+              aria-label="Discard saved draft"
+              className="inline-flex items-center gap-1 h-full pl-2 pr-2.5 font-semibold text-slate-500 hover:bg-red-500/10 hover:text-red-600 transition-colors">
+              <Icon name="trash" size={11} />
+              Clear
             </button>
           </div>
         </div>
@@ -1670,7 +1818,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
           <div className="border border-purple-200 rounded-xl bg-white shadow-sm p-4 space-y-3">
             <div>
               <SearchDropdown
-                label="Expense Type"
+                label="Expense Type" labelIcon="tag"
                 items={typeList.map(function (et) { return { label: (et.icon ? et.icon + ' ' : '') + et.name, value: String(et.id) } })}
                 value={e0.expenseTypeId}
                 onChange={function (val) { updateEntry(0, 'expenseTypeId', val) }}
@@ -1680,7 +1828,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
             {e0.expenseTypeId && subs.length > 0 && (
               <div>
                 <SearchDropdown
-                  label="Sub-Type"
+                  label="Sub-Type" labelIcon="split"
                   items={subs.map(function (st) { return { label: st.name, value: String(st.id) } })}
                   value={e0.expenseSubTypeId}
                   onChange={function (val) { updateEntry(0, 'expenseSubTypeId', val) }}
@@ -1696,47 +1844,102 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
       })()}
 
       {/* For a Function? */}
-      <div className={"border border-gray-200 rounded-xl bg-white p-4 space-y-3 " + (isAdminEdit ? "hidden" : "")}>
-        <div className="flex items-center justify-between">
-          <label className="text-sm font-medium text-gray-700">For a Function?</label>
-          <button type="button" onClick={function () { toggleFunction(!isFunction) }} className="flex items-center gap-2">
-            <div className={"relative w-9 h-5 rounded-full transition-colors " + (isFunction ? "bg-indigo-500" : "bg-gray-300")}>
+      <div className={"border border-slate-200 rounded-2xl bg-white px-3.5 py-2.5 sm:py-3 space-y-3 shadow-[0_1px_2px_rgba(15,23,42,0.05)] " + (isAdminEdit ? "hidden" : "")}>
+        <div className="flex items-center justify-between gap-3">
+          {/* A tinted glyph tile and one line of why. The row was a bare
+              question with a switch: nothing said what turning it on does. */}
+          <div className="flex items-center gap-2.5 min-w-0">
+            <span className={"shrink-0 w-9 h-9 rounded-xl inline-flex items-center justify-center transition-colors " + (isFunction ? "bg-indigo-50 text-indigo-600" : "bg-slate-100 text-slate-400")}>
+              <Icon name="calendar" size={17} />
+            </span>
+            <span className="min-w-0">
+              <label className="block text-[13px] font-semibold text-slate-800">For a function?</label>
+              <span className="block text-[11px] text-slate-500 leading-snug">For any function or event</span>
+            </span>
+          </div>
+          <button type="button" onClick={function () { toggleFunction(!isFunction) }}
+            aria-pressed={isFunction} aria-label="For a function?"
+            className="shrink-0 flex items-center gap-2">
+            <div className={"relative w-9 h-5 rounded-full transition-colors " + (isFunction ? "bg-indigo-600" : "bg-slate-300")}>
               <div className={"absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform " + (isFunction ? "translate-x-4" : "translate-x-0.5")} />
             </div>
           </button>
         </div>
         {isFunction && (
           <div className="space-y-2">
-            <EventDatePicker label="Function Date" value={eventDate}
+            <EventDatePicker label="Function Date" value={eventDate} collapsible
               onChange={function (dateStr) { setEventDate(dateStr); loadEventsByDate(dateStr) }} />
-            {eventsLoading && <p className="text-xs text-gray-400">Loading events...</p>}
-            {eventDate && !eventsLoading && events.length === 0 && <p className="text-xs text-gray-400">No events on this date</p>}
-            {events.length > 0 && (
-              <select value={eventId} onChange={function (e) { setEventId(e.target.value) }}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-amber-300" style={{ fontSize: '16px' }}>
-                <option value="">Select event...</option>
-                {events.map(function (ev) {
-                  var deptTag = ev.department ? ' [' + ev.department + ']' : ''
-                  var ctNo = ev.contract_no ? ' #' + ev.contract_no : ''
-                  var by = ev.created_user_name ? ' · by ' + ev.created_user_name : ''
-                  return <option key={ev.id} value={String(ev.id)}>{ev.event_name + (ev.client_name ? ' — ' + ev.client_name : '') + ' · ' + (ev.venue_name || '') + deptTag + ctNo + by}</option>
-                })}
-              </select>
-            )}
-            {(function () {
-              var sel = eventId ? events.find(function (ev) { return String(ev.id) === eventId }) : null
-              if (!sel) return null
+            {eventsLoading && <p className="text-xs text-slate-500">Loading events...</p>}
+            {eventDate && !eventsLoading && events.length === 0 && <p className="text-xs text-slate-500">No events on this date</p>}
+            {/* A card list, not a <select>: one function needs THREE department
+                colours on the same row, and a native option can only carry one
+                (the iOS wheel ignores even that). Real markup gets the chips —
+                and it matches the Extra Plates and Wallet function pickers. */}
+            {events.length > 0 && (function () {
+              var groups = groupFunctions(events)
+              // Once a function is chosen the other cards have done their job.
+              // Keeping them on screen pushed the amount, category and receipt
+              // fields a full phone-height down the form; the choice collapses
+              // to the one card that matters, with a way back beside it.
+              var picked = eventId ? groups.filter(function (g) {
+                return g.contracts.some(function (c) { return String(c.id) === eventId })
+              }) : null
+              var shown = (picked && picked.length === 1) ? picked : groups
               return (
-                <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-3 space-y-1">
-                  <p className="text-xs font-bold text-indigo-700">{sel.event_name}</p>
-                  <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-[11px] text-indigo-600">
-                    {sel.function_date && <span>📅 {sel.function_date}</span>}
-                    {sel.contract_type && <span>🎉 {sel.contract_type}</span>}
-                    {sel.venue_name && <span>📍 {sel.venue_name}</span>}
-                    {sel.session && <span>🕐 {sel.session}</span>}
-                    {sel.client_name && <span>👤 {sel.client_name}</span>}
-                  </div>
-                </div>
+              <div className="space-y-1.5">
+                {shown.map(function (g) {
+                  var head = g.contracts[0]
+                  var single = g.contracts.length === 1
+                  var sel = g.contracts.filter(function (c) { return String(c.id) === eventId })[0] || null
+                  var title = (
+                    <>
+                      <div className={"text-[13px] font-semibold " + (sel ? "text-indigo-900" : "text-slate-900")}>
+                        {head.event_name + (head.client_name ? ' — ' + head.client_name : '')}
+                      </div>
+                      <div className={"text-[11.5px] " + (sel ? "text-indigo-700" : "text-slate-500")}>
+                        {(head.venue_name || '') + (head.session ? ' · ' + head.session : '')}
+                      </div>
+                    </>
+                  )
+                  return (
+                    <div key={g.key}
+                      className={"rounded-xl border transition-colors " +
+                        (sel ? "border-indigo-600 border-2 bg-indigo-50" : "border-slate-300 bg-white")}>
+                      {/* The card picks the function, nothing finer. event_id
+                          takes the first contract in running order (Venue →
+                          Decor → Catering → Entertainment); the cost's own
+                          department is set per-allocation further down the
+                          form, so the contract row this hangs off does not
+                          need to be chosen here. */}
+                      <button type="button" onClick={function () { setEventId(String(head.id)) }}
+                        className="w-full text-left px-3 pt-2">
+                        {title}
+                      </button>
+                      {/* Which departments this evening is booked under — read
+                          only. One line, never wrapped: four names plus the
+                          label overflow a narrow phone, so the row scrolls
+                          sideways rather than folding and pushing every card
+                          below it down. */}
+                      <div className="flex items-center gap-1.5 px-3 pt-1 pb-2 overflow-x-auto overflow-y-hidden">
+                        {!single && <span className="shrink-0 text-[10.5px] font-bold uppercase tracking-[0.08em] text-slate-500">Dept:</span>}
+                        {g.contracts.map(function (c) {
+                          return (
+                            <span key={c.id} className={"shrink-0 text-[12px] font-medium " + deptInk(c.department)}>
+                              {c.department}
+                            </span>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )
+                })}
+                {shown !== groups && groups.length > 1 && (
+                  <button type="button" onClick={function () { setEventId('') }}
+                    className="text-[11.5px] font-semibold text-indigo-600 hover:text-indigo-800 px-1">
+                    Change function
+                  </button>
+                )}
+              </div>
               )
             })()}
           </div>
@@ -1755,22 +1958,64 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
         var subTypeFields = entry.expenseSubTypeId ? getSubTypeFields(entry.expenseSubTypeId) : []
 
         return (
-          <div key={entry._key} className="border border-amber-200 rounded-xl bg-white shadow-sm overflow-hidden">
-            <div className="flex items-center justify-between px-4 py-2 bg-amber-50 border-b border-amber-200">
-              <span className="font-semibold text-amber-900 text-sm">{'Expense #' + (idx + 1)}</span>
+          <div key={entry._key} className="ambria-rise flex-1 border border-white/70 rounded-2xl bg-white/70 shadow-[0_1px_2px_rgba(15,23,42,0.05)]">
+            <div className="flex items-center justify-between gap-2 px-4 py-2.5 bg-white/45 border-b border-white/70 rounded-t-2xl">
+              <button type="button" onClick={function () { updateEntry(idx, '_collapsed', !entry._collapsed) }}
+                className="flex items-center gap-2 min-w-0 flex-1 text-left">
+                <span className="shrink-0 text-slate-400">
+                  <Icon name={entry._collapsed ? 'chevronRight' : 'chevronDown'} size={14} />
+                </span>
+                <span className="shrink-0 w-7 h-7 rounded-lg bg-indigo-50 text-indigo-600 inline-flex items-center justify-center">
+                  <Icon name="receipt" size={14} />
+                </span>
+                <span className="shrink-0 text-[10px] font-bold uppercase tracking-[0.1em] text-indigo-800">
+                  {/* The rule sits under the label alone, not the full width:
+                      it marks which card you are in without spending a row. */}
+                  <span className="inline-block border-b-2 border-indigo-500 pb-1 pr-1.5">
+                    Expense<span data-notranslate>{' ' + (idx + 1)}</span>
+                  </span>
+                </span>
+                {entry._collapsed && (function () {
+                  var et = expenseTypes.find(function (t) { return String(t.id) === String(entry.expenseTypeId) })
+                  var st = expenseSubTypes.find(function (x) { return String(x.id) === String(entry.expenseSubTypeId) })
+                  var what = [et ? et.name : '', st ? st.name : ''].filter(Boolean).join(' › ') || (entry.description || '').trim()
+                  var amt = Number(entry.amount) > 0 ? formatPoints(Math.round(Number(entry.amount) * 100)) : ''
+                  return (
+                    <span className="flex items-baseline gap-2 min-w-0 text-[11.5px]">
+                      <span className="truncate text-slate-600">{what || 'Empty'}</span>
+                      {amt && <span className="shrink-0 font-bold text-slate-900 tabular-nums">{amt}</span>}
+                    </span>
+                  )
+                })()}
+              </button>
               {!isEditing && (
-                <div className="flex gap-1">
+                /* Same height, same radius. The bin is red — colour on the
+                   stroke, no filled box behind it, so it names itself as the
+                   destructive one without becoming the loudest thing in a
+                   header you read on every card. A bin and not a cross: a
+                   cross beside "Duplicate" reads as "close this card", which
+                   is what the chevron already does. */
+                <div className="flex items-center gap-1 shrink-0">
                   <button type="button" onClick={function () { duplicateEntry(idx) }}
-                    className="text-xs px-2 py-1 rounded bg-amber-100 text-amber-700 hover:bg-amber-200" title="Duplicate">📋</button>
+                    className="inline-flex items-center gap-1 h-7 px-2 rounded-lg text-[11px] font-semibold text-indigo-700 hover:bg-indigo-50 transition-colors" title="Duplicate"><Icon name="copy" size={12} />Duplicate</button>
                   {entries.length > 1 && (
                     <button type="button" onClick={function () { removeEntry(idx) }}
-                      className="text-xs px-2 py-1 rounded bg-red-100 text-red-600 hover:bg-red-200" title="Remove">✕</button>
+                      className="inline-flex items-center justify-center w-7 h-7 rounded-lg text-red-600 hover:bg-red-100 hover:text-red-700 transition-colors"
+                      title="Remove" aria-label={'Remove expense ' + (idx + 1)}>
+                      <Icon name="trash" size={14} />
+                    </button>
                   )}
                 </div>
               )}
             </div>
 
-            <div className="p-4 space-y-3">
+            {/* Hidden, not unmounted: every field in here holds typed state and
+                a fold must not throw it away. */}
+            <div className={"p-3.5 space-y-3" + (entry._collapsed ? " hidden" : "")}>
+              {/* Date and Expense Type: the two shortest fields in the form,
+                  paired so a wide window does not stretch each of them across
+                  the whole page on its own. */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[minmax(0,20rem)_minmax(0,34rem)] gap-3">
               {/* Date — new expenses gated to today − 3 days; edits may widen the window to preserve the original date */}
               {(function () {
                 var toYMD = function (d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') }
@@ -1780,16 +2025,32 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                 var effMin = (isEditing && editExp && editExp.expense_date && editExp.expense_date < minDate) ? editExp.expense_date : minDate
                 return (
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Date</label>
-                    <input type="date" value={entry.expenseDate} min={effMin} max={today}
+                    <label htmlFor={'exp-date-' + idx} className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-600 mb-1">
+                      <span className="shrink-0 w-5 h-5 rounded-md bg-slate-100 text-slate-500 inline-flex items-center justify-center"><Icon name="calendar" size={11} /></span>
+                      Date <span className="text-red-500">*</span>
+                    </label>
+                    <input id={'exp-date-' + idx} type="date" value={entry.expenseDate} min={effMin} max={today}
                       onChange={function (e) {
                         var v = e.target.value
-                        if (v && v < effMin) { updateEntry(idx, 'expenseDate', effMin); return }
-                        if (v && v > today) { updateEntry(idx, 'expenseDate', today); return }
+                        // The clamp used to happen silently: you picked a future
+                        // date, it snapped back, and nothing said why.
+                        if (v && v < effMin) {
+                          updateEntry(idx, 'expenseDate', effMin)
+                          updateEntry(idx, '_dateNote', 'Backdated to the oldest date you can claim.')
+                          return
+                        }
+                        if (v && v > today) {
+                          updateEntry(idx, 'expenseDate', today)
+                          updateEntry(idx, '_dateNote', 'Future dates need a requisition, not an expense.')
+                          return
+                        }
                         updateEntry(idx, 'expenseDate', v)
+                        if (entry._dateNote) updateEntry(idx, '_dateNote', '')
                       }}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-300" style={{ fontSize: '16px' }} />
-                    <p className="text-[10px] text-gray-500 mt-1">{isEditing ? 'Any date from the original up to today.' : 'Today or up to 3 days back. For future expenses, raise a requisition instead.'}</p>
+                      className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-xl text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-shadow" style={{ fontSize: '16px' }} />
+                    {entry._dateNote
+                      ? <p className="text-[10px] font-medium text-amber-700 mt-1">{entry._dateNote}</p>
+                      : <p className="text-[10px] text-slate-500 mt-1">{isEditing ? 'Any date from the original up to today.' : 'Today or up to 3 days back.'}</p>}
                   </div>
                 )
               })()}
@@ -1802,7 +2063,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                 return (
                   <div>
                     <SearchDropdown
-                      label="Expense Type"
+                      label="Expense Type" labelIcon="tag"
                       items={typeList.map(function (et) { return { label: (et.icon ? et.icon + ' ' : '') + et.name, value: String(et.id) } })}
                       value={entry.expenseTypeId}
                       onChange={function (val) { updateEntry(idx, 'expenseTypeId', val) }}
@@ -1811,12 +2072,19 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                   </div>
                 )
               })()}
+              </div>
 
               {/* Sub-Type */}
-              {entry.expenseTypeId && subTypesForType.length > 0 && (
+              {entry.expenseTypeId && subTypesForType.length === 1 && (
+                <p className="flex items-baseline gap-1.5 text-[11px] text-slate-500">
+                  <span className="font-semibold">Sub-type</span>
+                  <span className="text-slate-700">{subTypesForType[0].name}</span>
+                </p>
+              )}
+              {entry.expenseTypeId && subTypesForType.length > 1 && (
                 <div>
                   <SearchDropdown
-                    label="Sub-Type"
+                    label="Sub-Type" labelIcon="split"
                     items={subTypesForType.map(function (st) { return { label: st.name, value: String(st.id) } })}
                     value={entry.expenseSubTypeId}
                     onChange={function (val) { updateEntry(idx, 'expenseSubTypeId', val) }}
@@ -1837,12 +2105,22 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
               )}
 
               {/* Description */}
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Description <span className="text-red-500">*</span></label>
-                <VoiceInput as="textarea" value={entry.description}
+              <div className="lg:max-w-4xl">
+                <label htmlFor={'exp-desc-' + idx} className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-600 mb-1">
+                  <span className="shrink-0 w-5 h-5 rounded-md bg-indigo-50 text-indigo-500 inline-flex items-center justify-center"><Icon name="fileText" size={11} /></span>
+                  Description <span className="text-red-500">*</span>
+                </label>
+                <VoiceInput id={'exp-desc-' + idx} as="textarea" value={entry.description}
                   onChange={function (e) { updateEntry(idx, 'description', e.target.value) }}
-                  placeholder="What was this expense for..." rows={2}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-300 resize-none" />
+                  placeholder="What was this expense for..." rows={2} maxLength={500}
+                  className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-xl text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-shadow resize-none" />
+                {/* Amber past 90%, so the count is quiet until it matters and
+                    the box does not jump as a line appears and disappears. */}
+                <p className={"mt-1 text-right text-[10px] tabular-nums " +
+                  ((entry.description || '').length > 450 ? "text-amber-600 font-semibold" : "text-slate-400")}
+                  data-notranslate>
+                  {(entry.description || '').length + '/500'}
+                </p>
               </div>
 
               {/* Dynamic fields from sub-type */}
@@ -1852,329 +2130,485 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                 }, entry)
               })}
 
-              {/* Item purchase toggle + fields */}
-              <div className={"border rounded-lg p-3 transition-colors " + (entry.isItemPurchase ? "border-indigo-200 bg-indigo-50/40" : "border-gray-100 bg-gray-50")}>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <label className="text-xs font-semibold text-gray-700">📦 Item Select</label>
-                    <p className="text-[10px] text-gray-400 mt-0.5">Item enters inventory via receiver</p>
-                  </div>
-                  <button type="button" onClick={function () { toggleItemPurchase(idx) }} disabled={isEditing} className={"flex items-center " + (isEditing ? "opacity-50 cursor-not-allowed" : "")}>
-                    <div className={"relative w-9 h-5 rounded-full transition-colors " + (entry.isItemPurchase ? "bg-indigo-500" : "bg-gray-300")}>
-                      <div className={"absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform " + (entry.isItemPurchase ? "translate-x-4" : "translate-x-0.5")} />
-                    </div>
-                  </button>
-                </div>
+              {/* Items and Split used to stack, so switching either one on pushed
+                  the amount fields a screenful further down. They now share a
+                  card with a segmented switcher.
 
-                {entry.isItemPurchase && isEditing && (
-                  <div className="mt-3 mb-2 p-2 rounded-lg bg-amber-50 border border-amber-200">
-                    <p className="text-[11px] text-amber-700">🔒 Item details locked. Contact receiver to modify processed items.</p>
-                  </div>
-                )}
-                {entry.isItemPurchase && (
-                  <div className={"mt-3 space-y-3 " + (isEditing ? "pointer-events-none opacity-70" : "")}>
-                    {entry.items.map(function (im, iIdx) {
-                      var key = idx + '_' + iIdx
-                      var lineTotal = (Number(im.itemQty) || 0) * (Number(im.itemRate) || 0)
-                      var editingIdx = entry._editingItemIdx == null ? -1 : entry._editingItemIdx
-                      var expanded = !isItemComplete(im) || editingIdx === iIdx
-                      if (!expanded) {
+                  They are NOT made mutually exclusive: item_receipts and
+                  expense_allocations are written independently at submit, so
+                  buying items AND splitting the cost across departments is a
+                  real case. The tab only chooses which panel you are looking
+                  at; a dot on the other tab shows it is still switched on. */}
+              {(function () {
+                var panel = entry._panel === 'split' ? 'split' : 'items'
+                var tabs = [
+                  { k: 'items', label: 'Items', icon: 'box', on: entry.isItemPurchase },
+                  { k: 'split', label: 'Split', icon: 'split', on: entry.showAllocations },
+                ]
+                return (
+                  <div className="border border-slate-200 rounded-xl bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+                    {/* One pill slides between the two tabs rather than each tab
+                        painting its own background on click -- the movement is
+                        what tells you which way you just went. */}
+                    {/* Pinned: the Items panel runs long enough that the
+                        switch back to Split scrolls off the top, and you had
+                        to scroll up to find out which panel you were even in.
+                        Offset comes from the shell, not a hardcoded height —
+                        the admin shell has no top bar. */}
+                    {/* The strip spans the card and carries the divider, so
+                        the tabs read as this panel's tabs. The control itself
+                        is capped inside it — at full width two tabs became two
+                        enormous buttons. Opaque, because content scrolls
+                        underneath it while it is pinned.
+
+                        No overflow-hidden on the card above: it would pin this
+                        to a box that scrolls away, which is the one thing the
+                        sticky is here to prevent. */}
+                    <div className="sticky z-20 p-1.5 bg-white border-b border-slate-200 rounded-t-xl"
+                      style={{ top: 'var(--app-header-h, 0px)' }}>
+                    <div className="relative flex gap-1 p-1 bg-slate-100 rounded-lg sm:max-w-xs">
+                      <span
+                        aria-hidden="true"
+                        className="absolute top-1 bottom-1 left-1 w-[calc(50%-0.25rem)] rounded-md bg-white shadow-sm transition-transform duration-200 ease-out motion-reduce:transition-none"
+                        style={{ transform: panel === 'split' ? 'translateX(calc(100% + 0.25rem))' : 'translateX(0)' }}
+                      />
+                      {tabs.map(function (tb) {
+                        var active = panel === tb.k
                         return (
-                          <div key={im._key} className="border border-indigo-100 rounded-lg bg-white px-3 py-2 flex items-center gap-2">
-                            <span className="text-[10px] font-bold text-indigo-700 flex-shrink-0">#{iIdx + 1}</span>
-                            <button type="button" onClick={function () { if (!isEditing) setItemEditing(idx, iIdx) }}
-                              className={"flex-1 min-w-0 flex items-center gap-2 text-left " + (isEditing ? "cursor-default" : "hover:opacity-70")}>
-                              <div className="min-w-0 flex-1">
-                                <p className="text-xs font-semibold text-gray-800 truncate">
-                                  {im.itemQuery}
-                                  {im.itemMode === 'new' ? (
-                                    <span className="ml-1.5 text-[9px] font-bold text-amber-600">✦ New</span>
-                                  ) : (im.itemMatchedId && <span className="ml-1.5 text-[9px] font-bold text-green-600">✓</span>)}
-                                </p>
-                                <p className="text-[10px] text-gray-500 truncate">
-                                  {im.itemQty} {im.itemUnit} × {Number(im.itemRate).toLocaleString('en-IN')} pts{im.itemNotes ? ' · ' + im.itemNotes : ''}
-                                </p>
-                              </div>
-                              <span className="text-xs font-bold text-indigo-700 flex-shrink-0 tabular-nums">{lineTotal.toLocaleString('en-IN', { maximumFractionDigits: 2 })} pts</span>
-                            </button>
-                            {entry.items.length > 1 && !isEditing && (
-                              <button type="button" onClick={function () { removeItem(idx, iIdx) }}
-                                className="text-xs px-2 py-0.5 rounded bg-red-50 text-red-500 hover:bg-red-100 flex-shrink-0" title="Remove item">✕</button>
-                            )}
-                          </div>
+                          <button
+                            key={tb.k}
+                            type="button"
+                            onClick={function () { updateEntry(idx, '_panel', tb.k) }}
+                            aria-pressed={active}
+                            className={"relative flex-1 inline-flex items-center justify-center gap-1.5 py-1.5 rounded-md text-[12px] font-semibold transition-colors " +
+                              (active ? "text-indigo-700" : "text-slate-500 hover:text-slate-900")}
+                          >
+                            <Icon name={tb.icon} size={13} />
+                            {tb.label}
+                            {tb.on && <span className="w-1.5 h-1.5 rounded-full bg-indigo-500" />}
+                          </button>
                         )
-                      }
-                      return (
-                        <div key={im._key} className="border border-indigo-200 rounded-lg bg-white p-3 space-y-2.5">
-                          <div className="flex items-center justify-between">
-                            <span className="text-[11px] font-bold text-indigo-700">Item #{iIdx + 1}</span>
-                            <div className="flex items-center gap-2">
-                              <button type="button" onClick={function () { toggleItemMode(idx, iIdx) }}
-                                className="flex items-center gap-1.5" title={im.itemMode === 'new' ? 'Switch to inventory search' : 'Create as new item'}>
-                                <span className="text-[10px] font-bold text-gray-500">{im.itemMode === 'new' ? '✦ New Item' : '📦 Inventory'}</span>
-                                <div className={"relative w-9 h-5 rounded-full transition-colors " + (im.itemMode === 'new' ? "bg-amber-400" : "bg-indigo-500")}>
-                                  <div className={"absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform " + (im.itemMode === 'new' ? "translate-x-4" : "translate-x-0.5")} />
+                      })}
+                    </div>
+                    </div>
+                    {/* keyed on `panel` so the slide-in animation replays on every switch */}
+                    <div className="p-2.5">
+                      <div key={panel} className={panel === 'split' ? 'ambria-slide-left' : 'ambria-slide-right'}>
+                        {panel === 'items' ? (
+                          <div>
+                            {/* Tinted panel, not a bare row: this is the switch
+                                that changes what the rest of the card asks for,
+                                so it reads as its own decision. */}
+                            <div className={"flex items-center justify-between gap-3 rounded-xl px-2.5 py-2 border transition-colors " + (entry.isItemPurchase ? "bg-indigo-50/70 border-indigo-200" : "bg-slate-50 border-slate-200")}>
+                              <div className="flex items-center gap-2.5 min-w-0">
+                                <span className={"shrink-0 w-9 h-9 rounded-xl inline-flex items-center justify-center transition-colors " + (entry.isItemPurchase ? "bg-indigo-600 text-white" : "bg-white text-slate-400 border border-slate-200")}>
+                                  <Icon name="box" size={17} />
+                                </span>
+                                <div className="min-w-0">
+                                  <label className="block text-[12.5px] font-semibold text-slate-800">Item select</label>
+                                  <p className="text-[10px] text-slate-500 mt-0.5 leading-snug">Item enters inventory via receiver</p>
+                                </div>
+                              </div>
+                              <button type="button" onClick={function () { toggleItemPurchase(idx) }} disabled={isEditing} className={"flex items-center " + (isEditing ? "opacity-50 cursor-not-allowed" : "")}>
+                                <div className={"relative w-9 h-5 rounded-full transition-colors " + (entry.isItemPurchase ? "bg-indigo-600" : "bg-slate-300")}>
+                                  <div className={"absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform " + (entry.isItemPurchase ? "translate-x-4" : "translate-x-0.5")} />
                                 </div>
                               </button>
-                              {entry.items.length > 1 && (
-                                <button type="button" onClick={function () { removeItem(idx, iIdx) }}
-                                  className="text-xs px-2 py-0.5 rounded bg-red-50 text-red-500 hover:bg-red-100" title="Remove item">✕</button>
-                              )}
                             </div>
-                          </div>
 
-                          {im.itemMode === 'new' ? (
-                            <div className="space-y-2">
-                              <div>
-                                <label className="block text-xs font-medium text-gray-600 mb-1">Item Name <span className="text-red-500">*</span></label>
-                                <input type="text" value={im.itemQuery}
-                                  onChange={function (e) { updateItem(idx, iIdx, 'itemQuery', e.target.value) }}
-                                  placeholder="Item name (e.g. A4 Sheets, Broom, Chair)" maxLength="200"
-                                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-300 bg-white" style={{ fontSize: '16px' }} />
+                            {entry.isItemPurchase && isEditing && (
+                              <div className="mt-3 mb-2 p-2 rounded-lg bg-amber-50 border border-amber-200">
+                                <p className="flex items-start gap-1.5 text-[11px] text-amber-700">
+                                  <Icon name="lock" className="w-3.5 h-3.5 shrink-0 mt-px" />
+                                  Item details locked. Contact receiver to modify processed items.
+                                </p>
                               </div>
-                              <div>
-                                <label className="block text-xs font-medium text-gray-600 mb-1">Category <span className="text-gray-400">(optional)</span></label>
-                                <select value={im.itemMatchedCategoryId || ''}
-                                  onChange={function (e) { updateItem(idx, iIdx, 'itemMatchedCategoryId', e.target.value ? Number(e.target.value) : null) }}
-                                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-indigo-300" style={{ fontSize: '16px' }}>
-                                  <option value="">Category (optional)</option>
-                                  {itemCategories.map(function (c) { return <option key={c.id} value={String(c.id)}>{c.name}</option> })}
-                                </select>
-                              </div>
-                            </div>
-                          ) : (
-                            <div className="relative">
-                              <label className="block text-xs font-medium text-gray-600 mb-1">Item Name <span className="text-red-500">*</span>{im.itemMatchedId && <span className="ml-2 text-[10px] font-bold text-green-600">✓ Matched existing</span>}</label>
-                              <input type="text" value={im.itemQuery}
-                                onChange={function (e) { updateItem(idx, iIdx, 'itemQuery', e.target.value); searchInventoryItems(idx, iIdx, e.target.value) }}
-                                onFocus={function () { if (im.itemQuery && im.itemQuery.length >= 2) searchInventoryItems(idx, iIdx, im.itemQuery) }}
-                                placeholder="Search or type new item name..."
-                                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-300 bg-white" style={{ fontSize: '16px' }} />
-                              {itemSearchKey === key && itemMatches.length > 0 && (
-                                <div className="absolute z-20 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-56 overflow-y-auto">
-                                  {itemMatches.map(function (m) {
+                            )}
+                            {entry.isItemPurchase && (
+                              <div className={"mt-3 space-y-3 " + (isEditing ? "pointer-events-none opacity-70" : "")}>
+                                {entry.items.map(function (im, iIdx) {
+                                  var key = idx + '_' + iIdx
+                                  var lineTotal = (Number(im.itemQty) || 0) * (Number(im.itemRate) || 0)
+                                  // Default 0, not -1: a fresh form should show item 1
+                                  // open rather than a collapsed, empty chip.
+                                  var editingIdx = entry._editingItemIdx == null ? 0 : entry._editingItemIdx
+                                  var complete = isItemComplete(im)
+                                  // Only the item being edited stays open, so adding a new one
+                                  // folds the previous away even when it is half-filled. With
+                                  // nothing being edited (a fresh form, or after a failed
+                                  // submit) incomplete items open up so the gaps are visible.
+                                  // Force-expanding incomplete items made an unfinished
+                                  // item impossible to fold. They now collapse like any
+                                  // other and carry an "Incomplete" badge on the chip.
+                                  var expanded = editingIdx === iIdx
+                                  if (!expanded) {
                                     return (
-                                      <button key={m._source + '_' + m.id} type="button"
-                                        onMouseDown={function (evt) { evt.preventDefault(); pickItemMatch(idx, iIdx, m) }}
-                                        className="w-full text-left px-3 py-2 hover:bg-indigo-50 border-b border-gray-50 last:border-0">
-                                        <div className="text-sm text-gray-800 font-medium truncate">{m.name}</div>
-                                        <div className="text-[10px] text-gray-400">{m._source === 'catering_store' ? 'Catering Store' : 'Inventory'}{m.unit ? ' · ' + m.unit : ''}</div>
-                                      </button>
+                                      <div key={im._key} className={"border rounded-xl bg-white px-3 py-2.5 flex items-center gap-2 " + (complete ? "border-slate-200" : "border-amber-300")}>
+                                        <span className="shrink-0 text-[10px] font-bold uppercase tracking-[0.1em] text-slate-400">{iIdx + 1}</span>
+                                        <button type="button" onClick={function () { if (!isEditing) setItemEditing(idx, iIdx) }}
+                                          className={"flex-1 min-w-0 flex items-center gap-2 text-left " + (isEditing ? "cursor-default" : "hover:opacity-70")}>
+                                          <div className="min-w-0 flex-1">
+                                            <p className="flex items-center gap-1.5 text-[13px] font-semibold text-slate-900 truncate">
+                                              {im.itemQuery ? im.itemQuery : <span className="font-normal text-slate-400">Unnamed item</span>}
+                                              {im.itemMode === 'new'
+                                                ? <Icon name="sparkle" className="w-3 h-3 shrink-0 text-slate-400" />
+                                                : (im.itemMatchedId && <Icon name="check" className="w-3 h-3 shrink-0 text-indigo-600" />)}
+                                            </p>
+                                            <p className="text-[11px] text-slate-500 truncate">
+                                              {(Number(im.itemQty) || 0)} {im.itemUnit} × {(Number(im.itemRate) || 0).toLocaleString('en-IN')} pts{im.itemNotes ? ' · ' + im.itemNotes : ''}
+                                            </p>
+                                          </div>
+                                          {/* A folded item must still admit it is unfinished, or the
+                                              gap only surfaces on submit. */}
+                                          {complete ? (
+                                            <span className="shrink-0 text-[13px] font-bold text-slate-900 tabular-nums">{lineTotal.toLocaleString('en-IN', { maximumFractionDigits: 2 })} pts</span>
+                                          ) : (
+                                            <span className="shrink-0 text-[9.5px] font-bold uppercase tracking-[0.08em] px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 ring-1 ring-amber-300/70">Incomplete</span>
+                                          )}
+                                        </button>
+                                        {!isEditing && (
+                                          <button type="button" onClick={function () { removeItem(idx, iIdx) }}
+                                            className="shrink-0 w-6 h-6 flex items-center justify-center rounded-lg text-red-500 hover:bg-red-50 hover:text-red-600 transition-colors" title="Delete item" aria-label="Delete item"><Icon name="trash" className="w-4 h-4" /></button>
+                                        )}
+                                      </div>
                                     )
-                                  })}
-                                </div>
-                              )}
-                              {im.itemQuery && !im.itemMatchedId && itemMatches.length === 0 && itemSearchKey === key && im.itemQuery.length >= 2 && (
-                                <p className="text-[10px] text-amber-600 mt-1">No match — receiver will create as new inventory item</p>
-                              )}
-                            </div>
-                          )}
+                                  }
+                                  return (
+                                    // Focusing a field claims this item as the one being edited,
+                                    // so filling in the last value does not fold the card away
+                                    // from under the caret.
+                                    <div key={im._key} className="ambria-rise border border-slate-200 rounded-xl bg-white p-3 space-y-2.5"
+                                      onFocusCapture={function () { if (editingIdx !== iIdx && !isEditing) setItemEditing(idx, iIdx) }}>
+                                      <div className="flex items-center justify-between">
+                                        <span className="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-500">{'Item ' + (iIdx + 1)}</span>
+                                        <div className="flex items-center gap-2">
+                                          <button type="button" onClick={function () { toggleItemMode(idx, iIdx) }}
+                                            className="flex items-center gap-1.5" title={im.itemMode === 'new' ? 'Switch to inventory search' : 'Create as new item'}>
+                                            <span className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-[0.06em] text-slate-500">
+                                              <Icon name={im.itemMode === 'new' ? 'sparkle' : 'box'} className="w-3.5 h-3.5" />
+                                              {im.itemMode === 'new' ? 'New' : 'Inventory'}
+                                            </span>
+                                            <div className={"relative w-9 h-5 rounded-full transition-colors " + (im.itemMode === 'new' ? "bg-slate-400" : "bg-indigo-600")}>
+                                              <div className={"absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform " + (im.itemMode === 'new' ? "translate-x-4" : "translate-x-0.5")} />
+                                            </div>
+                                          </button>
+                                          <button type="button" onClick={function () { removeItem(idx, iIdx) }}
+                                            className="w-6 h-6 flex items-center justify-center rounded-lg text-red-500 hover:bg-red-50 hover:text-red-600 transition-colors" title="Delete item" aria-label="Delete item"><Icon name="trash" className="w-4 h-4" /></button>
+                                        </div>
+                                      </div>
 
-                          {/* Qty + Unit */}
-                          <div className="grid grid-cols-2 gap-2">
-                            <div>
-                              <label className="block text-xs font-medium text-gray-600 mb-1">Qty <span className="text-red-500">*</span></label>
-                              <input type="number" inputMode="numeric" value={im.itemQty}
-                                onChange={function (e) { updateItem(idx, iIdx, 'itemQty', e.target.value) }}
-                                placeholder="0" min="0" step="any"
-                                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-300 bg-white" style={{ fontSize: '16px' }} />
-                            </div>
-                            <div>
-                              <label className="block text-xs font-medium text-gray-600 mb-1">Unit</label>
-                              <select value={im.itemUnit}
-                                onChange={function (e) { updateItem(idx, iIdx, 'itemUnit', e.target.value) }}
-                                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-indigo-300" style={{ fontSize: '16px' }}>
-                                {['Pieces', 'Nos', 'Sets', 'Pairs', 'Dozens', 'Kg', 'Grams', 'Liters', 'ML', 'Meters', 'Feet', 'Rolls', 'Packets', 'Bags', 'Boxes', 'Cartons', 'Bottles', 'Sheets', 'Reams'].map(function (u) {
-                                  return <option key={u} value={u}>{u}</option>
+                                      {im.itemMode === 'new' ? (
+                                        <div className="space-y-2">
+                                          <div>
+                                            <label className="block text-[11px] font-semibold text-slate-600 mb-1">Item Name <span className="text-red-500">*</span></label>
+                                            <input type="text" value={im.itemQuery}
+                                              onChange={function (e) { updateItem(idx, iIdx, 'itemQuery', e.target.value) }}
+                                              placeholder="Item name (e.g. A4 Sheets, Broom, Chair)" maxLength="200"
+                                              className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-xl text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-shadow" style={{ fontSize: '16px' }} />
+                                          </div>
+                                          <div>
+                                            <label className="block text-[11px] font-semibold text-slate-600 mb-1">Category <span className="text-slate-500">(optional)</span></label>
+                                            <select value={im.itemMatchedCategoryId || ''}
+                                              onChange={function (e) { updateItem(idx, iIdx, 'itemMatchedCategoryId', e.target.value ? Number(e.target.value) : null) }}
+                                              className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-xl text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-shadow" style={{ fontSize: '16px' }}>
+                                              <option value="">Category (optional)</option>
+                                              {itemCategories.map(function (c) { return <option key={c.id} value={String(c.id)}>{c.name}</option> })}
+                                            </select>
+                                          </div>
+                                        </div>
+                                      ) : (
+                                        <div className="relative">
+                                          <label className="block text-[11px] font-semibold text-slate-600 mb-1">Item Name <span className="text-red-500">*</span>{im.itemMatchedId && <span className="ml-2 text-[10px] font-bold text-green-600">✓ Matched existing</span>}</label>
+                                          <input type="text" value={im.itemQuery}
+                                            onChange={function (e) { updateItem(idx, iIdx, 'itemQuery', e.target.value); searchInventoryItems(idx, iIdx, e.target.value) }}
+                                            onFocus={function () { if (im.itemQuery && im.itemQuery.length >= 2) searchInventoryItems(idx, iIdx, im.itemQuery) }}
+                                            placeholder="Search or type new item name..."
+                                            className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-xl text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-shadow" style={{ fontSize: '16px' }} />
+                                          {itemSearchKey === key && itemMatches.length > 0 && (
+                                            <div className="absolute z-20 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg max-h-56 overflow-y-auto">
+                                              {itemMatches.map(function (m) {
+                                                return (
+                                                  <button key={m._source + '_' + m.id} type="button"
+                                                    onMouseDown={function (evt) { evt.preventDefault(); pickItemMatch(idx, iIdx, m) }}
+                                                    className="w-full text-left px-3 py-2 hover:bg-indigo-50 border-b border-slate-50 last:border-0">
+                                                    <div className="text-sm text-slate-800 font-medium truncate">{m.name}</div>
+                                                    <div className="text-[10px] text-slate-500">{m._source === 'catering_store' ? 'Catering Store' : 'Inventory'}{m.unit ? ' · ' + m.unit : ''}</div>
+                                                  </button>
+                                                )
+                                              })}
+                                            </div>
+                                          )}
+                                          {im.itemQuery && !im.itemMatchedId && itemMatches.length === 0 && itemSearchKey === key && im.itemQuery.length >= 2 && (
+                                            <p className="text-[10px] text-amber-600 mt-1">No match — receiver will create as new inventory item</p>
+                                          )}
+                                        </div>
+                                      )}
+
+                                      {/* Qty, Unit and Rate are all short values, so they share
+                                          one row; Notes is free text and gets the full width
+                                          underneath rather than being squeezed beside Rate. */}
+                                      <div className="grid grid-cols-3 gap-2">
+                                        <div>
+                                          <label htmlFor={'item-qty-' + idx + '-' + iIdx} className="block text-[11px] font-semibold text-slate-600 mb-1">Qty <span className="text-red-500">*</span></label>
+                                          <input id={'item-qty-' + idx + '-' + iIdx} type="number" inputMode="numeric" value={im.itemQty}
+                                            onChange={function (e) { updateItem(idx, iIdx, 'itemQty', e.target.value) }}
+                                            placeholder="0" min="0" step="any"
+                                            className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-xl text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-shadow" style={{ fontSize: '16px' }} />
+                                        </div>
+                                        <div>
+                                          <label htmlFor={'item-unit-' + idx + '-' + iIdx} className="block text-[11px] font-semibold text-slate-600 mb-1">Unit</label>
+                                          <select id={'item-unit-' + idx + '-' + iIdx} value={im.itemUnit}
+                                            onChange={function (e) { updateItem(idx, iIdx, 'itemUnit', e.target.value) }}
+                                            className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-xl text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-shadow" style={{ fontSize: '16px' }}>
+                                            {['Pieces', 'Nos', 'Sets', 'Pairs', 'Dozens', 'Kg', 'Grams', 'Liters', 'ML', 'Meters', 'Feet', 'Rolls', 'Packets', 'Bags', 'Boxes', 'Cartons', 'Bottles', 'Sheets', 'Reams'].map(function (u) {
+                                              return <option key={u} value={u}>{u}</option>
+                                            })}
+                                          </select>
+                                        </div>
+                                        <div>
+                                          <label htmlFor={'item-rate-' + idx + '-' + iIdx} className="block text-[11px] font-semibold text-slate-600 mb-1">Rate <span className="text-red-500">*</span></label>
+                                          <input id={'item-rate-' + idx + '-' + iIdx} type="number" inputMode="decimal" value={im.itemRate}
+                                            onChange={function (e) { updateItem(idx, iIdx, 'itemRate', e.target.value) }}
+                                            placeholder="0" min="0" step="any"
+                                            className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-xl text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-shadow" style={{ fontSize: '16px' }} />
+                                        </div>
+                                      </div>
+
+                                      <div>
+                                        <label htmlFor={'item-notes-' + idx + '-' + iIdx} className="block text-[11px] font-semibold text-slate-600 mb-1">Notes <span className="font-normal text-slate-500">(brand, size, spec)</span></label>
+                                        {/* Collapse rides the Notes row as a bare arrow. A
+                                            labelled button needed a line of its own, and Notes
+                                            is the last field anyway -- you are already here
+                                            when you finish. The word lives in the tooltip and
+                                            the aria-label. */}
+                                        <div className="flex items-center gap-2">
+                                          <input id={'item-notes-' + idx + '-' + iIdx} type="text" value={im.itemNotes}
+                                            onChange={function (e) { updateItem(idx, iIdx, 'itemNotes', e.target.value) }}
+                                            placeholder="e.g. White ceramic, 10-inch round"
+                                            className="flex-1 min-w-0 px-3 py-2.5 bg-white border border-slate-300 rounded-xl text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-shadow" style={{ fontSize: '16px' }} />
+                                          {!isEditing && (
+                                            <button type="button" onClick={function () { setItemDone(idx) }}
+                                              title={complete ? 'Done — collapse this item' : 'Collapse this item'}
+                                              aria-label={complete ? 'Done, collapse this item' : 'Collapse this item'}
+                                              className={"shrink-0 w-10 h-10 flex items-center justify-center rounded-xl border active:scale-95 transition-all " +
+                                                (complete
+                                                  ? "text-indigo-700 bg-indigo-50 border-indigo-300 hover:bg-indigo-100"
+                                                  : "text-slate-500 bg-white border-slate-300 hover:bg-slate-50 hover:text-slate-900")}>
+                                              <Icon name="chevronUp" className="w-4 h-4" />
+                                            </button>
+                                          )}
+                                        </div>
+                                      </div>
+
+                                      {lineTotal > 0 && (
+                                        <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                                          <span className="min-w-0 text-[11px] font-medium text-slate-500">
+                                            Line total <span className="text-[13px] font-bold text-slate-900 tabular-nums">{lineTotal.toLocaleString('en-IN', { maximumFractionDigits: 2 })} pts</span>
+                                          </span>
+                                        </div>
+                                      )}
+                                    </div>
+                                  )
                                 })}
-                              </select>
-                            </div>
+
+                                <button type="button" onClick={function () { addItem(idx) }}
+                                  className="w-full py-2.5 rounded-xl border-2 border-dashed border-slate-300 text-[12.5px] font-semibold text-slate-600 hover:border-indigo-400 hover:text-indigo-600 transition-colors">
+                                  + Add item
+                                </button>
+                              </div>
+                            )}
                           </div>
-
-                          {/* Notes + Rate */}
-                          <div className="grid grid-cols-3 gap-2">
-                            <div className="col-span-2">
-                              <label className="block text-xs font-medium text-gray-600 mb-1">Notes <span className="text-gray-400">(brand, size, spec)</span></label>
-                              <input type="text" value={im.itemNotes}
-                                onChange={function (e) { updateItem(idx, iIdx, 'itemNotes', e.target.value) }}
-                                placeholder="e.g. White ceramic, 10-inch round"
-                                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-300 bg-white" style={{ fontSize: '16px' }} />
+                        ) : (
+                          <div>
+                              <div className="flex items-center justify-between">
+                                <div>
+                                  <label className="text-[12.5px] font-semibold text-slate-800">Split allocations</label>
+                                  <p className="text-[10px] text-slate-500 mt-0.5">Divide across departments / venues / sub-types</p>
+                                </div>
+                                <button type="button" onClick={function () { toggleShowAllocations(idx) }} className="flex items-center">
+                                  <div className={"relative w-9 h-5 rounded-full transition-colors " + (entry.showAllocations ? "bg-indigo-600" : "bg-slate-300")}>
+                                    <div className={"absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform " + (entry.showAllocations ? "translate-x-4" : "translate-x-0.5")} />
+                                  </div>
+                                </button>
+                              </div>
+                              {entry.showAllocations && <div className="mt-3">{(function () {
+                            var headerWarning = null
+                            var scopedType = entry.expenseTypeId ? expenseTypes.find(function (et) { return String(et.id) === String(entry.expenseTypeId) }) : null
+                            if (scopedType && scopedType.department_id) {
+                              var mismatches = entry.allocations.filter(function (a) { return a.departmentId && Number(a.departmentId) !== scopedType.department_id })
+                              if (mismatches.length > 0) {
+                                var typeDept = departments.find(function (d) { return d.id === scopedType.department_id })
+                                var typeDeptName = typeDept ? typeDept.name : ('dept #' + scopedType.department_id)
+                                // Name the row and the department: the two
+                                // facts that decide whether this is a slip or
+                                // the whole point of the split. Each row below
+                                // carries its own number, so quoting it here
+                                // points straight at the thing to look at.
+                                var mismatchRows = []
+                                entry.allocations.forEach(function (a, i) {
+                                  if (!a.departmentId || Number(a.departmentId) === scopedType.department_id) return
+                                  var d = departments.find(function (x) { return x.id === Number(a.departmentId) })
+                                  mismatchRows.push({ rowNo: i + 1, deptName: d ? d.name : ('dept #' + a.departmentId) })
+                                })
+                                headerWarning = (
+                                  <div className="relative overflow-hidden flex items-start gap-2 pl-3 pr-2.5 py-1.5 bg-white border border-slate-200 rounded-lg">
+                                    <span aria-hidden="true" className="absolute left-0 top-0 bottom-0 w-[3px] bg-amber-500" />
+                                    <span className="shrink-0 mt-[3px] text-amber-600"><Icon name="alert" size={12} /></span>
+                                    <p className="min-w-0 text-[11px] leading-snug text-slate-600">
+                                      <span className="font-bold text-slate-900">Flagged, not blocked</span>
+                                      {' · '}
+                                      <span className="font-semibold text-slate-900">{scopedType.name}</span>
+                                      {' is '}
+                                      <span className={"font-semibold " + deptInk(typeDeptName)}>{typeDeptName}</span>
+                                      {', but '}
+                                      {mismatchRows.map(function (r, i) {
+                                        return (
+                                          <span key={r.rowNo}>
+                                            {i === 0 ? '' : (i === mismatchRows.length - 1 ? ' and ' : ', ')}
+                                            {'Row'}<span data-notranslate>{' ' + r.rowNo}</span>{' is '}
+                                            <span className={"font-semibold " + deptInk(r.deptName)}>{r.deptName}</span>
+                                          </span>
+                                        )
+                                      })}
+                                      .
+                                    </p>
+                                  </div>
+                                )
+                              }
+                            }
+                            return (
+                              <AllocationRows
+                                allocations={entry.allocations}
+                                accent="amber"
+                                headerWarning={headerWarning}
+                                onAdd={function () { addAllocation(idx) }}
+                                onRemove={function (aIdx) { removeAllocation(idx, aIdx) }}
+                                onDuplicate={function (aIdx) { duplicateAllocation(idx, aIdx) }}
+                                isComplete={function (a) { return !!a.departmentId && !!a.venueId && !!a.expenseTypeId && !!a.amountRupees && Number(a.amountRupees) > 0 }}
+                                renderChip={function (a) {
+                                  var v = venues.find(function (x) { return String(x.id) === String(a.venueId) })
+                                  var d = departments.find(function (x) { return String(x.id) === String(a.departmentId) })
+                                  var et = expenseTypes.find(function (x) { return String(x.id) === String(a.expenseTypeId) })
+                                  var st = expenseSubTypes.find(function (x) { return String(x.id) === String(a.expenseSubTypeId) })
+                                  var typeLabel = st ? st.name : (et ? et.name : '')
+                                  var amt = Number(a.amountRupees) || 0
+                                  return {
+                                    left: (
+                                      <>
+                                        {v && <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-indigo-50 text-[10px] font-semibold text-indigo-700 shrink-0">{v.code}</span>}
+                                        {d && <span className={"font-medium truncate " + deptInk(d.name)}>{d.name}</span>}
+                                        {typeLabel && <span className="text-slate-500 shrink-0">›</span>}
+                                        {typeLabel && <span className="text-slate-500 truncate">{typeLabel}</span>}
+                                        {a.remarks && <span className="text-slate-500 truncate italic">· "{a.remarks}"</span>}
+                                      </>
+                                    ),
+                                    right: formatPoints(amt),
+                                  }
+                                }}
+                                renderExpanded={function (alloc, aIdx) {
+                                  var allocDeptId = alloc.departmentId ? Number(alloc.departmentId) : null
+                                  var scopedTypes = allocDeptId ? expenseTypes.filter(function (t) { return t.department_id === allocDeptId }) : []
+                                  var genericTypes = expenseTypes.filter(function (t) { return !t.department_id })
+                                  var allocSubTypeOptions = alloc.expenseTypeId ? expenseSubTypes.filter(function (s) { return s.expense_type_id === Number(alloc.expenseTypeId) }) : []
+                                  var isFallback = !!alloc.expenseTypeId && !!allocDeptId && scopedTypes.findIndex(function (t) { return String(t.id) === String(alloc.expenseTypeId) }) === -1
+                                  return (
+                                    <div className="space-y-1.5">
+                                      <div className="grid grid-cols-2 gap-2">
+                                        <select value={alloc.departmentId}
+                                          onChange={function (e) {
+                                            var newDept = e.target.value
+                                            var pick = pickBestAllocType(entries[idx], newDept)
+                                            setEntries(function (prev) { return prev.map(function (en, i) { if (i !== idx) return en; var copy = Object.assign({}, en); copy.allocations = en.allocations.map(function (a, j) { return j === aIdx ? Object.assign({}, a, { departmentId: newDept, expenseTypeId: pick.expenseTypeId, expenseSubTypeId: pick.expenseSubTypeId, venueId: '' }) : a }); return copy }) })
+                                          }}
+                                          className="w-full min-w-0 px-2.5 py-2 bg-white border border-slate-300 rounded-lg text-[12.5px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-shadow" style={{ fontSize: '16px' }}>
+                                          <option value="">Dept</option>
+                                          {departments.map(function (d) { return <option key={d.id} value={String(d.id)}>{d.name}</option> })}
+                                        </select>
+                                        <select value={alloc.venueId}
+                                          onChange={function (e) { updateAllocation(idx, aIdx, 'venueId', e.target.value) }}
+                                          className="w-full min-w-0 px-2.5 py-2 bg-white border border-slate-300 rounded-lg text-[12.5px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-shadow" style={{ fontSize: '16px' }}>
+                                          <option value="">Venue</option>
+                                          {venues.map(function (v) { return <option key={v.id} value={String(v.id)}>{v.code}</option> })}
+                                        </select>
+                                      </div>
+                                      <div className="grid grid-cols-2 gap-2">
+                                        <select value={alloc.expenseTypeId}
+                                          onChange={function (e) { setEntries(function (prev) { return prev.map(function (en, i) { if (i !== idx) return en; var copy = Object.assign({}, en); copy.allocations = en.allocations.map(function (a, j) { return j === aIdx ? Object.assign({}, a, { expenseTypeId: e.target.value, expenseSubTypeId: '' }) : a }); return copy }) }) }}
+                                          className="w-full min-w-0 px-2.5 py-2 bg-white border border-slate-300 rounded-lg text-[12.5px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-shadow" style={{ fontSize: '16px' }}>
+                                          <option value="">Type</option>
+                                          {scopedTypes.length > 0 && (
+                                            <optgroup label="Dept-specific">
+                                              {scopedTypes.map(function (t) { return <option key={t.id} value={String(t.id)}>{t.name}</option> })}
+                                            </optgroup>
+                                          )}
+                                          {genericTypes.length > 0 && (
+                                            <optgroup label="Generic">
+                                              {genericTypes.map(function (t) { return <option key={t.id} value={String(t.id)}>{t.name}</option> })}
+                                            </optgroup>
+                                          )}
+                                        </select>
+                                        <select value={alloc.expenseSubTypeId}
+                                          onChange={function (e) { updateAllocation(idx, aIdx, 'expenseSubTypeId', e.target.value) }}
+                                          disabled={!alloc.expenseTypeId}
+                                          className="w-full min-w-0 px-2.5 py-2 bg-white border border-slate-300 rounded-lg text-[12.5px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-shadow disabled:bg-slate-100 disabled:text-slate-400 disabled:border-slate-200" style={{ fontSize: '16px' }}>
+                                          <option value="">Sub-type</option>
+                                          {allocSubTypeOptions.map(function (s) { return <option key={s.id} value={String(s.id)}>{s.name}</option> })}
+                                        </select>
+                                      </div>
+                                      <div className="grid grid-cols-2 gap-2">
+                                        <input type="number" inputMode="numeric" value={alloc.amountRupees}
+                                          onChange={function (e) { updateAllocation(idx, aIdx, 'amountRupees', e.target.value) }}
+                                          placeholder="Amt" className="w-full min-w-0 px-2.5 py-2 bg-white border border-slate-300 rounded-lg text-[12.5px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-shadow" style={{ fontSize: '16px' }} />
+                                        <VoiceInput type="text" value={alloc.remarks}
+                                          onChange={function (e) { updateAllocation(idx, aIdx, 'remarks', e.target.value) }}
+                                          placeholder="Remarks" maxLength={200}
+                                          className="w-full min-w-0 px-2.5 py-2 bg-white border border-slate-300 rounded-lg text-[12.5px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-shadow" />
+                                      </div>
+                                      {isFallback && (
+                                        <p className="text-[10px] text-amber-700 font-medium">⚠ No dept-specific match — using generic/top-level type</p>
+                                      )}
+                                    </div>
+                                  )
+                                }}
+                              />
+                            )
+                          })()}</div>}
                             </div>
-                            <div>
-                              <label className="block text-xs font-medium text-gray-600 mb-1">Rate (pts) <span className="text-red-500">*</span></label>
-                              <input type="number" inputMode="decimal" value={im.itemRate}
-                                onChange={function (e) { updateItem(idx, iIdx, 'itemRate', e.target.value) }}
-                                placeholder="0" min="0" step="any"
-                                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-300 bg-white" style={{ fontSize: '16px' }} />
-                            </div>
-                          </div>
-
-                          {lineTotal > 0 && (
-                            <div className="flex items-center justify-end pt-1 border-t border-gray-100">
-                              <span className="text-[11px] text-gray-500">Line total:&nbsp;</span>
-                              <span className="text-xs font-bold text-indigo-700">{lineTotal.toLocaleString('en-IN', { maximumFractionDigits: 2 })} pts</span>
-                            </div>
-                          )}
-                        </div>
-                      )
-                    })}
-
-                    <button type="button" onClick={function () { addItem(idx) }}
-                      className="w-full py-2 rounded-lg border-2 border-dashed border-indigo-300 text-indigo-600 text-xs font-semibold hover:bg-indigo-50 transition-colors">
-                      + Add Item
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              {/* Allocations — behind toggle (available in both plain + Item Select modes) */}
-              <div className={"border rounded-lg p-3 transition-colors " + (entry.showAllocations ? "border-amber-200 bg-amber-50/40" : "border-gray-100 bg-gray-50")}>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <label className="text-xs font-semibold text-gray-700">🎯 Split Allocations</label>
-                      <p className="text-[10px] text-gray-400 mt-0.5">Divide across departments / venues / sub-types</p>
+                        )}
+                      </div>
                     </div>
-                    <button type="button" onClick={function () { toggleShowAllocations(idx) }} className="flex items-center">
-                      <div className={"relative w-9 h-5 rounded-full transition-colors " + (entry.showAllocations ? "bg-amber-500" : "bg-gray-300")}>
-                        <div className={"absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform " + (entry.showAllocations ? "translate-x-4" : "translate-x-0.5")} />
-                      </div>
-                    </button>
                   </div>
-                  {entry.showAllocations && <div className="mt-3">{(function () {
-                var headerWarning = null
-                var scopedType = entry.expenseTypeId ? expenseTypes.find(function (et) { return String(et.id) === String(entry.expenseTypeId) }) : null
-                if (scopedType && scopedType.department_id) {
-                  var mismatches = entry.allocations.filter(function (a) { return a.departmentId && Number(a.departmentId) !== scopedType.department_id })
-                  if (mismatches.length > 0) {
-                    var typeDept = departments.find(function (d) { return d.id === scopedType.department_id })
-                    headerWarning = (
-                      <div className="px-2.5 py-1.5 bg-amber-50 border border-amber-300 rounded-md text-[11px] text-amber-800">
-                        ⚠️ Type "{scopedType.name}" is scoped to <b>{typeDept?.name || ('dept #' + scopedType.department_id)}</b>, but {mismatches.length} allocation{mismatches.length > 1 ? 's use' : ' uses'} a different dept. Allowed but flagged for review.
-                      </div>
-                    )
-                  }
-                }
-                return (
-                  <AllocationRows
-                    allocations={entry.allocations}
-                    accent="amber"
-                    headerWarning={headerWarning}
-                    onAdd={function () { addAllocation(idx) }}
-                    onRemove={function (aIdx) { removeAllocation(idx, aIdx) }}
-                    onDuplicate={function (aIdx) { duplicateAllocation(idx, aIdx) }}
-                    isComplete={function (a) { return !!a.departmentId && !!a.venueId && !!a.expenseTypeId && !!a.amountRupees && Number(a.amountRupees) > 0 }}
-                    renderChip={function (a) {
-                      var v = venues.find(function (x) { return String(x.id) === String(a.venueId) })
-                      var d = departments.find(function (x) { return String(x.id) === String(a.departmentId) })
-                      var et = expenseTypes.find(function (x) { return String(x.id) === String(a.expenseTypeId) })
-                      var st = expenseSubTypes.find(function (x) { return String(x.id) === String(a.expenseSubTypeId) })
-                      var typeLabel = st ? st.name : (et ? et.name : '')
-                      var amt = Number(a.amountRupees) || 0
-                      return {
-                        left: (
-                          <>
-                            {v && <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-indigo-50 text-[10px] font-semibold text-indigo-700 shrink-0">{v.code}</span>}
-                            {d && <span className="text-gray-700 font-medium truncate">{d.name}</span>}
-                            {typeLabel && <span className="text-gray-400 shrink-0">›</span>}
-                            {typeLabel && <span className="text-gray-500 truncate">{typeLabel}</span>}
-                            {a.remarks && <span className="text-gray-400 truncate italic">· "{a.remarks}"</span>}
-                          </>
-                        ),
-                        right: formatPoints(amt),
-                      }
-                    }}
-                    renderExpanded={function (alloc, aIdx) {
-                      var allocDeptId = alloc.departmentId ? Number(alloc.departmentId) : null
-                      var scopedTypes = allocDeptId ? expenseTypes.filter(function (t) { return t.department_id === allocDeptId }) : []
-                      var genericTypes = expenseTypes.filter(function (t) { return !t.department_id })
-                      var allocSubTypeOptions = alloc.expenseTypeId ? expenseSubTypes.filter(function (s) { return s.expense_type_id === Number(alloc.expenseTypeId) }) : []
-                      var isFallback = !!alloc.expenseTypeId && !!allocDeptId && scopedTypes.findIndex(function (t) { return String(t.id) === String(alloc.expenseTypeId) }) === -1
-                      return (
-                        <div className="space-y-1.5">
-                          <div className="grid grid-cols-2 gap-2">
-                            <select value={alloc.departmentId}
-                              onChange={function (e) {
-                                var newDept = e.target.value
-                                var pick = pickBestAllocType(entries[idx], newDept)
-                                setEntries(function (prev) { return prev.map(function (en, i) { if (i !== idx) return en; var copy = Object.assign({}, en); copy.allocations = en.allocations.map(function (a, j) { return j === aIdx ? Object.assign({}, a, { departmentId: newDept, expenseTypeId: pick.expenseTypeId, expenseSubTypeId: pick.expenseSubTypeId, venueId: '' }) : a }); return copy }) })
-                              }}
-                              className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs bg-white focus:ring-2 focus:ring-amber-300" style={{ fontSize: '16px' }}>
-                              <option value="">Dept</option>
-                              {departments.map(function (d) { return <option key={d.id} value={String(d.id)}>{d.name}</option> })}
-                            </select>
-                            <select value={alloc.venueId}
-                              onChange={function (e) { updateAllocation(idx, aIdx, 'venueId', e.target.value) }}
-                              className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs bg-white focus:ring-2 focus:ring-amber-300" style={{ fontSize: '16px' }}>
-                              <option value="">Venue</option>
-                              {venues.map(function (v) { return <option key={v.id} value={String(v.id)}>{v.code}</option> })}
-                            </select>
-                          </div>
-                          <div className="grid grid-cols-2 gap-2">
-                            <select value={alloc.expenseTypeId}
-                              onChange={function (e) { setEntries(function (prev) { return prev.map(function (en, i) { if (i !== idx) return en; var copy = Object.assign({}, en); copy.allocations = en.allocations.map(function (a, j) { return j === aIdx ? Object.assign({}, a, { expenseTypeId: e.target.value, expenseSubTypeId: '' }) : a }); return copy }) }) }}
-                              className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs bg-white focus:ring-2 focus:ring-amber-300" style={{ fontSize: '16px' }}>
-                              <option value="">Type</option>
-                              {scopedTypes.length > 0 && (
-                                <optgroup label="Dept-specific">
-                                  {scopedTypes.map(function (t) { return <option key={t.id} value={String(t.id)}>{t.name}</option> })}
-                                </optgroup>
-                              )}
-                              {genericTypes.length > 0 && (
-                                <optgroup label="Generic">
-                                  {genericTypes.map(function (t) { return <option key={t.id} value={String(t.id)}>{t.name}</option> })}
-                                </optgroup>
-                              )}
-                            </select>
-                            <select value={alloc.expenseSubTypeId}
-                              onChange={function (e) { updateAllocation(idx, aIdx, 'expenseSubTypeId', e.target.value) }}
-                              disabled={!alloc.expenseTypeId}
-                              className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs bg-white focus:ring-2 focus:ring-amber-300 disabled:bg-gray-100 disabled:text-gray-400" style={{ fontSize: '16px' }}>
-                              <option value="">Sub-type</option>
-                              {allocSubTypeOptions.map(function (s) { return <option key={s.id} value={String(s.id)}>{s.name}</option> })}
-                            </select>
-                          </div>
-                          <div className="grid grid-cols-2 gap-2">
-                            <input type="number" inputMode="numeric" value={alloc.amountRupees}
-                              onChange={function (e) { updateAllocation(idx, aIdx, 'amountRupees', e.target.value) }}
-                              placeholder="Amt" className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs focus:ring-2 focus:ring-amber-300" style={{ fontSize: '16px' }} />
-                            <VoiceInput type="text" value={alloc.remarks}
-                              onChange={function (e) { updateAllocation(idx, aIdx, 'remarks', e.target.value) }}
-                              placeholder="Remarks" maxLength={200}
-                              className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs focus:ring-2 focus:ring-amber-300" />
-                          </div>
-                          {isFallback && (
-                            <p className="text-[10px] text-amber-700 font-medium">⚠ No dept-specific match — using generic/top-level type</p>
-                          )}
-                        </div>
-                      )
-                    }}
-                  />
                 )
-              })()}</div>}
-                </div>
+              })()}
 
               {/* Amount + GST + Gross Total — bottom */}
-              <div className="border border-amber-200 rounded-lg bg-amber-50/40 p-3 space-y-2">
+              <div className="border border-slate-200 rounded-xl bg-slate-50 p-3 space-y-2">
                 {entry.isItemPurchase && (
-                  <p className="text-[10px] text-amber-700 font-semibold">Amount auto-calculated from items × rate</p>
+                  <p className="text-[10px] font-semibold text-slate-500">Amount auto-calculated from items × rate</p>
                 )}
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-2 lg:grid-cols-[minmax(0,17rem)_minmax(0,17rem)] gap-3">
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Amount (pts) <span className="text-red-500">*</span></label>
-                    <input type="number" inputMode="decimal"
+                    <label htmlFor={'exp-amount-' + idx} className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-600 mb-1">
+                      <span className="shrink-0 w-5 h-5 rounded-md bg-indigo-50 text-indigo-500 inline-flex items-center justify-center"><Icon name="banknote" size={11} /></span>
+                      Amount (pts) <span className="text-red-500">*</span>
+                    </label>
+                    <input id={'exp-amount-' + idx} type="number" inputMode="decimal"
                       value={entry.isItemPurchase ? computeItemsTotal(entry).toString() : entry.amount}
                       onChange={function (e) { if (!entry.isItemPurchase) updateEntry(idx, 'amount', e.target.value) }}
                       readOnly={entry.isItemPurchase}
                       placeholder="0" min="0" step="any"
-                      className={"w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-amber-300 " + (entry.isItemPurchase ? "border-amber-200 bg-amber-100/60 text-gray-700 font-semibold cursor-not-allowed" : "border-gray-200 bg-white")}
+                      className={"w-full px-3 py-2.5 border rounded-xl text-[13px] tabular-nums focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-shadow " + (entry.isItemPurchase ? "border-slate-300 bg-slate-100 text-slate-600 font-semibold cursor-not-allowed" : "border-slate-300 bg-white text-slate-900 placeholder:text-slate-400")}
                       style={{ fontSize: '16px' }} />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">GST Amount (pts)</label>
-                    <input type="number" inputMode="decimal" value={entry.taxAmount}
+                    <label htmlFor={'exp-gst-' + idx} className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-600 mb-1">
+                      <span className="shrink-0 w-5 h-5 rounded-md bg-indigo-50 text-indigo-500 inline-flex items-center justify-center"><Icon name="receipt" size={11} /></span>
+                      GST Amount (pts)
+                    </label>
+                    <input id={'exp-gst-' + idx} type="number" inputMode="decimal" value={entry.taxAmount}
                       onChange={function (e) { updateEntry(idx, 'taxAmount', e.target.value) }}
                       placeholder="0" min="0" step="any"
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-amber-300" style={{ fontSize: '16px' }} />
+                      className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-xl text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-shadow" style={{ fontSize: '16px' }} />
                   </div>
                 </div>
                 {(function () {
@@ -2182,9 +2616,9 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                   var gst = Number(entry.taxAmount) || 0
                   var gross = amt + gst
                   return (
-                    <div className="flex items-center justify-between pt-2 border-t border-amber-200">
-                      <span className="text-xs font-semibold text-gray-600">Gross Total</span>
-                      <span className="text-base font-bold text-amber-800">{gross.toLocaleString('en-IN', { maximumFractionDigits: 2 })} pts</span>
+                    <div className="flex items-center justify-between pt-2 border-t border-slate-200">
+                      <span className="text-xs font-semibold text-slate-600">Gross Total</span>
+                      <span className="text-[17px] font-bold text-slate-900 tabular-nums tracking-[-0.01em]">{gross.toLocaleString('en-IN', { maximumFractionDigits: 2 })} pts</span>
                     </div>
                   )
                 })()}
@@ -2209,30 +2643,30 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                   <div className="border border-indigo-200 rounded-lg bg-indigo-50/40 p-3 space-y-2">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-semibold text-indigo-700">Payment Method</span>
-                      <span className="text-[11px] text-gray-500">Total: {amtRupees.toLocaleString('en-IN', { maximumFractionDigits: 2 })} pts</span>
+                      <span className="text-[11px] text-slate-500">Total: {amtRupees.toLocaleString('en-IN', { maximumFractionDigits: 2 })} pts</span>
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">Cash from Wallet</label>
+                        <label className="block text-[11px] font-semibold text-slate-600 mb-1">Cash from Wallet</label>
                         <input type="number" inputMode="decimal"
                           value={cashRupees ? String(cashRupees) : (split.creditPaise === 0 ? String(amtRupees) : '0')}
                           onChange={function (ev) { setPaymentCash(idx, ev.target.value) }}
                           min="0" step="any"
-                          className={"w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-indigo-300 bg-white " + (wOver ? "border-red-300" : "border-gray-200")}
+                          className={"w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-indigo-300 bg-white " + (wOver ? "border-red-300" : "border-slate-200")}
                           style={{ fontSize: '16px' }} />
                         {walletBalance != null && (
-                          <p className={"text-[11px] mt-1 " + (wOver ? "text-red-600 font-medium" : "text-gray-500")}>
+                          <p className={"text-[11px] mt-1 " + (wOver ? "text-red-600 font-medium" : "text-slate-500")}>
                             Wallet: {(walletBalance / 100).toLocaleString('en-IN', { maximumFractionDigits: 2 })} pts
                           </p>
                         )}
                       </div>
                       <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">Credit to Vendor</label>
+                        <label className="block text-[11px] font-semibold text-slate-600 mb-1">Credit to Vendor</label>
                         <input type="number" inputMode="decimal"
                           value={entry.paymentCreditRupees}
                           onChange={function (ev) { setPaymentCredit(idx, ev.target.value) }}
                           min="0" step="any" placeholder="0"
-                          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-indigo-300"
+                          className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-xl text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-shadow"
                           style={{ fontSize: '16px' }} />
                         {vendorLabel && (
                           <p className="text-[11px] text-indigo-600 mt-1 truncate">→ {vendorLabel}</p>
@@ -2317,13 +2751,13 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                       return (
                         <div className="pt-2 border-t border-indigo-200 space-y-3">
                           <div>
-                            <label className="block text-xs font-medium text-gray-600 mb-2">Pay Credit By <span className="text-red-500">*</span></label>
+                            <label className="block text-[11px] font-semibold text-slate-600 mb-2">Pay Credit By <span className="text-red-500">*</span></label>
                             <div className="flex gap-2">
-                              <label className={"flex-1 flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold border cursor-pointer transition-colors " + (cashChecked ? "bg-indigo-600 text-white border-indigo-600" : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50")}>
+                              <label className={"flex-1 flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold border cursor-pointer transition-colors " + (cashChecked ? "bg-indigo-600 text-white border-indigo-600" : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50")}>
                                 <input type="checkbox" checked={cashChecked} onChange={function () { togglePay('cash') }} className="w-4 h-4" />
                                 <span>💵 Cash</span>
                               </label>
-                              <label className={"flex-1 flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold border cursor-pointer transition-colors " + (bankChecked ? "bg-indigo-600 text-white border-indigo-600" : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50")}>
+                              <label className={"flex-1 flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold border cursor-pointer transition-colors " + (bankChecked ? "bg-indigo-600 text-white border-indigo-600" : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50")}>
                                 <input type="checkbox" checked={bankChecked} onChange={function () { togglePay('bank') }} className="w-4 h-4" />
                                 <span>🏦 Bank</span>
                               </label>
@@ -2337,22 +2771,22 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                                 {cashChecked ? (
                                   <>
                                     <div>
-                                      <label className="block text-xs font-medium text-gray-600 mb-1">Cash Portion (pts) <span className="text-red-500">*</span></label>
+                                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">Cash Portion (pts) <span className="text-red-500">*</span></label>
                                       <input type="number" inputMode="decimal"
                                         value={entry.paymentCreditCashRupees}
                                         onChange={function (ev) { setCashPortion(ev.target.value) }}
                                         min="0" step="any" placeholder="0"
                                         disabled={!bothChecked}
-                                        className={"w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-indigo-300 " + (bothChecked ? "border-gray-200 bg-white" : "border-gray-100 bg-gray-50 text-gray-500")}
+                                        className={"w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-indigo-300 " + (bothChecked ? "border-slate-200 bg-white" : "border-slate-100 bg-slate-50 text-slate-500")}
                                         style={{ fontSize: '16px' }} />
                                     </div>
                                     <div>
-                                      <label className="block text-xs font-medium text-gray-600 mb-1">Cash Due Date <span className="text-red-500">*</span></label>
+                                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">Cash Due Date <span className="text-red-500">*</span></label>
                                       <input type="date"
                                         value={entry.cashDueDate}
                                         min={entry.expenseDate}
                                         onChange={function (ev) { setDate('cashDueDate', ev.target.value) }}
-                                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-indigo-300"
+                                        className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-xl text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-shadow"
                                         style={{ fontSize: '16px' }} />
                                     </div>
                                   </>
@@ -2363,33 +2797,33 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                                 {bankChecked ? (
                                   <>
                                     <div>
-                                      <label className="block text-xs font-medium text-gray-600 mb-1">Bank Portion (pts) <span className="text-red-500">*</span></label>
+                                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">Bank Portion (pts) <span className="text-red-500">*</span></label>
                                       <input type="number" inputMode="decimal"
                                         value={entry.paymentCreditBankRupees}
                                         onChange={function (ev) { setBankPortion(ev.target.value) }}
                                         min="0" step="any" placeholder="0"
                                         disabled={!bothChecked}
-                                        className={"w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-indigo-300 " + (bothChecked ? "border-gray-200 bg-white" : "border-gray-100 bg-gray-50 text-gray-500")}
+                                        className={"w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-indigo-300 " + (bothChecked ? "border-slate-200 bg-white" : "border-slate-100 bg-slate-50 text-slate-500")}
                                         style={{ fontSize: '16px' }} />
                                     </div>
                                     <div>
-                                      <label className="block text-xs font-medium text-gray-600 mb-1">Bank Due Date <span className="text-red-500">*</span></label>
+                                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">Bank Due Date <span className="text-red-500">*</span></label>
                                       <input type="date"
                                         value={entry.bankDueDate}
                                         min={entry.expenseDate}
                                         onChange={function (ev) { setDate('bankDueDate', ev.target.value) }}
-                                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-indigo-300"
+                                        className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-xl text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-shadow"
                                         style={{ fontSize: '16px' }} />
                                     </div>
                                     <div>
-                                      <label className="block text-xs font-medium text-gray-600 mb-1">GST Amount (pts)</label>
+                                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">GST Amount (pts)</label>
                                       <input type="number" inputMode="decimal"
                                         value={entry.taxAmount}
                                         onChange={function (ev) { setBankGst(ev.target.value) }}
                                         min="0" step="any" placeholder="0"
-                                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-indigo-300"
+                                        className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-xl text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-shadow"
                                         style={{ fontSize: '16px' }} />
-                                      <p className="text-[10px] text-gray-500 mt-0.5">Mirrors the GST field above</p>
+                                      <p className="text-[10px] text-slate-500 mt-0.5">Mirrors the GST field above</p>
                                     </div>
                                   </>
                                 ) : null}
@@ -2411,7 +2845,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
 
               {/* Receipt */}
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Receipt <span className="text-red-500">*</span></label>
+                <label className="block text-[11px] font-semibold text-slate-600 mb-1">Receipt <span className="text-red-500">*</span></label>
                 {isEditing && existingReceipts.length > 0 && (function () {
                   var visible = existingReceipts.filter(function (p) { return removedReceipts.indexOf(p) === -1 })
                   var pending = removedReceipts.length
@@ -2462,14 +2896,14 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                         return (
                           <div key={rIdx} className="relative">
                             {isPdf ? (
-                              <div className="h-24 rounded-lg border border-gray-200 bg-gray-50 flex flex-col items-center justify-center text-gray-500 px-1">
+                              <div className="h-24 rounded-lg border border-slate-200 bg-slate-50 flex flex-col items-center justify-center text-slate-500 px-1">
                                 <span className="text-2xl">📄</span>
                                 <span className="text-[10px] truncate max-w-full">{file.name}</span>
                               </div>
                             ) : (
                               <img src={url} alt={"Receipt " + (rIdx + 1)}
                                 onClick={function () { setZoomImg(url) }}
-                                className="h-24 w-full rounded-lg border border-gray-200 object-cover cursor-pointer active:opacity-80" />
+                                className="h-24 w-full rounded-lg border border-slate-200 object-cover cursor-pointer active:opacity-80" />
                             )}
                             <button type="button" onClick={function () { removeReceipt(idx, rIdx) }}
                               className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white rounded-full text-[10px] flex items-center justify-center shadow-sm hover:bg-red-600">✕</button>
@@ -2477,15 +2911,15 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                         )
                       })}
                     </div>
-                    <p className="text-[10px] text-gray-400 text-center mb-2">{entry.receiptFiles.length} receipt{entry.receiptFiles.length > 1 ? 's' : ''} attached · tap image to enlarge</p>
+                    <p className="text-[10px] text-slate-500 text-center mb-2">{entry.receiptFiles.length} receipt{entry.receiptFiles.length > 1 ? 's' : ''} attached · tap image to enlarge</p>
                     <div className="flex gap-2">
-                      <label className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border-2 border-dashed border-gray-300 text-xs text-gray-500 hover:border-amber-400 hover:text-amber-600 cursor-pointer transition-colors">
-                        <span>📁</span><span>+ Add More</span>
+                      <label className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border-2 border-dashed border-slate-300 text-xs text-slate-500 hover:border-indigo-400 hover:text-indigo-600 cursor-pointer transition-colors">
+                        <Icon name="gallery" className="w-4 h-4" /><span>Add more</span>
                         <input type="file" accept="image/*,.pdf" multiple className="hidden"
                           onChange={function (e) { addReceipts(idx, e.target.files); e.target.value = '' }} />
                       </label>
-                      <label className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border-2 border-dashed border-gray-300 text-xs text-gray-500 hover:border-amber-400 hover:text-amber-600 cursor-pointer transition-colors">
-                        <span>📷</span><span>+ Photo</span>
+                      <label className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border-2 border-dashed border-slate-300 text-xs text-slate-500 hover:border-indigo-400 hover:text-indigo-600 cursor-pointer transition-colors">
+                        <Icon name="camera" className="w-4 h-4" /><span>Photo</span>
                         <input type="file" accept="image/*" capture="environment" className="hidden"
                           onChange={function (e) { addReceipts(idx, e.target.files); e.target.value = '' }} />
                       </label>
@@ -2512,37 +2946,37 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                     )}
                     {entry.audioBlobMeta && <div>1 voice note</div>}
                     <div className="flex gap-2 mt-2">
-                      <label className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border-2 border-dashed border-amber-400 text-xs text-amber-700 hover:border-amber-500 cursor-pointer transition-colors">
-                        <span>📁</span><span>Gallery</span>
+                      <label className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border-2 border-dashed border-slate-300 text-[12px] font-semibold text-slate-600 hover:border-indigo-400 hover:text-indigo-600 cursor-pointer transition-colors">
+                        <Icon name="gallery" className="w-[18px] h-[18px]" /><span>Gallery</span>
                         <input type="file" accept="image/*,.pdf" multiple className="hidden"
                           onChange={function (e) { addReceipts(idx, e.target.files); e.target.value = '' }} />
                       </label>
-                      <label className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border-2 border-dashed border-amber-400 text-xs text-amber-700 hover:border-amber-500 cursor-pointer transition-colors">
-                        <span>📷</span><span>Camera</span>
+                      <label className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border-2 border-dashed border-slate-300 text-[12px] font-semibold text-slate-600 hover:border-indigo-400 hover:text-indigo-600 cursor-pointer transition-colors">
+                        <Icon name="camera" className="w-[18px] h-[18px]" /><span>Camera</span>
                         <input type="file" accept="image/*" capture="environment" className="hidden"
                           onChange={function (e) { addReceipts(idx, e.target.files); e.target.value = '' }} />
                       </label>
                       <button type="button" onClick={function () { startRecording(idx) }}
-                        className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border-2 border-dashed border-amber-400 text-xs text-amber-700 hover:border-amber-500 transition-colors">
-                        <span>🎙</span><span>Voice</span>
+                        className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border-2 border-dashed border-slate-300 text-[12px] font-semibold text-slate-600 hover:border-indigo-400 hover:text-indigo-600 transition-colors">
+                        <Icon name="mic" className="w-[18px] h-[18px]" /><span>Voice</span>
                       </button>
                     </div>
                   </div>
                 ) : (
-                  <div className="flex gap-2">
-                    <label className="flex-1 flex items-center justify-center gap-1.5 py-3 rounded-lg border-2 border-dashed border-gray-300 text-sm text-gray-500 hover:border-amber-400 hover:text-amber-600 cursor-pointer transition-colors">
-                      <span>📁</span><span>Gallery</span>
+                  <div className="flex gap-2 lg:max-w-3xl">
+                    <label className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg border-2 border-dashed border-slate-300 text-sm text-slate-500 hover:border-indigo-400 hover:text-indigo-600 cursor-pointer transition-colors">
+                      <Icon name="gallery" className="w-[18px] h-[18px]" /><span>Gallery</span>
                       <input type="file" accept="image/*,.pdf" multiple className="hidden"
                         onChange={function (e) { addReceipts(idx, e.target.files); e.target.value = '' }} />
                     </label>
-                    <label className="flex-1 flex items-center justify-center gap-1.5 py-3 rounded-lg border-2 border-dashed border-gray-300 text-sm text-gray-500 hover:border-amber-400 hover:text-amber-600 cursor-pointer transition-colors">
-                      <span>📷</span><span>Camera</span>
+                    <label className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg border-2 border-dashed border-slate-300 text-sm text-slate-500 hover:border-indigo-400 hover:text-indigo-600 cursor-pointer transition-colors">
+                      <Icon name="camera" className="w-[18px] h-[18px]" /><span>Camera</span>
                       <input type="file" accept="image/*" capture="environment" className="hidden"
                         onChange={function (e) { addReceipts(idx, e.target.files); e.target.value = '' }} />
                     </label>
                     <button type="button" onClick={function () { startRecording(idx) }}
-                      className="flex-1 flex items-center justify-center gap-1.5 py-3 rounded-lg border-2 border-dashed border-gray-300 text-sm text-gray-500 hover:border-blue-400 hover:text-blue-600 transition-colors">
-                      <span>🎙</span><span>Voice</span>
+                      className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg border-2 border-dashed border-slate-300 text-sm text-slate-500 hover:border-indigo-400 hover:text-indigo-600 transition-colors">
+                      <Icon name="mic" className="w-[18px] h-[18px]" /><span>Voice</span>
                     </button>
                   </div>
                 )}
@@ -2571,15 +3005,28 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
         var shortPts = ((totalWalletSpend - effAvail) / 100).toLocaleString('en-IN', { maximumFractionDigits: 2 })
         var availPts = (effAvail / 100).toLocaleString('en-IN', { maximumFractionDigits: 2 })
         return (
-          <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-sm">
-            ⚠ Wallet will go negative. Available: {availPts} pts. Short by {shortPts} pts. Submit will proceed anyway.
+          /* Red, not amber: a negative wallet already renders red on the home
+             card and in the expense list, so the warning that you are about to
+             cause one should speak the same colour. */
+          <div className="flex items-start gap-2.5 p-3 rounded-xl bg-red-50 border border-red-300">
+            <Icon name="alert" className="w-4 h-4 shrink-0 mt-0.5 text-red-600" />
+            <div className="min-w-0">
+              <p className="text-[13px] font-semibold text-red-900 leading-snug">Wallet will go negative</p>
+              {/* The two figures were buried mid-sentence; they are the only part
+                  of this warning anyone reads, so they get their own line. */}
+              <p className="mt-1.5 flex flex-wrap items-baseline gap-x-4 gap-y-1 text-[12px] text-red-800">
+                <span>Available <span className="font-semibold tabular-nums">{availPts} pts</span></span>
+                <span>Short by <span className="font-bold tabular-nums text-red-900">{shortPts} pts</span></span>
+              </p>
+              <p className="mt-1.5 text-[11px] text-red-700">You can still submit — this is a warning, not a block.</p>
+            </div>
           </div>
         )
       })()}
 
       {/* Inline error card — sits right above the Submit button, always visible, easy screenshot */}
       {error && error.indexOf('Insufficient wallet balance') === -1 && (
-        <div className="p-3 rounded-lg bg-red-50 border-2 border-red-300 text-red-800 text-sm shadow-sm">
+        <div ref={errorRef} className="ambria-rise p-3 rounded-xl bg-red-50 border border-red-300 text-red-800 text-sm">
           <div className="flex items-start justify-between gap-2 mb-1.5">
             <span className="font-bold uppercase text-[10px] tracking-wider text-red-600">Submit failed</span>
             <div className="flex gap-1.5 flex-shrink-0">
@@ -2606,27 +3053,43 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
         </div>
       )}
 
-      {/* Add entry + Submit bar */}
-      <div className="flex gap-3">
-        {!isEditing && (
-          <button type="button" onClick={addEntry}
-            className="flex-1 py-2.5 rounded-xl border-2 border-dashed border-amber-300 text-amber-700 font-medium text-sm hover:bg-amber-50 transition-colors">
-            + Add Another Expense
+      {/* Add entry + Submit bar. Sticky to the bottom of the viewport: the form
+          runs several screens long, and having to scroll all the way down to
+          reach Submit was the single worst thing about filling it in. The
+          negative margins let it sit flush against the viewport edges while the
+          form itself stays inside its padded column. */}
+      <div className="ambria-glass sticky bottom-0 z-30 -mx-4 px-4 pt-3 pb-3 border-t border-slate-200 shadow-[0_-4px_16px_rgba(15,23,42,0.06)]">
+        <div className="flex gap-3">
+          {!isEditing && (
+            <button type="button" onClick={addEntry}
+              className="flex-1 inline-flex items-center justify-center gap-1.5 py-2.5 rounded-xl border-2 border-dashed border-slate-300 text-[13px] font-semibold text-slate-600 bg-white hover:border-indigo-400 hover:text-indigo-600 transition-colors">
+              {/* The "+" is an icon now, not a character in the label: the
+                  extractor treats a string containing a bare + as code and
+                  skipped it, so "+ Add another" never reached the dictionary. */}
+              <Icon name="plus" size={14} strokeWidth={2.4} />
+              Add another
+            </button>
+          )}
+          <button type="button" onClick={handleSubmit} disabled={saving}
+            className={'flex-1 inline-flex items-center justify-center gap-2 py-2.5 rounded-xl font-semibold text-[13px] text-white transition-all ' +
+              (saving
+                ? 'bg-slate-400 cursor-not-allowed'
+                : 'bg-gradient-to-b from-indigo-500 to-indigo-600 shadow-[0_2px_8px_rgba(79,70,229,0.30)] hover:from-indigo-600 hover:to-indigo-700 active:scale-[0.98]')}>
+            <Icon name={saving ? 'refresh' : 'send'} size={15} />
+            {saving
+              ? (isEditing ? 'Updating…' : 'Submitting…')
+              : isAdminEdit ? 'Update type'
+              : isEditing ? 'Update expense'
+              : (
+                <>
+                  Submit
+                  {entries.length > 1 && <span data-notranslate className="tabular-nums opacity-80">{" · " + entries.length}</span>}
+                </>
+              )}
+            {!saving && <Icon name="arrowRight" size={14} className="opacity-70" />}
           </button>
-        )}
-        <button type="button" onClick={handleSubmit} disabled={saving}
-          className={'flex-1 py-2.5 rounded-xl font-semibold text-sm text-white shadow-sm transition-all ' +
-            (saving ? 'bg-gray-400 cursor-not-allowed' : 'bg-amber-600 hover:bg-amber-700 active:scale-[0.98]')}>
-          {saving ? (isEditing ? 'Updating...' : 'Submitting...') : (isAdminEdit ? 'Update Type' : (isEditing ? 'Update Expense' : ('Submit ' + entries.length + ' Expense' + (entries.length > 1 ? 's' : ''))))}
-        </button>
+        </div>
       </div>
-      {!isEditing && draftSavedAt && (
-        <p className="text-[10px] text-gray-400 text-center -mt-2">
-          💾 Draft saved · {formatDraftAge(draftSavedAt + draftTick * 0)}
-          <button type="button" onClick={discardDraft}
-            className="ml-2 text-red-500 hover:text-red-700 underline">clear</button>
-        </p>
-      )}
 
       {zoomImg && createPortal((
         <div onClick={function () { setZoomImg('') }}

@@ -4,6 +4,7 @@ import { useRealtime } from '../../lib/useRealtime'
 import { logActivity } from '../../lib/logger'
 import { formatPoints } from '../../lib/format'
 import PaySalaryModal from '../employees/PaySalaryModal'
+import SearchField from '../../components/ui/SearchField'
 
 function SalaryPayouts({ profile }) {
   var perms = (profile && profile.permissions) || []
@@ -293,10 +294,12 @@ function SalaryPayouts({ profile }) {
 
       {/* Filters */}
       <div className="flex flex-col sm:flex-row gap-2 print:hidden">
-        <input type="text" value={search} onChange={function (e) { setSearch(e.target.value) }}
+        <SearchField
+          value={search}
+          onChange={function (v) { setSearch(v) }}
           placeholder="Search employee..."
-          className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-300 bg-white"
-          style={{ fontSize: '16px' }} />
+          className="flex-1"
+        />
         <input type="number" value={minStaleDays} onChange={function (e) { setMinStaleDays(e.target.value) }}
           placeholder="Min stale days" min="0"
           className="w-full sm:w-40 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-300 bg-white"

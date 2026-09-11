@@ -1,3 +1,5 @@
+import { deptCls } from '../../lib/ui'
+
 var BADGE_COLORS = {
   green:  'bg-green-100 text-green-700',
   blue:   'bg-blue-100 text-blue-700',
@@ -13,6 +15,15 @@ function Badge({ color, children }) {
   return (
     <span className={"inline-block px-2 py-0.5 rounded-full text-xs font-medium " + (BADGE_COLORS[color] || BADGE_COLORS.gray)}>
       {children}
+    </span>
+  )
+}
+
+function DeptChip({ name, className }) {
+  if (!name) return null
+  return (
+    <span className={"inline-flex items-center px-1.5 py-0.5 rounded-full border text-[10px] font-bold uppercase tracking-wide whitespace-nowrap " + deptCls(name) + (className ? ' ' + className : '')}>
+      {name}
     </span>
   )
 }
@@ -46,4 +57,4 @@ function StatusBadge({ status }) {
   return <Badge color={colorMap[status] || 'gray'}>{status}</Badge>
 }
 
-export { Badge, TypeBadge, StatusBadge }
+export { Badge, TypeBadge, StatusBadge, DeptChip }

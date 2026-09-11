@@ -4,6 +4,8 @@ import { formatPoints, formatDate, formatDateTime } from '../../lib/format'
 import EventDatePicker from '../../components/ui/EventDatePicker'
 import { hasPerm } from '../../lib/permissions'
 import { useExpenseDetailModal } from '../../hooks/useExpenseDetailModal.jsx'
+import { deptOrder } from '../../lib/ui'
+import { DeptChip } from '../../components/ui/Badge'
 
 var ENTRY_TYPES = [
   { key: 'all', label: 'All' },
@@ -15,20 +17,9 @@ var ENTRY_TYPES = [
 
 var EVT_COLS = 'id, event_name, function_date, venue_name, client_name, session, department, created_user_name, contract_no, agreed_cash_paise, agreed_bank_paise'
 
-function _deptOrder(d) {
-  if (d === 'Venue') return 0
-  if (d === 'Decor') return 1
-  if (d === 'Catering') return 2
-  if (d === 'Entertainment') return 3
-  return 9
-}
-function _deptCls(d) {
-  if (d === 'Venue') return 'bg-blue-100 text-blue-700'
-  if (d === 'Decor') return 'bg-purple-100 text-purple-700'
-  if (d === 'Catering') return 'bg-amber-100 text-amber-700'
-  if (d === 'Entertainment') return 'bg-pink-100 text-pink-700'
-  return 'bg-gray-100 text-gray-600'
-}
+// Running order comes from lib/ui so this screen cannot drift from the events
+// list or the expense picker; the colour rides along inside <DeptChip>.
+var _deptOrder = deptOrder
 function _groupKey(f) {
   return (f.client_name || '') + '|' + (f.function_date || '') + '|' + (f.venue_name || '') + '|' + (f.session || '')
 }
@@ -270,7 +261,7 @@ function EventLedger(props) {
                           {g.contracts.map(function (c) {
                             return (
                               <div key={c.id} className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px]">
-                                {c.department && <span className={"text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full " + _deptCls(c.department)}>{c.department}</span>}
+                                <DeptChip name={c.department} />
                                 {c.contract_no && <span className="text-gray-500 font-mono">#{c.contract_no}</span>}
                                 {c.created_user_name && <span className="text-gray-400">· by {c.created_user_name}</span>}
                               </div>
@@ -353,7 +344,7 @@ function EventLedger(props) {
                     <tr key={c.id} className="border-b border-gray-100 last:border-b-0">
                       <td className="px-3 py-2">
                         <div className="flex flex-wrap items-center gap-2">
-                          {c.department && <span className={"text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full " + _deptCls(c.department)}>{c.department}</span>}
+                          <DeptChip name={c.department} />
                           {c.contract_no && <span className="text-gray-500 font-mono">#{c.contract_no}</span>}
                           {c.created_user_name && <span className="text-[11px] text-gray-400">· by {c.created_user_name}</span>}
                         </div>
@@ -489,9 +480,7 @@ function EventLedger(props) {
                         </td>
                         <td className="px-3 py-2 text-xs text-gray-700">
                           {multiContract && contractByEventId[e.event_id] && contractByEventId[e.event_id].department && (
-                            <span className={"inline-block text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full mr-2 " + _deptCls(contractByEventId[e.event_id].department)}>
-                              {contractByEventId[e.event_id].department}
-                            </span>
+                            <DeptChip name={contractByEventId[e.event_id].department} className="mr-2" />
                           )}
                           {e.description || '—'}
                           {e._creatorName && <div className="text-[10px] text-gray-400 mt-0.5">by {e._creatorName}</div>}

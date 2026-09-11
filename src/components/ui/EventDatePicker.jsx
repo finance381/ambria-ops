@@ -1,6 +1,7 @@
 import { useState, useEffect, useLayoutEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { supabase } from '../../lib/supabase'
+import Icon from './Icon'
 
 var DAY_NAMES = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
 
@@ -22,7 +23,7 @@ var VENUE_COLORS = {
 }
 var DEFAULT_DOT_COLOR = '#6366F1'
 
-function EventDatePicker({ value, onChange, label, collapsible, includePast, triggerStyle }) {
+function EventDatePicker({ value, onChange, label, collapsible, includePast, triggerStyle, plain }) {
   var today = new Date()
   var initDate = value ? new Date(value + 'T00:00:00') : today
   var [viewYear, setViewYear] = useState(initDate.getFullYear())
@@ -80,7 +81,7 @@ function EventDatePicker({ value, onChange, label, collapsible, includePast, tri
   var [eventDates, setEventDates] = useState({})
   var [loading, setLoading] = useState(false)
 
-  useEffect(function () { fetchEventDates() }, [viewYear, viewMonth])
+  useEffect(function () { if (!plain) fetchEventDates() }, [viewYear, viewMonth, plain])
   useEffect(function () {
     if (value) { var d = new Date(value + 'T00:00:00'); if (!isNaN(d)) { setViewYear(d.getFullYear()); setViewMonth(d.getMonth()) } }
   }, [value])
@@ -168,9 +169,9 @@ function EventDatePicker({ value, onChange, label, collapsible, includePast, tri
       {collapsible && (
         <button type="button" ref={btnRef} onClick={function () { setOpen(!open) }}
           style={triggerStyle}
-          className={"w-full flex items-center justify-between px-3 py-2 border rounded-lg text-sm " + (value ? "border-indigo-300 bg-indigo-50 text-gray-900 font-medium" : "border-gray-200 text-gray-400")}>
-          <span>{value ? new Date(value + 'T00:00:00').getDate() + ' ' + shortMonths[new Date(value + 'T00:00:00').getMonth()] + ' ' + new Date(value + 'T00:00:00').getFullYear() : 'Select date'}</span>
-          <span className="text-[10px] text-gray-400">{open ? '▲' : '▼'}</span>
+          className={"w-full flex items-center justify-between gap-2 px-3 py-2.5 border rounded-xl text-[13px] transition-shadow " + (value ? "border-indigo-300 bg-indigo-50 text-slate-900 font-semibold" : "border-slate-300 bg-white text-slate-500")}>
+          <span className="truncate">{value ? new Date(value + 'T00:00:00').getDate() + ' ' + shortMonths[new Date(value + 'T00:00:00').getMonth()] + ' ' + new Date(value + 'T00:00:00').getFullYear() : 'Select date'}</span>
+          <span className={"shrink-0 " + (value ? "text-indigo-500" : "text-slate-400")}><Icon name="calendar" size={14} /></span>
         </button>
       )}
       {open && (function () {
@@ -232,7 +233,7 @@ function EventDatePicker({ value, onChange, label, collapsible, includePast, tri
                 <button type="button" onClick={function () { selectDate(cell.dateStr) }}
                   className={baseClass + colorClass}>
                   {cell.day}
-                  {hasEvent && (
+                  {hasEvent && !plain && (
                     <span className="absolute bottom-0 flex gap-px justify-center">
                       {venues.slice(0, 3).map(function (v, vi) {
                         return <span key={vi} className="w-1.5 h-1.5 rounded-full" style={{ background: isSelected ? '#fff' : (VENUE_COLORS[v] || DEFAULT_DOT_COLOR) }} />
@@ -245,20 +246,23 @@ function EventDatePicker({ value, onChange, label, collapsible, includePast, tri
           })}
         </div>
 
-        {/* Legend + clear */}
+        {/* Legend + clear. In plain mode there are no dots to explain, so the
+            footer is only worth drawing when there is a date to clear. */}
+        {(!plain || value) && (
         <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-100">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="w-1.5 h-1.5 rounded-full" style={{ background: '#6B21A8' }} /><span className="text-[10px] text-gray-400">AP</span>
+            {!plain && <><span className="w-1.5 h-1.5 rounded-full" style={{ background: '#6B21A8' }} /><span className="text-[10px] text-gray-400">AP</span>
             <span className="w-1.5 h-1.5 rounded-full" style={{ background: '#16A34A' }} /><span className="text-[10px] text-gray-400">AM</span>
             <span className="w-1.5 h-1.5 rounded-full" style={{ background: '#EA580C' }} /><span className="text-[10px] text-gray-400">AE</span>
             <span className="w-1.5 h-1.5 rounded-full" style={{ background: '#DC2626' }} /><span className="text-[10px] text-gray-400">AR</span>
-            {loading && <span className="text-[10px] text-gray-300 ml-1">...</span>}
+            {loading && <span className="text-[10px] text-gray-300 ml-1">...</span>}</>}
           </div>
           {value && (
             <button type="button" onClick={function () { onChange('') }}
               className="text-[11px] text-red-500 font-medium hover:text-red-700 transition-colors">Clear</button>
           )}
         </div>
+        )}
         </div>
       )
       return collapsible ? createPortal(panel, document.body) : panel

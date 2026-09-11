@@ -6,6 +6,7 @@ import { registerPdfFont } from '../../lib/pdfFont'
 import { hasPerm } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
 import { useExpenseDetailModal } from '../../hooks/useExpenseDetailModal.jsx'
+import SearchField from '../../components/ui/SearchField'
 
 var STATUS_LABELS = { recorded: 'Recorded', flagged: 'Resubmit', acknowledged: 'Acknowledged', deducted: 'Deducted' }
 var STATUS_COLORS = {
@@ -846,9 +847,12 @@ function Ledgers({ profile }) {
           )}
         </div>
 
-        <input type="text" value={search} onChange={function (e) { setSearch(e.target.value) }}
+        <SearchField
+          value={search}
+          onChange={function (v) { setSearch(v) }}
           placeholder="Search dept / type / sub-type..."
-          className="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-xs" style={{ fontSize: '16px' }} />
+          className="w-full"
+        />
 
         <div className="flex flex-wrap gap-1.5 items-center">
           <select value={userFilter} onChange={function (e) { setUserFilter(e.target.value) }}

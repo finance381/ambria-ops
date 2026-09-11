@@ -6,6 +6,7 @@ import { registerPdfFont } from '../../lib/pdfFont'
 import { useExpenseDetailModal } from '../../hooks/useExpenseDetailModal.jsx'
 import MultiSearchDropdown from '../../components/ui/MultiSearchDropdown'
 import { hasPerm } from '../../lib/permissions'
+import SearchField from '../../components/ui/SearchField'
 
 var PAGE_SIZE = 50
 
@@ -509,10 +510,12 @@ function InventoryLedger({ profile }) {
     <div>
       <div className="mb-3 space-y-2">
         <div className="flex flex-wrap gap-2 items-center">
-          <input type="text" value={search} onChange={function (e) { setSearch(e.target.value) }}
+          <SearchField
+            value={search}
+            onChange={function (v) { setSearch(v) }}
             placeholder="Search items, code, category..."
-            style={{ fontSize: '16px' }}
-            className="flex-1 min-w-[200px] px-3 py-2 border border-gray-200 rounded-lg" />
+            className="flex-1 min-w-[200px]"
+          />
           <button onClick={exportCSV} className="px-3 py-2 text-xs font-bold bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100">📊 CSV</button>
           <button onClick={exportPDF} disabled={exporting} className="px-3 py-2 text-xs font-bold bg-red-50 text-red-700 border border-red-200 rounded-lg hover:bg-red-100 disabled:opacity-50">📄 {exporting ? 'PDF...' : 'PDF'}</button>
         </div>
