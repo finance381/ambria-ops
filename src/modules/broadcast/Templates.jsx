@@ -16,6 +16,16 @@ var BUTTON_KINDS = [
 ]
 var MAX_BUTTONS = 10
 
+// WhatsApp template header media limits (Meta's current published specs) — shown next
+// to the upload button so nobody has to go look these up mid-upload.
+var HEADER_ACCEPT = { image: 'image/jpeg,image/png', video: 'video/mp4,video/3gpp', document: 'application/pdf' }
+var HEADER_MAX_BYTES = { image: 5 * 1024 * 1024, video: 16 * 1024 * 1024, document: 100 * 1024 * 1024 }
+var HEADER_SPEC_TEXT = {
+  image: 'JPEG or PNG, max 5 MB. Landscape ~1.91:1 (e.g. 1200×628) previews best — WhatsApp doesn\'t hard-enforce a resolution.',
+  video: 'MP4 or 3GPP, H.264 video + AAC audio, max 16 MB.',
+  document: 'PDF only for template headers, max 100 MB — keep it small (a few MB) for a fast preview.',
+}
+
 // From lg up the three columns each own their height and scroll internally,
 // so the page itself never moves. Sticky was the earlier attempt and is gone:
 // with the page fixed there is nothing to stick to.
@@ -180,6 +190,8 @@ function Templates({ profile }) {
   var [error, setError] = useState('')
   var [notice, setNotice] = useState('')
   var [btnMenu, setBtnMenu] = useState(false)
+  var [uploadingMedia, setUploadingMedia] = useState(false)
+  var [mediaUploadError, setMediaUploadError] = useState('')
 
   function loadTemplates() {
     setLoading(true)
@@ -215,6 +227,24 @@ function Templates({ profile }) {
   function openNew() {
     setError(''); setNotice('')
     setForm(emptyForm())
+  }
+
+  async function handleMediaUpload(file) {
+    if (!file) return
+    setMediaUploadError('')
+    var maxBytes = HEADER_MAX_BYTES[form.header_type]
+    if (maxBytes && file.size > maxBytes) {
+      setMediaUploadError('Too large — max ' + Math.round(maxBytes / (1024 * 1024)) + ' MB for a ' + form.header_type + ' header.')
+      return
+    }
+    setUploadingMedia(true)
+    var ext = ((file.name || '').split('.').pop() || 'bin').toLowerCase()
+    var path = form.header_type + '/' + Date.now() + '_' + Math.random().toString(36).slice(2, 8) + '.' + ext
+    var { error: upErr } = await supabase.storage.from('broadcast-media').upload(path, file, { upsert: true })
+    setUploadingMedia(false)
+    if (upErr) { setMediaUploadError('Upload failed: ' + upErr.message); return }
+    var publicUrl = supabase.storage.from('broadcast-media').getPublicUrl(path).data?.publicUrl
+    setForm(Object.assign({}, form, { header_content: publicUrl || path }))
   }
 
   function duplicateTemplate() {
@@ -456,7 +486,7 @@ function Templates({ profile }) {
         <div className={form.header_type ? "grid grid-cols-1 sm:grid-cols-2 gap-3" : ""}>
           <Field icon="gallery" label="Header Type" hint="Select header type for your template">
             <select disabled={!canEdit || isLocked} value={form.header_type}
-              onChange={function (ev) { setForm(Object.assign({}, form, { header_type: ev.target.value })) }}
+              onChange={function (ev) { setMediaUploadError(''); setForm(Object.assign({}, form, { header_type: ev.target.value, header_content: '' })) }}
               className={CTRL}>
               <option value="">None</option>
               <option value="text">Text</option>
@@ -465,12 +495,34 @@ function Templates({ profile }) {
               <option value="document">Document</option>
             </select>
           </Field>
-          {form.header_type && (
-            <Field icon="edit" label="Header Content" hint={form.header_type === 'text' ? 'Shown in bold above the body' : 'Storage path or public URL'}>
+          {form.header_type === 'text' && (
+            <Field icon="edit" label="Header Content" hint="Shown in bold above the body">
               <input type="text" disabled={!canEdit || isLocked} value={form.header_content}
                 onChange={function (ev) { setForm(Object.assign({}, form, { header_content: ev.target.value })) }}
-                placeholder={form.header_type === 'text' ? 'Header text' : 'Storage path / URL'}
+                placeholder="Header text"
                 className={CTRL} />
+            </Field>
+          )}
+          {form.header_type && form.header_type !== 'text' && (
+            <Field icon="paperclip" label="Header Content" bareField hint={HEADER_SPEC_TEXT[form.header_type]}>
+              <div className="flex items-center gap-2">
+                <label className={"inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-[12.5px] font-bold whitespace-nowrap transition-colors " +
+                  ((!canEdit || isLocked || uploadingMedia) ? "bg-slate-100 text-slate-400 cursor-not-allowed" : "bg-indigo-50 text-indigo-700 hover:bg-indigo-100 cursor-pointer")}>
+                  <Icon name="paperclip" size={13} />
+                  {uploadingMedia ? 'Uploading…' : 'Upload ' + form.header_type}
+                  <input type="file" className="hidden" disabled={!canEdit || isLocked || uploadingMedia}
+                    accept={HEADER_ACCEPT[form.header_type]}
+                    onChange={function (ev) { handleMediaUpload(ev.target.files[0]); ev.target.value = '' }} />
+                </label>
+                {form.header_content && (
+                  <span className="text-[12px] text-slate-500 truncate flex-1">{form.header_content.split('/').pop()}</span>
+                )}
+                {form.header_content && canEdit && !isLocked && (
+                  <button type="button" onClick={function () { setForm(Object.assign({}, form, { header_content: '' })) }}
+                    className="text-[12px] font-semibold text-red-500 hover:text-red-700 shrink-0">Remove</button>
+                )}
+              </div>
+              {mediaUploadError && <p className="text-[11.5px] text-red-600 mt-1">{mediaUploadError}</p>}
             </Field>
           )}
         </div>
@@ -764,7 +816,15 @@ function Templates({ profile }) {
               <p className="text-[13px] font-bold text-slate-900">{form.header_content}</p>
             )}
             {form.header_type && form.header_type !== 'text' && (
-              <div className="w-full h-24 bg-slate-100 rounded flex items-center justify-center text-[10px] font-semibold text-slate-400 uppercase tracking-wide">{form.header_type}</div>
+              form.header_content && form.header_type === 'image' ? (
+                <img src={form.header_content} alt="Header" className="w-full h-24 object-cover rounded" />
+              ) : form.header_content && form.header_type === 'video' ? (
+                <video src={form.header_content} className="w-full h-24 object-cover rounded" controls />
+              ) : form.header_content && form.header_type === 'document' ? (
+                <div className="w-full h-12 bg-slate-100 rounded flex items-center justify-center gap-1 text-[11px] font-medium text-slate-500 truncate px-2">📄 {form.header_content.split('/').pop()}</div>
+              ) : (
+                <div className="w-full h-24 bg-slate-100 rounded flex items-center justify-center text-[10px] font-semibold text-slate-400 uppercase tracking-wide">{form.header_type}</div>
+              )
             )}
             <p className="text-[13px] text-slate-800 whitespace-pre-wrap leading-snug">{previewBody || 'Body text preview...'}</p>
             {form.footer_text && <p className="text-[11px] text-slate-400">{form.footer_text}</p>}

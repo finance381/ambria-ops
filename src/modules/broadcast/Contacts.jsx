@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { supabase } from '../../lib/supabase'
 import { hasPerm } from '../../lib/permissions'
 import { formatDate } from '../../lib/format'
@@ -207,8 +208,8 @@ function ContactDetailDrawer({ contact, onClose, onChanged }) {
 
   var sess = sessionLabel(contact)
 
-  return (
-    <div className="fixed inset-0 z-[60] bg-white flex flex-col sm:inset-y-0 sm:right-0 sm:left-auto sm:w-[440px] sm:shadow-2xl sm:border-l sm:border-slate-200">
+  return createPortal((
+    <div className="fixed inset-0 z-[9998] bg-white flex flex-col sm:inset-y-0 sm:right-0 sm:left-auto sm:w-[440px] sm:shadow-2xl sm:border-l sm:border-slate-200">
       <div className="shrink-0 flex items-center justify-between gap-2 px-3 py-2.5 bg-slate-50 border-b border-slate-200">
         <button onClick={onClose}
           className="inline-flex items-center gap-1.5 h-8 px-2 -ml-1 rounded-lg text-[13px] font-semibold text-slate-600 hover:bg-white hover:text-slate-900 transition-colors">
@@ -323,7 +324,7 @@ function ContactDetailDrawer({ contact, onClose, onChanged }) {
         )}
       </div>
     </div>
-  )
+  ), document.body)
 }
 
 function Contacts({ profile }) {
@@ -371,20 +372,30 @@ function Contacts({ profile }) {
 
   var filtersOn = !!(search || sourceFilter || optStatusFilter || venueFilter)
 
-  async function pullFromContracts() {
+  async function runPull(fnName, label) {
     if (pulling) return
     setPulling(true); setPullMsg(''); setPullFailed(false)
     var sessionRes = await supabase.auth.getSession()
     var token = sessionRes.data && sessionRes.data.session ? sessionRes.data.session.access_token : null
-    var res = await supabase.functions.invoke('lms-contacts-pull', {
+    var res = await supabase.functions.invoke(fnName, {
       body: {}, headers: token ? { Authorization: 'Bearer ' + token } : {},
     })
     setPulling(false)
     if (res.error) { setPullFailed(true); setPullMsg('Pull failed: ' + res.error.message); return }
     var d = res.data || {}
-    setPullMsg('Pulled ' + d.total_candidates + ' contract contacts — ' + d.inserted + ' new, ' + d.updated + ' updated, ' + d.skipped_invalid_phone + ' invalid phone.')
+    var msg = 'Pulled ' + d.total_candidates + ' ' + label + ' — ' + d.inserted + ' new, ' + d.updated + ' updated, ' + d.skipped_invalid_phone + ' invalid phone.'
+    if (d.errors && d.errors.length > 0) msg += ' (' + d.errors.length + ' department error(s) — see console)'
+    if (d.errors && d.errors.length > 0) console.warn(fnName + ' errors:', d.errors)
+    setPullMsg(msg)
     loadContacts()
   }
+
+  function pullFromContracts() { runPull('lms-contacts-pull', 'contract contacts') }
+  // "Current leads (not dead or waste)" — pulls straight from the LMS's own
+  // lead endpoints (see LMS_Lead_Fetch_Guide.md); the only documented
+  // disposition filter there is cancel_remarks, so "current" excludes
+  // cancelled leads. No local "dead"/"waste" status exists to filter on.
+  function pullFromLeads() { runPull('lms-leads-pull', 'lead contacts') }
 
   // "0 of 0" said nothing when nothing was filtered. Say the plain count, and
   // only mention a subset when the filters are actually narrowing the list.
@@ -404,6 +415,12 @@ function Contacts({ profile }) {
             <button onClick={pullFromContracts} disabled={pulling} className={BTN_GHOST}>
               <Icon name={pulling ? 'refresh' : 'download'} size={14} />
               {pulling ? 'Pulling…' : 'Pull from Contracts'}
+            </button>
+          )}
+          {canImport && (
+            <button onClick={pullFromLeads} disabled={pulling} className={BTN_GHOST} title="Current leads, straight from the LMS — excludes cancelled">
+              <Icon name={pulling ? 'refresh' : 'download'} size={14} />
+              {pulling ? 'Pulling…' : 'Pull from Leads'}
             </button>
           )}
           {canImport && (
