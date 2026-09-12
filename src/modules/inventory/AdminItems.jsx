@@ -107,6 +107,7 @@ function AdminItems({ profile }) {
   var [importProgress, setImportProgress] = useState(null) // { done, total, skipped }
   var [importing, setImporting] = useState(false)
   var [exportModal, setExportModal] = useState(false)
+  var [toolsModal, setToolsModal] = useState(false)
   var [bulkImgModal, setBulkImgModal] = useState(null) // { file, matched, unmatched, duplicates, replacing, total }
   var [bulkImgProgress, setBulkImgProgress] = useState(null) // { done, failed, total, failedRows }
   var [bulkImgProcessing, setBulkImgProcessing] = useState(false)
@@ -930,18 +931,8 @@ function AdminItems({ profile }) {
           <button onClick={resetFilters}
             className="px-3 py-2.5 text-sm text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-colors font-medium">✕ Reset</button>
         )}
-        <button onClick={function () { setExportModal(true) }}
-          className="px-3 py-2.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-medium">📥 Export</button>
-        <label className="px-3 py-2.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-medium cursor-pointer">
-          📤 Import
-          <input type="file" accept=".csv" onChange={parseImportFile} className="hidden" />
-        </label>
-        <label className="px-3 py-2.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-medium cursor-pointer">
-          🖼️ Bulk Images
-          <input type="file" accept=".zip,application/zip,application/x-zip-compressed" onChange={parseBulkImageZip} className="hidden" />
-        </label>
-        <button onClick={downloadTemplate}
-          className="px-3 py-2.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-medium">📋 Template</button>
+        <button onClick={function () { setToolsModal(true) }}
+          className="px-3 py-2.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-medium">🧰 Tools</button>
       </div>
 
       {/* Table */}
@@ -1195,6 +1186,45 @@ function AdminItems({ profile }) {
          </div>
        )}
      </Modal>
+     {/* Tools modal — groups Export/Import/Bulk Images/Template behind one button */}
+      <Modal open={toolsModal} onClose={function () { setToolsModal(false) }} title="Inventory Tools">
+        <div className="space-y-2">
+          <button onClick={function () { setToolsModal(false); setExportModal(true) }}
+            className="w-full flex items-center gap-3 p-3 text-left border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
+            <span className="text-xl">📥</span>
+            <span>
+              <span className="block text-sm font-semibold text-gray-800">Export</span>
+              <span className="block text-xs text-gray-500">Download the current filtered list as CSV or PDF</span>
+            </span>
+          </button>
+          <label className="w-full flex items-center gap-3 p-3 text-left border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer">
+            <span className="text-xl">📤</span>
+            <span>
+              <span className="block text-sm font-semibold text-gray-800">Import</span>
+              <span className="block text-xs text-gray-500">Upload a CSV to bulk add/update items</span>
+            </span>
+            <input type="file" accept=".csv" className="hidden"
+              onChange={function (e) { setToolsModal(false); parseImportFile(e) }} />
+          </label>
+          <label className="w-full flex items-center gap-3 p-3 text-left border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer">
+            <span className="text-xl">🖼️</span>
+            <span>
+              <span className="block text-sm font-semibold text-gray-800">Bulk Images</span>
+              <span className="block text-xs text-gray-500">Upload a .zip of photos matched by inventory ID</span>
+            </span>
+            <input type="file" accept=".zip,application/zip,application/x-zip-compressed" className="hidden"
+              onChange={function (e) { setToolsModal(false); parseBulkImageZip(e) }} />
+          </label>
+          <button onClick={function () { downloadTemplate(); setToolsModal(false) }}
+            className="w-full flex items-center gap-3 p-3 text-left border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
+            <span className="text-xl">📋</span>
+            <span>
+              <span className="block text-sm font-semibold text-gray-800">Template</span>
+              <span className="block text-xs text-gray-500">Download a blank CSV with the expected columns</span>
+            </span>
+          </button>
+        </div>
+      </Modal>
      {/* Export modal */}
       <Modal open={exportModal} onClose={function () { setExportModal(false) }} title="Export Inventory">
         <div className="space-y-4">
