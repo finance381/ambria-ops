@@ -456,6 +456,27 @@ function Shell({ profile, onSignOut }) {
             )}
           </div>
 
+          {hasPerm(permsNew, 'finance.wallet') && walletBalance !== null && tab !== 'wallet' && (
+            <button
+              onClick={function () {
+                var fromGroup = activeGroup, fromTab = tab, fromSub = subTab
+                pushBack(function () { setActiveGroup(fromGroup); setTab(fromTab); setSubTab(fromSub) })
+                setActiveGroup('expenses'); setTab('wallet'); setSubTab(null)
+              }}
+              aria-label={'Wallet balance ' + formatPoints(walletBalance) + (walletPending > 0 ? ', ' + walletPending + ' pending' : '')}
+              className={"relative shrink-0 h-8 pl-2 pr-2.5 inline-flex items-center gap-1.5 rounded-lg border text-[11.5px] font-bold tabular-nums active:scale-95 transition-all " +
+                (walletBalance < 0
+                  ? "bg-red-50 border-red-200 text-red-700 hover:bg-red-100"
+                  : "bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100")}
+            >
+              <Icon name="wallet" className="w-[14px] h-[14px]" />
+              <span data-notranslate>{formatPoints(walletBalance)}</span>
+              {walletPending > 0 && (
+                <span aria-hidden="true" className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-amber-500 ring-2 ring-white" />
+              )}
+            </button>
+          )}
+
           {/* Language stays on the bar — it is toggled often enough to earn the width */}
           <div className="flex h-8 shrink-0 bg-slate-100 rounded-lg p-0.5">
             {[{ code: 'en', label: 'EN' }, { code: 'hi', label: 'हिं' }].map(function (l) {
@@ -502,8 +523,31 @@ function Shell({ profile, onSignOut }) {
                     this body-level backdrop despite its higher z-index, so every click
                     on Home/Desktop/Sign out was swallowed by the backdrop instead. */}
                 <div className="fixed inset-0 z-30" onClick={function () { setMenuOpen(false) }} />
-                <div className="fixed z-50 w-48 py-1 bg-white border border-slate-200 rounded-xl shadow-[0_8px_24px_rgba(15,23,42,0.12)] overflow-hidden"
+                <div className="fixed z-50 w-56 pb-1 bg-white border border-slate-200 rounded-xl shadow-[0_8px_24px_rgba(15,23,42,0.12)] overflow-hidden"
                   style={{ top: menuPos.top, right: menuPos.right }}>
+                  {/* Who you are. This was a card on the home screen, spending
+                      ~60px of the phone's first screenful on something you
+                      check once a week — and it belongs beside Sign out, which
+                      is the one action that needs you to be sure whose account
+                      you are in.
+
+                      No email: one account per person, the name already says
+                      which, and the address was the longest string in a column
+                      540px wide.
+
+                      Not a button. Nothing here is tappable — the profile
+                      screen lives under Personal, not behind the avatar. */}
+                  <div className="flex items-center gap-2.5 px-3 py-2.5 bg-slate-50/70 border-b border-slate-100">
+                    <span className="w-8 h-8 shrink-0 rounded-full bg-slate-900 flex items-center justify-center text-[12px] font-bold text-white">
+                      {profile.name?.charAt(0) || '?'}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-[13px] font-semibold text-slate-900 leading-snug truncate">{profile.name}</span>
+                      <span className={"inline-block mt-1 text-[9.5px] px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wider " + (ROLE_COLORS[profile.role] || '')}>
+                        {profile.role}
+                      </span>
+                    </span>
+                  </div>
                   {/* The landing site, not the app root. href="/" happened to
                       reach it on GitHub Pages, where the app is served from
                       /ambria-ops/ under the same user site — but it broke on a
@@ -549,24 +593,9 @@ function Shell({ profile, onSignOut }) {
       </header>
       )}
 
-      {/* User bar — home screen only. Inside a module you already know who you
-          are, and the card cost ~60px of the phone's first screenful. */}
-      {!activeGroup && !tab && (
-      <div className="max-w-[540px] mx-auto px-4 pt-3">
-        <div className="ambria-glass-card rounded-2xl px-3.5 py-2.5 flex items-center gap-3">
-          <div className="w-9 h-9 shrink-0 rounded-full bg-slate-900 flex items-center justify-center text-[13px] font-bold text-white">
-            {profile.name?.charAt(0) || '?'}
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="text-[13.5px] font-semibold text-slate-900 leading-snug truncate">{profile.name}</div>
-            <div className="text-[11.5px] font-medium text-slate-500 leading-snug truncate">{profile.email || ''}</div>
-          </div>
-          <span className={"text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider " + (ROLE_COLORS[profile.role] || '')}>
-            {profile.role}
-          </span>
-        </div>
-      </div>
-      )}
+      {/* The user bar that used to sit here is now the first row of the ⋯
+          menu — same three facts minus the email, none of the vertical cost
+          on the screen you look at most. */}
 
       {/* Success banner */}
       {showSuccess && (
@@ -586,26 +615,8 @@ function Shell({ profile, onSignOut }) {
         {/* Level 0: Group Cards */}
         {!activeGroup && !tab && (
           <>
-            {hasPerm(permsNew, 'finance.wallet') && walletBalance !== null && (
-              <button
-                onClick={function () { setActiveGroup('expenses'); setTab('wallet') }}
-                className={"relative w-full mb-3 rounded-2xl p-3 flex items-center justify-between border active:scale-[0.99] transition-all " + (walletBalance < 0 ? "bg-red-50 border-red-200" : "bg-emerald-50 border-emerald-200")}>
-                <div className="flex items-center gap-3">
-                  <span className={"w-9 h-9 shrink-0 rounded-full flex items-center justify-center " + (walletBalance < 0 ? "bg-red-100 text-red-600" : "bg-emerald-100 text-emerald-600")}>
-                    <Icon name="wallet" className="w-[18px] h-[18px]" />
-                  </span>
-                  <div className="text-left">
-                    <p className={"text-[10px] font-bold uppercase tracking-[0.08em] " + (walletBalance < 0 ? "text-red-500" : "text-emerald-600")}>Wallet Balance</p>
-                    <p className={"text-[17px] font-bold tabular-nums tracking-[-0.01em] " + (walletBalance < 0 ? "text-red-700" : "text-emerald-800")}>{formatPoints(walletBalance)}</p>
-                  </div>
-                </div>
-                {walletPending > 0 && (
-                  <span className="min-w-[24px] h-6 px-2 bg-amber-500 text-white text-[11px] font-bold rounded-full flex items-center justify-center">
-                    {walletPending} pending
-                  </span>
-                )}
-              </button>
-            )}
+          {/* The wallet card that used to head this screen is the chip on
+              the bar now — visible everywhere instead of only here. */}
           <div className="grid grid-cols-2 auto-rows-fr gap-3 pt-2">
             {visibleGroups.map(function (g) {
               var badge = groupBadge(g)
