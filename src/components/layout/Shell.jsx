@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { supabase } from '../../lib/supabase'
 import { ROLE_COLORS } from '../../lib/constants'
@@ -140,6 +140,8 @@ function Shell({ profile, onSignOut }) {
   // its own first page.
   var [subTab, setSubTab] = useState(null)
   var [menuOpen, setMenuOpen] = useState(false)
+  var [menuPos, setMenuPos] = useState(null)
+  var menuBtnRef = useRef(null)
   var [showSuccess, setShowSuccess] = useState(false)
 
   var permsNew = profile.permsNew || []
@@ -477,7 +479,14 @@ function Shell({ profile, onSignOut }) {
               controls ate the width the title needed. */}
           <div className="relative shrink-0">
             <button
-              onClick={function () { setMenuOpen(!menuOpen) }}
+              ref={menuBtnRef}
+              onClick={function () {
+                if (!menuOpen) {
+                  var rect = menuBtnRef.current.getBoundingClientRect()
+                  setMenuPos({ top: rect.bottom + 6, right: window.innerWidth - rect.right })
+                }
+                setMenuOpen(!menuOpen)
+              }}
               aria-label="More options"
               aria-expanded={menuOpen}
               className={"w-9 h-9 flex items-center justify-center rounded-xl transition-all active:scale-95 " +
@@ -485,13 +494,16 @@ function Shell({ profile, onSignOut }) {
             >
               <Icon name="more" className="w-[18px] h-[18px]" />
             </button>
-            {menuOpen && (
+            {menuOpen && menuPos && createPortal(
               <>
-                {createPortal(
-                  <div className="fixed inset-0 z-30" onClick={function () { setMenuOpen(false) }} />,
-                  document.body
-                )}
-                <div className="absolute right-0 top-full mt-1.5 z-50 w-48 py-1 bg-white border border-slate-200 rounded-xl shadow-[0_8px_24px_rgba(15,23,42,0.12)] overflow-hidden">
+                {/* Portalled together with the menu itself, not just this backdrop —
+                    the header's backdrop-filter (frosted glass) makes it a stacking
+                    context, and a menu left behind inside that context painted BELOW
+                    this body-level backdrop despite its higher z-index, so every click
+                    on Home/Desktop/Sign out was swallowed by the backdrop instead. */}
+                <div className="fixed inset-0 z-30" onClick={function () { setMenuOpen(false) }} />
+                <div className="fixed z-50 w-48 py-1 bg-white border border-slate-200 rounded-xl shadow-[0_8px_24px_rgba(15,23,42,0.12)] overflow-hidden"
+                  style={{ top: menuPos.top, right: menuPos.right }}>
                   {/* The landing site, not the app root. href="/" happened to
                       reach it on GitHub Pages, where the app is served from
                       /ambria-ops/ under the same user site — but it broke on a
@@ -529,7 +541,8 @@ function Shell({ profile, onSignOut }) {
                     Sign out
                   </button>
                 </div>
-              </>
+              </>,
+              document.body
             )}
           </div>
         </div>
