@@ -461,7 +461,12 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds, glass }) {
 
       autoTable(doc, {
         startY: fParts.length ? 27 : 25,
-        head: [['Date', 'Voucher', 'User', 'Particulars', 'Debit ₹', 'Credit ₹']],
+        // columnStyles' halign only ever reaches body cells (jspdf-autotable applies
+        // it exclusively to sectionName === 'body'), so the Debit/Credit headers need
+        // their own per-cell halign here to land over the right-aligned figures below.
+        head: [['Date', 'Voucher', 'User', 'Particulars',
+          { content: 'Debit ₹', styles: { halign: 'right' } },
+          { content: 'Credit ₹', styles: { halign: 'right' } }]],
         body: body,
         styles: { font: FONT, fontSize: 8, cellPadding: 1.5, overflow: 'linebreak', valign: 'top' },
         // No blanket halign here — each column's own halign below applies to its
