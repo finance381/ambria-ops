@@ -5,6 +5,7 @@ import { APPROVAL_STATUS_COLORS, APPROVAL_STATUS_LABELS } from '../../lib/consta
 import FilterDropdown from '../../components/ui/FilterDropdown'
 import EventDatePicker from '../../components/ui/EventDatePicker'
 import { registerPdfFont } from '../../lib/pdfFont'
+import { openOrSharePdf } from '../../lib/pdfOutput'
 import { useReferenceData } from '../../lib/referenceData.jsx'
 import { deptInk, STATUS_RAIL } from '../../lib/ui'
 import Icon from '../../components/ui/Icon'
@@ -363,6 +364,15 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds, glass }) {
       var totalDebit = 0
       var totalCredit = 0
 
+      // Parallel to `body` (one entry per real expense row, not the trailing
+      // GRAND TOTAL/NET rows) — didDrawCell below reads these to hand-draw the
+      // Date and Particulars cells instead of relying on autoTable's default
+      // single-style text flow, so the Expense/Entered dates get their own
+      // labeled zones and every allocation amount lands on one right edge
+      // regardless of how long its label is.
+      var dateMeta = []
+      var particularsMeta = []
+
       function fmtAmt(paise) {
         return (paise / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
       }
@@ -380,15 +390,15 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds, glass }) {
         var subTypeName = e.expense_sub_types?.name || ''
         var head = typeName ? typeName + (subTypeName ? ' > ' + subTypeName : '') : 'Expense'
 
-        var lines = [head]
-        if (e.description) lines.push(e.description.trim())
+        var pLines = [{ kind: 'header', text: head }]
+        if (e.description) pLines.push({ kind: 'desc', text: e.description.trim() })
 
         // Vendor + extra_field chips
         var chipParts = []
         if (e.vendor_name) chipParts.push('Vendor: ' + e.vendor_name)
         var chips = extraFieldChips(e, vendorMap)
         chips.forEach(function (c) { chipParts.push(c.label + ': ' + c.value) })
-        if (chipParts.length) lines.push(chipParts.join('  |  '))
+        if (chipParts.length) pLines.push({ kind: 'chip', text: chipParts.join('   ·   ') })
 
         // Per-allocation split
         var allocs = e.expense_allocations || []
@@ -402,22 +412,37 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds, glass }) {
           if (aSubType) parts.push('> ' + aSubType)
           var label = parts.join(' ') || '—'
           if (a.remarks) label = label + ' | ' + a.remarks
-          lines.push('  ' + label + ' — ' + fmtAmt(a.amount_paise || 0))
+          pLines.push({ kind: 'alloc', text: label, amount: fmtAmt(a.amount_paise || 0) })
         })
 
         // Subtotal + GST
         if ((e.tax_paise || 0) > 0) {
           var subtotal = allocs.reduce(function (s, a) { return s + (a.amount_paise || 0) }, 0)
-          lines.push('  Subtotal: ' + fmtAmt(subtotal) + '   GST: ' + fmtAmt(e.tax_paise))
+          pLines.push({ kind: 'foot', text: 'Subtotal ' + fmtAmt(subtotal) + '   GST', amount: fmtAmt(e.tax_paise) })
         }
 
-        if (e.status && e.status !== 'recorded') lines.push('(' + e.status + ')')
+        if (e.status && e.status !== 'recorded') pLines.push({ kind: 'status', text: e.status })
+
+        particularsMeta.push(pLines)
+        dateMeta.push({
+          expense: e.expense_date ? formatDate(e.expense_date) : '—',
+          entry: e.created_at ? formatDateTime(e.created_at) : '',
+        })
+
+        // Plain-text fallback — what actually seeds autoTable's automatic row-height
+        // calculation, and what a reader gets from copy/paste or a screen reader.
+        // The hand-drawn cells below reproduce the same line count.
+        var plainLines = pLines.map(function (l) {
+          if (l.kind === 'alloc' || l.kind === 'foot') return '  ' + l.text + '   ' + l.amount
+          if (l.kind === 'status') return '(' + l.text + ')'
+          return l.text
+        })
 
         body.push([
-          (e.expense_date ? 'Expense: ' + formatDate(e.expense_date) : '') + (e.created_at ? '\nEntry: ' + formatDateTime(e.created_at) : ''),
+          dateMeta[dateMeta.length - 1].expense + '\n\n' + (dateMeta[dateMeta.length - 1].entry ? 'Entered ' + dateMeta[dateMeta.length - 1].entry : ''),
           '#' + e.id,
           nameMap[e.user_id] || '—',
-          lines.join('\n'),
+          plainLines.join('\n'),
           debit ? fmtAmt(debit) : '',
           credit ? fmtAmt(credit) : '',
         ])
@@ -438,17 +463,91 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds, glass }) {
         startY: fParts.length ? 27 : 25,
         head: [['Date', 'Voucher', 'User', 'Particulars', 'Debit ₹', 'Credit ₹']],
         body: body,
-        styles: { font: FONT, fontSize: 8, cellPadding: 1.5, overflow: 'linebreak' },
-        headStyles: { font: FONT, fillColor: [50, 50, 50], textColor: 255, fontStyle: 'bold', halign: 'center' },
+        styles: { font: FONT, fontSize: 8, cellPadding: 1.5, overflow: 'linebreak', valign: 'top' },
+        // No blanket halign here — each column's own halign below applies to its
+        // header too, so "Debit ₹"/"Credit ₹" line up over their numbers instead
+        // of sitting centered above right-aligned figures.
+        headStyles: { font: FONT, fillColor: [50, 50, 50], textColor: 255, fontStyle: 'bold' },
         columnStyles: {
-          0: { cellWidth: 28, fontSize: 7 },
-          1: { cellWidth: 18 },
-          2: { cellWidth: 32 },
-          3: { cellWidth: 'auto' },
-          4: { cellWidth: 28, halign: 'right' },
-          5: { cellWidth: 28, halign: 'right' },
+          0: { cellWidth: 30, fontSize: 7, halign: 'left' },
+          1: { cellWidth: 16, halign: 'left' },
+          2: { cellWidth: 30, halign: 'left' },
+          3: { cellWidth: 'auto', halign: 'left' },
+          4: { cellWidth: 26, halign: 'right' },
+          5: { cellWidth: 26, halign: 'right' },
         },
         margin: { left: 10, right: 10 },
+        // Date (0) and Particulars (3) are hand-drawn in didDrawCell below, so
+        // suppress autoTable's own text for those two cells first — guarded to
+        // real expense rows only, since the trailing GRAND TOTAL/NET rows use
+        // colSpan starting at column 0 and must keep their default-rendered text.
+        willDrawCell: function (data) {
+          if (data.section !== 'body' || data.row.index >= particularsMeta.length) return
+          if (data.column.index === 0 || data.column.index === 3) data.cell.text = []
+        },
+        didDrawCell: function (data) {
+          if (data.section !== 'body' || data.row.index >= particularsMeta.length) return
+          var rowIdx = data.row.index
+          var x0 = data.cell.x, y0 = data.cell.y, w = data.cell.width
+          var padL = data.cell.padding('left')
+          var padT = data.cell.padding('top')
+          var innerW = w - padL - data.cell.padding('right')
+
+          if (data.column.index === 0) {
+            var dm = dateMeta[rowIdx]
+            var y = y0 + padT + 2.2
+            doc.setFont(FONT, 'normal'); doc.setFontSize(5.6); doc.setTextColor(130)
+            doc.text('EXPENSE', x0 + padL, y)
+            y += 3.4
+            doc.setFont(FONT, 'bold'); doc.setFontSize(7.5); doc.setTextColor(20)
+            doc.text(dm.expense, x0 + padL, y)
+            y += 2.6
+            doc.setDrawColor(210); doc.setLineWidth(0.15)
+            doc.line(x0 + padL, y, x0 + padL + 10, y)
+            if (dm.entry) {
+              y += 3.4
+              doc.setFont(FONT, 'normal'); doc.setFontSize(5.6); doc.setTextColor(130)
+              doc.text('ENTERED', x0 + padL, y)
+              y += 3.2
+              doc.setFont(FONT, 'normal'); doc.setFontSize(6.8); doc.setTextColor(90)
+              doc.text(dm.entry, x0 + padL, y)
+            }
+            doc.setTextColor(0)
+          }
+
+          if (data.column.index === 3) {
+            var lines = particularsMeta[rowIdx]
+            var yy = y0 + padT + 2.6
+            var lineH = 3.6
+            lines.forEach(function (l) {
+              if (l.kind === 'header') {
+                doc.setFont(FONT, 'bold'); doc.setFontSize(8); doc.setTextColor(20)
+                doc.splitTextToSize(l.text, innerW).forEach(function (wl) { doc.text(wl, x0 + padL, yy); yy += lineH })
+              } else if (l.kind === 'desc') {
+                doc.setFont(FONT, 'normal'); doc.setFontSize(8); doc.setTextColor(40)
+                doc.splitTextToSize(l.text, innerW).forEach(function (wl) { doc.text(wl, x0 + padL, yy); yy += lineH })
+              } else if (l.kind === 'chip') {
+                doc.setFont(FONT, 'normal'); doc.setFontSize(6.8); doc.setTextColor(80)
+                doc.splitTextToSize(l.text, innerW).forEach(function (wl) { doc.text(wl, x0 + padL, yy); yy += lineH - 0.3 })
+              } else if (l.kind === 'alloc' || l.kind === 'foot') {
+                var indentX = x0 + padL + 2
+                doc.setDrawColor(220); doc.setLineWidth(0.15)
+                doc.line(indentX - 1.2, yy - 2.6, indentX - 1.2, yy + 0.6)
+                doc.setFont(FONT, 'normal'); doc.setFontSize(7)
+                doc.setTextColor(l.kind === 'foot' ? 130 : 90)
+                var labelWrapped = doc.splitTextToSize(l.text, innerW - 22)
+                doc.text(labelWrapped[0], indentX, yy)
+                doc.setFont(FONT, 'normal'); doc.setFontSize(7); doc.setTextColor(20)
+                doc.text(l.amount, x0 + w - data.cell.padding('right'), yy, { align: 'right' })
+                yy += lineH
+              } else if (l.kind === 'status') {
+                doc.setFont(FONT, 'normal'); doc.setFontSize(6.8); doc.setTextColor(120)
+                doc.text('(' + l.text + ')', x0 + padL, yy); yy += lineH
+              }
+            })
+            doc.setTextColor(0)
+          }
+        },
         didDrawPage: function (data) {
           doc.setFontSize(7); doc.setTextColor(120)
           doc.text('Page ' + doc.internal.getCurrentPageInfo().pageNumber, pageW - 14, doc.internal.pageSize.getHeight() - 6, { align: 'right' })
@@ -456,7 +555,7 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds, glass }) {
         },
       })
 
-      doc.save('expenses_' + new Date().toISOString().split('T')[0] + '.pdf')
+      await openOrSharePdf(doc, 'expenses_' + new Date().toISOString().split('T')[0] + '.pdf')
     } catch (err) {
       alert('PDF export failed: ' + (err.message || err))
     } finally {
