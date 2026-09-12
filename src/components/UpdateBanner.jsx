@@ -62,19 +62,23 @@ function UpdateBanner() {
   var urgent = remainMs < 10 * 60 * 1000  // last 10 minutes
 
   return (
-    <div className={"fixed bottom-4 left-1/2 -translate-x-1/2 z-[9999] flex items-center gap-3 rounded-full text-white text-sm px-4 py-2 shadow-xl " +
+    <div className={"fixed bottom-4 inset-x-4 sm:inset-x-auto sm:left-1/2 sm:-translate-x-1/2 sm:w-auto sm:max-w-sm z-[9999] rounded-2xl text-white text-sm shadow-xl px-4 py-3 " +
       (urgent ? "bg-red-700" : "bg-gray-900")}>
-      <span>{urgent ? 'Auto-update in ' + timeStr : 'A new version is available.'}</span>
-      {!urgent && <span className="text-xs text-gray-400">Auto in {timeStr}</span>}
-      <button onClick={handleUpdate}
-        className="rounded-full bg-indigo-500 hover:bg-indigo-400 px-3 py-1 font-semibold transition">
-        Update now
-      </button>
-      {!urgent && (
-        <button onClick={handleDismiss}
-          aria-label="Dismiss"
-          className="text-gray-400 hover:text-white text-lg leading-none px-1">×</button>
-      )}
+      <div className="flex items-start justify-between gap-3">
+        <span className="font-medium leading-snug">{urgent ? 'Auto-update in ' + timeStr : 'A new version is available.'}</span>
+        {!urgent && (
+          <button onClick={handleDismiss}
+            aria-label="Dismiss"
+            className="shrink-0 -mt-1 -mr-1 text-gray-400 hover:text-white text-lg leading-none px-1">×</button>
+        )}
+      </div>
+      <div className={"flex items-center gap-3 mt-2.5 " + (urgent ? "justify-end" : "justify-between")}>
+        {!urgent && <span className="text-xs text-gray-400 whitespace-nowrap">Auto in {timeStr}</span>}
+        <button onClick={handleUpdate}
+          className="shrink-0 rounded-full bg-indigo-500 hover:bg-indigo-400 px-3.5 py-1.5 font-semibold transition whitespace-nowrap">
+          Update now
+        </button>
+      </div>
     </div>
   )
 }
