@@ -221,6 +221,7 @@ function Expenses({ profile, masterMode, inAdmin }) {
   async function handleFormDone() {
     var wasEditing = editExp
     setEditExp(null)
+    setView('saving')
 
     // Wait for the reload before switching the view, so the list/detail we navigate
     // to already has the just-submitted/edited expense in it — otherwise the view
@@ -334,6 +335,32 @@ function Expenses({ profile, masterMode, inAdmin }) {
           </button>
         </div>
         <ExpenseFormMulti profile={profile} walletBalance={walletBalance} editExp={editExp} onDone={handleFormDone} />
+      </div>
+    )
+  }
+
+  // ═══════════════════════════════════════════════
+  // SAVING → shown the instant the form's own submit work finishes, while
+  // handleFormDone reloads the list/detail data it's about to hand off to —
+  // a placeholder shaped like where we're headed, instead of the old form
+  // (already reset to a blank success state) sitting frozen for that gap.
+  // ═══════════════════════════════════════════════
+  if (view === 'saving') {
+    var skelCard = inAdmin ? CARD : "ambria-glass-card rounded-2xl"
+    return (
+      <div className={"space-y-3" + (inAdmin ? "" : " -mx-4 px-4 -mt-4 pt-4 -mb-8 pb-8 min-h-[calc(100dvh-3.5rem)]")}>
+        {[0, 1, 2, 3].map(function (i) {
+          return (
+            <div key={i} className={skelCard + " p-4 animate-pulse"} style={{ animationDelay: (i * 80) + 'ms' }}>
+              <div className="flex items-center justify-between gap-3">
+                <div className="h-3 w-24 bg-slate-200/70 rounded-full" />
+                <div className="h-3 w-14 bg-slate-200/70 rounded-full" />
+              </div>
+              <div className="mt-3 h-3.5 w-2/3 bg-slate-200/70 rounded-full" />
+              <div className="mt-2 h-3 w-1/3 bg-slate-200/50 rounded-full" />
+            </div>
+          )
+        })}
       </div>
     )
   }
