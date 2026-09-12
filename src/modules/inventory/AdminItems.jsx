@@ -76,7 +76,6 @@ function AdminItems({ profile }) {
   var [items, setItems] = useState([])
   var [loading, setLoading] = useState(true)
   var [search, setSearch] = useState('')
-  var [deptFilter, setDeptFilter] = useState([])
   var [statusFilter, setStatusFilter] = useState([])
   var [departments, setDepartments] = useState([])
   var venues = useReferenceData().venues.filter(function (v) { return v.active })
@@ -169,7 +168,7 @@ function AdminItems({ profile }) {
   function resetFilters() {
     // masterDeptFilter is deliberately left alone — it's no longer a user-facing
     // filter, just the locked inventory-default department scope for this screen.
-    setSearch(''); setDeptFilter([]); setStatusFilter([]); setSubDeptFilter([])
+    setSearch(''); setStatusFilter([]); setSubDeptFilter([])
     setCatFilter([]); setSubCatFilter([]); setVenueFilter([]); setSubVenueFilter([])
     setPage(1)
   }
@@ -246,7 +245,6 @@ function AdminItems({ profile }) {
     if (subCatFilter.length) filterParts.push({ label: 'Sub-category', value: subCatFilter.map(function (scid) { var sc = subCategoriesAll.find(function (x) { return String(x.id) === scid }); return sc ? sc.name : scid }).join(', ') })
     if (venueFilter.length) filterParts.push({ label: 'Venue', value: venueFilter.join(', ') })
     if (subVenueFilter.length) filterParts.push({ label: 'Sub-venue', value: subVenueFilter.map(function (svid) { var sv = subVenues.find(function (x) { return String(x.id) === svid }); return sv ? sv.name : svid }).join(', ') })
-    if (deptFilter.length) filterParts.push({ label: 'Alloc Dept', value: deptFilter.join(', ') })
     var rows = sorted.map(function (item, idx) {
       var allocs = item.venue_allocations || []
       if (venueFilter.length > 0) allocs = allocs.filter(function (va) { return va.venues && venueFilter.indexOf(va.venues.code) !== -1 })
@@ -800,7 +798,6 @@ function AdminItems({ profile }) {
         (item.sub_categories?.name || '').toLowerCase().includes(searchLower) ||
         (item.department || '').toLowerCase().includes(searchLower) ||
         (item.brand || '').toLowerCase().includes(searchLower)
-      var matchDept = deptFilter.length === 0 || deptFilter.indexOf(item.department) !== -1
       var matchStatus = statusFilter.length === 0 || statusFilter.indexOf(item.status) !== -1
       var matchMasterDept = masterDeptFilter.length === 0 || (function () {
         var sdId = item.categories?.sub_department_id
@@ -816,9 +813,9 @@ function AdminItems({ profile }) {
       var matchSubVenue = subVenueFilter.length === 0 || (item.venue_allocations || []).some(function (va) { return subVenueFilter.indexOf(String(va.sub_venue_id)) !== -1 })
       var matchCat = catFilter.length === 0 || catFilter.indexOf(String(item.category_id)) !== -1
       var matchSubCat = subCatFilter.length === 0 || subCatFilter.indexOf(String(item.sub_category_id)) !== -1
-      return matchSearch && matchMasterDept && matchDept && matchSubDept && matchStatus && matchVenue && matchCat && matchSubCat && matchSubVenue
+      return matchSearch && matchMasterDept && matchSubDept && matchStatus && matchVenue && matchCat && matchSubCat && matchSubVenue
     })
-  }, [items, search, deptFilter, statusFilter, masterDeptFilter, subDepartments, subDeptFilter, categories, venueFilter, subVenueFilter, catFilter, subCatFilter])
+  }, [items, search, statusFilter, masterDeptFilter, subDepartments, subDeptFilter, categories, venueFilter, subVenueFilter, catFilter, subCatFilter])
 
   function handleSort(key) {
     if (sortKey === key) { setSortDir(sortDir === 'asc' ? 'desc' : 'asc') }
@@ -884,9 +881,7 @@ function AdminItems({ profile }) {
           onChange={function (v) { setCatFilter(v); setSubCatFilter([]); setPage(1) }}
           options={categories.filter(function (c) {
             if (subDeptFilter.length > 0) return subDeptFilter.indexOf(String(c.sub_department_id)) !== -1
-            if (deptFilter.length === 0) return true
-            var deptCatIds = []; departments.filter(function (d) { return deptFilter.indexOf(d.name) !== -1 }).forEach(function (d) { (d.category_ids || []).forEach(function (cid) { if (deptCatIds.indexOf(cid) === -1) deptCatIds.push(cid) }) })
-            return deptCatIds.indexOf(c.id) !== -1
+            return true
           }).map(function (c) { return { label: c.name, value: String(c.id) } })} />
         {catFilter.length > 0 && (
           <FilterDropdown value={subCatFilter} placeholder="All Sub-categories" multi
@@ -906,9 +901,6 @@ function AdminItems({ profile }) {
               return vIds.indexOf(sv.venue_id) !== -1
             }).map(function (sv) { return { label: sv.name, value: String(sv.id) } })} />
         )}
-        <FilterDropdown value={deptFilter} placeholder="Alloc Dept" multi
-          onChange={function (v) { setDeptFilter(v); setPage(1) }}
-          options={departments.map(function (d) { return { label: d.name, value: d.name } })} />
       </div>
       {/* Toolbar — actions row */}
       <div className="flex gap-2 flex-wrap items-center">
@@ -925,7 +917,7 @@ function AdminItems({ profile }) {
         <div className="text-sm text-gray-400 self-center">
           {filtered.length} item{filtered.length !== 1 ? 's' : ''}
         </div>
-        {(search || deptFilter.length || statusFilter.length || subDeptFilter.length || catFilter.length || subCatFilter.length || venueFilter.length || subVenueFilter.length) && (
+        {(search || statusFilter.length || subDeptFilter.length || catFilter.length || subCatFilter.length || venueFilter.length || subVenueFilter.length) && (
           <button onClick={resetFilters}
             className="px-3 py-2.5 text-sm text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-colors font-medium">✕ Reset</button>
         )}
