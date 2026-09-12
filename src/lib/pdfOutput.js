@@ -8,20 +8,19 @@
 // preview/download/share at a time and picked it for the user by device.
 //
 // So this renders its own always-available preview instead: a fullscreen
-// overlay with the PDF in an <iframe> plus explicit Download and Share buttons,
-// the same on every device. Built with plain DOM (not a React component)
-// because this one helper is called from ~10 unrelated modules, most of them
-// outside any component that could host a portal — Object.assign(...style)
-// throughout rather than Tailwind classes so it renders correctly regardless
-// of whether a hand-built class string here happens to survive Tailwind's
-// content scan.
+// overlay with the PDF plus explicit Download and Share buttons, the same on
+// every device. Built with plain DOM (not a React component) because this one
+// helper is called from ~10 unrelated modules, most of them outside any
+// component that could host a portal — Object.assign(...style) throughout
+// rather than Tailwind classes so it renders correctly regardless of whether a
+// hand-built class string here happens to survive Tailwind's content scan.
 export async function openOrSharePdf(doc, filename) {
   var blob = doc.output('blob')
   var url = URL.createObjectURL(blob)
-  showPdfPreview(blob, url, filename)
+  await showPdfPreview(blob, url, filename)
 }
 
-function showPdfPreview(blob, url, filename) {
+async function showPdfPreview(blob, url, filename) {
   var overlay = document.createElement('div')
   Object.assign(overlay.style, {
     position: 'fixed', inset: '0', zIndex: '100000',
@@ -93,40 +92,25 @@ function showPdfPreview(blob, url, filename) {
   // Chrome for Android (and likely other mobile browsers) can only render a PDF
   // through its own full-tab viewer — asked to show one inside an <iframe> it
   // shows an inert "This page has been blocked by Chrome" placeholder instead of
-  // the PDF. Desktop browsers render a blob-URL PDF in an iframe fine, so the
-  // live inline preview is desktop-only; touch devices get a plain panel with
-  // the same Download/Share actions, sized for a thumb instead of a cursor.
+  // the PDF. So touch devices skip the browser's own PDF handling entirely and
+  // render every page as a plain <canvas> via pdf.js instead — that works the
+  // same everywhere because it never asks the browser to display a PDF at all,
+  // it just paints pixels. Desktop keeps the native iframe viewer (it already
+  // works there, and it comes with the browser's own zoom/search/print/select).
   var isTouchDevice = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(pointer: coarse)').matches
   if (isTouchDevice) {
-    var panel = document.createElement('div')
-    Object.assign(panel.style, {
-      flex: '1', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-      gap: '14px', padding: '24px', color: '#d1d5db', fontFamily: 'inherit', textAlign: 'center',
+    var pagesWrap = document.createElement('div')
+    Object.assign(pagesWrap.style, {
+      flex: '1', overflowY: 'auto', overflowX: 'hidden', padding: '12px', WebkitOverflowScrolling: 'touch',
     })
-    var icon = document.createElement('div')
-    icon.textContent = '📄'
-    icon.style.fontSize = '48px'
-    var name = document.createElement('div')
-    name.textContent = filename
-    Object.assign(name.style, { fontSize: '14px', fontWeight: '600', color: '#fff', wordBreak: 'break-all' })
-    var hint = document.createElement('div')
-    hint.textContent = 'Preview isn’t available on this device — download or share it instead.'
-    Object.assign(hint.style, { fontSize: '13px', maxWidth: '280px', lineHeight: '1.5' })
-    var actions = document.createElement('div')
-    Object.assign(actions.style, { display: 'flex', gap: '10px', marginTop: '6px' })
-    var bigDownload = mkButton('Download', true)
-    bigDownload.onclick = download
-    actions.appendChild(bigDownload)
-    if (canShareFile) {
-      var bigShare = mkButton('Share', true)
-      bigShare.onclick = share
-      actions.appendChild(bigShare)
-    }
-    panel.appendChild(icon)
-    panel.appendChild(name)
-    panel.appendChild(hint)
-    panel.appendChild(actions)
-    overlay.appendChild(panel)
+    var status = document.createElement('div')
+    status.textContent = 'Loading preview…'
+    Object.assign(status.style, { color: '#9ca3af', fontFamily: 'inherit', fontSize: '13px', textAlign: 'center', padding: '40px 0' })
+    pagesWrap.appendChild(status)
+    overlay.appendChild(pagesWrap)
+    renderPagesToCanvas(blob, pagesWrap, status).catch(function () {
+      status.textContent = 'Preview isn’t available for this file — download or share it instead.'
+    })
   } else {
     var frame = document.createElement('iframe')
     frame.src = url
@@ -144,5 +128,39 @@ function showPdfPreview(blob, url, filename) {
     document.removeEventListener('keydown', onKeyDown)
     if (overlay.parentNode) overlay.parentNode.removeChild(overlay)
     setTimeout(function () { URL.revokeObjectURL(url) }, 1000)
+  }
+}
+
+// Draws every page of the PDF as a plain <canvas> inside `container`, appended
+// one at a time as each finishes so the first page shows up as soon as it's
+// ready instead of the whole document rendering as one blocking batch.
+async function renderPagesToCanvas(blob, container, status) {
+  var pdfjsLib = await import('pdfjs-dist')
+  var workerUrlMod = await import('pdfjs-dist/build/pdf.worker.min.mjs?url')
+  pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrlMod.default
+
+  var data = await blob.arrayBuffer()
+  var pdfDoc = await pdfjsLib.getDocument({ data: data }).promise
+
+  container.removeChild(status)
+  var targetWidth = Math.min(container.clientWidth - 4, 900)
+  var dpr = window.devicePixelRatio || 1
+
+  for (var i = 1; i <= pdfDoc.numPages; i++) {
+    var page = await pdfDoc.getPage(i)
+    var baseViewport = page.getViewport({ scale: 1 })
+    var scale = targetWidth / baseViewport.width
+    var viewport = page.getViewport({ scale: scale * dpr })
+
+    var canvas = document.createElement('canvas')
+    canvas.width = viewport.width
+    canvas.height = viewport.height
+    Object.assign(canvas.style, {
+      display: 'block', width: (viewport.width / dpr) + 'px', height: (viewport.height / dpr) + 'px',
+      margin: '0 auto 12px', boxShadow: '0 2px 10px rgba(0,0,0,0.5)', background: '#fff',
+    })
+    container.appendChild(canvas)
+
+    await page.render({ canvasContext: canvas.getContext('2d'), viewport: viewport }).promise
   }
 }
