@@ -479,14 +479,18 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds, glass }) {
         margin: { left: 10, right: 10 },
         // Date (0) and Particulars (3) are hand-drawn in didDrawCell below, so
         // suppress autoTable's own text for those two cells first — guarded to
-        // real expense rows only, since the trailing GRAND TOTAL/NET rows use
-        // colSpan starting at column 0 and must keep their default-rendered text.
+        // real expense rows only. The trailing GRAND TOTAL/NET rows use colSpan
+        // starting at column 0 and must keep their default-rendered text, and a
+        // row whose content is too tall to fit a page gets split by autoTable
+        // into a synthetic "remainder" row with index -1 for the continuation on
+        // the next page — that one falls outside our meta arrays too, so it also
+        // keeps its default (plain-text-fallback) rendering instead of crashing.
         willDrawCell: function (data) {
-          if (data.section !== 'body' || data.row.index >= particularsMeta.length) return
+          if (data.section !== 'body' || data.row.index < 0 || data.row.index >= particularsMeta.length) return
           if (data.column.index === 0 || data.column.index === 3) data.cell.text = []
         },
         didDrawCell: function (data) {
-          if (data.section !== 'body' || data.row.index >= particularsMeta.length) return
+          if (data.section !== 'body' || data.row.index < 0 || data.row.index >= particularsMeta.length) return
           var rowIdx = data.row.index
           var x0 = data.cell.x, y0 = data.cell.y, w = data.cell.width
           var padL = data.cell.padding('left')
