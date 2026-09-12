@@ -22,7 +22,7 @@ function Row({ label, value, money }) {
   )
 }
 
-function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onUpdated, onEdit, onRaiseGV }) {
+function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack, onUpdated, onEdit, onRaiseGV }) {
   var [saving, setSaving] = useState(false)
   var [rejectMode, setRejectMode] = useState(false)
   var [rejectReason, setRejectReason] = useState('')
@@ -371,9 +371,20 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, onUpdated, onEdi
 
   return (
     <div className="@container space-y-3 pb-4">
-      {/* No "Back" link here: the Shell header already carries a back arrow,
-          and the duplicate cost a whole row above the fold. The amount leads
-          instead -- it is the one fact you open this screen to check. */}
+      {/* The phone shell's header carries a back arrow, so this screen adds
+          none there — the duplicate cost a whole row above the fold, and the
+          amount should lead: it is the one fact you open this screen to
+          check.
+
+          The admin shell has no back arrow, only a breadcrumb, so there it
+          has to provide its own or the screen is a dead end. */}
+      {inAdmin && onBack && (
+        <button type="button" onClick={onBack}
+          className="inline-flex items-center gap-1.5 h-8 px-2 -ml-1 rounded-lg text-[13px] font-semibold text-slate-600 hover:bg-white hover:text-slate-900 transition-colors">
+          <Icon name="arrowLeft" size={15} />
+          Back to expenses
+        </button>
+      )}
       <div className="bg-white border border-slate-200 rounded-2xl px-4 py-3.5 shadow-[0_1px_2px_rgba(15,23,42,0.05)]">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
