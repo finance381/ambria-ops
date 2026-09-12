@@ -5,6 +5,7 @@ import AdminShell from './components/layout/AdminShell'
 import PublicEmployeeForm from './pages/PublicEmployeeForm'
 import { LangProvider } from './lib/i18n.jsx'
 import UpdateBanner from './components/UpdateBanner'
+import PullToRefresh from './components/PullToRefresh'
 import { isPrivilegedRole } from './lib/permissions'
 import { ReferenceDataProvider } from './lib/referenceData.jsx'
 
@@ -70,10 +71,10 @@ function App() {
   var _isPrivileged = isPrivilegedRole(profile)
   var _hasDesktopPerms = (profile.desktop_permissions || []).some(function (k) { return k !== 'personal.profile' })
   if (params.get('view') === 'admin' && (_isPrivileged || _hasDesktopPerms)) {
-    return <LangProvider><ReferenceDataProvider><AdminShell profile={surfaceProfile(profile, 'desktop')} onSignOut={signOut} /><UpdateBanner /></ReferenceDataProvider></LangProvider>
+    return <LangProvider><ReferenceDataProvider><AdminShell profile={surfaceProfile(profile, 'desktop')} onSignOut={signOut} /><UpdateBanner /><PullToRefresh /></ReferenceDataProvider></LangProvider>
   }
 
-  return <LangProvider><ReferenceDataProvider><Shell profile={surfaceProfile(profile, 'mobile')} onSignOut={signOut} /><UpdateBanner /></ReferenceDataProvider></LangProvider>
+  return <LangProvider><ReferenceDataProvider><Shell profile={surfaceProfile(profile, 'mobile')} onSignOut={signOut} /><UpdateBanner /><PullToRefresh /></ReferenceDataProvider></LangProvider>
 }
 
 export default App
