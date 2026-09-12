@@ -9,6 +9,7 @@ import { useExpenseDetailModal } from '../../hooks/useExpenseDetailModal.jsx'
 import LedgerSourceMedia from '../../components/ledger/LedgerSourceMedia'
 import { filterVisibleVendors } from '../../lib/vendorGating'
 import { registerPdfFont } from '../../lib/pdfFont'
+import { openOrSharePdf } from '../../lib/pdfOutput'
 import { hasPerm } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
 import SearchField from '../../components/ui/SearchField'
@@ -613,7 +614,7 @@ function VendorLedger({ profile }) {
       })
 
       var safeName = vendorName.replace(/[^a-z0-9]+/gi, '_').slice(0, 40)
-      doc.save('vendor_' + safeName + '_' + new Date().toISOString().split('T')[0] + '.pdf')
+      await openOrSharePdf(doc, 'vendor_' + safeName + '_' + new Date().toISOString().split('T')[0] + '.pdf')
       try { await logActivity('VENDOR_LEDGER_PDF_EXPORT', vendorName + ' | ' + chrono.length + ' entries | closing ' + (closing / 100).toFixed(2)) } catch (_) {}
     } catch (err) {
       alert('PDF export failed: ' + (err.message || err))

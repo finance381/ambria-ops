@@ -1,3 +1,5 @@
+import { openOrSharePdf } from './pdfOutput'
+
 function amountInWordsIndian(paise) {
   var rupees = Math.floor(Math.abs(paise) / 100)
   if (rupees === 0) return 'Zero'
@@ -149,6 +151,5 @@ export async function generateCollectionReceiptPdf(data) {
     try { doc.addImage(sigDataUrl, 'PNG', margin + 3, sigY + 8, 45, 20) } catch (_) {}
   }
 
-  var url = doc.output('bloburl')
-  window.open(url, '_blank')
+  await openOrSharePdf(doc, 'receipt_' + (data.receiptNo || Date.now()) + '.pdf')
 }

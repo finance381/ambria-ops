@@ -10,6 +10,7 @@ import EventDatePicker from '../../components/ui/EventDatePicker'
 import { useVoice } from '../../hooks/useVoice'
 import { generateCollectionReceiptPdf } from '../../lib/pdfReceipt'
 import { registerPdfFont } from '../../lib/pdfFont'
+import { openOrSharePdf } from '../../lib/pdfOutput'
 import ExpenseDetail from './ExpenseDetail'
 import VoiceInput from '../../components/ui/VoiceInput'
 import { DeptChip } from '../../components/ui/Badge'
@@ -1406,8 +1407,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
         },
       })
 
-      var pdfUrl = doc.output('bloburl')
-      window.open(pdfUrl, '_blank')
+      await openOrSharePdf(doc, 'wallet_' + userName.replace(/[^a-z0-9]+/gi, '_') + '_' + new Date().toISOString().slice(0, 10) + '.pdf')
       try { await logActivity('WALLET_PDF_EXPORT', userName + ' | ' + chrono.length + ' txns') } catch (_) {}
     } catch (err) {
       alert('PDF export failed: ' + (err.message || err))

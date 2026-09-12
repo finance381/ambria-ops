@@ -3,6 +3,7 @@ import { supabase, fetchAll } from '../../lib/supabase'
 import { formatDate, formatDateTime, formatPaise } from '../../lib/format'
 import { useRealtime } from '../../lib/useRealtime'
 import { registerPdfFont } from '../../lib/pdfFont'
+import { openOrSharePdf } from '../../lib/pdfOutput'
 import { useExpenseDetailModal } from '../../hooks/useExpenseDetailModal.jsx'
 import MultiSearchDropdown from '../../components/ui/MultiSearchDropdown'
 import { hasPerm } from '../../lib/permissions'
@@ -398,7 +399,7 @@ function InventoryLedger({ profile }) {
           8: { cellWidth: 40 }
         }
       })
-      doc.save('inventory_ledger_' + new Date().toISOString().slice(0, 10) + '.pdf')
+      await openOrSharePdf(doc, 'inventory_ledger_' + new Date().toISOString().slice(0, 10) + '.pdf')
     } catch (e) {
       alert('PDF export failed: ' + (e.message || e))
     }

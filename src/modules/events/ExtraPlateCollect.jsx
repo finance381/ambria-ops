@@ -7,6 +7,7 @@ import { prepUpload } from '../../lib/uploadHelper'
 import EventDatePicker from '../../components/ui/EventDatePicker'
 import VoiceInput from '../../components/ui/VoiceInput'
 import { hasPerm } from '../../lib/permissions'
+import { openOrSharePdf } from '../../lib/pdfOutput'
 
 var BANK_SUB_MODES = [
   { value: 'upi', label: 'UPI' },
@@ -789,7 +790,7 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
               headStyles: { fillColor: [55,65,81], textColor: [255,255,255], font: baseFont, fontStyle: 'bold' },
               columnStyles: { 4: { halign: 'right' }, 5: { halign: 'right' }, 6: { halign: 'right' }, 7: { halign: 'right' }, 8: { halign: 'right' } }
             })
-            doc.save('extra_plates_' + new Date().toISOString().slice(0,10) + '.pdf')
+            await openOrSharePdf(doc, 'extra_plates_' + new Date().toISOString().slice(0,10) + '.pdf')
           } catch (e) {
             alert('PDF export failed: ' + (e.message || e))
           }

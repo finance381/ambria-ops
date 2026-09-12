@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { formatPoints, formatDate, formatDateTime } from '../../lib/format'
 import { pushBack } from '../../lib/backNav'
 import { registerPdfFont } from '../../lib/pdfFont'
+import { openOrSharePdf } from '../../lib/pdfOutput'
 import { hasPerm } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
 import { useExpenseDetailModal } from '../../hooks/useExpenseDetailModal.jsx'
@@ -544,22 +545,6 @@ function Ledgers({ profile }) {
     ctx.startY = (doc.lastAutoTable ? doc.lastAutoTable.finalY : ctx.startY) + 8
   }
 
-  function _openPdfPreview(doc, filename) {
-    try {
-      var blob = doc.output('blob')
-      var url = URL.createObjectURL(blob)
-      var w = window.open(url, '_blank')
-      if (!w) {
-        // Pop-up blocked — fall back to download
-        doc.save(filename)
-      }
-      // Revoke after a delay so the new tab has time to load
-      setTimeout(function () { URL.revokeObjectURL(url) }, 60000)
-    } catch (e) {
-      doc.save(filename)
-    }
-  }
-
   async function exportListPDF() {
     if (pdfBusy) return
     var groups = visibleGroups
@@ -593,7 +578,7 @@ function Ledgers({ profile }) {
           })
         })
       }
-      _openPdfPreview(ctx.doc, 'ledger_detailed_' + dateFrom + '_' + dateTo + '.pdf')
+      await openOrSharePdf(ctx.doc, 'ledger_detailed_' + dateFrom + '_' + dateTo + '.pdf')
     } catch (err) {
       alert('PDF export failed: ' + (err.message || err))
     } finally {
@@ -652,7 +637,7 @@ function Ledgers({ profile }) {
           })
         })
       }
-      _openPdfPreview(ctx.doc, 'ledger_' + fileTag.replace(/[^a-z0-9]+/gi, '_') + '_' + dateFrom + '_' + dateTo + '.pdf')
+      await openOrSharePdf(ctx.doc, 'ledger_' + fileTag.replace(/[^a-z0-9]+/gi, '_') + '_' + dateFrom + '_' + dateTo + '.pdf')
     } catch (err) {
       alert('PDF export failed: ' + (err.message || err))
     } finally {

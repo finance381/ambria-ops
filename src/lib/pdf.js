@@ -1,6 +1,7 @@
 import jsPDF from 'jspdf'
 import 'jspdf-autotable'
 import { formatPaise, formatDate, titleCase } from './format'
+import { openOrSharePdf } from './pdfOutput'
 
 var BRAND = [67, 56, 202]
 var DARK = [31, 41, 55]
@@ -90,7 +91,7 @@ var TYPE_LABELS = {
   misc: 'Miscellaneous',
 }
 
-export function generateChallanPdf(challan, items, venueMap) {
+export async function generateChallanPdf(challan, items, venueMap) {
   var doc = newDoc()
   var srcName = venueMap[challan.source_venue_id] || '—'
   var destName = challan.destination_text || venueMap[challan.destination_venue_id] || '—'
@@ -160,13 +161,13 @@ export function generateChallanPdf(challan, items, venueMap) {
 
   y = addSignatures(doc, y, ['Loaded By', 'Driver', 'Received By'])
 
-  doc.save('Challan_' + challan.challan_no + '.pdf')
+  await openOrSharePdf(doc, 'Challan_' + challan.challan_no + '.pdf')
 }
 
 // ═══════════════════════════════════════
 // PO PDF
 // ═══════════════════════════════════════
-export function generatePoPdf(po, items, creatorName) {
+export async function generatePoPdf(po, items, creatorName) {
   var doc = newDoc('landscape')
   var y = addHeader(doc, 'Purchase Order #' + (po.po_number || po.id.slice(0, 8)), titleCase(po.status))
 
@@ -201,13 +202,13 @@ export function generatePoPdf(po, items, creatorName) {
   doc.text('Estimated Total: ' + formatPaise(totalEst), 14, y)
 
   y = addSignatures(doc, y + 4, ['Prepared By', 'Approved By'])
-  doc.save('PO_' + (po.po_number || po.id.slice(0, 8)) + '.pdf')
+  await openOrSharePdf(doc, 'PO_' + (po.po_number || po.id.slice(0, 8)) + '.pdf')
 }
 
 // ═══════════════════════════════════════
 // PURCHASE COMPARISON PDF
 // ═══════════════════════════════════════
-export function generateComparisonPdf(po, items, creatorName) {
+export async function generateComparisonPdf(po, items, creatorName) {
   var doc = newDoc('landscape')
   var y = addHeader(doc, 'Purchase Comparison — PO #' + (po.po_number || po.id.slice(0, 8)), 'Estimated vs Actual')
 
@@ -253,13 +254,13 @@ export function generateComparisonPdf(po, items, creatorName) {
   doc.setTextColor(DARK[0], DARK[1], DARK[2])
   doc.text('Estimated: ' + formatPaise(totalEst) + '   |   Actual: ' + formatPaise(totalActual) + '   |   Variance: ' + (totalVar > 0 ? '+' : '') + formatPaise(Math.abs(totalVar)) + ' (' + (totalVar > 0 ? '+' : '') + totalPct + '%)', 14, y)
 
-  doc.save('Comparison_PO_' + (po.po_number || po.id.slice(0, 8)) + '.pdf')
+  await openOrSharePdf(doc, 'Comparison_PO_' + (po.po_number || po.id.slice(0, 8)) + '.pdf')
 }
 
 // ═══════════════════════════════════════
 // RECEIVING PDF
 // ═══════════════════════════════════════
-export function generateReceivingPdf(po, items, creatorName) {
+export async function generateReceivingPdf(po, items, creatorName) {
   var doc = newDoc('landscape')
   var y = addHeader(doc, 'Goods Receipt — PO #' + (po.po_number || po.id.slice(0, 8)), 'Receiving Report')
 
@@ -299,13 +300,13 @@ export function generateReceivingPdf(po, items, creatorName) {
   doc.text('Fully Received: ' + fullyRecd + '   |   Partial: ' + partial + '   |   Pending: ' + pending + '   |   Total Items: ' + items.length, 14, y)
 
   y = addSignatures(doc, y + 4, ['Received By', 'Verified By'])
-  doc.save('Receiving_PO_' + (po.po_number || po.id.slice(0, 8)) + '.pdf')
+  await openOrSharePdf(doc, 'Receiving_PO_' + (po.po_number || po.id.slice(0, 8)) + '.pdf')
 }
 
 // ═══════════════════════════════════════
 // RECEIVING LIST PDF (all pending items)
 // ═══════════════════════════════════════
-export function generateReceivingListPdf(items) {
+export async function generateReceivingListPdf(items) {
   var doc = newDoc('landscape')
   var y = addHeader(doc, 'Pending Receiving Report', items.length + ' items awaiting receipt')
 
@@ -338,5 +339,5 @@ export function generateReceivingListPdf(items) {
   doc.text('Total Qty: ' + totalQty + '   |   Items: ' + items.length, 14, y)
 
   y = addSignatures(doc, y + 4, ['Store Keeper', 'Verified By'])
-  doc.save('Receiving_Pending_' + new Date().toISOString().split('T')[0] + '.pdf')
+  await openOrSharePdf(doc, 'Receiving_Pending_' + new Date().toISOString().split('T')[0] + '.pdf')
 }
