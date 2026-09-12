@@ -11,6 +11,7 @@ import EventDatePicker from '../../components/ui/EventDatePicker'
 import { compressImage } from '../../lib/imageCompress'
 import VoiceInput from '../../components/ui/VoiceInput'
 import Icon from '../../components/ui/Icon'
+import CameraCapture from '../../components/ui/CameraCapture'
 import { hasPerm } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
 import { deptInk, deptOrder } from '../../lib/ui'
@@ -271,6 +272,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
   var [error, setError] = useState('')
   var [success, setSuccess] = useState('')
   var [zoomImg, setZoomImg] = useState('')
+  var [cameraTarget, setCameraTarget] = useState(null) // entry idx currently capturing for, or null
   var [itemSearchKey, setItemSearchKey] = useState('')
   var [itemMatches, setItemMatches] = useState([])
   var itemSearchTimer = useRef(null)
@@ -2918,11 +2920,10 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                         <input type="file" accept="image/*,.pdf" multiple className="hidden"
                           onChange={function (e) { addReceipts(idx, e.target.files); e.target.value = '' }} />
                       </label>
-                      <label className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border-2 border-dashed border-slate-300 text-xs text-slate-500 hover:border-indigo-400 hover:text-indigo-600 cursor-pointer transition-colors">
+                      <button type="button" onClick={function () { setCameraTarget(idx) }}
+                        className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border-2 border-dashed border-slate-300 text-xs text-slate-500 hover:border-indigo-400 hover:text-indigo-600 transition-colors">
                         <Icon name="camera" className="w-4 h-4" /><span>Photo</span>
-                        <input type="file" accept="image/*" capture="environment" className="hidden"
-                          onChange={function (e) { addReceipts(idx, e.target.files); e.target.value = '' }} />
-                      </label>
+                      </button>
                     </div>
                   </div>
                 ) : entry.audioUrl ? (
@@ -2951,11 +2952,10 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                         <input type="file" accept="image/*,.pdf" multiple className="hidden"
                           onChange={function (e) { addReceipts(idx, e.target.files); e.target.value = '' }} />
                       </label>
-                      <label className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border-2 border-dashed border-slate-300 text-[12px] font-semibold text-slate-600 hover:border-indigo-400 hover:text-indigo-600 cursor-pointer transition-colors">
+                      <button type="button" onClick={function () { setCameraTarget(idx) }}
+                        className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border-2 border-dashed border-slate-300 text-[12px] font-semibold text-slate-600 hover:border-indigo-400 hover:text-indigo-600 transition-colors">
                         <Icon name="camera" className="w-[18px] h-[18px]" /><span>Camera</span>
-                        <input type="file" accept="image/*" capture="environment" className="hidden"
-                          onChange={function (e) { addReceipts(idx, e.target.files); e.target.value = '' }} />
-                      </label>
+                      </button>
                       <button type="button" onClick={function () { startRecording(idx) }}
                         className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border-2 border-dashed border-slate-300 text-[12px] font-semibold text-slate-600 hover:border-indigo-400 hover:text-indigo-600 transition-colors">
                         <Icon name="mic" className="w-[18px] h-[18px]" /><span>Voice</span>
@@ -2969,11 +2969,10 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                       <input type="file" accept="image/*,.pdf" multiple className="hidden"
                         onChange={function (e) { addReceipts(idx, e.target.files); e.target.value = '' }} />
                     </label>
-                    <label className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg border-2 border-dashed border-slate-300 text-sm text-slate-500 hover:border-indigo-400 hover:text-indigo-600 cursor-pointer transition-colors">
+                    <button type="button" onClick={function () { setCameraTarget(idx) }}
+                      className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg border-2 border-dashed border-slate-300 text-sm text-slate-500 hover:border-indigo-400 hover:text-indigo-600 transition-colors">
                       <Icon name="camera" className="w-[18px] h-[18px]" /><span>Camera</span>
-                      <input type="file" accept="image/*" capture="environment" className="hidden"
-                        onChange={function (e) { addReceipts(idx, e.target.files); e.target.value = '' }} />
-                    </label>
+                    </button>
                     <button type="button" onClick={function () { startRecording(idx) }}
                       className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg border-2 border-dashed border-slate-300 text-sm text-slate-500 hover:border-indigo-400 hover:text-indigo-600 transition-colors">
                       <Icon name="mic" className="w-[18px] h-[18px]" /><span>Voice</span>
@@ -3099,6 +3098,13 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
           <img src={zoomImg} alt="Receipt" className="max-w-full max-h-full object-contain rounded-lg" />
         </div>
       ), document.body)}
+
+      {cameraTarget != null && (
+        <CameraCapture
+          onCapture={function (file) { addReceipts(cameraTarget, [file]); setCameraTarget(null) }}
+          onClose={function () { setCameraTarget(null) }}
+        />
+      )}
     </div>
   )
 }
