@@ -889,26 +889,24 @@ function AdminItems({ profile }) {
             var deptCatIds = []; departments.filter(function (d) { return deptFilter.indexOf(d.name) !== -1 }).forEach(function (d) { (d.category_ids || []).forEach(function (cid) { if (deptCatIds.indexOf(cid) === -1) deptCatIds.push(cid) }) })
             return deptCatIds.indexOf(c.id) !== -1
           }).map(function (c) { return { label: c.name, value: String(c.id) } })} />
-        <FilterDropdown value={subCatFilter} placeholder="All Sub-categories" multi
-          onChange={function (v) { setSubCatFilter(v); setPage(1) }}
-          options={subCategoriesAll.filter(function (sc) {
-            if (catFilter.length > 0) return catFilter.indexOf(String(sc.category_id)) !== -1
-            if (deptFilter.length > 0) {
-              var deptCatIds = []; departments.filter(function (d) { return deptFilter.indexOf(d.name) !== -1 }).forEach(function (d) { (d.category_ids || []).forEach(function (cid) { if (deptCatIds.indexOf(cid) === -1) deptCatIds.push(cid) }) })
-              return deptCatIds.indexOf(sc.category_id) !== -1
-            }
-            return true
-          }).map(function (sc) { return { label: sc.name, value: String(sc.id) } })} />
+        {catFilter.length > 0 && (
+          <FilterDropdown value={subCatFilter} placeholder="All Sub-categories" multi
+            onChange={function (v) { setSubCatFilter(v); setPage(1) }}
+            options={subCategoriesAll.filter(function (sc) {
+              return catFilter.indexOf(String(sc.category_id)) !== -1
+            }).map(function (sc) { return { label: sc.name, value: String(sc.id) } })} />
+        )}
         <FilterDropdown value={venueFilter} placeholder="All Venues" multi
           onChange={function (v) { setVenueFilter(v); setSubVenueFilter([]); setPage(1) }}
           options={venues.map(function (v) { return { label: v.code + ' \u2014 ' + v.name, value: v.code } })} />
-        <FilterDropdown value={subVenueFilter} placeholder="All Sub-venues" multi
-          onChange={function (v) { setSubVenueFilter(v); setPage(1) }}
-          options={subVenues.filter(function (sv) {
-            if (venueFilter.length === 0) return true
-            var vIds = venues.filter(function (v2) { return venueFilter.indexOf(v2.code) !== -1 }).map(function (v2) { return v2.id })
-            return vIds.indexOf(sv.venue_id) !== -1
-          }).map(function (sv) { return { label: sv.name, value: String(sv.id) } })} />
+        {venueFilter.length > 0 && (
+          <FilterDropdown value={subVenueFilter} placeholder="All Sub-venues" multi
+            onChange={function (v) { setSubVenueFilter(v); setPage(1) }}
+            options={subVenues.filter(function (sv) {
+              var vIds = venues.filter(function (v2) { return venueFilter.indexOf(v2.code) !== -1 }).map(function (v2) { return v2.id })
+              return vIds.indexOf(sv.venue_id) !== -1
+            }).map(function (sv) { return { label: sv.name, value: String(sv.id) } })} />
+        )}
         <FilterDropdown value={deptFilter} placeholder="Alloc Dept" multi
           onChange={function (v) { setDeptFilter(v); setPage(1) }}
           options={departments.map(function (d) { return { label: d.name, value: d.name } })} />
