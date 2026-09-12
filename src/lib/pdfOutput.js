@@ -41,19 +41,18 @@ function showPdfPreview(blob, url, filename) {
     fontSize: '13px', fontWeight: '600', color: '#fff', fontFamily: 'inherit',
   })
 
-  function mkButton(label) {
+  function mkButton(label, big) {
     var b = document.createElement('button')
     b.textContent = label
     Object.assign(b.style, {
       background: '#4338CA', color: '#fff', border: 'none', borderRadius: '999px',
-      padding: '7px 14px', fontSize: '13px', fontWeight: '600', cursor: 'pointer',
-      fontFamily: 'inherit', flexShrink: '0',
+      padding: big ? '11px 22px' : '7px 14px', fontSize: big ? '14px' : '13px', fontWeight: '600',
+      cursor: 'pointer', fontFamily: 'inherit', flexShrink: '0',
     })
     return b
   }
 
-  var downloadBtn = mkButton('Download')
-  downloadBtn.onclick = function () {
+  function download() {
     var a = document.createElement('a')
     a.href = url
     a.download = filename
@@ -61,16 +60,21 @@ function showPdfPreview(blob, url, filename) {
     a.click()
     a.remove()
   }
-  bar.appendChild(title)
-  bar.appendChild(downloadBtn)
 
   var file = null
   try { file = new File([blob], filename, { type: 'application/pdf' }) } catch (_) {}
-  if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
+  var canShareFile = !!(file && navigator.canShare && navigator.canShare({ files: [file] }))
+  function share() {
+    navigator.share({ files: [file] }).catch(function () {})
+  }
+
+  var downloadBtn = mkButton('Download')
+  downloadBtn.onclick = download
+  bar.appendChild(title)
+  bar.appendChild(downloadBtn)
+  if (canShareFile) {
     var shareBtn = mkButton('Share')
-    shareBtn.onclick = function () {
-      navigator.share({ files: [file] }).catch(function () {})
-    }
+    shareBtn.onclick = share
     bar.appendChild(shareBtn)
   }
 
@@ -84,13 +88,53 @@ function showPdfPreview(blob, url, filename) {
   closeBtn.onclick = close
   bar.appendChild(closeBtn)
 
-  var frame = document.createElement('iframe')
-  frame.src = url
-  frame.title = filename
-  Object.assign(frame.style, { flex: '1', border: 'none', width: '100%', background: '#525659' })
-
   overlay.appendChild(bar)
-  overlay.appendChild(frame)
+
+  // Chrome for Android (and likely other mobile browsers) can only render a PDF
+  // through its own full-tab viewer — asked to show one inside an <iframe> it
+  // shows an inert "This page has been blocked by Chrome" placeholder instead of
+  // the PDF. Desktop browsers render a blob-URL PDF in an iframe fine, so the
+  // live inline preview is desktop-only; touch devices get a plain panel with
+  // the same Download/Share actions, sized for a thumb instead of a cursor.
+  var isTouchDevice = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(pointer: coarse)').matches
+  if (isTouchDevice) {
+    var panel = document.createElement('div')
+    Object.assign(panel.style, {
+      flex: '1', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+      gap: '14px', padding: '24px', color: '#d1d5db', fontFamily: 'inherit', textAlign: 'center',
+    })
+    var icon = document.createElement('div')
+    icon.textContent = '📄'
+    icon.style.fontSize = '48px'
+    var name = document.createElement('div')
+    name.textContent = filename
+    Object.assign(name.style, { fontSize: '14px', fontWeight: '600', color: '#fff', wordBreak: 'break-all' })
+    var hint = document.createElement('div')
+    hint.textContent = 'Preview isn’t available on this device — download or share it instead.'
+    Object.assign(hint.style, { fontSize: '13px', maxWidth: '280px', lineHeight: '1.5' })
+    var actions = document.createElement('div')
+    Object.assign(actions.style, { display: 'flex', gap: '10px', marginTop: '6px' })
+    var bigDownload = mkButton('Download', true)
+    bigDownload.onclick = download
+    actions.appendChild(bigDownload)
+    if (canShareFile) {
+      var bigShare = mkButton('Share', true)
+      bigShare.onclick = share
+      actions.appendChild(bigShare)
+    }
+    panel.appendChild(icon)
+    panel.appendChild(name)
+    panel.appendChild(hint)
+    panel.appendChild(actions)
+    overlay.appendChild(panel)
+  } else {
+    var frame = document.createElement('iframe')
+    frame.src = url
+    frame.title = filename
+    Object.assign(frame.style, { flex: '1', border: 'none', width: '100%', background: '#525659' })
+    overlay.appendChild(frame)
+  }
+
   document.body.appendChild(overlay)
 
   function onKeyDown(e) { if (e.key === 'Escape') close() }
