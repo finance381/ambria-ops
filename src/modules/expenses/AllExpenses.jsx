@@ -16,13 +16,25 @@ var PAGE_SIZE = 20
 
 
 
-function extraFieldChips(exp) {
+// vendorMap (optional) resolves lookup-type extra fields sourced from vendors
+// (e.g. a "Vendor Name" field on a repair sub-type) into a readable name —
+// without it, lookup fields are skipped entirely, same as before.
+function extraFieldChips(exp, vendorMap) {
   var meta = exp.metadata || {}
   var typeFields = (exp.expense_types && exp.expense_types.extra_fields) || []
   var subFields = (exp.expense_sub_types && exp.expense_sub_types.extra_fields) || []
   var chips = []
   typeFields.concat(subFields).forEach(function (f) {
-    if (!f || !f.key || f.type === 'lookup') return
+    if (!f || !f.key) return
+    if (f.type === 'lookup') {
+      if (f.source !== 'vendors' || !vendorMap) return
+      var vId = meta[f.key]
+      if (vId == null || vId === '') return
+      var vName = vendorMap[String(vId)]
+      if (!vName) return
+      chips.push({ label: f.label || f.key, value: vName })
+      return
+    }
     var v = meta[f.key]
     if (v == null || v === '') return
     chips.push({ label: f.label || f.key, value: String(v) })
@@ -249,7 +261,7 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds, glass }) {
       var fullRows = []
       while (true) {
         var q = supabase.from('expenses')
-          .select('id, user_id, amount_paise, tax_paise, description, status, expense_date, deleted_at, vendor_name, metadata, expense_type_id, expense_sub_type_id, expense_types(name, extra_fields), expense_sub_types(name, extra_fields), ' + allocEmbed)
+          .select('id, user_id, amount_paise, tax_paise, description, status, expense_date, created_at, deleted_at, vendor_name, metadata, expense_type_id, expense_sub_type_id, expense_types(name, extra_fields), expense_sub_types(name, extra_fields), ' + allocEmbed)
           .order('expense_date', { ascending: true, nullsFirst: false })
           .order('id', { ascending: true })
           .range(fromIdx, fromIdx + CHUNK - 1)
@@ -281,6 +293,24 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds, glass }) {
       if (uIds.length > 0) {
         var { data: nm } = await supabase.rpc('get_profile_names', { p_ids: uIds })
         ;(nm || []).forEach(function (x) { nameMap[x.id] = x.name })
+      }
+
+      // ─ Fetch vendor names for any lookup-type extra field sourced from vendors ─
+      var vendorIds = []
+      fullRows.forEach(function (r) {
+        var meta = r.metadata || {}
+        var typeFields = (r.expense_types && r.expense_types.extra_fields) || []
+        var subFields = (r.expense_sub_types && r.expense_sub_types.extra_fields) || []
+        typeFields.concat(subFields).forEach(function (f) {
+          if (!f || f.type !== 'lookup' || f.source !== 'vendors') return
+          var vId = meta[f.key]
+          if (vId != null && vId !== '' && vendorIds.indexOf(vId) === -1) vendorIds.push(vId)
+        })
+      })
+      var vendorMap = {}
+      if (vendorIds.length > 0) {
+        var { data: vRows } = await supabase.from('vendors').select('id, name').in('id', vendorIds)
+        ;(vRows || []).forEach(function (v) { vendorMap[String(v.id)] = v.name })
       }
 
       // ─ Build PDF ─
@@ -356,7 +386,7 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds, glass }) {
         // Vendor + extra_field chips
         var chipParts = []
         if (e.vendor_name) chipParts.push('Vendor: ' + e.vendor_name)
-        var chips = extraFieldChips(e)
+        var chips = extraFieldChips(e, vendorMap)
         chips.forEach(function (c) { chipParts.push(c.label + ': ' + c.value) })
         if (chipParts.length) lines.push(chipParts.join('  |  '))
 
@@ -384,7 +414,7 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds, glass }) {
         if (e.status && e.status !== 'recorded') lines.push('(' + e.status + ')')
 
         body.push([
-          (e.expense_date ? formatDate(e.expense_date) : '') + (e.created_at ? '\nLogged ' + formatDateTime(e.created_at) : ''),
+          (e.expense_date ? 'Expense: ' + formatDate(e.expense_date) : '') + (e.created_at ? '\nEntry: ' + formatDateTime(e.created_at) : ''),
           '#' + e.id,
           nameMap[e.user_id] || '—',
           lines.join('\n'),
