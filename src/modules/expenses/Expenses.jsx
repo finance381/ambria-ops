@@ -370,12 +370,17 @@ function Expenses({ profile, masterMode, inAdmin }) {
   // ═══════════════════════════════════════════════
   if (view === 'detail' && detailExp) {
     return (
+      /* onBack, not onUpdated: leaving without changing anything should
+         not re-fetch both lists. A braced JSX comment cannot go here:
+         return ( ... ) takes one expression and that would be a second. */
       <ExpenseDetail
         key={detailExp.id + ':' + detailRefresh}
         exp={detailExp}
         profile={profile}
         isAdmin={isAdmin}
         isDeptApprover={isDeptApprover}
+        inAdmin={inAdmin}
+        onBack={function () { setView(detailExp._fromApprove ? 'approve' : detailExp._fromAll ? 'all' : 'list'); setDetailExp(null) }}
         onUpdated={function () { loadMyExpenses(false); loadApprovalExpenses(false); setView(detailExp._fromApprove ? 'approve' : detailExp._fromAll ? 'all' : 'list'); setDetailExp(null) }}
         onEdit={function () { setEditExp(detailExp); setView('form') }}
         onRaiseGV={function () { setView('gv') }}
