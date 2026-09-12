@@ -167,8 +167,9 @@ function AdminItems({ profile }) {
   }
 
   function resetFilters() {
+    // masterDeptFilter is deliberately left alone — it's no longer a user-facing
+    // filter, just the locked inventory-default department scope for this screen.
     setSearch(''); setDeptFilter([]); setStatusFilter([]); setSubDeptFilter([])
-    setMasterDeptFilter([]); setDefaultApplied(true)
     setCatFilter([]); setSubCatFilter([]); setVenueFilter([]); setSubVenueFilter([])
     setPage(1)
   }
@@ -870,9 +871,6 @@ function AdminItems({ profile }) {
           placeholder="Search name, ID, description, submitter..."
           className="flex-1 min-w-[220px] px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
         />
-        <FilterDropdown value={masterDeptFilter} placeholder="Master Dept" multi
-          onChange={function (v) { setMasterDeptFilter(v); setSubDeptFilter([]); setCatFilter([]); setSubCatFilter([]); setPage(1) }}
-          options={departments.map(function (d) { return { label: d.name + (d.is_inventory_default ? ' ★' : ''), value: String(d.id) } })} />
         <FilterDropdown value={subDeptFilter} placeholder="Master Sub-dept" multi
           onChange={function (v) { setSubDeptFilter(v); setCatFilter([]); setSubCatFilter([]); setPage(1) }}
           options={subDepartments.filter(function (sd) {
@@ -927,7 +925,7 @@ function AdminItems({ profile }) {
         <div className="text-sm text-gray-400 self-center">
           {filtered.length} item{filtered.length !== 1 ? 's' : ''}
         </div>
-        {(search || masterDeptFilter.length || deptFilter.length || statusFilter.length || subDeptFilter.length || catFilter.length || subCatFilter.length || venueFilter.length || subVenueFilter.length) && (
+        {(search || deptFilter.length || statusFilter.length || subDeptFilter.length || catFilter.length || subCatFilter.length || venueFilter.length || subVenueFilter.length) && (
           <button onClick={resetFilters}
             className="px-3 py-2.5 text-sm text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-colors font-medium">✕ Reset</button>
         )}
