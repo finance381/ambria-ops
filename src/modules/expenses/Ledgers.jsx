@@ -4,6 +4,7 @@ import { formatPoints, formatDate, formatDateTime } from '../../lib/format'
 import { pushBack } from '../../lib/backNav'
 import { registerPdfFont } from '../../lib/pdfFont'
 import { openOrSharePdf } from '../../lib/pdfOutput'
+import { plainParticularsLines, plainDateLines, makeStatementCellHooks } from '../../lib/pdfStatementTable'
 import { hasPerm } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
 import { useExpenseDetailModal } from '../../hooks/useExpenseDetailModal.jsx'
@@ -497,26 +498,37 @@ function Ledgers({ profile }) {
   function _renderAllocSection(ctx, title, allocs) {
     var doc = ctx.doc, FONT = ctx.FONT, autoTable = ctx.autoTable, pageW = ctx.pageW, pageH = ctx.pageH
     var subCommitted = 0, subPending = 0, subTotal = 0
+    var dateMeta = []
+    var particularsMeta = []
     var body = allocs.map(function (a) {
       subCommitted += (a.committed_paise || 0); subPending += (a.pending_paise || 0); subTotal += (a.amount_paise || 0)
       var uName = userMap[a.user_id] || '—'
       var vName = venueMap[a.venue_id] || '—'
+
+      var pLines = [{ kind: 'desc', text: a.description || a.remarks || '—' }]
+      var chipParts = []
+      if (a._vendorName && a._vendorName !== '—') chipParts.push('Vendor: ' + a._vendorName)
+      var payLabel = _paymentLabel(a._paymentMode, a._paymentSubMode)
+      if (payLabel !== '—') chipParts.push(payLabel)
+      if (chipParts.length) pLines.push({ kind: 'chip', text: chipParts.join('   ·   ') })
+      if (a.status && a.status !== 'recorded') pLines.push({ kind: 'status', text: STATUS_LABELS[a.status] || a.status })
+      particularsMeta.push(pLines)
+
+      var dm = { top: a.expense_date ? formatDate(a.expense_date) : '—', bottom: a.created_at ? formatDateTime(a.created_at) : '' }
+      dateMeta.push(dm)
+
       return [
-        a.expense_date || '—',
-        a.created_at ? formatDate(a.created_at) : '—',
-        a._vendorName,
-        (a.description || a.remarks || '—'),
+        plainDateLines(dm, 'Logged '),
         uName,
         vName,
-        (a.status ? (STATUS_LABELS[a.status] || a.status) : '—'),
-        _paymentLabel(a._paymentMode, a._paymentSubMode),
+        plainParticularsLines(pLines).join('\n'),
         { content: _fmtPts(a.committed_paise || 0), styles: { halign: 'right', textColor: [20, 100, 60] } },
         { content: _fmtPts(a.pending_paise || 0), styles: { halign: 'right', textColor: [140, 90, 20] } },
         { content: _fmtPts(a.amount_paise || 0), styles: { halign: 'right', fontStyle: 'bold' } },
       ]
     })
     body.push([
-      { content: 'Subtotal (' + allocs.length + ')', colSpan: 8, styles: { fontStyle: 'bold', fillColor: [235, 240, 250] } },
+      { content: 'Subtotal (' + allocs.length + ')', colSpan: 4, styles: { fontStyle: 'bold', fillColor: [235, 240, 250] } },
       { content: _fmtPts(subCommitted), styles: { fontStyle: 'bold', fillColor: [235, 240, 250], halign: 'right', textColor: [20, 100, 60] } },
       { content: _fmtPts(subPending), styles: { fontStyle: 'bold', fillColor: [235, 240, 250], halign: 'right', textColor: [140, 90, 20] } },
       { content: _fmtPts(subTotal), styles: { fontStyle: 'bold', fillColor: [235, 240, 250], halign: 'right' } },
@@ -524,18 +536,29 @@ function Ledgers({ profile }) {
     doc.setFont(FONT, 'bold'); doc.setFontSize(10); doc.setTextColor(30, 30, 90)
     doc.text(title, 14, ctx.startY)
     doc.setTextColor(0)
+    var statementHooks = makeStatementCellHooks(doc, FONT, {
+      dateCol: 0, particularsCol: 3, dateMeta: dateMeta, particularsMeta: particularsMeta,
+      topLabel: 'EXPENSE', bottomLabel: 'LOGGED',
+    })
     autoTable(doc, {
       startY: ctx.startY + 3,
-      head: [['Date', 'Logged', 'Vendor', 'Description', 'User', 'Venue', 'Status', 'Payment', 'Committed', 'Pending', 'Total']],
+      // columnStyles' halign only ever reaches body cells (jspdf-autotable applies it
+      // exclusively to sectionName === 'body'), so Committed/Pending/Total need their
+      // own per-cell halign here to land over the right-aligned figures below.
+      head: [['Date', 'User', 'Venue', 'Particulars',
+        { content: 'Committed', styles: { halign: 'right' } },
+        { content: 'Pending', styles: { halign: 'right' } },
+        { content: 'Total', styles: { halign: 'right' } }]],
       body: body,
-      styles: { font: FONT, fontSize: 7, cellPadding: 1.2, overflow: 'linebreak' },
-      headStyles: { font: FONT, fillColor: [50, 50, 50], textColor: 255, fontStyle: 'bold', halign: 'center', fontSize: 7 },
+      styles: { font: FONT, fontSize: 7, cellPadding: 1.2, overflow: 'linebreak', valign: 'top' },
+      headStyles: { font: FONT, fillColor: [50, 50, 50], textColor: 255, fontStyle: 'bold', fontSize: 7 },
       columnStyles: {
-        0: { cellWidth: 18 }, 1: { cellWidth: 18 }, 2: { cellWidth: 32 }, 3: { cellWidth: 44 }, 4: { cellWidth: 22 },
-        5: { cellWidth: 20 }, 6: { cellWidth: 18 }, 7: { cellWidth: 22 },
-        8: { cellWidth: 20, halign: 'right' }, 9: { cellWidth: 20, halign: 'right' }, 10: { cellWidth: 22, halign: 'right' },
+        0: { cellWidth: 26, fontSize: 6.3 }, 1: { cellWidth: 22 }, 2: { cellWidth: 18 }, 3: { cellWidth: 'auto' },
+        4: { cellWidth: 18, halign: 'right' }, 5: { cellWidth: 18, halign: 'right' }, 6: { cellWidth: 20, halign: 'right' },
       },
       margin: { left: 10, right: 10 },
+      willDrawCell: statementHooks.willDrawCell,
+      didDrawCell: statementHooks.didDrawCell,
       didDrawPage: function () {
         doc.setFontSize(6); doc.setTextColor(120)
         doc.text('Page ' + doc.internal.getCurrentPageInfo().pageNumber, pageW - 14, pageH - 5, { align: 'right' })

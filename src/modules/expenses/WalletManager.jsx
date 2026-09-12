@@ -11,6 +11,7 @@ import { useVoice } from '../../hooks/useVoice'
 import { generateCollectionReceiptPdf } from '../../lib/pdfReceipt'
 import { registerPdfFont } from '../../lib/pdfFont'
 import { openOrSharePdf } from '../../lib/pdfOutput'
+import { plainParticularsLines, plainDateLines, makeStatementCellHooks } from '../../lib/pdfStatementTable'
 import ExpenseDetail from './ExpenseDetail'
 import VoiceInput from '../../components/ui/VoiceInput'
 import { DeptChip } from '../../components/ui/Badge'
@@ -1258,15 +1259,23 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
       function fmtN(paise) {
         return ((paise || 0) / 100).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
       }
-      function enrichFor(t) {
-        if (t.reference_type === 'expense' || t.reference_type === 'expense_refund') {
-          var e = t.reference_id ? expenseRefs[t.reference_id] : null
-          if (!e) return ''
-          var lines = []
-          var tn = e.expense_types?.name || ''
-          var stn = e.expense_sub_types?.name || ''
-          if (tn) lines.push(tn + (stn ? ' > ' + stn : ''))
+      // Structured Particulars lines for the hand-drawn column: a bold header (the
+      // linked expense's type > sub-type when there is one, else the transaction's
+      // own ref kind), the description, then whatever context that reference type
+      // offers — sub-type fields, a per-allocation breakdown with right-pinned
+      // amounts, event name, counterparty, payment mode, etc.
+      function particularsLinesFor(t) {
+        var refLabel = REF_TYPE_LABELS[t.reference_type] || (t.reference_type || '')
+        var refNo = t.reference_id ? String(t.reference_id).slice(0, 10) : ''
+        var e = (t.reference_type === 'expense' || t.reference_type === 'expense_refund') && t.reference_id
+          ? expenseRefs[t.reference_id] : null
+        var tn = (e && e.expense_types?.name) || ''
+        var stn = (e && e.expense_sub_types?.name) || ''
 
+        var lines = [{ kind: 'header', text: tn ? (tn + (stn ? ' > ' + stn : '')) : (refLabel + (refNo ? ' #' + refNo : '')) }]
+        lines.push({ kind: 'desc', text: t.description || '—' })
+
+        if (e) {
           // Sub-type custom fields (vendor, employee, casual type, slip no, etc.), resolving
           // lookup fields to their display names — mirrors the on-screen transaction list.
           var subFields = (e.expense_sub_types && e.expense_sub_types.extra_fields) || []
@@ -1279,44 +1288,45 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             if (f.type === 'lookup' && f.source) display = expLookupLabels[f.source + ':' + String(val)] || val
             fieldBits.push((f.label || f.key) + ': ' + display)
           })
-          if (e.vendor_name && fieldBits.indexOf('Vendor: ' + e.vendor_name) === -1 && !fieldBits.some(function (b) { return b.slice(b.indexOf(': ') + 2) === e.vendor_name })) {
+          if (e.vendor_name && !fieldBits.some(function (b) { return b.slice(b.indexOf(': ') + 2) === e.vendor_name })) {
             fieldBits.unshift('Vendor: ' + e.vendor_name)
           }
-          if (fieldBits.length > 0) lines.push(fieldBits.join(' · '))
+          if (fieldBits.length > 0) lines.push({ kind: 'chip', text: fieldBits.join('   ·   ') })
 
           var allocs = e.expense_allocations || []
           if (allocs.length > 1) {
-            lines.push(allocs.map(function (a) {
+            allocs.forEach(function (a) {
               var atn = a.expense_types?.name || ''
               var astn = a.expense_sub_types?.name || ''
               var differs = atn && (atn !== tn || astn !== stn)
               var typeLabel = differs ? (' [' + atn + (astn ? ' > ' + astn : '') + ']') : ''
-              return (a.department || 'Unassigned') + typeLabel + ': ' + fmtN(a.amount_paise)
-            }).join(', '))
+              lines.push({ kind: 'alloc', text: (a.department || 'Unassigned') + typeLabel, amount: fmtN(a.amount_paise) })
+            })
           } else if (allocs.length === 1 && allocs[0].department) {
-            lines.push(allocs[0].department)
+            lines.push({ kind: 'chip', text: allocs[0].department })
           }
-          if (e._event_name) lines.push('Event: ' + e._event_name)
-          return lines.join('\n')
-        }
-        if (t.reference_type === 'transfer' && t.reference_id) {
+          if (e._event_name) lines.push({ kind: 'chip', text: 'Event: ' + e._event_name })
+          if (e.expense_date) lines.push({ kind: 'chip', text: 'Expense date: ' + fmtD(e.expense_date) })
+        } else if (t.reference_type === 'transfer' && t.reference_id) {
           var tr = transferParties[t.reference_id]
-          if (!tr) return ''
-          var cpId = t.type === 'debit' ? tr.to_user_id : tr.from_user_id
-          var cpName = walletProfiles[cpId]?.name
-          if (!cpName) return ''
-          return (t.type === 'debit' ? '→ ' : '← ') + cpName
-        }
-        if (t.reference_type === 'collection') {
+          if (tr) {
+            var cpId = t.type === 'debit' ? tr.to_user_id : tr.from_user_id
+            var cpName = walletProfiles[cpId]?.name
+            if (cpName) lines.push({ kind: 'chip', text: (t.type === 'debit' ? '→ ' : '← ') + cpName })
+          }
+        } else if (t.reference_type === 'collection') {
           var bits = []
           if (t.payment_mode) bits.push(t.payment_mode)
           if (t.receipt_no) bits.push('Receipt #' + t.receipt_no)
-          return bits.join(' · ')
+          if (bits.length) lines.push({ kind: 'chip', text: bits.join('   ·   ') })
+        } else if (t.reference_type === 'issued') {
+          lines.push({ kind: 'chip', text: 'Issued by admin' })
+        } else if (t.reference_type === 'deducted') {
+          lines.push({ kind: 'chip', text: 'Deducted by admin' })
+        } else if (t.reference_type === 'opening') {
+          lines.push({ kind: 'chip', text: 'Opening balance' })
         }
-        if (t.reference_type === 'issued') return 'Issued by admin'
-        if (t.reference_type === 'deducted') return 'Deducted by admin'
-        if (t.reference_type === 'opening') return 'Opening balance'
-        return ''
+        return lines
       }
 
       var periodFrom = txnFrom || (oldest ? oldest.created_at.split('T')[0] : '')
@@ -1360,45 +1370,52 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
       })
 
       // Main ledger
+      var dateMeta = []
+      var particularsMeta = []
       var body = chrono.map(function (t) {
         var dt = t.created_at ? new Date(t.created_at) : null
-        var entryCell = dt ? fmtD(t.created_at.split('T')[0]) + '\n' + dt.toTimeString().slice(0, 5) : '—'
-        var expRef = (t.reference_type === 'expense' || t.reference_type === 'expense_refund') && t.reference_id ? expenseRefs[t.reference_id] : null
-        var expenseDateCell = expRef && expRef.expense_date ? fmtD(expRef.expense_date) : '—'
-        var refLabel = REF_TYPE_LABELS[t.reference_type] || (t.reference_type || '')
-        var refNo = t.reference_id ? String(t.reference_id).slice(0, 10) : ''
-        var refCell = refLabel + (refNo ? '\n#' + refNo : '')
-        var enrich = enrichFor(t)
-        var descCell = (t.description || '—') + (enrich ? '\n' + enrich : '')
+        var dm = { top: dt ? fmtD(t.created_at.split('T')[0]) : '—', bottom: dt ? dt.toTimeString().slice(0, 5) : '' }
+        dateMeta.push(dm)
+        var pLines = particularsLinesFor(t)
+        particularsMeta.push(pLines)
         var isCredit = t.type === 'credit'
         var amt = fmtN(t.amount_paise || 0)
         return [
-          entryCell,
-          expenseDateCell,
-          refCell,
-          descCell,
+          plainDateLines(dm, ''),
+          plainParticularsLines(pLines).join('\n'),
           isCredit ? '' : amt,
           isCredit ? amt : '',
           fmtN(t.balance_after_paise || 0),
         ]
       })
 
+      var statementHooks = makeStatementCellHooks(doc, FONT, {
+        dateCol: 0, particularsCol: 1, dateMeta: dateMeta, particularsMeta: particularsMeta,
+        topLabel: 'DATE', bottomLabel: 'TIME',
+      })
+
       autoTable(doc, {
         startY: doc.lastAutoTable.finalY + 6,
-        head: [['Entry Date', 'Expense Date', 'Ref', 'Particulars', 'Debit', 'Credit', 'Balance']],
+        // columnStyles' halign only ever reaches body cells (jspdf-autotable applies it
+        // exclusively to sectionName === 'body'), so Debit/Credit/Balance need their own
+        // per-cell halign here to land over the right-aligned figures below.
+        head: [['Date', 'Particulars',
+          { content: 'Debit', styles: { halign: 'right' } },
+          { content: 'Credit', styles: { halign: 'right' } },
+          { content: 'Balance', styles: { halign: 'right' } }]],
         body: body,
         styles: { font: FONT, fontSize: 8, cellPadding: 1.5, overflow: 'linebreak', valign: 'top' },
-        headStyles: { font: FONT, fillColor: [50, 50, 50], textColor: 255, fontStyle: 'bold', halign: 'center' },
+        headStyles: { font: FONT, fillColor: [50, 50, 50], textColor: 255, fontStyle: 'bold' },
         columnStyles: {
-          0: { cellWidth: 20, fontSize: 7, halign: 'center' },
-          1: { cellWidth: 20, fontSize: 7, halign: 'center' },
-          2: { cellWidth: 18, fontSize: 7 },
-          3: { cellWidth: 'auto' },
-          4: { cellWidth: 20, halign: 'right', textColor: [180, 30, 30] },
-          5: { cellWidth: 20, halign: 'right', textColor: [16, 128, 60] },
-          6: { cellWidth: 20, halign: 'right', fontStyle: 'bold' },
+          0: { cellWidth: 26, fontSize: 7 },
+          1: { cellWidth: 'auto' },
+          2: { cellWidth: 22, halign: 'right', textColor: [180, 30, 30] },
+          3: { cellWidth: 22, halign: 'right', textColor: [16, 128, 60] },
+          4: { cellWidth: 24, halign: 'right', fontStyle: 'bold' },
         },
         margin: { left: 10, right: 10 },
+        willDrawCell: statementHooks.willDrawCell,
+        didDrawCell: statementHooks.didDrawCell,
         didDrawPage: function () {
           doc.setFontSize(7); doc.setTextColor(120)
           doc.text('Page ' + doc.internal.getCurrentPageInfo().pageNumber, pageW - 10, pageH - 6, { align: 'right' })

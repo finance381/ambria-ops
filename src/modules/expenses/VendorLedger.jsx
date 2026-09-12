@@ -10,6 +10,7 @@ import LedgerSourceMedia from '../../components/ledger/LedgerSourceMedia'
 import { filterVisibleVendors } from '../../lib/vendorGating'
 import { registerPdfFont } from '../../lib/pdfFont'
 import { openOrSharePdf } from '../../lib/pdfOutput'
+import { plainParticularsLines, plainDateLines, makeStatementCellHooks } from '../../lib/pdfStatementTable'
 import { hasPerm } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
 import SearchField from '../../components/ui/SearchField'
@@ -516,21 +517,25 @@ function VendorLedger({ profile }) {
       function fmtN(paise) {
         return ((paise || 0) / 100).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
       }
-      function refCellFor(e) {
+      function refLabelFor(e) {
         var kind = (e.metadata && e.metadata.kind) || e.ref_type || ''
         var refNo = ''
         if (e.metadata && e.metadata.purchase_number) refNo = 'PO #' + e.metadata.purchase_number
         else if (e.metadata && e.metadata.receipt_number) refNo = 'RCPT #' + e.metadata.receipt_number
         else if (e.ref_id) refNo = '#' + String(e.ref_id).slice(0, 8)
         var label = kind ? kind.toString().toUpperCase().replace(/_/g, ' ') : ''
-        return label + (refNo ? '\n' + refNo : '')
+        return label + (refNo ? '  ' + refNo : '') || '—'
       }
-      function particularsFor(e) {
-        var desc = e.description || '—'
-        var extra = []
-        if (e.metadata && e.metadata.mode) extra.push(String(e.metadata.mode).toUpperCase())
-        if (e.metadata && e.metadata.due_date) extra.push('Due ' + fmtD(e.metadata.due_date))
-        return desc + (extra.length ? '\n' + extra.join(' · ') : '')
+      // Structured Particulars lines for the hand-drawn column: a bold ref/kind
+      // header, the description, then a grey chip line for mode/due-date facts.
+      function particularsLinesFor(e) {
+        var lines = [{ kind: 'header', text: refLabelFor(e) }]
+        lines.push({ kind: 'desc', text: e.description || '—' })
+        var chipParts = []
+        if (e.metadata && e.metadata.mode) chipParts.push(String(e.metadata.mode).toUpperCase())
+        if (e.metadata && e.metadata.due_date) chipParts.push('Due ' + fmtD(e.metadata.due_date))
+        if (chipParts.length) lines.push({ kind: 'chip', text: chipParts.join('   ·   ') })
+        return lines
       }
 
       // Header
@@ -572,39 +577,55 @@ function VendorLedger({ profile }) {
 
       // Main ledger table (running balance recomputed chronologically, seeded with vendor opening balance)
       var running = opening
+      var dateMeta = []
+      var particularsMeta = []
       var body = chrono.map(function (e) {
         var isCredit = (e.credit_paise || 0) > 0
         running += (e.credit_paise || 0) - (e.debit_paise || 0)
         var dt = e.created_at ? new Date(e.created_at) : null
-        var loggedCell = dt ? 'Logged ' + fmtD(e.created_at.split('T')[0]) + ' ' + dt.toTimeString().slice(0, 5) : ''
-        var dateCell = (e.entry_date ? fmtD(e.entry_date) : '—') + (loggedCell ? '\n' + loggedCell : '')
+        var loggedCell = dt ? fmtD(e.created_at.split('T')[0]) + ' ' + dt.toTimeString().slice(0, 5) : ''
+        var dm = { top: e.entry_date ? fmtD(e.entry_date) : '—', bottom: loggedCell }
+        dateMeta.push(dm)
+        var pLines = particularsLinesFor(e)
+        particularsMeta.push(pLines)
         var cr = (e.credit_paise || 0)
         var db = (e.debit_paise || 0)
         return [
-          dateCell,
-          refCellFor(e),
-          particularsFor(e),
+          plainDateLines(dm, 'Logged '),
+          plainParticularsLines(pLines).join('\n'),
           isCredit ? fmtN(cr) : '',
           !isCredit ? fmtN(db) : '',
           fmtN(running),
         ]
       })
 
+      var statementHooks = makeStatementCellHooks(doc, FONT, {
+        dateCol: 0, particularsCol: 1, dateMeta: dateMeta, particularsMeta: particularsMeta,
+        topLabel: 'ENTRY', bottomLabel: 'LOGGED',
+      })
+
       autoTable(doc, {
         startY: doc.lastAutoTable.finalY + 6,
-        head: [['Date', 'Ref', 'Particulars', 'Bill (Cr)', 'Payment (Dr)', 'Balance']],
+        // columnStyles' halign only ever reaches body cells (jspdf-autotable applies it
+        // exclusively to sectionName === 'body'), so Bill/Payment/Balance need their own
+        // per-cell halign here to land over the right-aligned figures below.
+        head: [['Date', 'Particulars',
+          { content: 'Bill (Cr)', styles: { halign: 'right' } },
+          { content: 'Payment (Dr)', styles: { halign: 'right' } },
+          { content: 'Balance', styles: { halign: 'right' } }]],
         body: body,
         styles: { font: FONT, fontSize: 8, cellPadding: 1.5, overflow: 'linebreak', valign: 'top' },
-        headStyles: { font: FONT, fillColor: [50, 50, 50], textColor: 255, fontStyle: 'bold', halign: 'center' },
+        headStyles: { font: FONT, fillColor: [50, 50, 50], textColor: 255, fontStyle: 'bold' },
         columnStyles: {
-          0: { cellWidth: 28, fontSize: 6.5 },
-          1: { cellWidth: 22, fontSize: 7 },
-          2: { cellWidth: 'auto' },
-          3: { cellWidth: 22, halign: 'right', textColor: [140, 90, 20] },
-          4: { cellWidth: 22, halign: 'right', textColor: [16, 128, 60] },
-          5: { cellWidth: 24, halign: 'right', fontStyle: 'bold' },
+          0: { cellWidth: 30, fontSize: 7 },
+          1: { cellWidth: 'auto' },
+          2: { cellWidth: 24, halign: 'right', textColor: [140, 90, 20] },
+          3: { cellWidth: 24, halign: 'right', textColor: [16, 128, 60] },
+          4: { cellWidth: 26, halign: 'right', fontStyle: 'bold' },
         },
         margin: { left: 10, right: 10 },
+        willDrawCell: statementHooks.willDrawCell,
+        didDrawCell: statementHooks.didDrawCell,
         didDrawPage: function () {
           doc.setFontSize(7); doc.setTextColor(120)
           doc.text('Page ' + doc.internal.getCurrentPageInfo().pageNumber, pageW - 10, pageH - 6, { align: 'right' })
