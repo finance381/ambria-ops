@@ -1003,7 +1003,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             <div>
               <p className="text-[10px] uppercase text-gray-500 mb-1">Receipt Image</p>
               <img src={detailTarget.imgUrl} alt="receipt"
-                onClick={function () { setEnlargedImg(detailTarget.imgUrl) }}
+                onClick={function () { setEnlargedWalletImg(detailTarget.imgUrl) }}
                 className="w-full max-h-64 object-contain rounded border border-gray-200 cursor-zoom-in bg-gray-50" />
             </div>
           )}

@@ -116,6 +116,7 @@ function PaymentsLedger({ profile }) {
       var epc = epcByWalletTx[w.id]
       var evId = epc ? epc.event_id : (w.reference_id ? Number(w.reference_id) : null)
       if (evId && eventIds.indexOf(evId) === -1) eventIds.push(evId)
+      if (w.performed_by && profileIds.indexOf(w.performed_by) === -1) profileIds.push(w.performed_by)
     })
 
     var [pRes, evRes] = await Promise.all([
@@ -159,6 +160,7 @@ function PaymentsLedger({ profile }) {
         mode: w.payment_mode,
         amount_paise: w.amount_paise || 0,
         party_name: partyName,
+        collector_name: (w.performed_by && profileNames[w.performed_by]) || '',
         description: w.description || (w.receipt_no ? '#' + w.receipt_no : ''),
         type_label: meta.label,
         type_cls: meta.cls,
@@ -308,6 +310,7 @@ function PaymentsLedger({ profile }) {
                       <span className={"text-[10px] font-semibold px-1.5 py-0.5 border rounded " + r.type_cls}>
                         {r.type_label}
                       </span>
+                      {r.collector_name && <span className="text-[10px] text-gray-500 truncate">👤 {r.collector_name}</span>}
                       {r.description && <span className="text-[10px] text-gray-400 truncate">{r.description}</span>}
                     </div>
                     <p className="text-[10px] text-gray-400 mt-0.5">Logged {formatDateTime(r.logged_at)}</p>
