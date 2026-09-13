@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { formatDate } from '../../lib/format'
+import { bucketForEmployeeFile } from '../../lib/uploadHelper'
 
 var STATUS_STYLES = {
   active:      { label: 'Active',      cls: 'bg-green-100 text-green-700' },
@@ -71,9 +72,10 @@ function EmployeeDetail({ employeeId, jobDepartments, managers, profile, onEdit,
       data.monthly_bank_paise = null
     }
     setRow(data)
-    // Fetch photo signed URL
+    // Fetch photo signed URL — public-form submissions (pending employees) store
+    // their photo under employee-public-submissions, not employee-docs.
     if (data.photo_file_path) {
-      supabase.storage.from('employee-docs').createSignedUrl(data.photo_file_path, 600)
+      supabase.storage.from(bucketForEmployeeFile(data.photo_file_path)).createSignedUrl(data.photo_file_path, 600)
         .then(function (r) { if (r.data) setPhotoUrl(r.data.signedUrl) })
     }
 
@@ -91,7 +93,7 @@ function EmployeeDetail({ employeeId, jobDepartments, managers, profile, onEdit,
     var path = docType === 'aadhaar' ? row.aadhaar_file_path : row.pan_file_path
     if (!path) return
     setDocLoading(docType)
-    var { data, error: err } = await supabase.storage.from('employee-docs').createSignedUrl(path, 60)
+    var { data, error: err } = await supabase.storage.from(bucketForEmployeeFile(path)).createSignedUrl(path, 60)
     setDocLoading(null)
     if (err) { alert('Preview failed: ' + err.message); return }
     window.open(data.signedUrl, '_blank', 'noopener,noreferrer')

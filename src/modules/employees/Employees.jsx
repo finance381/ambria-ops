@@ -40,6 +40,7 @@ function Employees({ profile }) {
 
   // Modals
   var [editRow, setEditRow] = useState(null)
+  var [editLoading, setEditLoading] = useState(false)
   var [viewRow, setViewRow] = useState(null)
   var [showCreate, setShowCreate] = useState(false)
   var [deleteRow, setDeleteRow] = useState(null)
@@ -56,7 +57,11 @@ function Employees({ profile }) {
   var isAdminOrHR = hasPerm(profile?.permsNew, 'hr.employees')
   var hasEmployeesPerm = isAdminOrHR || hasPerm(permsNew, 'hr.employees')
   var canSeeAll = isAdminOrHR
-  var canSeeSalary = isAdminOrHR || hasPerm(permsNew, 'hr.employees.salary_view')
+  // 'hr.employees.salary_view' is an independent optional sub-permission (see the
+  // "See salaries" checkbox next to Employees in the permission matrix) — having
+  // base Employees access does not imply it, so this must not fall back to
+  // isAdminOrHR the way canSeeAll does.
+  var canSeeSalary = hasPerm(permsNew, 'hr.employees.salary_view')
 
   useRealtime(['employees', 'job_departments'], function () { if (!saving) loadAll() })
 
@@ -80,6 +85,19 @@ function Employees({ profile }) {
     setRows(empRes.data || [])
     setJobDepartments(jdRes.data || [])
     setLoading(false)
+  }
+
+  // The list only selects a lean column set for the table (loadAll above) — opening
+  // Edit straight from a list row with that object left most of the form blank, so
+  // this fetches the full record first, same as EmployeeDetail already does for its
+  // own Edit button.
+  async function openEditRow(r) {
+    setEditLoading(true)
+    var { data, error } = await supabase.from('employees').select('*').eq('id', r.id).maybeSingle()
+    setEditLoading(false)
+    if (error || !data) { alert('Failed to load employee: ' + (error?.message || 'not found')); return }
+    if (!canSeeSalary) { data.ctc_annual_paise = null; data.monthly_cash_paise = null; data.monthly_bank_paise = null }
+    setEditRow(data)
   }
 
   // Managers list for form picker (only active/probation/on_leave)
@@ -638,8 +656,8 @@ function Employees({ profile }) {
                       <button onClick={function () { setViewRow(r) }}
                         className="text-xs px-2 py-1 rounded text-gray-600 hover:bg-gray-100 mr-1">View</button>
                       {(canSeeAll || r.created_by === profile.id) && (
-                        <button onClick={function () { setEditRow(r) }}
-                          className="text-xs px-2 py-1 rounded text-indigo-600 hover:bg-indigo-50">Edit</button>
+                        <button onClick={function () { openEditRow(r) }} disabled={editLoading}
+                          className="text-xs px-2 py-1 rounded text-indigo-600 hover:bg-indigo-50 disabled:opacity-50">Edit</button>
                       )}
                       {r.status === 'pending' && isAdminOrHR && (
                         <button onClick={function () { setApproveRow(r) }}
