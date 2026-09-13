@@ -2680,28 +2680,43 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                       var cashChecked = !!entry.payWithCash
                       var bankChecked = !!entry.payWithBank
                       var bothChecked = cashChecked && bankChecked
+                      // While only one of Cash/Bank is checked, that side silently carries the
+                      // FULL credit (see getEntrySplit's onlyCash/onlyBank branches) regardless
+                      // of whatever rupee string happens to be sitting in the OTHER, unchecked
+                      // field — which can be stale (left over from an earlier split, or from
+                      // loading an edited expense). Checking the second box used to read that
+                      // stale number and subtract it from the total, silently shaving points off
+                      // the side that had actually been carrying everything. So a single→both
+                      // transition here always gives the side that was already checked the
+                      // fresh, full amount and starts the newly-checked side at 0, instead of
+                      // trusting whatever string was left in either field.
                       function togglePay(kind) {
                         setEntries(function (prev) {
                           return prev.map(function (en, ei) {
                             if (ei !== idx) return en
                             var patch = {}
                             if (kind === 'cash') {
-                              patch.payWithCash = !en.payWithCash
-                              if (!patch.payWithCash) { patch.paymentCreditCashRupees = ''; patch.cashDueDate = '' }
-                              else if (!en.payWithBank) { patch.paymentCreditCashRupees = String(creditRupees) }
+                              var cashOn = !en.payWithCash
+                              patch.payWithCash = cashOn
+                              if (!cashOn) {
+                                patch.paymentCreditCashRupees = ''; patch.cashDueDate = ''
+                              } else if (en.payWithBank) {
+                                patch.paymentCreditCashRupees = ''
+                                patch.paymentCreditBankRupees = String(creditRupees)
+                              } else {
+                                patch.paymentCreditCashRupees = String(creditRupees)
+                              }
                             } else {
-                              patch.payWithBank = !en.payWithBank
-                              if (!patch.payWithBank) { patch.paymentCreditBankRupees = ''; patch.bankDueDate = '' }
-                              else if (!en.payWithCash) { patch.paymentCreditBankRupees = String(creditRupees) }
-                            }
-                            // If both now checked and only one has a value, set the other to remainder
-                            var nowCash = patch.payWithCash !== undefined ? patch.payWithCash : en.payWithCash
-                            var nowBank = patch.payWithBank !== undefined ? patch.payWithBank : en.payWithBank
-                            if (nowCash && nowBank) {
-                              var cv = Number((patch.paymentCreditCashRupees !== undefined ? patch.paymentCreditCashRupees : en.paymentCreditCashRupees) || 0)
-                              var bv = Number((patch.paymentCreditBankRupees !== undefined ? patch.paymentCreditBankRupees : en.paymentCreditBankRupees) || 0)
-                              if (cv > 0 && bv === 0) patch.paymentCreditBankRupees = String(Math.max(0, creditRupees - cv))
-                              else if (bv > 0 && cv === 0) patch.paymentCreditCashRupees = String(Math.max(0, creditRupees - bv))
+                              var bankOn = !en.payWithBank
+                              patch.payWithBank = bankOn
+                              if (!bankOn) {
+                                patch.paymentCreditBankRupees = ''; patch.bankDueDate = ''
+                              } else if (en.payWithCash) {
+                                patch.paymentCreditBankRupees = ''
+                                patch.paymentCreditCashRupees = String(creditRupees)
+                              } else {
+                                patch.paymentCreditBankRupees = String(creditRupees)
+                              }
                             }
                             return Object.assign({}, en, patch)
                           })
@@ -2775,7 +2790,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                                     <div>
                                       <label className="block text-[11px] font-semibold text-slate-600 mb-1">Cash Portion (pts) <span className="text-red-500">*</span></label>
                                       <input type="number" inputMode="decimal"
-                                        value={entry.paymentCreditCashRupees}
+                                        value={bothChecked ? entry.paymentCreditCashRupees : String(creditRupees)}
                                         onChange={function (ev) { setCashPortion(ev.target.value) }}
                                         min="0" step="any" placeholder="0"
                                         disabled={!bothChecked}
@@ -2801,7 +2816,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                                     <div>
                                       <label className="block text-[11px] font-semibold text-slate-600 mb-1">Bank Portion (pts) <span className="text-red-500">*</span></label>
                                       <input type="number" inputMode="decimal"
-                                        value={entry.paymentCreditBankRupees}
+                                        value={bothChecked ? entry.paymentCreditBankRupees : String(creditRupees)}
                                         onChange={function (ev) { setBankPortion(ev.target.value) }}
                                         min="0" step="any" placeholder="0"
                                         disabled={!bothChecked}
