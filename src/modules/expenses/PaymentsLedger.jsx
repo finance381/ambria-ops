@@ -37,6 +37,7 @@ function PaymentsLedger({ profile }) {
   var [dirFilter, setDirFilter] = useState('all') // 'all' | 'in' | 'out'
   var [search, setSearch] = useState('')
   var [detailTarget, setDetailTarget] = useState(null) // { row, event, collectorName, loading } — vendor/salary/collection rows
+  var [enlargedImg, setEnlargedImg] = useState(null)
   var { openExpenseDetail, expenseDetailModal } = useExpenseDetailModal(profile, isAdmin, function () { load() })
 
   async function load() {
@@ -56,7 +57,7 @@ function PaymentsLedger({ profile }) {
         .limit(1000),
       supabase
         .from('wallet_transactions')
-        .select('id, created_at, amount_paise, description, payment_mode, receipt_no, reference_id, performed_by, status')
+        .select('id, created_at, amount_paise, description, payment_mode, receipt_no, reference_id, performed_by, status, received_image_path')
         .eq('reference_type', 'collection')
         .not('payment_mode', 'is', null)
         .neq('status', 'cancelled')
@@ -169,6 +170,9 @@ function PaymentsLedger({ profile }) {
         _epc: epc || null,
         _receiptNo: w.receipt_no,
         _performedBy: w.performed_by,
+        _imgUrl: w.received_image_path
+          ? supabase.storage.from('receipts').getPublicUrl(w.received_image_path).data?.publicUrl
+          : null,
       })
     })
     expWalletRows.forEach(function (r) {
@@ -377,11 +381,25 @@ function PaymentsLedger({ profile }) {
                   <PaymentProofThumbs meta={meta} />
                 </div>
               )}
+              {r.source === 'collection' && r._imgUrl && (
+                <div>
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Receipt Image</p>
+                  <img src={r._imgUrl} alt="receipt"
+                    onClick={function (ev) { ev.stopPropagation(); setEnlargedImg(r._imgUrl) }}
+                    className="w-full max-h-64 object-contain rounded border border-gray-200 cursor-zoom-in bg-gray-50" />
+                </div>
+              )}
               <p className="text-[10px] text-gray-400 pt-1">Logged {formatDateTime(r.logged_at)}</p>
             </div>
           </div>
         ), document.body)
       })()}
+
+      {enlargedImg && createPortal((
+        <div className="fixed inset-0 bg-black/80 z-[9999] flex items-center justify-center p-4" onClick={function () { setEnlargedImg(null) }}>
+          <img src={enlargedImg} alt="" className="max-w-full max-h-[80vh] rounded-lg" />
+        </div>
+      ), document.body)}
 
       {expenseDetailModal}
     </div>
