@@ -139,6 +139,9 @@ function Shell({ profile, onSignOut }) {
   // uses it today; a tile without `sub` clears it, so the module falls back to
   // its own first page.
   var [subTab, setSubTab] = useState(null)
+  // Set by navigateToExpenses when a ledger screen sends the user to a specific
+  // expense's edit/Raise JV view instead of just the Expenses tab.
+  var [deepLinkExpense, setDeepLinkExpense] = useState(null)
   var [menuOpen, setMenuOpen] = useState(false)
   var [menuPos, setMenuPos] = useState(null)
   var menuBtnRef = useRef(null)
@@ -231,10 +234,13 @@ function Shell({ profile, onSignOut }) {
   // Lets a ledger/wallet screen send the user to Finance > PC & Direct Expenses
   // (e.g. "Edit"/"Raise JV" on an expense opened from a read-only ledger row,
   // which has no editing UI of its own) instead of just telling them to go there.
-  function navigateToExpenses() {
+  // expenseId + mode ('edit' | 'gv') deep-link straight into that expense's
+  // edit form or Raise JV view once Expenses.jsx mounts there.
+  function navigateToExpenses(expenseId, mode) {
     var fromGroup = activeGroup, fromTab = tab, fromSub = subTab
     pushBack(function () { setActiveGroup(fromGroup); setTab(fromTab); setSubTab(fromSub) })
     setActiveGroup('expenses'); setTab('expenses'); setSubTab(null)
+    setDeepLinkExpense(expenseId ? { id: expenseId, mode: mode } : null)
   }
 
   // Current group object
@@ -734,7 +740,7 @@ function Shell({ profile, onSignOut }) {
           <Wallet profile={profile} onNavigateToExpenses={navigateToExpenses} />
         )}
         {tab === 'expenses' && (
-          <Expenses profile={profile} />
+          <Expenses profile={profile} deepLinkExpense={deepLinkExpense} onDeepLinkHandled={function () { setDeepLinkExpense(null) }} />
         )}
         {tab === 'cost_transfers' && (
           <CostTransfers profile={profile} />

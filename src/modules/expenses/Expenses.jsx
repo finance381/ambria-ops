@@ -28,7 +28,7 @@ var PAGE_SIZE = 20
 // The import also gets it a content hash, so a new backdrop is never served
 // from a stale cache.
 //
-function Expenses({ profile, masterMode, inAdmin }) {
+function Expenses({ profile, masterMode, inAdmin, deepLinkExpense, onDeepLinkHandled }) {
   var [view, setView] = useState('list') // list | form | detail | approve
   var [myExpenses, setMyExpenses] = useState([])
   var [approvalExpenses, setApprovalExpenses] = useState([])
@@ -113,6 +113,27 @@ function Expenses({ profile, masterMode, inAdmin }) {
     loadMyExpenses(false)
     loadApprovalExpenses(false)
   }, [statusFilter, dateFrom, dateTo, expSearchDebounced, deptFilter, subDeptFilter, venueFilter, userFilter, amountMin, amountMax])
+
+  // A ledger screen (Ledgers, Vendor Ledger, Wallet) sent the user here to edit
+  // a specific expense or raise a JV on it, instead of just landing on the tab —
+  // fetch that expense fresh (the ledger's own read-only view doesn't have every
+  // field the edit form needs) and open straight into the right mode.
+  useEffect(function () {
+    if (!deepLinkExpense || !deepLinkExpense.id) return
+    var cancelled = false
+    supabase.from('expenses')
+      .select('id, user_id, batch_id, expense_type_id, expense_sub_type_id, amount_paise, tax_paise, description, status, expense_date, receipt_path, receipt_paths, created_at, rejection_reason, flag_reason, penalty_paise, penalized_at, deduction_type, vendor_name, travel_from, travel_to, travel_mode, metadata, event_id, deleted_at, payment_cash_paise, payment_credit_paise, payment_credit_cash_paise, payment_credit_bank_paise, cash_due_date, bank_due_date, expense_types(name, extra_fields), expense_sub_types(name, extra_fields), events(event_name), expense_allocations(department, department_id, venue_id, amount_paise)')
+      .eq('id', deepLinkExpense.id).maybeSingle()
+      .then(function (res) {
+        if (cancelled) return
+        if (onDeepLinkHandled) onDeepLinkHandled()
+        if (!res.data) { alert('Expense not found: ' + (res.error?.message || 'missing')); return }
+        if (deepLinkExpense.mode === 'edit') { setEditExp(res.data); setView('form') }
+        else { setDetailExp(res.data); setView('gv') }
+      })
+    return function () { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deepLinkExpense])
   async function loadMyExpenses(append) {
     var offset = append ? myExpenses.length : 0
     if (!append) setLoading(true)

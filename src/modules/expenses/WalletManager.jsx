@@ -849,8 +849,8 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
               isDeptApprover={false}
               onBack={function () { closeExpenseDetail(false) }}
               onUpdated={function () { closeExpenseDetail(true) }}
-              onEdit={function () { closeExpenseDetail(false); onNavigateToExpenses && onNavigateToExpenses() }}
-              onRaiseGV={function () { closeExpenseDetail(false); onNavigateToExpenses && onNavigateToExpenses() }}
+              onEdit={function () { var id = expenseDetailTarget.id; closeExpenseDetail(false); onNavigateToExpenses && onNavigateToExpenses(id, 'edit') }}
+              onRaiseGV={function () { var id = expenseDetailTarget.id; closeExpenseDetail(false); onNavigateToExpenses && onNavigateToExpenses(id, 'gv') }}
             />
           )}
         </div>

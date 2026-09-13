@@ -135,7 +135,7 @@ function subTabAllowed(cfg, permsNew) {
   return true
 }
 
-function TabbedSection({ config, profile, onNavigate, activeSubTab }) {
+function TabbedSection({ config, profile, onNavigate, activeSubTab, deepLinkExpense, onDeepLinkHandled }) {
   var permsNew = profile.permsNew || []
   var visibleConfig = config.filter(function (c) { return subTabAllowed(c, permsNew) })
 
@@ -162,7 +162,8 @@ function TabbedSection({ config, profile, onNavigate, activeSubTab }) {
       <SubTabs tabs={visibleConfig} active={sub} onChange={setSub} />
       <Suspense fallback={<div className="text-center py-8 text-sm text-gray-400">Loading...</div>}>
         {Active && <Active profile={profile} onNavigate={onNavigate} inAdmin
-          onNavigateToExpenses={function () { onNavigate('expenses', 'expenses') }} />}
+          onNavigateToExpenses={function (expenseId, mode) { onNavigate('expenses', 'expenses', expenseId ? { id: expenseId, mode: mode } : null) }}
+          deepLinkExpense={deepLinkExpense} onDeepLinkHandled={onDeepLinkHandled} />}
       </Suspense>
     </div>
   )
@@ -269,7 +270,8 @@ function tabAllowed(tab, permsNew) {
 
 function makeTabbedModule(configKey) {
   return function (props) {
-    return <TabbedSection config={SUB_TAB_CONFIG[configKey]} profile={props.profile} onNavigate={props.onNavigate} activeSubTab={props.activeSubTab} />
+    return <TabbedSection config={SUB_TAB_CONFIG[configKey]} profile={props.profile} onNavigate={props.onNavigate} activeSubTab={props.activeSubTab}
+      deepLinkExpense={props.deepLinkExpense} onDeepLinkHandled={props.onDeepLinkHandled} />
   }
 }
 
@@ -295,6 +297,9 @@ function AdminShell({ profile, onSignOut }) {
   var [active, setActive] = useState(_defaultTab)
   var [subTab, setSubTab] = useState(null)
   var [navOpen, setNavOpen] = useState(false)
+  // Set by onNavigate's 3rd arg when a ledger screen sends the user to a
+  // specific expense's edit/Raise JV view instead of just the Expenses tab.
+  var [deepLinkExpense, setDeepLinkExpense] = useState(null)
 
   var _isVisible = visibleTabs.find(function (t) { return t.key === active }) != null
   var ActiveModule = _isVisible ? (MODULES[active] || null) : null
@@ -499,7 +504,11 @@ function AdminShell({ profile, onSignOut }) {
         )}
         {ActiveModule && (
           <Suspense fallback={<div className="text-center py-8 text-sm text-gray-400">Loading...</div>}>
-            <ActiveModule profile={profile} onNavigate={function (tab, sub) { setActive(tab); setSubTab(sub || null) }} activeSubTab={subTab} inAdmin />
+            <ActiveModule profile={profile}
+              onNavigate={function (tab, sub, deepLink) { setActive(tab); setSubTab(sub || null); setDeepLinkExpense(deepLink || null) }}
+              activeSubTab={subTab} inAdmin
+              deepLinkExpense={deepLinkExpense}
+              onDeepLinkHandled={function () { setDeepLinkExpense(null) }} />
           </Suspense>
         )}
         {!ActiveModule && (
