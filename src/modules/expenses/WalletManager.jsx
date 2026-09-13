@@ -65,7 +65,7 @@ var EXP_STATUS_COLORS = {
   deducted: 'bg-indigo-100 text-indigo-700',
 }
 
-function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, onClose, onBalanceChange, onOpenExpense }) {
+function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, onClose, onBalanceChange, onOpenExpense, onNavigateToExpenses }) {
   var [walletView, setWalletView] = useState(null)
   var [allWallets, setAllWallets] = useState([])
   var [walletProfiles, setWalletProfiles] = useState({})
@@ -849,8 +849,8 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
               isDeptApprover={false}
               onBack={function () { closeExpenseDetail(false) }}
               onUpdated={function () { closeExpenseDetail(true) }}
-              onEdit={function () { alert('To edit this expense, please open the Expenses tab.'); closeExpenseDetail(false) }}
-              onRaiseGV={function () { alert('To raise a Journal Voucher, please open the Expenses tab.'); closeExpenseDetail(false) }}
+              onEdit={function () { closeExpenseDetail(false); onNavigateToExpenses && onNavigateToExpenses() }}
+              onRaiseGV={function () { closeExpenseDetail(false); onNavigateToExpenses && onNavigateToExpenses() }}
             />
           )}
         </div>

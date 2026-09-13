@@ -228,6 +228,15 @@ function Shell({ profile, onSignOut }) {
     setSubTab(item.sub || null)
   }
 
+  // Lets a ledger/wallet screen send the user to Finance > PC & Direct Expenses
+  // (e.g. "Edit"/"Raise JV" on an expense opened from a read-only ledger row,
+  // which has no editing UI of its own) instead of just telling them to go there.
+  function navigateToExpenses() {
+    var fromGroup = activeGroup, fromTab = tab, fromSub = subTab
+    pushBack(function () { setActiveGroup(fromGroup); setTab(fromTab); setSubTab(fromSub) })
+    setActiveGroup('expenses'); setTab('expenses'); setSubTab(null)
+  }
+
   // Current group object
   var currentGroup = activeGroup ? visibleGroups.find(function (g) { return g.key === activeGroup }) : null
 
@@ -722,7 +731,7 @@ function Shell({ profile, onSignOut }) {
           <Requisitions profile={profile} onBack={goBack} />
         )}
         {tab === 'wallet' && (
-          <Wallet profile={profile} />
+          <Wallet profile={profile} onNavigateToExpenses={navigateToExpenses} />
         )}
         {tab === 'expenses' && (
           <Expenses profile={profile} />
@@ -731,10 +740,10 @@ function Shell({ profile, onSignOut }) {
           <CostTransfers profile={profile} />
         )}
         {tab === 'ledgers' && (
-          <Ledgers profile={profile} />
+          <Ledgers profile={profile} onNavigateToExpenses={navigateToExpenses} />
         )}
         {tab === 'vendor_ledger' && (
-          <VendorLedger profile={profile} />
+          <VendorLedger profile={profile} onNavigateToExpenses={navigateToExpenses} />
         )}
         {tab === 'payments' && (
           <Payments profile={profile} />

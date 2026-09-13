@@ -4,7 +4,7 @@ import WalletManager from './WalletManager'
 import { goBack as navBack } from '../../lib/backNav'
 import { hasPerm } from '../../lib/permissions'
 
-function Wallet({ profile }) {
+function Wallet({ profile, onNavigateToExpenses }) {
   var [walletBalance, setWalletBalance] = useState(0)
   var [myWallet, setMyWallet] = useState(null)
   var [loading, setLoading] = useState(true)
@@ -35,6 +35,7 @@ function Wallet({ profile }) {
       walletBalance={walletBalance}
       onClose={function () { navBack() }}
       onBalanceChange={setWalletBalance}
+      onNavigateToExpenses={onNavigateToExpenses}
     />
   )
 }

@@ -161,7 +161,8 @@ function TabbedSection({ config, profile, onNavigate, activeSubTab }) {
     <div>
       <SubTabs tabs={visibleConfig} active={sub} onChange={setSub} />
       <Suspense fallback={<div className="text-center py-8 text-sm text-gray-400">Loading...</div>}>
-        {Active && <Active profile={profile} onNavigate={onNavigate} inAdmin />}
+        {Active && <Active profile={profile} onNavigate={onNavigate} inAdmin
+          onNavigateToExpenses={function () { onNavigate('expenses', 'expenses') }} />}
       </Suspense>
     </div>
   )

@@ -43,11 +43,11 @@ function getPresetRange(preset) {
   return null
 }
 
-function Ledgers({ profile }) {
+function Ledgers({ profile, onNavigateToExpenses }) {
   var isAdmin = hasPerm(profile?.permsNew, 'finance.ledgers.expense')
   var scopeDeptIds = isAdmin ? null : (profile?.event_dept_ids || [])
   var hasScope = !isAdmin && scopeDeptIds && scopeDeptIds.length > 0
-  var { openExpenseDetail, expenseDetailModal } = useExpenseDetailModal(profile, isAdmin, function () { loadDrill(false) })
+  var { openExpenseDetail, expenseDetailModal } = useExpenseDetailModal(profile, isAdmin, function () { loadDrill(false) }, onNavigateToExpenses)
 
   // Date state
   var [datePreset, setDatePreset] = useState('month')

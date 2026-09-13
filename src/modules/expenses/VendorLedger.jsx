@@ -17,7 +17,7 @@ import SearchField from '../../components/ui/SearchField'
 
 function byName(a, b) { return (a.name || '').localeCompare(b.name || '') }
 
-function VendorLedger({ profile }) {
+function VendorLedger({ profile, onNavigateToExpenses }) {
   var permsNew = (profile && profile.permsNew) || []
   var isAdmin = hasPerm(permsNew, 'admin.dashboard')
   var canView = isAdmin || hasPerm(permsNew, 'finance.ledgers.vendor')
@@ -47,7 +47,7 @@ function VendorLedger({ profile }) {
   var [showDeleted, setShowDeleted] = useState(false)
   var { openExpenseDetail, expenseDetailModal } = useExpenseDetailModal(profile, isAdmin, function () {
     if (selectedVendor) loadEntries(selectedVendor, showDeleted)
-  })
+  }, onNavigateToExpenses)
 
   useEffect(function () {
     if (canView) { loadVendors(); loadFilterData() }

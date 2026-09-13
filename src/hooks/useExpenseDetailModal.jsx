@@ -8,7 +8,7 @@ var EXPENSE_DETAIL_SELECT = 'id, user_id, batch_id, expense_type_id, expense_sub
 // Shared "click an expense-linked ledger row → open the ExpenseDetail overlay"
 // behavior, used by every ledger tab except Cost Transfers (which has no
 // single underlying expense to open).
-export function useExpenseDetailModal(profile, isAdmin, onRefresh) {
+export function useExpenseDetailModal(profile, isAdmin, onRefresh, onNavigateToExpenses) {
   var [target, setTarget] = useState(null)
   var [loading, setLoading] = useState(false)
 
@@ -59,8 +59,8 @@ export function useExpenseDetailModal(profile, isAdmin, onRefresh) {
             isAdmin={isAdmin}
             isDeptApprover={false}
             onUpdated={function () { closeExpenseDetail(true) }}
-            onEdit={function () { alert('To edit this expense, please open the Expenses tab.'); closeExpenseDetail(false) }}
-            onRaiseGV={function () { alert('To raise a Journal Voucher, please open the Expenses tab.'); closeExpenseDetail(false) }}
+            onEdit={function () { closeExpenseDetail(false); onNavigateToExpenses && onNavigateToExpenses() }}
+            onRaiseGV={function () { closeExpenseDetail(false); onNavigateToExpenses && onNavigateToExpenses() }}
           />
         )}
       </div>
