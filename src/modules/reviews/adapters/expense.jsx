@@ -48,7 +48,18 @@ async function fetchDetail(sourceId) {
     .select('*, expense_types(name), expense_sub_types(name), profiles:user_id(name, email)')
     .eq('id', sourceId).maybeSingle()
   if (res.error) throw new Error(res.error.message)
-  return res.data
+  if (!res.data) return null
+  var receiptPaths = (res.data.receipt_paths && res.data.receipt_paths.length > 0)
+    ? res.data.receipt_paths
+    : (res.data.receipt_path ? [res.data.receipt_path] : [])
+  var receipts = receiptPaths.map(function (path) {
+    return {
+      path: path,
+      url: supabase.storage.from('receipts').getPublicUrl(path).data?.publicUrl,
+      isVoice: /\.(webm|ogg|mp3|wav)$/i.test(path),
+    }
+  })
+  return Object.assign({}, res.data, { _receipts: receipts })
 }
 
 function renderDetailBody(row) {
@@ -62,8 +73,16 @@ function renderDetailBody(row) {
         <div><p className="text-[10px] font-bold text-gray-400 uppercase">Date</p><p className="text-gray-900">{row.created_at ? formatDate(row.created_at) : '—'}</p></div>
       </div>
       {row.description && <p className="text-sm text-gray-700">{row.description}</p>}
-      {row.receipt_path && (
-        <img src={row.receipt_path} alt="Receipt" className="w-full max-h-64 object-contain rounded-lg border border-gray-200 bg-gray-50" />
+      {row._receipts && row._receipts.length > 0 && (
+        <div className="space-y-2">
+          {row._receipts.map(function (r, i) {
+            return r.isVoice ? (
+              <audio key={r.path + i} src={r.url} controls className="w-full h-8" />
+            ) : (
+              <img key={r.path + i} src={r.url} alt="Receipt" className="w-full max-h-64 object-contain rounded-lg border border-gray-200 bg-gray-50" />
+            )
+          })}
+        </div>
       )}
       {row.status === 'flagged' && row.flag_reason && (
         <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">Flagged: {row.flag_reason}</p>

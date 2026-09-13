@@ -35,6 +35,23 @@ function renderDetailBody(row) {
       {row.rejection_reason && (
         <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{row.rejection_reason}</p>
       )}
+      {row.receipt_path && (function () {
+        var rUrl = supabase.storage.from('receipts').getPublicUrl(row.receipt_path).data?.publicUrl
+        if (!rUrl) return null
+        return (
+          <div>
+            <p className="text-[10px] font-bold text-gray-400 uppercase mb-1">Receipt</p>
+            {/\.(jpg|jpeg|png|gif|webp)$/i.test(row.receipt_path) ? (
+              <img src={rUrl} alt="Receipt" className="w-full max-h-64 object-contain rounded-lg border border-gray-200 bg-gray-50" />
+            ) : (
+              <a href={rUrl} target="_blank" rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors">
+                📎 View Attachment
+              </a>
+            )}
+          </div>
+        )
+      })()}
     </div>
   )
 }

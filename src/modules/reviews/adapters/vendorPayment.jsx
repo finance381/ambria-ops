@@ -1,5 +1,6 @@
 import { supabase } from '../../../lib/supabase'
 import { formatDate, formatPoints } from '../../../lib/format'
+import PaymentProofThumbs from '../../../components/ledger/PaymentProofThumbs'
 
 // Read-only audit domain, same reasoning as adapters/expense.jsx — payments are
 // already final the instant pay_vendor runs, there's no pending state to review.
@@ -69,6 +70,12 @@ function renderDetailBody(row) {
         <div><p className="text-[10px] font-bold text-gray-400 uppercase">Date</p><p className="text-gray-900">{row.entry_date ? formatDate(row.entry_date) : '—'}</p></div>
       </div>
       {row.description && <p className="text-sm text-gray-700">{row.description}</p>}
+      {row.metadata && (row.metadata.payment_images || row.metadata.deduction_image) && (
+        <div>
+          <p className="text-[10px] font-bold text-gray-400 uppercase mb-1">Proof</p>
+          <PaymentProofThumbs meta={row.metadata} />
+        </div>
+      )}
     </div>
   )
 }
