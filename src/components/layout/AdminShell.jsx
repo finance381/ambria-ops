@@ -144,11 +144,21 @@ function TabbedSection({ config, profile, onNavigate, activeSubTab, deepLinkExpe
     : (visibleConfig.length > 0 ? visibleConfig[0].key : null)
   var [sub, setSub] = useState(_initial)
 
+  // deepLinkExpense is in the dependency list (not just activeSubTab) because a
+  // deep-linked navigation always targets the same sub-tab key ('expenses') —
+  // if the shell's subTab was already 'expenses' from an earlier deep link and
+  // the user has since clicked into a different sub-tab by hand (which only
+  // ever updates this component's own `sub` state below, never the shell's),
+  // activeSubTab alone never changes value and this effect would never re-fire,
+  // leaving `sub` stuck wherever it was clicked. deepLinkExpense is a fresh
+  // object on every navigation, so it forces the reassertion through even when
+  // activeSubTab's value happens to be unchanged.
   useEffect(function () {
     if (activeSubTab && visibleConfig.find(function (c) { return c.key === activeSubTab })) {
       setSub(activeSubTab)
     }
-  }, [activeSubTab])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSubTab, deepLinkExpense])
 
   var _isAllowed = visibleConfig.find(function (c) { return c.key === sub }) != null
   var Active = _isAllowed ? config.find(function (c) { return c.key === sub })?.component : null
