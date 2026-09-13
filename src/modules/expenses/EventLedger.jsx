@@ -52,7 +52,7 @@ function EventLedger(props) {
   var profile = props && props.profile
   var isAdmin = hasPerm(profile?.permsNew, 'finance.ledgers.event')
   var [currentEventIds, setCurrentEventIds] = useState([])
-  var { openExpenseDetail, expenseDetailModal } = useExpenseDetailModal(profile, isAdmin, function () { loadEntries(currentEventIds) })
+  var { openExpenseDetail, expenseDetailModal } = useExpenseDetailModal(profile, isAdmin, function () { loadEntries(currentEventIds) }, props && props.onNavigateToExpenses)
   var propEventId = props && props.eventId ? String(props.eventId) : null
   var [date, setDate] = useState('')
   var [functions, setFunctions] = useState([])
