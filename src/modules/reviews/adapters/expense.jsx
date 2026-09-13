@@ -1,5 +1,6 @@
 import { supabase } from '../../../lib/supabase'
 import { formatDate, formatPoints } from '../../../lib/format'
+import { getReceiptUrl, isVoiceNotePath } from '../../../lib/uploadHelper'
 
 // Read-only audit domain — no review_status, no approve/reject. Not part of
 // v_review_queue, so this adapter owns its own list fetch (recent window,
@@ -53,11 +54,7 @@ async function fetchDetail(sourceId) {
     ? res.data.receipt_paths
     : (res.data.receipt_path ? [res.data.receipt_path] : [])
   var receipts = receiptPaths.map(function (path) {
-    return {
-      path: path,
-      url: supabase.storage.from('receipts').getPublicUrl(path).data?.publicUrl,
-      isVoice: /\.(webm|ogg|mp3|wav)$/i.test(path),
-    }
+    return { path: path, url: getReceiptUrl(path), isVoice: isVoiceNotePath(path) }
   })
   return Object.assign({}, res.data, { _receipts: receipts })
 }

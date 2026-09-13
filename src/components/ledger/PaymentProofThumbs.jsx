@@ -1,4 +1,4 @@
-import { supabase } from '../../lib/supabase'
+import { getReceiptUrl } from '../../lib/uploadHelper'
 
 function PaymentProofThumbs({ meta }) {
   var paths = meta && Array.isArray(meta.payment_images) ? meta.payment_images : []
@@ -8,7 +8,7 @@ function PaymentProofThumbs({ meta }) {
   return (
     <div className="flex gap-1.5 mt-1.5 flex-wrap">
       {paths.map(function (p, i) {
-        var url = supabase.storage.from('receipts').getPublicUrl(p).data.publicUrl
+        var url = getReceiptUrl(p)
         return (
           <a key={p + '_' + i} href={url} target="_blank" rel="noopener noreferrer"
             className="block w-10 h-10 rounded border border-gray-200 overflow-hidden hover:border-indigo-400 hover:shadow-sm transition-all"
@@ -20,7 +20,7 @@ function PaymentProofThumbs({ meta }) {
         )
       })}
       {dedPath && (function () {
-        var dUrl = supabase.storage.from('receipts').getPublicUrl(dedPath).data.publicUrl
+        var dUrl = getReceiptUrl(dedPath)
         return (
           <a key={'ded_' + dedPath} href={dUrl} target="_blank" rel="noopener noreferrer"
             className="block w-10 h-10 rounded border border-amber-300 overflow-hidden hover:border-amber-500 hover:shadow-sm transition-all ring-1 ring-amber-200"

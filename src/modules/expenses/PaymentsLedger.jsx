@@ -7,6 +7,7 @@ import { hasPerm } from '../../lib/permissions'
 import SearchField from '../../components/ui/SearchField'
 import { useExpenseDetailModal } from '../../hooks/useExpenseDetailModal.jsx'
 import PaymentProofThumbs from '../../components/ledger/PaymentProofThumbs'
+import { getReceiptUrl, isVoiceNotePath } from '../../lib/uploadHelper'
 
 // Every real cash/bank movement in the system, from whichever source recorded it:
 // money paid out (vendor payments/deductions, salary payments/adjustments, wallet-funded
@@ -170,9 +171,8 @@ function PaymentsLedger({ profile }) {
         _epc: epc || null,
         _receiptNo: w.receipt_no,
         _performedBy: w.performed_by,
-        _imgUrl: w.received_image_path
-          ? supabase.storage.from('receipts').getPublicUrl(w.received_image_path).data?.publicUrl
-          : null,
+        _imgUrl: getReceiptUrl(w.received_image_path),
+        _imgIsVoice: isVoiceNotePath(w.received_image_path),
       })
     })
     expWalletRows.forEach(function (r) {
@@ -383,10 +383,14 @@ function PaymentsLedger({ profile }) {
               )}
               {r.source === 'collection' && r._imgUrl && (
                 <div>
-                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Receipt Image</p>
-                  <img src={r._imgUrl} alt="receipt"
-                    onClick={function (ev) { ev.stopPropagation(); setEnlargedImg(r._imgUrl) }}
-                    className="w-full max-h-64 object-contain rounded border border-gray-200 cursor-zoom-in bg-gray-50" />
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Receipt {r._imgIsVoice ? '(voice note)' : 'Image'}</p>
+                  {r._imgIsVoice ? (
+                    <audio src={r._imgUrl} controls className="w-full h-8" />
+                  ) : (
+                    <img src={r._imgUrl} alt="receipt"
+                      onClick={function (ev) { ev.stopPropagation(); setEnlargedImg(r._imgUrl) }}
+                      className="w-full max-h-64 object-contain rounded border border-gray-200 cursor-zoom-in bg-gray-50" />
+                  )}
                 </div>
               )}
               <p className="text-[10px] text-gray-400 pt-1">Logged {formatDateTime(r.logged_at)}</p>

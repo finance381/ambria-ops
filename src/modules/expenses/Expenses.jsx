@@ -20,6 +20,12 @@ import { deptInk } from '../../lib/ui'
 
 var PAGE_SIZE = 20
 
+// Single source of truth for the allocation columns every query below embeds —
+// these drifted out of sync once already (a past edit added expense_type_id/
+// expense_sub_type_id to some but not all of the embeds below, silently wiping
+// per-allocation types back to the entry-level one on re-edit).
+var ALLOC_COLS = 'department, department_id, venue_id, amount_paise, expense_type_id, expense_sub_type_id'
+
 // One backdrop for every view of this section — Mine, Review, All and the form
 // all render it, so they read as one screen you tab between rather than four.
 //
@@ -151,7 +157,7 @@ function Expenses({ profile, masterMode, inAdmin, deepLinkExpense, onDeepLinkHan
     if (!deepLinkExpense || !deepLinkExpense.id) return
     var cancelled = false
     supabase.from('expenses')
-      .select('id, user_id, batch_id, expense_type_id, expense_sub_type_id, amount_paise, tax_paise, description, status, expense_date, receipt_path, receipt_paths, created_at, rejection_reason, flag_reason, penalty_paise, penalized_at, deduction_type, vendor_name, travel_from, travel_to, travel_mode, metadata, event_id, deleted_at, payment_cash_paise, payment_credit_paise, payment_credit_cash_paise, payment_credit_bank_paise, cash_due_date, bank_due_date, expense_types(name, extra_fields), expense_sub_types(name, extra_fields), events(event_name), expense_allocations(department, department_id, venue_id, amount_paise, expense_type_id, expense_sub_type_id)')
+      .select('id, user_id, batch_id, expense_type_id, expense_sub_type_id, amount_paise, tax_paise, description, status, expense_date, receipt_path, receipt_paths, created_at, rejection_reason, flag_reason, penalty_paise, penalized_at, deduction_type, vendor_name, travel_from, travel_to, travel_mode, metadata, event_id, deleted_at, payment_cash_paise, payment_credit_paise, payment_credit_cash_paise, payment_credit_bank_paise, cash_due_date, bank_due_date, expense_types(name, extra_fields), expense_sub_types(name, extra_fields), events(event_name), expense_allocations(' + ALLOC_COLS + ')')
       .eq('id', deepLinkExpense.id).maybeSingle()
       .then(function (res) {
         if (cancelled) return
@@ -170,8 +176,8 @@ function Expenses({ profile, masterMode, inAdmin, deepLinkExpense, onDeepLinkHan
 
     var hasAllocFilter = !!(deptFilter || subDeptFilter || venueFilter)
     var allocEmbed = hasAllocFilter
-      ? 'expense_allocations!inner(department, department_id, venue_id, amount_paise, expense_type_id, expense_sub_type_id)'
-      : 'expense_allocations(department, department_id, venue_id, amount_paise, expense_type_id, expense_sub_type_id)'
+      ? 'expense_allocations!inner(' + ALLOC_COLS + ')'
+      : 'expense_allocations(' + ALLOC_COLS + ')'
 
     var query = supabase.from('expenses')
       .select('id, user_id, batch_id, expense_type_id, expense_sub_type_id, amount_paise, tax_paise, description, status, expense_date, receipt_path, receipt_paths, created_at, rejection_reason, flag_reason, penalty_paise, penalized_at, penalized_by, reviewed_at, reviewed_by, acknowledged_at, acknowledged_by, deduction_type, vendor_name, travel_from, travel_to, travel_mode, metadata, event_id, deleted_at, payment_cash_paise, payment_credit_paise, payment_credit_cash_paise, payment_credit_bank_paise, cash_due_date, bank_due_date, expense_types(name), expense_sub_types(name, extra_fields), events(event_name), ' + allocEmbed)
@@ -216,8 +222,8 @@ function Expenses({ profile, masterMode, inAdmin, deepLinkExpense, onDeepLinkHan
 
     var hasAllocFilter2 = !!(deptFilter || subDeptFilter || venueFilter)
     var allocEmbed2 = hasAllocFilter2
-      ? 'expense_allocations!inner(department, department_id, venue_id, amount_paise, expense_type_id, expense_sub_type_id)'
-      : 'expense_allocations(department, department_id, venue_id, amount_paise, expense_type_id, expense_sub_type_id)'
+      ? 'expense_allocations!inner(' + ALLOC_COLS + ')'
+      : 'expense_allocations(' + ALLOC_COLS + ')'
 
     var query = supabase.from('expenses')
       .select('id, user_id, batch_id, expense_type_id, expense_sub_type_id, amount_paise, tax_paise, description, status, expense_date, receipt_path, receipt_paths, created_at, rejection_reason, flag_reason, penalty_paise, penalized_at, penalized_by, reviewed_at, reviewed_by, deduction_type, vendor_name, travel_from, travel_to, travel_mode, metadata, event_id, deleted_at, payment_cash_paise, payment_credit_paise, payment_credit_cash_paise, payment_credit_bank_paise, cash_due_date, bank_due_date, expense_types(name), expense_sub_types(name, extra_fields), events(event_name), ' + allocEmbed2)
@@ -289,7 +295,7 @@ function Expenses({ profile, masterMode, inAdmin, deepLinkExpense, onDeepLinkHan
 
     if (wasEditing && wasEditing.id) {
       var editedP = supabase.from('expenses')
-        .select('id, user_id, batch_id, expense_type_id, expense_sub_type_id, amount_paise, tax_paise, description, status, expense_date, receipt_path, receipt_paths, created_at, rejection_reason, flag_reason, penalty_paise, penalized_at, deduction_type, vendor_name, travel_from, travel_to, travel_mode, metadata, event_id, deleted_at, payment_cash_paise, payment_credit_paise, payment_credit_cash_paise, payment_credit_bank_paise, cash_due_date, bank_due_date, expense_types(name, extra_fields), expense_sub_types(name, extra_fields), events(event_name), expense_allocations(department, department_id, venue_id, amount_paise, expense_type_id, expense_sub_type_id)')
+        .select('id, user_id, batch_id, expense_type_id, expense_sub_type_id, amount_paise, tax_paise, description, status, expense_date, receipt_path, receipt_paths, created_at, rejection_reason, flag_reason, penalty_paise, penalized_at, deduction_type, vendor_name, travel_from, travel_to, travel_mode, metadata, event_id, deleted_at, payment_cash_paise, payment_credit_paise, payment_credit_cash_paise, payment_credit_bank_paise, cash_due_date, bank_due_date, expense_types(name, extra_fields), expense_sub_types(name, extra_fields), events(event_name), expense_allocations(' + ALLOC_COLS + ')')
         .eq('id', wasEditing.id)
         .maybeSingle()
       var results = await Promise.all([loadMyExpenses(false), loadApprovalExpenses(false), walletP, editedP])

@@ -1,4 +1,5 @@
 import { compressImage } from './imageCompress'
+import { supabase } from './supabase'
 
 // Wrap file uploads: compress images to target KB; pass PDFs / non-images through.
 // Never throws — falls back to original file if compression fails.
@@ -21,4 +22,18 @@ export async function prepUpload(file, targetKB) {
 export function bucketForEmployeeFile(path) {
   if (path && path.indexOf('submissions/') === 0) return 'employee-public-submissions'
   return 'employee-docs'
+}
+
+// A receipt/proof file is stored by extension only — no separate "is this a
+// voice note" column — so this is the one place that decides it, rather than
+// each caller re-deriving (and disagreeing on) the same check.
+export function isVoiceNotePath(path) {
+  return !!(path && /\.(webm|ogg|mp3|wav|m4a)$/i.test(path))
+}
+
+// Public URL for a file in the shared `receipts` bucket. Every caller building
+// this URL by hand risks pointing at the wrong bucket name if it ever changes.
+export function getReceiptUrl(path) {
+  if (!path) return null
+  return supabase.storage.from('receipts').getPublicUrl(path).data?.publicUrl || null
 }

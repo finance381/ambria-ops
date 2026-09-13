@@ -1,5 +1,6 @@
 import { supabase } from '../../../lib/supabase'
 import { formatDate, formatPoints } from '../../../lib/format'
+import { getReceiptUrl, isVoiceNotePath } from '../../../lib/uploadHelper'
 
 async function fetchDetail(sourceId) {
   var res = await supabase.from('requisitions')
@@ -36,12 +37,14 @@ function renderDetailBody(row) {
         <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{row.rejection_reason}</p>
       )}
       {row.receipt_path && (function () {
-        var rUrl = supabase.storage.from('receipts').getPublicUrl(row.receipt_path).data?.publicUrl
+        var rUrl = getReceiptUrl(row.receipt_path)
         if (!rUrl) return null
         return (
           <div>
             <p className="text-[10px] font-bold text-gray-400 uppercase mb-1">Receipt</p>
-            {/\.(jpg|jpeg|png|gif|webp)$/i.test(row.receipt_path) ? (
+            {isVoiceNotePath(row.receipt_path) ? (
+              <audio src={rUrl} controls className="w-full h-8" />
+            ) : /\.(jpg|jpeg|png|gif|webp)$/i.test(row.receipt_path) ? (
               <img src={rUrl} alt="Receipt" className="w-full max-h-64 object-contain rounded-lg border border-gray-200 bg-gray-50" />
             ) : (
               <a href={rUrl} target="_blank" rel="noopener noreferrer"
