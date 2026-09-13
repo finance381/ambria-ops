@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import ysFixWebmDuration from 'fix-webm-duration'
 import { createPortal } from 'react-dom'
 import { supabase } from '../../lib/supabase'
 import { formatDate, formatPoints } from '../../lib/format'
@@ -104,10 +105,18 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   var [transferAmount, setTransferAmount] = useState('')
   var [transferDesc, setTransferDesc] = useState('')
   var [transferImage, setTransferImage] = useState(null)
+  var [transferAudioBlob, setTransferAudioBlob] = useState(null)
+  var [transferAudioUrl, setTransferAudioUrl] = useState('')
+  var [transferRecording, setTransferRecording] = useState(false)
   var [transferSaving, setTransferSaving] = useState(false)
   var [transferConfirmModal, setTransferConfirmModal] = useState(null)
   var [transferConfirmImage, setTransferConfirmImage] = useState(null)
+  var [transferConfirmAudioBlob, setTransferConfirmAudioBlob] = useState(null)
+  var [transferConfirmAudioUrl, setTransferConfirmAudioUrl] = useState('')
+  var [transferConfirmRecording, setTransferConfirmRecording] = useState(false)
   var [transferConfirmSaving, setTransferConfirmSaving] = useState(false)
+  var transferRecorderRef = useRef(null)
+  var transferConfirmRecorderRef = useRef(null)
   var [transferParties, setTransferParties] = useState({})
   var [expenseRefs, setExpenseRefs] = useState({})
   // Resolved display labels for lookup-type sub-type extra fields, keyed 'source:id' → label.
@@ -573,10 +582,57 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     setTransferAmount('')
     setTransferDesc('')
     setTransferImage(null)
+    removeTransferAudio()
     if (transferUsers.length === 0) {
       var { data } = await supabase.rpc('get_transfer_users')
       setTransferUsers(data || [])
     }
+  }
+
+  function startTransferRecording() {
+    navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
+      var chunks = []
+      var recorder = new MediaRecorder(stream, { mimeType: 'audio/webm' })
+      var startedAt = Date.now()
+      transferRecorderRef.current = { recorder: recorder, stream: stream }
+      recorder.ondataavailable = function (e) { if (e.data.size > 0) chunks.push(e.data) }
+      recorder.onstop = function () {
+        stream.getTracks().forEach(function (t) { t.stop() })
+        var rawBlob = new Blob(chunks, { type: 'audio/webm' })
+        var durationMs = Date.now() - startedAt
+        ysFixWebmDuration(rawBlob, durationMs, { logger: false }).then(function (fixedBlob) {
+          var blob = fixedBlob || rawBlob
+          if (transferAudioUrl) URL.revokeObjectURL(transferAudioUrl)
+          setTransferAudioBlob(blob)
+          setTransferAudioUrl(URL.createObjectURL(blob))
+          setTransferRecording(false)
+          setTransferImage(null)
+          transferRecorderRef.current = null
+        }).catch(function () {
+          if (transferAudioUrl) URL.revokeObjectURL(transferAudioUrl)
+          setTransferAudioBlob(rawBlob)
+          setTransferAudioUrl(URL.createObjectURL(rawBlob))
+          setTransferRecording(false)
+          setTransferImage(null)
+          transferRecorderRef.current = null
+        })
+      }
+      setTransferRecording(true)
+      recorder.start()
+      setTimeout(function () { stopTransferRecording() }, 30000)
+    }).catch(function () { alert('Microphone access denied') })
+  }
+
+  function stopTransferRecording() {
+    var mr = transferRecorderRef.current
+    if (mr && mr.recorder.state === 'recording') mr.recorder.stop()
+  }
+
+  function removeTransferAudio() {
+    if (transferAudioUrl) URL.revokeObjectURL(transferAudioUrl)
+    setTransferAudioBlob(null)
+    setTransferAudioUrl('')
+    setTransferRecording(false)
   }
 
   async function initiateTransfer() {
@@ -591,6 +647,11 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
       var { error: upErr } = await supabase.storage.from('receipts').upload(path, tF, { upsert: true })
       if (upErr) { alert('Image upload failed: ' + upErr.message); setTransferSaving(false); return }
       imagePath = path
+    } else if (transferAudioBlob) {
+      var path2 = 'wallet/transfer/' + profile.id + '_' + Date.now() + '_voice.webm'
+      var { error: upErr2 } = await supabase.storage.from('receipts').upload(path2, transferAudioBlob, { contentType: 'audio/webm', upsert: true })
+      if (upErr2) { alert('Voice note upload failed: ' + upErr2.message); setTransferSaving(false); return }
+      imagePath = path2
     }
     var toName = (transferUsers.find(function (u) { return u.id === transferTo }) || {}).name || '—'
     var { data: tid, error } = await supabase.rpc('initiate_transfer', {
@@ -603,9 +664,56 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     try { await logActivity('WALLET_TRANSFER', toName + ' | ' + formatPoints(amountRupees)) } catch (_) {}
     setTransferModal(false)
     setTransferSaving(false)
+    removeTransferAudio()
     refreshBalance()
     loadTransfers()
     refreshView()
+  }
+
+  function startTransferConfirmRecording() {
+    navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
+      var chunks = []
+      var recorder = new MediaRecorder(stream, { mimeType: 'audio/webm' })
+      var startedAt = Date.now()
+      transferConfirmRecorderRef.current = { recorder: recorder, stream: stream }
+      recorder.ondataavailable = function (e) { if (e.data.size > 0) chunks.push(e.data) }
+      recorder.onstop = function () {
+        stream.getTracks().forEach(function (t) { t.stop() })
+        var rawBlob = new Blob(chunks, { type: 'audio/webm' })
+        var durationMs = Date.now() - startedAt
+        ysFixWebmDuration(rawBlob, durationMs, { logger: false }).then(function (fixedBlob) {
+          var blob = fixedBlob || rawBlob
+          if (transferConfirmAudioUrl) URL.revokeObjectURL(transferConfirmAudioUrl)
+          setTransferConfirmAudioBlob(blob)
+          setTransferConfirmAudioUrl(URL.createObjectURL(blob))
+          setTransferConfirmRecording(false)
+          setTransferConfirmImage(null)
+          transferConfirmRecorderRef.current = null
+        }).catch(function () {
+          if (transferConfirmAudioUrl) URL.revokeObjectURL(transferConfirmAudioUrl)
+          setTransferConfirmAudioBlob(rawBlob)
+          setTransferConfirmAudioUrl(URL.createObjectURL(rawBlob))
+          setTransferConfirmRecording(false)
+          setTransferConfirmImage(null)
+          transferConfirmRecorderRef.current = null
+        })
+      }
+      setTransferConfirmRecording(true)
+      recorder.start()
+      setTimeout(function () { stopTransferConfirmRecording() }, 30000)
+    }).catch(function () { alert('Microphone access denied') })
+  }
+
+  function stopTransferConfirmRecording() {
+    var mr = transferConfirmRecorderRef.current
+    if (mr && mr.recorder.state === 'recording') mr.recorder.stop()
+  }
+
+  function removeTransferConfirmAudio() {
+    if (transferConfirmAudioUrl) URL.revokeObjectURL(transferConfirmAudioUrl)
+    setTransferConfirmAudioBlob(null)
+    setTransferConfirmAudioUrl('')
+    setTransferConfirmRecording(false)
   }
 
   async function confirmTransferReceive() {
@@ -619,6 +727,11 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
       var { error: upErr } = await supabase.storage.from('receipts').upload(path, tcF, { upsert: true })
       if (upErr) { alert('Image upload failed: ' + upErr.message); setTransferConfirmSaving(false); return }
       imagePath = path
+    } else if (transferConfirmAudioBlob) {
+      var path2c = 'wallet/transfer/' + profile.id + '_recv_' + Date.now() + '_voice.webm'
+      var { error: upErr2c } = await supabase.storage.from('receipts').upload(path2c, transferConfirmAudioBlob, { contentType: 'audio/webm', upsert: true })
+      if (upErr2c) { alert('Voice note upload failed: ' + upErr2c.message); setTransferConfirmSaving(false); return }
+      imagePath = path2c
     }
     var { error } = await supabase.rpc('confirm_transfer', {
       p_transfer_id: transferConfirmModal.id,
@@ -628,6 +741,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     try { await logActivity('WALLET_TRANSFER_CONFIRM', formatPoints(transferConfirmModal.amount_paise) + ' from ' + (transferConfirmModal._fromName || '—')) } catch (_) {}
     setTransferConfirmModal(null)
     setTransferConfirmImage(null)
+    removeTransferConfirmAudio()
     setTransferConfirmSaving(false)
     refreshBalance()
     loadTransfers()
@@ -1734,8 +1848,9 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
 
   function renderTransferModal() {
     if (!transferModal) return null
+    function closeTransfer() { setTransferModal(false); removeTransferAudio() }
     return (
-      <BottomSheet open={true} onClose={function () { setTransferModal(false) }} title="Transfer Cash">
+      <BottomSheet open={true} onClose={closeTransfer} title="Transfer Cash">
         <div className="space-y-4">
           <SearchDropdown label="Send to" required
             items={transferUsers.map(function (u) { return { label: u.name, value: u.id } })}
@@ -1759,22 +1874,38 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
               className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">📷 Cash Photo</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Cash proof</label>
             {transferImage ? (
               <div className="flex items-center gap-2">
                 <span className="text-xs text-green-600 font-medium truncate flex-1">✓ {transferImage.name}</span>
                 <button onClick={function () { setTransferImage(null) }} className="text-xs text-red-500 font-bold hover:text-red-700">✕</button>
               </div>
+            ) : transferAudioUrl ? (
+              <div className="flex items-center gap-2 p-2 rounded-lg bg-blue-50 border border-blue-200">
+                <audio src={transferAudioUrl} controls className="flex-1 h-8" />
+                <button onClick={removeTransferAudio} className="text-xs text-red-500 font-bold hover:text-red-700 flex-shrink-0">✕</button>
+              </div>
+            ) : transferRecording ? (
+              <button type="button" onClick={stopTransferRecording}
+                className="w-full py-2.5 rounded-lg bg-red-500 text-white text-sm font-medium animate-pulse flex items-center justify-center gap-2">
+                <span className="w-2.5 h-2.5 bg-white rounded-full" />Recording... Tap to stop
+              </button>
             ) : (
-              <label className="block w-full py-2.5 text-center text-sm text-emerald-600 border border-dashed border-emerald-300 rounded-lg cursor-pointer hover:bg-emerald-50 transition-colors">
-                Tap to attach photo
-                <input type="file" accept="image/*" capture="environment" className="sr-only"
-                  onChange={function (e) { if (e.target.files?.[0]) setTransferImage(e.target.files[0]); e.target.value = '' }} />
-              </label>
+              <div className="grid grid-cols-2 gap-2">
+                <label className="py-2.5 text-center text-sm text-emerald-600 border border-dashed border-emerald-300 rounded-lg cursor-pointer hover:bg-emerald-50 transition-colors">
+                  📷 Photo
+                  <input type="file" accept="image/*" capture="environment" className="sr-only"
+                    onChange={function (e) { if (e.target.files?.[0]) setTransferImage(e.target.files[0]); e.target.value = '' }} />
+                </label>
+                <button type="button" onClick={startTransferRecording}
+                  className="py-2.5 text-center text-sm text-emerald-600 border border-dashed border-emerald-300 rounded-lg hover:bg-emerald-50 transition-colors">
+                  🎤 Voice note
+                </button>
+              </div>
             )}
           </div>
           <div className="flex gap-3 pt-2">
-            <button onClick={function () { setTransferModal(false) }}
+            <button onClick={closeTransfer}
               className="flex-1 py-3 text-sm text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors font-semibold">Cancel</button>
             <button onClick={initiateTransfer}
               disabled={transferSaving || !transferTo || !transferAmount || Number(transferAmount) <= 0}
@@ -1789,29 +1920,46 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
 
   function renderTransferConfirmModal() {
     if (!transferConfirmModal) return null
+    function closeConfirm() { setTransferConfirmModal(null); setTransferConfirmImage(null); removeTransferConfirmAudio() }
     return (
-      <BottomSheet open={true} onClose={function () { setTransferConfirmModal(null); setTransferConfirmImage(null) }} title="Confirm Transfer Received">
+      <BottomSheet open={true} onClose={closeConfirm} title="Confirm Transfer Received">
         <div className="space-y-4">
           <p className="text-sm text-gray-500">From: <span className="font-bold text-gray-900">{transferConfirmModal._fromName}</span></p>
           <p className="text-sm text-gray-500">Amount: <span className="font-bold text-green-700">{formatPoints(transferConfirmModal.amount_paise)}</span></p>
           <p className="text-xs text-gray-400">{transferConfirmModal.description || '—'}</p>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">📷 Receipt Photo</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Proof of receipt</label>
             {transferConfirmImage ? (
               <div className="flex items-center gap-2">
                 <span className="text-xs text-green-600 font-medium truncate flex-1">✓ {transferConfirmImage.name}</span>
                 <button onClick={function () { setTransferConfirmImage(null) }} className="text-xs text-red-500 font-bold hover:text-red-700">✕</button>
               </div>
+            ) : transferConfirmAudioUrl ? (
+              <div className="flex items-center gap-2 p-2 rounded-lg bg-blue-50 border border-blue-200">
+                <audio src={transferConfirmAudioUrl} controls className="flex-1 h-8" />
+                <button onClick={removeTransferConfirmAudio} className="text-xs text-red-500 font-bold hover:text-red-700 flex-shrink-0">✕</button>
+              </div>
+            ) : transferConfirmRecording ? (
+              <button type="button" onClick={stopTransferConfirmRecording}
+                className="w-full py-3 rounded-lg bg-red-500 text-white text-sm font-medium animate-pulse flex items-center justify-center gap-2">
+                <span className="w-2.5 h-2.5 bg-white rounded-full" />Recording... Tap to stop
+              </button>
             ) : (
-              <label className="block w-full py-3 text-center text-sm text-amber-700 border-2 border-dashed border-amber-300 rounded-lg cursor-pointer hover:bg-amber-50 transition-colors font-medium">
-                📷 Take photo of cash received
-                <input type="file" accept="image/*" capture="environment" className="sr-only"
-                  onChange={function (e) { if (e.target.files?.[0]) setTransferConfirmImage(e.target.files[0]); e.target.value = '' }} />
-              </label>
+              <div className="grid grid-cols-2 gap-2">
+                <label className="py-3 text-center text-sm text-amber-700 border-2 border-dashed border-amber-300 rounded-lg cursor-pointer hover:bg-amber-50 transition-colors font-medium">
+                  📷 Photo
+                  <input type="file" accept="image/*" capture="environment" className="sr-only"
+                    onChange={function (e) { if (e.target.files?.[0]) setTransferConfirmImage(e.target.files[0]); e.target.value = '' }} />
+                </label>
+                <button type="button" onClick={startTransferConfirmRecording}
+                  className="py-3 text-center text-sm text-amber-700 border-2 border-dashed border-amber-300 rounded-lg hover:bg-amber-50 transition-colors font-medium">
+                  🎤 Voice note
+                </button>
+              </div>
             )}
           </div>
           <div className="flex gap-3 pt-2">
-            <button onClick={function () { setTransferConfirmModal(null); setTransferConfirmImage(null) }}
+            <button onClick={closeConfirm}
               className="flex-1 py-3 text-sm text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors font-semibold">Cancel</button>
             <button onClick={confirmTransferReceive} disabled={transferConfirmSaving}
               className="flex-1 py-3 text-sm text-white bg-green-600 rounded-xl hover:bg-green-700 disabled:opacity-50 transition-colors font-semibold">
@@ -2354,20 +2502,27 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             <p className="text-[10px] font-bold text-amber-600 uppercase tracking-wider">Incoming Transfers</p>
             {pendingIncoming.map(function (t) {
               var imgUrl = t.sender_image_path ? supabase.storage.from('receipts').getPublicUrl(t.sender_image_path).data?.publicUrl : null
+              var isVoice = !!(t.sender_image_path && t.sender_image_path.indexOf('.webm') !== -1)
               return (
                 <div key={t.id} className="bg-amber-50/50 border border-amber-300 rounded-lg p-3">
                   <div className="flex items-start justify-between">
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold text-gray-900">{t._fromName} sent you {formatPoints(t.amount_paise)}</p>
                       <p className="text-xs text-gray-500 mt-0.5">{t.description || '—'} · {formatDate(t.created_at)}</p>
-                      {imgUrl && (
+                      {imgUrl && isVoice && (
+                        <div className="mt-1.5 flex items-center gap-1.5">
+                          <span className="text-[8px] bg-blue-600 text-white px-1 rounded font-bold">Sent</span>
+                          <audio src={imgUrl} controls className="h-7 max-w-[180px]" />
+                        </div>
+                      )}
+                      {imgUrl && !isVoice && (
                         <div className="mt-1.5 relative inline-block cursor-pointer" onClick={function () { setEnlargedWalletImg(imgUrl) }}>
                           <img src={imgUrl} alt="" className="w-10 h-10 rounded border border-gray-200 object-cover" />
                           <span className="absolute -top-1 -left-1 text-[8px] bg-blue-600 text-white px-1 rounded font-bold">Sent</span>
                         </div>
                       )}
                     </div>
-                    <button onClick={function () { setTransferConfirmModal(t); setTransferConfirmImage(null) }}
+                    <button onClick={function () { setTransferConfirmModal(t); setTransferConfirmImage(null); removeTransferConfirmAudio() }}
                       className="px-3 py-1.5 text-[10px] font-bold text-amber-700 bg-amber-100 border border-amber-300 rounded-lg hover:bg-amber-200 transition-colors flex-shrink-0 ml-2">
                       📷 Confirm
                     </button>
@@ -2406,15 +2561,19 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
         <div className="space-y-2">
           {walletTxns.map(function (t) {
             var isCredit = t.type === 'credit'
-            var issuedUrl = t.issued_image_path ? supabase.storage.from('receipts').getPublicUrl(t.issued_image_path).data?.publicUrl : null
-            var receivedUrl = t.received_image_path ? supabase.storage.from('receipts').getPublicUrl(t.received_image_path).data?.publicUrl : null
+            var issuedPath = t.issued_image_path || null
+            var receivedPath = t.received_image_path || null
             var transferRow = t.reference_type === 'transfer' && t.reference_id ? transferParties[t.reference_id] : null
             if (transferRow) {
               var transferSenderPath = transferRow.sender_image_path
               var transferReceiverPath = transferRow.receiver_image_path || transferRow.received_image_path
-              if (transferSenderPath) issuedUrl = supabase.storage.from('receipts').getPublicUrl(transferSenderPath).data?.publicUrl
-              if (transferReceiverPath) receivedUrl = supabase.storage.from('receipts').getPublicUrl(transferReceiverPath).data?.publicUrl
+              if (transferSenderPath) issuedPath = transferSenderPath
+              if (transferReceiverPath) receivedPath = transferReceiverPath
             }
+            var issuedUrl = issuedPath ? supabase.storage.from('receipts').getPublicUrl(issuedPath).data?.publicUrl : null
+            var receivedUrl = receivedPath ? supabase.storage.from('receipts').getPublicUrl(receivedPath).data?.publicUrl : null
+            var issuedIsVoice = !!(issuedPath && issuedPath.indexOf('.webm') !== -1)
+            var receivedIsVoice = !!(receivedPath && receivedPath.indexOf('.webm') !== -1)
             var isOwnWallet = selectedWallet && selectedWallet.user_id === profile.id
             var canConfirm = isCredit && t.status === 'pending' && isOwnWallet
             var epcHit = epcRefs[t.id] || null
@@ -2553,14 +2712,26 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                       {t.performed_by && walletProfiles[t.performed_by] ? ' · by ' + walletProfiles[t.performed_by].name : ''}
                     </p>
                     {t.received_at && <p className="text-[10px] text-green-600 font-medium mt-0.5">✓ Confirmed {formatDate(t.received_at)}</p>}
-                    <div className="flex gap-2 mt-1.5">
-                      {issuedUrl && (
+                    <div className="flex gap-2 mt-1.5 flex-wrap items-center">
+                      {issuedUrl && issuedIsVoice && (
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[8px] bg-blue-600 text-white px-1 rounded font-bold">Sent</span>
+                          <audio src={issuedUrl} controls className="h-7 max-w-[180px]" />
+                        </div>
+                      )}
+                      {issuedUrl && !issuedIsVoice && (
                         <div className="relative cursor-pointer" onClick={function () { setEnlargedWalletImg(issuedUrl) }}>
                           <img src={issuedUrl} alt="" className="w-10 h-10 rounded border border-gray-200 object-cover" />
                           <span className="absolute -top-1 -left-1 text-[8px] bg-blue-600 text-white px-1 rounded font-bold">Sent</span>
                         </div>
                       )}
-                      {receivedUrl && (
+                      {receivedUrl && receivedIsVoice && (
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[8px] bg-green-600 text-white px-1 rounded font-bold">Rcvd</span>
+                          <audio src={receivedUrl} controls className="h-7 max-w-[180px]" />
+                        </div>
+                      )}
+                      {receivedUrl && !receivedIsVoice && (
                         <div className="relative cursor-pointer" onClick={function () { setEnlargedWalletImg(receivedUrl) }}>
                           <img src={receivedUrl} alt="" className="w-10 h-10 rounded border border-gray-200 object-cover" />
                           <span className="absolute -top-1 -left-1 text-[8px] bg-green-600 text-white px-1 rounded font-bold">Rcvd</span>
