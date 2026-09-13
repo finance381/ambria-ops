@@ -25,7 +25,7 @@
 // A flat wash under the whole section, so it separates from the shell ground
 // below it. The shaped part is the SVG on top of this.
 var WASH = {
-  backgroundImage: 'linear-gradient(180deg, rgba(245,243,255,0.85), rgba(245,243,255,0) 260px)',
+  backgroundImage: 'linear-gradient(180deg, rgba(243,240,255,0.95) 0px, rgba(245,243,255,0.55) 220px, rgba(246,245,255,0.28) 520px, rgba(246,245,255,0) 900px)',
 }
 
 
@@ -41,6 +41,7 @@ var WASH = {
 // shows as a step every cycle once it starts moving.
 var WAVE_A = 'M0 0 H1200 V78 C1080 118 950 46 820 74 C690 102 560 140 430 104 C300 68 140 44 0 78 Z'
 var WAVE_B = 'M0 0 H1200 V44 C1090 76 980 18 850 42 C710 68 590 96 440 66 C300 38 150 22 0 44 Z'
+var WAVE_C = 'M0 0 H1200 V104 C1060 142 930 88 800 108 C660 130 540 162 400 134 C270 108 130 92 0 104 Z'
 
 // The same two curves at 40% of their amplitude, for phone widths only.
 //
@@ -54,6 +55,7 @@ var WAVE_B = 'M0 0 H1200 V44 C1090 76 980 18 850 42 C710 68 590 96 440 66 C300 3
 // Endpoints are untouched, so these tile as seamlessly as the full-size pair.
 var WAVE_A_SM = 'M0 0 H1200 V78 C1080 94 950 65 820 76 C690 88 560 103 430 88 C300 74 140 64 0 78 Z'
 var WAVE_B_SM = 'M0 0 H1200 V44 C1090 57 980 34 850 43 C710 54 590 65 440 53 C300 42 150 35 0 44 Z'
+var WAVE_C_SM = 'M0 0 H1200 V104 C1060 119 930 97 800 105 C660 114 540 127 400 116 C270 105 130 99 0 104 Z'
 
 // 200% wide, holding the tile twice. The animation slides it exactly one tile
 // left and starts over on an identical frame — a continuous drift in one
@@ -80,7 +82,17 @@ function PageWave({ offset }) {
           it can be as large as it likes without ever reading as a shape that
           ends somewhere. */}
       <div className="absolute -top-40 right-[-8rem] w-[34rem] h-[34rem] rounded-full ambria-glow-drift"
-        style={{ background: 'radial-gradient(circle, rgba(129,140,248,0.22) 0%, rgba(129,140,248,0) 70%)' }} />
+        style={{ background: 'radial-gradient(circle, rgba(129,140,248,0.26) 0%, rgba(129,140,248,0) 70%)' }} />
+
+      {/* Further down and on the other side, drifting on a longer cycle and
+          out of phase with the first. The page used to have nothing at all
+          below the header band, so scrolling past it arrived on flat grey. */}
+      <div className="absolute top-[45%] left-[-12rem] w-[40rem] h-[40rem] rounded-full ambria-glow-drift"
+        style={{
+          background: 'radial-gradient(circle, rgba(167,139,250,0.16) 0%, rgba(167,139,250,0) 70%)',
+          animationDuration: '26s',
+          animationDelay: '-9s',
+        }} />
 
       {/* `offset` is the chrome above the page header — 3.5rem of top bar in
           the admin shell, nothing in API Marketing. The band starts at the very
@@ -94,7 +106,7 @@ function PageWave({ offset }) {
           because it has to change at the sm breakpoint — see the rule for
           why — and an inline style cannot hold a media query. */}
       <div className="absolute inset-x-0 top-0 overflow-hidden ambria-wave-mask"
-        style={{ height: offset ? 'calc(8rem + ' + offset + ')' : '8rem' }}>
+        style={{ height: offset ? 'calc(11rem + ' + offset + ')' : '11rem' }}>
         <svg width="0" height="0" className="absolute">
           <defs>
             {/* Vertical, so horizontal travel cannot make it pulse. */}
@@ -119,6 +131,14 @@ function PageWave({ offset }) {
               <stop offset="0%" stopColor="#c4b5fd" stopOpacity="0.44" />
               <stop offset="100%" stopColor="#c4b5fd" stopOpacity="0" />
             </linearGradient>
+            {/* The crest. Brightest at its own top edge and gone a third of
+                the way down, so it reads as a lit rim on the curve rather
+                than a third slab of colour. */}
+            <linearGradient id="pageWaveC" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#ffffff" stopOpacity="0.55" />
+              <stop offset="35%" stopColor="#e0e7ff" stopOpacity="0.22" />
+              <stop offset="100%" stopColor="#e0e7ff" stopOpacity="0" />
+            </linearGradient>
           </defs>
         </svg>
         {/* the deeper band, then a shallower one in front so the edge is not a
@@ -129,6 +149,8 @@ function PageWave({ offset }) {
         <Band d={WAVE_B_SM} gradient="pageWaveBSm" className="ambria-wave-fast sm:hidden" />
         <Band d={WAVE_A} gradient="pageWaveA" className="ambria-wave-slow hidden sm:block" />
         <Band d={WAVE_B} gradient="pageWaveB" className="ambria-wave-fast hidden sm:block" />
+        <Band d={WAVE_C_SM} gradient="pageWaveC" className="ambria-wave-drift sm:hidden" />
+        <Band d={WAVE_C} gradient="pageWaveC" className="ambria-wave-drift hidden sm:block" />
       </div>
     </div>
   )

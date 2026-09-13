@@ -28,6 +28,35 @@ var PAGE_SIZE = 20
 // The import also gets it a content hash, so a new backdrop is never served
 // from a stale cache.
 //
+// A figure with its label, for the desktop summary row.
+//
+// Every one of these is a number the page already had — the one-line stat
+// strip was printing them in the same 11px grey as everything else, on a
+// screen with 1500px of room. Nothing new is computed and nothing is
+// estimated; a tile with no real number behind it would be worse than no
+// tile at all.
+//
+// `onClick` makes it a button, because a count of things waiting on you is
+// a place to go, not a fact to read.
+function StatTile({ label, value, sub, accent, onClick }) {
+  var body = (
+    <>
+      <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">{label}</p>
+      <p className={"mt-1.5 text-[24px] font-bold leading-none tabular-nums tracking-[-0.02em] " +
+        (accent || "text-slate-900")} data-notranslate>{value}</p>
+      {sub && <p className="mt-1 text-[11.5px] text-slate-500 leading-snug">{sub}</p>}
+    </>
+  )
+  var shell = CARD + " px-4 py-3.5 text-left"
+  if (!onClick) return <div className={shell}>{body}</div>
+  return (
+    <button type="button" onClick={onClick}
+      className={shell + " transform-gpu transition-all duration-150 hover:shadow-lg hover:border-indigo-200 hover:-translate-y-px active:scale-[0.995]"}>
+      {body}
+    </button>
+  )
+}
+
 function Expenses({ profile, masterMode, inAdmin, deepLinkExpense, onDeepLinkHandled }) {
   var [view, setView] = useState('list') // list | form | detail | approve
   var [myExpenses, setMyExpenses] = useState([])
@@ -311,6 +340,9 @@ function Expenses({ profile, masterMode, inAdmin, deepLinkExpense, onDeepLinkHan
   var myMonthExps = myExpenses.filter(function (e) { return (e.expense_date || '').slice(0, 7) === monthPrefix })
   var monthCount = myMonthExps.length
   var monthTotal = myMonthExps.reduce(function (sum, e) { return sum + (e.amount_paise || 0) }, 0)
+  // What the Review tab is about: the value sitting on someone's desk, not
+  // the reviewer's own spending.
+  var pendingTotal = approvalExpenses.reduce(function (sum, e) { return sum + (e.amount_paise || 0) }, 0)
   if (masterMode) {
     return <ExpenseTypeMaster />
   }
@@ -332,9 +364,12 @@ function Expenses({ profile, masterMode, inAdmin, deepLinkExpense, onDeepLinkHan
       // itself. No overflow-hidden here: the submit bar inside is sticky, and
       // overflow on an ancestor would pin it to a box that scrolls away.
       <div className={"relative isolate space-y-3" + (inAdmin ? "" : " -mx-4 px-4 -mt-4 pt-4 -mb-8 pb-8 min-h-[calc(100dvh-3.5rem)]")}>
+        {/* The dashboard heading is drawn by the form itself — it shares a
+            row with the draft-restore prompt, which only the form knows about. */}
         {/* Which mode you are in, and the way out. It was a 10px caps line and
             a text link — the smallest type on the page carrying the only exit. */}
-        <div className="flex items-center justify-between gap-3 px-3.5 py-2.5 sm:py-3 rounded-2xl bg-white/70 border border-indigo-100 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+        <div className={"flex items-center justify-between gap-3 px-3.5 py-2.5 sm:py-3 rounded-2xl bg-white/70 border border-indigo-100 shadow-[0_1px_2px_rgba(15,23,42,0.04)]" +
+          (inAdmin ? " hidden" : "")}>
           <div className="flex items-center gap-3 min-w-0">
             <span className="shrink-0 w-9 h-9 rounded-xl bg-indigo-600 text-white inline-flex items-center justify-center shadow-[0_2px_6px_rgba(79,70,229,0.30)]">
               <Icon name="fileText" size={17} />
@@ -355,7 +390,8 @@ function Expenses({ profile, masterMode, inAdmin, deepLinkExpense, onDeepLinkHan
             Cancel
           </button>
         </div>
-        <ExpenseFormMulti profile={profile} walletBalance={walletBalance} editExp={editExp} onDone={handleFormDone} />
+        <ExpenseFormMulti profile={profile} walletBalance={walletBalance} editExp={editExp} onDone={handleFormDone} inAdmin={inAdmin}
+          onCancel={function () { var next = editExp && editExp._fromApprove ? 'approve' : editExp && editExp._fromAll ? 'all' : 'list'; setView(next); setEditExp(null) }} />
       </div>
     )
   }
@@ -495,6 +531,42 @@ function Expenses({ profile, masterMode, inAdmin, deepLinkExpense, onDeepLinkHan
         )
       })()}
 
+      {/* Three tiles instead of one grey line, from lg in the dashboard. */}
+      {inAdmin && view === 'list' && (
+        <div className={"hidden lg:grid gap-3 " + (showApproveTab ? "grid-cols-3" : "grid-cols-2")}>
+          <StatTile
+            label="This month"
+            value={formatPoints(monthTotal)}
+            sub={monthCount === 1 ? '1 expense' : monthCount + ' expenses'} />
+          <StatTile
+            label="All time"
+            value={formatPoints(myTotal)}
+            sub={myExpenses.length === 1 ? '1 expense' : myExpenses.length + ' expenses'} />
+          {showApproveTab && (
+            <StatTile
+              label="Pending review"
+              value={String(approvalExpenses.length)}
+              accent={approvalExpenses.length > 0 ? 'text-amber-600' : 'text-slate-400'}
+              sub={approvalExpenses.length === 0 ? 'Nothing waiting on you' : 'Open the Review tab'}
+              onClick={function () { setView('approve'); setStatusFilter('') }} />
+          )}
+        </div>
+      )}
+
+      {inAdmin && view === 'approve' && (
+        <div className="hidden lg:grid grid-cols-2 gap-3">
+          <StatTile
+            label="Awaiting your review"
+            value={String(approvalExpenses.length)}
+            accent={approvalExpenses.length > 0 ? 'text-amber-600' : 'text-slate-400'}
+            sub={approvalExpenses.length === 0 ? 'The queue is clear' : 'Submissions from your departments'} />
+          <StatTile
+            label="Value in the queue"
+            value={formatPoints(pendingTotal)}
+            sub="Total of everything above" />
+        </div>
+      )}
+
       {/* Stat strip — what the deleted page heading used to say, on one line */}
       {(view === 'list' || view === 'approve') && (
         /* px-0.5 so the line does not start flush against the card edges
@@ -504,7 +576,7 @@ function Expenses({ profile, masterMode, inAdmin, deepLinkExpense, onDeepLinkHan
            A plain block comment rather than a braced JSX one: inside
            cond && ( ... ) only a single expression is allowed, and a braced
            comment counts as a second one. */
-        <div className="flex items-center justify-between gap-2 px-0.5">
+        <div className={"flex items-center justify-between gap-2 px-0.5" + (inAdmin ? " lg:hidden" : "")}>
           <p className={T.meta + " min-w-0 truncate"}>
             {view === 'approve' ? (
               approvalExpenses.length === 0 ? 'Nothing pending review' : (

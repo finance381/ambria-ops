@@ -209,6 +209,21 @@
   .ambria-thin-scroll::-webkit-scrollbar-button { display: none; }
   .ambria-thin-scroll::-webkit-scrollbar-corner { background: transparent; }
 
+  /* ── A pinned column that scrolls inside itself ───────────────────────
+     The rail only overflows sometimes: Payment Method appears once a vendor
+     is picked, and grows again when the credit is split. Every time it
+     crossed that line the scrollbar appeared or vanished and every card in
+     the column jumped sideways by its width. The gutter is reserved whether
+     or not the bar is in it.
+
+     No overscroll-behavior here. contain stops the rail handing a gesture on
+     to the page — which also means a pointer resting on the rail freezes the
+     page, and on a form this long that is far worse than the mid-flick jump
+     it was added to prevent. */
+  .ambria-rail {
+    scrollbar-gutter: stable;
+  }
+
   /* Number fields carry a stepper in every browser and it earns nothing on
      the values this app collects — nobody raises a bill one rupee at a time.
      It eats the right padding a currency field needs, it puts a click target
@@ -254,6 +269,13 @@
   }
   .ambria-wave-fast {
     animation: ambria-wave-flow 8s linear infinite;
+    will-change: transform;
+  }
+  /* The crest, slowest of the three. Three speeds rather than two is what
+     keeps the band from resolving into a repeating pattern: the slowest and
+     fastest only line up again every few minutes. */
+  .ambria-wave-drift {
+    animation: ambria-wave-flow 19s linear infinite;
     will-change: transform;
   }
 
@@ -324,7 +346,7 @@
     .ambria-slide-left, .ambria-slide-right, .ambria-rise { animation: none; }
     /* Decoration is the first thing to stop when someone asks for less
        motion — nothing is communicated by it. */
-    .ambria-wave-slow, .ambria-wave-fast, .ambria-glow-drift,
+    .ambria-wave-slow, .ambria-wave-fast, .ambria-wave-drift, .ambria-glow-drift,
     .ambria-rail-drift, .ambria-sheen { animation: none; }
   }
 }

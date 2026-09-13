@@ -207,6 +207,12 @@ function SearchDropdown({ items, value, onChange, onAdd, onInputChange, placehol
                 (error ? "border-red-400 focus:border-red-500 focus:ring-red-500/20"
                        : "border-slate-300 focus:border-indigo-500 focus:ring-indigo-500/20")
               }
+              /* 16px, like every other input in the app and like both sibling
+                 dropdowns. This one was left at 13px, so it rendered ~4px
+                 shorter than any plain field beside it — and on iOS it was the
+                 only control on a form that zooms the page when you focus it,
+                 which is the whole reason the 16px rule exists. */
+              style={{ fontSize: '16px' }}
             />
             {query && (
               <button

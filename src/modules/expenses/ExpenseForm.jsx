@@ -14,9 +14,34 @@ import Icon from '../../components/ui/Icon'
 import CameraCapture from '../../components/ui/CameraCapture'
 import { hasPerm } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
-import { deptInk, deptOrder } from '../../lib/ui'
+import { deptCls, deptInk, deptOrder } from '../../lib/ui'
 
 function byName(a, b) { return (a.name || '').localeCompare(b.name || '') }
+
+function FieldLabel({ htmlFor, icon, required, children }) {
+  return (
+    <label htmlFor={htmlFor} className="flex items-center gap-2 text-[13px] font-bold text-slate-800 mb-1.5">
+      {icon && <Icon name={icon} size={15} className="shrink-0 text-slate-400" />}
+      {children}
+      {required && <span className="text-red-500">*</span>}
+    </label>
+  )
+}
+
+function PanelHead({ icon, sub, right, children }) {
+  return (
+    <div className="flex items-center gap-2.5 px-4 py-3 border-b border-slate-100">
+      <span className="shrink-0 w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 inline-flex items-center justify-center">
+        <Icon name={icon} size={16} />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block font-display text-[15px] font-bold text-slate-900 tracking-[-0.01em] leading-snug">{children}</span>
+        {sub && <span className="block text-[11px] font-medium text-slate-500 leading-snug">{sub}</span>}
+      </span>
+      {right}
+    </div>
+  )
+}
 
 // One evening at one venue is booked as up to four contracts — one per
 // department — and every one of them carries the same client, venue and
@@ -73,6 +98,11 @@ function makeEntry() {
     audioBlob: null,
     audioUrl: '',
     recording: false,
+    // Off to start with. validate() requires at least one priced item once
+    // this is on, and Amount turns read-only — so the common case, an expense
+    // that is not a purchase of things, would otherwise have to switch it off
+    // before it could be filled in. The tabs open their own panel on arrival,
+    // which is where turning it on belongs.
     isItemPurchase: false,
     items: [makeItem()],
     paymentCreditRupees: '',  // vendor-credit total (rupees). Cash = amount - credit.
@@ -245,7 +275,7 @@ function hydrateEntry(exp) {
   }
 }
 
-function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
+function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCancel }) {
   var isEditing = !!editExp
   var refData = useReferenceData()
   var expenseTypes = refData.expenseTypes.filter(function (t) { return t.active })
@@ -424,6 +454,176 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
     setEventsLoading(false)
     if (rows.length === 1) setEventId(String(rows[0].id))
     else if (!rows.some(function (r) { return String(r.id) === eventId })) setEventId('')
+  }
+
+  // The date-then-function picker the toggle reveals.
+  //
+  // A function because it has two homes. On a phone it belongs to the card
+  // above the entries, where the toggle is. In admin the toggle moved into
+  // the first entry's top row — and the picker stayed behind, so turning it
+  // on made a panel appear ABOVE the switch you had just pressed. Rendering
+  // it wherever its toggle is, is the whole fix.
+  //
+  // eventDate and eventId are form-level state, so only the first entry
+  // draws the admin copy; there is one function per submission, not one per
+  // entry.
+  function renderFunctionPicker() {
+    return (
+    <div className="space-y-2">
+      <EventDatePicker label="Function Date" value={eventDate} collapsible
+        onChange={function (dateStr) { setEventDate(dateStr); loadEventsByDate(dateStr) }} />
+      {eventsLoading && <p className="text-[12px] text-slate-500">Loading events...</p>}
+      {eventDate && !eventsLoading && events.length === 0 && <p className="text-[12px] text-slate-500">No events on this date</p>}
+      {/* A card list, not a <select>: one function needs THREE department
+          colours on the same row, and a native option can only carry one
+          (the iOS wheel ignores even that). Real markup gets the chips —
+          and it matches the Extra Plates and Wallet function pickers. */}
+      {events.length > 0 && (function () {
+        var groups = groupFunctions(events)
+        // Once a function is chosen the other cards have done their job.
+        // Keeping them on screen pushed the amount, category and receipt
+        // fields a full phone-height down the form; the choice collapses
+        // to the one card that matters, with a way back beside it.
+        var picked = eventId ? groups.filter(function (g) {
+          return g.contracts.some(function (c) { return String(c.id) === eventId })
+        }) : null
+        var shown = (picked && picked.length === 1) ? picked : groups
+        return (
+        /* ═══ a grid of tiles, not a stack of bars ═════════════════════════
+           Full-width rows spent the whole column on one function and pushed
+           the amount and receipt fields a screen down. Four across, and the
+           fifth starts a new row.
+
+           A grid rather than a scrolling row: the count is whatever the date
+           returns, and a row hides everything past the fourth tile behind a
+           gesture — with six bookings you could not tell there were six.
+
+           Column count is gated on the wide flag, not on lg alone. The phone shell is
+           a 540px column inside whatever viewport the laptop happens to have,
+           so a bare lg:grid-cols-4 fires inside it and hands the phone four
+           120px tiles. */
+        <div className="space-y-2">
+        <div className={"grid gap-2 grid-cols-1 sm:grid-cols-2" + (wide ? " lg:grid-cols-4" : "")}>
+          {shown.map(function (g) {
+            var head = g.contracts[0]
+            var sel = g.contracts.filter(function (c) { return String(c.id) === eventId })[0] || null
+            return (
+              /* The tile picks the function, nothing finer. event_id takes the
+                 first contract in running order (Venue → Decor → Catering →
+                 Entertainment); the cost's own department is set per-allocation
+                 further down the form, so the contract row this hangs off does
+                 not need to be chosen here. */
+              <button key={g.key} type="button" onClick={function () { setEventId(String(head.id)) }}
+                className={"text-left rounded-xl border px-2.5 py-2 transition-all duration-150 " +
+                  (sel
+                    ? "border-indigo-500 bg-indigo-50 ring-1 ring-indigo-500"
+                    : "border-slate-200 bg-white hover:border-indigo-300 hover:shadow-[0_2px_8px_rgba(15,23,42,0.06)]")}>
+                <span className="flex items-start justify-between gap-1.5">
+                  <span className={"min-w-0 flex-1 block text-[11px] font-bold uppercase tracking-[0.03em] leading-snug truncate " +
+                    (sel ? "text-indigo-900" : "text-slate-900")}>
+                    {head.event_name}
+                  </span>
+                  {/* Which departments this evening is booked under — read only,
+                      and never wrapped: a second row of chips is what made these
+                      tall in the first place. */}
+                  <span className="shrink-0 flex flex-nowrap items-center gap-1">
+                    {g.contracts.map(function (c) {
+                      return (
+                        /* 10px is the floor the rest of the form uses, so the chip
+                           shrinks by losing padding and its border rather than its
+                           type. The border was a second edge inside a tile that
+                           already has one. */
+                        <span key={c.id}
+                          className={"text-[10px] font-bold uppercase tracking-[0.03em] leading-none px-1.5 py-[3px] rounded " + deptCls(c.department)}>
+                          {c.department}
+                        </span>
+                      )
+                    })}
+                  </span>
+                </span>
+                {head.client_name && (
+                  <span className={"block text-[11px] leading-snug truncate " + (sel ? "text-indigo-800" : "text-slate-700")}>
+                    {head.client_name}
+                  </span>
+                )}
+                {/* Venue and session stay. They are half of what tells two
+                    bookings on the same evening apart — funcKeyOf groups on
+                    them — so a tile without them can be a twin of the one
+                    beside it. */}
+                <span className={"block text-[10px] leading-snug truncate " + (sel ? "text-indigo-600" : "text-slate-500")}>
+                  {(head.venue_name || '') + (head.session ? ' · ' + head.session : '')}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+          {shown !== groups && groups.length > 1 && (
+            <button type="button" onClick={function () { setEventId('') }}
+              className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 px-1">
+              Change function
+            </button>
+          )}
+        </div>
+        )
+      })()}
+    </div>
+    )
+  }
+
+  // Only the admin shell has room for the two-column form. See the layout
+  // comment on the entry body for why a breakpoint alone was not enough.
+  var wide = !!inAdmin
+
+  // The toggle row. `boxed` wraps it in its own card, which is what the phone
+  // layout needs; on a laptop it is a cell inside the entry card and brings
+  // its own border instead.
+  function renderFunctionToggle(boxed) {
+    if (!boxed) {
+      return (
+        <div>
+          <FieldLabel htmlFor="exp-isfunction" icon="calendar">For a function?</FieldLabel>
+          <button type="button" id="exp-isfunction"
+            onClick={function () { toggleFunction(!isFunction) }}
+            aria-pressed={isFunction}
+            className="w-full flex items-center gap-2.5 border border-slate-200 rounded-xl bg-white px-3 h-[46px] transition-colors hover:border-indigo-300">
+            <span className={"relative block shrink-0 w-9 h-5 rounded-full transition-colors duration-200 " +
+              (isFunction ? "bg-indigo-600" : "bg-slate-300")}>
+              <span className={"absolute block top-1/2 -mt-2 w-4 h-4 bg-white rounded-full shadow transition-[left] duration-200 ease-out " +
+                (isFunction ? "left-[18px]" : "left-0.5")} />
+            </span>
+            <span className="text-[13px] font-bold text-slate-700">{isFunction ? 'Yes' : 'No'}</span>
+          </button>
+        </div>
+      )
+    }
+    return (
+      <div className={boxed
+        ? 'flex items-center justify-between gap-3'
+        : 'flex items-center justify-between gap-2.5 border border-slate-200 rounded-xl bg-white px-3 h-[46px]'}>
+        {/* A tinted glyph tile and one line of why. The row was a bare
+            question with a switch: nothing said what turning it on does. */}
+        <div className="flex items-center gap-2.5 min-w-0">
+          <span className={"shrink-0 rounded-xl inline-flex items-center justify-center transition-colors " +
+            (boxed ? "w-9 h-9 " : "w-7 h-7 ") +
+            (isFunction ? "bg-indigo-50 text-indigo-600" : "bg-slate-100 text-slate-400")}>
+            <Icon name="calendar" size={boxed ? 17 : 15} />
+          </span>
+          <span className="min-w-0">
+            <label className="block text-[13px] font-semibold text-slate-800 truncate">For a function?</label>
+            {boxed && (
+              <span className="block text-[11px] text-slate-500 leading-snug">For any function or event</span>
+            )}
+          </span>
+        </div>
+        <button type="button" onClick={function () { toggleFunction(!isFunction) }}
+          aria-pressed={isFunction} aria-label="For a function?"
+          className="shrink-0 flex items-center gap-2">
+          <div className={"relative w-9 h-5 rounded-full transition-colors " + (isFunction ? "bg-indigo-600" : "bg-slate-300")}>
+            <div className={"absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform " + (isFunction ? "translate-x-4" : "translate-x-0.5")} />
+          </div>
+        </button>
+      </div>
+    )
   }
 
   function toggleFunction(val) {
@@ -1032,7 +1232,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
   }
 
   function renderDynamicField(field, value, onChange, entry) {
-    var cls = 'w-full px-3 py-2.5 bg-white border border-slate-300 rounded-xl text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-shadow'
+    var cls = 'w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 hover:border-slate-300 transition-[border-color,box-shadow] duration-150'
     var sty = { fontSize: '16px' }
 
     if (field.type === 'lookup') {
@@ -1736,28 +1936,87 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
        of empty page to scroll into. The 9rem offset is the Shell header plus the
        page padding above this point; dvh, not vh, so mobile browser chrome
        counts. Erring slightly tall is safe: the bar stays pinned either way. */
-    <div className="flex flex-col space-y-3 -mb-8 min-h-[calc(100dvh-8rem)]">
+    /* -mb-8 on the phone only. A negative bottom margin makes this element
+       end 2rem ABOVE the content you can still see — and in the admin shell
+       that element is inside the flex row the sidebar sticks within, so the
+       rail ran out of containing block 2rem early and lifted right at the
+       bottom of the page. The phone has no sticky rail to break. */
+    <div className={"flex flex-col space-y-3 min-h-[calc(100dvh-8rem)]" + (wide ? "" : " -mb-8")}>
       {/* Draft-restore banner — shows only if a saved draft was found on mount */}
       {/* The old paragraph explained that receipts cannot be restored, but the
           receipt field already says exactly that, with the file names, right
           where you have to act on it. Here it was just a wall of text between
           you and two buttons. */}
+      {wide && (
+        <div className="hidden lg:flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3 min-w-0">
+            <span className="shrink-0 w-11 h-11 rounded-xl bg-indigo-50 text-indigo-600 inline-flex items-center justify-center">
+              <Icon name="fileText" size={22} />
+            </span>
+            <div className="min-w-0">
+              <h1 className="font-display text-[24px] font-extrabold text-slate-900 leading-tight tracking-[-0.02em]">
+                {isEditing ? 'Edit Expense' : 'New Expense'}
+              </h1>
+              <p className="text-[13px] font-medium text-slate-500 leading-snug">Track your PC &amp; Direct expenses easily</p>
+            </div>
+          </div>
+          {draftRestorable && (
+            <div className="ambria-rise flex items-center gap-2.5 shrink-0">
+              <div className="flex items-center gap-3 pl-3 pr-1.5 py-1.5 rounded-xl bg-indigo-50 border border-indigo-200">
+                <span className="shrink-0 w-7 h-7 rounded-lg bg-white text-indigo-600 inline-flex items-center justify-center">
+                  <Icon name="clock" size={15} />
+                </span>
+                <span className="min-w-0">
+                  <span className="block text-[12px] font-bold text-indigo-900 leading-snug">Restore previous data</span>
+                  <span className="block text-[11px] font-medium text-indigo-500/90 tabular-nums leading-snug">
+                    Last saved {formatDraftAge(draftRestorable.savedAt)} · {(draftRestorable.entries || []).length} entr{(draftRestorable.entries || []).length === 1 ? 'y' : 'ies'}
+                  </span>
+                </span>
+                <button type="button" onClick={restoreDraft}
+                  className="group shrink-0 inline-flex items-center justify-center gap-1.5 h-9 px-4 rounded-lg text-[13px] font-bold text-white bg-gradient-to-b from-indigo-500 to-indigo-600 shadow-[0_1px_2px_rgba(79,70,229,0.25)] transform-gpu transition-all duration-200 ease-out hover:from-indigo-600 hover:to-indigo-700 hover:shadow-[0_4px_12px_rgba(79,70,229,0.30)] hover:-translate-y-px active:translate-y-0 active:scale-[0.98]">
+                  <Icon name="undo" className="w-3.5 h-3.5 transition-transform duration-300 ease-out group-hover:-rotate-[40deg] motion-reduce:transition-none motion-reduce:group-hover:rotate-0" />
+                  Restore
+                </button>
+              </div>
+              {/* Outside the pill: it is not part of the offer, it is the
+                  refusal of it. */}
+              <button type="button" onClick={discardDraft}
+                className="shrink-0 inline-flex items-center justify-center gap-1.5 h-11 px-4 rounded-xl text-[13px] font-bold text-slate-600 bg-white border border-slate-200 transform-gpu transition-all duration-200 ease-out hover:border-slate-400 hover:bg-slate-50 hover:text-slate-900 hover:shadow-[0_2px_8px_rgba(15,23,42,0.07)] hover:-translate-y-px active:translate-y-0 active:scale-[0.98]">
+                <Icon name="refresh" size={14} />
+                Start fresh
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
       {draftRestorable && (
-        <div className="ambria-rise p-3 rounded-xl bg-indigo-50 border border-indigo-200">
-          <div className="flex items-baseline justify-between gap-3">
-            <p className="text-[13px] font-semibold text-indigo-900">Restore your previous data?</p>
-            <span className="shrink-0 text-[11px] font-medium text-indigo-500 tabular-nums">
+        <div className={(wide ? "lg:hidden " : "") + "ambria-rise p-3 rounded-xl bg-indigo-50 border border-indigo-200" +
+          (wide ? " lg:flex lg:items-center lg:gap-4 lg:px-4" : "")}>
+          <div className={"flex items-baseline justify-between gap-3" +
+            (wide ? " lg:flex-1 lg:min-w-0 lg:justify-start" : "")}>
+            <p className="text-[13px] font-bold text-indigo-900 leading-snug tracking-[-0.01em]">Restore your previous data?</p>
+            <span className="shrink-0 text-[11px] font-medium text-indigo-500/90 tabular-nums">
               {formatDraftAge(draftRestorable.savedAt)} · {(draftRestorable.entries || []).length} entr{(draftRestorable.entries || []).length === 1 ? 'y' : 'ies'}
             </span>
           </div>
-          <div className="flex gap-2 mt-2.5">
+          <div className={"flex gap-2 mt-2.5" + (wide ? " lg:mt-0 lg:shrink-0" : "")}>
             <button type="button" onClick={restoreDraft}
-              className="flex-1 inline-flex items-center justify-center gap-1.5 py-2 text-[12.5px] font-semibold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 active:scale-[0.98] transition-all">
-              <Icon name="undo" className="w-3.5 h-3.5" />
+              className={"group flex-1 inline-flex items-center justify-center gap-1.5 h-9 px-3 rounded-lg text-[13px] font-bold text-white " +
+                "bg-gradient-to-b from-indigo-500 to-indigo-600 shadow-[0_1px_2px_rgba(79,70,229,0.25)] " +
+                "transform-gpu transition-all duration-200 ease-out " +
+                "hover:from-indigo-600 hover:to-indigo-700 hover:shadow-[0_4px_12px_rgba(79,70,229,0.30)] hover:-translate-y-px " +
+                "active:translate-y-0 active:scale-[0.98] active:shadow-[0_1px_2px_rgba(79,70,229,0.25)]" +
+                (wide ? " lg:flex-none lg:px-5" : "")}>
+              <Icon name="undo" className="w-3.5 h-3.5 transition-transform duration-300 ease-out group-hover:-rotate-[40deg] motion-reduce:transition-none motion-reduce:group-hover:rotate-0" />
               Restore
             </button>
             <button type="button" onClick={discardDraft}
-              className="flex-1 py-2 text-[12.5px] font-semibold text-slate-600 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 hover:text-slate-900 active:scale-[0.98] transition-all">
+              className={"flex-1 inline-flex items-center justify-center h-9 px-3 rounded-lg text-[13px] font-bold text-slate-600 bg-white border border-slate-200 " +
+                "transform-gpu transition-all duration-200 ease-out " +
+                "hover:border-slate-400 hover:bg-slate-50 hover:text-slate-900 hover:shadow-[0_2px_8px_rgba(15,23,42,0.07)] hover:-translate-y-px " +
+                "active:translate-y-0 active:scale-[0.98] active:shadow-none" +
+                (wide ? " lg:flex-none lg:px-4" : "")}>
               Start fresh
             </button>
           </div>
@@ -1799,10 +2058,13 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
         </div>
       )}
       {/* Error banner moved next to the Submit button below — screenshot-friendly, one-tap Copy */}
-      {success && <div className="p-3 rounded-lg bg-green-50 border border-green-200 text-green-700 text-sm whitespace-pre-wrap">{success}</div>}
+      {success && <div className="p-3 rounded-lg bg-green-50 border border-green-200 text-green-700 text-[13px] whitespace-pre-wrap">{success}</div>}
       {isAdminEdit && (
-        <div className="p-3 rounded-lg bg-purple-50 border border-purple-200 text-purple-700 text-sm">
-          🔧 Admin retype — only expense type & sub-type will be saved. Amount, receipts, allocations, wallet remain unchanged.
+        <div className="p-3 rounded-lg bg-purple-50 border border-purple-200 text-purple-700 text-[13px]">
+          <span className="flex items-start gap-2">
+            <Icon name="wrench" size={15} className="shrink-0 mt-0.5" />
+            <span>Admin retype — only expense type &amp; sub-type will be saved. Amount, receipts, allocations, wallet remain unchanged.</span>
+          </span>
         </div>
       )}
       {isAdminEdit && entries.length > 0 && (function () {
@@ -1839,113 +2101,17 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
               </div>
             )}
             {e0.expenseTypeId && subs.length === 0 && (
-              <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">No sub-types configured for this type</p>
+              <p className="text-[12px] text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">No sub-types configured for this type</p>
             )}
           </div>
         )
       })()}
 
       {/* For a Function? */}
-      <div className={"border border-slate-200 rounded-2xl bg-white px-3.5 py-2.5 sm:py-3 space-y-3 shadow-[0_1px_2px_rgba(15,23,42,0.05)] " + (isAdminEdit ? "hidden" : "")}>
-        <div className="flex items-center justify-between gap-3">
-          {/* A tinted glyph tile and one line of why. The row was a bare
-              question with a switch: nothing said what turning it on does. */}
-          <div className="flex items-center gap-2.5 min-w-0">
-            <span className={"shrink-0 w-9 h-9 rounded-xl inline-flex items-center justify-center transition-colors " + (isFunction ? "bg-indigo-50 text-indigo-600" : "bg-slate-100 text-slate-400")}>
-              <Icon name="calendar" size={17} />
-            </span>
-            <span className="min-w-0">
-              <label className="block text-[13px] font-semibold text-slate-800">For a function?</label>
-              <span className="block text-[11px] text-slate-500 leading-snug">For any function or event</span>
-            </span>
-          </div>
-          <button type="button" onClick={function () { toggleFunction(!isFunction) }}
-            aria-pressed={isFunction} aria-label="For a function?"
-            className="shrink-0 flex items-center gap-2">
-            <div className={"relative w-9 h-5 rounded-full transition-colors " + (isFunction ? "bg-indigo-600" : "bg-slate-300")}>
-              <div className={"absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform " + (isFunction ? "translate-x-4" : "translate-x-0.5")} />
-            </div>
-          </button>
-        </div>
-        {isFunction && (
-          <div className="space-y-2">
-            <EventDatePicker label="Function Date" value={eventDate} collapsible
-              onChange={function (dateStr) { setEventDate(dateStr); loadEventsByDate(dateStr) }} />
-            {eventsLoading && <p className="text-xs text-slate-500">Loading events...</p>}
-            {eventDate && !eventsLoading && events.length === 0 && <p className="text-xs text-slate-500">No events on this date</p>}
-            {/* A card list, not a <select>: one function needs THREE department
-                colours on the same row, and a native option can only carry one
-                (the iOS wheel ignores even that). Real markup gets the chips —
-                and it matches the Extra Plates and Wallet function pickers. */}
-            {events.length > 0 && (function () {
-              var groups = groupFunctions(events)
-              // Once a function is chosen the other cards have done their job.
-              // Keeping them on screen pushed the amount, category and receipt
-              // fields a full phone-height down the form; the choice collapses
-              // to the one card that matters, with a way back beside it.
-              var picked = eventId ? groups.filter(function (g) {
-                return g.contracts.some(function (c) { return String(c.id) === eventId })
-              }) : null
-              var shown = (picked && picked.length === 1) ? picked : groups
-              return (
-              <div className="space-y-1.5">
-                {shown.map(function (g) {
-                  var head = g.contracts[0]
-                  var single = g.contracts.length === 1
-                  var sel = g.contracts.filter(function (c) { return String(c.id) === eventId })[0] || null
-                  var title = (
-                    <>
-                      <div className={"text-[13px] font-semibold " + (sel ? "text-indigo-900" : "text-slate-900")}>
-                        {head.event_name + (head.client_name ? ' — ' + head.client_name : '')}
-                      </div>
-                      <div className={"text-[11.5px] " + (sel ? "text-indigo-700" : "text-slate-500")}>
-                        {(head.venue_name || '') + (head.session ? ' · ' + head.session : '')}
-                      </div>
-                    </>
-                  )
-                  return (
-                    <div key={g.key}
-                      className={"rounded-xl border transition-colors " +
-                        (sel ? "border-indigo-600 border-2 bg-indigo-50" : "border-slate-300 bg-white")}>
-                      {/* The card picks the function, nothing finer. event_id
-                          takes the first contract in running order (Venue →
-                          Decor → Catering → Entertainment); the cost's own
-                          department is set per-allocation further down the
-                          form, so the contract row this hangs off does not
-                          need to be chosen here. */}
-                      <button type="button" onClick={function () { setEventId(String(head.id)) }}
-                        className="w-full text-left px-3 pt-2">
-                        {title}
-                      </button>
-                      {/* Which departments this evening is booked under — read
-                          only. One line, never wrapped: four names plus the
-                          label overflow a narrow phone, so the row scrolls
-                          sideways rather than folding and pushing every card
-                          below it down. */}
-                      <div className="flex items-center gap-1.5 px-3 pt-1 pb-2 overflow-x-auto overflow-y-hidden">
-                        {!single && <span className="shrink-0 text-[10.5px] font-bold uppercase tracking-[0.08em] text-slate-500">Dept:</span>}
-                        {g.contracts.map(function (c) {
-                          return (
-                            <span key={c.id} className={"shrink-0 text-[12px] font-medium " + deptInk(c.department)}>
-                              {c.department}
-                            </span>
-                          )
-                        })}
-                      </div>
-                    </div>
-                  )
-                })}
-                {shown !== groups && groups.length > 1 && (
-                  <button type="button" onClick={function () { setEventId('') }}
-                    className="text-[11.5px] font-semibold text-indigo-600 hover:text-indigo-800 px-1">
-                    Change function
-                  </button>
-                )}
-              </div>
-              )
-            })()}
-          </div>
-        )}
+      <div className={"border border-slate-200 rounded-2xl bg-white px-3.5 py-2.5 sm:py-3 space-y-3 shadow-[0_1px_2px_rgba(15,23,42,0.05)] " +
+        (isAdminEdit ? "hidden " : "") + (wide ? "lg:hidden " : "")}>
+        {renderFunctionToggle(true)}
+        {isFunction && renderFunctionPicker()}
       </div>
 
       {entries.map(function (entry, idx) {
@@ -1960,8 +2126,11 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
         var subTypeFields = entry.expenseSubTypeId ? getSubTypeFields(entry.expenseSubTypeId) : []
 
         return (
-          <div key={entry._key} className="ambria-rise flex-1 border border-white/70 rounded-2xl bg-white/70 shadow-[0_1px_2px_rgba(15,23,42,0.05)]">
-            <div className="flex items-center justify-between gap-2 px-4 py-2.5 bg-white/45 border-b border-white/70 rounded-t-2xl">
+          <div key={entry._key} className={"ambria-rise flex-1 border border-white/70 rounded-2xl bg-white/70 shadow-[0_1px_2px_rgba(15,23,42,0.05)]" +
+            (wide ? " lg:border-0 lg:bg-transparent lg:shadow-none lg:rounded-none" : "")}>
+            <div className={"flex items-center justify-between gap-2 px-4 py-2.5 bg-white/45 border-b border-white/70 rounded-t-2xl" +
+              (wide ? (entries.length === 1 ? " lg:hidden"
+                : " lg:bg-white lg:border lg:border-slate-200 lg:rounded-xl lg:mb-4") : "")}>
               <button type="button" onClick={function () { updateEntry(idx, '_collapsed', !entry._collapsed) }}
                 className="flex items-center gap-2 min-w-0 flex-1 text-left">
                 <span className="shrink-0 text-slate-400">
@@ -1970,7 +2139,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                 <span className="shrink-0 w-7 h-7 rounded-lg bg-indigo-50 text-indigo-600 inline-flex items-center justify-center">
                   <Icon name="receipt" size={14} />
                 </span>
-                <span className="shrink-0 text-[10px] font-bold uppercase tracking-[0.1em] text-indigo-800">
+                <span className="shrink-0 text-[10px] font-bold uppercase tracking-[0.08em] text-indigo-800">
                   {/* The rule sits under the label alone, not the full width:
                       it marks which card you are in without spending a row. */}
                   <span className="inline-block border-b-2 border-indigo-500 pb-1 pr-1.5">
@@ -1983,7 +2152,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                   var what = [et ? et.name : '', st ? st.name : ''].filter(Boolean).join(' › ') || (entry.description || '').trim()
                   var amt = Number(entry.amount) > 0 ? formatPoints(Math.round(Number(entry.amount) * 100)) : ''
                   return (
-                    <span className="flex items-baseline gap-2 min-w-0 text-[11.5px]">
+                    <span className="flex items-baseline gap-2 min-w-0 text-[11px]">
                       <span className="truncate text-slate-600">{what || 'Empty'}</span>
                       {amt && <span className="shrink-0 font-bold text-slate-900 tabular-nums">{amt}</span>}
                     </span>
@@ -2011,13 +2180,41 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
               )}
             </div>
 
-            {/* Hidden, not unmounted: every field in here holds typed state and
-                a fold must not throw it away. */}
-            <div className={"p-3.5 space-y-3" + (entry._collapsed ? " hidden" : "")}>
+            {/* See the fold note on the class list below. */}
+            {/* h-full at lg so the grid fills the entry card rather than
+               stopping at its own content. The card carries flex-1, so on a
+               form that does not fill the screen it grows — and the rail can
+               only stay pinned for as long as the box it lives in lasts. */}
+            <div className={"p-3.5 space-y-3" + (entry._collapsed ? " hidden"
+              : (wide ? " lg:space-y-0 lg:grid lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-4 lg:items-start lg:h-full" : ""))}>
+              {/* What the expense is. min-w-0, or a long option label in the
+                  type picker pushes the whole column wider than its share. */}
+              <div className={"min-w-0 space-y-3" + (wide ? " lg:space-y-4" : "")}>
+              <div className={wide ? "lg:border lg:border-slate-200 lg:rounded-2xl lg:bg-white lg:shadow-[0_1px_2px_rgba(15,23,42,0.04)] lg:overflow-hidden lg:transition-shadow lg:duration-300 lg:hover:shadow-[0_8px_28px_rgba(15,23,42,0.07)]" : ""}>
+                {wide && (
+                  <div className="hidden lg:block">
+                    <PanelHead icon="fileText" sub="Enter the basic details of this expense"
+                      right={entries.length === 1 ? (
+                        <span className="flex items-center gap-1.5 shrink-0">
+                          {!isEditing && (
+                            <button type="button" onClick={function () { duplicateEntry(idx) }} title="Duplicate"
+                              className="inline-flex items-center gap-1 h-7 px-2 rounded-lg text-[11px] font-semibold text-indigo-700 hover:bg-indigo-50 transition-colors">
+                              <Icon name="copy" size={12} />
+                              Duplicate
+                            </button>
+                          )}
+                          <span data-notranslate className="text-[10px] font-bold uppercase tracking-[0.08em] text-indigo-700 bg-indigo-50 rounded-md px-2 py-1">
+                            {'Expense ' + (idx + 1)}
+                          </span>
+                        </span>
+                      ) : null}>Expense Details</PanelHead>
+                  </div>
+                )}
+                <div className={"space-y-3" + (wide ? " lg:p-4" : "")}>
               {/* Date and Expense Type: the two shortest fields in the form,
                   paired so a wide window does not stretch each of them across
                   the whole page on its own. */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[minmax(0,20rem)_minmax(0,34rem)] gap-3">
+              <div className={"grid grid-cols-1 sm:grid-cols-2 gap-3" + (wide ? " lg:grid-cols-3 lg:max-w-5xl lg:items-start" : "")}>
               {/* Date — new expenses gated to today − 3 days; edits may widen the window to preserve the original date */}
               {(function () {
                 var toYMD = function (d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') }
@@ -2027,10 +2224,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                 var effMin = (isEditing && editExp && editExp.expense_date && editExp.expense_date < minDate) ? editExp.expense_date : minDate
                 return (
                   <div>
-                    <label htmlFor={'exp-date-' + idx} className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-600 mb-1">
-                      <span className="shrink-0 w-5 h-5 rounded-md bg-slate-100 text-slate-500 inline-flex items-center justify-center"><Icon name="calendar" size={11} /></span>
-                      Date <span className="text-red-500">*</span>
-                    </label>
+                    <FieldLabel htmlFor={'exp-date-' + idx} icon="calendar" required>Date</FieldLabel>
                     <input id={'exp-date-' + idx} type="date" value={entry.expenseDate} min={effMin} max={today}
                       onChange={function (e) {
                         var v = e.target.value
@@ -2049,7 +2243,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                         updateEntry(idx, 'expenseDate', v)
                         if (entry._dateNote) updateEntry(idx, '_dateNote', '')
                       }}
-                      className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-xl text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-shadow" style={{ fontSize: '16px' }} />
+                      className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 hover:border-slate-300 transition-[border-color,box-shadow] duration-150" style={{ fontSize: '16px' }} />
                     {entry._dateNote
                       ? <p className="text-[10px] font-medium text-amber-700 mt-1">{entry._dateNote}</p>
                       : <p className="text-[10px] text-slate-500 mt-1">{isEditing ? 'Any date from the original up to today.' : 'Today or up to 3 days back.'}</p>}
@@ -2064,8 +2258,9 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                 var typeList = isAdminEt ? expenseTypes : expenseTypes.filter(function (et) { return userEtIds.indexOf(et.id) !== -1 })
                 return (
                   <div>
+                    <FieldLabel htmlFor={'exp-type-' + idx} icon="tag" required>Expense Type</FieldLabel>
                     <SearchDropdown
-                      label="Expense Type" labelIcon="tag"
+                      id={'exp-type-' + idx}
                       items={typeList.map(function (et) { return { label: (et.icon ? et.icon + ' ' : '') + et.name, value: String(et.id) } })}
                       value={entry.expenseTypeId}
                       onChange={function (val) { updateEntry(idx, 'expenseTypeId', val) }}
@@ -2074,7 +2269,22 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                   </div>
                 )
               })()}
+
+              {/* The third cell of row one. Hidden below lg, where the form
+                  card above owns this toggle, and only on the first entry:
+                  it is form-level state, not per-entry.
+
+                  It carries its own label now, so it lines up with the two
+                  inputs the way any third field would. */}
+              {wide && idx === 0 && !isAdminEdit && (
+                <div className="hidden lg:block">{renderFunctionToggle(false)}</div>
+              )}
               </div>
+
+              {/* Opens directly under the switch that revealed it. */}
+              {wide && idx === 0 && !isAdminEdit && isFunction && (
+                <div className="hidden lg:block">{renderFunctionPicker()}</div>
+              )}
 
               {/* Sub-Type */}
               {entry.expenseTypeId && subTypesForType.length === 1 && (
@@ -2084,9 +2294,10 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                 </p>
               )}
               {entry.expenseTypeId && subTypesForType.length > 1 && (
-                <div>
+                <div className="lg:max-w-md">
+                  <FieldLabel htmlFor={'exp-subtype-' + idx} icon="split" required>Sub-Type</FieldLabel>
                   <SearchDropdown
-                    label="Sub-Type" labelIcon="split"
+                    id={'exp-subtype-' + idx}
                     items={subTypesForType.map(function (st) { return { label: st.name, value: String(st.id) } })}
                     value={entry.expenseSubTypeId}
                     onChange={function (val) { updateEntry(idx, 'expenseSubTypeId', val) }}
@@ -2103,19 +2314,17 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
 
               {/* No sub-types warning */}
               {entry.expenseTypeId && subTypesForType.length === 0 && (
-                <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">No sub-types configured for this type. Contact admin.</p>
+                <p className="text-[12px] text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">No sub-types configured for this type. Contact admin.</p>
               )}
 
               {/* Description */}
-              <div className="lg:max-w-4xl">
-                <label htmlFor={'exp-desc-' + idx} className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-600 mb-1">
-                  <span className="shrink-0 w-5 h-5 rounded-md bg-indigo-50 text-indigo-500 inline-flex items-center justify-center"><Icon name="fileText" size={11} /></span>
-                  Description <span className="text-red-500">*</span>
-                </label>
+              <div>
+                <FieldLabel htmlFor={'exp-desc-' + idx} icon="fileText" required>Description</FieldLabel>
                 <VoiceInput id={'exp-desc-' + idx} as="textarea" value={entry.description}
                   onChange={function (e) { updateEntry(idx, 'description', e.target.value) }}
                   placeholder="What was this expense for..." rows={2} maxLength={500}
-                  className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-xl text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-shadow resize-none" />
+                  className={"w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 hover:border-slate-300 transition-[border-color,box-shadow] duration-150 resize-none" +
+                    (wide ? " lg:min-h-[84px]" : "")} />
                 {/* Amber past 90%, so the count is quiet until it matters and
                     the box does not jump as a line appears and disappears. */}
                 <p className={"mt-1 text-right text-[10px] tabular-nums " +
@@ -2125,12 +2334,56 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                 </p>
               </div>
 
-              {/* Dynamic fields from sub-type */}
-              {subTypeFields.map(function (field) {
-                return renderDynamicField(field, entry.fieldValues[field.key] || '', function (val) {
-                  updateFieldValue(idx, field.key, val)
-                }, entry)
-              })}
+
+              </div>
+              </div>
+
+              {/* Above the items rather than under them. The arithmetic runs
+                  the other way — amount comes out of qty x rate — but most
+                  expenses never open the Items panel at all, and for those the
+                  total was stranded at the foot of the column behind a card
+                  they had no use for. */}
+              <div className="border border-slate-200 rounded-xl lg:rounded-2xl bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)] overflow-hidden lg:transition-shadow lg:duration-300 lg:hover:shadow-[0_8px_28px_rgba(15,23,42,0.07)]">
+                <PanelHead icon="calculator">What It Costs</PanelHead>
+                <div className="p-4 space-y-2">
+                {entry.isItemPurchase && (
+                  <p className="text-[10px] font-semibold text-slate-500">Amount auto-calculated from items × rate</p>
+                )}
+                <div className={"grid grid-cols-2 gap-3" + (wide ? " lg:max-w-xl" : "")}>
+                  <div>
+                    <FieldLabel htmlFor={'exp-amount-' + idx} icon="rupee" required>Amount (pts)</FieldLabel>
+                    <input id={'exp-amount-' + idx} type="number" inputMode="decimal"
+                      value={entry.isItemPurchase ? computeItemsTotal(entry).toString() : entry.amount}
+                      onChange={function (e) { if (!entry.isItemPurchase) updateEntry(idx, 'amount', e.target.value) }}
+                      readOnly={entry.isItemPurchase}
+                      placeholder="0" min="0" step="any"
+                      className={"w-full px-3 py-2.5 border rounded-xl text-[13px] tabular-nums focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 hover:border-slate-300 transition-[border-color,box-shadow] duration-150 " + (entry.isItemPurchase ? "border-slate-200 bg-slate-100 text-slate-600 font-semibold cursor-not-allowed" : "border-slate-200 bg-white text-slate-900 placeholder:text-slate-400")}
+                      style={{ fontSize: '16px' }} />
+                  </div>
+                  <div>
+                    <FieldLabel htmlFor={'exp-gst-' + idx} icon="percent">GST Amount (pts)</FieldLabel>
+                    <input id={'exp-gst-' + idx} type="number" inputMode="decimal" value={entry.taxAmount}
+                      onChange={function (e) { updateEntry(idx, 'taxAmount', e.target.value) }}
+                      placeholder="0" min="0" step="any"
+                      className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 hover:border-slate-300 transition-[border-color,box-shadow] duration-150" style={{ fontSize: '16px' }} />
+                  </div>
+                </div>
+                </div>
+                {(function () {
+                  var amt = entry.isItemPurchase ? computeItemsTotal(entry) : (Number(entry.amount) || 0)
+                  var gst = Number(entry.taxAmount) || 0
+                  var gross = amt + gst
+                  return (
+                    <div className="flex items-center justify-between gap-3 px-4 py-3.5 bg-indigo-50/60 border-t border-indigo-100">
+                      <span className="text-[13px] font-bold text-indigo-900">Gross Total</span>
+                      <span className="text-[20px] font-bold text-slate-900 tabular-nums tracking-[-0.02em] leading-none" data-notranslate>
+                        {gross.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                        <span className="ml-1 text-[12px] font-semibold text-slate-500">pts</span>
+                      </span>
+                    </div>
+                  )
+                })()}
+              </div>
 
               {/* Items and Split used to stack, so switching either one on pushed
                   the amount fields a screenful further down. They now share a
@@ -2148,7 +2401,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                   { k: 'split', label: 'Split', icon: 'split', on: entry.showAllocations },
                 ]
                 return (
-                  <div className="border border-slate-200 rounded-xl bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+                  <div className={"border border-slate-200 rounded-xl bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]" + (wide ? " lg:rounded-2xl lg:transition-shadow lg:duration-300 lg:hover:shadow-[0_8px_28px_rgba(15,23,42,0.07)]" : "")}>
                     {/* One pill slides between the two tabs rather than each tab
                         painting its own background on click -- the movement is
                         what tells you which way you just went. */}
@@ -2166,9 +2419,22 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                         No overflow-hidden on the card above: it would pin this
                         to a box that scrolls away, which is the one thing the
                         sticky is here to prevent. */}
-                    <div className="sticky z-20 p-1.5 bg-white border-b border-slate-200 rounded-t-xl"
+                    <div className={"sticky z-20 flex items-center gap-3 p-1.5 bg-white border-b border-slate-200 rounded-t-xl" +
+                      (wide ? " lg:px-4 lg:py-3 lg:rounded-t-2xl" : "")}
                       style={{ top: 'var(--app-header-h, 0px)' }}>
-                    <div className="relative flex gap-1 p-1 bg-slate-100 rounded-lg sm:max-w-xs">
+                    {wide && (
+                      <span className="hidden lg:flex items-center gap-2.5 min-w-0 flex-1">
+                        <span className="shrink-0 w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 inline-flex items-center justify-center">
+                          <Icon name="box" size={16} />
+                        </span>
+                        <span className="min-w-0">
+                          <span className="block font-display text-[15px] font-bold text-slate-900 tracking-[-0.01em] leading-snug">Items</span>
+                          <span className="block text-[11px] font-medium text-slate-500 leading-snug">Buy items, or split the cost across departments</span>
+                        </span>
+                      </span>
+                    )}
+                    <div className={"relative flex gap-1 p-1 bg-slate-100 rounded-lg flex-1 sm:max-w-xs" +
+                      (wide ? " lg:flex-none lg:w-[196px]" : "")}>
                       <span
                         aria-hidden="true"
                         className="absolute top-1 bottom-1 left-1 w-[calc(50%-0.25rem)] rounded-md bg-white shadow-sm transition-transform duration-200 ease-out motion-reduce:transition-none"
@@ -2180,9 +2446,15 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                           <button
                             key={tb.k}
                             type="button"
-                            onClick={function () { updateEntry(idx, '_panel', tb.k) }}
+                            onClick={function () {
+                              if (panel !== tb.k) {
+                                if (tb.k === 'split' && !entry.showAllocations) toggleShowAllocations(idx)
+                                if (tb.k === 'items' && !entry.isItemPurchase && !isEditing) toggleItemPurchase(idx)
+                              }
+                              updateEntry(idx, '_panel', tb.k)
+                            }}
                             aria-pressed={active}
-                            className={"relative flex-1 inline-flex items-center justify-center gap-1.5 py-1.5 rounded-md text-[12px] font-semibold transition-colors " +
+                            className={"relative flex-1 inline-flex items-center justify-center gap-1.5 py-1.5 rounded-md text-[12px] font-bold transition-colors " +
                               (active ? "text-indigo-700" : "text-slate-500 hover:text-slate-900")}
                           >
                             <Icon name={tb.icon} size={13} />
@@ -2207,7 +2479,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                                   <Icon name="box" size={17} />
                                 </span>
                                 <div className="min-w-0">
-                                  <label className="block text-[12.5px] font-semibold text-slate-800">Item select</label>
+                                  <label className="block text-[12px] font-semibold text-slate-800">Item select</label>
                                   <p className="text-[10px] text-slate-500 mt-0.5 leading-snug">Item enters inventory via receiver</p>
                                 </div>
                               </div>
@@ -2245,8 +2517,8 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                                   var expanded = editingIdx === iIdx
                                   if (!expanded) {
                                     return (
-                                      <div key={im._key} className={"border rounded-xl bg-white px-3 py-2.5 flex items-center gap-2 " + (complete ? "border-slate-200" : "border-amber-300")}>
-                                        <span className="shrink-0 text-[10px] font-bold uppercase tracking-[0.1em] text-slate-400">{iIdx + 1}</span>
+                                      <div key={im._key} className={"border rounded-xl px-3 py-2.5 flex items-center gap-2 transition-colors " + (complete ? "bg-white border-slate-200" : "bg-amber-50/40 border-amber-200")}>
+                                        <span className="shrink-0 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400">{iIdx + 1}</span>
                                         <button type="button" onClick={function () { if (!isEditing) setItemEditing(idx, iIdx) }}
                                           className={"flex-1 min-w-0 flex items-center gap-2 text-left " + (isEditing ? "cursor-default" : "hover:opacity-70")}>
                                           <div className="min-w-0 flex-1">
@@ -2256,7 +2528,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                                                 ? <Icon name="sparkle" className="w-3 h-3 shrink-0 text-slate-400" />
                                                 : (im.itemMatchedId && <Icon name="check" className="w-3 h-3 shrink-0 text-indigo-600" />)}
                                             </p>
-                                            <p className="text-[11px] text-slate-500 truncate">
+                                            <p className="text-[11px] text-slate-500 truncate tabular-nums">
                                               {(Number(im.itemQty) || 0)} {im.itemUnit} × {(Number(im.itemRate) || 0).toLocaleString('en-IN')} pts{im.itemNotes ? ' · ' + im.itemNotes : ''}
                                             </p>
                                           </div>
@@ -2265,7 +2537,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                                           {complete ? (
                                             <span className="shrink-0 text-[13px] font-bold text-slate-900 tabular-nums">{lineTotal.toLocaleString('en-IN', { maximumFractionDigits: 2 })} pts</span>
                                           ) : (
-                                            <span className="shrink-0 text-[9.5px] font-bold uppercase tracking-[0.08em] px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 ring-1 ring-amber-300/70">Incomplete</span>
+                                            <span className="shrink-0 text-[10px] font-bold uppercase tracking-[0.08em] px-2 py-0.5 rounded-md bg-amber-100 text-amber-800">Incomplete</span>
                                           )}
                                         </button>
                                         {!isEditing && (
@@ -2282,11 +2554,11 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                                     <div key={im._key} className="ambria-rise border border-slate-200 rounded-xl bg-white p-3 space-y-2.5"
                                       onFocusCapture={function () { if (editingIdx !== iIdx && !isEditing) setItemEditing(idx, iIdx) }}>
                                       <div className="flex items-center justify-between">
-                                        <span className="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-500">{'Item ' + (iIdx + 1)}</span>
+                                        <span className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">{'Item ' + (iIdx + 1)}</span>
                                         <div className="flex items-center gap-2">
                                           <button type="button" onClick={function () { toggleItemMode(idx, iIdx) }}
                                             className="flex items-center gap-1.5" title={im.itemMode === 'new' ? 'Switch to inventory search' : 'Create as new item'}>
-                                            <span className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-[0.06em] text-slate-500">
+                                            <span className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">
                                               <Icon name={im.itemMode === 'new' ? 'sparkle' : 'box'} className="w-3.5 h-3.5" />
                                               {im.itemMode === 'new' ? 'New' : 'Inventory'}
                                             </span>
@@ -2306,13 +2578,13 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                                             <input type="text" value={im.itemQuery}
                                               onChange={function (e) { updateItem(idx, iIdx, 'itemQuery', e.target.value) }}
                                               placeholder="Item name (e.g. A4 Sheets, Broom, Chair)" maxLength="200"
-                                              className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-xl text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-shadow" style={{ fontSize: '16px' }} />
+                                              className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 hover:border-slate-300 transition-[border-color,box-shadow] duration-150" style={{ fontSize: '16px' }} />
                                           </div>
                                           <div>
                                             <label className="block text-[11px] font-semibold text-slate-600 mb-1">Category <span className="text-slate-500">(optional)</span></label>
                                             <select value={im.itemMatchedCategoryId || ''}
                                               onChange={function (e) { updateItem(idx, iIdx, 'itemMatchedCategoryId', e.target.value ? Number(e.target.value) : null) }}
-                                              className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-xl text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-shadow" style={{ fontSize: '16px' }}>
+                                              className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 hover:border-slate-300 transition-[border-color,box-shadow] duration-150" style={{ fontSize: '16px' }}>
                                               <option value="">Category (optional)</option>
                                               {itemCategories.map(function (c) { return <option key={c.id} value={String(c.id)}>{c.name}</option> })}
                                             </select>
@@ -2320,12 +2592,12 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                                         </div>
                                       ) : (
                                         <div className="relative">
-                                          <label className="block text-[11px] font-semibold text-slate-600 mb-1">Item Name <span className="text-red-500">*</span>{im.itemMatchedId && <span className="ml-2 text-[10px] font-bold text-green-600">✓ Matched existing</span>}</label>
+                                          <label className="block text-[11px] font-semibold text-slate-600 mb-1">Item Name <span className="text-red-500">*</span>{im.itemMatchedId && <span className="ml-2 inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600"><Icon name="check" size={11} />Matched existing</span>}</label>
                                           <input type="text" value={im.itemQuery}
                                             onChange={function (e) { updateItem(idx, iIdx, 'itemQuery', e.target.value); searchInventoryItems(idx, iIdx, e.target.value) }}
                                             onFocus={function () { if (im.itemQuery && im.itemQuery.length >= 2) searchInventoryItems(idx, iIdx, im.itemQuery) }}
                                             placeholder="Search or type new item name..."
-                                            className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-xl text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-shadow" style={{ fontSize: '16px' }} />
+                                            className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 hover:border-slate-300 transition-[border-color,box-shadow] duration-150" style={{ fontSize: '16px' }} />
                                           {itemSearchKey === key && itemMatches.length > 0 && (
                                             <div className="absolute z-20 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg max-h-56 overflow-y-auto">
                                               {itemMatches.map(function (m) {
@@ -2333,7 +2605,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                                                   <button key={m._source + '_' + m.id} type="button"
                                                     onMouseDown={function (evt) { evt.preventDefault(); pickItemMatch(idx, iIdx, m) }}
                                                     className="w-full text-left px-3 py-2 hover:bg-indigo-50 border-b border-slate-50 last:border-0">
-                                                    <div className="text-sm text-slate-800 font-medium truncate">{m.name}</div>
+                                                    <div className="text-[13px] text-slate-800 font-medium truncate">{m.name}</div>
                                                     <div className="text-[10px] text-slate-500">{m._source === 'catering_store' ? 'Catering Store' : 'Inventory'}{m.unit ? ' · ' + m.unit : ''}</div>
                                                   </button>
                                                 )
@@ -2355,13 +2627,13 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                                           <input id={'item-qty-' + idx + '-' + iIdx} type="number" inputMode="numeric" value={im.itemQty}
                                             onChange={function (e) { updateItem(idx, iIdx, 'itemQty', e.target.value) }}
                                             placeholder="0" min="0" step="any"
-                                            className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-xl text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-shadow" style={{ fontSize: '16px' }} />
+                                            className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 hover:border-slate-300 transition-[border-color,box-shadow] duration-150" style={{ fontSize: '16px' }} />
                                         </div>
                                         <div>
                                           <label htmlFor={'item-unit-' + idx + '-' + iIdx} className="block text-[11px] font-semibold text-slate-600 mb-1">Unit</label>
                                           <select id={'item-unit-' + idx + '-' + iIdx} value={im.itemUnit}
                                             onChange={function (e) { updateItem(idx, iIdx, 'itemUnit', e.target.value) }}
-                                            className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-xl text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-shadow" style={{ fontSize: '16px' }}>
+                                            className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 hover:border-slate-300 transition-[border-color,box-shadow] duration-150" style={{ fontSize: '16px' }}>
                                             {['Pieces', 'Nos', 'Sets', 'Pairs', 'Dozens', 'Kg', 'Grams', 'Liters', 'ML', 'Meters', 'Feet', 'Rolls', 'Packets', 'Bags', 'Boxes', 'Cartons', 'Bottles', 'Sheets', 'Reams'].map(function (u) {
                                               return <option key={u} value={u}>{u}</option>
                                             })}
@@ -2372,7 +2644,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                                           <input id={'item-rate-' + idx + '-' + iIdx} type="number" inputMode="decimal" value={im.itemRate}
                                             onChange={function (e) { updateItem(idx, iIdx, 'itemRate', e.target.value) }}
                                             placeholder="0" min="0" step="any"
-                                            className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-xl text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-shadow" style={{ fontSize: '16px' }} />
+                                            className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 hover:border-slate-300 transition-[border-color,box-shadow] duration-150" style={{ fontSize: '16px' }} />
                                         </div>
                                       </div>
 
@@ -2387,7 +2659,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                                           <input id={'item-notes-' + idx + '-' + iIdx} type="text" value={im.itemNotes}
                                             onChange={function (e) { updateItem(idx, iIdx, 'itemNotes', e.target.value) }}
                                             placeholder="e.g. White ceramic, 10-inch round"
-                                            className="flex-1 min-w-0 px-3 py-2.5 bg-white border border-slate-300 rounded-xl text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-shadow" style={{ fontSize: '16px' }} />
+                                            className="flex-1 min-w-0 px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 hover:border-slate-300 transition-[border-color,box-shadow] duration-150" style={{ fontSize: '16px' }} />
                                           {!isEditing && (
                                             <button type="button" onClick={function () { setItemDone(idx) }}
                                               title={complete ? 'Done — collapse this item' : 'Collapse this item'}
@@ -2395,7 +2667,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                                               className={"shrink-0 w-10 h-10 flex items-center justify-center rounded-xl border active:scale-95 transition-all " +
                                                 (complete
                                                   ? "text-indigo-700 bg-indigo-50 border-indigo-300 hover:bg-indigo-100"
-                                                  : "text-slate-500 bg-white border-slate-300 hover:bg-slate-50 hover:text-slate-900")}>
+                                                  : "text-slate-500 bg-white border-slate-200 hover:bg-slate-50 hover:text-slate-900")}>
                                               <Icon name="chevronUp" className="w-4 h-4" />
                                             </button>
                                           )}
@@ -2414,7 +2686,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                                 })}
 
                                 <button type="button" onClick={function () { addItem(idx) }}
-                                  className="w-full py-2.5 rounded-xl border-2 border-dashed border-slate-300 text-[12.5px] font-semibold text-slate-600 hover:border-indigo-400 hover:text-indigo-600 transition-colors">
+                                  className="w-full py-2.5 rounded-xl border border-slate-200 text-[12px] font-semibold text-slate-600 hover:border-indigo-400 hover:text-indigo-600 transition-colors">
                                   + Add item
                                 </button>
                               </div>
@@ -2424,7 +2696,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                           <div>
                               <div className="flex items-center justify-between">
                                 <div>
-                                  <label className="text-[12.5px] font-semibold text-slate-800">Split allocations</label>
+                                  <label className="text-[12px] font-semibold text-slate-800">Split allocations</label>
                                   <p className="text-[10px] text-slate-500 mt-0.5">Divide across departments / venues / sub-types</p>
                                 </div>
                                 <button type="button" onClick={function () { toggleShowAllocations(idx) }} className="flex items-center">
@@ -2522,13 +2794,13 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                                             var pick = pickBestAllocType(entries[idx], newDept)
                                             setEntries(function (prev) { return prev.map(function (en, i) { if (i !== idx) return en; var copy = Object.assign({}, en); copy.allocations = en.allocations.map(function (a, j) { return j === aIdx ? Object.assign({}, a, { departmentId: newDept, expenseTypeId: pick.expenseTypeId, expenseSubTypeId: pick.expenseSubTypeId, venueId: '' }) : a }); return copy }) })
                                           }}
-                                          className="w-full min-w-0 px-2.5 py-2 bg-white border border-slate-300 rounded-lg text-[12.5px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-shadow" style={{ fontSize: '16px' }}>
+                                          className="w-full min-w-0 px-2.5 py-2 bg-white border border-slate-200 rounded-lg text-[12px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 hover:border-slate-300 transition-[border-color,box-shadow] duration-150" style={{ fontSize: '16px' }}>
                                           <option value="">Dept</option>
                                           {departments.map(function (d) { return <option key={d.id} value={String(d.id)}>{d.name}</option> })}
                                         </select>
                                         <select value={alloc.venueId}
                                           onChange={function (e) { updateAllocation(idx, aIdx, 'venueId', e.target.value) }}
-                                          className="w-full min-w-0 px-2.5 py-2 bg-white border border-slate-300 rounded-lg text-[12.5px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-shadow" style={{ fontSize: '16px' }}>
+                                          className="w-full min-w-0 px-2.5 py-2 bg-white border border-slate-200 rounded-lg text-[12px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 hover:border-slate-300 transition-[border-color,box-shadow] duration-150" style={{ fontSize: '16px' }}>
                                           <option value="">Venue</option>
                                           {venues.map(function (v) { return <option key={v.id} value={String(v.id)}>{v.code}</option> })}
                                         </select>
@@ -2536,7 +2808,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                                       <div className="grid grid-cols-2 gap-2">
                                         <select value={alloc.expenseTypeId}
                                           onChange={function (e) { setEntries(function (prev) { return prev.map(function (en, i) { if (i !== idx) return en; var copy = Object.assign({}, en); copy.allocations = en.allocations.map(function (a, j) { return j === aIdx ? Object.assign({}, a, { expenseTypeId: e.target.value, expenseSubTypeId: '' }) : a }); return copy }) }) }}
-                                          className="w-full min-w-0 px-2.5 py-2 bg-white border border-slate-300 rounded-lg text-[12.5px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-shadow" style={{ fontSize: '16px' }}>
+                                          className="w-full min-w-0 px-2.5 py-2 bg-white border border-slate-200 rounded-lg text-[12px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 hover:border-slate-300 transition-[border-color,box-shadow] duration-150" style={{ fontSize: '16px' }}>
                                           <option value="">Type</option>
                                           {scopedTypes.length > 0 && (
                                             <optgroup label="Dept-specific">
@@ -2552,7 +2824,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                                         <select value={alloc.expenseSubTypeId}
                                           onChange={function (e) { updateAllocation(idx, aIdx, 'expenseSubTypeId', e.target.value) }}
                                           disabled={!alloc.expenseTypeId}
-                                          className="w-full min-w-0 px-2.5 py-2 bg-white border border-slate-300 rounded-lg text-[12.5px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-shadow disabled:bg-slate-100 disabled:text-slate-400 disabled:border-slate-200" style={{ fontSize: '16px' }}>
+                                          className="w-full min-w-0 px-2.5 py-2 bg-white border border-slate-200 rounded-lg text-[12px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 hover:border-slate-300 transition-[border-color,box-shadow] duration-150 disabled:bg-slate-100 disabled:text-slate-400 disabled:border-slate-200" style={{ fontSize: '16px' }}>
                                           <option value="">Sub-type</option>
                                           {allocSubTypeOptions.map(function (s) { return <option key={s.id} value={String(s.id)}>{s.name}</option> })}
                                         </select>
@@ -2560,14 +2832,17 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                                       <div className="grid grid-cols-2 gap-2">
                                         <input type="number" inputMode="numeric" value={alloc.amountRupees}
                                           onChange={function (e) { updateAllocation(idx, aIdx, 'amountRupees', e.target.value) }}
-                                          placeholder="Amt" className="w-full min-w-0 px-2.5 py-2 bg-white border border-slate-300 rounded-lg text-[12.5px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-shadow" style={{ fontSize: '16px' }} />
+                                          placeholder="Amt" className="w-full min-w-0 px-2.5 py-2 bg-white border border-slate-200 rounded-lg text-[12px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 hover:border-slate-300 transition-[border-color,box-shadow] duration-150" style={{ fontSize: '16px' }} />
                                         <VoiceInput type="text" value={alloc.remarks}
                                           onChange={function (e) { updateAllocation(idx, aIdx, 'remarks', e.target.value) }}
                                           placeholder="Remarks" maxLength={200}
-                                          className="w-full min-w-0 px-2.5 py-2 bg-white border border-slate-300 rounded-lg text-[12.5px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-shadow" />
+                                          className="w-full min-w-0 px-2.5 py-2 bg-white border border-slate-200 rounded-lg text-[12px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 hover:border-slate-300 transition-[border-color,box-shadow] duration-150" />
                                       </div>
                                       {isFallback && (
-                                        <p className="text-[10px] text-amber-700 font-medium">⚠ No dept-specific match — using generic/top-level type</p>
+                                        <p className="flex items-center gap-1.5 text-[10px] text-amber-700 font-medium">
+                                          <Icon name="alert" size={12} className="shrink-0" />
+                                          No dept-specific match — using generic/top-level type
+                                        </p>
                                       )}
                                     </div>
                                   )
@@ -2583,48 +2858,33 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                 )
               })()}
 
-              {/* Amount + GST + Gross Total — bottom */}
-              <div className="border border-slate-200 rounded-xl bg-slate-50 p-3 space-y-2">
-                {entry.isItemPurchase && (
-                  <p className="text-[10px] font-semibold text-slate-500">Amount auto-calculated from items × rate</p>
-                )}
-                <div className="grid grid-cols-2 lg:grid-cols-[minmax(0,17rem)_minmax(0,17rem)] gap-3">
-                  <div>
-                    <label htmlFor={'exp-amount-' + idx} className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-600 mb-1">
-                      <span className="shrink-0 w-5 h-5 rounded-md bg-indigo-50 text-indigo-500 inline-flex items-center justify-center"><Icon name="banknote" size={11} /></span>
-                      Amount (pts) <span className="text-red-500">*</span>
-                    </label>
-                    <input id={'exp-amount-' + idx} type="number" inputMode="decimal"
-                      value={entry.isItemPurchase ? computeItemsTotal(entry).toString() : entry.amount}
-                      onChange={function (e) { if (!entry.isItemPurchase) updateEntry(idx, 'amount', e.target.value) }}
-                      readOnly={entry.isItemPurchase}
-                      placeholder="0" min="0" step="any"
-                      className={"w-full px-3 py-2.5 border rounded-xl text-[13px] tabular-nums focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-shadow " + (entry.isItemPurchase ? "border-slate-300 bg-slate-100 text-slate-600 font-semibold cursor-not-allowed" : "border-slate-300 bg-white text-slate-900 placeholder:text-slate-400")}
-                      style={{ fontSize: '16px' }} />
-                  </div>
-                  <div>
-                    <label htmlFor={'exp-gst-' + idx} className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-600 mb-1">
-                      <span className="shrink-0 w-5 h-5 rounded-md bg-indigo-50 text-indigo-500 inline-flex items-center justify-center"><Icon name="receipt" size={11} /></span>
-                      GST Amount (pts)
-                    </label>
-                    <input id={'exp-gst-' + idx} type="number" inputMode="decimal" value={entry.taxAmount}
-                      onChange={function (e) { updateEntry(idx, 'taxAmount', e.target.value) }}
-                      placeholder="0" min="0" step="any"
-                      className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-xl text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-shadow" style={{ fontSize: '16px' }} />
+              </div>
+
+              {/* What it costs and what proves it, pinned beside the left
+                  column — the entry card has no overflow of its own, which is
+                  what lets sticky work here at all. */}
+              <div className={"space-y-3 ambria-thin-scroll ambria-rail" +
+                (wide ? " lg:self-start lg:sticky lg:max-h-[calc(100vh-5.5rem)] lg:overflow-y-auto" : "")}
+                style={wide ? { top: 'calc(var(--app-header-h, 0px) + 0.75rem)' } : undefined}>
+              {/* The sub-type's own fields, in the side column. The vendor
+                  field among them is what makes Payment Method below appear,
+                  so the two now sit together. */}
+              {subTypeFields.length > 0 && (
+                <div className={wide ? "lg:border lg:border-slate-200 lg:rounded-2xl lg:bg-white lg:shadow-[0_1px_2px_rgba(15,23,42,0.04)] lg:overflow-hidden" : ""}>
+                  {wide && (
+                    <div className="hidden lg:block">
+                      <PanelHead icon="list" sub="Required for this sub-type">Details</PanelHead>
+                    </div>
+                  )}
+                  <div className={"space-y-3" + (wide ? " lg:p-4" : "")}>
+                    {subTypeFields.map(function (field) {
+                      return renderDynamicField(field, entry.fieldValues[field.key] || '', function (val) {
+                        updateFieldValue(idx, field.key, val)
+                      }, entry)
+                    })}
                   </div>
                 </div>
-                {(function () {
-                  var amt = entry.isItemPurchase ? computeItemsTotal(entry) : (Number(entry.amount) || 0)
-                  var gst = Number(entry.taxAmount) || 0
-                  var gross = amt + gst
-                  return (
-                    <div className="flex items-center justify-between pt-2 border-t border-slate-200">
-                      <span className="text-xs font-semibold text-slate-600">Gross Total</span>
-                      <span className="text-[17px] font-bold text-slate-900 tabular-nums tracking-[-0.01em]">{gross.toLocaleString('en-IN', { maximumFractionDigits: 2 })} pts</span>
-                    </div>
-                  )
-                })()}
-              </div>
+              )}
 
               {/* Payment Method — only when vendor lookup field exists AND a vendor is picked */}
               {(function () {
@@ -2644,8 +2904,8 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                 return (
                   <div className="border border-indigo-200 rounded-lg bg-indigo-50/40 p-3 space-y-2">
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-semibold text-indigo-700">Payment Method</span>
-                      <span className="text-[11px] text-slate-500">Total: {amtRupees.toLocaleString('en-IN', { maximumFractionDigits: 2 })} pts</span>
+                      <span className="text-[12px] font-semibold text-indigo-700">Payment Method</span>
+                      <span className="text-[11px] text-slate-500 tabular-nums">Total: {amtRupees.toLocaleString('en-IN', { maximumFractionDigits: 2 })} pts</span>
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       <div>
@@ -2654,10 +2914,10 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                           value={cashRupees ? String(cashRupees) : (split.creditPaise === 0 ? String(amtRupees) : '0')}
                           onChange={function (ev) { setPaymentCash(idx, ev.target.value) }}
                           min="0" step="any"
-                          className={"w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-indigo-300 bg-white " + (wOver ? "border-red-300" : "border-slate-200")}
+                          className={"w-full px-3 py-2 border rounded-lg text-[13px] focus:ring-2 focus:ring-indigo-300 bg-white " + (wOver ? "border-red-300" : "border-slate-200")}
                           style={{ fontSize: '16px' }} />
                         {walletBalance != null && (
-                          <p className={"text-[11px] mt-1 " + (wOver ? "text-red-600 font-medium" : "text-slate-500")}>
+                          <p className={"text-[11px] mt-1 tabular-nums " + (wOver ? "text-red-600 font-medium" : "text-slate-500")}>
                             Wallet: {(walletBalance / 100).toLocaleString('en-IN', { maximumFractionDigits: 2 })} pts
                           </p>
                         )}
@@ -2668,7 +2928,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                           value={entry.paymentCreditRupees}
                           onChange={function (ev) { setPaymentCredit(idx, ev.target.value) }}
                           min="0" step="any" placeholder="0"
-                          className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-xl text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-shadow"
+                          className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 hover:border-slate-300 transition-[border-color,box-shadow] duration-150"
                           style={{ fontSize: '16px' }} />
                         {vendorLabel && (
                           <p className="text-[11px] text-indigo-600 mt-1 truncate">→ {vendorLabel}</p>
@@ -2770,13 +3030,15 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                           <div>
                             <label className="block text-[11px] font-semibold text-slate-600 mb-2">Pay Credit By <span className="text-red-500">*</span></label>
                             <div className="flex gap-2">
-                              <label className={"flex-1 flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold border cursor-pointer transition-colors " + (cashChecked ? "bg-indigo-600 text-white border-indigo-600" : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50")}>
-                                <input type="checkbox" checked={cashChecked} onChange={function () { togglePay('cash') }} className="w-4 h-4" />
-                                <span>💵 Cash</span>
+                              <label className={"flex-1 flex items-center gap-2 px-3 py-2 rounded-lg text-[13px] font-semibold border cursor-pointer transition-colors " + (cashChecked ? "bg-indigo-50 text-indigo-900 border-indigo-500" : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50")}>
+                                <input type="checkbox" checked={cashChecked} onChange={function () { togglePay('cash') }} className="w-4 h-4 accent-indigo-600" />
+                                <Icon name="banknote" size={15} />
+                                <span>Cash</span>
                               </label>
-                              <label className={"flex-1 flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold border cursor-pointer transition-colors " + (bankChecked ? "bg-indigo-600 text-white border-indigo-600" : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50")}>
-                                <input type="checkbox" checked={bankChecked} onChange={function () { togglePay('bank') }} className="w-4 h-4" />
-                                <span>🏦 Bank</span>
+                              <label className={"flex-1 flex items-center gap-2 px-3 py-2 rounded-lg text-[13px] font-semibold border cursor-pointer transition-colors " + (bankChecked ? "bg-indigo-50 text-indigo-900 border-indigo-500" : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50")}>
+                                <input type="checkbox" checked={bankChecked} onChange={function () { togglePay('bank') }} className="w-4 h-4 accent-indigo-600" />
+                                <Icon name="bank" size={15} />
+                                <span>Bank</span>
                               </label>
                             </div>
                           </div>
@@ -2794,7 +3056,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                                         onChange={function (ev) { setCashPortion(ev.target.value) }}
                                         min="0" step="any" placeholder="0"
                                         disabled={!bothChecked}
-                                        className={"w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-indigo-300 " + (bothChecked ? "border-slate-200 bg-white" : "border-slate-100 bg-slate-50 text-slate-500")}
+                                        className={"w-full px-3 py-2 border rounded-lg text-[13px] focus:ring-2 focus:ring-indigo-300 " + (bothChecked ? "border-slate-200 bg-white" : "border-slate-100 bg-slate-50 text-slate-500")}
                                         style={{ fontSize: '16px' }} />
                                     </div>
                                     <div>
@@ -2803,7 +3065,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                                         value={entry.cashDueDate}
                                         min={entry.expenseDate}
                                         onChange={function (ev) { setDate('cashDueDate', ev.target.value) }}
-                                        className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-xl text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-shadow"
+                                        className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 hover:border-slate-300 transition-[border-color,box-shadow] duration-150"
                                         style={{ fontSize: '16px' }} />
                                     </div>
                                   </>
@@ -2820,7 +3082,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                                         onChange={function (ev) { setBankPortion(ev.target.value) }}
                                         min="0" step="any" placeholder="0"
                                         disabled={!bothChecked}
-                                        className={"w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-indigo-300 " + (bothChecked ? "border-slate-200 bg-white" : "border-slate-100 bg-slate-50 text-slate-500")}
+                                        className={"w-full px-3 py-2 border rounded-lg text-[13px] focus:ring-2 focus:ring-indigo-300 " + (bothChecked ? "border-slate-200 bg-white" : "border-slate-100 bg-slate-50 text-slate-500")}
                                         style={{ fontSize: '16px' }} />
                                     </div>
                                     <div>
@@ -2829,7 +3091,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                                         value={entry.bankDueDate}
                                         min={entry.expenseDate}
                                         onChange={function (ev) { setDate('bankDueDate', ev.target.value) }}
-                                        className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-xl text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-shadow"
+                                        className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 hover:border-slate-300 transition-[border-color,box-shadow] duration-150"
                                         style={{ fontSize: '16px' }} />
                                     </div>
                                     <div>
@@ -2838,7 +3100,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                                         value={entry.taxAmount}
                                         onChange={function (ev) { setBankGst(ev.target.value) }}
                                         min="0" step="any" placeholder="0"
-                                        className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-xl text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-shadow"
+                                        className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 hover:border-slate-300 transition-[border-color,box-shadow] duration-150"
                                         style={{ fontSize: '16px' }} />
                                       <p className="text-[10px] text-slate-500 mt-0.5">Mirrors the GST field above</p>
                                     </div>
@@ -2860,17 +3122,29 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                 )
               })()}
 
-              {/* Receipt */}
-              <div>
-                <label className="block text-[11px] font-semibold text-slate-600 mb-1">Receipt <span className="text-red-500">*</span></label>
+              {/* What proves it */}
+              <div className={wide ? "lg:border lg:border-slate-200 lg:rounded-2xl lg:bg-white lg:shadow-[0_1px_2px_rgba(15,23,42,0.04)] lg:overflow-hidden lg:p-4 lg:transition-shadow lg:duration-300 lg:hover:shadow-[0_8px_28px_rgba(15,23,42,0.07)]" : ""}>
+                {/* Two headings rather than one that morphs: the tile and the
+                    15px type only work above lg, and responsive-swapping a
+                    glyph size is not something a size prop can do. */}
+                {wide && (
+                  <div className="hidden lg:block -mx-4 -mt-4 mb-4">
+                    <PanelHead icon="paperclip">Receipt <span className="text-red-500">*</span></PanelHead>
+                  </div>
+                )}
+                <label className={"flex items-center gap-1.5 text-[11px] font-semibold text-slate-600 mb-1.5" + (wide ? " lg:hidden" : "")}>
+                  <span className="shrink-0 w-5 h-5 rounded-md bg-indigo-50 text-indigo-500 inline-flex items-center justify-center"><Icon name="paperclip" size={11} /></span>
+                  Receipt <span className="text-red-500">*</span>
+                </label>
                 {isEditing && existingReceipts.length > 0 && (function () {
                   var visible = existingReceipts.filter(function (p) { return removedReceipts.indexOf(p) === -1 })
                   var pending = removedReceipts.length
                   return (
                     <div className="mb-3 p-2 rounded-lg bg-blue-50 border border-blue-200">
                       <div className="flex items-center justify-between mb-2">
-                        <span className="text-[11px] font-bold text-blue-700 uppercase tracking-wider">
-                          📎 Existing ({visible.length}{pending > 0 ? ' · ' + pending + ' marked to remove' : ''})
+                        <span className="text-[11px] font-bold text-blue-700 uppercase tracking-[0.08em]">
+                          <Icon name="paperclip" size={12} className="shrink-0" />
+                          Existing ({visible.length}{pending > 0 ? ' · ' + pending + ' marked to remove' : ''})
                         </span>
                         {pending > 0 && (
                           <button type="button" onClick={function () { setRemovedReceipts([]) }}
@@ -2886,16 +3160,16 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                             return (
                               <div key={path} className="relative">
                                 {isVoice ? (
-                                  <div className="h-24 rounded-lg border border-blue-200 bg-white flex items-center justify-center text-blue-600 text-2xl">🎙</div>
+                                  <div className="h-24 rounded-lg border border-blue-200 bg-white flex items-center justify-center text-blue-600"><Icon name="mic" size={24} /></div>
                                 ) : isPdf ? (
-                                  <div className="h-24 rounded-lg border border-blue-200 bg-white flex items-center justify-center text-blue-600 text-2xl">📄</div>
+                                  <div className="h-24 rounded-lg border border-blue-200 bg-white flex items-center justify-center text-blue-600"><Icon name="fileText" size={24} /></div>
                                 ) : (
                                   <img src={url} alt="Existing receipt"
                                     onClick={function () { setZoomImg(url) }}
                                     className="h-24 w-full rounded-lg border border-blue-200 object-cover cursor-pointer active:opacity-80" />
                                 )}
                                 <button type="button" onClick={function () { setRemovedReceipts(function (prev) { return prev.concat([path]) }) }}
-                                  className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white rounded-full text-[10px] flex items-center justify-center shadow-sm hover:bg-red-600">✕</button>
+                                  className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white rounded-full text-[10px] flex items-center justify-center shadow-sm hover:bg-red-600"><Icon name="close" size={12} /></button>
                               </div>
                             )
                           })}
@@ -2914,7 +3188,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                           <div key={rIdx} className="relative">
                             {isPdf ? (
                               <div className="h-24 rounded-lg border border-slate-200 bg-slate-50 flex flex-col items-center justify-center text-slate-500 px-1">
-                                <span className="text-2xl">📄</span>
+                                <Icon name="fileText" size={22} />
                                 <span className="text-[10px] truncate max-w-full">{file.name}</span>
                               </div>
                             ) : (
@@ -2923,20 +3197,20 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                                 className="h-24 w-full rounded-lg border border-slate-200 object-cover cursor-pointer active:opacity-80" />
                             )}
                             <button type="button" onClick={function () { removeReceipt(idx, rIdx) }}
-                              className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white rounded-full text-[10px] flex items-center justify-center shadow-sm hover:bg-red-600">✕</button>
+                              className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white rounded-full text-[10px] flex items-center justify-center shadow-sm hover:bg-red-600"><Icon name="close" size={12} /></button>
                           </div>
                         )
                       })}
                     </div>
                     <p className="text-[10px] text-slate-500 text-center mb-2">{entry.receiptFiles.length} receipt{entry.receiptFiles.length > 1 ? 's' : ''} attached · tap image to enlarge</p>
                     <div className="flex gap-2">
-                      <label className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border-2 border-dashed border-slate-300 text-xs text-slate-500 hover:border-indigo-400 hover:text-indigo-600 cursor-pointer transition-colors">
+                      <label className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border border-slate-200 text-[12px] text-slate-500 hover:border-indigo-400 hover:text-indigo-600 cursor-pointer transition-colors">
                         <Icon name="gallery" className="w-4 h-4" /><span>Add more</span>
                         <input type="file" accept="image/*,.pdf" multiple className="hidden"
                           onChange={function (e) { addReceipts(idx, e.target.files); e.target.value = '' }} />
                       </label>
                       <button type="button" onClick={function () { setCameraTarget(idx) }}
-                        className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border-2 border-dashed border-slate-300 text-xs text-slate-500 hover:border-indigo-400 hover:text-indigo-600 transition-colors">
+                        className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border border-slate-200 text-[12px] text-slate-500 hover:border-indigo-400 hover:text-indigo-600 transition-colors">
                         <Icon name="camera" className="w-4 h-4" /><span>Photo</span>
                       </button>
                     </div>
@@ -2945,16 +3219,19 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                   <div className="flex items-center gap-3 p-3 rounded-lg bg-blue-50 border border-blue-200">
                     <audio src={entry.audioUrl} controls className="flex-1 h-8" />
                     <button type="button" onClick={function () { removeAudio(idx) }}
-                      className="w-6 h-6 bg-red-500 text-white rounded-full text-xs flex items-center justify-center shadow-sm hover:bg-red-600 flex-shrink-0">✕</button>
+                      className="w-6 h-6 bg-red-500 text-white rounded-full text-[12px] flex items-center justify-center shadow-sm hover:bg-red-600 flex-shrink-0"><Icon name="close" size={12} /></button>
                   </div>
                 ) : entry.recording ? (
                   <button type="button" onClick={function () { stopRecording(idx) }}
-                    className="w-full py-3 rounded-lg bg-red-500 text-white text-sm font-medium animate-pulse flex items-center justify-center gap-2">
+                    className="w-full py-3 rounded-lg bg-red-500 text-white text-[13px] font-medium animate-pulse flex items-center justify-center gap-2">
                     <span className="w-2.5 h-2.5 bg-white rounded-full" />Recording... Tap to stop
                   </button>
                 ) : (entry.receiptFilesMeta && entry.receiptFilesMeta.length > 0) || entry.audioBlobMeta ? (
                   <div className="p-2.5 rounded-lg bg-amber-50 border border-amber-300 text-amber-800 text-[11px] mb-2">
-                    <div className="font-bold mb-0.5">🔗 Please re-attach — restored from draft</div>
+                    <div className="flex items-center gap-1.5 font-bold mb-0.5">
+                      <Icon name="paperclip" size={12} className="shrink-0" />
+                      Please re-attach — restored from draft
+                    </div>
                     {entry.receiptFilesMeta && entry.receiptFilesMeta.length > 0 && (
                       <div className="truncate">
                         {entry.receiptFilesMeta.length} receipt{entry.receiptFilesMeta.length > 1 ? 's' : ''}: {entry.receiptFilesMeta.map(function (m) { return m.name }).join(', ')}
@@ -2962,38 +3239,61 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                     )}
                     {entry.audioBlobMeta && <div>1 voice note</div>}
                     <div className="flex gap-2 mt-2">
-                      <label className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border-2 border-dashed border-slate-300 text-[12px] font-semibold text-slate-600 hover:border-indigo-400 hover:text-indigo-600 cursor-pointer transition-colors">
+                      <label className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border border-slate-200 text-[12px] font-semibold text-slate-600 hover:border-indigo-400 hover:text-indigo-600 cursor-pointer transition-colors">
                         <Icon name="gallery" className="w-[18px] h-[18px]" /><span>Gallery</span>
                         <input type="file" accept="image/*,.pdf" multiple className="hidden"
                           onChange={function (e) { addReceipts(idx, e.target.files); e.target.value = '' }} />
                       </label>
                       <button type="button" onClick={function () { setCameraTarget(idx) }}
-                        className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border-2 border-dashed border-slate-300 text-[12px] font-semibold text-slate-600 hover:border-indigo-400 hover:text-indigo-600 transition-colors">
+                        className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border border-slate-200 text-[12px] font-semibold text-slate-600 hover:border-indigo-400 hover:text-indigo-600 transition-colors">
                         <Icon name="camera" className="w-[18px] h-[18px]" /><span>Camera</span>
                       </button>
                       <button type="button" onClick={function () { startRecording(idx) }}
-                        className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border-2 border-dashed border-slate-300 text-[12px] font-semibold text-slate-600 hover:border-indigo-400 hover:text-indigo-600 transition-colors">
+                        className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border border-slate-200 text-[12px] font-semibold text-slate-600 hover:border-indigo-400 hover:text-indigo-600 transition-colors">
                         <Icon name="mic" className="w-[18px] h-[18px]" /><span>Voice</span>
                       </button>
                     </div>
                   </div>
                 ) : (
-                  <div className="flex gap-2 lg:max-w-3xl">
-                    <label className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg border-2 border-dashed border-slate-300 text-sm text-slate-500 hover:border-indigo-400 hover:text-indigo-600 cursor-pointer transition-colors">
-                      <Icon name="gallery" className="w-[18px] h-[18px]" /><span>Gallery</span>
+                  <div className="space-y-2">
+                    {/* The drop target. Laptop only — there is nothing to drag
+                        on a phone, and it would just push the buttons down. */}
+                    <label
+                      onDragOver={function (e) { e.preventDefault() }}
+                      onDrop={function (e) {
+                        e.preventDefault()
+                        if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                          addReceipts(idx, e.dataTransfer.files)
+                        }
+                      }}
+                      className={(wide ? "hidden lg:flex" : "hidden") + " flex-col items-center justify-center gap-1 py-5 rounded-xl border-2 border-dashed border-slate-300 bg-white text-center hover:border-indigo-400 hover:bg-indigo-50/40 cursor-pointer transition-colors"}>
+                      <span className="text-indigo-500"><Icon name="download" className="w-5 h-5" /></span>
+                      <span className="text-[12px] text-slate-500">
+                        Drop file here or <span className="font-semibold text-indigo-600">click to upload</span>
+                      </span>
+                      <span className="text-[10px] text-slate-400">JPG, PNG, PDF</span>
                       <input type="file" accept="image/*,.pdf" multiple className="hidden"
                         onChange={function (e) { addReceipts(idx, e.target.files); e.target.value = '' }} />
                     </label>
-                    <button type="button" onClick={function () { setCameraTarget(idx) }}
-                      className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg border-2 border-dashed border-slate-300 text-sm text-slate-500 hover:border-indigo-400 hover:text-indigo-600 transition-colors">
-                      <Icon name="camera" className="w-[18px] h-[18px]" /><span>Camera</span>
-                    </button>
-                    <button type="button" onClick={function () { startRecording(idx) }}
-                      className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg border-2 border-dashed border-slate-300 text-sm text-slate-500 hover:border-indigo-400 hover:text-indigo-600 transition-colors">
-                      <Icon name="mic" className="w-[18px] h-[18px]" /><span>Voice</span>
-                    </button>
+                    <div className="flex gap-2">
+                      <label className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border border-slate-200 bg-white text-[12px] font-semibold text-slate-600 hover:border-indigo-400 hover:text-indigo-600 cursor-pointer transition-colors">
+                        <Icon name="gallery" className="w-[18px] h-[18px]" /><span>Gallery</span>
+                        <input type="file" accept="image/*,.pdf" multiple className="hidden"
+                          onChange={function (e) { addReceipts(idx, e.target.files); e.target.value = '' }} />
+                      </label>
+                      <label className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border border-slate-200 bg-white text-[12px] font-semibold text-slate-600 hover:border-indigo-400 hover:text-indigo-600 cursor-pointer transition-colors">
+                        <Icon name="camera" className="w-[18px] h-[18px]" /><span>Camera</span>
+                        <input type="file" accept="image/*" capture="environment" className="hidden"
+                          onChange={function (e) { addReceipts(idx, e.target.files); e.target.value = '' }} />
+                      </label>
+                      <button type="button" onClick={function () { startRecording(idx) }}
+                        className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border border-slate-200 bg-white text-[12px] font-semibold text-slate-600 hover:border-indigo-400 hover:text-indigo-600 transition-colors">
+                        <Icon name="mic" className="w-[18px] h-[18px]" /><span>Voice</span>
+                      </button>
+                    </div>
                   </div>
                 )}
+              </div>
               </div>
             </div>
           </div>
@@ -3022,27 +3322,48 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
           /* Red, not amber: a negative wallet already renders red on the home
              card and in the expense list, so the warning that you are about to
              cause one should speak the same colour. */
-          <div className="flex items-start gap-2.5 p-3 rounded-xl bg-red-50 border border-red-300">
-            <Icon name="alert" className="w-4 h-4 shrink-0 mt-0.5 text-red-600" />
-            <div className="min-w-0">
-              <p className="text-[13px] font-semibold text-red-900 leading-snug">Wallet will go negative</p>
+          <div className={"flex items-start gap-2.5 p-3 rounded-xl bg-red-50/70 border border-red-200/80" +
+            (wide ? " lg:items-center lg:gap-4 lg:px-4" : "")}>
+            <span className={"shrink-0 inline-flex items-center justify-center rounded-lg bg-red-100 text-red-600 w-7 h-7" + (wide ? " lg:w-8 lg:h-8" : "")}>
+              <Icon name="alert" className="w-4 h-4" />
+            </span>
+            <div className={"min-w-0" + (wide ? " lg:flex-1" : "")}>
+              <p className="font-display text-[13px] font-bold text-slate-900 leading-snug tracking-[-0.01em]">Wallet will go negative</p>
               {/* The two figures were buried mid-sentence; they are the only part
-                  of this warning anyone reads, so they get their own line. */}
-              <p className="mt-1.5 flex flex-wrap items-baseline gap-x-4 gap-y-1 text-[12px] text-red-800">
-                <span>Available <span className="font-semibold tabular-nums">{availPts} pts</span></span>
-                <span>Short by <span className="font-bold tabular-nums text-red-900">{shortPts} pts</span></span>
+                  of this warning anyone reads, so they get their own line.
+
+                  On the dashboard they move out to the right instead — a banner
+                  1500px wide with three short lines stacked against its left
+                  edge is mostly empty red. Same two numbers, read as a pair at
+                  the end of the sentence that explains them. */}
+              <p className={"mt-1.5 flex flex-wrap items-baseline gap-x-4 gap-y-1 text-[12px] font-medium" +
+                (wide ? " lg:hidden" : "")}>
+                <span className="text-slate-600">Available <span className="font-bold tabular-nums text-slate-800">{availPts} pts</span></span>
+                <span className="text-slate-600">Short by <span className="font-extrabold tabular-nums text-red-600">{shortPts} pts</span></span>
               </p>
-              <p className="mt-1.5 text-[11px] text-red-700">You can still submit — this is a warning, not a block.</p>
+              <p className={"mt-1.5 text-[12px] font-medium text-slate-600" + (wide ? " lg:mt-0.5" : "")}>You can still submit — this is a warning, not a block.</p>
             </div>
+            {wide && (
+              <div className="hidden lg:flex shrink-0 items-stretch divide-x divide-red-200 border-l border-red-200">
+                <span className="px-5 text-right">
+                  <span className="block text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">Available</span>
+                  <span className="block mt-1 font-display text-[15px] font-bold tabular-nums text-slate-700" data-notranslate>{availPts} pts</span>
+                </span>
+                <span className="pl-5 pr-1 text-right">
+                  <span className="block text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">Short by</span>
+                  <span className="block mt-1 font-display text-[15px] font-extrabold tabular-nums text-red-600" data-notranslate>{shortPts} pts</span>
+                </span>
+              </div>
+            )}
           </div>
         )
       })()}
 
       {/* Inline error card — sits right above the Submit button, always visible, easy screenshot */}
       {error && error.indexOf('Insufficient wallet balance') === -1 && (
-        <div ref={errorRef} className="ambria-rise p-3 rounded-xl bg-red-50 border border-red-300 text-red-800 text-sm">
+        <div ref={errorRef} className="ambria-rise p-3 rounded-xl bg-red-50 border border-red-300 text-red-800 text-[13px]">
           <div className="flex items-start justify-between gap-2 mb-1.5">
-            <span className="font-bold uppercase text-[10px] tracking-wider text-red-600">Submit failed</span>
+            <span className="font-bold uppercase text-[10px] tracking-[0.08em] text-red-600">Submit failed</span>
             <div className="flex gap-1.5 flex-shrink-0">
               <button type="button" onClick={function (ev) {
                 var b = ev.currentTarget
@@ -3051,15 +3372,15 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
                   else {
                     var ta = document.createElement('textarea'); ta.value = error; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta)
                   }
-                  var orig = b.textContent; b.textContent = 'Copied ✓'; setTimeout(function () { b.textContent = orig }, 1500)
+                  var orig = b.textContent; b.textContent = 'Copied'; setTimeout(function () { b.textContent = orig }, 1500)
                 } catch (_) {}
               }}
                 className="px-2 py-0.5 text-[10px] font-bold bg-white border border-red-300 text-red-700 rounded hover:bg-red-100">
-                📋 Copy
+                <span className="inline-flex items-center gap-1"><Icon name="copy" size={11} />Copy</span>
               </button>
               <button type="button" onClick={function () { setError('') }}
                 className="px-2 py-0.5 text-[10px] font-bold bg-white border border-red-300 text-red-700 rounded hover:bg-red-100">
-                ✕
+                <Icon name="close" size={12} />
               </button>
             </div>
           </div>
@@ -3072,11 +3393,16 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
           reach Submit was the single worst thing about filling it in. The
           negative margins let it sit flush against the viewport edges while the
           form itself stays inside its padded column. */}
-      <div className="ambria-glass sticky bottom-0 z-30 -mx-4 px-4 pt-3 pb-3 border-t border-slate-200 shadow-[0_-4px_16px_rgba(15,23,42,0.06)]">
-        <div className="flex gap-3">
+      {/* On the dashboard the bar drops its border and shadow: the mockup
+          has these two buttons sitting on the page, not on a ledge. It stays
+          sticky and keeps the glass, which is what stops scrolled content
+          showing through them on a form that runs several screens. */}
+      <div className={"ambria-glass sticky bottom-0 z-30 -mx-4 px-4 pt-3 pb-3 border-t border-slate-200 shadow-[0_-4px_16px_rgba(15,23,42,0.06)]" +
+        (wide ? " lg:border-transparent lg:shadow-none lg:pt-4" : "")}>
+        <div className={"flex gap-3" + (wide ? " lg:justify-end" : "")}>
           {!isEditing && (
             <button type="button" onClick={addEntry}
-              className="flex-1 inline-flex items-center justify-center gap-1.5 py-2.5 rounded-xl border-2 border-dashed border-slate-300 text-[13px] font-semibold text-slate-600 bg-white hover:border-indigo-400 hover:text-indigo-600 transition-colors">
+              className={"flex-1 inline-flex items-center justify-center gap-1.5 py-2.5 rounded-xl border border-slate-200 text-[13px] font-bold text-slate-600 bg-white transform-gpu transition-all duration-200 ease-out hover:border-indigo-400 hover:text-indigo-600 hover:-translate-y-px active:translate-y-0 active:scale-[0.98]" + (wide ? " lg:flex-none lg:px-4 lg:mr-auto" : "")}>
               {/* The "+" is an icon now, not a character in the label: the
                   extractor treats a string containing a bare + as code and
                   skipped it, so "+ Add another" never reached the dictionary. */}
@@ -3084,8 +3410,14 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
               Add another
             </button>
           )}
+          {wide && onCancel && (
+            <button type="button" onClick={onCancel}
+              className="hidden lg:inline-flex items-center justify-center px-5 py-2.5 rounded-xl border border-slate-200 bg-white text-[13px] font-bold text-slate-700 transform-gpu transition-all duration-200 ease-out hover:bg-slate-50 hover:text-slate-900 hover:border-slate-400 hover:-translate-y-px active:translate-y-0 active:scale-[0.98]">
+              Cancel
+            </button>
+          )}
           <button type="button" onClick={handleSubmit} disabled={saving}
-            className={'flex-1 inline-flex items-center justify-center gap-2 py-2.5 rounded-xl font-semibold text-[13px] text-white transition-all ' +
+            className={'flex-1 inline-flex items-center justify-center gap-2 py-2.5 rounded-xl font-bold text-[13px] text-white transition-all ' + (wide ? 'lg:flex-none lg:px-6 ' : '') +
               (saving
                 ? 'bg-slate-400 cursor-not-allowed'
                 : 'bg-gradient-to-b from-indigo-500 to-indigo-600 shadow-[0_2px_8px_rgba(79,70,229,0.30)] hover:from-indigo-600 hover:to-indigo-700 active:scale-[0.98]')}>
@@ -3109,7 +3441,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone }) {
         <div onClick={function () { setZoomImg('') }}
           className="fixed inset-0 z-[9998] bg-black/90 flex items-center justify-center p-4" style={{ margin: 0 }}>
           <button onClick={function () { setZoomImg('') }}
-            className="absolute top-4 right-4 w-10 h-10 bg-white/20 text-white rounded-full text-xl flex items-center justify-center hover:bg-white/30">✕</button>
+            className="absolute top-4 right-4 w-10 h-10 bg-white/20 text-white rounded-full text-xl flex items-center justify-center hover:bg-white/30"><Icon name="close" size={12} /></button>
           <img src={zoomImg} alt="Receipt" className="max-w-full max-h-full object-contain rounded-lg" />
         </div>
       ), document.body)}

@@ -441,18 +441,17 @@ function AdminShell({ profile, onSignOut }) {
           behind it, and BroadcastHub's full-height layout subtracts it rather
           than overflowing by exactly the bar's height. */}
       <div className="relative isolate flex-1 min-w-0 flex flex-col" style={{ '--app-header-h': '3.5rem' }}>
-        {/* API Marketing carries artwork; it is drawn here rather than inside
-            the module.
+        {/* The two sections that carry artwork, drawn here rather than inside
+            each module.
 
-            The hub used to draw its own, from inside <main> — which is below
-            this bar, so the bar stayed a white strip across a tinted page no
-            matter how transparent it was made. Nothing inside main can reach
-            above the bar; the column can. BroadcastHub skips its own copy
-            when it sees inAdmin.
+            API Marketing used to draw its own, from inside <main> — which is
+            below this bar, so the bar stayed a white strip across a tinted
+            page no matter how transparent it was made. Nothing inside main can
+            reach above it; the column can.
 
             On the other sections it would be decoration nobody asked for,
             sitting behind dense tables where a calm ground matters more. */}
-        {active === 'broadcast' && <PageWave offset="var(--app-header-h, 0px)" />}
+        {(active === 'expenses' || active === 'broadcast') && <PageWave offset="var(--app-header-h, 0px)" />}
 
         {/* Desktop only — the phone gets the fixed bar further down, which
             carries the drawer trigger this one has no need for.
