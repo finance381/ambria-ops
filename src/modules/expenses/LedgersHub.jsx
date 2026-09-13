@@ -80,7 +80,7 @@ function LedgersHub(props) {
         })}
       </div>
       <Suspense fallback={<p className="text-gray-400 text-sm py-8 text-center">Loading...</p>}>
-        <Cmp profile={props.profile} onNavigate={props.onNavigate} />
+        <Cmp profile={props.profile} onNavigate={props.onNavigate} onNavigateToExpenses={props.onNavigateToExpenses} />
       </Suspense>
     </div>
   )
