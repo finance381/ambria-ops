@@ -30,7 +30,7 @@ var ALLOC_COLS = 'department, department_id, venue_id, amount_paise, expense_typ
 // all render it, so they read as one screen you tab between rather than four.
 //
 // Imported rather than referenced from public/: vite.config.js sets
-// base: "/ambria-ops/", so a hand-written "/pc-bg.png" would 404 in production.
+// base: "/ambria-ops/", so a hand-written "/pc-bg.webp" would 404 in production.
 // The import also gets it a content hash, so a new backdrop is never served
 // from a stale cache.
 //

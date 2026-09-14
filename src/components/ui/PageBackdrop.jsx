@@ -1,9 +1,9 @@
-import pcBg from '../../assets/pc-bg.png'
+import pcBg from '../../assets/pc-bg.webp'
 
 // The artwork behind a page.
 //
 // Imported rather than referenced from public/: vite.config.js sets
-// base: "/ambria-ops/", so a hand-written "/pc-bg.png" would 404 in production.
+// base: "/ambria-ops/", so a hand-written "/pc-bg.webp" would 404 in production.
 // The import also gets it a content hash, so a new backdrop is never served
 // from a stale cache.
 //
