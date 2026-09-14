@@ -19,6 +19,8 @@ import { DeptChip } from '../../components/ui/Badge'
 import SearchField from '../../components/ui/SearchField'
 import { pushBack, goBack } from '../../lib/backNav'
 import PaymentProofThumbs from '../../components/ledger/PaymentProofThumbs'
+import { hasPerm } from '../../lib/permissions'
+import { useReferenceData } from '../../lib/referenceData.jsx'
 
 
 
@@ -67,6 +69,9 @@ var EXP_STATUS_COLORS = {
 }
 
 function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, onClose, onBalanceChange, onOpenExpense, onNavigateToExpenses }) {
+  var permsNew = (profile && profile.permsNew) || []
+  var canCreateTentativeEvent = hasPerm(permsNew, 'events.list.create_tentative')
+  var activeVenues = useReferenceData().venues.filter(function (v) { return v.active }).slice().sort(function (a, b) { return (a.name || '').localeCompare(b.name || '') })
   var [walletView, setWalletView] = useState(null)
   var [allWallets, setAllWallets] = useState([])
   var [walletProfiles, setWalletProfiles] = useState({})
@@ -137,6 +142,13 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   var [collectImage, setCollectImage] = useState(null)
   var [collectSaving, setCollectSaving] = useState(false)
   var collectVoice = useVoice()
+  var [tentativeModal, setTentativeModal] = useState(false)
+  var [tentativeGuestName, setTentativeGuestName] = useState('')
+  var [tentativeVenue, setTentativeVenue] = useState('')
+  var [tentativePax, setTentativePax] = useState('')
+  var [tentativeFunctionType, setTentativeFunctionType] = useState('')
+  var [tentativeSaving, setTentativeSaving] = useState(false)
+  var [eventTypeOptions, setEventTypeOptions] = useState([])
 
   useEffect(function () {
     if (isAdmin || isAuditor) {
@@ -678,8 +690,9 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     if (!dateStr) { setCollectEvents([]); return }
     setCollectFunctionsLoading(true)
     var { data } = await supabase.from('events')
-      .select('id, event_name, function_date, venue_name, client_name, session, contact_person, contact_number, secondary_contact, created_user_name, department, contract_no')
+      .select('id, event_name, function_date, venue_name, client_name, session, contact_person, contact_number, secondary_contact, created_user_name, department, contract_no, is_tentative')
       .eq('function_date', dateStr)
+      .is('merged_into_id', null)
       .order('event_name')
     setCollectEvents(data || [])
     setCollectFunctionsLoading(false)
@@ -694,6 +707,37 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     var { data, error } = await supabase.rpc('fn_event_balance', { p_event_id: Number(fid) })
     if (!error && data && data.length > 0) { setCollectBalance(data[0]) }
     setCollectBalanceLoading(false)
+  }
+
+  function openTentativeModal() {
+    setTentativeGuestName('')
+    setTentativeVenue('')
+    setTentativePax('')
+    setTentativeFunctionType('')
+    setTentativeModal(true)
+    if (eventTypeOptions.length === 0) {
+      supabase.from('quote_config').select('key, value').eq('key', 'event_types').maybeSingle()
+        .then(function (res) { setEventTypeOptions((res.data && res.data.value) || []) })
+    }
+  }
+
+  async function submitTentativeEvent() {
+    if (tentativeSaving || !collectDate || !tentativeGuestName.trim() || !tentativeVenue || !tentativeFunctionType) return
+    setTentativeSaving(true)
+    var venueName = (activeVenues.find(function (v) { return String(v.id) === tentativeVenue }) || {}).name || ''
+    var { data: newId, error } = await supabase.rpc('fn_create_tentative_event', {
+      p_event_name: tentativeFunctionType,
+      p_client_name: tentativeGuestName.trim(),
+      p_venue_name: venueName,
+      p_function_date: collectDate,
+      p_pax: tentativePax ? Number(tentativePax) : null,
+      p_function_type: tentativeFunctionType,
+    })
+    if (error) { alert('Could not create event: ' + error.message); setTentativeSaving(false); return }
+    setTentativeSaving(false)
+    setTentativeModal(false)
+    await loadFunctionsForDate(collectDate)
+    if (newId != null) selectCollectFunction(String(newId))
   }
 
   async function printReceipt(txn) {
@@ -1571,7 +1615,13 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
               <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">2. Select Function</label>
               {collectFunctionsLoading && <p className="text-xs text-gray-400">Loading...</p>}
               {!collectFunctionsLoading && collectEvents.length === 0 && (
-                <p className="text-xs text-gray-400">No functions on this date</p>
+                <p className="text-xs text-gray-400 mb-2">No functions on this date</p>
+              )}
+              {!collectFunctionsLoading && canCreateTentativeEvent && (
+                <button type="button" onClick={openTentativeModal}
+                  className="w-full mb-2 py-2 text-xs font-semibold text-indigo-600 border border-dashed border-indigo-300 rounded-lg hover:bg-indigo-50 transition-colors">
+                  + Booking not in the list? Create tentative event
+                </button>
               )}
               {collectEvents.length > 0 && (
                 <div className="space-y-1.5">
@@ -1583,8 +1633,11 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                         onKeyDown={function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectCollectFunction(String(ev.id)) } }}
                         className={"w-full text-left px-3 py-2 rounded-lg border transition-colors cursor-pointer " +
                           (selected ? "border-blue-600 bg-blue-50 border-2" : "border-gray-200 hover:border-gray-300 bg-white")}>
-                        <div className={"text-sm font-medium " + (selected ? "text-blue-900" : "text-gray-900")}>
-                          {ev.event_name + (ev.client_name ? ' — ' + ev.client_name : '')}
+                        <div className={"text-sm font-medium flex items-center gap-1.5 " + (selected ? "text-blue-900" : "text-gray-900")}>
+                          <span>{ev.event_name + (ev.client_name ? ' — ' + ev.client_name : '')}</span>
+                          {ev.is_tentative && (
+                            <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 border border-amber-200">Tentative</span>
+                          )}
                         </div>
                         <div className={"text-xs " + (selected ? "text-blue-700" : "text-gray-500")}>
                           {(ev.venue_name || '') + (ev.session ? ' · ' + ev.session : '')}
@@ -1741,6 +1794,66 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
               disabled={!canSubmit}
               className="flex-1 py-3 text-sm text-white bg-blue-600 rounded-xl hover:bg-blue-700 disabled:opacity-50 transition-colors font-semibold">
               {collectSaving ? 'Saving...' : 'Collect ' + (collectAmount && Number(collectAmount) > 0 ? Number(collectAmount).toLocaleString('en-IN') + ' pts' : '')}
+            </button>
+          </div>
+        </div>
+      </BottomSheet>
+    )
+  }
+
+  function renderTentativeModal() {
+    if (!tentativeModal) return null
+    var canSubmitTentative = !tentativeSaving && tentativeGuestName.trim() && tentativeVenue && tentativeFunctionType
+    return (
+      <BottomSheet open={true} onClose={function () { setTentativeModal(false) }} title="Create Tentative Event">
+        <div className="space-y-4">
+          <p className="text-xs text-gray-500">
+            For a booking that hasn't been contracted in LMS yet. It'll get its own ledger right away —
+            once the real LMS event syncs in, an admin can merge this into it.
+          </p>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Guest Name</label>
+            <input type="text" value={tentativeGuestName}
+              onChange={function (e) { setTentativeGuestName(e.target.value) }}
+              placeholder="e.g. Himanshu Vats"
+              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              style={{ fontSize: '16px' }} />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Venue</label>
+            <select value={tentativeVenue} onChange={function (e) { setTentativeVenue(e.target.value) }}
+              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              style={{ fontSize: '16px' }}>
+              <option value="">Select venue...</option>
+              {activeVenues.map(function (v) { return <option key={v.id} value={v.id}>{v.name}</option> })}
+            </select>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Pax</label>
+              <input type="number" min="0" inputMode="numeric" value={tentativePax}
+                onChange={function (e) { setTentativePax(e.target.value) }}
+                placeholder="0"
+                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                style={{ fontSize: '16px' }} />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Function Type</label>
+              <select value={tentativeFunctionType} onChange={function (e) { setTentativeFunctionType(e.target.value) }}
+                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                style={{ fontSize: '16px' }}>
+                <option value="">Select...</option>
+                {eventTypeOptions.map(function (t, i) { return <option key={t.label + i} value={t.label}>{(t.icon ? t.icon + ' ' : '') + t.label}</option> })}
+              </select>
+            </div>
+          </div>
+          <p className="text-xs text-gray-400">Function date: {formatDate(collectDate)}</p>
+          <div className="flex gap-3 pt-2">
+            <button onClick={function () { setTentativeModal(false) }}
+              className="flex-1 py-3 text-sm text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors font-semibold">Cancel</button>
+            <button onClick={submitTentativeEvent} disabled={!canSubmitTentative}
+              className="flex-1 py-3 text-sm text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition-colors font-semibold">
+              {tentativeSaving ? 'Creating...' : 'Create Event'}
             </button>
           </div>
         </div>
@@ -2085,6 +2198,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
         </div>
 
         {renderCollectModal()}
+        {renderTentativeModal()}
         {renderTransferModal()}
         {renderIssueModal()}
         {renderReceiveModal()}
@@ -2678,6 +2792,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
         {renderIssueModal()}
         {renderReceiveModal()}
         {renderCollectModal()}
+        {renderTentativeModal()}
         {renderTransferModal()}
         {renderTransferConfirmModal()}
         {renderCancelModal()}

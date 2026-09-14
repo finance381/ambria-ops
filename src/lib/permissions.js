@@ -70,7 +70,11 @@ export var PERM_GROUPS = [
   ]},
   { group: 'Events', icon: '📅', scope: 'both', children: [
     { key: 'events.list',                label: 'Events',                 scope: 'both', dataScope: true,
-      optional: [{ key: 'events.list.setup_teardown', label: 'Set setup/teardown days' }] },
+      optional: [
+        { key: 'events.list.setup_teardown', label: 'Set setup/teardown days' },
+        { key: 'events.list.create_tentative', label: 'Create tentative events' },
+        { key: 'events.list.merge', label: 'Merge tentative events into LMS events' },
+      ] },
     { key: 'events.extra_plate_collect', label: 'Extra Plate Collection', scope: 'mobile', dataScope: true,
       note: 'F&B floor staff collecting extra plate revenue on event day' },
     { key: 'events.quote',               label: 'Quote Calculator',       scope: 'both' },
