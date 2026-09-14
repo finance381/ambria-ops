@@ -71,7 +71,7 @@ var EXP_STATUS_COLORS = {
 function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, onClose, onBalanceChange, onOpenExpense, onNavigateToExpenses }) {
   var permsNew = (profile && profile.permsNew) || []
   var canCreateTentativeEvent = hasPerm(permsNew, 'events.list.create_tentative')
-  var activeVenues = useReferenceData().venues.filter(function (v) { return v.active }).slice().sort(function (a, b) { return (a.name || '').localeCompare(b.name || '') })
+  var activeVenues = useReferenceData().venues.filter(function (v) { return v.active }).slice().sort(function (a, b) { return (a.code || '').localeCompare(b.code || '') })
   var [walletView, setWalletView] = useState(null)
   var [allWallets, setAllWallets] = useState([])
   var [walletProfiles, setWalletProfiles] = useState({})
@@ -1823,7 +1823,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
               className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
               style={{ fontSize: '16px' }}>
               <option value="">Select venue...</option>
-              {activeVenues.map(function (v) { return <option key={v.id} value={v.id}>{v.name}</option> })}
+              {activeVenues.map(function (v) { return <option key={v.id} value={v.id}>{(v.code ? v.code + ' — ' : '') + v.name}</option> })}
             </select>
           </div>
           <div className="grid grid-cols-2 gap-3">
