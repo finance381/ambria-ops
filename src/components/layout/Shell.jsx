@@ -1,38 +1,44 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, lazy, Suspense } from 'react'
 import { createPortal } from 'react-dom'
 import { supabase } from '../../lib/supabase'
 import { ROLE_COLORS } from '../../lib/constants'
-import Inventory from '../../modules/inventory/Inventory'
-import InventoryForm from '../../modules/inventory/InventoryForm'
-import Events from '../../modules/events/Events'
-import ExtraPlateCollect from '../../modules/events/ExtraPlateCollect'
-import AdminReview from '../../modules/categories/AdminReview'
-import DeptReview from '../../modules/categories/DeptReview'
 import { useLang } from '../../lib/i18n.jsx'
-import QuoteCalculator from '../../modules/quote/QuoteCalculator'
-import Requisitions from '../../modules/requisitions/Requisitions'
-
-import Purchase from '../../modules/purchase/Purchase'
-import Expenses from '../../modules/expenses/Expenses'
-import Ledgers from '../../modules/expenses/Ledgers'
-import VendorLedger from '../../modules/expenses/VendorLedger'
-import Payments from '../../modules/expenses/Payments'
-import CostTransfers from '../../modules/expenses/CostTransfers'
-import SalaryPayouts from '../../modules/expenses/SalaryPayouts'
-import SalaryLedger from '../../modules/employees/SalaryLedger'
-import Wallet from '../../modules/expenses/Wallet'
-import ProductionOrders from '../../modules/production/ProductionOrders'
-import Boxes from '../../modules/boxes/Boxes'
-import Challans from '../../modules/challans/Challans'
-import RateCardEditor from '../../modules/quote/RateCardEditor'
-import Vendors from '../../modules/vendors/Vendors'
-import Employees from '../../modules/employees/Employees'
-import AdminMobile from '../../modules/categories/AdminMobile.jsx'
-import MyProfile from '../../modules/employees/MyProfile'
-import Projects from '../../modules/projects/Projects'
-import Reviews from '../../modules/reviews/Reviews'
-import BroadcastHub from '../../modules/broadcast/BroadcastHub.jsx'
 import { hasPerm } from '../../lib/permissions'
+
+// Lazy: every one of these is a full feature module, and this shell mounts
+// unconditionally at login for every user regardless of role — statically
+// importing them (as this file used to) put all ~27 of them in the one
+// bundle every phone downloads and parses before first paint, even for a
+// user who only ever opens Inventory. AdminShell.jsx already does this;
+// this file just hadn't caught up.
+var Inventory = lazy(function () { return import('../../modules/inventory/Inventory') })
+var InventoryForm = lazy(function () { return import('../../modules/inventory/InventoryForm') })
+var Events = lazy(function () { return import('../../modules/events/Events') })
+var ExtraPlateCollect = lazy(function () { return import('../../modules/events/ExtraPlateCollect') })
+var AdminReview = lazy(function () { return import('../../modules/categories/AdminReview') })
+var DeptReview = lazy(function () { return import('../../modules/categories/DeptReview') })
+var QuoteCalculator = lazy(function () { return import('../../modules/quote/QuoteCalculator') })
+var Requisitions = lazy(function () { return import('../../modules/requisitions/Requisitions') })
+var Purchase = lazy(function () { return import('../../modules/purchase/Purchase') })
+var Expenses = lazy(function () { return import('../../modules/expenses/Expenses') })
+var Ledgers = lazy(function () { return import('../../modules/expenses/Ledgers') })
+var VendorLedger = lazy(function () { return import('../../modules/expenses/VendorLedger') })
+var Payments = lazy(function () { return import('../../modules/expenses/Payments') })
+var CostTransfers = lazy(function () { return import('../../modules/expenses/CostTransfers') })
+var SalaryPayouts = lazy(function () { return import('../../modules/expenses/SalaryPayouts') })
+var SalaryLedger = lazy(function () { return import('../../modules/employees/SalaryLedger') })
+var Wallet = lazy(function () { return import('../../modules/expenses/Wallet') })
+var ProductionOrders = lazy(function () { return import('../../modules/production/ProductionOrders') })
+var Boxes = lazy(function () { return import('../../modules/boxes/Boxes') })
+var Challans = lazy(function () { return import('../../modules/challans/Challans') })
+var RateCardEditor = lazy(function () { return import('../../modules/quote/RateCardEditor') })
+var Vendors = lazy(function () { return import('../../modules/vendors/Vendors') })
+var Employees = lazy(function () { return import('../../modules/employees/Employees') })
+var AdminMobile = lazy(function () { return import('../../modules/categories/AdminMobile.jsx') })
+var MyProfile = lazy(function () { return import('../../modules/employees/MyProfile') })
+var Projects = lazy(function () { return import('../../modules/projects/Projects') })
+var Reviews = lazy(function () { return import('../../modules/reviews/Reviews') })
+var BroadcastHub = lazy(function () { return import('../../modules/broadcast/BroadcastHub.jsx') })
 
 var GROUPS = [
   {
@@ -701,6 +707,7 @@ function Shell({ profile, onSignOut }) {
         )}
 
         {/* Level 2: Module */}
+        <Suspense fallback={<div className="text-center py-8 text-sm text-gray-400">Loading...</div>}>
         {tab === 'add' && (
           <InventoryForm
             item={null}
@@ -793,6 +800,7 @@ function Shell({ profile, onSignOut }) {
         {tab === 'projects' && (
           <Projects profile={profile} />
         )}
+        </Suspense>
       </main>
 
       {/* Footer — home screen only. Inside a module it is decoration that sits
