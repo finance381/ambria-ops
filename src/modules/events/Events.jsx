@@ -103,7 +103,13 @@ function Events({ profile }) {
   var isAdmin = hasPerm(profile?.permsNew, 'events.list')
   var permsNew = profile?.permsNew || []
   var canQuickSend = hasPerm(permsNew, 'broadcast.quicksend')
+  var canMergeEvents = hasPerm(permsNew, 'events.list.merge')
   var [quickSendGroup, setQuickSendGroup] = useState(null)
+  var [mergeSearch, setMergeSearch] = useState('')
+  var [mergeResults, setMergeResults] = useState([])
+  var [mergeSearching, setMergeSearching] = useState(false)
+  var [mergeTargetId, setMergeTargetId] = useState(null)
+  var [mergeSaving, setMergeSaving] = useState(false)
 
   useEffect(function () {
     if (!selectedFunction) { setExtraPlateSummary(null); return }
@@ -169,8 +175,9 @@ function Events({ profile }) {
     var [eventsRes, deptRes] = await Promise.all([
       supabase
         .from('events_safe')
-        .select('id, lms_event_id, contract_no, contract_date, function_date, department, contract_type, venue_name, location, contact_person, contact_number, event_name, client_name, session, catering, total_plates, complementary_plates, extra_plates_charge, balance_received, balance_bank, balance_amount, status, synced_at, created_user_name')
+        .select('id, lms_event_id, contract_no, contract_date, function_date, department, contract_type, venue_name, location, contact_person, contact_number, event_name, client_name, session, catering, total_plates, complementary_plates, extra_plates_charge, balance_received, balance_bank, balance_amount, status, synced_at, created_user_name, is_tentative, pax, function_type, merged_into_id')
         .gte('function_date', dateFloorStr)
+        .is('merged_into_id', null)
         .order('function_date', { ascending: false })
         .limit(2000),
       supabase.from('departments').select('id, name').eq('active', true).eq('hide_from_lists', false),
@@ -205,6 +212,38 @@ function Events({ profile }) {
       if (!silent) setSyncMsg('Sync error: ' + err.message)
     }
     setSyncing(false)
+  }
+
+  function searchMergeTargets(q) {
+    setMergeSearch(q)
+    setMergeTargetId(null)
+    if (!q || q.trim().length < 2) { setMergeResults([]); return }
+    setMergeSearching(true)
+    supabase.from('events_safe')
+      .select('id, event_name, client_name, venue_name, function_date, contract_no')
+      .eq('is_tentative', false)
+      .ilike('client_name', '%' + q.trim() + '%')
+      .order('function_date', { ascending: false })
+      .limit(20)
+      .then(function (res) {
+        setMergeResults(res.data || [])
+        setMergeSearching(false)
+      })
+  }
+
+  async function submitMerge() {
+    if (mergeSaving || !selectedFunction || !mergeTargetId) return
+    if (!confirm('Merge this tentative event into the selected event? This moves all its collections/ledger history and cannot be undone.')) return
+    setMergeSaving(true)
+    var { error } = await supabase.rpc('fn_merge_events', {
+      p_tentative_id: selectedFunction.id,
+      p_target_id: mergeTargetId,
+    })
+    setMergeSaving(false)
+    if (error) { alert('Merge failed: ' + error.message); return }
+    setMergeSearch(''); setMergeResults([]); setMergeTargetId(null)
+    setSelectedFunction(null)
+    loadEvents()
   }
 
   var visibleEvents = hasEventDeptFilter
@@ -326,6 +365,9 @@ function Events({ profile }) {
                   return (
                     <div key={f.id} className="flex items-center gap-2 text-xs text-gray-600 bg-gray-50 rounded px-2 py-1.5">
                       <span className="font-medium text-gray-800 truncate flex-1">{f.event_name || f.contract_type || '—'}</span>
+                      {f.is_tentative && (
+                        <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full flex-shrink-0 bg-amber-100 text-amber-700">Tentative</span>
+                      )}
                       {f.department && <span className={"text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full flex-shrink-0 " +
                         (f.department === 'Venue' ? "bg-blue-100 text-blue-700" :
                          f.department === 'Decor' ? "bg-purple-100 text-purple-700" :
@@ -423,6 +465,7 @@ function Events({ profile }) {
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
                             <h5 className="font-semibold text-gray-800 text-sm truncate">{f.event_name || f.contract_type || '—'}</h5>
+                            {f.is_tentative && <Badge color="amber">Tentative</Badge>}
                             {f.department && <Badge color="indigo">{f.department}</Badge>}
                           </div>
                           <div className="flex flex-wrap gap-x-2 gap-y-0.5 text-[11px] text-gray-500 mt-1">
@@ -447,12 +490,20 @@ function Events({ profile }) {
         title={selectedFunction?.event_name || selectedFunction?.contract_type || ''} wide>
         {selectedFunction && (
           <div className="space-y-5">
+            {selectedFunction.is_tentative && (
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-bold uppercase px-2 py-1 rounded bg-amber-100 text-amber-700 border border-amber-200">
+                  Tentative — no LMS contract yet
+                </span>
+              </div>
+            )}
             <div className="bg-gray-50 rounded-lg p-4 space-y-2">
               <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-600">
                 {selectedFunction.contract_no && <span><strong>Contract:</strong> #{selectedFunction.contract_no}</span>}
                 {(selectedFunction.function_date || selectedFunction.contract_date) && <span><strong>Event Date:</strong> {formatDate(selectedFunction.function_date || selectedFunction.contract_date)}</span>}
                 {selectedFunction.contract_type && <span><strong>Type:</strong> {selectedFunction.contract_type}</span>}
                 {selectedFunction.department && <span><strong>Dept:</strong> {selectedFunction.department}</span>}
+                {selectedFunction.function_type && <span><strong>Function:</strong> {selectedFunction.function_type}</span>}
               </div>
               <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-600">
                 {selectedFunction.venue_name && <span><strong>Venue:</strong> {selectedFunction.venue_name}</span>}
@@ -460,6 +511,7 @@ function Events({ profile }) {
               </div>
               <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-600">
                 {selectedFunction.total_plates > 0 && <span><strong>Plates:</strong> {selectedFunction.total_plates}</span>}
+                {selectedFunction.pax > 0 && <span><strong>Pax:</strong> {selectedFunction.pax}</span>}
                 {selectedFunction.complementary_plates > 0 && <span><strong>Complimentary:</strong> {selectedFunction.complementary_plates}</span>}
                 {selectedFunction.session && <span><strong>Session:</strong> {selectedFunction.session}</span>}
                 {selectedFunction.catering && <span><strong>Catering:</strong> {selectedFunction.catering}</span>}
@@ -565,7 +617,42 @@ function Events({ profile }) {
               <p className="text-xs text-gray-400 text-right">Last synced: {formatDate(selectedFunction.synced_at)}</p>
             )}
 
-            <button onClick={function () { setSelectedFunction(null) }}
+            {selectedFunction.is_tentative && canMergeEvents && (
+              <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4 space-y-2">
+                <h4 className="text-xs font-bold text-indigo-700 uppercase tracking-wider">Merge into a real LMS event</h4>
+                <p className="text-xs text-indigo-600">Once the LMS contract for this booking has synced in, search for it by guest name and merge — all collections and ledger history move over.</p>
+                <input type="text" value={mergeSearch}
+                  onChange={function (e) { searchMergeTargets(e.target.value) }}
+                  placeholder="Search guest name..."
+                  className="w-full px-3 py-2 border border-indigo-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                {mergeSearching && <p className="text-xs text-indigo-400">Searching...</p>}
+                {!mergeSearching && mergeResults.length > 0 && (
+                  <div className="space-y-1 max-h-48 overflow-y-auto">
+                    {mergeResults.map(function (r) {
+                      var picked = mergeTargetId === r.id
+                      return (
+                        <div key={r.id} role="button" tabIndex={0}
+                          onClick={function () { setMergeTargetId(r.id) }}
+                          className={"px-3 py-2 rounded-lg border cursor-pointer text-sm " +
+                            (picked ? "border-indigo-600 bg-indigo-100" : "border-gray-200 bg-white hover:border-gray-300")}>
+                          <div className="font-medium text-gray-900">{r.event_name}{r.client_name ? ' — ' + r.client_name : ''}</div>
+                          <div className="text-xs text-gray-500">{r.venue_name || ''}{r.function_date ? ' · ' + formatDate(r.function_date) : ''}{r.contract_no ? ' · #' + r.contract_no : ''}</div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+                {!mergeSearching && mergeSearch.trim().length >= 2 && mergeResults.length === 0 && (
+                  <p className="text-xs text-gray-400">No matching LMS events found.</p>
+                )}
+                <button type="button" onClick={submitMerge} disabled={!mergeTargetId || mergeSaving}
+                  className="w-full py-2 text-sm font-semibold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors">
+                  {mergeSaving ? 'Merging...' : 'Merge into selected event'}
+                </button>
+              </div>
+            )}
+
+            <button onClick={function () { setSelectedFunction(null); setMergeSearch(''); setMergeResults([]); setMergeTargetId(null) }}
               className="text-sm text-indigo-600 font-medium hover:text-indigo-800 transition-colors">
               ← Back to functions
             </button>

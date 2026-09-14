@@ -724,11 +724,9 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   async function submitTentativeEvent() {
     if (tentativeSaving || !collectDate || !tentativeGuestName.trim() || !tentativeVenue || !tentativeFunctionType) return
     setTentativeSaving(true)
-    var venueName = (activeVenues.find(function (v) { return String(v.id) === tentativeVenue }) || {}).name || ''
     var { data: newId, error } = await supabase.rpc('fn_create_tentative_event', {
-      p_event_name: tentativeFunctionType,
       p_client_name: tentativeGuestName.trim(),
-      p_venue_name: venueName,
+      p_venue_id: Number(tentativeVenue),
       p_function_date: collectDate,
       p_pax: tentativePax ? Number(tentativePax) : null,
       p_function_type: tentativeFunctionType,
