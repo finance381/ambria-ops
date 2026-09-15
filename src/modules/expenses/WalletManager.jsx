@@ -73,8 +73,13 @@ function ProofThumb({ url, label, tone, onOpen }) {
   var isVoice = isVoiceNotePath(url)
   if (isVoice) {
     return (
-      <span className="relative inline-block shrink-0">
-        <audio src={url} controls className="h-8 max-w-[190px]" />
+      /* min-w-0 and w-full, not max-w alone. A native audio player has an
+         intrinsic minimum width of its own — max-width cannot take it below
+         that, so on a narrow phone the control pushed the row past the screen
+         and the page could be swiped sideways into white space. Given a width
+         it can actually use, it lays its controls out to fit. */
+      <span className="relative block min-w-0 max-w-[190px]">
+        <audio src={url} controls className="h-8 w-full min-w-0" />
         <span className={"absolute -top-1 -left-1 px-1 rounded text-[8px] font-bold text-white " + tone}>{label}</span>
       </span>
     )
@@ -2893,18 +2898,22 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
         {/* Two dates on one line, Type on its own. At flex-1 across three
             controls a phone gave each ~110px and a date input will not go
             under about 140, so the row overflowed and Type was cut off. */}
+        {/* min-w-0 on both. A native date input has an intrinsic minimum width,
+            and a grid item defaults to min-width:auto — so the two refused to
+            shrink below it, the row grew past a narrow screen, and the whole
+            page could be swiped sideways into white space. */}
         <div className="grid grid-cols-2 gap-2">
-          <div>
+          <div className="min-w-0">
             <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-[0.08em] mb-1">From</label>
             <input type="date" value={txnFrom} onChange={function (e) { setTxnFrom(e.target.value); openWalletTxns(null, e.target.value, null) }}
               className="w-full h-11 px-3 bg-white border border-slate-200 rounded-xl text-[13px] text-slate-900 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-shadow"
-              style={{ fontSize: '16px' }} />
+              style={{ fontSize: '16px', minWidth: 0 }} />
           </div>
-          <div>
+          <div className="min-w-0">
             <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-[0.08em] mb-1">To</label>
             <input type="date" value={txnTo} onChange={function (e) { setTxnTo(e.target.value); openWalletTxns(null, null, e.target.value) }}
               className="w-full h-11 px-3 bg-white border border-slate-200 rounded-xl text-[13px] text-slate-900 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-shadow"
-              style={{ fontSize: '16px' }} />
+              style={{ fontSize: '16px', minWidth: 0 }} />
           </div>
           <div className="col-span-2">
             <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-[0.08em] mb-1">Type</label>
