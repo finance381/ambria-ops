@@ -3,11 +3,42 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
 
+// The page artwork reaches the browser late.
+//
+// It is imported by a component, so it lives inside the main chunk as a URL
+// string: nothing knows the file exists until half a megabyte of JS has
+// downloaded, parsed and rendered. On a phone that is a second or more of bare
+// ground before the backdrop arrives.
+//
+// This puts the URL in the head instead, so the fetch runs alongside the
+// bundle rather than behind it. It cannot be written into index.html by hand,
+// because the name carries a content hash that only exists after the build —
+// hence reading it back off the bundle here.
+function preloadPageArt() {
+  var base = '/'
+  return {
+    name: 'preload-page-art',
+    apply: 'build',
+    enforce: 'post',
+    configResolved: function (config) { base = config.base },
+    transformIndexHtml: function (html, ctx) {
+      var file = Object.keys(ctx.bundle || {}).find(function (f) { return /pc-bg-[^/]*.webp$/.test(f) })
+      if (!file) return
+      return [{
+        tag: 'link',
+        attrs: { rel: 'preload', as: 'image', href: base + file, fetchpriority: 'high' },
+        injectTo: 'head',
+      }]
+    },
+  }
+}
+
 export default defineConfig({
   base: '/ambria-ops/',
   plugins: [
     react(),
     tailwindcss(),
+    preloadPageArt(),
     VitePWA({
       registerType: 'prompt',
       includeAssets: ['favicon.svg'],
