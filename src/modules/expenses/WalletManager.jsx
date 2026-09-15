@@ -2211,7 +2211,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                 <button type="button" onClick={initiateTransfer} disabled={!ready}
                   className={"flex-1 h-12 inline-flex items-center justify-center gap-1.5 rounded-xl text-[14px] font-bold text-white transition-all " +
                     (ready
-                      ? "bg-gradient-to-b from-emerald-500 to-emerald-600 shadow-[0_2px_8px_rgba(5,150,105,0.30)] hover:from-emerald-600 hover:to-emerald-700 active:scale-[0.98]"
+                      ? "bg-gradient-to-b from-indigo-500 to-indigo-600 shadow-[0_2px_8px_rgba(79,70,229,0.30)] hover:from-indigo-600 hover:to-indigo-700 active:scale-[0.98]"
                       : "bg-slate-300 cursor-not-allowed")}>
                   {transferSaving
                     ? 'Sending…'
