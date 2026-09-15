@@ -14,6 +14,14 @@ import SearchField from '../../components/ui/SearchField'
 
 function byName(a, b) { return (a.name || '').localeCompare(b.name || '') }
 
+// 'YYYY-MM-DD' -> the next calendar day, same format — used to turn a single
+// picked date into a [day, next day) bound against a timestamptz column.
+function nextDay(dateStr) {
+  var d = new Date(dateStr + 'T00:00:00')
+  d.setDate(d.getDate() + 1)
+  return d.toISOString().split('T')[0]
+}
+
 var PAGE_SIZE = 20
 
 
@@ -47,7 +55,7 @@ function extraFieldChips(exp, vendorMap) {
 // Filter state cache — survives mount/unmount within a tab session.
 // Cleared on hard refresh. Not persisted to storage on purpose.
 var _savedFilters = {
-  status: '', from: '', to: '', search: '', filtersOpen: false,
+  status: '', from: '', to: '', ackDate: '', search: '', filtersOpen: false,
   dept: '', expType: '', expSubType: '', venue: '', user: '', amountMin: '', amountMax: ''
 }
 
@@ -57,6 +65,9 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds, glass }) {
   var [allExpStatus, setAllExpStatus] = useState(function () { return _savedFilters.status })
   var [allExpFrom, setAllExpFrom] = useState(function () { return _savedFilters.from })
   var [allExpTo, setAllExpTo] = useState(function () { return _savedFilters.to })
+  // Only meaningful while allExpStatus === 'acknowledged' — filters by the day
+  // an expense was acknowledged (acknowledged_at), not its expense_date.
+  var [ackDateFilter, setAckDateFilter] = useState(function () { return _savedFilters.ackDate })
   var [allExpSearch, setAllExpSearch] = useState(function () { return _savedFilters.search })
   var [allExpSearchD, setAllExpSearchD] = useState(function () { return _savedFilters.search })
   var [allExpLoading, setAllExpLoading] = useState(false)
@@ -105,11 +116,11 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds, glass }) {
   // Persist every filter change to the module-level cache so re-mount (after opening a detail) restores state.
   useEffect(function () {
     _savedFilters = {
-      status: allExpStatus, from: allExpFrom, to: allExpTo, search: allExpSearch, filtersOpen: filtersOpen,
+      status: allExpStatus, from: allExpFrom, to: allExpTo, ackDate: ackDateFilter, search: allExpSearch, filtersOpen: filtersOpen,
       dept: deptFilter, expType: expTypeFilter, expSubType: expSubTypeFilter, venue: venueFilter,
       user: userFilter, amountMin: amountMin, amountMax: amountMax
     }
-  }, [allExpStatus, allExpFrom, allExpTo, allExpSearch, filtersOpen, deptFilter, expTypeFilter, expSubTypeFilter, venueFilter, userFilter, amountMin, amountMax])
+  }, [allExpStatus, allExpFrom, allExpTo, ackDateFilter, allExpSearch, filtersOpen, deptFilter, expTypeFilter, expSubTypeFilter, venueFilter, userFilter, amountMin, amountMax])
 
   useEffect(function () {
     Promise.all([
@@ -123,7 +134,7 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds, glass }) {
 
   useEffect(function () {
     loadAllExps(false)
-  }, [allExpStatus, allExpFrom, allExpTo, allExpSearchD, deptFilter, expTypeFilter, expSubTypeFilter, venueFilter, userFilter, amountMin, amountMax, (scopeDeptIds || []).join(',')])
+  }, [allExpStatus, allExpFrom, allExpTo, ackDateFilter, allExpSearchD, deptFilter, expTypeFilter, expSubTypeFilter, venueFilter, userFilter, amountMin, amountMax, (scopeDeptIds || []).join(',')])
 
   async function loadAllExps(append) {
     var offset = append ? allExps.length : 0
@@ -148,6 +159,9 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds, glass }) {
     }
     if (allExpFrom) query = query.gte('expense_date', allExpFrom)
     if (allExpTo) query = query.lte('expense_date', allExpTo)
+    if (allExpStatus === 'acknowledged' && ackDateFilter) {
+      query = query.gte('acknowledged_at', ackDateFilter).lt('acknowledged_at', nextDay(ackDateFilter))
+    }
     if (allExpSearchD) query = query.ilike('description', '%' + allExpSearchD + '%')
     if (userFilter) query = query.eq('user_id', userFilter)
     if (deptFilter) query = query.eq('expense_allocations.department_id', Number(deptFilter))
@@ -205,6 +219,9 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds, glass }) {
       else if (allExpStatus) totalQuery = totalQuery.eq('status', allExpStatus).is('deleted_at', null)
       if (allExpFrom) totalQuery = totalQuery.gte('expense_date', allExpFrom)
       if (allExpTo) totalQuery = totalQuery.lte('expense_date', allExpTo)
+      if (allExpStatus === 'acknowledged' && ackDateFilter) {
+        totalQuery = totalQuery.gte('acknowledged_at', ackDateFilter).lt('acknowledged_at', nextDay(ackDateFilter))
+      }
       if (allExpSearchD) totalQuery = totalQuery.ilike('description', '%' + allExpSearchD + '%')
       if (userFilter) totalQuery = totalQuery.eq('user_id', userFilter)
       if (deptFilter) totalQuery = totalQuery.eq('expense_allocations.department_id', Number(deptFilter))
@@ -271,6 +288,9 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds, glass }) {
         else if (allExpStatus) q = q.eq('status', allExpStatus).is('deleted_at', null)
         if (allExpFrom) q = q.gte('expense_date', allExpFrom)
         if (allExpTo) q = q.lte('expense_date', allExpTo)
+        if (allExpStatus === 'acknowledged' && ackDateFilter) {
+          q = q.gte('acknowledged_at', ackDateFilter).lt('acknowledged_at', nextDay(ackDateFilter))
+        }
         if (allExpSearchD) q = q.ilike('description', '%' + allExpSearchD + '%')
         if (userFilter) q = q.eq('user_id', userFilter)
         if (deptFilter) q = q.eq('expense_allocations.department_id', Number(deptFilter))
@@ -531,6 +551,7 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds, glass }) {
         if (allExpStatus) count++
         if (allExpFrom) count++
         if (allExpTo) count++
+        if (allExpStatus === 'acknowledged' && ackDateFilter) count++
         if (userFilter) count++
         if (deptFilter) count++
         if (expTypeFilter) count++
@@ -539,7 +560,7 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds, glass }) {
         if (amountMin) count++
         if (amountMax) count++
         function resetFilters() {
-          setAllExpStatus(''); setAllExpFrom(''); setAllExpTo('')
+          setAllExpStatus(''); setAllExpFrom(''); setAllExpTo(''); setAckDateFilter('')
           setUserFilter(''); setDeptFilter(''); setExpTypeFilter(''); setExpSubTypeFilter(''); setVenueFilter('')
           setAmountMin(''); setAmountMax('')
         }
@@ -616,6 +637,12 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds, glass }) {
                       )
                     })}
                   </div>
+                  {allExpStatus === 'acknowledged' && (
+                    <div className="mt-2">
+                      <label className="block text-[10.5px] font-bold uppercase tracking-[0.08em] text-slate-500 mb-1.5">Acknowledged on</label>
+                      <EventDatePicker value={ackDateFilter} onChange={setAckDateFilter} collapsible includePast plain />
+                    </div>
+                  )}
                 </div>
                 {userOptions.length > 0 && (
                   <div>
