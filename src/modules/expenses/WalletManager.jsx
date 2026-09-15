@@ -2170,36 +2170,40 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                 </button>
               </div>
             ) : transferRec.url ? (
-              <div className="flex items-center gap-2 p-2 rounded-lg bg-blue-50 border border-blue-200">
-                <audio src={transferRec.url} controls className="flex-1 h-8" />
-                <button onClick={transferRec.remove} className="text-xs text-red-500 font-bold hover:text-red-700 flex-shrink-0">✕</button>
+              <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-white border border-slate-200">
+                <audio src={transferRec.url} controls className="flex-1 min-w-0 h-8" />
+                <button type="button" onClick={transferRec.remove} aria-label="Remove voice note"
+                  className="shrink-0 w-7 h-7 inline-flex items-center justify-center rounded-lg text-red-600 hover:bg-red-100 transition-colors">
+                  <Icon name="trash" size={14} />
+                </button>
               </div>
             ) : transferRec.recording ? (
               <button type="button" onClick={transferRec.stop}
-                className="w-full py-2.5 rounded-lg bg-red-500 text-white text-sm font-medium animate-pulse flex items-center justify-center gap-2">
-                <span className="w-2.5 h-2.5 bg-white rounded-full" />Recording... Tap to stop
+                className="w-full h-12 inline-flex items-center justify-center gap-2 rounded-xl bg-red-500 text-[13px] font-bold text-white hover:bg-red-600 transition-colors">
+                <span className="w-2.5 h-2.5 rounded-full bg-white animate-pulse" />
+                Recording… tap to stop
               </button>
             ) : (
               <div className="grid grid-cols-2 gap-2">
-                <label className="py-2.5 text-center text-sm text-emerald-600 border border-dashed border-emerald-300 rounded-lg cursor-pointer hover:bg-emerald-50 transition-colors">
-                  📷 Photo
+                <label className="h-12 inline-flex items-center justify-center gap-2 text-[13px] font-bold text-slate-700 border border-slate-200 bg-white rounded-xl cursor-pointer hover:border-indigo-400 hover:text-indigo-600 transition-colors">
+                  <Icon name="camera" size={16} />
+                  Photo
                   <input type="file" accept="image/*" capture="environment" className="sr-only"
                     onChange={function (e) { if (e.target.files?.[0]) setTransferImage(e.target.files[0]); e.target.value = '' }} />
                 </label>
                 <button type="button" onClick={transferRec.start}
-                  className="py-2.5 text-center text-sm text-emerald-600 border border-dashed border-emerald-300 rounded-lg hover:bg-emerald-50 transition-colors">
-                  🎤 Voice note
+                  className="h-12 inline-flex items-center justify-center gap-2 text-[13px] font-bold text-slate-700 border border-slate-200 bg-white rounded-xl hover:border-indigo-400 hover:text-indigo-600 transition-colors">
+                  <Icon name="mic" size={16} />
+                  Voice note
                 </button>
               </div>
             )}
           </div>
-          <div className="flex gap-3 pt-2">
-            <button onClick={closeTransfer}
-              className="flex-1 py-3 text-sm text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors font-semibold">Cancel</button>
-            <button onClick={initiateTransfer}
-              disabled={transferSaving || !transferTo || !transferAmount || Number(transferAmount) <= 0}
-              className="flex-1 py-3 text-sm text-white bg-emerald-600 rounded-xl hover:bg-emerald-700 disabled:opacity-50 transition-colors font-semibold">
-              {transferSaving ? 'Sending...' : 'Send ' + (transferAmount && Number(transferAmount) > 0 ? Number(transferAmount).toLocaleString('en-IN') + ' pts' : '')}
+
+          <div className="flex gap-3 pt-1">
+            <button type="button" onClick={closeTransfer}
+              className="flex-1 h-12 rounded-xl text-[14px] font-bold text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 active:scale-[0.98] transition-all">
+              Cancel
             </button>
             {(function () {
               var ready = !transferSaving && transferTo && transferAmount && Number(transferAmount) > 0
