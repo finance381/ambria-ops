@@ -112,6 +112,14 @@ var WALLET_BG_FOOT = 'linear-gradient(to right, ' + [
   '#ecf0fd 60%', '#ecf0fe 90%', '#a2bbaf 95%', '#8baa9c 100%',
 ].join(', ') + ')'
 
+// EventDatePicker draws its own bordered box. Inside the shared pill that is a
+// border within a border, so the trigger is flattened to just its contents —
+// inline, because these have to beat the classes the component sets itself.
+var DATE_TRIGGER = {
+  border: 0, background: 'transparent', borderRadius: 0,
+  padding: '12px 10px 12px 12px',
+}
+
 function WalletBackdrop() {
   return (
     <div aria-hidden="true" className="pointer-events-none fixed inset-0 -z-10"
@@ -137,66 +145,6 @@ function WalletBackdrop() {
         backgroundRepeat: 'no-repeat, no-repeat',
         backgroundColor: '#ecf0fd',
       }} />
-  )
-}
-
-// A date field that can be any width.
-//
-// A native date control has an intrinsic width it will not go under, and given
-// less room than that Chrome draws no text and no picker — which is how two of
-// them side by side on a phone came out as two empty white boxes. Nothing set
-// on the input fixes that: it is the control's own minimum, and asking it to
-// shrink is what makes it blank.
-//
-// So the control is not what you see. The value is our own text, which
-// truncates like any other text, and the real input lies over it stretched to
-// whatever box we hand it. Absolutely positioned, its intrinsic width stops
-// deciding anything, and tapping it still opens the native picker.
-//
-// It also sidesteps mm/dd/yyyy — the browser picks that order by locale, and
-// here it was showing the American one.
-// The commit is the tick, not the picker.
-//
-// React's onChange is the browser's INPUT event, which runs the whole time the
-// picker is open — so the field took today's date the moment it was opened,
-// before anything had been confirmed. The browser's own CHANGE event is the one
-// that means "done", and React does not hand it to us for a text-like input, so
-// it is listened for directly.
-//
-// Meanwhile the input still has to be a controlled field or React fights the
-// picker for the DOM value on every render. It is controlled by a draft that
-// nobody else can see; only a commit reaches the caller, and only the caller's
-// value is what gets drawn.
-function DateSlot({ label, value, onCommit }) {
-  var ref = useRef(null)
-  var [draft, setDraft] = useState(value)
-
-  useEffect(function () { setDraft(value) }, [value])
-
-  useEffect(function () {
-    var el = ref.current
-    if (!el) return
-    function commit(e) { onCommit(e.target.value) }
-    el.addEventListener('change', commit)
-    return function () { el.removeEventListener('change', commit) }
-  })
-
-  return (
-    <span className="relative flex-1 min-w-0 flex items-center gap-1 pl-3 pr-2.5">
-      {value ? (
-        <span className="min-w-0 truncate text-[13px] font-semibold text-slate-900" data-notranslate>{formatDate(value)}</span>
-      ) : (
-        <span className="min-w-0 truncate text-[13px] text-slate-400">{label}</span>
-      )}
-      {/* The chevron the Type select below has. Nothing is wired to it — the
-          input already covers the whole slot — but without one there was
-          nothing saying this opens anything. */}
-      <Icon name="chevronDown" size={14} className="ml-auto shrink-0 text-slate-400" />
-      <input ref={ref} type="date" aria-label={label} value={draft}
-        onChange={function (e) { setDraft(e.target.value) }}
-        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-        style={{ fontSize: '16px' }} />
-    </span>
   )
 }
 
@@ -2986,14 +2934,26 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           <div>
             <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-[0.08em] mb-1">Time Period</label>
-            <div className="flex items-stretch h-11 overflow-hidden bg-white border border-slate-200 rounded-xl focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-500/20 transition-shadow">
-              <DateSlot label="From" value={txnFrom}
-                onCommit={function (v) { setTxnFrom(v); openWalletTxns(null, v, null) }} />
+            {/* The app's own calendar, the same one the expense filters use.
+                A native date input was the wrong tool twice over: it would not
+                shrink to half a phone row without drawing an empty box, and it
+                took a date the moment its picker opened, because React's
+                onChange is the input event and that runs while the picker is
+                still up. This one fires on a tap and on nothing else. */}
+            <div className="flex items-stretch bg-white border border-slate-200 rounded-xl overflow-hidden">
+              <div className="flex-1 min-w-0">
+                <EventDatePicker value={txnFrom} placeholder="From" collapsible includePast plain
+                  triggerStyle={DATE_TRIGGER}
+                  onChange={function (v) { setTxnFrom(v); openWalletTxns(null, v, null) }} />
+              </div>
               {/* A rule, not a dash: the two halves read as one field
                   otherwise, and a dash on the baseline was easy to miss. */}
               <span aria-hidden="true" className="shrink-0 self-stretch my-2 w-px bg-slate-200" />
-              <DateSlot label="To" value={txnTo}
-                onCommit={function (v) { setTxnTo(v); openWalletTxns(null, null, v) }} />
+              <div className="flex-1 min-w-0">
+                <EventDatePicker value={txnTo} placeholder="To" collapsible includePast plain
+                  triggerStyle={DATE_TRIGGER}
+                  onChange={function (v) { setTxnTo(v); openWalletTxns(null, null, v) }} />
+              </div>
             </div>
           </div>
           <div>
