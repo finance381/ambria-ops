@@ -2899,27 +2899,33 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
           </div>
         </div>
 
-        {/* Two dates on one line, Type on its own. At flex-1 across three
-            controls a phone gave each ~110px and a date input will not go
-            under about 140, so the row overflowed and Type was cut off. */}
-        {/* One column until two genuinely fit. A native date control will not
-            go below its own intrinsic width, so on a narrow screen the pair
-            overflowed the row and the page could be swiped sideways into
-            space nothing paints. Full width each, and nothing has to shrink. */}
+        {/* One pill for the pair, not two.
+
+            Two bordered date fields side by side do not fit a narrow phone:
+            each native control has an intrinsic width it will not go under,
+            and two sets of border and padding cost another fifty pixels on
+            top. Stacking them fixed the overflow but spent two rows on one
+            question. Sharing a single border pays for the second field, so
+            the pair sits on one line with room to spare at 320px. */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          <div className="min-w-0">
-            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-[0.08em] mb-1">From</label>
-            <input type="date" value={txnFrom} onChange={function (e) { setTxnFrom(e.target.value); openWalletTxns(null, e.target.value, null) }}
-              className="w-full h-11 px-3 bg-white border border-slate-200 rounded-xl text-[13px] text-slate-900 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-shadow"
-              style={{ fontSize: '16px' }} />
+          <div>
+            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-[0.08em] mb-1">Period</label>
+            {/* overflow-hidden is the floor: should a browser ever want more
+                room than the row has, it clips inside the card rather than
+                letting the page be swiped sideways. */}
+            <div className="flex items-center gap-1 h-11 px-2 overflow-hidden bg-white border border-slate-200 rounded-xl focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-500/20 transition-shadow">
+              <input type="date" aria-label="From" value={txnFrom}
+                onChange={function (e) { setTxnFrom(e.target.value); openWalletTxns(null, e.target.value, null) }}
+                className="flex-1 h-full bg-transparent border-0 p-0 text-slate-900 focus:outline-none"
+                style={{ fontSize: '16px' }} />
+              <span className="shrink-0 text-[13px] text-slate-300">–</span>
+              <input type="date" aria-label="To" value={txnTo}
+                onChange={function (e) { setTxnTo(e.target.value); openWalletTxns(null, null, e.target.value) }}
+                className="flex-1 h-full bg-transparent border-0 p-0 text-slate-900 focus:outline-none"
+                style={{ fontSize: '16px' }} />
+            </div>
           </div>
-          <div className="min-w-0">
-            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-[0.08em] mb-1">To</label>
-            <input type="date" value={txnTo} onChange={function (e) { setTxnTo(e.target.value); openWalletTxns(null, null, e.target.value) }}
-              className="w-full h-11 px-3 bg-white border border-slate-200 rounded-xl text-[13px] text-slate-900 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-shadow"
-              style={{ fontSize: '16px' }} />
-          </div>
-          <div className="col-span-1 sm:col-span-2">
+          <div>
             <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-[0.08em] mb-1">Type</label>
             <div className="flex gap-2">
               <div className="relative flex-1 min-w-0">
