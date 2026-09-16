@@ -134,7 +134,32 @@ function WalletBackdrop() {
 //
 // It also sidesteps mm/dd/yyyy — the browser picks that order by locale, and
 // here it was showing the American one.
-function DateSlot({ label, value, onChange }) {
+// The commit is the tick, not the picker.
+//
+// React's onChange is the browser's INPUT event, which runs the whole time the
+// picker is open — so the field took today's date the moment it was opened,
+// before anything had been confirmed. The browser's own CHANGE event is the one
+// that means "done", and React does not hand it to us for a text-like input, so
+// it is listened for directly.
+//
+// Meanwhile the input still has to be a controlled field or React fights the
+// picker for the DOM value on every render. It is controlled by a draft that
+// nobody else can see; only a commit reaches the caller, and only the caller's
+// value is what gets drawn.
+function DateSlot({ label, value, onCommit }) {
+  var ref = useRef(null)
+  var [draft, setDraft] = useState(value)
+
+  useEffect(function () { setDraft(value) }, [value])
+
+  useEffect(function () {
+    var el = ref.current
+    if (!el) return
+    function commit(e) { onCommit(e.target.value) }
+    el.addEventListener('change', commit)
+    return function () { el.removeEventListener('change', commit) }
+  })
+
   return (
     <span className="relative flex-1 min-w-0 flex items-center px-3">
       {value ? (
@@ -142,7 +167,8 @@ function DateSlot({ label, value, onChange }) {
       ) : (
         <span className="min-w-0 truncate text-[13px] text-slate-400">{label}</span>
       )}
-      <input type="date" aria-label={label} value={value} onChange={onChange}
+      <input ref={ref} type="date" aria-label={label} value={draft}
+        onChange={function (e) { setDraft(e.target.value) }}
         className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
         style={{ fontSize: '16px' }} />
     </span>
@@ -2937,12 +2963,12 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-[0.08em] mb-1">Time Period</label>
             <div className="flex items-stretch h-11 overflow-hidden bg-white border border-slate-200 rounded-xl focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-500/20 transition-shadow">
               <DateSlot label="From" value={txnFrom}
-                onChange={function (e) { setTxnFrom(e.target.value); openWalletTxns(null, e.target.value, null) }} />
+                onCommit={function (v) { setTxnFrom(v); openWalletTxns(null, v, null) }} />
               {/* A rule, not a dash: the two halves read as one field
                   otherwise, and a dash on the baseline was easy to miss. */}
               <span aria-hidden="true" className="shrink-0 self-stretch my-2 w-px bg-slate-200" />
               <DateSlot label="To" value={txnTo}
-                onChange={function (e) { setTxnTo(e.target.value); openWalletTxns(null, null, e.target.value) }} />
+                onCommit={function (v) { setTxnTo(v); openWalletTxns(null, null, v) }} />
             </div>
           </div>
           <div>
