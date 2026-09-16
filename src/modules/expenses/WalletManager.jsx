@@ -105,10 +105,23 @@ function ProofThumb({ url, label, tone, onOpen }) {
 
 function WalletBackdrop() {
   return (
-    <div aria-hidden="true" className="pointer-events-none fixed inset-x-0 top-0 h-[100lvh] -z-10 bg-no-repeat"
+    // h-screen is the fallback; the lvh height below wins wherever it parses.
+    <div aria-hidden="true" className="pointer-events-none fixed inset-x-0 top-0 h-screen -z-10 bg-no-repeat"
       style={{
+        // The LARGE viewport height: the one that assumes the address bar is
+        // retracted, and so does not change while the page is scrolled. That is
+        // what makes cover safe here. Sized against both axes off a height that
+        // moves, the artwork rescaled as the bar slid away and read as a zoom —
+        // which is what inset-0 would give, since top/bottom resolve against
+        // whatever the viewport is at that moment.
+        height: '100lvh',
         backgroundImage: 'url(' + import.meta.env.BASE_URL + 'wallet-bg.png)',
-        backgroundSize: '100% auto',
+        // Width-driven sizing left the artwork short of the bottom: at 1.65:1
+        // it only makes about 650px on a 393px phone, and the rest of the
+        // screen fell back to flat colour. There is no flat colour that hides
+        // that seam either — the artwork's bottom edge runs from #a6b1cb at one
+        // side through #eef2fd in the middle to #90afa1 at the other.
+        backgroundSize: 'cover',
         // Top of the viewport. Pushing it below the bar cleared the wallet but
         // left a band of flat colour above it, which is a worse artefact than
         // the one it fixed — the bar is translucent, so the artwork is meant to
