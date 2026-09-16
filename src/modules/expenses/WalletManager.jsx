@@ -10,6 +10,12 @@ import EventDatePicker from '../../components/ui/EventDatePicker'
 import { useVoice } from '../../hooks/useVoice'
 import { useAudioRecorder } from '../../hooks/useAudioRecorder'
 import { generateCollectionReceiptPdf } from '../../lib/pdfReceipt'
+// Imported rather than read out of public/, for the same reasons PageBackdrop
+// gives: the base path is handled for us, and the content hash means a new
+// backdrop is never served from a stale cache. It was a 1.05MB PNG; as WebP at
+// quality 92 the same artwork is 23KB, which is why it used to be visibly
+// absent for a moment every time the wallet opened.
+import walletBg from '../../assets/wallet-bg.webp'
 import { registerPdfFont } from '../../lib/pdfFont'
 import { openOrSharePdf } from '../../lib/pdfOutput'
 import { plainParticularsLines, plainDateLines, makeStatementCellHooks } from '../../lib/pdfStatementTable'
@@ -138,7 +144,7 @@ function WalletBackdrop() {
     // keeps the foot at the foot while it loads.
     <div aria-hidden="true" className="pointer-events-none fixed inset-0 -z-10 flex flex-col overflow-hidden"
       style={{ backgroundColor: '#ecf0fd' }}>
-      <img src={import.meta.env.BASE_URL + 'wallet-bg.png'} alt="" fetchpriority="high" decoding="async"
+      <img src={walletBg} alt="" fetchpriority="high" decoding="async"
         className="w-full shrink-0" style={{ aspectRatio: '977 / 1609' }} />
       <div className="flex-1" style={{ backgroundImage: WALLET_BG_FOOT }} />
     </div>

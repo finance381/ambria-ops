@@ -42,6 +42,13 @@ export default defineConfig({
     VitePWA({
       registerType: 'prompt',
       includeAssets: ['favicon.svg'],
+      // The default glob is js,css,html,ico,png,svg — which quietly left every
+      // .webp out, and both page backdrops are webp. They were fetched over the
+      // network on a cold load while everything around them came from the
+      // cache, which is the one thing a backdrop must not do.
+      workbox: {
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,webp}'],
+      },
       manifest: {
           "name": "Ambria Ops",
           "short_name": "Ambria Ops",
