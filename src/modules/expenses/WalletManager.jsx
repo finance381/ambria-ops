@@ -2914,17 +2914,27 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                 room than the row has, it clips inside the card rather than
                 letting the page be swiped sideways. */}
             <div className="flex items-center gap-2 h-11 px-3 overflow-hidden bg-white border border-slate-200 rounded-xl focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-500/20 transition-shadow">
+              {/* flex-auto, not flex-1: flex-1 bases the field at zero and lets
+                  it be squeezed under its own minimum, and a native date field
+                  given less room than it needs draws nothing at all — two empty
+                  white boxes. Basing on content means it starts at the width it
+                  wants. */}
               <input type="date" aria-label="From" value={txnFrom}
                 onChange={function (e) { setTxnFrom(e.target.value); openWalletTxns(null, e.target.value, null) }}
-                className="flex-1 h-full bg-transparent border-0 p-0 text-slate-900 focus:outline-none"
+                className="flex-auto h-full bg-transparent border-0 p-0 text-slate-900 focus:outline-none [&::-webkit-calendar-picker-indicator]:hidden sm:[&::-webkit-calendar-picker-indicator]:inline-block"
                 style={{ fontSize: '16px' }} />
               {/* A rule, not a dash: the two halves read as one field otherwise,
                   and a dash sitting on the baseline was easy to miss between
                   two rows of digits. */}
               <span aria-hidden="true" className="shrink-0 self-stretch my-2 w-px bg-slate-200" />
+              {/* The picker button costs about twenty pixels a field, which is
+                  exactly what a phone does not have. It goes on a narrow
+                  screen, where tapping the field opens the picker anyway, and
+                  comes back on a wide one, where a mouse needs something to
+                  click and there is room for it. */}
               <input type="date" aria-label="To" value={txnTo}
                 onChange={function (e) { setTxnTo(e.target.value); openWalletTxns(null, null, e.target.value) }}
-                className="flex-1 h-full bg-transparent border-0 p-0 text-slate-900 focus:outline-none"
+                className="flex-auto h-full bg-transparent border-0 p-0 text-slate-900 focus:outline-none [&::-webkit-calendar-picker-indicator]:hidden sm:[&::-webkit-calendar-picker-indicator]:inline-block"
                 style={{ fontSize: '16px' }} />
             </div>
           </div>
