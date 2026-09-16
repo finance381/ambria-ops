@@ -122,29 +122,26 @@ var DATE_TRIGGER = {
 
 function WalletBackdrop() {
   return (
-    <div aria-hidden="true" className="pointer-events-none fixed inset-0 -z-10"
-      style={{
-        // Two layers, and NEITHER of them can be rescaled by a change of
-        // height. That is the whole point.
-        //
-        // The artwork is sized by width alone, so the element growing taller as
-        // the address bar retracts does not touch it. cover would, and did —
-        // it was that rescaling, over and over as the bar slid in and out, that
-        // read as the background zooming while the page scrolled.
-        //
-        // The gradient under it is constant down its whole length, so
-        // stretching it vertically changes nothing you can see. Between them
-        // the screen is covered to the bottom with nothing that moves.
-        backgroundImage: 'url(' + import.meta.env.BASE_URL + 'wallet-bg.png), ' + WALLET_BG_FOOT,
-        backgroundSize: '100% auto, 100% 100%',
-        // Top of the viewport. Pushing it below the bar cleared the wallet but
-        // left a band of flat colour above it, which is a worse artefact than
-        // the one it fixed — the bar is translucent, so the artwork is meant to
-        // run underneath it.
-        backgroundPosition: 'center top, center top',
-        backgroundRepeat: 'no-repeat, no-repeat',
-        backgroundColor: '#ecf0fd',
-      }} />
+    // Two pieces stacked, the foot taking whatever the artwork leaves. As
+    // background layers the foot was painted across the whole element and the
+    // artwork over the top of it, so until the artwork arrived — and it is a
+    // megabyte — the edge colours it continues were the entire screen: a dark
+    // stripe down one side and a green one down the other. It can only ever be
+    // the part below the artwork, so it is laid out as that part.
+    //
+    // Nothing here is measured against height. The artwork is as wide as the
+    // element and as tall as its own proportions make it, so the element
+    // growing taller when the address bar retracts cannot resize it — that
+    // rescaling, over and over as the bar slid in and out, was the background
+    // appearing to zoom while the page scrolled. aspect-ratio means the box is
+    // the right size before the file is there rather than after, which is what
+    // keeps the foot at the foot while it loads.
+    <div aria-hidden="true" className="pointer-events-none fixed inset-0 -z-10 flex flex-col overflow-hidden"
+      style={{ backgroundColor: '#ecf0fd' }}>
+      <img src={import.meta.env.BASE_URL + 'wallet-bg.png'} alt="" fetchpriority="high" decoding="async"
+        className="w-full shrink-0" style={{ aspectRatio: '977 / 1609' }} />
+      <div className="flex-1" style={{ backgroundImage: WALLET_BG_FOOT }} />
+    </div>
   )
 }
 
