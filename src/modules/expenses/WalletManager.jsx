@@ -174,12 +174,16 @@ function DateSlot({ label, value, onCommit }) {
   })
 
   return (
-    <span className="relative flex-1 min-w-0 flex items-center px-3">
+    <span className="relative flex-1 min-w-0 flex items-center gap-1 pl-3 pr-2.5">
       {value ? (
         <span className="min-w-0 truncate text-[13px] font-semibold text-slate-900" data-notranslate>{formatDate(value)}</span>
       ) : (
         <span className="min-w-0 truncate text-[13px] text-slate-400">{label}</span>
       )}
+      {/* The chevron the Type select below has. Nothing is wired to it — the
+          input already covers the whole slot — but without one there was
+          nothing saying this opens anything. */}
+      <Icon name="chevronDown" size={14} className="ml-auto shrink-0 text-slate-400" />
       <input ref={ref} type="date" aria-label={label} value={draft}
         onChange={function (e) { setDraft(e.target.value) }}
         className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
