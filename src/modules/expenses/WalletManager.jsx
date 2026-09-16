@@ -103,31 +103,39 @@ function ProofThumb({ url, label, tone, onOpen }) {
   )
 }
 
+// The artwork's own bottom edge, read off the file: a dark sliver at one side,
+// a wash of #ecf0fd–#f4f6fe across the middle, and the leaf at the other. Laid
+// out left to right it continues the picture downwards, so the artwork can stop
+// where it stops and the screen still ends in the colours it was ending in.
+var WALLET_BG_FOOT = 'linear-gradient(to right, ' + [
+  '#a7b6ce 0%', '#edf0fd 4%', '#f4f6fe 25%', '#eef2fd 42%',
+  '#ecf0fd 60%', '#ecf0fe 90%', '#a2bbaf 95%', '#8baa9c 100%',
+].join(', ') + ')'
+
 function WalletBackdrop() {
   return (
-    // h-screen is the fallback; the lvh height below wins wherever it parses.
-    <div aria-hidden="true" className="pointer-events-none fixed inset-x-0 top-0 h-screen -z-10 bg-no-repeat"
+    <div aria-hidden="true" className="pointer-events-none fixed inset-0 -z-10"
       style={{
-        // The LARGE viewport height: the one that assumes the address bar is
-        // retracted, and so does not change while the page is scrolled. That is
-        // what makes cover safe here. Sized against both axes off a height that
-        // moves, the artwork rescaled as the bar slid away and read as a zoom —
-        // which is what inset-0 would give, since top/bottom resolve against
-        // whatever the viewport is at that moment.
-        height: '100lvh',
-        backgroundImage: 'url(' + import.meta.env.BASE_URL + 'wallet-bg.png)',
-        // Width-driven sizing left the artwork short of the bottom: at 1.65:1
-        // it only makes about 650px on a 393px phone, and the rest of the
-        // screen fell back to flat colour. There is no flat colour that hides
-        // that seam either — the artwork's bottom edge runs from #a6b1cb at one
-        // side through #eef2fd in the middle to #90afa1 at the other.
-        backgroundSize: 'cover',
+        // Two layers, and NEITHER of them can be rescaled by a change of
+        // height. That is the whole point.
+        //
+        // The artwork is sized by width alone, so the element growing taller as
+        // the address bar retracts does not touch it. cover would, and did —
+        // it was that rescaling, over and over as the bar slid in and out, that
+        // read as the background zooming while the page scrolled.
+        //
+        // The gradient under it is constant down its whole length, so
+        // stretching it vertically changes nothing you can see. Between them
+        // the screen is covered to the bottom with nothing that moves.
+        backgroundImage: 'url(' + import.meta.env.BASE_URL + 'wallet-bg.png), ' + WALLET_BG_FOOT,
+        backgroundSize: '100% auto, 100% 100%',
         // Top of the viewport. Pushing it below the bar cleared the wallet but
         // left a band of flat colour above it, which is a worse artefact than
         // the one it fixed — the bar is translucent, so the artwork is meant to
         // run underneath it.
-        backgroundPosition: 'center top',
-        backgroundColor: '#eaeefb',
+        backgroundPosition: 'center top, center top',
+        backgroundRepeat: 'no-repeat, no-repeat',
+        backgroundColor: '#ecf0fd',
       }} />
   )
 }
