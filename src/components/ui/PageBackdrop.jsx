@@ -39,18 +39,24 @@ import pcBg from '../../assets/pc-bg.webp'
 function PageBackdrop({ veil }) {
   return (
     <div aria-hidden="true" className="pointer-events-none fixed inset-0 -z-10 overflow-hidden" style={{ backgroundColor: '#afc5db' }}>
-      {/* Blurred, because on a phone cover lands this almost exactly at its
-          native size and the diagonals came out hard-edged — every one of them
-          a line as crisp as the card borders in front of it, which is not what
-          a backdrop is for. scale-110 goes with the blur: a blurred element
-          samples transparent pixels past its own edges and fades out around
-          them, so it is overfilled and the faded ring pushed off-screen. */}
+      {/* Blurred and enlarged, because on a phone cover lands this almost
+          exactly at its native size: the diagonals arrived hard-edged and
+          crowded, every one of them a line as crisp as the card borders in
+          front of it, and a dozen of them across the screen. At 1.35 the same
+          shapes are half as many and twice as broad, which is a ground rather
+          than a pattern, and the blur takes the edge off what is left.
+          Enlarging is also what a blur needs anyway — a blurred element samples
+          transparent pixels past its own edges and fades out around them, so it
+          has to overfill for the faded ring to fall off-screen. */}
       <img src={pcBg} alt="" fetchpriority="high" decoding="async"
-        className="w-full h-full object-cover object-center blur-[2px] scale-110" />
+        className="w-full h-full object-cover object-center blur-[3px] scale-135" />
       {/* A white scrim: the artwork is busiest at the corners and the cards
           need a calm ground to sit on, or every border competes with a
-          diagonal behind it. */}
-      <div className={'absolute inset-0 ' + (veil || 'bg-white/62')} />
+          diagonal behind it.
+          Graded rather than flat — heaviest at the top, where the header and
+          the first row of cards are, and lifting towards the bottom, where
+          there is usually nothing to read and the artwork can be itself. */}
+      <div className={'absolute inset-0 ' + (veil || 'bg-gradient-to-b from-white/72 via-white/62 to-white/50')} />
     </div>
   )
 }
