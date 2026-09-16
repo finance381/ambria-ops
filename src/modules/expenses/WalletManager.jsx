@@ -79,13 +79,19 @@ function ProofThumb({ url, label, tone, onOpen }) {
   var isVoice = isVoiceNotePath(url)
   if (isVoice) {
     return (
-      /* min-w-0 and w-full, not max-w alone. A native audio player has an
-         intrinsic minimum width of its own — max-width cannot take it below
+      /* w-full is what gives this a width at all. Without it the span is
+         shrink-to-fit, so it takes its width from the audio inside it while the
+         audio takes its width from the span — and the pair settle on nothing.
+         The player vanished and left only the badge, which is absolute and so
+         did not need a box to sit in.
+         min-w-0 is still needed alongside it: a native audio player has an
+         intrinsic minimum width of its own, and max-width cannot take it below
          that, so on a narrow phone the control pushed the row past the screen
-         and the page could be swiped sideways into white space. Given a width
-         it can actually use, it lays its controls out to fit. */
-      <span className="relative block min-w-0 max-w-[190px]">
-        <audio src={url} controls className="h-8 w-full min-w-0" />
+         and the page could be swiped sideways into white space.
+         No height, so the browser draws the whole control rather than a strip
+         of one with the timeline dropped. */
+      <span className="relative block w-full min-w-0 max-w-[260px]">
+        <audio src={url} controls className="w-full min-w-0" />
         <span className={"absolute -top-1 -left-1 px-1 rounded text-[8px] font-bold text-white " + tone}>{label}</span>
       </span>
     )
@@ -3291,7 +3297,10 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                         Confirmed {formatDate(t.received_at)}
                       </p>
                     )}
-                    <div className="flex gap-2 mt-1.5">
+                    {/* wrap, because two players side by side on a phone each
+                        end up too narrow for the browser to draw a timeline
+                        in; stacked they each get the row. */}
+                    <div className="flex flex-wrap items-center gap-2 mt-1.5">
                       {issuedUrl && (
                         <ProofThumb url={issuedUrl} label="Sent" tone="bg-blue-600"
                           onOpen={function () { setEnlargedWalletImg(issuedUrl) }} />
