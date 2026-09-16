@@ -119,6 +119,36 @@ function WalletBackdrop() {
   )
 }
 
+// A date field that can be any width.
+//
+// A native date control has an intrinsic width it will not go under, and given
+// less room than that Chrome draws no text and no picker — which is how two of
+// them side by side on a phone came out as two empty white boxes. Nothing set
+// on the input fixes that: it is the control's own minimum, and asking it to
+// shrink is what makes it blank.
+//
+// So the control is not what you see. The value is our own text, which
+// truncates like any other text, and the real input lies over it stretched to
+// whatever box we hand it. Absolutely positioned, its intrinsic width stops
+// deciding anything, and tapping it still opens the native picker.
+//
+// It also sidesteps mm/dd/yyyy — the browser picks that order by locale, and
+// here it was showing the American one.
+function DateSlot({ label, value, onChange }) {
+  return (
+    <span className="relative flex-1 min-w-0 flex items-center px-3">
+      {value ? (
+        <span className="min-w-0 truncate text-[13px] font-semibold text-slate-900" data-notranslate>{formatDate(value)}</span>
+      ) : (
+        <span className="min-w-0 truncate text-[13px] text-slate-400">{label}</span>
+      )}
+      <input type="date" aria-label={label} value={value} onChange={onChange}
+        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+        style={{ fontSize: '16px' }} />
+    </span>
+  )
+}
+
 function avatarTint(name) {
   var s = String(name || '')
   var h = 0
@@ -2899,43 +2929,20 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
           </div>
         </div>
 
-        {/* One pill for the pair, not two.
-
-            Two bordered date fields side by side do not fit a narrow phone:
-            each native control has an intrinsic width it will not go under,
-            and two sets of border and padding cost another fifty pixels on
-            top. Stacking them fixed the overflow but spent two rows on one
-            question. Sharing a single border pays for the second field, so
-            the pair sits on one line with room to spare at 320px. */}
+        {/* One pill for the pair, not two: two bordered date fields side by
+            side do not fit a narrow phone, and stacking them spent two rows
+            on one question. Sharing a border pays for the second field. */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           <div>
             <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-[0.08em] mb-1">Time Period</label>
-            {/* overflow-hidden is the floor: should a browser ever want more
-                room than the row has, it clips inside the card rather than
-                letting the page be swiped sideways. */}
-            <div className="flex items-center gap-2 h-11 px-3 overflow-hidden bg-white border border-slate-200 rounded-xl focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-500/20 transition-shadow">
-              {/* flex-auto, not flex-1: flex-1 bases the field at zero and lets
-                  it be squeezed under its own minimum, and a native date field
-                  given less room than it needs draws nothing at all — two empty
-                  white boxes. Basing on content means it starts at the width it
-                  wants. */}
-              <input type="date" aria-label="From" value={txnFrom}
-                onChange={function (e) { setTxnFrom(e.target.value); openWalletTxns(null, e.target.value, null) }}
-                className="flex-auto h-full bg-transparent border-0 p-0 text-slate-900 focus:outline-none [&::-webkit-calendar-picker-indicator]:hidden sm:[&::-webkit-calendar-picker-indicator]:inline-block"
-                style={{ fontSize: '16px' }} />
-              {/* A rule, not a dash: the two halves read as one field otherwise,
-                  and a dash sitting on the baseline was easy to miss between
-                  two rows of digits. */}
+            <div className="flex items-stretch h-11 overflow-hidden bg-white border border-slate-200 rounded-xl focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-500/20 transition-shadow">
+              <DateSlot label="From" value={txnFrom}
+                onChange={function (e) { setTxnFrom(e.target.value); openWalletTxns(null, e.target.value, null) }} />
+              {/* A rule, not a dash: the two halves read as one field
+                  otherwise, and a dash on the baseline was easy to miss. */}
               <span aria-hidden="true" className="shrink-0 self-stretch my-2 w-px bg-slate-200" />
-              {/* The picker button costs about twenty pixels a field, which is
-                  exactly what a phone does not have. It goes on a narrow
-                  screen, where tapping the field opens the picker anyway, and
-                  comes back on a wide one, where a mouse needs something to
-                  click and there is room for it. */}
-              <input type="date" aria-label="To" value={txnTo}
-                onChange={function (e) { setTxnTo(e.target.value); openWalletTxns(null, null, e.target.value) }}
-                className="flex-auto h-full bg-transparent border-0 p-0 text-slate-900 focus:outline-none [&::-webkit-calendar-picker-indicator]:hidden sm:[&::-webkit-calendar-picker-indicator]:inline-block"
-                style={{ fontSize: '16px' }} />
+              <DateSlot label="To" value={txnTo}
+                onChange={function (e) { setTxnTo(e.target.value); openWalletTxns(null, null, e.target.value) }} />
             </div>
           </div>
           <div>
