@@ -39,12 +39,18 @@ import pcBg from '../../assets/pc-bg.webp'
 function PageBackdrop({ veil }) {
   return (
     <div aria-hidden="true" className="pointer-events-none fixed inset-0 -z-10 overflow-hidden" style={{ backgroundColor: '#afc5db' }}>
+      {/* Blurred, because on a phone cover lands this almost exactly at its
+          native size and the diagonals came out hard-edged — every one of them
+          a line as crisp as the card borders in front of it, which is not what
+          a backdrop is for. scale-110 goes with the blur: a blurred element
+          samples transparent pixels past its own edges and fades out around
+          them, so it is overfilled and the faded ring pushed off-screen. */}
       <img src={pcBg} alt="" fetchpriority="high" decoding="async"
-        className="w-full h-full object-cover object-center" />
+        className="w-full h-full object-cover object-center blur-[2px] scale-110" />
       {/* A white scrim: the artwork is busiest at the corners and the cards
           need a calm ground to sit on, or every border competes with a
           diagonal behind it. */}
-      <div className={'absolute inset-0 ' + (veil || 'bg-white/55')} />
+      <div className={'absolute inset-0 ' + (veil || 'bg-white/62')} />
     </div>
   )
 }
