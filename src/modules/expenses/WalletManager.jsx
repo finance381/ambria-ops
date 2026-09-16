@@ -2909,16 +2909,19 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             the pair sits on one line with room to spare at 320px. */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           <div>
-            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-[0.08em] mb-1">Period</label>
+            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-[0.08em] mb-1">Time Period</label>
             {/* overflow-hidden is the floor: should a browser ever want more
                 room than the row has, it clips inside the card rather than
                 letting the page be swiped sideways. */}
-            <div className="flex items-center gap-1 h-11 px-2 overflow-hidden bg-white border border-slate-200 rounded-xl focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-500/20 transition-shadow">
+            <div className="flex items-center gap-2 h-11 px-3 overflow-hidden bg-white border border-slate-200 rounded-xl focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-500/20 transition-shadow">
               <input type="date" aria-label="From" value={txnFrom}
                 onChange={function (e) { setTxnFrom(e.target.value); openWalletTxns(null, e.target.value, null) }}
                 className="flex-1 h-full bg-transparent border-0 p-0 text-slate-900 focus:outline-none"
                 style={{ fontSize: '16px' }} />
-              <span className="shrink-0 text-[13px] text-slate-300">–</span>
+              {/* A rule, not a dash: the two halves read as one field otherwise,
+                  and a dash sitting on the baseline was easy to miss between
+                  two rows of digits. */}
+              <span aria-hidden="true" className="shrink-0 self-stretch my-2 w-px bg-slate-200" />
               <input type="date" aria-label="To" value={txnTo}
                 onChange={function (e) { setTxnTo(e.target.value); openWalletTxns(null, null, e.target.value) }}
                 className="flex-1 h-full bg-transparent border-0 p-0 text-slate-900 focus:outline-none"
