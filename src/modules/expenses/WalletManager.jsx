@@ -259,6 +259,47 @@ var REF_TYPE_STYLES = {
   salary_adjustment: 'bg-amber-50 text-amber-700 border-amber-200',
 }
 
+// The glyph and tint for a row's leading square. Same families as the chip
+// above, so a row says the same thing twice in two ways — which is the point on
+// a long ledger: the tile is what you scan, the chip is what you read.
+var REF_TYPE_MARKS = {
+  expense:           { icon: 'receipt',    tone: 'bg-red-50 text-red-600' },
+  expense_refund:    { icon: 'undo',       tone: 'bg-green-50 text-green-600' },
+  transfer:          { icon: 'transfer',   tone: 'bg-blue-50 text-blue-600' },
+  issued:            { icon: 'plus',       tone: 'bg-purple-50 text-purple-600' },
+  deducted:          { icon: 'minus',      tone: 'bg-orange-50 text-orange-600' },
+  collection:        { icon: 'banknote',   tone: 'bg-emerald-50 text-emerald-600' },
+  collection_cancel: { icon: 'close',      tone: 'bg-rose-50 text-rose-600' },
+  opening:           { icon: 'wallet',     tone: 'bg-slate-100 text-slate-500' },
+  vendor_payment:    { icon: 'creditCard', tone: 'bg-red-50 text-red-600' },
+  vendor_deduction:  { icon: 'creditCard', tone: 'bg-amber-50 text-amber-600' },
+  salary_payment:    { icon: 'bank',       tone: 'bg-red-50 text-red-600' },
+  salary_adjustment: { icon: 'bank',       tone: 'bg-amber-50 text-amber-600' },
+}
+
+// A reading of the period. The four of them are the same shape on purpose —
+// they are four answers to one question, and giving each its own size or its
+// own filled panel made them look like four unrelated facts.
+function StatTile({ icon, tone, label, value, valueClass }) {
+  return (
+    <div className="flex items-center gap-3 px-3.5 py-3 bg-white border border-slate-200 rounded-xl">
+      <span className={'shrink-0 w-9 h-9 rounded-lg inline-flex items-center justify-center ' + tone}>
+        <Icon name={icon} size={17} />
+      </span>
+      <div className="min-w-0">
+        <p className="text-[11px] font-semibold text-slate-500 leading-none">{label}</p>
+        <p className={'mt-1.5 text-[16px] font-bold tabular-nums leading-none ' + valueClass} data-notranslate>{value}</p>
+      </div>
+    </div>
+  )
+}
+
+var TXN_SORTS = {
+  latest: 'Latest',
+  oldest: 'Oldest',
+  amount: 'Highest amount',
+}
+
 // wallet_transactions rows created by pay_vendor/pay_employee — reference_id points at
 // the ledger_entries row for that specific payment (proof images, deduction reason, etc.)
 var PAYMENT_REF_TYPES = ['vendor_payment', 'vendor_deduction', 'salary_payment', 'salary_adjustment']
@@ -285,6 +326,10 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   var [txnFrom, setTxnFrom] = useState('')
   var [txnTo, setTxnTo] = useState('')
   var [txnRefType, setTxnRefType] = useState('')
+  // Sorted here rather than in the query: the period is already capped at 500
+  // rows and they are all in hand, so reordering them is free and does not cost
+  // a round trip every time somebody changes their mind.
+  var [txnSort, setTxnSort] = useState('latest')
   var [walletSearch, setWalletSearch] = useState('')
   var [walletRoleFilter, setWalletRoleFilter] = useState('')
   var [pdfBusy, setPdfBusy] = useState(false)
@@ -2996,7 +3041,19 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
       <div key={t.id}
         onClick={handleRowClick}
         className={"bg-white border rounded-lg p-3 " + rowBorderClass + (rowIsClickable ? " cursor-pointer hover:border-indigo-300 hover:bg-indigo-50/30 transition-colors" : "")}>
-        <div className="flex items-start justify-between">
+        {/* justify-between was never doing the split — the left column is
+            flex-1 and already pushes the figures right — so the row can simply
+            gain a third child at the front. */}
+        <div className="flex items-start gap-3">
+          {inAdmin && REF_TYPE_MARKS[t.reference_type] && (
+            /* The tile is what you scan down a long ledger; the chip beside the
+               title is what you read once you have stopped. On a phone there is
+               no room to say it twice. */
+            <span aria-hidden="true"
+              className={"shrink-0 w-10 h-10 rounded-xl inline-flex items-center justify-center " + REF_TYPE_MARKS[t.reference_type].tone}>
+              <Icon name={REF_TYPE_MARKS[t.reference_type].icon} size={18} />
+            </span>
+          )}
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               {t.reference_type && (
@@ -3197,6 +3254,214 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     )
     }
 
+    // Four readings of one period. Both layouts print them, so they are worked
+    // out once rather than inside whichever happens to be rendering.
+    var stats = (function () {
+      var chrono = walletTxns.slice().sort(function (a, b) {
+        return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      })
+      var cr = 0, db = 0
+      chrono.forEach(function (t) {
+        if (t.type === 'credit') cr += (t.amount_paise || 0)
+        else db += (t.amount_paise || 0)
+      })
+      var oldest = chrono[0]
+      var newest = chrono[chrono.length - 1]
+      return {
+        credits: cr,
+        debits: db,
+        opening: oldest ? ((oldest.balance_after_paise || 0) - (oldest.type === 'credit' ? (oldest.amount_paise || 0) : -(oldest.amount_paise || 0))) : 0,
+        closing: newest ? (newest.balance_after_paise || 0) : 0,
+      }
+    })()
+
+    var sortedTxns = (function () {
+      if (txnSort === 'latest') return walletTxns
+      var rows = walletTxns.slice()
+      if (txnSort === 'oldest') {
+        return rows.sort(function (a, b) { return new Date(a.created_at) - new Date(b.created_at) })
+      }
+      return rows.sort(function (a, b) { return (b.amount_paise || 0) - (a.amount_paise || 0) })
+    })()
+
+    function applyTxnFilters() { openWalletTxns(null, null, null, null) }
+    function resetTxnFilters() {
+      setTxnFrom(''); setTxnTo(''); setTxnRefType('')
+      openWalletTxns(null, '', '', '')
+    }
+
+    // ── The desktop ledger ──────────────────────────────────────────────
+    // Four bands down the page, each one a card: who this is, what the period
+    // came to, what is being asked of it, and the answer. On a phone the same
+    // material is a single column of sections, because a card inside a 540px
+    // column is a box around the whole screen.
+    function renderTxnsDesktop() {
+      var bal = selectedWallet.balance_paise || 0
+      return (
+        <div className="space-y-4">
+          <WalletBackdrop inAdmin={inAdmin} />
+
+          <button type="button" onClick={goBack}
+            className="inline-flex items-center gap-1.5 h-8 -ml-1 px-2 rounded-lg text-[13px] font-bold text-indigo-600 hover:bg-indigo-50 transition-colors">
+            <Icon name="arrowLeft" size={15} />
+            {(isAdmin || isAuditor) ? 'Back to Wallets' : 'Back'}
+          </button>
+
+          {/* Who. The balance sits on the same line as the name rather than
+              under it: it is the headline fact about this person, not a
+              footnote to their email address. */}
+          <div className="flex items-center gap-4 bg-white border border-slate-200 rounded-2xl px-5 py-4">
+            <span className={"shrink-0 w-12 h-12 rounded-full inline-flex items-center justify-center text-[17px] font-bold " + avatarTint(txnUser.name)}>
+              {(txnUser.name || '?').charAt(0).toUpperCase()}
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-3 flex-wrap">
+                <h2 className="font-display text-[18px] font-bold text-slate-900 leading-tight truncate">{txnUser.name || '—'}</h2>
+                <span className={"inline-flex px-2.5 py-1 rounded-full text-[13px] font-bold tabular-nums " +
+                  (bal < 0 ? "bg-red-100 text-red-700" : bal === 0 ? "bg-slate-100 text-slate-500" : "bg-emerald-100 text-emerald-700")}
+                  data-notranslate>{formatPoints(bal)}</span>
+              </div>
+              <p className="mt-0.5 text-[12px] text-slate-500 truncate">{txnUser.email || '—'}</p>
+            </div>
+            {walletTxns.length > 0 && (
+              <div className="shrink-0 flex items-center gap-2">
+                <button type="button" onClick={exportWalletCSV}
+                  className="inline-flex items-center gap-2 h-10 px-3.5 rounded-xl text-[13px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 transition-colors">
+                  <Icon name="download" size={15} />
+                  Download CSV
+                </button>
+                <button type="button" onClick={exportWalletPDF} disabled={pdfBusy}
+                  className="inline-flex items-center gap-2 h-10 px-3.5 rounded-xl text-[13px] font-bold text-red-700 bg-red-50 border border-red-200 hover:bg-red-100 disabled:opacity-60 transition-colors">
+                  <Icon name={pdfBusy ? 'refresh' : 'fileText'} size={15} />
+                  {pdfBusy ? 'Generating…' : 'Download PDF'}
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* What it came to. */}
+          {walletTxns.length > 0 && (
+            <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
+              <StatTile icon="wallet" tone="bg-indigo-50 text-indigo-600" label="Opening Balance"
+                value={formatPoints(stats.opening)}
+                valueClass={stats.opening < 0 ? 'text-red-600' : 'text-slate-900'} />
+              <StatTile icon="chevronUp" tone="bg-emerald-50 text-emerald-600" label="Total Credits"
+                value={'+' + formatPoints(stats.credits)} valueClass="text-emerald-600" />
+              <StatTile icon="chevronDown" tone="bg-red-50 text-red-600" label="Total Debits"
+                value={'-' + formatPoints(stats.debits)} valueClass="text-red-600" />
+              <StatTile icon="box" tone="bg-violet-50 text-violet-600" label="Closing Balance"
+                value={formatPoints(stats.closing)}
+                valueClass={stats.closing < 0 ? 'text-red-600' : 'text-slate-900'} />
+            </div>
+          )}
+
+          {/* What is being asked of it. Apply re-runs the read; the controls
+              already apply themselves the moment they change, so it is there
+              for the case where nothing changed and you want it again. Reset
+              is the only one that does something no control can. */}
+          <div className="bg-white border border-slate-200 rounded-2xl px-5 py-4">
+            <div className="flex flex-wrap items-end gap-4">
+              <div className="min-w-[300px] flex-[2]">
+                <label className="block text-[11px] font-semibold text-slate-500 mb-1.5">Time Period</label>
+                <div className="flex items-center gap-2">
+                  <span aria-hidden="true" className="shrink-0 w-10 h-11 inline-flex items-center justify-center rounded-xl bg-slate-50 border border-slate-200 text-slate-400">
+                    <Icon name="calendar" size={16} />
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <EventDatePicker value={txnFrom} placeholder="From date" collapsible includePast plain
+                      onChange={function (v) { setTxnFrom(v); openWalletTxns(null, v, null) }} />
+                  </div>
+                  <span aria-hidden="true" className="shrink-0 text-slate-300"><Icon name="arrowRight" size={15} /></span>
+                  <div className="flex-1 min-w-0">
+                    <EventDatePicker value={txnTo} placeholder="To date" collapsible includePast plain
+                      onChange={function (v) { setTxnTo(v); openWalletTxns(null, null, v) }} />
+                  </div>
+                </div>
+              </div>
+
+              <div className="min-w-[200px] flex-1">
+                <label htmlFor="txn-type" className="block text-[11px] font-semibold text-slate-500 mb-1.5">Type</label>
+                <div className="relative">
+                  <select id="txn-type" value={txnRefType}
+                    onChange={function (e) { setTxnRefType(e.target.value); openWalletTxns(null, null, null, e.target.value) }}
+                    className="appearance-none w-full h-11 pl-3.5 pr-9 bg-white border border-slate-200 rounded-xl text-[13px] text-slate-900 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-shadow">
+                    <option value="">All Types</option>
+                    <option value="expense">Expenses</option>
+                    <option value="expense_refund">Refunds</option>
+                    <option value="collection">Collections</option>
+                    <option value="transfer">Transfers</option>
+                    <option value="issued">Issued (admin)</option>
+                    <option value="deducted">Deducted (admin)</option>
+                    <option value="opening">Opening</option>
+                  </select>
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
+                    <Icon name="chevronDown" size={15} />
+                  </span>
+                </div>
+              </div>
+
+              <button type="button" onClick={applyTxnFilters}
+                className="shrink-0 h-11 px-6 inline-flex items-center justify-center gap-2 rounded-xl text-[13px] font-bold text-white bg-gradient-to-b from-indigo-500 to-indigo-600 shadow-[0_2px_8px_rgba(79,70,229,0.30)] hover:from-indigo-600 hover:to-indigo-700 active:scale-[0.98] transition-all">
+                <Icon name="refresh" size={15} />
+                Apply Filters
+              </button>
+              <button type="button" onClick={resetTxnFilters}
+                className="shrink-0 h-11 px-3 rounded-xl text-[13px] font-bold text-indigo-600 hover:bg-indigo-50 transition-colors">
+                Reset
+              </button>
+            </div>
+          </div>
+
+          {/* The answer. */}
+          <div className="bg-white border border-slate-200 rounded-2xl">
+            <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-slate-200">
+              <div className="min-w-0">
+                <h3 className="font-display text-[15px] font-bold text-slate-900">
+                  Transactions <span data-notranslate>({walletTxns.length})</span>
+                </h3>
+                <p className="mt-0.5 text-[12px] text-slate-500">Showing all wallet transactions for the selected period</p>
+              </div>
+              {walletTxns.length > 1 && (
+                /* The real control, invisible and exactly over the text it
+                   describes, so the whole thing is the tap target and the
+                   native picker still opens — the same trick the wallet
+                   list's sort uses. */
+                <span className="relative shrink-0 inline-flex items-center gap-1.5 h-9 px-3 rounded-xl border border-slate-200 text-[13px] text-slate-500">
+                  Sort by:
+                  <span className="font-bold text-slate-900" data-notranslate>{TXN_SORTS[txnSort]}</span>
+                  <Icon name="chevronDown" size={14} className="text-slate-400" />
+                  <select value={txnSort} onChange={function (e) { setTxnSort(e.target.value) }}
+                    aria-label="Sort transactions"
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer">
+                    <option value="latest">Latest</option>
+                    <option value="oldest">Oldest</option>
+                    <option value="amount">Highest amount</option>
+                  </select>
+                </span>
+              )}
+            </div>
+            {walletTxns.length === 0 ? (
+              <p className="px-5 py-14 text-center text-[13px] font-medium text-slate-400">No transactions yet</p>
+            ) : (
+              <div className="p-3 space-y-2">{sortedTxns.map(renderTxnRow)}</div>
+            )}
+          </div>
+
+          {renderIssueModal()}
+          {renderReceiveModal()}
+          {renderCollectModal()}
+          {renderTransferModal()}
+          {renderTransferConfirmModal()}
+          {renderCollectionDetailModal()}
+          {renderPaymentDetailModal()}
+          {renderExpenseDetailModal()}
+          {renderEnlargedImage()}
+        </div>
+      )
+    }
+
+    if (inAdmin) return renderTxnsDesktop()
+
     return (
       <div className="space-y-4">
         <WalletBackdrop inAdmin={inAdmin} />
@@ -3303,18 +3568,8 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
           </div>
         </div>
         {walletTxns.length > 0 && (function () {
-          var chrono = walletTxns.slice().sort(function (a, b) {
-            return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-          })
-          var totalCr = 0, totalDb = 0
-          chrono.forEach(function (t) {
-            if (t.type === 'credit') totalCr += (t.amount_paise || 0)
-            else totalDb += (t.amount_paise || 0)
-          })
-          var oldest = chrono[0]
-          var newest = chrono[chrono.length - 1]
-          var opening = oldest ? ((oldest.balance_after_paise || 0) - (oldest.type === 'credit' ? (oldest.amount_paise || 0) : -(oldest.amount_paise || 0))) : 0
-          var closing = newest ? (newest.balance_after_paise || 0) : 0
+          var totalCr = stats.credits, totalDb = stats.debits
+          var opening = stats.opening, closing = stats.closing
           return (
             /* Four readings of the same period, so they get one shape and one
                type size. Closing stays dark because it is the answer the other
@@ -3406,7 +3661,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
           </div>
         )}
         <div className="space-y-2">
-          {walletTxns.map(renderTxnRow)}
+          {sortedTxns.map(renderTxnRow)}
         </div>
         {renderIssueModal()}
         {renderReceiveModal()}
