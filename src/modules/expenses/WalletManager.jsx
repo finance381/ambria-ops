@@ -2947,6 +2947,256 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   // ═══════════════════════════════════════════════
   if (walletView === 'transactions' && selectedWallet) {
     var txnUser = walletProfiles[selectedWallet.user_id] || {}
+    // One row, drawn the same whichever layout asks for it. It was written
+    // inline in the list; the desktop layout needs the same row inside a
+    // different card, and 240 lines is not something to keep two copies of.
+    function renderTxnRow(t) {
+    var isCredit = t.type === 'credit'
+    var issuedPath = t.issued_image_path || null
+    var receivedPath = t.received_image_path || null
+    var transferRow = t.reference_type === 'transfer' && t.reference_id ? transferParties[t.reference_id] : null
+    if (transferRow) {
+      var transferSenderPath = transferRow.sender_image_path
+      var transferReceiverPath = transferRow.receiver_image_path || transferRow.received_image_path
+      if (transferSenderPath) issuedPath = transferSenderPath
+      if (transferReceiverPath) receivedPath = transferReceiverPath
+    }
+    var issuedUrl = getReceiptUrl(issuedPath)
+    var receivedUrl = getReceiptUrl(receivedPath)
+    var issuedIsVoice = isVoiceNotePath(issuedPath)
+    var receivedIsVoice = isVoiceNotePath(receivedPath)
+    var isOwnWallet = selectedWallet && selectedWallet.user_id === profile.id
+    var canConfirm = isCredit && t.status === 'pending' && isOwnWallet
+    var epcHit = epcRefs[t.id] || null
+    var isEpc = !!epcHit && !epcHit.isCancel
+    var isEpcCancel = !!epcHit && epcHit.isCancel
+    var isCancelled = t.status === 'cancelled'
+    var epcCancellable = isEpc && epcHit.epc.status !== 'cancelled' && (isAdmin || epcHit.epc.collected_by === profile.id)
+    var collCancellable = t.reference_type === 'collection' && !isCancelled && (isAdmin || t.performed_by === profile.id)
+    var isExpRow = (t.reference_type === 'expense' || t.reference_type === 'expense_refund') && t.reference_id
+    var isPayRow = PAYMENT_REF_TYPES.indexOf(t.reference_type) !== -1
+    var rowIsClickable = isExpRow || t.reference_type === 'collection' || isEpc || isPayRow
+    function handleRowClick() {
+      if (!rowIsClickable) return
+      if (isExpRow) {
+        if (onOpenExpense) onOpenExpense(t.reference_id)
+        else openExpenseDetail(t.reference_id)
+      } else if (t.reference_type === 'collection') {
+        openCollectionDetail(t, 'collection')
+      } else if (isEpc) {
+        openCollectionDetail(t, 'epc')
+      } else if (isPayRow) {
+        openPaymentDetail(t)
+      }
+    }
+    var rowBorderClass = isCancelled
+      ? "border-gray-200 opacity-50"
+      : (t.status === 'pending' ? "border-amber-300 bg-amber-50/30" : "border-gray-200")
+    return (
+      <div key={t.id}
+        onClick={handleRowClick}
+        className={"bg-white border rounded-lg p-3 " + rowBorderClass + (rowIsClickable ? " cursor-pointer hover:border-indigo-300 hover:bg-indigo-50/30 transition-colors" : "")}>
+        <div className="flex items-start justify-between">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              {t.reference_type && (
+                <span className={"text-[9px] font-bold uppercase px-1.5 py-0.5 rounded border " + (REF_TYPE_STYLES[t.reference_type] || 'bg-gray-100 text-gray-700 border-gray-300')}>
+                  {REF_TYPE_LABELS[t.reference_type] || t.reference_type}
+                </span>
+              )}
+              {isEpc && (
+                <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded border bg-emerald-50 text-emerald-700 border-emerald-200">
+                  Extra Plates
+                </span>
+              )}
+              {isEpcCancel && (
+                <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded border bg-rose-50 text-rose-700 border-rose-200">
+                  EP Cancel
+                </span>
+              )}
+              <p className={"text-[14px] font-bold text-slate-900 leading-snug " + (isCancelled ? "line-through" : "")}>
+                {t.description || '—'}
+                {t.reference_type === 'transfer' && t.reference_id && transferParties[t.reference_id] && (function () {
+                  var tr = transferParties[t.reference_id]
+                  var cpId = t.type === 'debit' ? tr.to_user_id : tr.from_user_id
+                  var cpName = walletProfiles[cpId]?.name
+                  if (!cpName) return null
+                  return ' ' + (t.type === 'debit' ? '→' : '←') + ' ' + cpName
+                })()}
+                {isEpc && ' · ' + epcHit.epc.extras_charged + ' extras'}
+              </p>
+              {t.reference_type === 'collection' && t.payment_mode && (
+                <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 border border-emerald-200">
+                  {t.payment_mode}
+                </span>
+              )}
+              {t.status === 'pending' && (
+                <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded">Pending</span>
+              )}
+              {isCancelled && (
+                <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 bg-rose-100 text-rose-700 rounded">Cancelled</span>
+              )}
+              {(t.reference_type === 'expense' || t.reference_type === 'expense_refund') && t.reference_id && expenseRefs[t.reference_id] && expenseRefs[t.reference_id].status && (
+                <span className={"text-[9px] font-bold uppercase px-1.5 py-0.5 rounded " + (EXP_STATUS_COLORS[expenseRefs[t.reference_id].status] || 'bg-gray-100 text-gray-600')}>
+                  {EXP_STATUS_LABELS[expenseRefs[t.reference_id].status] || expenseRefs[t.reference_id].status}
+                </span>
+              )}
+            </div>
+            {isCancelled && t.cancelled_reason && (
+              <p className="text-[10px] text-rose-600 italic mt-0.5">Reason: {t.cancelled_reason}</p>
+            )}
+            {/* Enrichment: expense/refund → type › sub-type · event · vendor · extra fields · (refund amount + date) · per-allocation breakdown */}
+            {(t.reference_type === 'expense' || t.reference_type === 'expense_refund') && t.reference_id && expenseRefs[t.reference_id] && (function () {
+              var e = expenseRefs[t.reference_id]
+              var typeName = e.expense_types?.name || ''
+              var subTypeName = e.expense_sub_types?.name || ''
+              var allocs = e.expense_allocations || []
+              var parts = []
+              var pairs = []
+              var subFields = (e.expense_sub_types && e.expense_sub_types.extra_fields) || []
+              var meta = e.metadata || {}
+              var extraFieldValues = []
+              subFields.forEach(function (f) {
+                var val = meta[f.key]
+                if (val == null || val === '') return
+                var display = val
+                if (f.type === 'lookup' && f.source) display = expLookupLabels[f.source + ':' + String(val)] || val
+                pairs.push({ label: f.label || f.key, value: String(display) })
+                extraFieldValues.push(String(display))
+              })
+              // The plain vendor_name column is a fallback shown to the same
+              // value a sub-type "vendor" lookup field already surfaces — skip
+              // it here when that's the case so the vendor name isn't repeated.
+              if (e.vendor_name && extraFieldValues.indexOf(e.vendor_name) === -1) pairs.unshift({ label: 'Vendor', value: e.vendor_name })
+              if (t.reference_type === 'expense_refund' && e.amount_paise) parts.push('orig ' + formatPoints(e.amount_paise) + ' on ' + formatDate(e.expense_date))
+              return (
+                <>
+                  {(typeName || e._event_name) && (
+                    <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+                      {typeName && (
+                        <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 text-[10px] font-bold">
+                          {typeName + (subTypeName ? ' › ' + subTypeName : '')}
+                        </span>
+                      )}
+                      {e._event_name && (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-500">
+                          <Icon name="calendar" size={11} />
+                          {e._event_name}
+                        </span>
+                      )}
+                    </p>
+                  )}
+                  {pairs.length > 0 && (
+                    <p className="mt-1 text-[11px] text-slate-500 leading-snug">
+                      {pairs.map(function (pr, pi) {
+                        return (
+                          <span key={pi}>
+                            {pi > 0 && <span className="text-slate-300"> · </span>}
+                            {pr.label + ': '}
+                            <span className="font-semibold text-slate-700">{pr.value}</span>
+                          </span>
+                        )
+                      })}
+                    </p>
+                  )}
+                  {parts.length > 0 && <p className="mt-1 text-[11px] text-slate-500">{parts.join(' · ')}</p>}
+                  {allocs.length > 0 && (
+                    <div className="mt-0.5 space-y-0.5">
+                      {allocs.map(function (a, ai) {
+                        var allocType = a.expense_types?.name || ''
+                        var allocSubType = a.expense_sub_types?.name || ''
+                        return (
+                          <p key={ai} className="text-[10px] text-slate-500 tabular-nums">
+                            {(a.department || 'Unassigned')}{allocType ? ' · ' + allocType + (allocSubType ? ' › ' + allocSubType : '') : ''} — {formatPoints(a.amount_paise)}
+                          </p>
+                        )
+                      })}
+                    </div>
+                  )}
+                </>
+              )
+            })()}
+            {(function () {
+              var d = new Date(t.created_at)
+              var time = isNaN(d) ? '' : String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0')
+              var ref = t.reference_type
+                ? (REF_TYPE_LABELS[t.reference_type] || t.reference_type) + (t.reference_id ? ' #' + String(t.reference_id).slice(0, 8) : '')
+                : ''
+              var who = t.performed_by && walletProfiles[t.performed_by] ? walletProfiles[t.performed_by].name : ''
+              var bits = [formatDate(t.created_at), time, ref].filter(Boolean)
+              return (
+                <p className="mt-1 text-[11px] text-slate-500 leading-snug">
+                  {bits.map(function (b, bi) {
+                    return (
+                      <span key={bi} className="whitespace-nowrap">
+                        {bi > 0 && <span className="text-slate-300"> · </span>}
+                        {b}
+                      </span>
+                    )
+                  })}
+                  {who && (
+                    <span className="whitespace-nowrap">
+                      <span className="text-slate-300"> · </span>
+                      by <span className="font-semibold text-slate-600">{who}</span>
+                    </span>
+                  )}
+                </p>
+              )
+            })()}
+            {t.received_at && (
+              <p className="mt-1 flex items-center gap-1 text-[11px] font-semibold text-emerald-600">
+                <Icon name="checkCircle" size={12} className="shrink-0" />
+                Confirmed {formatDate(t.received_at)}
+              </p>
+            )}
+            {/* wrap, because two players side by side on a phone each
+                end up too narrow for the browser to draw a timeline
+                in; stacked they each get the row. */}
+            <div className="flex flex-wrap items-center gap-2 mt-1.5">
+              {issuedUrl && (
+                <ProofThumb url={issuedUrl} label="Sent" tone="bg-blue-600"
+                  onOpen={function () { setEnlargedWalletImg(issuedUrl) }} />
+              )}
+              {receivedUrl && (
+                <ProofThumb url={receivedUrl} label="Rcvd" tone="bg-emerald-600"
+                  onOpen={function () { setEnlargedWalletImg(receivedUrl) }} />
+              )}
+            </div>
+            {isPayRow && t.reference_id && paymentRefs[t.reference_id] && (
+              <div onClick={function (ev) { ev.stopPropagation() }}>
+                <PaymentProofThumbs meta={paymentRefs[t.reference_id].metadata} />
+              </div>
+            )}
+          </div>
+          <div className="text-right flex-shrink-0 ml-2">
+            <p className={"text-[15px] font-bold tabular-nums " + (isCredit ? "text-emerald-600" : "text-red-600")} data-notranslate>
+              {isCredit ? '+' : '−'}{formatPoints(Math.abs(t.amount_paise))}
+            </p>
+            <p className="text-[11px] text-slate-400 tabular-nums" data-notranslate>bal: {formatPoints(t.balance_after_paise)}</p>
+            {canConfirm && (
+              <button onClick={function (ev) { ev.stopPropagation(); setReceiveModal(t); setReceiveImage(null) }}
+                className="mt-1.5 px-2 py-1 text-[10px] font-bold text-amber-700 bg-amber-100 border border-amber-300 rounded hover:bg-amber-200 transition-colors">
+                📷 Confirm Received
+              </button>
+            )}
+            {t.reference_type === 'collection' && t.receipt_no && (
+              <button onClick={function (ev) { ev.stopPropagation(); printReceipt(t) }}
+                className="mt-1.5 ml-1 px-2 py-1 text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded hover:bg-blue-100 transition-colors">
+                🖨 #{t.receipt_no}
+              </button>
+            )}
+            {(collCancellable || epcCancellable) && (
+              <button onClick={function (ev) { ev.stopPropagation(); openCancel(t, collCancellable ? 'collection' : 'epc') }}
+                className="mt-1.5 ml-1 px-2 py-1 text-[10px] font-bold text-red-700 bg-red-50 border border-red-200 rounded hover:bg-red-100 transition-colors">
+                🚫 Cancel
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    )
+    }
+
     return (
       <div className="space-y-4">
         <WalletBackdrop inAdmin={inAdmin} />
@@ -3156,252 +3406,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
           </div>
         )}
         <div className="space-y-2">
-          {walletTxns.map(function (t) {
-            var isCredit = t.type === 'credit'
-            var issuedPath = t.issued_image_path || null
-            var receivedPath = t.received_image_path || null
-            var transferRow = t.reference_type === 'transfer' && t.reference_id ? transferParties[t.reference_id] : null
-            if (transferRow) {
-              var transferSenderPath = transferRow.sender_image_path
-              var transferReceiverPath = transferRow.receiver_image_path || transferRow.received_image_path
-              if (transferSenderPath) issuedPath = transferSenderPath
-              if (transferReceiverPath) receivedPath = transferReceiverPath
-            }
-            var issuedUrl = getReceiptUrl(issuedPath)
-            var receivedUrl = getReceiptUrl(receivedPath)
-            var issuedIsVoice = isVoiceNotePath(issuedPath)
-            var receivedIsVoice = isVoiceNotePath(receivedPath)
-            var isOwnWallet = selectedWallet && selectedWallet.user_id === profile.id
-            var canConfirm = isCredit && t.status === 'pending' && isOwnWallet
-            var epcHit = epcRefs[t.id] || null
-            var isEpc = !!epcHit && !epcHit.isCancel
-            var isEpcCancel = !!epcHit && epcHit.isCancel
-            var isCancelled = t.status === 'cancelled'
-            var epcCancellable = isEpc && epcHit.epc.status !== 'cancelled' && (isAdmin || epcHit.epc.collected_by === profile.id)
-            var collCancellable = t.reference_type === 'collection' && !isCancelled && (isAdmin || t.performed_by === profile.id)
-            var isExpRow = (t.reference_type === 'expense' || t.reference_type === 'expense_refund') && t.reference_id
-            var isPayRow = PAYMENT_REF_TYPES.indexOf(t.reference_type) !== -1
-            var rowIsClickable = isExpRow || t.reference_type === 'collection' || isEpc || isPayRow
-            function handleRowClick() {
-              if (!rowIsClickable) return
-              if (isExpRow) {
-                if (onOpenExpense) onOpenExpense(t.reference_id)
-                else openExpenseDetail(t.reference_id)
-              } else if (t.reference_type === 'collection') {
-                openCollectionDetail(t, 'collection')
-              } else if (isEpc) {
-                openCollectionDetail(t, 'epc')
-              } else if (isPayRow) {
-                openPaymentDetail(t)
-              }
-            }
-            var rowBorderClass = isCancelled
-              ? "border-gray-200 opacity-50"
-              : (t.status === 'pending' ? "border-amber-300 bg-amber-50/30" : "border-gray-200")
-            return (
-              <div key={t.id}
-                onClick={handleRowClick}
-                className={"bg-white border rounded-lg p-3 " + rowBorderClass + (rowIsClickable ? " cursor-pointer hover:border-indigo-300 hover:bg-indigo-50/30 transition-colors" : "")}>
-                <div className="flex items-start justify-between">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      {t.reference_type && (
-                        <span className={"text-[9px] font-bold uppercase px-1.5 py-0.5 rounded border " + (REF_TYPE_STYLES[t.reference_type] || 'bg-gray-100 text-gray-700 border-gray-300')}>
-                          {REF_TYPE_LABELS[t.reference_type] || t.reference_type}
-                        </span>
-                      )}
-                      {isEpc && (
-                        <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded border bg-emerald-50 text-emerald-700 border-emerald-200">
-                          Extra Plates
-                        </span>
-                      )}
-                      {isEpcCancel && (
-                        <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded border bg-rose-50 text-rose-700 border-rose-200">
-                          EP Cancel
-                        </span>
-                      )}
-                      <p className={"text-[14px] font-bold text-slate-900 leading-snug " + (isCancelled ? "line-through" : "")}>
-                        {t.description || '—'}
-                        {t.reference_type === 'transfer' && t.reference_id && transferParties[t.reference_id] && (function () {
-                          var tr = transferParties[t.reference_id]
-                          var cpId = t.type === 'debit' ? tr.to_user_id : tr.from_user_id
-                          var cpName = walletProfiles[cpId]?.name
-                          if (!cpName) return null
-                          return ' ' + (t.type === 'debit' ? '→' : '←') + ' ' + cpName
-                        })()}
-                        {isEpc && ' · ' + epcHit.epc.extras_charged + ' extras'}
-                      </p>
-                      {t.reference_type === 'collection' && t.payment_mode && (
-                        <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 border border-emerald-200">
-                          {t.payment_mode}
-                        </span>
-                      )}
-                      {t.status === 'pending' && (
-                        <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded">Pending</span>
-                      )}
-                      {isCancelled && (
-                        <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 bg-rose-100 text-rose-700 rounded">Cancelled</span>
-                      )}
-                      {(t.reference_type === 'expense' || t.reference_type === 'expense_refund') && t.reference_id && expenseRefs[t.reference_id] && expenseRefs[t.reference_id].status && (
-                        <span className={"text-[9px] font-bold uppercase px-1.5 py-0.5 rounded " + (EXP_STATUS_COLORS[expenseRefs[t.reference_id].status] || 'bg-gray-100 text-gray-600')}>
-                          {EXP_STATUS_LABELS[expenseRefs[t.reference_id].status] || expenseRefs[t.reference_id].status}
-                        </span>
-                      )}
-                    </div>
-                    {isCancelled && t.cancelled_reason && (
-                      <p className="text-[10px] text-rose-600 italic mt-0.5">Reason: {t.cancelled_reason}</p>
-                    )}
-                    {/* Enrichment: expense/refund → type › sub-type · event · vendor · extra fields · (refund amount + date) · per-allocation breakdown */}
-                    {(t.reference_type === 'expense' || t.reference_type === 'expense_refund') && t.reference_id && expenseRefs[t.reference_id] && (function () {
-                      var e = expenseRefs[t.reference_id]
-                      var typeName = e.expense_types?.name || ''
-                      var subTypeName = e.expense_sub_types?.name || ''
-                      var allocs = e.expense_allocations || []
-                      var parts = []
-                      var pairs = []
-                      var subFields = (e.expense_sub_types && e.expense_sub_types.extra_fields) || []
-                      var meta = e.metadata || {}
-                      var extraFieldValues = []
-                      subFields.forEach(function (f) {
-                        var val = meta[f.key]
-                        if (val == null || val === '') return
-                        var display = val
-                        if (f.type === 'lookup' && f.source) display = expLookupLabels[f.source + ':' + String(val)] || val
-                        pairs.push({ label: f.label || f.key, value: String(display) })
-                        extraFieldValues.push(String(display))
-                      })
-                      // The plain vendor_name column is a fallback shown to the same
-                      // value a sub-type "vendor" lookup field already surfaces — skip
-                      // it here when that's the case so the vendor name isn't repeated.
-                      if (e.vendor_name && extraFieldValues.indexOf(e.vendor_name) === -1) pairs.unshift({ label: 'Vendor', value: e.vendor_name })
-                      if (t.reference_type === 'expense_refund' && e.amount_paise) parts.push('orig ' + formatPoints(e.amount_paise) + ' on ' + formatDate(e.expense_date))
-                      return (
-                        <>
-                          {(typeName || e._event_name) && (
-                            <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
-                              {typeName && (
-                                <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 text-[10px] font-bold">
-                                  {typeName + (subTypeName ? ' › ' + subTypeName : '')}
-                                </span>
-                              )}
-                              {e._event_name && (
-                                <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-500">
-                                  <Icon name="calendar" size={11} />
-                                  {e._event_name}
-                                </span>
-                              )}
-                            </p>
-                          )}
-                          {pairs.length > 0 && (
-                            <p className="mt-1 text-[11px] text-slate-500 leading-snug">
-                              {pairs.map(function (pr, pi) {
-                                return (
-                                  <span key={pi}>
-                                    {pi > 0 && <span className="text-slate-300"> · </span>}
-                                    {pr.label + ': '}
-                                    <span className="font-semibold text-slate-700">{pr.value}</span>
-                                  </span>
-                                )
-                              })}
-                            </p>
-                          )}
-                          {parts.length > 0 && <p className="mt-1 text-[11px] text-slate-500">{parts.join(' · ')}</p>}
-                          {allocs.length > 0 && (
-                            <div className="mt-0.5 space-y-0.5">
-                              {allocs.map(function (a, ai) {
-                                var allocType = a.expense_types?.name || ''
-                                var allocSubType = a.expense_sub_types?.name || ''
-                                return (
-                                  <p key={ai} className="text-[10px] text-slate-500 tabular-nums">
-                                    {(a.department || 'Unassigned')}{allocType ? ' · ' + allocType + (allocSubType ? ' › ' + allocSubType : '') : ''} — {formatPoints(a.amount_paise)}
-                                  </p>
-                                )
-                              })}
-                            </div>
-                          )}
-                        </>
-                      )
-                    })()}
-                    {(function () {
-                      var d = new Date(t.created_at)
-                      var time = isNaN(d) ? '' : String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0')
-                      var ref = t.reference_type
-                        ? (REF_TYPE_LABELS[t.reference_type] || t.reference_type) + (t.reference_id ? ' #' + String(t.reference_id).slice(0, 8) : '')
-                        : ''
-                      var who = t.performed_by && walletProfiles[t.performed_by] ? walletProfiles[t.performed_by].name : ''
-                      var bits = [formatDate(t.created_at), time, ref].filter(Boolean)
-                      return (
-                        <p className="mt-1 text-[11px] text-slate-500 leading-snug">
-                          {bits.map(function (b, bi) {
-                            return (
-                              <span key={bi} className="whitespace-nowrap">
-                                {bi > 0 && <span className="text-slate-300"> · </span>}
-                                {b}
-                              </span>
-                            )
-                          })}
-                          {who && (
-                            <span className="whitespace-nowrap">
-                              <span className="text-slate-300"> · </span>
-                              by <span className="font-semibold text-slate-600">{who}</span>
-                            </span>
-                          )}
-                        </p>
-                      )
-                    })()}
-                    {t.received_at && (
-                      <p className="mt-1 flex items-center gap-1 text-[11px] font-semibold text-emerald-600">
-                        <Icon name="checkCircle" size={12} className="shrink-0" />
-                        Confirmed {formatDate(t.received_at)}
-                      </p>
-                    )}
-                    {/* wrap, because two players side by side on a phone each
-                        end up too narrow for the browser to draw a timeline
-                        in; stacked they each get the row. */}
-                    <div className="flex flex-wrap items-center gap-2 mt-1.5">
-                      {issuedUrl && (
-                        <ProofThumb url={issuedUrl} label="Sent" tone="bg-blue-600"
-                          onOpen={function () { setEnlargedWalletImg(issuedUrl) }} />
-                      )}
-                      {receivedUrl && (
-                        <ProofThumb url={receivedUrl} label="Rcvd" tone="bg-emerald-600"
-                          onOpen={function () { setEnlargedWalletImg(receivedUrl) }} />
-                      )}
-                    </div>
-                    {isPayRow && t.reference_id && paymentRefs[t.reference_id] && (
-                      <div onClick={function (ev) { ev.stopPropagation() }}>
-                        <PaymentProofThumbs meta={paymentRefs[t.reference_id].metadata} />
-                      </div>
-                    )}
-                  </div>
-                  <div className="text-right flex-shrink-0 ml-2">
-                    <p className={"text-[15px] font-bold tabular-nums " + (isCredit ? "text-emerald-600" : "text-red-600")} data-notranslate>
-                      {isCredit ? '+' : '−'}{formatPoints(Math.abs(t.amount_paise))}
-                    </p>
-                    <p className="text-[11px] text-slate-400 tabular-nums" data-notranslate>bal: {formatPoints(t.balance_after_paise)}</p>
-                    {canConfirm && (
-                      <button onClick={function (ev) { ev.stopPropagation(); setReceiveModal(t); setReceiveImage(null) }}
-                        className="mt-1.5 px-2 py-1 text-[10px] font-bold text-amber-700 bg-amber-100 border border-amber-300 rounded hover:bg-amber-200 transition-colors">
-                        📷 Confirm Received
-                      </button>
-                    )}
-                    {t.reference_type === 'collection' && t.receipt_no && (
-                      <button onClick={function (ev) { ev.stopPropagation(); printReceipt(t) }}
-                        className="mt-1.5 ml-1 px-2 py-1 text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded hover:bg-blue-100 transition-colors">
-                        🖨 #{t.receipt_no}
-                      </button>
-                    )}
-                    {(collCancellable || epcCancellable) && (
-                      <button onClick={function (ev) { ev.stopPropagation(); openCancel(t, collCancellable ? 'collection' : 'epc') }}
-                        className="mt-1.5 ml-1 px-2 py-1 text-[10px] font-bold text-red-700 bg-red-50 border border-red-200 rounded hover:bg-red-100 transition-colors">
-                        🚫 Cancel
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
-            )
-          })}
+          {walletTxns.map(renderTxnRow)}
         </div>
         {renderIssueModal()}
         {renderReceiveModal()}
