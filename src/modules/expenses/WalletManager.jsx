@@ -154,7 +154,7 @@ var ADMIN_GRID = {
 // header glow's motion — slow, eased, reversing, and small enough that it is
 // depth rather than movement. Different durations and offsets, so the three
 // never line up into a pulse.
-function Blob({ className, colour, seconds, delay }) {
+function DriftBlob({ className, colour, seconds, delay }) {
   return (
     <div aria-hidden="true"
       className={'absolute rounded-full ambria-glow-drift ' + className}
@@ -178,9 +178,9 @@ function AdminBackdrop() {
   return (
     <div aria-hidden="true" className="pointer-events-none fixed inset-0 -z-10 overflow-hidden"
       style={{ backgroundColor: '#f7f9fd' }}>
-      <Blob className="-top-[28%] -left-[12%] w-[62%] h-[85%]" colour="rgba(99,102,241,0.20)" seconds={26} delay={0} />
-      <Blob className="-top-[22%] -right-[10%] w-[55%] h-[78%]" colour="rgba(56,189,248,0.17)" seconds={33} delay={-9} />
-      <Blob className="-bottom-[32%] left-[22%] w-[58%] h-[75%]" colour="rgba(139,92,246,0.14)" seconds={29} delay={-17} />
+      <DriftBlob className="-top-[28%] -left-[12%] w-[62%] h-[85%]" colour="rgba(99,102,241,0.20)" seconds={26} delay={0} />
+      <DriftBlob className="-top-[22%] -right-[10%] w-[55%] h-[78%]" colour="rgba(56,189,248,0.17)" seconds={33} delay={-9} />
+      <DriftBlob className="-bottom-[32%] left-[22%] w-[58%] h-[75%]" colour="rgba(139,92,246,0.14)" seconds={29} delay={-17} />
       <div className="absolute inset-0" style={ADMIN_GRID} />
       {/* The floor. Everything above fades into it rather than stopping, so
           there is no edge across the page where the ground runs out. */}
@@ -3447,15 +3447,22 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             )}
           </div>
 
+          {/* The same eleven the phone branch mounts. Two were missing here and
+              one was a name I had invented, which is why the page came up
+              blank: an undefined call in the render path takes the whole tree
+              with it, and a build does not see it because it is only a
+              reference until something runs. */}
           {renderIssueModal()}
           {renderReceiveModal()}
           {renderCollectModal()}
+          {renderTentativeModal()}
           {renderTransferModal()}
           {renderTransferConfirmModal()}
+          {renderCancelModal()}
           {renderCollectionDetailModal()}
           {renderPaymentDetailModal()}
           {renderExpenseDetailModal()}
-          {renderEnlargedImage()}
+          {renderEnlargedImg()}
         </div>
       )
     }
