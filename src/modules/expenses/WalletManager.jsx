@@ -3284,7 +3284,6 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
       return rows.sort(function (a, b) { return (b.amount_paise || 0) - (a.amount_paise || 0) })
     })()
 
-    function applyTxnFilters() { openWalletTxns(null, null, null, null) }
     function resetTxnFilters() {
       setTxnFrom(''); setTxnTo(''); setTxnRefType('')
       openWalletTxns(null, '', '', '')
@@ -3400,15 +3399,17 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                 </div>
               </div>
 
-              <button type="button" onClick={applyTxnFilters}
-                className="shrink-0 h-11 px-6 inline-flex items-center justify-center gap-2 rounded-xl text-[13px] font-bold text-white bg-gradient-to-b from-indigo-500 to-indigo-600 shadow-[0_2px_8px_rgba(79,70,229,0.30)] hover:from-indigo-600 hover:to-indigo-700 active:scale-[0.98] transition-all">
-                <Icon name="refresh" size={15} />
-                Apply Filters
-              </button>
-              <button type="button" onClick={resetTxnFilters}
-                className="shrink-0 h-11 px-3 rounded-xl text-[13px] font-bold text-indigo-600 hover:bg-indigo-50 transition-colors">
-                Reset
-              </button>
+              {/* No Apply. Every control here reads the moment it changes, so a
+                  button promising to apply them was describing work that was
+                  already done. Reset stays because clearing all three at once
+                  is the one thing none of them can do on its own. */}
+              {(txnFrom || txnTo || txnRefType) && (
+                <button type="button" onClick={resetTxnFilters}
+                  className="shrink-0 h-11 px-4 inline-flex items-center gap-1.5 rounded-xl text-[13px] font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors">
+                  <Icon name="close" size={14} />
+                  Reset
+                </button>
+              )}
             </div>
           </div>
 
