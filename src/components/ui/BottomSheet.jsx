@@ -18,11 +18,27 @@ function BottomSheet({ open, onClose, title, children }) {
   return createPortal((
     <div className="fixed inset-0 z-[9998]" onClick={onClose}>
       <div className="absolute inset-0 bg-black/40 transition-opacity" />
+      {/* A sheet on a phone, a dialog on anything wider.
+          Anchored to the bottom edge and stretched between the sides, this was
+          a form running the full width of a desk — a label at one end of
+          nineteen hundred pixels and its field at the other. A sheet is the
+          right shape for a screen you hold; on a screen you sit at, the same
+          panel wants a width it can be read across and the middle of the
+          viewport to sit in.
+
+          sm: measures the viewport rather than the column the phone shell
+          renders into, which is usually a trap — here it is exactly right, because
+          this is portalled to <body> and covers the whole window whatever the
+          shell around it is doing. */}
       <div
-        className="absolute bottom-0 left-0 right-0 bg-white/60 backdrop-blur-2xl rounded-t-2xl max-h-[85vh] flex flex-col shadow-2xl border-t border-white/60"
+        className={"absolute bg-white/60 backdrop-blur-2xl max-h-[85vh] flex flex-col shadow-2xl border-white/60 " +
+          "inset-x-0 bottom-0 rounded-t-2xl border-t " +
+          "sm:inset-x-auto sm:bottom-auto sm:left-1/2 sm:top-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 " +
+          "sm:w-[min(36rem,calc(100vw-3rem))] sm:rounded-2xl sm:border"}
         onClick={function (e) { e.stopPropagation() }}
       >
-        <div className="flex items-center justify-center pt-3 pb-1">
+        {/* The grab handle is a promise about dragging that only a sheet makes. */}
+        <div className="flex items-center justify-center pt-3 pb-1 sm:hidden">
           <div className="w-10 h-1 bg-slate-300 rounded-full" />
         </div>
         {/* No × here. Every sheet that uses this carries its own dismissal —
@@ -33,8 +49,9 @@ function BottomSheet({ open, onClose, title, children }) {
 
             If a sheet ever ships without one, it needs a × back, not a user
             hunting for the backdrop behind a full-height panel. */}
+        {/* sm:pt-4 replaces the space the hidden grab handle was leaving. */}
         {title && (
-          <div className="px-5 pb-3 border-b border-slate-900/[0.06]">
+          <div className="px-5 pb-3 sm:pt-4 border-b border-slate-900/[0.06]">
             <h3 className="font-display text-[15px] font-bold text-slate-900">{title}</h3>
           </div>
         )}
