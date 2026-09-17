@@ -132,25 +132,65 @@ var DATE_TRIGGER = {
   padding: '12px 10px 12px 12px',
 }
 
-// The desktop ground. Two washes, barely there, anchored off the top corners.
+// A hairline grid, faded out as it falls. It is the one mark on this ground
+// that is actually drawn, and it is the reason the page reads as a surface
+// rather than as a colour: rules at 3.5% are below the threshold you would call
+// a pattern, but they give the eye a scale, and a wash with a scale behind it
+// stops looking like an empty gradient. The mask takes it out before it reaches
+// the content, so nothing is ever ruled through a table.
+var ADMIN_GRID = {
+  backgroundImage: [
+    'linear-gradient(rgba(15,23,42,0.035) 1px, transparent 1px)',
+    'linear-gradient(90deg, rgba(15,23,42,0.035) 1px, transparent 1px)',
+  ].join(', '),
+  backgroundSize: '44px 44px',
+  maskImage: 'radial-gradient(120% 75% at 50% 0%, #000 30%, transparent 78%)',
+  WebkitMaskImage: 'radial-gradient(120% 75% at 50% 0%, #000 30%, transparent 78%)',
+}
+
+// Each blob is its own element rather than a background layer, so it can be
+// moved: a gradient cannot be animated without repainting it, but a div can be
+// translated on the compositor for nothing. They borrow ambria-glow-drift, the
+// header glow's motion — slow, eased, reversing, and small enough that it is
+// depth rather than movement. Different durations and offsets, so the three
+// never line up into a pulse.
+function Blob({ className, colour, seconds, delay }) {
+  return (
+    <div aria-hidden="true"
+      className={'absolute rounded-full ambria-glow-drift ' + className}
+      style={{
+        backgroundImage: 'radial-gradient(closest-side, ' + colour + ', transparent)',
+        animationDuration: seconds + 's',
+        animationDelay: delay + 's',
+      }} />
+  )
+}
+
+// The desktop ground.
 //
-// A photograph does not survive this screen. On a phone it is a tall column and
-// the picture fills it; across a 1500px content area the same picture becomes a
-// wallet lying under the ledger, with tables and figures reading over the top of
-// it. What is wanted behind an admin page is not a subject at all — just enough
-// tint that the white cards have something to be white against.
-var ADMIN_WASHES = [
-  'radial-gradient(45% 55% at 0% 0%,   rgba(99,102,241,0.10), transparent 70%)',
-  'radial-gradient(40% 50% at 100% 0%, rgba(56,189,248,0.09), transparent 70%)',
-].join(', ')
+// A photograph does not survive this screen. On a phone the wallet is a tall
+// column and the artwork fills it; across a 1500px content area the same
+// artwork becomes a wallet lying under the ledger, with rows and figures
+// reading over the top of it. What belongs behind an admin page is not a
+// subject at all — a surface, with enough going on that it is not flat and
+// little enough that nobody reads it.
+function AdminBackdrop() {
+  return (
+    <div aria-hidden="true" className="pointer-events-none fixed inset-0 -z-10 overflow-hidden"
+      style={{ backgroundColor: '#f7f9fd' }}>
+      <Blob className="-top-[28%] -left-[12%] w-[62%] h-[85%]" colour="rgba(99,102,241,0.20)" seconds={26} delay={0} />
+      <Blob className="-top-[22%] -right-[10%] w-[55%] h-[78%]" colour="rgba(56,189,248,0.17)" seconds={33} delay={-9} />
+      <Blob className="-bottom-[32%] left-[22%] w-[58%] h-[75%]" colour="rgba(139,92,246,0.14)" seconds={29} delay={-17} />
+      <div className="absolute inset-0" style={ADMIN_GRID} />
+      {/* The floor. Everything above fades into it rather than stopping, so
+          there is no edge across the page where the ground runs out. */}
+      <div className="absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-b from-transparent to-[#f7f9fd]" />
+    </div>
+  )
+}
 
 function WalletBackdrop({ inAdmin }) {
-  if (inAdmin) {
-    return (
-      <div aria-hidden="true" className="pointer-events-none fixed inset-0 -z-10"
-        style={{ backgroundColor: '#f6f8fc', backgroundImage: ADMIN_WASHES }} />
-    )
-  }
+  if (inAdmin) return <AdminBackdrop />
   return (
     // Two pieces stacked, the foot taking whatever the artwork leaves. As
     // background layers the foot was painted across the whole element and the
