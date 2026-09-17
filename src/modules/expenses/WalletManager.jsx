@@ -132,20 +132,22 @@ var DATE_TRIGGER = {
   padding: '12px 10px 12px 12px',
 }
 
-// A hairline grid, faded out as it falls. It is the one mark on this ground
-// that is actually drawn, and it is the reason the page reads as a surface
-// rather than as a colour: rules at 3.5% are below the threshold you would call
-// a pattern, but they give the eye a scale, and a wash with a scale behind it
-// stops looking like an empty gradient. The mask takes it out before it reaches
-// the content, so nothing is ever ruled through a table.
+// A hairline grid, corner to corner. It is the one mark on this ground that is
+// actually drawn, and it is the reason the page reads as a surface rather than
+// as a colour: rules this faint are below the threshold you would call a
+// pattern, but they give the eye a scale, and a wash with a scale behind it
+// stops looking like an empty gradient.
+//
+// No mask. Fading it out left the grid showing in whichever corner the blobs
+// happened to be palest, which reads as a smudge rather than as a ruled ground
+// — if it is structure it has to hold everywhere, and if it cannot hold
+// everywhere it should not be there at all.
 var ADMIN_GRID = {
   backgroundImage: [
-    'linear-gradient(rgba(15,23,42,0.035) 1px, transparent 1px)',
-    'linear-gradient(90deg, rgba(15,23,42,0.035) 1px, transparent 1px)',
+    'linear-gradient(rgba(15,23,42,0.05) 1px, transparent 1px)',
+    'linear-gradient(90deg, rgba(15,23,42,0.05) 1px, transparent 1px)',
   ].join(', '),
   backgroundSize: '44px 44px',
-  maskImage: 'radial-gradient(120% 75% at 50% 0%, #000 30%, transparent 78%)',
-  WebkitMaskImage: 'radial-gradient(120% 75% at 50% 0%, #000 30%, transparent 78%)',
 }
 
 // Each blob is its own element rather than a background layer, so it can be
