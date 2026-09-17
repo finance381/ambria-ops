@@ -2736,69 +2736,103 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
       })
     }
 
-    var filtersActive = !!walletRoleFilter || walletBalanceState !== 'all' || walletPendingOnly || walletSort !== 'name'
-
-    return (
-      <div className="space-y-4">
-
-        {/* The artwork is the whole screen behind the list, not a strip behind
-            the title: the illustration sits at the top of a 977x1609 image and
-            the leaves run down both sides, so cropping it to a 280px band threw
-            away everything but the empty middle.
-
-            fixed, so it stays put while ninety rows scroll over it. -z-10 works
-            because the phone shell root is relative + isolate — without that
-            stacking context it would fall behind the body and vanish.
-
-            bg-top keeps the wallet anchored: cover on a portrait image in a
-            narrower portrait viewport crops the sides, and centring it would
-            push the illustration off the top on a short screen. */}
-        <WalletBackdrop inAdmin={inAdmin} />
-
-        <div className="relative -mx-4 px-4 pt-3 pb-5">
-
-          <h1 className="relative font-display text-[30px] font-extrabold text-slate-900 leading-none tracking-[-0.03em]">Wallet</h1>
-          <p className="relative mt-2 text-[14px] font-medium text-slate-500">Manage and track wallet balances</p>
-
-          {/* Two figures about the list as a whole, split down the middle. */}
-          <div className="relative mt-5 bg-white/85 backdrop-blur-sm border border-white/70 rounded-2xl shadow-[0_2px_10px_rgba(15,23,42,0.06)] px-4 py-3.5 flex items-center">
-            <button type="button" onClick={function () { setWalletRoleFilter(''); setWalletBalanceState('all'); setWalletPendingOnly(false) }}
-              className="flex-1 min-w-0 flex items-center gap-3 text-left">
-              <span className="shrink-0 w-10 h-10 rounded-2xl bg-indigo-100 text-indigo-600 inline-flex items-center justify-center">
-                <Icon name="wallet" size={19} />
-              </span>
-              <span className="min-w-0">
-                <span className="block font-display text-[17px] font-bold text-slate-900 leading-snug">All Wallets</span>
-                <span className="block text-[13px] font-medium text-slate-500 tabular-nums" data-notranslate>
-                  {filteredWallets.length} wallets
-                </span>
-              </span>
-            </button>
-
-            <span aria-hidden="true" className="shrink-0 w-px h-10 bg-slate-200 mx-2" />
-
-            {(function () {
-              // The sum of what is on screen, not of every wallet in the table:
-              // filter to one role and this has to follow, or it is answering a
-              // question nobody asked.
-              var total = filteredWallets.reduce(function (s, w) { return s + (w.balance_paise || 0) }, 0)
-              return (
-                <div className="flex-1 min-w-0 flex items-center gap-3">
-                  <span className={"shrink-0 w-10 h-10 rounded-2xl inline-flex items-center justify-center " +
-                    (total < 0 ? "bg-red-100 text-red-600" : "bg-emerald-100 text-emerald-600")}>
-                    <Icon name="banknote" size={19} />
-                  </span>
-                  <span className="min-w-0">
-                    <span className="block text-[13px] font-medium text-slate-500 leading-snug">Total Points</span>
-                    <span className={"block font-display text-[16px] font-bold tabular-nums leading-snug whitespace-nowrap " +
-                      (total < 0 ? "text-red-700" : "text-slate-900")} data-notranslate>{formatPoints(total)}</span>
-                  </span>
-                </div>
-              )
-            })()}
-          </div>
+    // The five controls over this list. They are the same controls in both
+    // layouts — a phone stacks them down the page, a desktop lays them along
+    // one toolbar — so they are written once and arranged twice.
+    function renderWalletSearch() {
+      return (
+        <div className="relative flex-1 min-w-[220px]">
+          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
+            <Icon name="search" size={19} />
+          </span>
+          <input type="text" value={walletSearch}
+            onChange={function (e) { setWalletSearch(e.target.value) }}
+            placeholder="Search name, email, role..."
+            className="w-full h-[52px] pl-12 pr-4 bg-white border border-slate-200 rounded-2xl text-[14px] text-slate-900 placeholder:text-slate-400 shadow-[0_1px_2px_rgba(15,23,42,0.04)] focus:outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/15 transition-shadow"
+            style={{ fontSize: '16px' }} />
         </div>
+      )
+    }
 
+    function renderRoleSelect() {
+      return (
+        <div className="relative shrink-0">
+          <select value={walletRoleFilter} onChange={function (e) { setWalletRoleFilter(e.target.value) }}
+            aria-label="Filter by role"
+            className="appearance-none w-[9.5rem] h-[52px] pl-4 pr-9 bg-white border border-slate-200 rounded-2xl text-[14px] font-medium text-slate-700 shadow-[0_1px_2px_rgba(15,23,42,0.04)] focus:outline-none focus:border-indigo-400"
+            style={{ fontSize: '16px' }}>
+            <option value="">All Roles</option>
+            {roleOptions.map(function (r) { return <option key={r} value={r}>{r}</option> })}
+          </select>
+          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
+            <Icon name="chevronDown" size={16} />
+          </span>
+        </div>
+      )
+    }
+
+    // Four words. On a phone they divide the row between them; on a desktop
+    // that row is 1500px wide and each word was sitting alone in the middle of
+    // 340px of nothing, so there they take the width they need.
+    function renderBalanceTabs() {
+      return (
+        <div className={"flex items-center h-[52px] bg-indigo-50/70 rounded-2xl p-1 " + (inAdmin ? "shrink-0" : "flex-1 min-w-0")}>
+          {[['all', 'All'], ['positive', '+ve'], ['zero', 'Zero'], ['negative', '−ve']].map(function (opt) {
+            var active = walletBalanceState === opt[0]
+            return (
+              <button key={opt[0]} type="button" onClick={function () { setWalletBalanceState(opt[0]) }}
+                aria-pressed={active}
+                className={(inAdmin ? "px-5 " : "flex-1 min-w-0 px-1 ") + "h-full text-[13px] font-bold rounded-xl transition-colors " +
+                  (active ? "bg-white text-indigo-700 shadow-[0_1px_3px_rgba(15,23,42,0.10)]" : "text-slate-500 hover:text-slate-800")}>
+                {opt[1]}
+              </button>
+            )
+          })}
+        </div>
+      )
+    }
+
+    function renderPendingToggle() {
+      return (
+        <label className="inline-flex items-center gap-2.5 shrink-0 text-[14px] font-medium text-slate-600 cursor-pointer select-none">
+          <input type="checkbox" checked={walletPendingOnly}
+            onChange={function (e) { setWalletPendingOnly(e.target.checked) }}
+            className="w-5 h-5 rounded-md border-slate-300 accent-indigo-600" />
+          Pending only
+        </label>
+      )
+    }
+
+    function renderWalletSort() {
+      return (
+        <span className="inline-flex items-center gap-1.5 text-[14px] text-slate-500 shrink-0">
+          Sort by:
+          <span className="relative inline-flex items-center gap-1 font-bold text-slate-900">
+            <span data-notranslate>{SORT_LABELS[walletSort] || SORT_LABELS.name}</span>
+            <Icon name="chevronDown" size={15} className="text-slate-400" />
+            {/* The real control, invisible and exactly over the text it
+                describes — so the tap target is the whole thing and the
+                native picker still opens. */}
+            <select value={walletSort} onChange={function (e) { setWalletSort(e.target.value) }}
+              aria-label="Sort by"
+              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+              style={{ fontSize: '16px' }}>
+              <option value="name">Name</option>
+              <option value="balance_desc">Balance high → low</option>
+              <option value="balance_asc">Balance low → high</option>
+              <option value="pending">Most pending</option>
+              <option value="activity">Recent activity</option>
+            </select>
+          </span>
+        </span>
+      )
+    }
+
+    // The wallet chip and Bulk Issue. On a desktop they belong beside the page
+    // title, where the actions for a page live; on a phone they are a row of
+    // their own because the title has no spare width.
+    function renderWalletActions() {
+      return (
         <div className="flex items-center gap-2">
           {myWallet && (
             <button type="button" onClick={function () {
@@ -2832,81 +2866,135 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             </button>
           )}
         </div>
-        {/* Search — a tall pill, the way the mockup has it. */}
-        <div className="relative">
-          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
-            <Icon name="search" size={19} />
-          </span>
-          <input type="text" value={walletSearch}
-            onChange={function (e) { setWalletSearch(e.target.value) }}
-            placeholder="Search name, email, role..."
-            className="w-full h-[52px] pl-12 pr-4 bg-white border border-slate-200 rounded-2xl text-[14px] text-slate-900 placeholder:text-slate-400 shadow-[0_1px_2px_rgba(15,23,42,0.04)] focus:outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/15 transition-shadow"
-            style={{ fontSize: '16px' }} />
-        </div>
+      )
+    }
 
-        <div className="flex items-center gap-2.5">
-          <div className="relative shrink-0">
-            <select value={walletRoleFilter} onChange={function (e) { setWalletRoleFilter(e.target.value) }}
-              className="appearance-none w-[9.5rem] h-[52px] pl-4 pr-9 bg-white border border-slate-200 rounded-2xl text-[14px] font-medium text-slate-700 shadow-[0_1px_2px_rgba(15,23,42,0.04)] focus:outline-none focus:border-indigo-400"
-              style={{ fontSize: '16px' }}>
-              <option value="">All Roles</option>
-              {roleOptions.map(function (r) { return <option key={r} value={r}>{r}</option> })}
-            </select>
-            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
-              <Icon name="chevronDown" size={16} />
-            </span>
+    return (
+      <div className="space-y-4">
+
+        {/* The artwork is the whole screen behind the list, not a strip behind
+            the title: the illustration sits at the top of a 977x1609 image and
+            the leaves run down both sides, so cropping it to a 280px band threw
+            away everything but the empty middle.
+
+            fixed, so it stays put while ninety rows scroll over it. -z-10 works
+            because the phone shell root is relative + isolate — without that
+            stacking context it would fall behind the body and vanish.
+
+            bg-top keeps the wallet anchored: cover on a portrait image in a
+            narrower portrait viewport crops the sides, and centring it would
+            push the illustration off the top on a short screen. */}
+        <WalletBackdrop inAdmin={inAdmin} />
+
+        <div className="relative -mx-4 px-4 pt-3 pb-5">
+
+          {/* On a desktop the page actions belong beside the title, which is
+              where the actions for a page live. A phone gives them a row of
+              their own because the title has no spare width. */}
+          <div className={inAdmin ? "relative flex items-start justify-between gap-4" : "relative"}>
+            <div className="min-w-0">
+              <h1 className="font-display text-[30px] font-extrabold text-slate-900 leading-none tracking-[-0.03em]">Wallet</h1>
+              <p className="mt-2 text-[14px] font-medium text-slate-500">Manage and track wallet balances</p>
+            </div>
+            {inAdmin && <div className="shrink-0">{renderWalletActions()}</div>}
           </div>
 
-          <div className="flex-1 min-w-0 flex items-center h-[52px] bg-indigo-50/70 rounded-2xl p-1">
-            {[['all', 'All'], ['positive', '+ve'], ['zero', 'Zero'], ['negative', '−ve']].map(function (opt) {
-              var active = walletBalanceState === opt[0]
+          {inAdmin ? (
+            /* A wide page can answer more than two questions, and the two it
+               was answering had a third of the row each and nothing in the
+               middle. Deficit and pending are the two that decide whether
+               anybody has to do something today. */
+            (function () {
+              var total = filteredWallets.reduce(function (s, w) { return s + (w.balance_paise || 0) }, 0)
+              var negatives = filteredWallets.filter(function (w) { return (w.balance_paise || 0) < 0 }).length
+              var pending = filteredWallets.reduce(function (s, w) { return s + (w._pendingCount || 0) }, 0)
               return (
-                <button key={opt[0]} type="button" onClick={function () { setWalletBalanceState(opt[0]) }}
-                  aria-pressed={active}
-                  className={"flex-1 min-w-0 h-full px-1 text-[13px] font-bold rounded-xl transition-colors " +
-                    (active ? "bg-white text-indigo-700 shadow-[0_1px_3px_rgba(15,23,42,0.10)]" : "text-slate-500 hover:text-slate-800")}>
-                  {opt[1]}
-                </button>
+                <div className="relative mt-5 grid grid-cols-2 xl:grid-cols-4 gap-3">
+                  <StatTile icon="users" tone="bg-indigo-50 text-indigo-600" label="Wallets"
+                    value={String(filteredWallets.length)} valueClass="text-slate-900" />
+                  <StatTile icon="banknote" tone={total < 0 ? "bg-red-50 text-red-600" : "bg-emerald-50 text-emerald-600"}
+                    label="Total Points" value={formatPoints(total)}
+                    valueClass={total < 0 ? "text-red-700" : "text-slate-900"} />
+                  <StatTile icon="alert" tone="bg-rose-50 text-rose-600" label="In Deficit"
+                    value={String(negatives)} valueClass={negatives > 0 ? "text-rose-700" : "text-slate-900"} />
+                  <StatTile icon="clock" tone="bg-amber-50 text-amber-600" label="Pending"
+                    value={String(pending)} valueClass={pending > 0 ? "text-amber-700" : "text-slate-900"} />
+                </div>
               )
-            })}
+            })()
+          ) : (
+            <>
+            {/* Two figures about the list as a whole, split down the middle. */}
+            <div className="relative mt-5 bg-white/85 backdrop-blur-sm border border-white/70 rounded-2xl shadow-[0_2px_10px_rgba(15,23,42,0.06)] px-4 py-3.5 flex items-center">
+              <button type="button" onClick={function () { setWalletRoleFilter(''); setWalletBalanceState('all'); setWalletPendingOnly(false) }}
+                className="flex-1 min-w-0 flex items-center gap-3 text-left">
+                <span className="shrink-0 w-10 h-10 rounded-2xl bg-indigo-100 text-indigo-600 inline-flex items-center justify-center">
+                  <Icon name="wallet" size={19} />
+                </span>
+                <span className="min-w-0">
+                  <span className="block font-display text-[17px] font-bold text-slate-900 leading-snug">All Wallets</span>
+                  <span className="block text-[13px] font-medium text-slate-500 tabular-nums" data-notranslate>
+                    {filteredWallets.length} wallets
+                  </span>
+                </span>
+              </button>
+
+              <span aria-hidden="true" className="shrink-0 w-px h-10 bg-slate-200 mx-2" />
+
+              {(function () {
+                // The sum of what is on screen, not of every wallet in the table:
+                // filter to one role and this has to follow, or it is answering a
+                // question nobody asked.
+                var total = filteredWallets.reduce(function (s, w) { return s + (w.balance_paise || 0) }, 0)
+                return (
+                  <div className="flex-1 min-w-0 flex items-center gap-3">
+                    <span className={"shrink-0 w-10 h-10 rounded-2xl inline-flex items-center justify-center " +
+                      (total < 0 ? "bg-red-100 text-red-600" : "bg-emerald-100 text-emerald-600")}>
+                      <Icon name="banknote" size={19} />
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block text-[13px] font-medium text-slate-500 leading-snug">Total Points</span>
+                      <span className={"block font-display text-[16px] font-bold tabular-nums leading-snug whitespace-nowrap " +
+                        (total < 0 ? "text-red-700" : "text-slate-900")} data-notranslate>{formatPoints(total)}</span>
+                    </span>
+                  </div>
+                )
+              })()}
+            </div>
+            </>
+          )}
+        </div>
+
+        {inAdmin ? (
+          /* One toolbar. Stacked, these five took four rows and most of a
+             screen before a single wallet appeared. */
+          <div className="bg-white border border-slate-200 rounded-2xl px-4 py-3.5 flex flex-wrap items-center gap-3">
+            {renderWalletSearch()}
+            {renderRoleSelect()}
+            {renderBalanceTabs()}
+            <span aria-hidden="true" className="hidden xl:block w-px h-8 bg-slate-200" />
+            {renderPendingToggle()}
+            {renderWalletSort()}
           </div>
-
-        </div>
-
-        <div className="flex items-center justify-between gap-3">
-          <label className="inline-flex items-center gap-2.5 text-[14px] font-medium text-slate-600 cursor-pointer select-none">
-            <input type="checkbox" checked={walletPendingOnly}
-              onChange={function (e) { setWalletPendingOnly(e.target.checked) }}
-              className="w-5 h-5 rounded-md border-slate-300 accent-indigo-600" />
-            Pending only
-          </label>
-
-          <span className="inline-flex items-center gap-1.5 text-[14px] text-slate-500 shrink-0">
-            Sort by:
-            <span className="relative inline-flex items-center gap-1 font-bold text-slate-900">
-              <span data-notranslate>{SORT_LABELS[walletSort] || SORT_LABELS.name}</span>
-              <Icon name="chevronDown" size={15} className="text-slate-400" />
-              {/* The real control, invisible and exactly over the text it
-                  describes — so the tap target is the whole thing and the
-                  native picker still opens. */}
-              <select value={walletSort} onChange={function (e) { setWalletSort(e.target.value) }}
-                aria-label="Sort by"
-                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                style={{ fontSize: '16px' }}>
-                <option value="name">Name</option>
-                <option value="balance_desc">Balance high → low</option>
-                <option value="balance_asc">Balance low → high</option>
-                <option value="pending">Most pending</option>
-                <option value="activity">Recent activity</option>
-              </select>
-            </span>
-          </span>
-        </div>
+        ) : (
+          <>
+            {renderWalletActions()}
+            {renderWalletSearch()}
+            <div className="flex items-center gap-2.5">
+              {renderRoleSelect()}
+              {renderBalanceTabs()}
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              {renderPendingToggle()}
+              {renderWalletSort()}
+            </div>
+          </>
+        )}
 
         {/* One column unless we are actually on the dashboard. md: measures the
             viewport and the phone shell is a 540px column inside it, so a bare
             md:grid-cols-2 gave the phone two 160px cards. */}
-        <div className={"space-y-2" + (inAdmin ? " md:space-y-0 md:grid md:grid-cols-2 md:gap-2" : "")}>
+        <div className={"space-y-2" + (inAdmin ? " md:space-y-0 md:grid md:grid-cols-2 xl:grid-cols-3 md:gap-2.5" : "")}>
           {filteredWallets.map(function (w) {
             var p = walletProfiles[w.user_id] || {}
             return (
