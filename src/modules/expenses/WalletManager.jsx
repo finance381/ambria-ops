@@ -286,7 +286,11 @@ var REF_TYPE_MARKS = {
 // own filled panel made them look like four unrelated facts.
 function StatTile({ icon, tone, label, value, valueClass }) {
   return (
-    <div className="flex items-center gap-3 px-3.5 py-3 bg-white border border-slate-200 rounded-xl">
+    /* Translucent, so the ruled ground shows through rather than being
+       covered by an opaque panel. No backdrop blur: there can be a hundred of
+       these surfaces on one page and blurring each one is a GPU layer apiece,
+       where plain alpha is free. */
+    <div className="flex items-center gap-3 px-3.5 py-3 bg-white/75 border border-slate-200 rounded-xl">
       <span className={'shrink-0 w-9 h-9 rounded-lg inline-flex items-center justify-center ' + tone}>
         <Icon name={icon} size={17} />
       </span>
@@ -2972,7 +2976,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
         {inAdmin ? (
           /* One toolbar. Stacked, these five took four rows and most of a
              screen before a single wallet appeared. */
-          <div className="bg-white border border-slate-200 rounded-2xl px-4 py-3.5 flex flex-wrap items-center gap-3">
+          <div className="bg-white/75 border border-slate-200 rounded-2xl px-4 py-3.5 flex flex-wrap items-center gap-3">
             {renderWalletSearch()}
             {renderRoleSelect()}
             {renderBalanceTabs()}
@@ -3002,7 +3006,8 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
           {filteredWallets.map(function (w) {
             var p = walletProfiles[w.user_id] || {}
             return (
-              <div key={w.id} className="relative bg-white border border-slate-200 rounded-2xl px-3.5 py-2.5 flex items-center gap-3 shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition-colors hover:border-slate-300">
+              <div key={w.id} className={"relative border border-slate-200 rounded-2xl px-3.5 py-2.5 flex items-center gap-3 shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition-colors hover:border-slate-300 " +
+                (inAdmin ? "bg-white/75" : "bg-white")}>
                 {bulkMode && (
                   <input type="checkbox" checked={!!bulkSelected[w.user_id]}
                     onChange={function () { setBulkSelected(function (prev) { var n = Object.assign({}, prev); n[w.user_id] = !n[w.user_id]; return n }) }}
