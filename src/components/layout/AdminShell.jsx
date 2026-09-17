@@ -205,7 +205,6 @@ var ADMIN_TABS = [
     anyPerm: ['review.inventory','review.item_receipts','review.expenses','review.requisitions','review.vendor_payments'] },
   { key: 'expenses',    label: 'Finance',     icon: 'creditCard',
     blurb: 'Track and manage all your financial activities in one place.',
-    tagline: ['Better insights.', 'Smarter decisions.'],
     anyPerm: ['finance.wallet','finance.expenses','finance.payments','finance.salary_payouts','finance.cost_transfers','finance.ledgers.expense','finance.ledgers.event','finance.ledgers.vendor','finance.ledgers.salary','finance.ledgers.inventory','finance.ledgers.cost_transfer','finance.ledgers.gv'] },
   { key: 'procurement', label: 'Procurement', icon: 'cart',
     blurb: 'Requisitions, purchase orders and vendors.',
@@ -491,24 +490,6 @@ function AdminShell({ profile, onSignOut }) {
                 )}
               </div>
             </div>
-            {/* Only where a section has one — an invented line of copy per
-                section would be filler, and filler in a header is noise.
-
-                Indigo lead, muted second line: the same two-line block
-                BroadcastHub prints, down to the sizes. */}
-            {activeTab.tagline && (
-              <div className="hidden lg:block text-right shrink-0">
-                {activeTab.tagline.map(function (line, i) {
-                  return (
-                    <p key={i} className={i === 0
-                      ? 'font-display text-[12.5px] font-extrabold text-indigo-600 leading-tight tracking-[-0.01em]'
-                      : 'text-[11px] text-slate-400 leading-snug'}>
-                      {line}
-                    </p>
-                  )
-                })}
-              </div>
-            )}
           </div>
         )}
         {ActiveModule && (
