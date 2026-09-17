@@ -183,10 +183,12 @@ function AdminBackdrop() {
       <DriftBlob className="-top-[28%] -left-[12%] w-[62%] h-[85%]" colour="rgba(99,102,241,0.20)" seconds={26} delay={0} />
       <DriftBlob className="-top-[22%] -right-[10%] w-[55%] h-[78%]" colour="rgba(56,189,248,0.17)" seconds={33} delay={-9} />
       <DriftBlob className="-bottom-[32%] left-[22%] w-[58%] h-[75%]" colour="rgba(139,92,246,0.14)" seconds={29} delay={-17} />
-      <div className="absolute inset-0" style={ADMIN_GRID} />
-      {/* The floor. Everything above fades into it rather than stopping, so
-          there is no edge across the page where the ground runs out. */}
+      {/* The floor, and only the colour fades into it. The blobs have to, or
+          the page ends on an edge where the ground runs out; the grid must not,
+          or it stops a third of the way up the screen and the ruling looks like
+          it ran out of ink. So the floor goes under the grid, not over it. */}
       <div className="absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-b from-transparent to-[#f7f9fd]" />
+      <div className="absolute inset-0" style={ADMIN_GRID} />
     </div>
   )
 }
