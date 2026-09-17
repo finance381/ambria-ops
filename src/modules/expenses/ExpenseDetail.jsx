@@ -825,12 +825,21 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
         </div>
       )}
 
-      {/* Decide */}
+      {/* Decide.
+
+          One verdict, then the two ways of not giving it. They were four bars
+          of equal width down the panel, which made a side errand look like a
+          decision and gave the decision nothing to stand out against.
+
+          Send back and Deduct are the same weight as each other because they
+          are the same kind of answer. Deduct says what it is in its text and
+          its glyph rather than in a red border — an outlined panel in a second
+          colour reads as a second primary, and there is only one here. */}
       {canReview && !rejectMode && (
         <div className="space-y-2">
           {exp.status === 'recorded' && (
             <button onClick={acknowledge} disabled={saving}
-              className="w-full inline-flex items-center justify-center gap-2 py-3 text-[13px] font-bold text-white bg-emerald-600 rounded-xl hover:bg-emerald-700 active:scale-[0.99] disabled:opacity-50 disabled:active:scale-100 transition-all">
+              className="w-full inline-flex items-center justify-center gap-2 py-3 rounded-xl text-[13px] font-bold text-white bg-gradient-to-b from-emerald-500 to-emerald-600 shadow-[0_2px_8px_rgba(5,150,105,0.30)] hover:from-emerald-600 hover:to-emerald-700 active:scale-[0.99] disabled:opacity-50 disabled:active:scale-100 transition-all">
               <Icon name="checkCircle" size={16} />
               {saving ? 'Saving...' : 'Acknowledge'}
             </button>
@@ -838,20 +847,20 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
           <div className="flex gap-2">
             {exp.status === 'flagged' && (
               <button onClick={acknowledge} disabled={saving}
-                className="flex-1 inline-flex items-center justify-center gap-2 py-3 text-[13px] font-bold text-white bg-emerald-600 rounded-xl hover:bg-emerald-700 active:scale-[0.99] disabled:opacity-50 disabled:active:scale-100 transition-all">
+                className="flex-1 inline-flex items-center justify-center gap-2 py-3 rounded-xl text-[13px] font-bold text-white bg-gradient-to-b from-emerald-500 to-emerald-600 shadow-[0_2px_8px_rgba(5,150,105,0.30)] hover:from-emerald-600 hover:to-emerald-700 active:scale-[0.99] disabled:opacity-50 disabled:active:scale-100 transition-all">
                 <Icon name="checkCircle" size={16} />
                 {saving ? '...' : 'Accept'}
               </button>
             )}
             {exp.status !== 'flagged' && (
               <button onClick={function () { setRejectMode('flag') }} disabled={saving}
-                className="flex-1 inline-flex items-center justify-center gap-2 py-3 text-[13px] font-semibold text-slate-700 bg-white border border-slate-300 rounded-xl hover:bg-slate-50 active:scale-[0.99] disabled:opacity-50 transition-all">
+                className="flex-1 inline-flex items-center justify-center gap-2 py-3 rounded-xl text-[13px] font-semibold text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 active:scale-[0.99] disabled:opacity-50 transition-all">
                 <Icon name="undo" size={15} />
                 Send back
               </button>
             )}
             <button onClick={function () { setRejectMode('deduct') }} disabled={saving}
-              className="flex-1 inline-flex items-center justify-center gap-2 py-3 text-[13px] font-semibold text-red-700 bg-white border border-red-200 rounded-xl hover:bg-red-50 active:scale-[0.99] disabled:opacity-50 transition-all">
+              className="flex-1 inline-flex items-center justify-center gap-2 py-3 rounded-xl text-[13px] font-semibold text-red-700 bg-white border border-slate-300 hover:bg-red-50 hover:border-red-200 active:scale-[0.99] disabled:opacity-50 transition-all">
               <Icon name="banknote" size={15} />
               Deduct
             </button>
@@ -877,14 +886,6 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
         </div>
       )}
 
-      {/* Bookkeeping — a side errand, not a verdict on this expense */}
-      {canRaiseGV && (
-        <button onClick={onRaiseGV} disabled={saving}
-          className="w-full inline-flex items-center justify-center gap-2 py-2.5 text-[12.5px] font-semibold text-slate-600 bg-white border border-slate-300 rounded-xl hover:bg-slate-50 active:scale-[0.99] disabled:opacity-50 transition-all">
-          <Icon name="fileText" size={15} />
-          Raise JV
-        </button>
-      )}
 
       {rejectMode && (
         <div className="space-y-3">
@@ -953,13 +954,26 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
         </div>
       )}
 
-      {canDelete && !deleteMode && (
-        <div className="pt-2 border-t border-slate-200">
-          <button onClick={function () { setDeleteMode(true) }} disabled={saving}
-            className="w-full inline-flex items-center justify-center gap-2 py-2.5 text-[12.5px] font-semibold text-red-600 rounded-xl hover:bg-red-50 disabled:opacity-50 transition-colors">
-            <Icon name="trash" size={14} />
-            Delete expense
-          </button>
+      {/* The errands. Neither is a verdict on this expense — one is
+          bookkeeping, the other is undoing a mistake — so they sit below the
+          rule at the size of what they are, rather than taking a full bar each
+          in the middle of the decisions. */}
+      {(canRaiseGV || (canDelete && !deleteMode)) && (
+        <div className="flex items-center justify-between gap-3 pt-3 border-t border-slate-200">
+          {canRaiseGV ? (
+            <button onClick={onRaiseGV} disabled={saving}
+              className="inline-flex items-center gap-1.5 h-9 px-3 -ml-1 rounded-lg text-[12.5px] font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900 disabled:opacity-50 transition-colors">
+              <Icon name="fileText" size={15} />
+              Raise JV
+            </button>
+          ) : <span />}
+          {canDelete && !deleteMode && (
+            <button onClick={function () { setDeleteMode(true) }} disabled={saving}
+              className="inline-flex items-center gap-1.5 h-9 px-3 -mr-1 rounded-lg text-[12.5px] font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50 transition-colors">
+              <Icon name="trash" size={14} />
+              Delete expense
+            </button>
+          )}
         </div>
       )}
 
