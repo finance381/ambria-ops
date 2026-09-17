@@ -42,6 +42,27 @@ var WASHES = [
   'radial-gradient(70% 55% at -8% 88%,  rgba(45,212,191,0.20), transparent 72%)',
 ].join(', ')
 
+// A hairline grid, faded out as it falls. It is the one mark on this ground
+// that is actually drawn, and it is what stops the washes reading as an empty
+// gradient: rules at 3.5% are below anything you would call a pattern, but they
+// give the eye a scale, and colour with a scale behind it reads as a surface.
+//
+// It sits ABOVE the scrim, not under it. Under a 72% white veil a 3.5% rule is
+// not there at all, and lifting the rule to survive the veil would make it a
+// pattern again — which is the thing the diagonals were dropped for.
+//
+// The mask takes it out before it reaches the content, so nothing is ever ruled
+// through a card.
+var GRID = {
+  backgroundImage: [
+    'linear-gradient(rgba(15,23,42,0.035) 1px, transparent 1px)',
+    'linear-gradient(90deg, rgba(15,23,42,0.035) 1px, transparent 1px)',
+  ].join(', '),
+  backgroundSize: '44px 44px',
+  maskImage: 'radial-gradient(120% 75% at 50% 0%, #000 30%, transparent 78%)',
+  WebkitMaskImage: 'radial-gradient(120% 75% at 50% 0%, #000 30%, transparent 78%)',
+}
+
 // `veil` overrides the scrim. How much the ground can show through depends on
 // how wide the page is: behind one 540px column of cards on a phone it frames
 // the content, but across a 1500px admin content area the same colour spreads
@@ -57,6 +78,7 @@ function PageBackdrop({ veil }) {
           single flat value had to be calm enough for the busiest part of the
           page, which left the rest of it duller than it needed to be. */}
       <div className={'absolute inset-0 ' + (veil || 'bg-gradient-to-b from-white/72 via-white/60 to-white/45')} />
+      <div className="absolute inset-0" style={GRID} />
     </div>
   )
 }
