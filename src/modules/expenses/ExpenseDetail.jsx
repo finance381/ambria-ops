@@ -15,9 +15,11 @@ import Icon from '../../components/ui/Icon'
 function Row({ label, value, money }) {
   if (value === null || value === undefined || value === '') return null
   return (
-    <div className="flex items-baseline justify-between gap-3 py-2">
-      <span className="shrink-0 text-[11.5px] font-medium text-slate-500">{label}</span>
-      <span className={"min-w-0 text-right text-[13px] text-slate-900" + (money ? " font-semibold tabular-nums" : "")}>{value}</span>
+    /* The value carries the weight. A label and its answer at the same weight
+       makes a reader work out which is which on every line. */
+    <div className="flex items-baseline justify-between gap-4 py-2.5">
+      <span className="shrink-0 text-[12px] font-medium text-slate-500">{label}</span>
+      <span className={"min-w-0 text-right text-[13px] font-semibold text-slate-900" + (money ? " tabular-nums" : "")}>{value}</span>
     </div>
   )
 }
@@ -473,7 +475,7 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
             {receipts.map(function (r, rIdx) {
               if (r.isVoice) {
                 return (
-                  <div key={rIdx} className="space-y-1">
+                  <div key={rIdx} className="rounded-xl border border-slate-200 bg-white p-2.5">
                     <audio controls preload="auto" className="w-full"
                       onLoadedMetadata={function (ev) {
                         // MediaRecorder WebM lacks proper cues → playback stops after first cluster (~3s).
@@ -497,9 +499,14 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
                       <source src={r.url} />
                       Your browser cannot play this audio.
                     </audio>
+                    {/* A way out if the player cannot cope with the recording,
+                        not a second heading. Underlined and lettered ⬇ it read
+                        as a warning about the thing above it; it is a quiet
+                        offer sitting under the control it belongs to. */}
                     <a href={r.url} download target="_blank" rel="noopener noreferrer"
-                      className="text-[10px] text-slate-500 hover:text-indigo-600 underline">
-                      ⬇ Download if playback fails
+                      className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-medium text-slate-400 hover:text-indigo-600 transition-colors">
+                      <Icon name="download" size={12} />
+                      Download
                     </a>
                   </div>
                 )
@@ -594,15 +601,31 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
           <Row label="Travel" value={exp.travel_from + (exp.travel_to ? ' → ' + exp.travel_to : '') + (exp.travel_mode ? ' (' + exp.travel_mode + ')' : '')} />
         )}
         {exp.events?.event_name && <Row label="Event" value={exp.events.event_name} />}
-        {exp.expense_sub_types?.extra_fields && exp.expense_sub_types.extra_fields.map(function (field) {
-          var val = (exp.metadata && exp.metadata[field.key]) || exp[field.key] || null
-          if (!val) return null
-          var display = val
-          if (field.type === 'lookup' && field.source) {
-            display = lookupLabels[field.source + ':' + String(val)] || val
-          }
-          return <Row key={field.key} label={field.label} value={display} />
-        })}
+        {/* A sub-type can define a field that says what one of the rows above
+            already said — Vendor Name beside Vendor, holding the same words two
+            rows apart. Whatever has been printed is remembered, and a field
+            repeating it is dropped rather than shown under a second label. */}
+        {(function () {
+          var fields = exp.expense_sub_types?.extra_fields
+          if (!fields || !fields.length) return null
+          var seen = {}
+          function mark(v) { if (v) seen[String(v).trim().toLowerCase()] = true }
+          mark(exp.vendor_name)
+          mark(exp.events?.event_name)
+          mark(formatDate(exp.expense_date))
+          return fields.map(function (field) {
+            var val = (exp.metadata && exp.metadata[field.key]) || exp[field.key] || null
+            if (!val) return null
+            var display = val
+            if (field.type === 'lookup' && field.source) {
+              display = lookupLabels[field.source + ':' + String(val)] || val
+            }
+            var key = String(display).trim().toLowerCase()
+            if (seen[key]) return null
+            seen[key] = true
+            return <Row key={field.key} label={field.label} value={display} />
+          })
+        })()}
         <Row label="Submitted" value={exp.created_at ? formatDate(exp.created_at) : '—'} />
       </div>
 
