@@ -132,7 +132,25 @@ var DATE_TRIGGER = {
   padding: '12px 10px 12px 12px',
 }
 
-function WalletBackdrop() {
+// The desktop ground. Two washes, barely there, anchored off the top corners.
+//
+// A photograph does not survive this screen. On a phone it is a tall column and
+// the picture fills it; across a 1500px content area the same picture becomes a
+// wallet lying under the ledger, with tables and figures reading over the top of
+// it. What is wanted behind an admin page is not a subject at all — just enough
+// tint that the white cards have something to be white against.
+var ADMIN_WASHES = [
+  'radial-gradient(45% 55% at 0% 0%,   rgba(99,102,241,0.10), transparent 70%)',
+  'radial-gradient(40% 50% at 100% 0%, rgba(56,189,248,0.09), transparent 70%)',
+].join(', ')
+
+function WalletBackdrop({ inAdmin }) {
+  if (inAdmin) {
+    return (
+      <div aria-hidden="true" className="pointer-events-none fixed inset-0 -z-10"
+        style={{ backgroundColor: '#f6f8fc', backgroundImage: ADMIN_WASHES }} />
+    )
+  }
   return (
     // Two pieces stacked, the foot taking whatever the artwork leaves. As
     // background layers the foot was painted across the whole element and the
@@ -2348,7 +2366,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     return (
       <div className="@container">
       <div className="space-y-4 max-w-2xl mx-auto @3xl:max-w-none">
-        <WalletBackdrop />
+        <WalletBackdrop inAdmin={inAdmin} />
         <div className="space-y-2">
           {inAdmin && (
             <button type="button" onClick={handleBack}
@@ -2650,7 +2668,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             bg-top keeps the wallet anchored: cover on a portrait image in a
             narrower portrait viewport crops the sides, and centring it would
             push the illustration off the top on a short screen. */}
-        <WalletBackdrop />
+        <WalletBackdrop inAdmin={inAdmin} />
 
         <div className="relative -mx-4 px-4 pt-3 pb-5">
 
@@ -2891,7 +2909,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     var txnUser = walletProfiles[selectedWallet.user_id] || {}
     return (
       <div className="space-y-4">
-        <WalletBackdrop />
+        <WalletBackdrop inAdmin={inAdmin} />
         <div className="space-y-3">
           {/* Only where nothing else offers a way back. This calls backNav's
              goBack — the very same handler the phone shell's ← pops — so on a
