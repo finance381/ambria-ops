@@ -601,31 +601,15 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
           <Row label="Travel" value={exp.travel_from + (exp.travel_to ? ' → ' + exp.travel_to : '') + (exp.travel_mode ? ' (' + exp.travel_mode + ')' : '')} />
         )}
         {exp.events?.event_name && <Row label="Event" value={exp.events.event_name} />}
-        {/* A sub-type can define a field that says what one of the rows above
-            already said — Vendor Name beside Vendor, holding the same words two
-            rows apart. Whatever has been printed is remembered, and a field
-            repeating it is dropped rather than shown under a second label. */}
-        {(function () {
-          var fields = exp.expense_sub_types?.extra_fields
-          if (!fields || !fields.length) return null
-          var seen = {}
-          function mark(v) { if (v) seen[String(v).trim().toLowerCase()] = true }
-          mark(exp.vendor_name)
-          mark(exp.events?.event_name)
-          mark(formatDate(exp.expense_date))
-          return fields.map(function (field) {
-            var val = (exp.metadata && exp.metadata[field.key]) || exp[field.key] || null
-            if (!val) return null
-            var display = val
-            if (field.type === 'lookup' && field.source) {
-              display = lookupLabels[field.source + ':' + String(val)] || val
-            }
-            var key = String(display).trim().toLowerCase()
-            if (seen[key]) return null
-            seen[key] = true
-            return <Row key={field.key} label={field.label} value={display} />
-          })
-        })()}
+        {exp.expense_sub_types?.extra_fields && exp.expense_sub_types.extra_fields.map(function (field) {
+          var val = (exp.metadata && exp.metadata[field.key]) || exp[field.key] || null
+          if (!val) return null
+          var display = val
+          if (field.type === 'lookup' && field.source) {
+            display = lookupLabels[field.source + ':' + String(val)] || val
+          }
+          return <Row key={field.key} label={field.label} value={display} />
+        })}
         <Row label="Submitted" value={exp.created_at ? formatDate(exp.created_at) : '—'} />
       </div>
 

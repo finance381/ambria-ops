@@ -3221,20 +3221,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
               // The plain vendor_name column is a fallback shown to the same
               // value a sub-type "vendor" lookup field already surfaces — skip
               // it here when that's the case so the vendor name isn't repeated.
-              //
-              // It can also hold an id rather than a name, which is where
-              // "Vendor: 261" beside "Vendor Name: Blinkit" came from: the same
-              // vendor twice, once unreadable. A run of digits is never a name,
-              // so it is resolved if the lookup happens to know it and dropped
-              // if it does not — an id on screen tells nobody anything.
-              if (e.vendor_name && extraFieldValues.indexOf(e.vendor_name) === -1) {
-                var vendorLabel = /^\d+$/.test(String(e.vendor_name).trim())
-                  ? expLookupLabels['vendors:' + String(e.vendor_name).trim()]
-                  : e.vendor_name
-                if (vendorLabel && extraFieldValues.indexOf(String(vendorLabel)) === -1) {
-                  pairs.unshift({ label: 'Vendor', value: String(vendorLabel) })
-                }
-              }
+              if (e.vendor_name && extraFieldValues.indexOf(e.vendor_name) === -1) pairs.unshift({ label: 'Vendor', value: e.vendor_name })
               if (t.reference_type === 'expense_refund' && e.amount_paise) parts.push('orig ' + formatPoints(e.amount_paise) + ' on ' + formatDate(e.expense_date))
               return (
                 <>
@@ -3267,24 +3254,14 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                     </p>
                   )}
                   {parts.length > 0 && <p className="mt-1 text-[11px] text-slate-500">{parts.join(' · ')}</p>}
-                  {/* What an allocation line is for is the split: which
-                      department carries how much. A single allocation carries
-                      all of it, and the figure is already on the right of this
-                      row, so it says only where the money went. The type comes
-                      out too wherever it matches the chip above — printing the
-                      same words twice, two lines apart, tells nobody anything
-                      they did not just read. */}
                   {allocs.length > 0 && (
                     <div className="mt-0.5 space-y-0.5">
                       {allocs.map(function (a, ai) {
                         var allocType = a.expense_types?.name || ''
                         var allocSubType = a.expense_sub_types?.name || ''
-                        var differs = allocType && (allocType !== typeName || allocSubType !== subTypeName)
                         return (
                           <p key={ai} className="text-[10px] text-slate-500 tabular-nums">
-                            {(a.department || 'Unassigned')}
-                            {differs ? ' · ' + allocType + (allocSubType ? ' › ' + allocSubType : '') : ''}
-                            {allocs.length > 1 ? ' — ' + formatPoints(a.amount_paise) : ''}
+                            {(a.department || 'Unassigned')}{allocType ? ' · ' + allocType + (allocSubType ? ' › ' + allocSubType : '') : ''} — {formatPoints(a.amount_paise)}
                           </p>
                         )
                       })}
