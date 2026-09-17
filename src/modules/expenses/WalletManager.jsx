@@ -3433,16 +3433,20 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
               </div>
               <p className="mt-0.5 text-[12px] text-slate-500 truncate">{txnUser.email || '—'}</p>
             </div>
+            {/* Both of these do the same harmless thing, so they look the same.
+                Green and red on a pair of downloads read as a verdict on the
+                file — one safe, one dangerous — when the only thing that
+                differs is the format, which the word already says. */}
             {walletTxns.length > 0 && (
               <div className="shrink-0 flex items-center gap-2">
                 <button type="button" onClick={exportWalletCSV}
-                  className="inline-flex items-center gap-2 h-10 px-3.5 rounded-xl text-[13px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 transition-colors">
-                  <Icon name="download" size={15} />
+                  className="inline-flex items-center gap-2 h-10 px-3.5 rounded-xl text-[13px] font-bold text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 hover:text-slate-900 active:scale-[0.98] disabled:opacity-60 transition-all">
+                  <Icon name="download" size={15} className="text-slate-400" />
                   Download CSV
                 </button>
                 <button type="button" onClick={exportWalletPDF} disabled={pdfBusy}
-                  className="inline-flex items-center gap-2 h-10 px-3.5 rounded-xl text-[13px] font-bold text-red-700 bg-red-50 border border-red-200 hover:bg-red-100 disabled:opacity-60 transition-colors">
-                  <Icon name={pdfBusy ? 'refresh' : 'fileText'} size={15} />
+                  className="inline-flex items-center gap-2 h-10 px-3.5 rounded-xl text-[13px] font-bold text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 hover:text-slate-900 active:scale-[0.98] disabled:opacity-60 transition-all">
+                  <Icon name={pdfBusy ? 'refresh' : 'fileText'} size={15} className="text-slate-400" />
                   {pdfBusy ? 'Generating…' : 'Download PDF'}
                 </button>
               </div>
@@ -3615,13 +3619,13 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             {walletTxns.length > 0 && (
               <div className="shrink-0 flex gap-2">
                 <button type="button" onClick={exportWalletCSV} title="Export CSV"
-                  className="inline-flex items-center gap-1.5 h-9 px-2.5 sm:px-3 rounded-xl text-[12px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 transition-colors">
-                  <Icon name="download" size={15} />
+                  className="inline-flex items-center gap-1.5 h-9 px-2.5 sm:px-3 rounded-xl text-[12px] font-bold text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 hover:text-slate-900 active:scale-[0.98] disabled:opacity-60 transition-all">
+                  <Icon name="download" size={15} className="text-slate-400" />
                   <span className="hidden sm:inline">CSV</span>
                 </button>
                 <button type="button" onClick={exportWalletPDF} disabled={pdfBusy} title="Export PDF"
-                  className="inline-flex items-center gap-1.5 h-9 px-2.5 sm:px-3 rounded-xl text-[12px] font-bold text-red-700 bg-red-50 border border-red-200 hover:bg-red-100 disabled:opacity-60 transition-colors">
-                  <Icon name={pdfBusy ? 'refresh' : 'fileText'} size={14} />
+                  className="inline-flex items-center gap-1.5 h-9 px-2.5 sm:px-3 rounded-xl text-[12px] font-bold text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 hover:text-slate-900 active:scale-[0.98] disabled:opacity-60 transition-all">
+                  <Icon name={pdfBusy ? 'refresh' : 'fileText'} size={14} className="text-slate-400" />
                   <span className="hidden sm:inline">{pdfBusy ? 'Generating…' : 'PDF'}</span>
                 </button>
               </div>
