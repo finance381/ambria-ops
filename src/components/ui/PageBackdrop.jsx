@@ -42,28 +42,6 @@ var WASHES = [
   'radial-gradient(70% 55% at -8% 88%,  rgba(45,212,191,0.20), transparent 72%)',
 ].join(', ')
 
-// A hairline grid, corner to corner. It is the one mark on this ground that is
-// actually drawn, and it is what stops the washes reading as an empty gradient:
-// rules this faint are below anything you would call a pattern, but they give
-// the eye a scale, and colour with a scale behind it reads as a surface.
-//
-// No mask. Fading it out left the grid showing in whichever corner the washes
-// happened to be palest, which reads as a smudge rather than as a ruled ground
-// — if it is structure it has to hold everywhere, and if it cannot hold
-// everywhere it should not be there at all.
-//
-// 5%, not 3.5%: it sits above the scrim, and what it has to survive is not the
-// white but the saturated middle of a wash, where a 3.5% line disappears. Still
-// a twentieth of black, which is a line you find when you look for it and not
-// before.
-var GRID = {
-  backgroundImage: [
-    'linear-gradient(rgba(15,23,42,0.05) 1px, transparent 1px)',
-    'linear-gradient(90deg, rgba(15,23,42,0.05) 1px, transparent 1px)',
-  ].join(', '),
-  backgroundSize: '44px 44px',
-}
-
 // `veil` overrides the scrim. How much the ground can show through depends on
 // how wide the page is: behind one 540px column of cards on a phone it frames
 // the content, but across a 1500px admin content area the same colour spreads
@@ -79,7 +57,6 @@ function PageBackdrop({ veil }) {
           single flat value had to be calm enough for the busiest part of the
           page, which left the rest of it duller than it needed to be. */}
       <div className={'absolute inset-0 ' + (veil || 'bg-gradient-to-b from-white/72 via-white/60 to-white/45')} />
-      <div className="absolute inset-0" style={GRID} />
     </div>
   )
 }
