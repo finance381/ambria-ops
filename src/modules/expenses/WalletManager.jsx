@@ -132,7 +132,11 @@ var DATE_TRIGGER = {
   padding: '12px 10px 12px 12px',
 }
 
-function WalletBackdrop() {
+function WalletBackdrop({ inAdmin }) {
+  // Nothing on the desktop. The wallet is one tab of Finance and the others
+  // are plain, so a ground here made this one screen look like it belonged to
+  // a different section.
+  if (inAdmin) return null
   return (
     // Two pieces stacked, the foot taking whatever the artwork leaves. As
     // background layers the foot was painted across the whole element and the
@@ -202,6 +206,68 @@ var REF_TYPE_STYLES = {
   salary_adjustment: 'bg-amber-50 text-amber-700 border-amber-200',
 }
 
+// The glyph and tint for a row's leading square. Same families as the chip
+// above, so a row says the same thing twice in two ways — which is the point on
+// a long ledger: the tile is what you scan, the chip is what you read.
+var REF_TYPE_MARKS = {
+  expense:           { icon: 'receipt',    tone: 'bg-red-50 text-red-600' },
+  expense_refund:    { icon: 'undo',       tone: 'bg-green-50 text-green-600' },
+  transfer:          { icon: 'transfer',   tone: 'bg-blue-50 text-blue-600' },
+  issued:            { icon: 'plus',       tone: 'bg-purple-50 text-purple-600' },
+  deducted:          { icon: 'minus',      tone: 'bg-orange-50 text-orange-600' },
+  collection:        { icon: 'banknote',   tone: 'bg-emerald-50 text-emerald-600' },
+  collection_cancel: { icon: 'close',      tone: 'bg-rose-50 text-rose-600' },
+  opening:           { icon: 'wallet',     tone: 'bg-slate-100 text-slate-500' },
+  vendor_payment:    { icon: 'creditCard', tone: 'bg-red-50 text-red-600' },
+  vendor_deduction:  { icon: 'creditCard', tone: 'bg-amber-50 text-amber-600' },
+  salary_payment:    { icon: 'bank',       tone: 'bg-red-50 text-red-600' },
+  salary_adjustment: { icon: 'bank',       tone: 'bg-amber-50 text-amber-600' },
+}
+
+// The glyph for a sub-type field, picked off its own label. A sub-type can
+// define any field it likes, so there is no map to look it up in — but the
+// handful that actually recur are named plainly enough to recognise, and
+// anything unrecognised gets the one that means "a written detail".
+function fieldGlyph(label) {
+  var l = String(label || '').toLowerCase()
+  if (l.indexOf('vendor') !== -1) return 'building'
+  if (l.indexOf('date') !== -1) return 'calendar'
+  if (l.indexOf('employee') !== -1 || l.indexOf('staff') !== -1 || l.indexOf('name') !== -1) return 'user'
+  if (l.indexOf('amount') !== -1 || l.indexOf('rate') !== -1) return 'rupee'
+  if (l.indexOf('event') !== -1) return 'calendar'
+  if (l.indexOf('venue') !== -1) return 'mapPin'
+  return 'fileText'
+}
+
+// A reading of the period. The four of them are the same shape on purpose —
+// they are four answers to one question, and giving each its own size or its
+// own filled panel made them look like four unrelated facts.
+// A figure. Not a control — these report, and reporting is all they do.
+//
+// Translucent, so the ruled ground shows through rather than being covered by
+// an opaque panel. No backdrop blur: there can be a hundred of these surfaces
+// on one page and blurring each one is a GPU layer apiece, where plain alpha is
+// free.
+function StatTile({ icon, tone, label, value, valueClass }) {
+  return (
+    <div className="flex items-center gap-3 px-3.5 py-3 bg-white/75 border border-slate-200 rounded-xl">
+      <span className={'shrink-0 w-9 h-9 rounded-lg inline-flex items-center justify-center ' + tone}>
+        <Icon name={icon} size={17} />
+      </span>
+      <div className="min-w-0">
+        <p className="text-[11px] font-semibold text-slate-500 leading-none">{label}</p>
+        <p className={'mt-1.5 text-[16px] font-bold tabular-nums leading-none ' + valueClass} data-notranslate>{value}</p>
+      </div>
+    </div>
+  )
+}
+
+var TXN_SORTS = {
+  latest: 'Latest',
+  oldest: 'Oldest',
+  amount: 'Highest amount',
+}
+
 // wallet_transactions rows created by pay_vendor/pay_employee — reference_id points at
 // the ledger_entries row for that specific payment (proof images, deduction reason, etc.)
 var PAYMENT_REF_TYPES = ['vendor_payment', 'vendor_deduction', 'salary_payment', 'salary_adjustment']
@@ -230,6 +296,29 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   var [txnFrom, setTxnFrom] = useState('')
   var [txnTo, setTxnTo] = useState('')
   var [txnRefType, setTxnRefType] = useState('')
+  // Sorted here rather than in the query: the period is already capped at 500
+  // rows and they are all in hand, so reordering them is free and does not cost
+  // a round trip every time somebody changes their mind.
+  var [txnSort, setTxnSort] = useState('latest')
+
+  // Hold the page still while an overlay is open.
+  //
+  // These five are portalled straight to <body> rather than going through
+  // BottomSheet, which is the only thing in this app that was locking the
+  // page. So the page kept its scrollbar down the side of the overlay, and a
+  // wheel over the dark ground scrolled the list behind it.
+  //
+  // The previous value is put back rather than cleared, because a sheet may be
+  // holding its own lock underneath this one and clearing would let the page
+  // go while that sheet is still up.
+  var overlayOpen = !!(expenseDetailTarget || detailTarget || payDetailTarget || cancelTarget || enlargedWalletImg)
+  useEffect(function () {
+    if (!overlayOpen) return
+    var previous = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return function () { document.body.style.overflow = previous }
+  }, [overlayOpen])
+
   var [walletSearch, setWalletSearch] = useState('')
   var [walletRoleFilter, setWalletRoleFilter] = useState('')
   var [pdfBusy, setPdfBusy] = useState(false)
@@ -1073,15 +1162,34 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   var [detailTarget, setDetailTarget] = useState(null)  // { txn, kind, event, collectorName, imgUrl, loading }
   var [payDetailTarget, setPayDetailTarget] = useState(null)  // { txn, entry, partyName, loading }
 
+  // Opens on what is already here, then fills in the rest.
+  //
+  // The ledger row this was clicked from was drawn from expenseRefs, which
+  // already holds the description, the amount, the date, the status, the type
+  // and the allocations — most of what the panel opens with. Waiting on a
+  // round trip to show any of it meant a second of "Loading expense…" for
+  // facts that were on the screen a moment ago.
+  //
+  // The fetch still runs, for the things the ledger had no reason to load:
+  // the receipts, the tax split, who reviewed it and when. When it lands it
+  // replaces the seed. The id does not change, so the panel is not remounted
+  // and nothing it has already drawn flickers.
   async function openExpenseDetail(expenseId) {
     if (!expenseId) return
-    setExpenseDetailLoading(true)
-    setExpenseDetailTarget({ _placeholder: true, id: expenseId })
+    var seed = expenseRefs[expenseId] || expenseRefs[Number(expenseId)]
+    setExpenseDetailLoading(!seed)
+    setExpenseDetailTarget(seed ? Object.assign({}, seed) : { _placeholder: true, id: expenseId })
     var { data: row, error } = await supabase.from('expenses')
-      .select('id, user_id, batch_id, expense_type_id, expense_sub_type_id, amount_paise, tax_paise, description, status, expense_date, receipt_path, receipt_paths, created_at, rejection_reason, flag_reason, penalty_paise, penalized_at, penalized_by, reviewed_at, reviewed_by, acknowledged_at, acknowledged_by, deduction_type, vendor_name, travel_from, travel_to, travel_mode, metadata, event_id, deleted_at, expense_types(name, extra_fields), expense_sub_types(name, extra_fields), events(event_name), expense_allocations(department, department_id, venue_id, amount_paise)')
+      .select('id, user_id, batch_id, expense_type_id, expense_sub_type_id, amount_paise, tax_paise, description, status, expense_date, receipt_path, receipt_paths, created_at, rejection_reason, flag_reason, penalty_paise, penalized_at, penalized_by, reviewed_at, reviewed_by, acknowledged_at, acknowledged_by, deduction_type, vendor_name, travel_from, travel_to, travel_mode, metadata, event_id, deleted_at, expense_types(name, extra_fields), expense_sub_types(name, extra_fields), events(event_name, venue_name, function_date, pax), expense_allocations(department, department_id, venue_id, amount_paise)')
       .eq('id', Number(expenseId)).maybeSingle()
     setExpenseDetailLoading(false)
-    if (error || !row) { alert('Expense not found: ' + (error?.message || 'missing')); setExpenseDetailTarget(null); return }
+    if (error || !row) {
+      // With a seed on screen there is something to read and something to
+      // close; taking it away to announce a failed refresh would be worse
+      // than the failure.
+      if (!seed) { alert('Expense not found: ' + (error?.message || 'missing')); setExpenseDetailTarget(null) }
+      return
+    }
     setExpenseDetailTarget(row)
   }
 
@@ -1099,7 +1207,17 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     return createPortal((
       <div className="fixed inset-0 z-[9998] bg-black/70 flex items-start sm:items-center justify-center p-0 sm:p-4 overflow-y-auto"
         onClick={function () { closeExpenseDetail(false) }}>
-        <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-2xl p-4 sm:p-5 min-h-screen sm:min-h-0 sm:max-h-[92vh] overflow-y-auto"
+        {/* Wide enough for the detail to use its own two-column layout.
+
+            ExpenseDetail is a @container and splits into two columns at 48rem.
+            At max-w-2xl the container was about 630px, so it never did — every
+            panel stacked, the panel ran twice the height it needed, and a modal
+            that fits on a screen had a scrollbar down the side of it.
+
+            The height cap stays as a floor, not as the plan: an expense with a
+            dozen allocations can outgrow any screen, and without it the bottom
+            of the panel would be somewhere below the desk. */}
+        <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-5xl p-4 sm:p-5 min-h-screen sm:min-h-0 sm:max-h-[92vh] overflow-y-auto"
           onClick={function (ev) { ev.stopPropagation() }}>
           {expenseDetailLoading || expenseDetailTarget._placeholder ? (
             <div className="py-16 text-center text-sm text-gray-500">Loading expense…</div>
@@ -2375,7 +2493,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     return (
       <div className="@container">
       <div className="space-y-4 max-w-2xl mx-auto @3xl:max-w-none">
-        <WalletBackdrop />
+        <WalletBackdrop inAdmin={inAdmin} />
         <div className="space-y-2">
           {inAdmin && (
             <button type="button" onClick={handleBack}
@@ -2395,19 +2513,28 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
           </div>
         </div>
 
-        <div className="space-y-4 @3xl:grid @3xl:grid-cols-12 @3xl:gap-5 @3xl:space-y-0 @3xl:items-start">
-          <div className="@3xl:col-span-5 space-y-4">
+        {/* items-stretch, not items-start: the right column held one short card
+            and then stopped, leaving the page with a column of nothing beside a
+            column of content. Stretched, the two sides are one block. */}
+        <div className="space-y-4 @3xl:grid @3xl:grid-cols-12 @3xl:gap-5 @3xl:space-y-0 @3xl:items-stretch">
+          <div className="@3xl:col-span-5">
 
-        {/* Balance card */}
+        {/* The heading moves out of the card so that this column and the one
+            beside it start their cards on the same line. Recent Transactions
+            has always had its heading outside, and that one label was the whole
+            reason the two columns began at different heights. */}
+        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] mb-2">Balance</p>
         <div className="bg-white border border-slate-200 rounded-2xl shadow-[0_1px_2px_rgba(15,23,42,0.04)] p-5">
-          <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">Balance</p>
-          <p className={"mt-1 font-display text-[34px] font-extrabold tabular-nums leading-none " + balColor}
+          <p className={"font-display text-[34px] font-extrabold tabular-nums leading-none " + balColor}
             data-notranslate>{formatPoints(bal)}</p>
           <p className="mt-2.5 text-[12px] text-slate-500">Last activity — {lastActivity}</p>
         </div>
 
-        {/* 2x2 action grid */}
-        <div className="grid grid-cols-2 gap-3">
+        {/* Two up on a phone, four across once the page splits into columns.
+            At that point this column is about 600px and the tiles were sitting
+            two to a row at 300px each — a 40px glyph and one word in the middle
+            of a card wide enough for a sentence. */}
+        <div className="mt-4 grid grid-cols-2 @3xl:grid-cols-4 gap-3">
           <button type="button" onClick={openCollectModal} className="relative py-4 bg-white border border-slate-200 rounded-2xl shadow-[0_1px_2px_rgba(15,23,42,0.04)] hover:border-slate-300 active:scale-[0.98] transition-all flex flex-col items-center justify-center gap-2">
             <span className="w-10 h-10 rounded-full bg-blue-50 text-blue-600 inline-flex items-center justify-center">
               <Icon name="download" size={18} />
@@ -2451,9 +2578,9 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
         </div>
           </div>
 
-          <div className="@3xl:col-span-7">
+          <div className="@3xl:col-span-7 @3xl:flex @3xl:flex-col">
         {/* Recent transactions */}
-        <div>
+        <div className="@3xl:flex-1 @3xl:flex @3xl:flex-col @3xl:min-h-0">
           {/* The heading carries the way to the rest of them. It listed five and
              said nothing about there being more, so History was the only route
              and it was two tiles away. */}
@@ -2469,7 +2596,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
           {walletTxns.length === 0 ? (
             /* Says what would be here and how it gets here, rather than only
                that there is nothing. */
-            <div className="py-8 px-4 text-center bg-white border border-slate-200 rounded-2xl">
+            <div className="py-8 px-4 text-center bg-white border border-slate-200 rounded-2xl @3xl:flex-1 @3xl:flex @3xl:flex-col @3xl:items-center @3xl:justify-center">
               <span className="inline-flex w-11 h-11 rounded-full bg-slate-100 text-slate-400 items-center justify-center">
                 <Icon name="receipt" size={19} />
               </span>
@@ -2660,69 +2787,110 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
       })
     }
 
-    var filtersActive = !!walletRoleFilter || walletBalanceState !== 'all' || walletPendingOnly || walletSort !== 'name'
-
-    return (
-      <div className="space-y-4">
-
-        {/* The artwork is the whole screen behind the list, not a strip behind
-            the title: the illustration sits at the top of a 977x1609 image and
-            the leaves run down both sides, so cropping it to a 280px band threw
-            away everything but the empty middle.
-
-            fixed, so it stays put while ninety rows scroll over it. -z-10 works
-            because the phone shell root is relative + isolate — without that
-            stacking context it would fall behind the body and vanish.
-
-            bg-top keeps the wallet anchored: cover on a portrait image in a
-            narrower portrait viewport crops the sides, and centring it would
-            push the illustration off the top on a short screen. */}
-        <WalletBackdrop />
-
-        <div className="relative -mx-4 px-4 pt-3 pb-5">
-
-          <h1 className="relative font-display text-[30px] font-extrabold text-slate-900 leading-none tracking-[-0.03em]">Wallet</h1>
-          <p className="relative mt-2 text-[14px] font-medium text-slate-500">Manage and track wallet balances</p>
-
-          {/* Two figures about the list as a whole, split down the middle. */}
-          <div className="relative mt-5 bg-white/85 backdrop-blur-sm border border-white/70 rounded-2xl shadow-[0_2px_10px_rgba(15,23,42,0.06)] px-4 py-3.5 flex items-center">
-            <button type="button" onClick={function () { setWalletRoleFilter(''); setWalletBalanceState('all'); setWalletPendingOnly(false) }}
-              className="flex-1 min-w-0 flex items-center gap-3 text-left">
-              <span className="shrink-0 w-10 h-10 rounded-2xl bg-indigo-100 text-indigo-600 inline-flex items-center justify-center">
-                <Icon name="wallet" size={19} />
-              </span>
-              <span className="min-w-0">
-                <span className="block font-display text-[17px] font-bold text-slate-900 leading-snug">All Wallets</span>
-                <span className="block text-[13px] font-medium text-slate-500 tabular-nums" data-notranslate>
-                  {filteredWallets.length} wallets
-                </span>
-              </span>
-            </button>
-
-            <span aria-hidden="true" className="shrink-0 w-px h-10 bg-slate-200 mx-2" />
-
-            {(function () {
-              // The sum of what is on screen, not of every wallet in the table:
-              // filter to one role and this has to follow, or it is answering a
-              // question nobody asked.
-              var total = filteredWallets.reduce(function (s, w) { return s + (w.balance_paise || 0) }, 0)
-              return (
-                <div className="flex-1 min-w-0 flex items-center gap-3">
-                  <span className={"shrink-0 w-10 h-10 rounded-2xl inline-flex items-center justify-center " +
-                    (total < 0 ? "bg-red-100 text-red-600" : "bg-emerald-100 text-emerald-600")}>
-                    <Icon name="banknote" size={19} />
-                  </span>
-                  <span className="min-w-0">
-                    <span className="block text-[13px] font-medium text-slate-500 leading-snug">Total Points</span>
-                    <span className={"block font-display text-[16px] font-bold tabular-nums leading-snug whitespace-nowrap " +
-                      (total < 0 ? "text-red-700" : "text-slate-900")} data-notranslate>{formatPoints(total)}</span>
-                  </span>
-                </div>
-              )
-            })()}
-          </div>
+    // The five controls over this list. They are the same controls in both
+    // layouts — a phone stacks them down the page, a desktop lays them along
+    // one toolbar — so they are written once and arranged twice.
+    function renderWalletSearch() {
+      return (
+        <div className="relative flex-1 min-w-[220px]">
+          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
+            <Icon name="search" size={19} />
+          </span>
+          <input type="text" value={walletSearch}
+            onChange={function (e) { setWalletSearch(e.target.value) }}
+            placeholder="Search name, email, role..."
+            className="w-full h-[52px] pl-12 pr-4 bg-white border border-slate-200 rounded-2xl text-[14px] text-slate-900 placeholder:text-slate-400 shadow-[0_1px_2px_rgba(15,23,42,0.04)] focus:outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/15 transition-shadow"
+            style={{ fontSize: '16px' }} />
         </div>
+      )
+    }
 
+    function renderRoleSelect() {
+      return (
+        <div className="relative shrink-0">
+          <select value={walletRoleFilter} onChange={function (e) { setWalletRoleFilter(e.target.value) }}
+            aria-label="Filter by role"
+            className="appearance-none w-[9.5rem] h-[52px] pl-4 pr-9 bg-white border border-slate-200 rounded-2xl text-[14px] font-medium text-slate-700 shadow-[0_1px_2px_rgba(15,23,42,0.04)] focus:outline-none focus:border-indigo-400"
+            style={{ fontSize: '16px' }}>
+            <option value="">All Roles</option>
+            {roleOptions.map(function (r) { return <option key={r} value={r}>{r}</option> })}
+          </select>
+          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
+            <Icon name="chevronDown" size={16} />
+          </span>
+        </div>
+      )
+    }
+
+    // Four words. On a phone they divide the row between them; on a desktop
+    // that row is 1500px wide and each word was sitting alone in the middle of
+    // 340px of nothing, so there they take the width they need.
+    function renderBalanceTabs() {
+      return (
+        <div className={"flex items-center h-[52px] bg-indigo-50/70 rounded-2xl p-1 " + (inAdmin ? "shrink-0" : "flex-1 min-w-0")}>
+          {[['all', 'All'], ['positive', '+ve'], ['zero', 'Zero'], ['negative', '−ve']].map(function (opt) {
+            var active = walletBalanceState === opt[0]
+            return (
+              <button key={opt[0]} type="button" onClick={function () { setWalletBalanceState(opt[0]) }}
+                aria-pressed={active}
+                /* An inactive segment shows what it would become: the same
+                   white pill, at less than full strength. Darkening the text
+                   alone left the four of them looking like labels rather than
+                   like something you press. The active one does not answer the
+                   pointer, because pressing it again does nothing. */
+                className={(inAdmin ? "px-5 " : "flex-1 min-w-0 px-1 ") + "h-full text-[13px] font-bold rounded-xl transition-all duration-150 " +
+                  (active
+                    ? "bg-white text-indigo-700 shadow-[0_1px_3px_rgba(15,23,42,0.10)]"
+                    : "text-slate-500 hover:text-slate-900 hover:bg-white/70 hover:shadow-[0_1px_3px_rgba(15,23,42,0.06)]")}>
+                {opt[1]}
+              </button>
+            )
+          })}
+        </div>
+      )
+    }
+
+    function renderPendingToggle() {
+      return (
+        <label className="inline-flex items-center gap-2.5 shrink-0 text-[14px] font-medium text-slate-600 cursor-pointer select-none">
+          <input type="checkbox" checked={walletPendingOnly}
+            onChange={function (e) { setWalletPendingOnly(e.target.checked) }}
+            className="w-5 h-5 rounded-md border-slate-300 accent-indigo-600" />
+          Pending only
+        </label>
+      )
+    }
+
+    function renderWalletSort() {
+      return (
+        <span className="inline-flex items-center gap-1.5 text-[14px] text-slate-500 shrink-0">
+          Sort by:
+          <span className="relative inline-flex items-center gap-1 font-bold text-slate-900">
+            <span data-notranslate>{SORT_LABELS[walletSort] || SORT_LABELS.name}</span>
+            <Icon name="chevronDown" size={15} className="text-slate-400" />
+            {/* The real control, invisible and exactly over the text it
+                describes — so the tap target is the whole thing and the
+                native picker still opens. */}
+            <select value={walletSort} onChange={function (e) { setWalletSort(e.target.value) }}
+              aria-label="Sort by"
+              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+              style={{ fontSize: '16px' }}>
+              <option value="name">Name</option>
+              <option value="balance_desc">Balance high → low</option>
+              <option value="balance_asc">Balance low → high</option>
+              <option value="pending">Most pending</option>
+              <option value="activity">Recent activity</option>
+            </select>
+          </span>
+        </span>
+      )
+    }
+
+    // The wallet chip and Bulk Issue. On a desktop they belong beside the page
+    // title, where the actions for a page live; on a phone they are a row of
+    // their own because the title has no spare width.
+    function renderWalletActions() {
+      return (
         <div className="flex items-center gap-2">
           {myWallet && (
             <button type="button" onClick={function () {
@@ -2756,85 +2924,150 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             </button>
           )}
         </div>
-        {/* Search — a tall pill, the way the mockup has it. */}
-        <div className="relative">
-          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
-            <Icon name="search" size={19} />
-          </span>
-          <input type="text" value={walletSearch}
-            onChange={function (e) { setWalletSearch(e.target.value) }}
-            placeholder="Search name, email, role..."
-            className="w-full h-[52px] pl-12 pr-4 bg-white border border-slate-200 rounded-2xl text-[14px] text-slate-900 placeholder:text-slate-400 shadow-[0_1px_2px_rgba(15,23,42,0.04)] focus:outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/15 transition-shadow"
-            style={{ fontSize: '16px' }} />
-        </div>
+      )
+    }
 
-        <div className="flex items-center gap-2.5">
-          <div className="relative shrink-0">
-            <select value={walletRoleFilter} onChange={function (e) { setWalletRoleFilter(e.target.value) }}
-              className="appearance-none w-[9.5rem] h-[52px] pl-4 pr-9 bg-white border border-slate-200 rounded-2xl text-[14px] font-medium text-slate-700 shadow-[0_1px_2px_rgba(15,23,42,0.04)] focus:outline-none focus:border-indigo-400"
-              style={{ fontSize: '16px' }}>
-              <option value="">All Roles</option>
-              {roleOptions.map(function (r) { return <option key={r} value={r}>{r}</option> })}
-            </select>
-            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
-              <Icon name="chevronDown" size={16} />
-            </span>
+    return (
+      <div className="space-y-4">
+
+        {/* The artwork is the whole screen behind the list, not a strip behind
+            the title: the illustration sits at the top of a 977x1609 image and
+            the leaves run down both sides, so cropping it to a 280px band threw
+            away everything but the empty middle.
+
+            fixed, so it stays put while ninety rows scroll over it. -z-10 works
+            because the phone shell root is relative + isolate — without that
+            stacking context it would fall behind the body and vanish.
+
+            bg-top keeps the wallet anchored: cover on a portrait image in a
+            narrower portrait viewport crops the sides, and centring it would
+            push the illustration off the top on a short screen. */}
+        <WalletBackdrop inAdmin={inAdmin} />
+
+        <div className="relative -mx-4 px-4 pt-3 pb-5">
+
+          {/* On a desktop the page actions belong beside the title, which is
+              where the actions for a page live. A phone gives them a row of
+              their own because the title has no spare width. */}
+          <div className={inAdmin ? "relative flex items-start justify-between gap-4" : "relative"}>
+            <div className="min-w-0">
+              <h1 className="font-display text-[30px] font-extrabold text-slate-900 leading-none tracking-[-0.03em]">Wallet</h1>
+              <p className="mt-2 text-[14px] font-medium text-slate-500">Manage and track wallet balances</p>
+            </div>
+            {inAdmin && <div className="shrink-0">{renderWalletActions()}</div>}
           </div>
 
-          <div className="flex-1 min-w-0 flex items-center h-[52px] bg-indigo-50/70 rounded-2xl p-1">
-            {[['all', 'All'], ['positive', '+ve'], ['zero', 'Zero'], ['negative', '−ve']].map(function (opt) {
-              var active = walletBalanceState === opt[0]
+          {inAdmin ? (
+            /* A wide page can answer more than two questions, and the two it
+               was answering had a third of the row each and nothing in the
+               middle. Deficit and pending are the two that decide whether
+               anybody has to do something today. */
+            (function () {
+              var total = filteredWallets.reduce(function (s, w) { return s + (w.balance_paise || 0) }, 0)
               return (
-                <button key={opt[0]} type="button" onClick={function () { setWalletBalanceState(opt[0]) }}
-                  aria-pressed={active}
-                  className={"flex-1 min-w-0 h-full px-1 text-[13px] font-bold rounded-xl transition-colors " +
-                    (active ? "bg-white text-indigo-700 shadow-[0_1px_3px_rgba(15,23,42,0.10)]" : "text-slate-500 hover:text-slate-800")}>
-                  {opt[1]}
-                </button>
+                <div className="relative mt-5 grid grid-cols-2 gap-3">
+                  <StatTile icon="users" tone="bg-indigo-50 text-indigo-600" label="Wallets"
+                    value={String(filteredWallets.length)} valueClass="text-slate-900" />
+                  <StatTile icon="banknote" tone={total < 0 ? "bg-red-50 text-red-600" : "bg-emerald-50 text-emerald-600"}
+                    label="Total Points" value={formatPoints(total)}
+                    valueClass={total < 0 ? "text-red-700" : "text-slate-900"} />
+                </div>
               )
-            })}
+            })()
+          ) : (
+            <>
+            {/* Two figures about the list as a whole, split down the middle. */}
+            <div className="relative mt-5 bg-white/85 backdrop-blur-sm border border-white/70 rounded-2xl shadow-[0_2px_10px_rgba(15,23,42,0.06)] px-4 py-3.5 flex items-center">
+              <button type="button" onClick={function () { setWalletRoleFilter(''); setWalletBalanceState('all'); setWalletPendingOnly(false) }}
+                className="flex-1 min-w-0 flex items-center gap-3 text-left">
+                <span className="shrink-0 w-10 h-10 rounded-2xl bg-indigo-100 text-indigo-600 inline-flex items-center justify-center">
+                  <Icon name="wallet" size={19} />
+                </span>
+                <span className="min-w-0">
+                  <span className="block font-display text-[17px] font-bold text-slate-900 leading-snug">All Wallets</span>
+                  <span className="block text-[13px] font-medium text-slate-500 tabular-nums" data-notranslate>
+                    {filteredWallets.length} wallets
+                  </span>
+                </span>
+              </button>
+
+              <span aria-hidden="true" className="shrink-0 w-px h-10 bg-slate-200 mx-2" />
+
+              {(function () {
+                // The sum of what is on screen, not of every wallet in the table:
+                // filter to one role and this has to follow, or it is answering a
+                // question nobody asked.
+                var total = filteredWallets.reduce(function (s, w) { return s + (w.balance_paise || 0) }, 0)
+                return (
+                  <div className="flex-1 min-w-0 flex items-center gap-3">
+                    <span className={"shrink-0 w-10 h-10 rounded-2xl inline-flex items-center justify-center " +
+                      (total < 0 ? "bg-red-100 text-red-600" : "bg-emerald-100 text-emerald-600")}>
+                      <Icon name="banknote" size={19} />
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block text-[13px] font-medium text-slate-500 leading-snug">Total Points</span>
+                      <span className={"block font-display text-[16px] font-bold tabular-nums leading-snug whitespace-nowrap " +
+                        (total < 0 ? "text-red-700" : "text-slate-900")} data-notranslate>{formatPoints(total)}</span>
+                    </span>
+                  </div>
+                )
+              })()}
+            </div>
+            </>
+          )}
+        </div>
+
+        {inAdmin ? (
+          /* One toolbar. Stacked, these five took four rows and most of a
+             screen before a single wallet appeared. */
+          <div className="bg-white/75 border border-slate-200 rounded-2xl px-4 py-3.5 flex flex-wrap items-center gap-3">
+            {renderWalletSearch()}
+            {renderRoleSelect()}
+            {renderBalanceTabs()}
+            <span aria-hidden="true" className="hidden xl:block w-px h-8 bg-slate-200" />
+            {renderPendingToggle()}
+            {renderWalletSort()}
           </div>
-
-        </div>
-
-        <div className="flex items-center justify-between gap-3">
-          <label className="inline-flex items-center gap-2.5 text-[14px] font-medium text-slate-600 cursor-pointer select-none">
-            <input type="checkbox" checked={walletPendingOnly}
-              onChange={function (e) { setWalletPendingOnly(e.target.checked) }}
-              className="w-5 h-5 rounded-md border-slate-300 accent-indigo-600" />
-            Pending only
-          </label>
-
-          <span className="inline-flex items-center gap-1.5 text-[14px] text-slate-500 shrink-0">
-            Sort by:
-            <span className="relative inline-flex items-center gap-1 font-bold text-slate-900">
-              <span data-notranslate>{SORT_LABELS[walletSort] || SORT_LABELS.name}</span>
-              <Icon name="chevronDown" size={15} className="text-slate-400" />
-              {/* The real control, invisible and exactly over the text it
-                  describes — so the tap target is the whole thing and the
-                  native picker still opens. */}
-              <select value={walletSort} onChange={function (e) { setWalletSort(e.target.value) }}
-                aria-label="Sort by"
-                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                style={{ fontSize: '16px' }}>
-                <option value="name">Name</option>
-                <option value="balance_desc">Balance high → low</option>
-                <option value="balance_asc">Balance low → high</option>
-                <option value="pending">Most pending</option>
-                <option value="activity">Recent activity</option>
-              </select>
-            </span>
-          </span>
-        </div>
+        ) : (
+          <>
+            {renderWalletActions()}
+            {renderWalletSearch()}
+            <div className="flex items-center gap-2.5">
+              {renderRoleSelect()}
+              {renderBalanceTabs()}
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              {renderPendingToggle()}
+              {renderWalletSort()}
+            </div>
+          </>
+        )}
 
         {/* One column unless we are actually on the dashboard. md: measures the
             viewport and the phone shell is a 540px column inside it, so a bare
             md:grid-cols-2 gave the phone two 160px cards. */}
-        <div className={"space-y-2" + (inAdmin ? " md:space-y-0 md:grid md:grid-cols-2 md:gap-2" : "")}>
+        {/* What the filters came back with, above the thing they filtered. One
+            figure, for the filter that is actually on: which tab you picked is
+            already shown by the tab, and printing the other three beside it was
+            answering questions nobody had asked yet. */}
+        <p className="text-[12px] text-slate-500">
+          Showing
+          <span className="mx-1 font-bold text-slate-900 tabular-nums" data-notranslate>{filteredWallets.length}</span>
+          wallets
+        </p>
+
+        <div className={"space-y-2" + (inAdmin ? " md:space-y-0 md:grid md:grid-cols-2 xl:grid-cols-3 md:gap-2.5" : "")}>
           {filteredWallets.map(function (w) {
             var p = walletProfiles[w.user_id] || {}
             return (
-              <div key={w.id} className="relative bg-white border border-slate-200 rounded-2xl px-3.5 py-2.5 flex items-center gap-3 shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition-colors hover:border-slate-300">
+              /* The whole row opens the wallet, so the whole row answers the
+                 pointer: it lifts a pixel, its edge takes the accent, and the
+                 translucent card goes solid white, which on the ruled ground is
+                 what reads as coming forward. transform-gpu keeps the lift on
+                 the compositor — ninety of these animating their own layout
+                 would not be free. */
+              <div key={w.id} className={"group relative border rounded-2xl px-3.5 py-2.5 flex items-center gap-3 transform-gpu transition-all duration-150 shadow-[0_1px_2px_rgba(15,23,42,0.04)] border-slate-200 hover:border-indigo-300 hover:bg-white hover:-translate-y-px hover:shadow-[0_6px_18px_rgba(79,70,229,0.10)] " +
+                (inAdmin ? "bg-white/75" : "bg-white")}>
                 {bulkMode && (
                   <input type="checkbox" checked={!!bulkSelected[w.user_id]}
                     onChange={function () { setBulkSelected(function (prev) { var n = Object.assign({}, prev); n[w.user_id] = !n[w.user_id]; return n }) }}
@@ -2847,7 +3080,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                 <div className="flex-1 min-w-0 cursor-pointer" onClick={function () { if (!bulkMode) openWalletTxns(w) }}>
                   <span className="min-w-0 block">
                     <span className="flex items-center gap-1.5 min-w-0">
-                      <span className="text-[15px] font-bold text-slate-900 truncate">{p.name || '—'}</span>
+                      <span className="text-[15px] font-bold text-slate-900 truncate transition-colors group-hover:text-indigo-700">{p.name || '—'}</span>
                       {w._pendingCount > 0 && (
                         <span className="shrink-0 min-w-[18px] h-[18px] px-1 rounded-full bg-amber-500 text-white text-[10px] font-bold inline-flex items-center justify-center tabular-nums"
                           title={w._pendingCount + ' pending'}>{w._pendingCount}</span>
@@ -2916,9 +3149,563 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   // ═══════════════════════════════════════════════
   if (walletView === 'transactions' && selectedWallet) {
     var txnUser = walletProfiles[selectedWallet.user_id] || {}
+    // One row, drawn the same whichever layout asks for it. It was written
+    // inline in the list; the desktop layout needs the same row inside a
+    // different card, and 240 lines is not something to keep two copies of.
+    function renderTxnRow(t) {
+    var isCredit = t.type === 'credit'
+    var issuedPath = t.issued_image_path || null
+    var receivedPath = t.received_image_path || null
+    var transferRow = t.reference_type === 'transfer' && t.reference_id ? transferParties[t.reference_id] : null
+    if (transferRow) {
+      var transferSenderPath = transferRow.sender_image_path
+      var transferReceiverPath = transferRow.receiver_image_path || transferRow.received_image_path
+      if (transferSenderPath) issuedPath = transferSenderPath
+      if (transferReceiverPath) receivedPath = transferReceiverPath
+    }
+    var issuedUrl = getReceiptUrl(issuedPath)
+    var receivedUrl = getReceiptUrl(receivedPath)
+    var issuedIsVoice = isVoiceNotePath(issuedPath)
+    var receivedIsVoice = isVoiceNotePath(receivedPath)
+    var isOwnWallet = selectedWallet && selectedWallet.user_id === profile.id
+    var canConfirm = isCredit && t.status === 'pending' && isOwnWallet
+    var epcHit = epcRefs[t.id] || null
+    var isEpc = !!epcHit && !epcHit.isCancel
+    var isEpcCancel = !!epcHit && epcHit.isCancel
+    var isCancelled = t.status === 'cancelled'
+    var epcCancellable = isEpc && epcHit.epc.status !== 'cancelled' && (isAdmin || epcHit.epc.collected_by === profile.id)
+    var collCancellable = t.reference_type === 'collection' && !isCancelled && (isAdmin || t.performed_by === profile.id)
+    var isExpRow = (t.reference_type === 'expense' || t.reference_type === 'expense_refund') && t.reference_id
+    var isPayRow = PAYMENT_REF_TYPES.indexOf(t.reference_type) !== -1
+    var rowIsClickable = isExpRow || t.reference_type === 'collection' || isEpc || isPayRow
+    function handleRowClick() {
+      if (!rowIsClickable) return
+      if (isExpRow) {
+        if (onOpenExpense) onOpenExpense(t.reference_id)
+        else openExpenseDetail(t.reference_id)
+      } else if (t.reference_type === 'collection') {
+        openCollectionDetail(t, 'collection')
+      } else if (isEpc) {
+        openCollectionDetail(t, 'epc')
+      } else if (isPayRow) {
+        openPaymentDetail(t)
+      }
+    }
+    var rowBorderClass = isCancelled
+      ? "border-gray-200 opacity-50"
+      : (t.status === 'pending' ? "border-amber-300 bg-amber-50/30" : "border-gray-200")
+    return (
+      <div key={t.id}
+        onClick={handleRowClick}
+        className={"bg-white border rounded-xl px-3.5 py-3 " + rowBorderClass + (rowIsClickable ? " cursor-pointer hover:border-indigo-300 hover:bg-indigo-50/30 transition-colors" : "")}>
+        {/* justify-between was never doing the split — the left column is
+            flex-1 and already pushes the figures right — so the row can simply
+            gain a third child at the front. */}
+        <div className="flex items-start gap-3">
+          {inAdmin && REF_TYPE_MARKS[t.reference_type] && (
+            /* The tile is what you scan down a long ledger; the chip beside the
+               title is what you read once you have stopped. On a phone there is
+               no room to say it twice. */
+            <span aria-hidden="true"
+              className={"shrink-0 w-10 h-10 rounded-xl inline-flex items-center justify-center " + REF_TYPE_MARKS[t.reference_type].tone}>
+              <Icon name={REF_TYPE_MARKS[t.reference_type].icon} size={18} />
+            </span>
+          )}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              {t.reference_type && (
+                <span className={"text-[9px] font-bold uppercase px-1.5 py-0.5 rounded border " + (REF_TYPE_STYLES[t.reference_type] || 'bg-gray-100 text-gray-700 border-gray-300')}>
+                  {REF_TYPE_LABELS[t.reference_type] || t.reference_type}
+                </span>
+              )}
+              {isEpc && (
+                <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded border bg-emerald-50 text-emerald-700 border-emerald-200">
+                  Extra Plates
+                </span>
+              )}
+              {isEpcCancel && (
+                <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded border bg-rose-50 text-rose-700 border-rose-200">
+                  EP Cancel
+                </span>
+              )}
+              <p className={"text-[14px] font-bold text-slate-900 leading-snug " + (isCancelled ? "line-through" : "")}>
+                {t.description || '—'}
+                {t.reference_type === 'transfer' && t.reference_id && transferParties[t.reference_id] && (function () {
+                  var tr = transferParties[t.reference_id]
+                  var cpId = t.type === 'debit' ? tr.to_user_id : tr.from_user_id
+                  var cpName = walletProfiles[cpId]?.name
+                  if (!cpName) return null
+                  return ' ' + (t.type === 'debit' ? '→' : '←') + ' ' + cpName
+                })()}
+                {isEpc && ' · ' + epcHit.epc.extras_charged + ' extras'}
+              </p>
+              {t.reference_type === 'collection' && t.payment_mode && (
+                <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 border border-emerald-200">
+                  {t.payment_mode}
+                </span>
+              )}
+              {t.status === 'pending' && (
+                <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded">Pending</span>
+              )}
+              {isCancelled && (
+                <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 bg-rose-100 text-rose-700 rounded">Cancelled</span>
+              )}
+              {(t.reference_type === 'expense' || t.reference_type === 'expense_refund') && t.reference_id && expenseRefs[t.reference_id] && expenseRefs[t.reference_id].status && (
+                <span className={"text-[9px] font-bold uppercase px-1.5 py-0.5 rounded " + (EXP_STATUS_COLORS[expenseRefs[t.reference_id].status] || 'bg-gray-100 text-gray-600')}>
+                  {EXP_STATUS_LABELS[expenseRefs[t.reference_id].status] || expenseRefs[t.reference_id].status}
+                </span>
+              )}
+              {!isCancelled && (
+                <CheckedStamp
+                  checked={!!t.checked_by}
+                  checkerName={t.checked_by && walletProfiles[t.checked_by] ? walletProfiles[t.checked_by].name : null}
+                  checkedAt={t.checked_at}
+                  canToggle={canMarkChecked}
+                  canUncheck={t.checked_by === profile.id || isAdmin || isAuditor}
+                  busy={checkingTxnId === t.id}
+                  onToggle={function (ev) { ev.stopPropagation(); toggleWalletCheck(t) }}
+                />
+              )}
+            </div>
+            {isCancelled && t.cancelled_reason && (
+              <p className="text-[10px] text-rose-600 italic mt-0.5">Reason: {t.cancelled_reason}</p>
+            )}
+            {/* Enrichment: expense/refund → type › sub-type · event · vendor · extra fields · (refund amount + date) · per-allocation breakdown */}
+            {(t.reference_type === 'expense' || t.reference_type === 'expense_refund') && t.reference_id && expenseRefs[t.reference_id] && (function () {
+              var e = expenseRefs[t.reference_id]
+              var typeName = e.expense_types?.name || ''
+              var subTypeName = e.expense_sub_types?.name || ''
+              var allocs = e.expense_allocations || []
+              var parts = []
+              var pairs = []
+              var subFields = (e.expense_sub_types && e.expense_sub_types.extra_fields) || []
+              var meta = e.metadata || {}
+              var extraFieldValues = []
+              subFields.forEach(function (f) {
+                var val = meta[f.key]
+                if (val == null || val === '') return
+                var display = val
+                if (f.type === 'lookup' && f.source) display = expLookupLabels[f.source + ':' + String(val)] || val
+                pairs.push({ label: f.label || f.key, value: String(display) })
+                extraFieldValues.push(String(display))
+              })
+              // The plain vendor_name column is a fallback shown to the same
+              // value a sub-type "vendor" lookup field already surfaces — skip
+              // it here when that's the case so the vendor name isn't repeated.
+              if (e.vendor_name && extraFieldValues.indexOf(e.vendor_name) === -1) pairs.unshift({ label: 'Vendor', value: e.vendor_name })
+              if (t.reference_type === 'expense_refund' && e.amount_paise) parts.push('orig ' + formatPoints(e.amount_paise) + ' on ' + formatDate(e.expense_date))
+              return (
+                <>
+                  {/* One rhythm down the row. Five lines at four pixels apart,
+                      every one of them grey and roughly the same size, is why
+                      this read as a block rather than as facts — nothing told
+                      the eye where one thing ended and the next began. */}
+                  {(typeName || e._event_name) && (
+                    <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1">
+                      {typeName && (
+                        <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 text-[10px] font-bold">
+                          {typeName + (subTypeName ? ' › ' + subTypeName : '')}
+                        </span>
+                      )}
+                      {e._event_name && (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-500">
+                          <Icon name="calendar" size={11} />
+                          {e._event_name}
+                        </span>
+                      )}
+                    </p>
+                  )}
+                  {/* Each field as its own unit, not one sentence with middots
+                      in it. Strung together, "Expense Details: Odc hk expense ·
+                      Vendor Name: Venue rental" is a line you have to read
+                      through to find the break in; stacked label over value,
+                      with real space between the pairs, the breaks are where
+                      the eye already is. */}
+                  {pairs.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {pairs.map(function (pr, pi) {
+                        return (
+                          <span key={pi} className="inline-flex min-w-0 items-center gap-2.5 px-3 py-2 rounded-xl bg-slate-50 border border-slate-100">
+                            <Icon name={fieldGlyph(pr.label)} size={15} className="shrink-0 text-slate-400" />
+                            <span className="inline-flex min-w-0 flex-col gap-1">
+                              <span className="text-[9.5px] font-bold uppercase tracking-[0.06em] text-slate-400 leading-none">{pr.label}</span>
+                              <span className="text-[12.5px] font-semibold text-slate-800 leading-none truncate">{pr.value}</span>
+                            </span>
+                          </span>
+                        )
+                      })}
+                    </div>
+                  )}
+                  {parts.length > 0 && <p className="mt-2 text-[11px] text-slate-500 leading-relaxed">{parts.join(' · ')}</p>}
+                  {allocs.length > 0 && (
+                    <div className="mt-2 space-y-1">
+                      {allocs.map(function (a, ai) {
+                        var allocType = a.expense_types?.name || ''
+                        var allocSubType = a.expense_sub_types?.name || ''
+                        return (
+                          /* One chain of narrowing — department, type,
+                             sub-type — so it reads with chevrons throughout
+                             rather than a middot for the first step and a
+                             chevron for the second. The figure is the point of
+                             the line, so it is the part that is not grey. */
+                          /* The figures share a column. Trailing the label with
+                             a dash put each one wherever its own label happened
+                             to end, so four allocations made four different
+                             margins and the amounts could not be compared down
+                             the list — which is the only reason to print them
+                             one under another. The label takes the room that is
+                             left, the figure is pinned right, and tabular-nums
+                             lines the digits up inside it. */
+                          <p key={ai} className="flex items-center gap-3 text-[12px] text-slate-500 leading-relaxed">
+                            <Icon name="tag" size={14} className="shrink-0 text-slate-400" />
+                            {/* The label sizes to its own text rather than
+                                taking the whole row, so there is something left
+                                for the leader to fill. It still shrinks and
+                                truncates when the text is longer than the room. */}
+                            <span className="min-w-0 truncate">
+                              {(a.department || 'Unassigned')}{allocType ? ' › ' + allocType + (allocSubType ? ' › ' + allocSubType : '') : ''}
+                            </span>
+                            {/* The leader, drawn rather than bordered. A dotted
+                                border only grows by growing its width, so a
+                                bigger dot is also a thicker rule and the browser
+                                decides the spacing; a repeated radial gradient
+                                sets the dot and the gap independently. */}
+                            <span aria-hidden="true" className="flex-1 min-w-[1.5rem] self-center h-[2px]"
+                              style={{
+                                backgroundImage: 'radial-gradient(circle, rgb(203 213 225) 1px, transparent 1.1px)',
+                                backgroundSize: '7px 2px',
+                                backgroundRepeat: 'repeat-x',
+                                backgroundPosition: 'center',
+                              }} />
+                            <span className="shrink-0 font-bold text-slate-800 tabular-nums" data-notranslate>{formatPoints(a.amount_paise)}</span>
+                          </p>
+                        )
+                      })}
+                    </div>
+                  )}
+                </>
+              )
+            })()}
+            {(function () {
+              var d = new Date(t.created_at)
+              var time = isNaN(d) ? '' : String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0')
+              var ref = t.reference_type
+                ? (REF_TYPE_LABELS[t.reference_type] || t.reference_type) + (t.reference_id ? ' #' + String(t.reference_id).slice(0, 8) : '')
+                : ''
+              var who = t.performed_by && walletProfiles[t.performed_by] ? walletProfiles[t.performed_by].name : ''
+              // Date and time are one fact, so they are one item rather than two
+              // separated as though they were unrelated.
+              var when = formatDate(t.created_at) + (time ? ', ' + time : '')
+              var facts = [
+                { icon: 'calendar', text: when },
+                ref ? { icon: 'receipt', text: ref } : null,
+                who ? { icon: 'user', text: who, lead: 'by ' } : null,
+              ].filter(Boolean)
+              // A wider gap above: everything before this says what the row is,
+              // and this says when it happened and who did it. A glyph apiece
+              // and a rule between them, because three kinds of fact in one grey
+              // string separated by middots is the thing that made this row hard
+              // to read in the first place.
+              return (
+                <div className="mt-2.5 pt-0.5 flex flex-wrap items-center gap-y-1 text-[11.5px] text-slate-400 leading-relaxed">
+                  {facts.map(function (f, fi) {
+                    return (
+                      <span key={fi} className="inline-flex items-center whitespace-nowrap">
+                        {fi > 0 && <span aria-hidden="true" className="mx-3 w-px h-3.5 bg-slate-200" />}
+                        <Icon name={f.icon} size={13} className="shrink-0 mr-1.5 text-slate-300" />
+                        {/* One span, not a bare "by " beside another element.
+                            A text run on its own is an anonymous flex item, and
+                            a flex item has its leading and trailing whitespace
+                            trimmed — which is where the space in "by " went. */}
+                        <span>
+                          {f.lead}
+                          {f.lead
+                            ? <span className="font-semibold text-slate-600">{f.text}</span>
+                            : f.text}
+                        </span>
+                      </span>
+                    )
+                  })}
+                </div>
+              )
+            })()}
+            {t.received_at && (
+              <p className="mt-1 flex items-center gap-1 text-[11px] font-semibold text-emerald-600">
+                <Icon name="checkCircle" size={12} className="shrink-0" />
+                Confirmed {formatDate(t.received_at)}
+              </p>
+            )}
+            {/* wrap, because two players side by side on a phone each
+                end up too narrow for the browser to draw a timeline
+                in; stacked they each get the row. */}
+            <div className="flex flex-wrap items-center gap-2 mt-1.5">
+              {issuedUrl && (
+                <ProofThumb url={issuedUrl} label="Sent" tone="bg-blue-600"
+                  onOpen={function () { setEnlargedWalletImg(issuedUrl) }} />
+              )}
+              {receivedUrl && (
+                <ProofThumb url={receivedUrl} label="Rcvd" tone="bg-emerald-600"
+                  onOpen={function () { setEnlargedWalletImg(receivedUrl) }} />
+              )}
+            </div>
+            {isPayRow && t.reference_id && paymentRefs[t.reference_id] && (
+              <div onClick={function (ev) { ev.stopPropagation() }}>
+                <PaymentProofThumbs meta={paymentRefs[t.reference_id].metadata} />
+              </div>
+            )}
+          </div>
+          <div className="text-right flex-shrink-0 ml-2">
+            <p className={"text-[15px] font-bold tabular-nums " + (isCredit ? "text-emerald-600" : "text-red-600")} data-notranslate>
+              {isCredit ? '+' : '−'}{formatPoints(Math.abs(t.amount_paise))}
+            </p>
+                    <p className="text-[11px] text-slate-400 tabular-nums" data-notranslate>Balance: {formatPoints(t.balance_after_paise)}</p>
+            {canConfirm && (
+              <button onClick={function (ev) { ev.stopPropagation(); setReceiveModal(t); setReceiveImage(null) }}
+                className="mt-1.5 px-2 py-1 text-[10px] font-bold text-amber-700 bg-amber-100 border border-amber-300 rounded hover:bg-amber-200 transition-colors">
+                📷 Confirm Received
+              </button>
+            )}
+            {t.reference_type === 'collection' && t.receipt_no && (
+              <button onClick={function (ev) { ev.stopPropagation(); printReceipt(t) }}
+                className="mt-1.5 ml-1 px-2 py-1 text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded hover:bg-blue-100 transition-colors">
+                🖨 #{t.receipt_no}
+              </button>
+            )}
+            {(collCancellable || epcCancellable) && (
+              <button onClick={function (ev) { ev.stopPropagation(); openCancel(t, collCancellable ? 'collection' : 'epc') }}
+                className="mt-1.5 ml-1 px-2 py-1 text-[10px] font-bold text-red-700 bg-red-50 border border-red-200 rounded hover:bg-red-100 transition-colors">
+                🚫 Cancel
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    )
+    }
+
+    // Four readings of one period. Both layouts print them, so they are worked
+    // out once rather than inside whichever happens to be rendering.
+    var stats = (function () {
+      var chrono = walletTxns.slice().sort(function (a, b) {
+        return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      })
+      var cr = 0, db = 0
+      chrono.forEach(function (t) {
+        if (t.type === 'credit') cr += (t.amount_paise || 0)
+        else db += (t.amount_paise || 0)
+      })
+      var oldest = chrono[0]
+      var newest = chrono[chrono.length - 1]
+      return {
+        credits: cr,
+        debits: db,
+        opening: oldest ? ((oldest.balance_after_paise || 0) - (oldest.type === 'credit' ? (oldest.amount_paise || 0) : -(oldest.amount_paise || 0))) : 0,
+        closing: newest ? (newest.balance_after_paise || 0) : 0,
+      }
+    })()
+
+    var sortedTxns = (function () {
+      if (txnSort === 'latest') return walletTxns
+      var rows = walletTxns.slice()
+      if (txnSort === 'oldest') {
+        return rows.sort(function (a, b) { return new Date(a.created_at) - new Date(b.created_at) })
+      }
+      return rows.sort(function (a, b) { return (b.amount_paise || 0) - (a.amount_paise || 0) })
+    })()
+
+    function resetTxnFilters() {
+      setTxnFrom(''); setTxnTo(''); setTxnRefType('')
+      openWalletTxns(null, '', '', '')
+    }
+
+    // ── The desktop ledger ──────────────────────────────────────────────
+    // Four bands down the page, each one a card: who this is, what the period
+    // came to, what is being asked of it, and the answer. On a phone the same
+    // material is a single column of sections, because a card inside a 540px
+    // column is a box around the whole screen.
+    function renderTxnsDesktop() {
+      var bal = selectedWallet.balance_paise || 0
+      return (
+        <div className="space-y-4">
+          <WalletBackdrop inAdmin={inAdmin} />
+
+          <button type="button" onClick={goBack}
+            className="inline-flex items-center gap-1.5 h-8 -ml-1 px-2 rounded-lg text-[13px] font-bold text-indigo-600 hover:bg-indigo-50 transition-colors">
+            <Icon name="arrowLeft" size={15} />
+            {(isAdmin || isAuditor) ? 'Back to Wallets' : 'Back'}
+          </button>
+
+          {/* Who. The balance sits on the same line as the name rather than
+              under it: it is the headline fact about this person, not a
+              footnote to their email address. */}
+          <div className="flex items-center gap-4 bg-white border border-slate-200 rounded-2xl px-5 py-4">
+            <span className={"shrink-0 w-12 h-12 rounded-full inline-flex items-center justify-center text-[17px] font-bold " + avatarTint(txnUser.name)}>
+              {(txnUser.name || '?').charAt(0).toUpperCase()}
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-3 flex-wrap">
+                <h2 className="font-display text-[18px] font-bold text-slate-900 leading-tight truncate">{txnUser.name || '—'}</h2>
+                <span className={"inline-flex px-2.5 py-1 rounded-full text-[13px] font-bold tabular-nums " +
+                  (bal < 0 ? "bg-red-100 text-red-700" : bal === 0 ? "bg-slate-100 text-slate-500" : "bg-emerald-100 text-emerald-700")}
+                  data-notranslate>{formatPoints(bal)}</span>
+              </div>
+              <p className="mt-0.5 text-[12px] text-slate-500 truncate">{txnUser.email || '—'}</p>
+            </div>
+            {/* Both of these do the same harmless thing, so they look the same.
+                Green and red on a pair of downloads read as a verdict on the
+                file — one safe, one dangerous — when the only thing that
+                differs is the format, which the word already says. */}
+            {walletTxns.length > 0 && (
+              <div className="shrink-0 flex items-center gap-2">
+                <button type="button" onClick={exportWalletCSV}
+                  className="inline-flex items-center gap-2 h-10 px-3.5 rounded-xl text-[13px] font-bold text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 hover:text-slate-900 active:scale-[0.98] disabled:opacity-60 transition-all">
+                  <Icon name="download" size={15} className="text-slate-400" />
+                  Download CSV
+                </button>
+                <button type="button" onClick={exportWalletPDF} disabled={pdfBusy}
+                  className="inline-flex items-center gap-2 h-10 px-3.5 rounded-xl text-[13px] font-bold text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 hover:text-slate-900 active:scale-[0.98] disabled:opacity-60 transition-all">
+                  <Icon name={pdfBusy ? 'refresh' : 'fileText'} size={15} className="text-slate-400" />
+                  {pdfBusy ? 'Generating…' : 'Download PDF'}
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* What it came to. */}
+          {walletTxns.length > 0 && (
+            <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
+              <StatTile icon="wallet" tone="bg-indigo-50 text-indigo-600" label="Opening Balance"
+                value={formatPoints(stats.opening)}
+                valueClass={stats.opening < 0 ? 'text-red-600' : 'text-slate-900'} />
+              <StatTile icon="chevronUp" tone="bg-emerald-50 text-emerald-600" label="Total Credits"
+                value={'+' + formatPoints(stats.credits)} valueClass="text-emerald-600" />
+              <StatTile icon="chevronDown" tone="bg-red-50 text-red-600" label="Total Debits"
+                value={'-' + formatPoints(stats.debits)} valueClass="text-red-600" />
+              <StatTile icon="box" tone="bg-violet-50 text-violet-600" label="Closing Balance"
+                value={formatPoints(stats.closing)}
+                valueClass={stats.closing < 0 ? 'text-red-600' : 'text-slate-900'} />
+            </div>
+          )}
+
+          {/* What is being asked of it. Apply re-runs the read; the controls
+              already apply themselves the moment they change, so it is there
+              for the case where nothing changed and you want it again. Reset
+              is the only one that does something no control can. */}
+          <div className="bg-white border border-slate-200 rounded-2xl px-5 py-4">
+            <div className="flex flex-wrap items-end gap-4">
+              <div className="min-w-[300px] flex-[2]">
+                <label className="block text-[11px] font-semibold text-slate-500 mb-1.5">Time Period</label>
+                <div className="flex items-center gap-2">
+                  <span aria-hidden="true" className="shrink-0 w-10 h-11 inline-flex items-center justify-center rounded-xl bg-slate-50 border border-slate-200 text-slate-400">
+                    <Icon name="calendar" size={16} />
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <EventDatePicker value={txnFrom} placeholder="From date" collapsible includePast plain
+                      onChange={function (v) { setTxnFrom(v); openWalletTxns(null, v, null) }} />
+                  </div>
+                  <span aria-hidden="true" className="shrink-0 text-slate-300"><Icon name="arrowRight" size={15} /></span>
+                  <div className="flex-1 min-w-0">
+                    <EventDatePicker value={txnTo} placeholder="To date" collapsible includePast plain
+                      onChange={function (v) { setTxnTo(v); openWalletTxns(null, null, v) }} />
+                  </div>
+                </div>
+              </div>
+
+              <div className="min-w-[200px] flex-1">
+                <label htmlFor="txn-type" className="block text-[11px] font-semibold text-slate-500 mb-1.5">Type</label>
+                <div className="relative">
+                  <select id="txn-type" value={txnRefType}
+                    onChange={function (e) { setTxnRefType(e.target.value); openWalletTxns(null, null, null, e.target.value) }}
+                    className="appearance-none w-full h-11 pl-3.5 pr-9 bg-white border border-slate-200 rounded-xl text-[13px] text-slate-900 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-shadow">
+                    <option value="">All Types</option>
+                    <option value="expense">Expenses</option>
+                    <option value="expense_refund">Refunds</option>
+                    <option value="collection">Collections</option>
+                    <option value="transfer">Transfers</option>
+                    <option value="issued">Issued (admin)</option>
+                    <option value="deducted">Deducted (admin)</option>
+                    <option value="opening">Opening</option>
+                  </select>
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
+                    <Icon name="chevronDown" size={15} />
+                  </span>
+                </div>
+              </div>
+
+              {/* No Apply. Every control here reads the moment it changes, so a
+                  button promising to apply them was describing work that was
+                  already done. Reset stays because clearing all three at once
+                  is the one thing none of them can do on its own. */}
+              {(txnFrom || txnTo || txnRefType) && (
+                <button type="button" onClick={resetTxnFilters}
+                  className="shrink-0 h-11 px-4 inline-flex items-center gap-1.5 rounded-xl text-[13px] font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors">
+                  <Icon name="close" size={14} />
+                  Reset
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* The answer. */}
+          <div className="bg-white border border-slate-200 rounded-2xl">
+            <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-slate-200">
+              <div className="min-w-0">
+                <h3 className="font-display text-[15px] font-bold text-slate-900">
+                  Transactions <span data-notranslate>({walletTxns.length})</span>
+                </h3>
+                <p className="mt-0.5 text-[12px] text-slate-500">Showing all wallet transactions for the selected period</p>
+              </div>
+              {walletTxns.length > 1 && (
+                /* The real control, invisible and exactly over the text it
+                   describes, so the whole thing is the tap target and the
+                   native picker still opens — the same trick the wallet
+                   list's sort uses. */
+                <span className="relative shrink-0 inline-flex items-center gap-1.5 h-9 px-3 rounded-xl border border-slate-200 text-[13px] text-slate-500">
+                  Sort by:
+                  <span className="font-bold text-slate-900" data-notranslate>{TXN_SORTS[txnSort]}</span>
+                  <Icon name="chevronDown" size={14} className="text-slate-400" />
+                  <select value={txnSort} onChange={function (e) { setTxnSort(e.target.value) }}
+                    aria-label="Sort transactions"
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer">
+                    <option value="latest">Latest</option>
+                    <option value="oldest">Oldest</option>
+                    <option value="amount">Highest amount</option>
+                  </select>
+                </span>
+              )}
+            </div>
+            {walletTxns.length === 0 ? (
+              <p className="px-5 py-14 text-center text-[13px] font-medium text-slate-400">No transactions yet</p>
+            ) : (
+              <div className="p-3 space-y-2">{sortedTxns.map(renderTxnRow)}</div>
+            )}
+          </div>
+
+          {/* The same eleven the phone branch mounts. Two were missing here and
+              one was a name I had invented, which is why the page came up
+              blank: an undefined call in the render path takes the whole tree
+              with it, and a build does not see it because it is only a
+              reference until something runs. */}
+          {renderIssueModal()}
+          {renderReceiveModal()}
+          {renderCollectModal()}
+          {renderTentativeModal()}
+          {renderTransferModal()}
+          {renderTransferConfirmModal()}
+          {renderCancelModal()}
+          {renderCollectionDetailModal()}
+          {renderPaymentDetailModal()}
+          {renderExpenseDetailModal()}
+          {renderEnlargedImg()}
+        </div>
+      )
+    }
+
+    if (inAdmin) return renderTxnsDesktop()
+
     return (
       <div className="space-y-4">
-        <WalletBackdrop />
+        <WalletBackdrop inAdmin={inAdmin} />
         <div className="space-y-3">
           {/* Only where nothing else offers a way back. This calls backNav's
              goBack — the very same handler the phone shell's ← pops — so on a
@@ -2950,13 +3737,13 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             {walletTxns.length > 0 && (
               <div className="shrink-0 flex gap-2">
                 <button type="button" onClick={exportWalletCSV} title="Export CSV"
-                  className="inline-flex items-center gap-1.5 h-9 px-2.5 sm:px-3 rounded-xl text-[12px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 transition-colors">
-                  <Icon name="download" size={15} />
+                  className="inline-flex items-center gap-1.5 h-9 px-2.5 sm:px-3 rounded-xl text-[12px] font-bold text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 hover:text-slate-900 active:scale-[0.98] disabled:opacity-60 transition-all">
+                  <Icon name="download" size={15} className="text-slate-400" />
                   <span className="hidden sm:inline">CSV</span>
                 </button>
                 <button type="button" onClick={exportWalletPDF} disabled={pdfBusy} title="Export PDF"
-                  className="inline-flex items-center gap-1.5 h-9 px-2.5 sm:px-3 rounded-xl text-[12px] font-bold text-red-700 bg-red-50 border border-red-200 hover:bg-red-100 disabled:opacity-60 transition-colors">
-                  <Icon name={pdfBusy ? 'refresh' : 'fileText'} size={14} />
+                  className="inline-flex items-center gap-1.5 h-9 px-2.5 sm:px-3 rounded-xl text-[12px] font-bold text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 hover:text-slate-900 active:scale-[0.98] disabled:opacity-60 transition-all">
+                  <Icon name={pdfBusy ? 'refresh' : 'fileText'} size={14} className="text-slate-400" />
                   <span className="hidden sm:inline">{pdfBusy ? 'Generating…' : 'PDF'}</span>
                 </button>
               </div>
@@ -3022,18 +3809,8 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
           </div>
         </div>
         {walletTxns.length > 0 && (function () {
-          var chrono = walletTxns.slice().sort(function (a, b) {
-            return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-          })
-          var totalCr = 0, totalDb = 0
-          chrono.forEach(function (t) {
-            if (t.type === 'credit') totalCr += (t.amount_paise || 0)
-            else totalDb += (t.amount_paise || 0)
-          })
-          var oldest = chrono[0]
-          var newest = chrono[chrono.length - 1]
-          var opening = oldest ? ((oldest.balance_after_paise || 0) - (oldest.type === 'credit' ? (oldest.amount_paise || 0) : -(oldest.amount_paise || 0))) : 0
-          var closing = newest ? (newest.balance_after_paise || 0) : 0
+          var totalCr = stats.credits, totalDb = stats.debits
+          var opening = stats.opening, closing = stats.closing
           return (
             /* Four readings of the same period, so they get one shape and one
                type size. Closing stays dark because it is the answer the other
@@ -3125,263 +3902,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
           </div>
         )}
         <div className="space-y-2">
-          {walletTxns.map(function (t) {
-            var isCredit = t.type === 'credit'
-            var issuedPath = t.issued_image_path || null
-            var receivedPath = t.received_image_path || null
-            var transferRow = t.reference_type === 'transfer' && t.reference_id ? transferParties[t.reference_id] : null
-            if (transferRow) {
-              var transferSenderPath = transferRow.sender_image_path
-              var transferReceiverPath = transferRow.receiver_image_path || transferRow.received_image_path
-              if (transferSenderPath) issuedPath = transferSenderPath
-              if (transferReceiverPath) receivedPath = transferReceiverPath
-            }
-            var issuedUrl = getReceiptUrl(issuedPath)
-            var receivedUrl = getReceiptUrl(receivedPath)
-            var issuedIsVoice = isVoiceNotePath(issuedPath)
-            var receivedIsVoice = isVoiceNotePath(receivedPath)
-            var isOwnWallet = selectedWallet && selectedWallet.user_id === profile.id
-            var canConfirm = isCredit && t.status === 'pending' && isOwnWallet
-            var epcHit = epcRefs[t.id] || null
-            var isEpc = !!epcHit && !epcHit.isCancel
-            var isEpcCancel = !!epcHit && epcHit.isCancel
-            var isCancelled = t.status === 'cancelled'
-            var epcCancellable = isEpc && epcHit.epc.status !== 'cancelled' && (isAdmin || epcHit.epc.collected_by === profile.id)
-            var collCancellable = t.reference_type === 'collection' && !isCancelled && (isAdmin || t.performed_by === profile.id)
-            var isExpRow = (t.reference_type === 'expense' || t.reference_type === 'expense_refund') && t.reference_id
-            var isPayRow = PAYMENT_REF_TYPES.indexOf(t.reference_type) !== -1
-            var rowIsClickable = isExpRow || t.reference_type === 'collection' || isEpc || isPayRow
-            function handleRowClick() {
-              if (!rowIsClickable) return
-              if (isExpRow) {
-                if (onOpenExpense) onOpenExpense(t.reference_id)
-                else openExpenseDetail(t.reference_id)
-              } else if (t.reference_type === 'collection') {
-                openCollectionDetail(t, 'collection')
-              } else if (isEpc) {
-                openCollectionDetail(t, 'epc')
-              } else if (isPayRow) {
-                openPaymentDetail(t)
-              }
-            }
-            var rowBorderClass = isCancelled
-              ? "border-gray-200 opacity-50"
-              : (t.status === 'pending' ? "border-amber-300 bg-amber-50/30" : "border-gray-200")
-            return (
-              <div key={t.id}
-                onClick={handleRowClick}
-                className={"bg-white border rounded-lg p-3 " + rowBorderClass + (rowIsClickable ? " cursor-pointer hover:border-indigo-300 hover:bg-indigo-50/30 transition-colors" : "")}>
-                <div className="flex items-start justify-between">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      {t.reference_type && (
-                        <span className={"text-[9px] font-bold uppercase px-1.5 py-0.5 rounded border " + (REF_TYPE_STYLES[t.reference_type] || 'bg-gray-100 text-gray-700 border-gray-300')}>
-                          {REF_TYPE_LABELS[t.reference_type] || t.reference_type}
-                        </span>
-                      )}
-                      {isEpc && (
-                        <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded border bg-emerald-50 text-emerald-700 border-emerald-200">
-                          Extra Plates
-                        </span>
-                      )}
-                      {isEpcCancel && (
-                        <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded border bg-rose-50 text-rose-700 border-rose-200">
-                          EP Cancel
-                        </span>
-                      )}
-                      <p className={"text-[14px] font-bold text-slate-900 leading-snug " + (isCancelled ? "line-through" : "")}>
-                        {t.description || '—'}
-                        {t.reference_type === 'transfer' && t.reference_id && transferParties[t.reference_id] && (function () {
-                          var tr = transferParties[t.reference_id]
-                          var cpId = t.type === 'debit' ? tr.to_user_id : tr.from_user_id
-                          var cpName = walletProfiles[cpId]?.name
-                          if (!cpName) return null
-                          return ' ' + (t.type === 'debit' ? '→' : '←') + ' ' + cpName
-                        })()}
-                        {isEpc && ' · ' + epcHit.epc.extras_charged + ' extras'}
-                      </p>
-                      {t.reference_type === 'collection' && t.payment_mode && (
-                        <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 border border-emerald-200">
-                          {t.payment_mode}
-                        </span>
-                      )}
-                      {t.status === 'pending' && (
-                        <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded">Pending</span>
-                      )}
-                      {isCancelled && (
-                        <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 bg-rose-100 text-rose-700 rounded">Cancelled</span>
-                      )}
-                      {(t.reference_type === 'expense' || t.reference_type === 'expense_refund') && t.reference_id && expenseRefs[t.reference_id] && expenseRefs[t.reference_id].status && (
-                        <span className={"text-[9px] font-bold uppercase px-1.5 py-0.5 rounded " + (EXP_STATUS_COLORS[expenseRefs[t.reference_id].status] || 'bg-gray-100 text-gray-600')}>
-                          {EXP_STATUS_LABELS[expenseRefs[t.reference_id].status] || expenseRefs[t.reference_id].status}
-                        </span>
-                      )}
-                      {!isCancelled && (
-                        <CheckedStamp
-                          checked={!!t.checked_by}
-                          checkerName={t.checked_by && walletProfiles[t.checked_by] ? walletProfiles[t.checked_by].name : null}
-                          checkedAt={t.checked_at}
-                          canToggle={canMarkChecked}
-                          canUncheck={t.checked_by === profile.id || isAdmin || isAuditor}
-                          busy={checkingTxnId === t.id}
-                          onToggle={function (ev) { ev.stopPropagation(); toggleWalletCheck(t) }}
-                        />
-                      )}
-                    </div>
-                    {isCancelled && t.cancelled_reason && (
-                      <p className="text-[10px] text-rose-600 italic mt-0.5">Reason: {t.cancelled_reason}</p>
-                    )}
-                    {/* Enrichment: expense/refund → type › sub-type · event · vendor · extra fields · (refund amount + date) · per-allocation breakdown */}
-                    {(t.reference_type === 'expense' || t.reference_type === 'expense_refund') && t.reference_id && expenseRefs[t.reference_id] && (function () {
-                      var e = expenseRefs[t.reference_id]
-                      var typeName = e.expense_types?.name || ''
-                      var subTypeName = e.expense_sub_types?.name || ''
-                      var allocs = e.expense_allocations || []
-                      var parts = []
-                      var pairs = []
-                      var subFields = (e.expense_sub_types && e.expense_sub_types.extra_fields) || []
-                      var meta = e.metadata || {}
-                      var extraFieldValues = []
-                      subFields.forEach(function (f) {
-                        var val = meta[f.key]
-                        if (val == null || val === '') return
-                        var display = val
-                        if (f.type === 'lookup' && f.source) display = expLookupLabels[f.source + ':' + String(val)] || val
-                        pairs.push({ label: f.label || f.key, value: String(display) })
-                        extraFieldValues.push(String(display))
-                      })
-                      // The plain vendor_name column is a fallback shown to the same
-                      // value a sub-type "vendor" lookup field already surfaces — skip
-                      // it here when that's the case so the vendor name isn't repeated.
-                      if (e.vendor_name && extraFieldValues.indexOf(e.vendor_name) === -1) pairs.unshift({ label: 'Vendor', value: e.vendor_name })
-                      if (t.reference_type === 'expense_refund' && e.amount_paise) parts.push('orig ' + formatPoints(e.amount_paise) + ' on ' + formatDate(e.expense_date))
-                      return (
-                        <>
-                          {(typeName || e._event_name) && (
-                            <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
-                              {typeName && (
-                                <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 text-[10px] font-bold">
-                                  {typeName + (subTypeName ? ' › ' + subTypeName : '')}
-                                </span>
-                              )}
-                              {e._event_name && (
-                                <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-500">
-                                  <Icon name="calendar" size={11} />
-                                  {e._event_name}
-                                </span>
-                              )}
-                            </p>
-                          )}
-                          {pairs.length > 0 && (
-                            <p className="mt-1 text-[11px] text-slate-500 leading-snug">
-                              {pairs.map(function (pr, pi) {
-                                return (
-                                  <span key={pi}>
-                                    {pi > 0 && <span className="text-slate-300"> · </span>}
-                                    {pr.label + ': '}
-                                    <span className="font-semibold text-slate-700">{pr.value}</span>
-                                  </span>
-                                )
-                              })}
-                            </p>
-                          )}
-                          {parts.length > 0 && <p className="mt-1 text-[11px] text-slate-500">{parts.join(' · ')}</p>}
-                          {allocs.length > 0 && (
-                            <div className="mt-0.5 space-y-0.5">
-                              {allocs.map(function (a, ai) {
-                                var allocType = a.expense_types?.name || ''
-                                var allocSubType = a.expense_sub_types?.name || ''
-                                return (
-                                  <p key={ai} className="text-[10px] text-slate-500 tabular-nums">
-                                    {(a.department || 'Unassigned')}{allocType ? ' · ' + allocType + (allocSubType ? ' › ' + allocSubType : '') : ''} — {formatPoints(a.amount_paise)}
-                                  </p>
-                                )
-                              })}
-                            </div>
-                          )}
-                        </>
-                      )
-                    })()}
-                    {(function () {
-                      var d = new Date(t.created_at)
-                      var time = isNaN(d) ? '' : String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0')
-                      var ref = t.reference_type
-                        ? (REF_TYPE_LABELS[t.reference_type] || t.reference_type) + (t.reference_id ? ' #' + String(t.reference_id).slice(0, 8) : '')
-                        : ''
-                      var who = t.performed_by && walletProfiles[t.performed_by] ? walletProfiles[t.performed_by].name : ''
-                      var bits = [formatDate(t.created_at), time, ref].filter(Boolean)
-                      return (
-                        <p className="mt-1 text-[11px] text-slate-500 leading-snug">
-                          {bits.map(function (b, bi) {
-                            return (
-                              <span key={bi} className="whitespace-nowrap">
-                                {bi > 0 && <span className="text-slate-300"> · </span>}
-                                {b}
-                              </span>
-                            )
-                          })}
-                          {who && (
-                            <span className="whitespace-nowrap">
-                              <span className="text-slate-300"> · </span>
-                              by <span className="font-semibold text-slate-600">{who}</span>
-                            </span>
-                          )}
-                        </p>
-                      )
-                    })()}
-                    {t.received_at && (
-                      <p className="mt-1 flex items-center gap-1 text-[11px] font-semibold text-emerald-600">
-                        <Icon name="checkCircle" size={12} className="shrink-0" />
-                        Confirmed {formatDate(t.received_at)}
-                      </p>
-                    )}
-                    {/* wrap, because two players side by side on a phone each
-                        end up too narrow for the browser to draw a timeline
-                        in; stacked they each get the row. */}
-                    <div className="flex flex-wrap items-center gap-2 mt-1.5">
-                      {issuedUrl && (
-                        <ProofThumb url={issuedUrl} label="Sent" tone="bg-blue-600"
-                          onOpen={function () { setEnlargedWalletImg(issuedUrl) }} />
-                      )}
-                      {receivedUrl && (
-                        <ProofThumb url={receivedUrl} label="Rcvd" tone="bg-emerald-600"
-                          onOpen={function () { setEnlargedWalletImg(receivedUrl) }} />
-                      )}
-                    </div>
-                    {isPayRow && t.reference_id && paymentRefs[t.reference_id] && (
-                      <div onClick={function (ev) { ev.stopPropagation() }}>
-                        <PaymentProofThumbs meta={paymentRefs[t.reference_id].metadata} />
-                      </div>
-                    )}
-                  </div>
-                  <div className="text-right flex-shrink-0 ml-2">
-                    <p className={"text-[15px] font-bold tabular-nums " + (isCredit ? "text-emerald-600" : "text-red-600")} data-notranslate>
-                      {isCredit ? '+' : '−'}{formatPoints(Math.abs(t.amount_paise))}
-                    </p>
-                    <p className="text-[11px] text-slate-400 tabular-nums" data-notranslate>bal: {formatPoints(t.balance_after_paise)}</p>
-                    {canConfirm && (
-                      <button onClick={function (ev) { ev.stopPropagation(); setReceiveModal(t); setReceiveImage(null) }}
-                        className="mt-1.5 px-2 py-1 text-[10px] font-bold text-amber-700 bg-amber-100 border border-amber-300 rounded hover:bg-amber-200 transition-colors">
-                        📷 Confirm Received
-                      </button>
-                    )}
-                    {t.reference_type === 'collection' && t.receipt_no && (
-                      <button onClick={function (ev) { ev.stopPropagation(); printReceipt(t) }}
-                        className="mt-1.5 ml-1 px-2 py-1 text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded hover:bg-blue-100 transition-colors">
-                        🖨 #{t.receipt_no}
-                      </button>
-                    )}
-                    {(collCancellable || epcCancellable) && (
-                      <button onClick={function (ev) { ev.stopPropagation(); openCancel(t, collCancellable ? 'collection' : 'epc') }}
-                        className="mt-1.5 ml-1 px-2 py-1 text-[10px] font-bold text-red-700 bg-red-50 border border-red-200 rounded hover:bg-red-100 transition-colors">
-                        🚫 Cancel
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
-            )
-          })}
+          {sortedTxns.map(renderTxnRow)}
         </div>
         {renderIssueModal()}
         {renderReceiveModal()}

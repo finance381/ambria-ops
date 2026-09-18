@@ -1,11 +1,16 @@
-import pcBg from '../../assets/pc-bg.webp'
-
-// The artwork behind a page.
+// The ground behind a page.
 //
-// Imported rather than referenced from public/: vite.config.js sets
-// base: "/ambria-ops/", so a hand-written "/pc-bg.webp" would 404 in production.
-// The import also gets it a content hash, so a new backdrop is never served
-// from a stale cache.
+// Drawn rather than photographed. It was a WebP of hard diagonals, and a
+// picture gives you no say in any of this: how many lines cross the screen is
+// whatever `cover` decides, and on a phone that was a dozen of them, each as
+// crisp as the card borders in front. Blurring and enlarging it got the edge
+// off but never changed what it was — a pattern competing with the content.
+//
+// Four wide, soft washes of colour instead. They read as depth rather than as
+// marks, which is the job: give the frosted cards something to sit on that is
+// not flat, and stay quiet enough that nobody looks at it twice. It is also a
+// few hundred bytes of CSS, so there is nothing to load and nothing to arrive
+// late.
 //
 // Fixed, so it stays put while the page scrolls over it. It was absolute until
 // the shell took it over, and absolute meant it covered the whole document and
@@ -18,7 +23,7 @@ import pcBg from '../../assets/pc-bg.webp'
 //     body background and disappears.
 //   - and NOT overflow-hidden on the parent: sticky children (the shell header,
 //     the expense form's submit bar, the Items/Split tabs) get pinned to a box
-//     that scrolls away. The img clips itself to its own inset-0 box instead.
+//     that scrolls away. It clips itself to its own inset-0 box instead.
 //
 // One caveat that cost an afternoon in the admin shell: a stacking context
 // paints as a single unit, above every sibling that precedes it. So this has
@@ -26,25 +31,32 @@ import pcBg from '../../assets/pc-bg.webp'
 // shell root, not inside the page area — or it hides the header rather than
 // sitting under it.
 //
-// `veil` overrides the scrim. How much the artwork can show through depends
-// on how wide the page is: behind one 540px column of cards on a phone the
-// diagonals frame the content, but across a 1500px admin content area the
-// same diagonals cut straight through tables and card borders.
-// The flat colour below is the artwork averaged down to one pixel, so while the
-// file is still in flight the ground composites to the same tone the artwork
-// will — the page opens on its own colour rather than on white that later
-// darkens. fetchpriority tells the browser this one is worth the queue, since
-// by the time it is asked for, the lazy images further down the page have
-// already been queued.
+// The washes are placed off the corners and sized past them, so what shows is
+// the middle of each one. Nothing here has a hard edge anywhere near the
+// screen, which is why a change of viewport height — the address bar sliding
+// away mid-scroll — moves them a little instead of resizing something sharp.
+var WASHES = [
+  'radial-gradient(75% 55% at 8% -5%,  rgba(99,102,241,0.30), transparent 72%)',
+  'radial-gradient(65% 50% at 102% 12%, rgba(56,189,248,0.26), transparent 72%)',
+  'radial-gradient(80% 60% at 88% 104%, rgba(139,92,246,0.26), transparent 72%)',
+  'radial-gradient(70% 55% at -8% 88%,  rgba(45,212,191,0.20), transparent 72%)',
+].join(', ')
+
+// `veil` overrides the scrim. How much the ground can show through depends on
+// how wide the page is: behind one 540px column of cards on a phone it frames
+// the content, but across a 1500px admin content area the same colour spreads
+// under tables and card borders.
 function PageBackdrop({ veil }) {
   return (
-    <div aria-hidden="true" className="pointer-events-none fixed inset-0 -z-10 overflow-hidden" style={{ backgroundColor: '#afc5db' }}>
-      <img src={pcBg} alt="" fetchpriority="high" decoding="async"
-        className="w-full h-full object-cover object-center" />
-      {/* A white scrim: the artwork is busiest at the corners and the cards
-          need a calm ground to sit on, or every border competes with a
-          diagonal behind it. */}
-      <div className={'absolute inset-0 ' + (veil || 'bg-white/55')} />
+    <div aria-hidden="true" className="pointer-events-none fixed inset-0 -z-10 overflow-hidden"
+      style={{ backgroundColor: '#eef1f7' }}>
+      <div className="absolute inset-0" style={{ backgroundImage: WASHES }} />
+      {/* A white scrim, graded rather than flat: heaviest at the top, where the
+          header and the first row of cards are, and lifting towards the bottom,
+          where there is usually nothing to read and the colour can be itself. A
+          single flat value had to be calm enough for the busiest part of the
+          page, which left the rest of it duller than it needed to be. */}
+      <div className={'absolute inset-0 ' + (veil || 'bg-gradient-to-b from-white/72 via-white/60 to-white/45')} />
     </div>
   )
 }

@@ -205,7 +205,6 @@ var ADMIN_TABS = [
     anyPerm: ['review.inventory','review.item_receipts','review.expenses','review.requisitions','review.vendor_payments'] },
   { key: 'expenses',    label: 'Finance',     icon: 'creditCard',
     blurb: 'Track and manage all your financial activities in one place.',
-    tagline: ['Better insights.', 'Smarter decisions.'],
     anyPerm: ['finance.wallet','finance.expenses','finance.payments','finance.salary_payouts','finance.cost_transfers','finance.ledgers.expense','finance.ledgers.event','finance.ledgers.vendor','finance.ledgers.salary','finance.ledgers.inventory','finance.ledgers.cost_transfer','finance.ledgers.gv'] },
   { key: 'procurement', label: 'Procurement', icon: 'cart',
     blurb: 'Requisitions, purchase orders and vendors.',
@@ -314,6 +313,22 @@ function AdminShell({ profile, onSignOut }) {
   var _isVisible = visibleTabs.find(function (t) { return t.key === active }) != null
   var ActiveModule = _isVisible ? (MODULES[active] || null) : null
   var activeTab = ADMIN_TABS.find(function (t) { return t.key === active })
+
+  // The breadcrumb bar has two jobs that want opposite things. At the top of
+  // the page it should not be there at all — any tint of its own makes the top
+  // of the page a lighter strip than the band below it. Once the page moves it
+  // has to hide what is passing under it, which needs to be nearly opaque.
+  //
+  // So it is told which of the two it is doing. The window is the scroller —
+  // the shell root is min-h-screen with no overflow of its own — so scrollY is
+  // the whole of it.
+  var [pageScrolled, setPageScrolled] = useState(false)
+  useEffect(function () {
+    function onScroll() { setPageScrolled(window.scrollY > 4) }
+    onScroll()
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return function () { window.removeEventListener('scroll', onScroll) }
+  }, [])
   var activeLabel = activeTab?.label || ''
 
   // The icon inherits currentColor, so one colour per state covers both the
@@ -456,11 +471,21 @@ function AdminShell({ profile, onSignOut }) {
         {/* Desktop only — the phone gets the fixed bar further down, which
             carries the drawer trigger this one has no need for.
 
-            Glass, not white: the page ground runs behind it, and an opaque
-            strip across the top of a tinted page reads as a piece of another
-            screen. Still frosted and still bordered, because content scrolls
-            underneath it. */}
-        <div className="hidden md:flex sticky top-0 z-30 shrink-0 h-14 items-center justify-between gap-4 px-8 bg-white/40 backdrop-blur-md border-b border-white/50">
+            Glass, and barely that: the page ground runs behind it, so any tint
+            of its own makes the top of the page a lighter strip than the band
+            below it — two surfaces where there is one page. At 40% white with a
+            border under it, that strip and the line across it were the first
+            things you saw. 20% and no border is enough to mute what scrolls
+            underneath without becoming a surface of its own; the blur does the
+            rest of that work. */}
+        {/* Nothing of its own until the page moves, then frosted. Any tint at
+            rest makes the top of the page a lighter strip than the band below
+            it, which reads as two surfaces; once the page moves it has to hide
+            what is passing underneath. */}
+        <div className={(pageScrolled
+          ? 'bg-white/55 backdrop-blur-2xl backdrop-saturate-150 shadow-[0_1px_12px_rgba(15,23,42,0.06)] '
+          : '') +
+          "hidden md:flex sticky top-0 z-30 shrink-0 h-14 items-center justify-between gap-4 px-8 transition-colors duration-200"}>
           {/* Two levels is all this shell has — the section, and the sub-tab
               inside it, which the tab row already shows. So the trail stops
               at the section rather than inventing depth. */}
@@ -491,24 +516,6 @@ function AdminShell({ profile, onSignOut }) {
                 )}
               </div>
             </div>
-            {/* Only where a section has one — an invented line of copy per
-                section would be filler, and filler in a header is noise.
-
-                Indigo lead, muted second line: the same two-line block
-                BroadcastHub prints, down to the sizes. */}
-            {activeTab.tagline && (
-              <div className="hidden lg:block text-right shrink-0">
-                {activeTab.tagline.map(function (line, i) {
-                  return (
-                    <p key={i} className={i === 0
-                      ? 'font-display text-[12.5px] font-extrabold text-indigo-600 leading-tight tracking-[-0.01em]'
-                      : 'text-[11px] text-slate-400 leading-snug'}>
-                      {line}
-                    </p>
-                  )
-                })}
-              </div>
-            )}
           </div>
         )}
         {ActiveModule && (

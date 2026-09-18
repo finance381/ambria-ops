@@ -15,9 +15,11 @@ import Icon from '../../components/ui/Icon'
 function Row({ label, value, money }) {
   if (value === null || value === undefined || value === '') return null
   return (
-    <div className="flex items-baseline justify-between gap-3 py-2">
-      <span className="shrink-0 text-[11.5px] font-medium text-slate-500">{label}</span>
-      <span className={"min-w-0 text-right text-[13px] text-slate-900" + (money ? " font-semibold tabular-nums" : "")}>{value}</span>
+    /* The value carries the weight. A label and its answer at the same weight
+       makes a reader work out which is which on every line. */
+    <div className="flex items-baseline justify-between gap-4 py-2.5">
+      <span className="shrink-0 text-[12px] font-medium text-slate-500">{label}</span>
+      <span className={"min-w-0 text-right text-[13px] font-semibold text-slate-900" + (money ? " tabular-nums" : "")}>{value}</span>
     </div>
   )
 }
@@ -47,7 +49,14 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
   var [gvCreators, setGvCreators] = useState({})
   var refData = useReferenceData()
 
+  // Only once somebody opens the deduct form.
+  //
+  // This reads deduction_type off every expense in the table to build a list
+  // of suggestions for one field. It ran on every mount — so opening any
+  // expense, to read it or to acknowledge it, scanned the whole table for a
+  // datalist almost nobody was going to see.
   useEffect(function () {
+    if (rejectMode !== 'deduct' || deductionTypes.length > 0) return
     supabase.from('expenses').select('deduction_type').not('deduction_type', 'is', null).neq('deduction_type', '')
       .then(function (res) {
         var unique = []
@@ -59,7 +68,7 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
         unique.sort()
         setDeductionTypes(unique)
       })
-  }, [])
+  }, [rejectMode])
 
   useEffect(function () {
     var ids = []
@@ -473,7 +482,7 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
             {receipts.map(function (r, rIdx) {
               if (r.isVoice) {
                 return (
-                  <div key={rIdx} className="space-y-1">
+                  <div key={rIdx} className="rounded-xl border border-slate-200 bg-white p-2.5">
                     <audio controls preload="auto" className="w-full"
                       onLoadedMetadata={function (ev) {
                         // MediaRecorder WebM lacks proper cues → playback stops after first cluster (~3s).
@@ -497,9 +506,14 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
                       <source src={r.url} />
                       Your browser cannot play this audio.
                     </audio>
+                    {/* A way out if the player cannot cope with the recording,
+                        not a second heading. Underlined and lettered ⬇ it read
+                        as a warning about the thing above it; it is a quiet
+                        offer sitting under the control it belongs to. */}
                     <a href={r.url} download target="_blank" rel="noopener noreferrer"
-                      className="text-[10px] text-slate-500 hover:text-indigo-600 underline">
-                      ⬇ Download if playback fails
+                      className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-medium text-slate-400 hover:text-indigo-600 transition-colors">
+                      <Icon name="download" size={12} />
+                      Download
                     </a>
                   </div>
                 )
@@ -511,7 +525,14 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
                       src={r.url} alt={"Receipt " + (rIdx + 1)}
                       onClick={function () { setImgFullscreen(r.url); setFullscreenIdx(rIdx) }}
                       style={{ transform: 'rotate(' + (imgRotations[r.path] || 0) + 'deg)', transition: 'transform 0.2s' }}
-                      className="w-full max-h-64 @3xl:max-h-[520px] object-contain rounded-lg border border-slate-100 bg-slate-50 cursor-pointer active:opacity-80"
+                      /* Capped against the viewport, not at a fixed 520px. A
+                         receipt is a photograph of a piece of paper, so it is
+                         always the tallest thing here and it is what decides
+                         whether the panel fits on a screen — 520px did on a tall
+                         one and did not on a laptop. Tapping it opens the
+                         full-screen viewer, which is where a receipt is actually
+                         read. */
+                      className="w-full max-h-64 @3xl:max-h-[52vh] object-contain rounded-lg border border-slate-100 bg-slate-50 cursor-pointer active:opacity-80"
                     />
                     <button type="button" onClick={function (e) { rotateImg(r.path, e) }} title="Rotate" aria-label="Rotate receipt"
                       className="absolute top-2 right-2 w-8 h-8 bg-black/50 hover:bg-black/70 text-white rounded-full flex items-center justify-center">
@@ -805,12 +826,21 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
         </div>
       )}
 
-      {/* Decide */}
+      {/* Decide.
+
+          One verdict, then the two ways of not giving it. They were four bars
+          of equal width down the panel, which made a side errand look like a
+          decision and gave the decision nothing to stand out against.
+
+          Send back and Deduct are the same weight as each other because they
+          are the same kind of answer. Deduct says what it is in its text and
+          its glyph rather than in a red border — an outlined panel in a second
+          colour reads as a second primary, and there is only one here. */}
       {canReview && !rejectMode && (
         <div className="space-y-2">
           {exp.status === 'recorded' && (
             <button onClick={acknowledge} disabled={saving}
-              className="w-full inline-flex items-center justify-center gap-2 py-3 text-[13px] font-bold text-white bg-emerald-600 rounded-xl hover:bg-emerald-700 active:scale-[0.99] disabled:opacity-50 disabled:active:scale-100 transition-all">
+              className="w-full inline-flex items-center justify-center gap-2 py-3 rounded-xl text-[13px] font-bold text-white bg-gradient-to-b from-emerald-500 to-emerald-600 shadow-[0_2px_8px_rgba(5,150,105,0.30)] hover:from-emerald-600 hover:to-emerald-700 active:scale-[0.99] disabled:opacity-50 disabled:active:scale-100 transition-all">
               <Icon name="checkCircle" size={16} />
               {saving ? 'Saving...' : 'Acknowledge'}
             </button>
@@ -818,20 +848,20 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
           <div className="flex gap-2">
             {exp.status === 'flagged' && (
               <button onClick={acknowledge} disabled={saving}
-                className="flex-1 inline-flex items-center justify-center gap-2 py-3 text-[13px] font-bold text-white bg-emerald-600 rounded-xl hover:bg-emerald-700 active:scale-[0.99] disabled:opacity-50 disabled:active:scale-100 transition-all">
+                className="flex-1 inline-flex items-center justify-center gap-2 py-3 rounded-xl text-[13px] font-bold text-white bg-gradient-to-b from-emerald-500 to-emerald-600 shadow-[0_2px_8px_rgba(5,150,105,0.30)] hover:from-emerald-600 hover:to-emerald-700 active:scale-[0.99] disabled:opacity-50 disabled:active:scale-100 transition-all">
                 <Icon name="checkCircle" size={16} />
                 {saving ? '...' : 'Accept'}
               </button>
             )}
             {exp.status !== 'flagged' && (
               <button onClick={function () { setRejectMode('flag') }} disabled={saving}
-                className="flex-1 inline-flex items-center justify-center gap-2 py-3 text-[13px] font-semibold text-slate-700 bg-white border border-slate-300 rounded-xl hover:bg-slate-50 active:scale-[0.99] disabled:opacity-50 transition-all">
+                className="flex-1 inline-flex items-center justify-center gap-2 py-3 rounded-xl text-[13px] font-semibold text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 active:scale-[0.99] disabled:opacity-50 transition-all">
                 <Icon name="undo" size={15} />
                 Send back
               </button>
             )}
             <button onClick={function () { setRejectMode('deduct') }} disabled={saving}
-              className="flex-1 inline-flex items-center justify-center gap-2 py-3 text-[13px] font-semibold text-red-700 bg-white border border-red-200 rounded-xl hover:bg-red-50 active:scale-[0.99] disabled:opacity-50 transition-all">
+              className="flex-1 inline-flex items-center justify-center gap-2 py-3 rounded-xl text-[13px] font-semibold text-red-700 bg-white border border-slate-300 hover:bg-red-50 hover:border-red-200 active:scale-[0.99] disabled:opacity-50 transition-all">
               <Icon name="banknote" size={15} />
               Deduct
             </button>
@@ -857,14 +887,6 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
         </div>
       )}
 
-      {/* Bookkeeping — a side errand, not a verdict on this expense */}
-      {canRaiseGV && (
-        <button onClick={onRaiseGV} disabled={saving}
-          className="w-full inline-flex items-center justify-center gap-2 py-2.5 text-[12.5px] font-semibold text-slate-600 bg-white border border-slate-300 rounded-xl hover:bg-slate-50 active:scale-[0.99] disabled:opacity-50 transition-all">
-          <Icon name="fileText" size={15} />
-          Raise JV
-        </button>
-      )}
 
       {rejectMode && (
         <div className="space-y-3">
@@ -933,13 +955,26 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
         </div>
       )}
 
-      {canDelete && !deleteMode && (
-        <div className="pt-2 border-t border-slate-200">
-          <button onClick={function () { setDeleteMode(true) }} disabled={saving}
-            className="w-full inline-flex items-center justify-center gap-2 py-2.5 text-[12.5px] font-semibold text-red-600 rounded-xl hover:bg-red-50 disabled:opacity-50 transition-colors">
-            <Icon name="trash" size={14} />
-            Delete expense
-          </button>
+      {/* The errands. Neither is a verdict on this expense — one is
+          bookkeeping, the other is undoing a mistake — so they sit below the
+          rule at the size of what they are, rather than taking a full bar each
+          in the middle of the decisions. */}
+      {(canRaiseGV || (canDelete && !deleteMode)) && (
+        <div className="flex items-center justify-between gap-3 pt-3 border-t border-slate-200">
+          {canRaiseGV ? (
+            <button onClick={onRaiseGV} disabled={saving}
+              className="inline-flex items-center gap-1.5 h-9 px-3 -ml-1 rounded-lg text-[12.5px] font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900 disabled:opacity-50 transition-colors">
+              <Icon name="fileText" size={15} />
+              Raise JV
+            </button>
+          ) : <span />}
+          {canDelete && !deleteMode && (
+            <button onClick={function () { setDeleteMode(true) }} disabled={saving}
+              className="inline-flex items-center gap-1.5 h-9 px-3 -mr-1 rounded-lg text-[12.5px] font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50 transition-colors">
+              <Icon name="trash" size={14} />
+              Delete expense
+            </button>
+          )}
         </div>
       )}
 

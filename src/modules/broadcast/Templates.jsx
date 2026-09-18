@@ -107,18 +107,22 @@ function bodyVarNums(bodyText) {
 
 function StatusChip({ value, count, active, onClick }) {
   return (
-    <button onClick={onClick}
-      className={"flex w-full items-center justify-between gap-1.5 h-8 pl-2.5 pr-1.5 text-[11.5px] font-semibold rounded-xl capitalize transition-colors border " +
+    /* An unpicked chip leans towards the dark it would become rather than just
+       firming its outline: seven chips whose only answer was a slightly greyer
+       border read as a list, not as seven things you can press. The picked one
+       does not respond — pressing it again does nothing. */
+    <button type="button" onClick={onClick} aria-pressed={!!active}
+      className={"group flex w-full items-center justify-between gap-1.5 h-8 pl-2.5 pr-1.5 text-[11.5px] font-semibold rounded-xl capitalize border transition-all duration-150 " +
         (active
           ? "bg-slate-900 border-slate-900 text-white"
-          : "bg-white border-slate-200 text-slate-700 hover:border-slate-300")}>
+          : "bg-white border-slate-200 text-slate-700 hover:border-slate-400 hover:bg-slate-50 hover:text-slate-900 hover:shadow-[0_1px_3px_rgba(15,23,42,0.08)]")}>
       {value}
       {/* The count sits in its own pill rather than trailing the label as
           bare text: at 11px a lone digit beside a word reads as part of it
           ("Draft 0"), and it has to stay legible on the dark active chip. */}
       <span data-notranslate
-        className={"inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-md text-[10.5px] font-bold tabular-nums " +
-          (active ? "bg-white/20 text-white" : "bg-slate-100 text-slate-500")}>
+        className={"inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-md text-[10.5px] font-bold tabular-nums transition-colors " +
+          (active ? "bg-white/20 text-white" : "bg-slate-100 text-slate-500 group-hover:bg-slate-200 group-hover:text-slate-700")}>
         {count}
       </span>
     </button>
@@ -174,7 +178,14 @@ function Field({ icon, label, hint, required, children, right, tall, bareField, 
 }
 
 // pl-11 clears the gutter Field draws its glyph and divider in.
-var CTRL = "block w-full pl-11 pr-3 py-2 bg-white border border-slate-300 rounded-xl text-[16px] sm:text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-shadow disabled:bg-slate-50 disabled:text-slate-500"
+// Every field on this form. The hover is enabled:, not bare: a disabled field
+// darkening its edge under the pointer promises an edit that is not on offer —
+// and half of these lock once a template has been submitted.
+//
+// The transition names both properties it animates. It said transition-shadow,
+// which is the ring; the border colour was changing in one frame under it, so
+// focus arrived as a snap followed by a fade.
+var CTRL = "block w-full pl-11 pr-3 py-2 bg-white border border-slate-300 rounded-xl text-[16px] sm:text-[13px] text-slate-900 placeholder:text-slate-400 enabled:hover:border-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-[border-color,box-shadow] duration-150 disabled:bg-slate-50 disabled:text-slate-500"
 function Templates({ profile }) {
   var permsNew = (profile && profile.permsNew) || []
   var canEdit = hasPerm(permsNew, 'broadcast.templates.edit')

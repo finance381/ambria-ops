@@ -258,25 +258,96 @@
 
      Two durations, both forward, so the bands slide past each other instead
      of moving as one drawing — that difference is what reads as water rather
-     than as a picture being dragged. */
+     than as a picture being dragged.
+
+     It travels left to right. Starting at -50% and ending at 0 is the same
+     seamless loop as the other way round — the band is drawn twice over, so
+     both ends of the travel are the identical frame — it just runs the other
+     way. */
   @keyframes ambria-wave-flow {
-    from { transform: translate3d(0, 0, 0); }
-    to { transform: translate3d(-50%, 0, 0); }
+    from { transform: translate3d(-50%, 0, 0); }
+    to { transform: translate3d(0, 0, 0); }
   }
+  /* The swell, on top of the travel.
+
+     Sliding sideways at a constant rate is a picture being dragged past a
+     window. Water also rises and falls, and it is the rise that sells it —
+     so each band carries a slow vertical breath as well, eased rather than
+     linear, because the turn at the top and bottom is where the movement
+     reads as weight rather than as a loop.
+
+     It animates `translate`, not `transform`, on purpose. Two animations on
+     one element cannot both drive transform — the later one simply wins —
+     but translate is its own property and composes with transform, so the
+     travel and the swell stack without either knowing about the other and
+     without an extra wrapper element apiece. */
+  @keyframes ambria-wave-swell {
+    0%, 100% { translate: 0 0; }
+    50%      { translate: 0 var(--wave-swell, -7px); }
+  }
+
+  /* The third axis: the band grows and settles as well as rising.
+
+     scale is a standalone property too, so this stacks on the other two
+     rather than fighting them — travel on transform, swell on translate,
+     breath on scale, none of the three aware of the others.
+
+     transform-origin: bottom is what makes it a swell instead of a zoom. From
+     the centre the band would grow downward as well, and the underside of
+     these waves is a straight edge that has to stay put. From the bottom only
+     the crests move. */
+  @keyframes ambria-wave-breathe {
+    0%, 100% { scale: 1 1; }
+    50%      { scale: 1 var(--wave-breathe, 1.04); }
+  }
+
+  /* Every period here is coprime with the travel it rides on, and with the
+     other bands' — a swell that shared a factor with its own travel would
+     come back to the same frame every few seconds, which is the tell the
+     three speeds exist to avoid in the first place. The negative delays start
+     each band part-way through, so they are already out of step on the first
+     frame rather than drifting apart over a minute. */
+  /* Three bands, and no two of them doing the same thing.
+
+     Each has its own travel speed, its own swell period AND its own swell
+     height, its own breath, and a negative delay on each so nothing starts
+     where anything else starts. Equal amplitudes were the remaining tell: the
+     bands rose at different moments but by the same amount, which reads as
+     one drawing cut into strips. Different heights read as different waves.
+
+     The periods are deliberately awkward numbers. Anything sharing a factor
+     with its own travel, or with another band's swell, returns to the same
+     arrangement every few seconds — and a pattern you can catch is worse than
+     no pattern at all. These come back together somewhere past the hour. */
   .ambria-wave-slow {
-    animation: ambria-wave-flow 12s linear infinite;
-    will-change: transform;
+    --wave-swell: -6px;
+    --wave-breathe: 1.03;
+    transform-origin: bottom;
+    animation: ambria-wave-flow 12s linear infinite,
+               ambria-wave-swell 7s ease-in-out infinite,
+               ambria-wave-breathe 17s ease-in-out -3s infinite;
+    will-change: transform, translate, scale;
   }
   .ambria-wave-fast {
-    animation: ambria-wave-flow 8s linear infinite;
-    will-change: transform;
+    --wave-swell: -11px;
+    --wave-breathe: 1.06;
+    transform-origin: bottom;
+    animation: ambria-wave-flow 8s linear infinite -2.5s,
+               ambria-wave-swell 5s ease-in-out -1.7s infinite,
+               ambria-wave-breathe 13s ease-in-out -7s infinite;
+    will-change: transform, translate, scale;
   }
   /* The crest, slowest of the three. Three speeds rather than two is what
      keeps the band from resolving into a repeating pattern: the slowest and
      fastest only line up again every few minutes. */
   .ambria-wave-drift {
-    animation: ambria-wave-flow 19s linear infinite;
-    will-change: transform;
+    --wave-swell: -4px;
+    --wave-breathe: 1.02;
+    transform-origin: bottom;
+    animation: ambria-wave-flow 19s linear infinite -6s,
+               ambria-wave-swell 11s ease-in-out -4.3s infinite,
+               ambria-wave-breathe 23s ease-in-out -11s infinite;
+    will-change: transform, translate, scale;
   }
 
   /* The header band's horizontal falloff.

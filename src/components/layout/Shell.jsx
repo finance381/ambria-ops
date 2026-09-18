@@ -649,7 +649,7 @@ function Shell({ profile, onSignOut }) {
                 <button
                   key={g.key}
                   onClick={function () { openGroup(g) }}
-                  className="relative ambria-glass-card rounded-2xl p-5 flex flex-col items-center justify-center gap-2 hover:bg-white/70 hover:shadow-[0_6px_20px_rgba(79,70,229,0.12)] active:scale-[0.98] transition-all"
+                  className="relative ambria-glass-card bg-indigo-200/40 shadow-[inset_0_1px_0_rgba(255,255,255,0.85),0_2px_8px_rgba(15,23,42,0.07),0_0_0_1px_rgba(99,102,241,0.18)] rounded-2xl p-5 flex flex-col items-center justify-center gap-2 hover:bg-white/70 hover:shadow-[0_8px_22px_rgba(79,70,229,0.16)] active:scale-[0.98] transition-all"
                 >
                   {badge > 0 && (
                     <span className="absolute top-2 right-2 min-w-[20px] h-5 px-1.5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
@@ -694,7 +694,7 @@ function Shell({ profile, onSignOut }) {
                      opaque white cards would blank it out in rectangles. Hover
                      deepens the glass rather than adding a border, which on a
                      patterned ground reads as noise. */
-                  className="relative ambria-glass-card rounded-2xl p-5 flex flex-col items-center justify-center gap-2 hover:bg-white/70 hover:shadow-[0_6px_20px_rgba(79,70,229,0.12)] active:scale-[0.98] transition-all"
+                  className="relative ambria-glass-card bg-indigo-200/40 shadow-[inset_0_1px_0_rgba(255,255,255,0.85),0_2px_8px_rgba(15,23,42,0.07),0_0_0_1px_rgba(99,102,241,0.18)] rounded-2xl p-5 flex flex-col items-center justify-center gap-2 hover:bg-white/70 hover:shadow-[0_8px_22px_rgba(79,70,229,0.16)] active:scale-[0.98] transition-all"
                 >
                   {badges[f.key] > 0 && (
                     <span className="absolute top-2 right-2 min-w-[20px] h-5 px-1.5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
