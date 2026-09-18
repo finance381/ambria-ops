@@ -518,7 +518,14 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
                       src={r.url} alt={"Receipt " + (rIdx + 1)}
                       onClick={function () { setImgFullscreen(r.url); setFullscreenIdx(rIdx) }}
                       style={{ transform: 'rotate(' + (imgRotations[r.path] || 0) + 'deg)', transition: 'transform 0.2s' }}
-                      className="w-full max-h-64 @3xl:max-h-[520px] object-contain rounded-lg border border-slate-100 bg-slate-50 cursor-pointer active:opacity-80"
+                      /* Capped against the viewport, not at a fixed 520px. A
+                         receipt is a photograph of a piece of paper, so it is
+                         always the tallest thing here and it is what decides
+                         whether the panel fits on a screen — 520px did on a tall
+                         one and did not on a laptop. Tapping it opens the
+                         full-screen viewer, which is where a receipt is actually
+                         read. */
+                      className="w-full max-h-64 @3xl:max-h-[52vh] object-contain rounded-lg border border-slate-100 bg-slate-50 cursor-pointer active:opacity-80"
                     />
                     <button type="button" onClick={function (e) { rotateImg(r.path, e) }} title="Rotate" aria-label="Rotate receipt"
                       className="absolute top-2 right-2 w-8 h-8 bg-black/50 hover:bg-black/70 text-white rounded-full flex items-center justify-center">
