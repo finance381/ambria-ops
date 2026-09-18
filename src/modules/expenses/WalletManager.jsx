@@ -1136,15 +1136,34 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   var [detailTarget, setDetailTarget] = useState(null)  // { txn, kind, event, collectorName, imgUrl, loading }
   var [payDetailTarget, setPayDetailTarget] = useState(null)  // { txn, entry, partyName, loading }
 
+  // Opens on what is already here, then fills in the rest.
+  //
+  // The ledger row this was clicked from was drawn from expenseRefs, which
+  // already holds the description, the amount, the date, the status, the type
+  // and the allocations — most of what the panel opens with. Waiting on a
+  // round trip to show any of it meant a second of "Loading expense…" for
+  // facts that were on the screen a moment ago.
+  //
+  // The fetch still runs, for the things the ledger had no reason to load:
+  // the receipts, the tax split, who reviewed it and when. When it lands it
+  // replaces the seed. The id does not change, so the panel is not remounted
+  // and nothing it has already drawn flickers.
   async function openExpenseDetail(expenseId) {
     if (!expenseId) return
-    setExpenseDetailLoading(true)
-    setExpenseDetailTarget({ _placeholder: true, id: expenseId })
+    var seed = expenseRefs[expenseId] || expenseRefs[Number(expenseId)]
+    setExpenseDetailLoading(!seed)
+    setExpenseDetailTarget(seed ? Object.assign({}, seed) : { _placeholder: true, id: expenseId })
     var { data: row, error } = await supabase.from('expenses')
       .select('id, user_id, batch_id, expense_type_id, expense_sub_type_id, amount_paise, tax_paise, description, status, expense_date, receipt_path, receipt_paths, created_at, rejection_reason, flag_reason, penalty_paise, penalized_at, penalized_by, reviewed_at, reviewed_by, acknowledged_at, acknowledged_by, deduction_type, vendor_name, travel_from, travel_to, travel_mode, metadata, event_id, deleted_at, expense_types(name, extra_fields), expense_sub_types(name, extra_fields), events(event_name), expense_allocations(department, department_id, venue_id, amount_paise)')
       .eq('id', Number(expenseId)).maybeSingle()
     setExpenseDetailLoading(false)
-    if (error || !row) { alert('Expense not found: ' + (error?.message || 'missing')); setExpenseDetailTarget(null); return }
+    if (error || !row) {
+      // With a seed on screen there is something to read and something to
+      // close; taking it away to announce a failed refresh would be worse
+      // than the failure.
+      if (!seed) { alert('Expense not found: ' + (error?.message || 'missing')); setExpenseDetailTarget(null) }
+      return
+    }
     setExpenseDetailTarget(row)
   }
 

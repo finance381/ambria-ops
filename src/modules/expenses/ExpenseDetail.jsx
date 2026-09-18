@@ -49,7 +49,14 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
   var [gvCreators, setGvCreators] = useState({})
   var refData = useReferenceData()
 
+  // Only once somebody opens the deduct form.
+  //
+  // This reads deduction_type off every expense in the table to build a list
+  // of suggestions for one field. It ran on every mount — so opening any
+  // expense, to read it or to acknowledge it, scanned the whole table for a
+  // datalist almost nobody was going to see.
   useEffect(function () {
+    if (rejectMode !== 'deduct' || deductionTypes.length > 0) return
     supabase.from('expenses').select('deduction_type').not('deduction_type', 'is', null).neq('deduction_type', '')
       .then(function (res) {
         var unique = []
@@ -61,7 +68,7 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
         unique.sort()
         setDeductionTypes(unique)
       })
-  }, [])
+  }, [rejectMode])
 
   useEffect(function () {
     var ids = []
