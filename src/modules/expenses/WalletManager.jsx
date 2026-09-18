@@ -263,6 +263,21 @@ var REF_TYPE_MARKS = {
   salary_adjustment: { icon: 'bank',       tone: 'bg-amber-50 text-amber-600' },
 }
 
+// The glyph for a sub-type field, picked off its own label. A sub-type can
+// define any field it likes, so there is no map to look it up in — but the
+// handful that actually recur are named plainly enough to recognise, and
+// anything unrecognised gets the one that means "a written detail".
+function fieldGlyph(label) {
+  var l = String(label || '').toLowerCase()
+  if (l.indexOf('vendor') !== -1) return 'building'
+  if (l.indexOf('date') !== -1) return 'calendar'
+  if (l.indexOf('employee') !== -1 || l.indexOf('staff') !== -1 || l.indexOf('name') !== -1) return 'user'
+  if (l.indexOf('amount') !== -1 || l.indexOf('rate') !== -1) return 'rupee'
+  if (l.indexOf('event') !== -1) return 'calendar'
+  if (l.indexOf('venue') !== -1) return 'mapPin'
+  return 'fileText'
+}
+
 // A reading of the period. The four of them are the same shape on purpose —
 // they are four answers to one question, and giving each its own size or its
 // own filled panel made them look like four unrelated facts.
@@ -3249,12 +3264,15 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                       with real space between the pairs, the breaks are where
                       the eye already is. */}
                   {pairs.length > 0 && (
-                    <div className="mt-2 flex flex-wrap gap-x-6 gap-y-2">
+                    <div className="mt-2 flex flex-wrap gap-2">
                       {pairs.map(function (pr, pi) {
                         return (
-                          <span key={pi} className="inline-flex min-w-0 flex-col gap-1">
-                            <span className="text-[9.5px] font-bold uppercase tracking-[0.06em] text-slate-400 leading-none">{pr.label}</span>
-                            <span className="text-[12px] font-semibold text-slate-700 leading-none">{pr.value}</span>
+                          <span key={pi} className="inline-flex min-w-0 items-center gap-2.5 px-3 py-2 rounded-xl bg-slate-50 border border-slate-100">
+                            <Icon name={fieldGlyph(pr.label)} size={15} className="shrink-0 text-slate-400" />
+                            <span className="inline-flex min-w-0 flex-col gap-1">
+                              <span className="text-[9.5px] font-bold uppercase tracking-[0.06em] text-slate-400 leading-none">{pr.label}</span>
+                              <span className="text-[12.5px] font-semibold text-slate-800 leading-none truncate">{pr.value}</span>
+                            </span>
                           </span>
                         )
                       })}
@@ -3267,13 +3285,18 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                         var allocType = a.expense_types?.name || ''
                         var allocSubType = a.expense_sub_types?.name || ''
                         return (
-                          /* The figure is the point of the line — which
-                             department carries how much — so it is the part
-                             that is not grey. */
-                          <p key={ai} className="text-[11px] text-slate-500 leading-relaxed">
-                            {(a.department || 'Unassigned')}{allocType ? ' · ' + allocType + (allocSubType ? ' › ' + allocSubType : '') : ''}
-                            <span className="mx-1 text-slate-300">—</span>
-                            <span className="font-semibold text-slate-700 tabular-nums" data-notranslate>{formatPoints(a.amount_paise)}</span>
+                          /* One chain of narrowing — department, type,
+                             sub-type — so it reads with chevrons throughout
+                             rather than a middot for the first step and a
+                             chevron for the second. The figure is the point of
+                             the line, so it is the part that is not grey. */
+                          <p key={ai} className="flex items-center gap-2 text-[12px] text-slate-500 leading-relaxed">
+                            <Icon name="tag" size={14} className="shrink-0 text-slate-400" />
+                            <span className="min-w-0">
+                              {(a.department || 'Unassigned')}{allocType ? ' › ' + allocType + (allocSubType ? ' › ' + allocSubType : '') : ''}
+                              <span className="mx-1.5 text-slate-300">—</span>
+                              <span className="font-bold text-slate-800 tabular-nums" data-notranslate>{formatPoints(a.amount_paise)}</span>
+                            </span>
                           </p>
                         )
                       })}
@@ -3289,26 +3312,34 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                 ? (REF_TYPE_LABELS[t.reference_type] || t.reference_type) + (t.reference_id ? ' #' + String(t.reference_id).slice(0, 8) : '')
                 : ''
               var who = t.performed_by && walletProfiles[t.performed_by] ? walletProfiles[t.performed_by].name : ''
-              var bits = [formatDate(t.created_at), time, ref].filter(Boolean)
+              // Date and time are one fact, so they are one item rather than two
+              // separated as though they were unrelated.
+              var when = formatDate(t.created_at) + (time ? ', ' + time : '')
+              var facts = [
+                { icon: 'calendar', text: when },
+                ref ? { icon: 'receipt', text: ref } : null,
+                who ? { icon: 'user', text: who, lead: 'by ' } : null,
+              ].filter(Boolean)
               // A wider gap above: everything before this says what the row is,
-              // and this says when it happened and who did it.
+              // and this says when it happened and who did it. A glyph apiece
+              // and a rule between them, because three kinds of fact in one grey
+              // string separated by middots is the thing that made this row hard
+              // to read in the first place.
               return (
-                <p className="mt-2.5 pt-0.5 text-[11px] text-slate-400 leading-relaxed">
-                  {bits.map(function (b, bi) {
+                <div className="mt-2.5 pt-0.5 flex flex-wrap items-center gap-y-1 text-[11.5px] text-slate-400 leading-relaxed">
+                  {facts.map(function (f, fi) {
                     return (
-                      <span key={bi} className="whitespace-nowrap">
-                        {bi > 0 && <span className="text-slate-300"> · </span>}
-                        {b}
+                      <span key={fi} className="inline-flex items-center whitespace-nowrap">
+                        {fi > 0 && <span aria-hidden="true" className="mx-3 w-px h-3.5 bg-slate-200" />}
+                        <Icon name={f.icon} size={13} className="shrink-0 mr-1.5 text-slate-300" />
+                        {f.lead}
+                        {f.lead
+                          ? <span className="font-semibold text-slate-600">{f.text}</span>
+                          : f.text}
                       </span>
                     )
                   })}
-                  {who && (
-                    <span className="whitespace-nowrap">
-                      <span className="text-slate-300"> · </span>
-                      by <span className="font-semibold text-slate-600">{who}</span>
-                    </span>
-                  )}
-                </p>
+                </div>
               )
             })()}
             {t.received_at && (
@@ -3340,7 +3371,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             <p className={"text-[15px] font-bold tabular-nums " + (isCredit ? "text-emerald-600" : "text-red-600")} data-notranslate>
               {isCredit ? '+' : '−'}{formatPoints(Math.abs(t.amount_paise))}
             </p>
-            <p className="text-[11px] text-slate-400 tabular-nums" data-notranslate>bal: {formatPoints(t.balance_after_paise)}</p>
+                    <p className="text-[11px] text-slate-400 tabular-nums" data-notranslate>Balance: {formatPoints(t.balance_after_paise)}</p>
             {canConfirm && (
               <button onClick={function (ev) { ev.stopPropagation(); setReceiveModal(t); setReceiveImage(null) }}
                 className="mt-1.5 px-2 py-1 text-[10px] font-bold text-amber-700 bg-amber-100 border border-amber-300 rounded hover:bg-amber-200 transition-colors">
