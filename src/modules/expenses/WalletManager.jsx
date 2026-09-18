@@ -2482,13 +2482,19 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
           </div>
         </div>
 
-        <div className="space-y-4 @3xl:grid @3xl:grid-cols-12 @3xl:gap-5 @3xl:space-y-0 @3xl:items-start">
-          <div className="@3xl:col-span-5 space-y-4">
+        {/* items-stretch, not items-start: the right column held one short card
+            and then stopped, leaving the page with a column of nothing beside a
+            column of content. Stretched, the two sides are one block. */}
+        <div className="space-y-4 @3xl:grid @3xl:grid-cols-12 @3xl:gap-5 @3xl:space-y-0 @3xl:items-stretch">
+          <div className="@3xl:col-span-5">
 
-        {/* Balance card */}
+        {/* The heading moves out of the card so that this column and the one
+            beside it start their cards on the same line. Recent Transactions
+            has always had its heading outside, and that one label was the whole
+            reason the two columns began at different heights. */}
+        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] mb-2">Balance</p>
         <div className="bg-white border border-slate-200 rounded-2xl shadow-[0_1px_2px_rgba(15,23,42,0.04)] p-5">
-          <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">Balance</p>
-          <p className={"mt-1 font-display text-[34px] font-extrabold tabular-nums leading-none " + balColor}
+          <p className={"font-display text-[34px] font-extrabold tabular-nums leading-none " + balColor}
             data-notranslate>{formatPoints(bal)}</p>
           <p className="mt-2.5 text-[12px] text-slate-500">Last activity — {lastActivity}</p>
         </div>
@@ -2497,7 +2503,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             At that point this column is about 600px and the tiles were sitting
             two to a row at 300px each — a 40px glyph and one word in the middle
             of a card wide enough for a sentence. */}
-        <div className="grid grid-cols-2 @3xl:grid-cols-4 gap-3">
+        <div className="mt-4 grid grid-cols-2 @3xl:grid-cols-4 gap-3">
           <button type="button" onClick={openCollectModal} className="relative py-4 bg-white border border-slate-200 rounded-2xl shadow-[0_1px_2px_rgba(15,23,42,0.04)] hover:border-slate-300 active:scale-[0.98] transition-all flex flex-col items-center justify-center gap-2">
             <span className="w-10 h-10 rounded-full bg-blue-50 text-blue-600 inline-flex items-center justify-center">
               <Icon name="download" size={18} />
@@ -2541,9 +2547,9 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
         </div>
           </div>
 
-          <div className="@3xl:col-span-7">
+          <div className="@3xl:col-span-7 @3xl:flex @3xl:flex-col">
         {/* Recent transactions */}
-        <div>
+        <div className="@3xl:flex-1 @3xl:flex @3xl:flex-col @3xl:min-h-0">
           {/* The heading carries the way to the rest of them. It listed five and
              said nothing about there being more, so History was the only route
              and it was two tiles away. */}
@@ -2559,7 +2565,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
           {walletTxns.length === 0 ? (
             /* Says what would be here and how it gets here, rather than only
                that there is nothing. */
-            <div className="py-8 px-4 text-center bg-white border border-slate-200 rounded-2xl">
+            <div className="py-8 px-4 text-center bg-white border border-slate-200 rounded-2xl @3xl:flex-1 @3xl:flex @3xl:flex-col @3xl:items-center @3xl:justify-center">
               <span className="inline-flex w-11 h-11 rounded-full bg-slate-100 text-slate-400 items-center justify-center">
                 <Icon name="receipt" size={19} />
               </span>
