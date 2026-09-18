@@ -879,8 +879,22 @@ function Ledgers({ profile, onNavigateToExpenses }) {
         ) : (
           <div className="space-y-2">
             {drillRows.map(function (r) {
+              // The row hands over what it is already showing, so the overlay
+              // opens on it rather than on a spinner. amount_paise is this
+              // allocation's share rather than the expense's total, so it is
+              // deliberately not passed — a figure that changes under you a
+              // moment after it appears is worse than one that arrives late.
               return (
-                <div key={r.allocation_id} onClick={function () { openExpenseDetail(r.expense_id) }}
+                <div key={r.allocation_id}
+                  onClick={function () {
+                    openExpenseDetail(r.expense_id, {
+                      description: r.description,
+                      expense_date: r.expense_date,
+                      status: r.status,
+                      user_id: r.user_id,
+                      created_at: r.created_at,
+                    })
+                  }}
                   className="group bg-white border border-slate-200 rounded-2xl px-4 py-3.5 cursor-pointer hover:border-indigo-300 hover:shadow-[0_4px_14px_rgba(79,70,229,0.08)] transition-all duration-150">
                   <div className="flex items-start gap-4">
                     <div className="flex-1 min-w-0">
