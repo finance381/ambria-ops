@@ -268,20 +268,47 @@
     from { transform: translate3d(-50%, 0, 0); }
     to { transform: translate3d(0, 0, 0); }
   }
+  /* The swell, on top of the travel.
+
+     Sliding sideways at a constant rate is a picture being dragged past a
+     window. Water also rises and falls, and it is the rise that sells it —
+     so each band carries a slow vertical breath as well, eased rather than
+     linear, because the turn at the top and bottom is where the movement
+     reads as weight rather than as a loop.
+
+     It animates `translate`, not `transform`, on purpose. Two animations on
+     one element cannot both drive transform — the later one simply wins —
+     but translate is its own property and composes with transform, so the
+     travel and the swell stack without either knowing about the other and
+     without an extra wrapper element apiece. */
+  @keyframes ambria-wave-swell {
+    0%, 100% { translate: 0 0; }
+    50%      { translate: 0 -7px; }
+  }
+
+  /* Every period here is coprime with the travel it rides on, and with the
+     other bands' — a swell that shared a factor with its own travel would
+     come back to the same frame every few seconds, which is the tell the
+     three speeds exist to avoid in the first place. The negative delays start
+     each band part-way through, so they are already out of step on the first
+     frame rather than drifting apart over a minute. */
   .ambria-wave-slow {
-    animation: ambria-wave-flow 12s linear infinite;
-    will-change: transform;
+    animation: ambria-wave-flow 12s linear infinite,
+               ambria-wave-swell 7s ease-in-out infinite;
+    will-change: transform, translate;
   }
   .ambria-wave-fast {
-    animation: ambria-wave-flow 8s linear infinite;
-    will-change: transform;
+    animation: ambria-wave-flow 8s linear infinite,
+               ambria-wave-swell 5s ease-in-out -1.7s infinite;
+    will-change: transform, translate;
   }
   /* The crest, slowest of the three. Three speeds rather than two is what
      keeps the band from resolving into a repeating pattern: the slowest and
      fastest only line up again every few minutes. */
   .ambria-wave-drift {
-    animation: ambria-wave-flow 19s linear infinite;
-    will-change: transform;
+    animation: ambria-wave-flow 19s linear infinite,
+               ambria-wave-swell 11s ease-in-out -4.3s infinite;
+    will-change: transform, translate;
   }
 
   /* The header band's horizontal falloff.
