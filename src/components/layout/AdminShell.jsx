@@ -487,7 +487,7 @@ function AdminShell({ profile, onSignOut }) {
             Once the bar is opaque enough to hide the ground, it has to carry
             the ruling itself, and only on a section whose page is ruled at all. */}
         <div className={(pageScrolled
-          ? (active === 'expenses' ? 'ambria-grid ' : '') + 'bg-white/80 backdrop-blur-md shadow-[0_1px_12px_rgba(15,23,42,0.06)] '
+          ? (active === 'expenses' ? 'ambria-grid ' : '') + 'bg-white/55 backdrop-blur-2xl backdrop-saturate-150 shadow-[0_1px_12px_rgba(15,23,42,0.06)] '
           : '') +
           "hidden md:flex sticky top-0 z-30 shrink-0 h-14 items-center justify-between gap-4 px-8 transition-colors duration-200"}>
           {/* Two levels is all this shell has — the section, and the sub-tab
