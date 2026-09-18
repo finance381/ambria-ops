@@ -107,18 +107,22 @@ function bodyVarNums(bodyText) {
 
 function StatusChip({ value, count, active, onClick }) {
   return (
-    <button onClick={onClick}
-      className={"flex w-full items-center justify-between gap-1.5 h-8 pl-2.5 pr-1.5 text-[11.5px] font-semibold rounded-xl capitalize transition-colors border " +
+    /* An unpicked chip leans towards the dark it would become rather than just
+       firming its outline: seven chips whose only answer was a slightly greyer
+       border read as a list, not as seven things you can press. The picked one
+       does not respond — pressing it again does nothing. */
+    <button type="button" onClick={onClick} aria-pressed={!!active}
+      className={"group flex w-full items-center justify-between gap-1.5 h-8 pl-2.5 pr-1.5 text-[11.5px] font-semibold rounded-xl capitalize border transition-all duration-150 " +
         (active
           ? "bg-slate-900 border-slate-900 text-white"
-          : "bg-white border-slate-200 text-slate-700 hover:border-slate-300")}>
+          : "bg-white border-slate-200 text-slate-700 hover:border-slate-400 hover:bg-slate-50 hover:text-slate-900 hover:shadow-[0_1px_3px_rgba(15,23,42,0.08)]")}>
       {value}
       {/* The count sits in its own pill rather than trailing the label as
           bare text: at 11px a lone digit beside a word reads as part of it
           ("Draft 0"), and it has to stay legible on the dark active chip. */}
       <span data-notranslate
-        className={"inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-md text-[10.5px] font-bold tabular-nums " +
-          (active ? "bg-white/20 text-white" : "bg-slate-100 text-slate-500")}>
+        className={"inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-md text-[10.5px] font-bold tabular-nums transition-colors " +
+          (active ? "bg-white/20 text-white" : "bg-slate-100 text-slate-500 group-hover:bg-slate-200 group-hover:text-slate-700")}>
         {count}
       </span>
     </button>
