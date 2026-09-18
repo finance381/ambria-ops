@@ -153,7 +153,7 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
     var acknowledgerIdByExpId = {}
     if (expIds.length > 0) {
       var { data: exps } = await supabase.from('expenses')
-        .select('id, receipt_paths, receipt_path, amount_paise, tax_paise, user_id, acknowledged_by, expense_allocations(department, department_id, venue_id, amount_paise, remarks)')
+        .select('id, receipt_paths, receipt_path, amount_paise, tax_paise, user_id, acknowledged_by, expense_allocations(department, department_id, venue_id, amount_paise, remarks, expense_type_id, expense_sub_type_id)')
         .in('id', expIds)
       ;(exps || []).forEach(function (ex) {
         var paths = Array.isArray(ex.receipt_paths) && ex.receipt_paths.length > 0
@@ -179,6 +179,10 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
     })
     var venueNameById = {}
     refData.venues.forEach(function (v) { venueNameById[v.id] = v.name })
+    var expTypeNameById = {}
+    refData.expenseTypes.forEach(function (t) { expTypeNameById[t.id] = t.name })
+    var expSubTypeNameById = {}
+    refData.expenseSubTypes.forEach(function (st) { expSubTypeNameById[st.id] = st.name })
 
     // Profile name lookup — resolves ledger_entries.created_by plus, for expense-linked
     // rows, the submitter (expenses.user_id) and acknowledger (expenses.acknowledged_by).
@@ -209,6 +213,8 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
         if (breakdownByExpId[id]) {
           patch._breakdown = breakdownByExpId[id]
           patch._venueNames = venueNameById
+          patch._typeNames = expTypeNameById
+          patch._subTypeNames = expSubTypeNameById
         }
         if (submitterIdByExpId[id] && profileNameById[submitterIdByExpId[id]]) patch._submitterName = profileNameById[submitterIdByExpId[id]]
         if (acknowledgerIdByExpId[id] && profileNameById[acknowledgerIdByExpId[id]]) patch._acknowledgerName = profileNameById[acknowledgerIdByExpId[id]]
@@ -535,6 +541,27 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
         if (e.metadata && e.metadata.mode) chipParts.push(String(e.metadata.mode).toUpperCase())
         if (e.metadata && e.metadata.due_date) chipParts.push('Due ' + fmtD(e.metadata.due_date))
         if (chipParts.length) lines.push({ kind: 'chip', text: chipParts.join('   ·   ') })
+        // Per-allocation split for expense-linked rows — same breakdown the
+        // on-screen entry shows (e._breakdown, built in loadEntries), so the
+        // statement matches what opening the entry in the app shows.
+        if (e._breakdown && e._breakdown.allocations && e._breakdown.allocations.length > 0) {
+          e._breakdown.allocations.forEach(function (a) {
+            var vName = a.venue_id && e._venueNames ? e._venueNames[a.venue_id] : null
+            var tName = a.expense_type_id && e._typeNames ? e._typeNames[a.expense_type_id] : null
+            var stName = a.expense_sub_type_id && e._subTypeNames ? e._subTypeNames[a.expense_sub_type_id] : null
+            var typeLabel = tName ? (tName + (stName ? ' › ' + stName : '')) : (stName || '')
+            var parts = []
+            if (a.department) parts.push(a.department)
+            if (typeLabel) parts.push(typeLabel)
+            if (vName) parts.push(vName)
+            var label = parts.length > 0 ? parts.join(' · ') : '—'
+            if (a.remarks) label += ' — ' + a.remarks
+            lines.push({ kind: 'alloc', text: label, amount: fmtN(a.amount_paise || 0) })
+          })
+          if ((e._breakdown.tax_paise || 0) > 0) {
+            lines.push({ kind: 'foot', text: 'GST', amount: fmtN(e._breakdown.tax_paise) })
+          }
+        }
         return lines
       }
 
@@ -624,6 +651,7 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
           4: { cellWidth: 26, halign: 'right', fontStyle: 'bold' },
         },
         margin: { left: 10, right: 10 },
+        didParseCell: statementHooks.didParseCell,
         willDrawCell: statementHooks.willDrawCell,
         didDrawCell: statementHooks.didDrawCell,
         didDrawPage: function () {
@@ -748,6 +776,11 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
             var isCredit = (e.credit_paise || 0) > 0
             var isDeleted = !!e.deleted_at
             var amt = isCredit ? (e.credit_paise || 0) : (e.debit_paise || 0)
+            // GST-driven fractional-rupee amounts (e.g. 7,584.84) are exact in the
+            // ledger, but the headline figure shows the same rounded whole-rupee
+            // total as "Grand total (rounded)" in the breakdown panel below, so the
+            // two don't visibly disagree on the same entry.
+            var headlineAmt = e._breakdown ? Math.round(e._breakdown.amount_paise / 100) * 100 : amt
             var kind = e.metadata && e.metadata.kind ? e.metadata.kind : e.ref_type
             var dotColor = isDeleted ? 'bg-gray-300' : isCredit ? 'bg-amber-500' : 'bg-green-500'
             var isExpRow = e.ref_type === 'expense' && e.ref_id && /^[0-9]+$/.test(String(e.ref_id)) && !isDeleted
@@ -839,8 +872,12 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
                             <div className="font-bold uppercase text-[9px] tracking-wider text-gray-500 mb-1">Allocation{b.allocations.length > 1 ? 's' : ''}</div>
                             {b.allocations.map(function (a, ai) {
                               var vName = a.venue_id && e._venueNames ? e._venueNames[a.venue_id] : null
+                              var tName = a.expense_type_id && e._typeNames ? e._typeNames[a.expense_type_id] : null
+                              var stName = a.expense_sub_type_id && e._subTypeNames ? e._subTypeNames[a.expense_sub_type_id] : null
+                              var typeLabel = tName ? (tName + (stName ? ' › ' + stName : '')) : (stName || '')
                               var parts = []
                               if (a.department) parts.push(a.department)
+                              if (typeLabel) parts.push(typeLabel)
                               if (vName) parts.push(vName)
                               return (
                                 <div key={ai} className="flex justify-between gap-2 text-gray-700 py-0.5">
@@ -857,7 +894,7 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
                 </div>
                 <div className="text-right flex-shrink-0">
                   <p className={"text-sm font-bold " + (isCredit ? "text-amber-800" : "text-green-700")}>
-                    {isCredit ? '+' : '−'}{formatPoints(amt)}
+                    {isCredit ? '+' : '−'}{formatPoints(headlineAmt)}
                   </p>
                   {!isDeleted && (
                     <p className="text-[10px] text-gray-400">Bal: {formatPoints(e.runningBalance)}</p>

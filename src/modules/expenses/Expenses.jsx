@@ -157,7 +157,7 @@ function Expenses({ profile, masterMode, inAdmin, deepLinkExpense, onDeepLinkHan
     if (!deepLinkExpense || !deepLinkExpense.id) return
     var cancelled = false
     supabase.from('expenses')
-      .select('id, user_id, batch_id, expense_type_id, expense_sub_type_id, amount_paise, tax_paise, description, status, expense_date, receipt_path, receipt_paths, created_at, rejection_reason, flag_reason, penalty_paise, penalized_at, deduction_type, vendor_name, travel_from, travel_to, travel_mode, metadata, event_id, deleted_at, payment_cash_paise, payment_credit_paise, payment_credit_cash_paise, payment_credit_bank_paise, cash_due_date, bank_due_date, expense_types(name, extra_fields), expense_sub_types(name, extra_fields), events(event_name), expense_allocations(' + ALLOC_COLS + ')')
+      .select('id, user_id, batch_id, expense_type_id, expense_sub_type_id, amount_paise, tax_paise, description, status, expense_date, receipt_path, receipt_paths, created_at, rejection_reason, flag_reason, penalty_paise, penalized_at, deduction_type, vendor_name, travel_from, travel_to, travel_mode, metadata, event_id, deleted_at, payment_cash_paise, payment_credit_paise, payment_credit_cash_paise, payment_credit_bank_paise, cash_due_date, bank_due_date, expense_types(name, extra_fields), expense_sub_types(name, extra_fields), events(event_name, venue_name, function_date, pax), expense_allocations(' + ALLOC_COLS + ')')
       .eq('id', deepLinkExpense.id).maybeSingle()
       .then(function (res) {
         if (cancelled) return
@@ -180,7 +180,7 @@ function Expenses({ profile, masterMode, inAdmin, deepLinkExpense, onDeepLinkHan
       : 'expense_allocations(' + ALLOC_COLS + ')'
 
     var query = supabase.from('expenses')
-      .select('id, user_id, batch_id, expense_type_id, expense_sub_type_id, amount_paise, tax_paise, description, status, expense_date, receipt_path, receipt_paths, created_at, rejection_reason, flag_reason, penalty_paise, penalized_at, penalized_by, reviewed_at, reviewed_by, acknowledged_at, acknowledged_by, deduction_type, vendor_name, travel_from, travel_to, travel_mode, metadata, event_id, deleted_at, payment_cash_paise, payment_credit_paise, payment_credit_cash_paise, payment_credit_bank_paise, cash_due_date, bank_due_date, expense_types(name), expense_sub_types(name, extra_fields), events(event_name), ' + allocEmbed)
+      .select('id, user_id, batch_id, expense_type_id, expense_sub_type_id, amount_paise, tax_paise, description, status, expense_date, receipt_path, receipt_paths, created_at, rejection_reason, flag_reason, penalty_paise, penalized_at, penalized_by, reviewed_at, reviewed_by, acknowledged_at, acknowledged_by, deduction_type, vendor_name, travel_from, travel_to, travel_mode, metadata, event_id, deleted_at, payment_cash_paise, payment_credit_paise, payment_credit_cash_paise, payment_credit_bank_paise, cash_due_date, bank_due_date, expense_types(name), expense_sub_types(name, extra_fields), events(event_name, venue_name, function_date, pax), ' + allocEmbed)
       .eq('user_id', profile.id)
       .is('deleted_at', null)
       .order('created_at', { ascending: false })
@@ -226,7 +226,7 @@ function Expenses({ profile, masterMode, inAdmin, deepLinkExpense, onDeepLinkHan
       : 'expense_allocations(' + ALLOC_COLS + ')'
 
     var query = supabase.from('expenses')
-      .select('id, user_id, batch_id, expense_type_id, expense_sub_type_id, amount_paise, tax_paise, description, status, expense_date, receipt_path, receipt_paths, created_at, rejection_reason, flag_reason, penalty_paise, penalized_at, penalized_by, reviewed_at, reviewed_by, deduction_type, vendor_name, travel_from, travel_to, travel_mode, metadata, event_id, deleted_at, payment_cash_paise, payment_credit_paise, payment_credit_cash_paise, payment_credit_bank_paise, cash_due_date, bank_due_date, expense_types(name), expense_sub_types(name, extra_fields), events(event_name), ' + allocEmbed2)
+      .select('id, user_id, batch_id, expense_type_id, expense_sub_type_id, amount_paise, tax_paise, description, status, expense_date, receipt_path, receipt_paths, created_at, rejection_reason, flag_reason, penalty_paise, penalized_at, penalized_by, reviewed_at, reviewed_by, deduction_type, vendor_name, travel_from, travel_to, travel_mode, metadata, event_id, deleted_at, payment_cash_paise, payment_credit_paise, payment_credit_cash_paise, payment_credit_bank_paise, cash_due_date, bank_due_date, expense_types(name), expense_sub_types(name, extra_fields), events(event_name, venue_name, function_date, pax), ' + allocEmbed2)
       .neq('user_id', profile.id)
       .in('status', statuses)
       .is('deleted_at', null)
@@ -295,7 +295,7 @@ function Expenses({ profile, masterMode, inAdmin, deepLinkExpense, onDeepLinkHan
 
     if (wasEditing && wasEditing.id) {
       var editedP = supabase.from('expenses')
-        .select('id, user_id, batch_id, expense_type_id, expense_sub_type_id, amount_paise, tax_paise, description, status, expense_date, receipt_path, receipt_paths, created_at, rejection_reason, flag_reason, penalty_paise, penalized_at, deduction_type, vendor_name, travel_from, travel_to, travel_mode, metadata, event_id, deleted_at, payment_cash_paise, payment_credit_paise, payment_credit_cash_paise, payment_credit_bank_paise, cash_due_date, bank_due_date, expense_types(name, extra_fields), expense_sub_types(name, extra_fields), events(event_name), expense_allocations(' + ALLOC_COLS + ')')
+        .select('id, user_id, batch_id, expense_type_id, expense_sub_type_id, amount_paise, tax_paise, description, status, expense_date, receipt_path, receipt_paths, created_at, rejection_reason, flag_reason, penalty_paise, penalized_at, deduction_type, vendor_name, travel_from, travel_to, travel_mode, metadata, event_id, deleted_at, payment_cash_paise, payment_credit_paise, payment_credit_cash_paise, payment_credit_bank_paise, cash_due_date, bank_due_date, expense_types(name, extra_fields), expense_sub_types(name, extra_fields), events(event_name, venue_name, function_date, pax), expense_allocations(' + ALLOC_COLS + ')')
         .eq('id', wasEditing.id)
         .maybeSingle()
       var results = await Promise.all([loadMyExpenses(false), loadApprovalExpenses(false), walletP, editedP])

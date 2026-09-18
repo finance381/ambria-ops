@@ -615,6 +615,9 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
           <Row label="Travel" value={exp.travel_from + (exp.travel_to ? ' → ' + exp.travel_to : '') + (exp.travel_mode ? ' (' + exp.travel_mode + ')' : '')} />
         )}
         {exp.events?.event_name && <Row label="Event" value={exp.events.event_name} />}
+        {exp.events?.function_date && <Row label="Event Date" value={formatDate(exp.events.function_date)} />}
+        {exp.events?.venue_name && <Row label="Venue" value={exp.events.venue_name} />}
+        {exp.events?.pax > 0 && <Row label="Pax" value={exp.events.pax} />}
         {exp.expense_sub_types?.extra_fields && exp.expense_sub_types.extra_fields.map(function (field) {
           var val = (exp.metadata && exp.metadata[field.key]) || exp[field.key] || null
           if (!val) return null

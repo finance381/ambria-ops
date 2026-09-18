@@ -59,6 +59,23 @@ export function makeStatementCellHooks(doc, FONT, opts) {
     if (data.column.index === dateCol || data.column.index === particularsCol) data.cell.text = []
   }
 
+  // autoTable sizes each row from the cell's original `text` — before
+  // willDrawCell empties it above — using the column's own font size and a
+  // plain line count. That estimate has no idea didDrawCell below hand-draws
+  // an extra label line above each date and a divider between them, so
+  // without a floor here the row can come out shorter than what actually
+  // gets painted, clipping the bottom ("LOGGED"/date) line at the cell's
+  // edge. The two constants mirror the fixed vertical offsets didDrawCell
+  // uses (label + date, or label + date + divider + label + date).
+  function didParseCell(data) {
+    if (!inRange(data)) return
+    if (data.column.index !== dateCol) return
+    var dm = dateMeta[data.row.index]
+    if (!dm) return
+    var contentH = dm.bottom ? 16.5 : 7
+    data.cell.styles.minCellHeight = contentH + data.cell.padding('top') + data.cell.padding('bottom')
+  }
+
   function didDrawCell(data) {
     if (!inRange(data)) return
     var rowIdx = data.row.index
@@ -125,5 +142,5 @@ export function makeStatementCellHooks(doc, FONT, opts) {
     }
   }
 
-  return { willDrawCell: willDrawCell, didDrawCell: didDrawCell }
+  return { willDrawCell: willDrawCell, didDrawCell: didDrawCell, didParseCell: didParseCell }
 }
