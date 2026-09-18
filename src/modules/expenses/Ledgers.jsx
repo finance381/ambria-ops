@@ -910,7 +910,11 @@ function Ledgers({ profile, onNavigateToExpenses }) {
                               <span key={i} className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-50 border border-slate-100 text-[11.5px] text-slate-500">
                                 <Icon name={glyphForLabel(c.label)} size={13} className="shrink-0 text-slate-400" />
                                 {c.label}:
-                                <span className="font-bold text-indigo-700">{c.value}</span>
+                                {/* Weight, not colour. Indigo on the value made
+                                    every chip look like a link to somewhere, and
+                                    a row of them a row of links; the label is
+                                    already the quiet half of the pair. */}
+                                <span className="font-bold text-slate-800">{c.value}</span>
                               </span>
                             )
                           })}
