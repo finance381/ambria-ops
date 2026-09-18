@@ -8,6 +8,7 @@ import { hasPerm } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
 import VoiceInput from '../../components/ui/VoiceInput'
 import Icon from '../../components/ui/Icon'
+import CheckedStamp from '../../components/ui/CheckedStamp'
 
 // Label left, value right, hairline between. A py-2 row plus a divider costs
 // ~34px where the old space-y-3 pair cost ~44px, and the rule makes a long
@@ -84,6 +85,54 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
       setAcknowledgerName(exp.acknowledged_by ? (map[exp.acknowledged_by] || '—') : '')
     })
   }, [exp.id, exp.reviewed_by, exp.penalized_by, exp.acknowledged_by])
+
+  // The "checked" stamp lives on wallet_transactions (the debit this expense
+  // created), not on the expense row itself — same finance-controller review
+  // as the Wallet ledger row, surfaced here too. A resubmit debits the wallet
+  // again under the same reference_id, so the newest matching row is the one
+  // that reflects the current submission.
+  var [checkTxnId, setCheckTxnId] = useState(null)
+  var [checkedBy, setCheckedBy] = useState(null)
+  var [checkedAt, setCheckedAt] = useState(null)
+  var [checkedByName, setCheckedByName] = useState('')
+  var [checkBusy, setCheckBusy] = useState(false)
+
+  useEffect(function () {
+    var cancelled = false
+    setCheckTxnId(null); setCheckedBy(null); setCheckedAt(null); setCheckedByName('')
+    supabase.from('wallet_transactions')
+      .select('id, checked_by, checked_at')
+      .eq('reference_type', 'expense')
+      .eq('reference_id', String(exp.id))
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .then(function (res) {
+        if (cancelled) return
+        var row = res.data && res.data[0]
+        if (!row) return
+        setCheckTxnId(row.id)
+        setCheckedBy(row.checked_by)
+        setCheckedAt(row.checked_at)
+        if (row.checked_by) {
+          supabase.from('profiles').select('name').eq('id', row.checked_by).maybeSingle().then(function (r2) {
+            if (!cancelled) setCheckedByName((r2.data && r2.data.name) || '')
+          })
+        }
+      })
+    return function () { cancelled = true }
+  }, [exp.id])
+
+  async function toggleChecked() {
+    if (!checkTxnId || checkBusy) return
+    setCheckBusy(true)
+    var { data, error } = await supabase.rpc('fn_toggle_wallet_check', { p_transaction_id: checkTxnId })
+    setCheckBusy(false)
+    if (error) { alert('Could not update: ' + error.message); return }
+    var nowChecked = !!data
+    setCheckedBy(nowChecked ? profile.id : null)
+    setCheckedAt(nowChecked ? new Date().toISOString() : null)
+    setCheckedByName(nowChecked ? (profile.name || '') : '')
+  }
 
   useEffect(function () {
     supabase.from('general_vouchers')
@@ -188,6 +237,7 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
   var canDelete = !isDeleted && ((exp.user_id === profile?.id && (exp.status === 'recorded' || exp.status === 'flagged')) || isAdmin)
   var canEdit = !isDeleted && exp.user_id === profile?.id && (exp.status === 'recorded' || exp.status === 'flagged')
   var canResubmit = !isDeleted && exp.user_id === profile?.id && exp.status === 'flagged'
+  var canMarkChecked = hasPerm(profile?.permsNew, 'finance.wallet.mark_checked')
   // GV rules:
   //  • recorded / flagged / deducted → admin OR anyone with finance_gv permission
   //  • acknowledged → admin OR auditor only (finance_gv perm not enough — locks stricter after ack)
@@ -823,6 +873,24 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
               )
             })}
           </div>
+        </div>
+      )}
+
+      {/* Lets an auditor see, before they act, whether the finance controller
+          already verified the allocation — separate from acknowledge/send
+          back/deduct, which is about the bill itself. */}
+      {checkTxnId && (checkedBy || canMarkChecked) && (
+        <div className="flex items-center justify-between py-1">
+          <span className="text-[12px] font-medium text-slate-500">Finance check</span>
+          <CheckedStamp
+            checked={!!checkedBy}
+            checkerName={checkedByName}
+            checkedAt={checkedAt}
+            canToggle={canMarkChecked}
+            canUncheck={checkedBy === profile?.id || isAdmin || isAuditor}
+            busy={checkBusy}
+            onToggle={toggleChecked}
+          />
         </div>
       )}
 
