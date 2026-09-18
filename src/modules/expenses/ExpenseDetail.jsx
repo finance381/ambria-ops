@@ -858,15 +858,15 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
       {/* Lets an auditor see, before they act, whether the finance controller
           already verified the allocation — separate from acknowledge/send
           back/deduct, which is about the bill itself. */}
-      {checkTxnId && (checkedBy || canMarkChecked) && (
+      {(exp.checked_by || canMarkChecked) && (
         <div className="flex items-center justify-between py-1">
           <span className="text-[12px] font-medium text-slate-500">Finance check</span>
           <CheckedStamp
-            checked={!!checkedBy}
+            checked={!!exp.checked_by}
             checkerName={checkedByName}
-            checkedAt={checkedAt}
+            checkedAt={exp.checked_at}
             canToggle={canMarkChecked}
-            canUncheck={checkedBy === profile?.id || isAdmin || isAuditor}
+            canUncheck={exp.checked_by === profile?.id || isAdmin || isAuditor}
             busy={checkBusy}
             onToggle={toggleChecked}
           />
