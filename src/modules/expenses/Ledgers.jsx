@@ -129,17 +129,6 @@ function Ledgers({ profile, onNavigateToExpenses }) {
   var [venueFilter, setVenueFilter] = useState('')
   var [statusFilter, setStatusFilter] = useState('')
   var [pendingOnly, setPendingOnly] = useState(false)
-  // Which column the table is ordered by, and which way. Empty means the order
-  // the query returned, which is what it has always shown.
-  var [sortKey, setSortKey] = useState('')
-  var [sortDir, setSortDir] = useState('desc')
-  function toggleSort(k) {
-    // Same column again flips the direction; a new column starts on the way
-    // round people ask first, which for a figure is biggest.
-    if (sortKey === k) { setSortDir(sortDir === 'desc' ? 'asc' : 'desc'); return }
-    setSortKey(k)
-    setSortDir('desc')
-  }
   var [pdfBusy, setPdfBusy] = useState(false)
 
   // Master maps
@@ -775,8 +764,6 @@ function Ledgers({ profile, onNavigateToExpenses }) {
   }
 
   // Client-side filter: search + pendingOnly (nested dept -> type -> sub-type)
-  // `var`, and reassigned below: the sort rebuilds the tree rather than
-  // mutating the groups the memo handed over.
   var visibleGroups = deptGroups.map(function (g) {
     var deptName = g.deptId ? (deptMap[g.deptId] || 'Unassigned') : 'Unallocated'
     var q = searchDeb.toLowerCase()
@@ -809,24 +796,6 @@ function Ledgers({ profile, onNavigateToExpenses }) {
   //
   // The name differs per level: a department has one, a type has one, a
   // sub-type has one, and they are three different fields.
-  // Every column that sorts is a figure now, so there is one comparator. The
-  // by-name branch went with the caret on Department / Type — nothing can set
-  // sortKey to 'name' any more, and a branch nothing can reach is a branch that
-  // stops being true without anyone finding out.
-  if (sortKey) {
-    var dir = sortDir === 'asc' ? 1 : -1
-    var byNum = function (a, b) { return dir * ((a[sortKey] || 0) - (b[sortKey] || 0)) }
-
-    visibleGroups = visibleGroups.map(function (g) {
-      var types = g.typeGroups.map(function (t) {
-        return Object.assign({}, t, { subRows: t.subRows.slice().sort(byNum) })
-      })
-      types.sort(byNum)
-      return Object.assign({}, g, { typeGroups: types })
-    })
-    visibleGroups.sort(byNum)
-  }
-
   // ─── DRILL VIEW ───
   if (drillGroup) {
     return (
@@ -1014,24 +983,6 @@ function Ledgers({ profile, onNavigateToExpenses }) {
     )
   }
 
-  // A heading you can order by. The caret is faint until the column is the one
-  // doing the ordering, so the row reads as headings with an affordance rather
-  // than as a row of arrows.
-  function SortHead(props) {
-    var on = sortKey === props.k
-    return (
-      <button type="button" onClick={function () { toggleSort(props.k) }}
-        aria-label={"Sort by " + props.label}
-        className={"inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-[0.08em] transition-colors " +
-          (props.right ? "justify-end " : "") +
-          (on ? "text-indigo-600" : "text-slate-500 hover:text-slate-900")}>
-        {props.label}
-        <Icon name={on && sortDir === 'asc' ? 'chevronUp' : 'chevronDown'} size={12}
-          className={"shrink-0 " + (on ? "" : "opacity-30")} />
-      </button>
-    )
-  }
-
   function PresetChip(props) {
     var active = datePreset === props.k
     return (
@@ -1206,17 +1157,13 @@ function Ledgers({ profile, onNavigateToExpenses }) {
               up with each other. */}
           <div className="flex items-stretch bg-slate-50 border-b border-slate-200">
             <div className={"flex-1 " + COLS + " px-3 py-2.5"}>
-              {/* A plain heading. It sorted by name, which is an order the tree
-                  is close to already and not one anybody came here to ask for —
-                  the caret was a control whose answer to being pressed was
-                  "much the same list". The figures still sort; those are
-                  questions worth asking. */}
+              {/* Headings, not controls. */}
               <span className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em]">Department / Type</span>
-              <SortHead k="committed" label="Acknowledged" right />
-              <SortHead k="pending" label="Pending" right />
-              <SortHead k="credit" label="Credit" right />
-              <SortHead k="total" label="Net Total" right />
-              <SortHead k="allocs" label="#" right />
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] text-right">Acknowledged</span>
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] text-right">Pending</span>
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] text-right">Credit</span>
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] text-right">Net Total</span>
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] text-right">#</span>
             </div>
             <span className="shrink-0 px-2.5 py-2.5 text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em]">Export</span>
           </div>
