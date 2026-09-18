@@ -24,36 +24,41 @@ var COLS = 'grid grid-cols-[1fr_104px_104px_104px_120px_44px] gap-2'
 // behind every figure turns four columns into a wall of tinted blocks, and the
 // only part that differs between them, the number, then has to compete with
 // its own background to be read.
-// Aligned on the decimal point, not on the right edge.
+// The figure and its unit in two columns, not one string.
 //
-// Ranging a money column right lines up the last character, which is only the
-// same thing when every figure has the same number of decimals. Here most are
-// whole and a few are not, so "7,82,310 pts" sat against "22,946.29 pts" with
-// their digits two places out — the column looked ragged down the middle even
-// though every row ended flush.
+// "pts" after every number is the same three characters on every row, and
+// baked into the string it was pushing each figure left by however wide its
+// own number happened to be — so the units ran in a ragged line down the
+// column and the numbers ended wherever that left them.
 //
-// The fraction goes in a slot of its own, 3ch wide and left-aligned, which is
-// exactly ".99" in tabular figures. A whole number leaves that slot empty and
-// still occupies it, so the units digit of every figure in the column lands on
-// the same vertical line.
+// The unit gets a fixed slot at the right of the cell and the number ranges
+// right against it. Both edges are then straight: every "pts" starts on one
+// line, every figure ends on another.
+//
+// The unit is grey and unbolded whatever the figure is doing. It carries no
+// information — it is the same word in all twelve cells — and at the weight of
+// the number it was competing with it.
 function Money({ paise, tone, bold, dashWhenZero }) {
   var dash = paise == null || (dashWhenZero && !paise)
-  if (dash) {
-    return <span className="text-right text-[12.5px] text-slate-300" data-notranslate>—</span>
-  }
+  return (
+    <span className="flex items-baseline justify-end gap-2 whitespace-nowrap" data-notranslate>
+      <span className={"text-[12.5px] tabular-nums " +
+        (dash ? "text-slate-300" : (bold ? "font-bold " : "font-semibold ") + tone)}>
+        {dash ? '—' : formatPointsPlain(paise)}
+      </span>
+      <span className="w-[1.9rem] shrink-0 text-left text-[11.5px] font-medium text-slate-400">pts</span>
+    </span>
+  )
+}
+
+// formatPoints without its unit, since Money prints that separately.
+function formatPointsPlain(paise) {
   var neg = paise < 0
   var abs = Math.abs(paise)
   var whole = Math.floor(abs / 100)
   var frac = abs % 100
-  return (
-    <span className={"text-right text-[12.5px] tabular-nums whitespace-nowrap " +
-      (bold ? "font-bold " : "font-semibold ") + tone}
-      data-notranslate>
-      {(neg ? '−' : '') + whole.toLocaleString('en-IN')}
-      <span className="inline-block w-[3ch] text-left">{frac ? '.' + String(frac).padStart(2, '0') : ''}</span>
-      pts
-    </span>
-  )
+  return (neg ? '−' : '') + whole.toLocaleString('en-IN') +
+    (frac ? '.' + String(frac).padStart(2, '0') : '')
 }
 
 var TONES = {
