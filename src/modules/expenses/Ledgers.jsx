@@ -481,11 +481,15 @@ function Ledgers({ profile, onNavigateToExpenses }) {
       return next
     })
     if (opening && rowEl) {
-      // The row does not move when it expands — the content grows underneath
-      // it — so this can be measured now rather than after the render.
+      // scroll-margin-top and scrollIntoView, rather than working out a target
+      // and calling scrollTo. Two things are pinned above this row — the
+      // shell's bar and this screen's filter block — and only one of them is a
+      // number this component can measure. Handing the browser a calc that
+      // names the other lets it resolve both, and find the right scroller while
+      // it is at it.
       var sticky = stickyRef.current ? stickyRef.current.offsetHeight : 0
-      var top = rowEl.getBoundingClientRect().top + window.scrollY - sticky - 8
-      window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
+      rowEl.style.scrollMarginTop = 'calc(var(--app-header-h, 0px) + ' + (sticky + 8) + 'px)'
+      rowEl.scrollIntoView({ behavior: 'smooth', block: 'start' })
     }
     allocSnapshot.current[deptKey] = currentAllocs
     setDeptDelta(function (prev) {
@@ -944,7 +948,13 @@ function Ledgers({ profile, onNavigateToExpenses }) {
         <p className="text-xs text-gray-400">Live financial tracker · {totals.allocs} allocation{totals.allocs !== 1 ? 's' : ''}</p>
       </div>
 
-      <div ref={stickyRef} className="sticky top-0 z-10 bg-gray-50 pt-1 pb-3 border-b border-gray-200 space-y-2">
+      {/* top-0 put this underneath the shell's own sticky bar rather than below
+          it — both were pinned to the top of the window and the shell's is the
+          one in front, so the first rows of this block were behind it the whole
+          time you were scrolled. --app-header-h is what the shell publishes for
+          exactly this. */}
+      <div ref={stickyRef} className="sticky z-10 bg-gray-50 pt-1 pb-3 border-b border-gray-200 space-y-2"
+        style={{ top: 'var(--app-header-h, 0px)' }}>
         {/* Left-aligned, and the figure given the size of the thing it is. A
             9px label centred over a 16px number made four cards you had to lean
             in to read; ranged left they also line up with everything below
