@@ -35,7 +35,17 @@ export function useExpenseDetailModal(profile, isAdmin, onRefresh, onNavigateToE
   var expenseDetailModal = !target ? null : createPortal((
     <div className="fixed inset-0 z-[9998] bg-black/70 flex items-start sm:items-center justify-center p-0 sm:p-4 overflow-y-auto"
       onClick={function () { closeExpenseDetail(false) }}>
-      <div className="relative bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-2xl p-4 sm:p-5 min-h-screen sm:min-h-0 sm:max-h-[92vh] overflow-y-auto"
+      {/* Wide enough for the detail to use its own two-column layout.
+
+          ExpenseDetail is a @container and splits into two columns at 48rem. At
+          max-w-2xl the container was about 630px once padding was off, so it
+          never did — every panel stacked, the panel ran twice the height it
+          needed, and a modal that fits on a screen had a scrollbar down the
+          side of it.
+
+          The height cap stays as a floor rather than as the plan: an expense
+          with a dozen allocations can outgrow any screen. */}
+      <div className="relative bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-5xl p-4 sm:p-5 min-h-screen sm:min-h-0 sm:max-h-[92vh] overflow-y-auto"
         onClick={function (ev) { ev.stopPropagation() }}>
         {/* The overlay owns its close control. It used to lean on the Back link
             inside ExpenseDetail, which left no way out on a phone, where the
