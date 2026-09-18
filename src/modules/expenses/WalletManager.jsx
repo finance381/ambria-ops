@@ -3290,13 +3290,20 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                              rather than a middot for the first step and a
                              chevron for the second. The figure is the point of
                              the line, so it is the part that is not grey. */
-                          <p key={ai} className="flex items-center gap-2 text-[12px] text-slate-500 leading-relaxed">
+                          /* The figures share a column. Trailing the label with
+                             a dash put each one wherever its own label happened
+                             to end, so four allocations made four different
+                             margins and the amounts could not be compared down
+                             the list — which is the only reason to print them
+                             one under another. The label takes the room that is
+                             left, the figure is pinned right, and tabular-nums
+                             lines the digits up inside it. */
+                          <p key={ai} className="flex items-center gap-3 text-[12px] text-slate-500 leading-relaxed">
                             <Icon name="tag" size={14} className="shrink-0 text-slate-400" />
-                            <span className="min-w-0">
+                            <span className="flex-1 min-w-0 truncate">
                               {(a.department || 'Unassigned')}{allocType ? ' › ' + allocType + (allocSubType ? ' › ' + allocSubType : '') : ''}
-                              <span className="mx-1.5 text-slate-300">—</span>
-                              <span className="font-bold text-slate-800 tabular-nums" data-notranslate>{formatPoints(a.amount_paise)}</span>
                             </span>
+                            <span className="shrink-0 font-bold text-slate-800 tabular-nums" data-notranslate>{formatPoints(a.amount_paise)}</span>
                           </p>
                         )
                       })}
