@@ -884,24 +884,24 @@ function Ledgers({ profile, onNavigateToExpenses }) {
                   className="group bg-white border border-slate-200 rounded-2xl px-4 py-3.5 cursor-pointer hover:border-indigo-300 hover:shadow-[0_4px_14px_rgba(79,70,229,0.08)] transition-all duration-150">
                   <div className="flex items-start gap-4">
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap text-[12px]">
-                        <Icon name="calendar" size={14} className="shrink-0 text-slate-300" />
-                        <span className="font-semibold text-slate-700">{formatDate(r.expense_date)}</span>
-                        <span className="text-slate-400">· logged {formatDateTime(r.created_at)}</span>
-                        <span className="text-slate-400">by <span className="font-semibold text-slate-700">{userMap[r.user_id] || '—'}</span></span>
-                        <span className={"text-[10.5px] px-2 py-0.5 rounded-md font-bold " + (STATUS_COLORS[r.status] || 'bg-gray-100 text-gray-600')}>
+                      {/* What it was, first. The date and who logged it led the
+                          row and the description came second, so the line you
+                          read to know what you are looking at was the one line
+                          that was not at the top. */}
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="text-[14px] font-semibold text-slate-900 truncate">{r.description || '—'}</p>
+                        <span className={"shrink-0 text-[10.5px] px-2 py-0.5 rounded-md font-bold " + (STATUS_COLORS[r.status] || 'bg-gray-100 text-gray-600')}>
                           {STATUS_LABELS[r.status] || r.status}
                         </span>
                         {(function () {
                           var sb = SOURCE_BADGES[r.source] || SOURCE_BADGES.allocation
                           return (
-                            <span className={"text-[9px] px-1.5 py-0.5 rounded border font-semibold " + sb.cls}>
+                            <span className={"shrink-0 text-[9.5px] px-1.5 py-0.5 rounded border font-semibold " + sb.cls}>
                               {sb.label}
                             </span>
                           )
                         })()}
                       </div>
-                      <p className="mt-1.5 text-[14px] text-slate-800 truncate">{r.description || '—'}</p>
                       {r.remarks && <p className="mt-1 text-[12px] italic text-slate-500">"{r.remarks}"</p>}
                       {r.venue_id && <p className="mt-1 text-[11.5px] text-slate-400">Venue: {venueMap[r.venue_id] || '—'}</p>}
                       {r._fieldChips && r._fieldChips.length > 0 && (
@@ -921,6 +921,25 @@ function Ledgers({ profile, onNavigateToExpenses }) {
                           })}
                         </div>
                       )}
+                      {/* When and who, under everything that says what. A glyph
+                          apiece and a rule between them, rather than three kinds
+                          of fact in one grey string separated by middots. */}
+                      <div className="mt-2.5 flex flex-wrap items-center gap-y-1 text-[11.5px] text-slate-400">
+                        <span className="inline-flex items-center whitespace-nowrap">
+                          <Icon name="calendar" size={13} className="shrink-0 mr-1.5 text-slate-300" />
+                          {formatDate(r.expense_date)}
+                        </span>
+                        <span aria-hidden="true" className="mx-3 w-px h-3.5 bg-slate-200" />
+                        <span className="inline-flex items-center whitespace-nowrap">
+                          <Icon name="clock" size={13} className="shrink-0 mr-1.5 text-slate-300" />
+                          logged {formatDateTime(r.created_at)}
+                        </span>
+                        <span aria-hidden="true" className="mx-3 w-px h-3.5 bg-slate-200" />
+                        <span className="inline-flex items-center whitespace-nowrap">
+                          <Icon name="user" size={13} className="shrink-0 mr-1.5 text-slate-300" />
+                          <span>by <span className="font-semibold text-slate-600">{userMap[r.user_id] || '—'}</span></span>
+                        </span>
+                      </div>
                     </div>
                     {/* The figure gets a panel and a rule of its own. It was a
                         bold number floating at the end of a paragraph, which is
