@@ -347,6 +347,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   var [transferModal, setTransferModal] = useState(false)
   var [transferUsers, setTransferUsers] = useState([])
   var [transferTo, setTransferTo] = useState('')
+  var [transferToBalance, setTransferToBalance] = useState(null)
   var [transferAmount, setTransferAmount] = useState('')
   var [transferDesc, setTransferDesc] = useState('')
   var [transferImage, setTransferImage] = useState(null)
@@ -859,6 +860,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   async function openTransferModal() {
     setTransferModal(true)
     setTransferTo('')
+    setTransferToBalance(null)
     setTransferAmount('')
     setTransferDesc('')
     setTransferImage(null)
@@ -868,6 +870,16 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
       setTransferUsers(data || [])
     }
   }
+
+  useEffect(function () {
+    if (!transferTo) { setTransferToBalance(null); return }
+    var cancelled = false
+    setTransferToBalance(undefined)  // loading
+    supabase.from('wallets').select('balance_paise').eq('user_id', transferTo).maybeSingle().then(function (res) {
+      if (!cancelled) setTransferToBalance(res.data?.balance_paise || 0)
+    })
+    return function () { cancelled = true }
+  }, [transferTo])
 
   async function initiateTransfer() {
     if (transferSaving || !transferTo || !transferAmount || Number(transferAmount) <= 0) return
@@ -2333,6 +2345,18 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
               value={transferTo}
               onChange={function (val) { setTransferTo(val) }}
               placeholder="Search user..." />
+            {transferTo && (
+              <p className="mt-1.5 text-[12px] text-slate-500">
+                Balance:{' '}
+                {transferToBalance === undefined ? (
+                  '…'
+                ) : (
+                  <span className={"font-bold tabular-nums " + (transferToBalance < 0 ? "text-red-600" : "text-slate-700")} data-notranslate>
+                    {formatPoints(transferToBalance)}
+                  </span>
+                )}
+              </p>
+            )}
           </div>
 
           <div>
