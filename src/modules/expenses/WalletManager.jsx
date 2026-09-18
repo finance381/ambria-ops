@@ -3026,7 +3026,13 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
           {filteredWallets.map(function (w) {
             var p = walletProfiles[w.user_id] || {}
             return (
-              <div key={w.id} className={"relative border border-slate-200 rounded-2xl px-3.5 py-2.5 flex items-center gap-3 shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition-colors hover:border-slate-300 " +
+              /* The whole row opens the wallet, so the whole row answers the
+                 pointer: it lifts a pixel, its edge takes the accent, and the
+                 translucent card goes solid white, which on the ruled ground is
+                 what reads as coming forward. transform-gpu keeps the lift on
+                 the compositor — ninety of these animating their own layout
+                 would not be free. */
+              <div key={w.id} className={"group relative border rounded-2xl px-3.5 py-2.5 flex items-center gap-3 transform-gpu transition-all duration-150 shadow-[0_1px_2px_rgba(15,23,42,0.04)] border-slate-200 hover:border-indigo-300 hover:bg-white hover:-translate-y-px hover:shadow-[0_6px_18px_rgba(79,70,229,0.10)] " +
                 (inAdmin ? "bg-white/75" : "bg-white")}>
                 {bulkMode && (
                   <input type="checkbox" checked={!!bulkSelected[w.user_id]}
@@ -3040,7 +3046,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                 <div className="flex-1 min-w-0 cursor-pointer" onClick={function () { if (!bulkMode) openWalletTxns(w) }}>
                   <span className="min-w-0 block">
                     <span className="flex items-center gap-1.5 min-w-0">
-                      <span className="text-[15px] font-bold text-slate-900 truncate">{p.name || '—'}</span>
+                      <span className="text-[15px] font-bold text-slate-900 truncate transition-colors group-hover:text-indigo-700">{p.name || '—'}</span>
                       {w._pendingCount > 0 && (
                         <span className="shrink-0 min-w-[18px] h-[18px] px-1 rounded-full bg-amber-500 text-white text-[10px] font-bold inline-flex items-center justify-center tabular-nums"
                           title={w._pendingCount + ' pending'}>{w._pendingCount}</span>
