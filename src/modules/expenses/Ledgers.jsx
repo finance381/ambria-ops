@@ -19,12 +19,42 @@ var STATUS_LABELS = { recorded: 'Recorded', flagged: 'Resubmit', acknowledged: '
 // eleven characters and 80px was cutting them to the edge of the cell.
 var COLS = 'grid grid-cols-[1fr_104px_104px_104px_120px_44px] gap-2'
 
+// A figure in a tint of its own meaning: settled, waiting, credited, and the
+// answer. The pill is what makes a column scannable — at the group levels the
+// eye is looking for magnitude, not for a precise number.
+//
+// Sub-type rows get `plain`, because a pill on every line of a long list is a
+// pattern of pills rather than a set of figures, and by then you are reading
+// the number rather than scanning the column.
+function Money({ value, tone, plain, bold }) {
+  var empty = value === 0
+  if (plain) {
+    return (
+      <span className={"text-[12.5px] text-right tabular-nums whitespace-nowrap " + (bold ? "font-bold text-slate-900 " : "") + tone.text}
+        data-notranslate>{value}</span>
+    )
+  }
+  return (
+    <span className="text-right">
+      <span className={"inline-block px-2.5 py-1 rounded-lg text-[12.5px] font-bold tabular-nums whitespace-nowrap " +
+        (empty ? "text-slate-400" : tone.pill)} data-notranslate>{value}</span>
+    </span>
+  )
+}
+
+var TONES = {
+  committed: { pill: 'bg-emerald-50 text-emerald-700', text: 'text-emerald-700' },
+  pending:   { pill: 'bg-amber-50 text-amber-700',     text: 'text-amber-700' },
+  credit:    { pill: 'bg-rose-50 text-rose-700',       text: 'text-rose-700' },
+  total:     { pill: 'bg-indigo-50 text-indigo-700',   text: 'text-slate-900' },
+}
+
 // The per-row export. Three of them, one per level.
 //
 // Neutral, like the two in the toolbar. Opening a PDF is not destructive, and
 // a column of red down the right-hand edge of a table reads as a column of
 // warnings — which was the loudest thing on a screen whose job is figures.
-var PDF_BTN = 'shrink-0 px-2.5 inline-flex items-center gap-1 border-l border-slate-100 text-[11px] font-bold text-slate-500 hover:bg-slate-50 hover:text-slate-900 disabled:opacity-40 transition-colors'
+var PDF_BTN = 'shrink-0 self-center mr-3 h-8 px-3 inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white text-[11.5px] font-bold text-slate-600 hover:border-indigo-300 hover:text-indigo-700 disabled:opacity-40 transition-all duration-150'
 var STATUS_COLORS = {
   recorded: 'bg-amber-100 text-amber-700',
   flagged: 'bg-orange-100 text-orange-700',
@@ -75,6 +105,18 @@ function Ledgers({ profile, onNavigateToExpenses }) {
   var [venueFilter, setVenueFilter] = useState('')
   var [statusFilter, setStatusFilter] = useState('')
   var [pendingOnly, setPendingOnly] = useState(false)
+  // Which column the table is ordered by, and which way. Empty means the order
+  // the query returned, which is what it has always shown.
+  var [sortKey, setSortKey] = useState('')
+  var [sortDir, setSortDir] = useState('desc')
+  function toggleSort(k) {
+    // Same column again flips the direction; a new column starts on the way
+    // round that answers the question people ask first — biggest, and for a
+    // name, A to Z.
+    if (sortKey === k) { setSortDir(sortDir === 'desc' ? 'asc' : 'desc'); return }
+    setSortKey(k)
+    setSortDir(k === 'name' ? 'asc' : 'desc')
+  }
   var [pdfBusy, setPdfBusy] = useState(false)
 
   // Master maps
@@ -684,6 +726,8 @@ function Ledgers({ profile, onNavigateToExpenses }) {
   }
 
   // Client-side filter: search + pendingOnly (nested dept -> type -> sub-type)
+  // `var`, and reassigned below: the sort rebuilds the tree rather than
+  // mutating the groups the memo handed over.
   var visibleGroups = deptGroups.map(function (g) {
     var deptName = g.deptId ? (deptMap[g.deptId] || 'Unassigned') : 'Unallocated'
     var q = searchDeb.toLowerCase()
@@ -706,6 +750,34 @@ function Ledgers({ profile, onNavigateToExpenses }) {
     if (q && !deptMatch && filteredTypes.length === 0) return null
     return Object.assign({}, g, { typeGroups: filteredTypes, deptName: deptName })
   }).filter(Boolean)
+
+  // The chosen column, applied at every level of the tree.
+  //
+  // Sorting only the departments would leave the types and sub-types inside
+  // them in whatever order they arrived, so ordering by Pending would put the
+  // biggest department first and then bury its biggest type somewhere in the
+  // middle — which is not what anybody clicking that heading is asking for.
+  //
+  // The name differs per level: a department has one, a type has one, a
+  // sub-type has one, and they are three different fields.
+  if (sortKey) {
+    var dir = sortDir === 'asc' ? 1 : -1
+    var byName = function (name) {
+      return function (a, b) { return dir * String(name(a) || '').localeCompare(String(name(b) || '')) }
+    }
+    var byNum = function (a, b) { return dir * ((a[sortKey] || 0) - (b[sortKey] || 0)) }
+    var subName = function (r) { return r.subTypeId ? (subTypeMap[r.subTypeId] || '') : '' }
+
+    visibleGroups = visibleGroups.map(function (g) {
+      var types = g.typeGroups.map(function (t) {
+        var subs = t.subRows.slice().sort(sortKey === 'name' ? byName(subName) : byNum)
+        return Object.assign({}, t, { subRows: subs })
+      })
+      types.sort(sortKey === 'name' ? byName(function (t) { return t.typeName }) : byNum)
+      return Object.assign({}, g, { typeGroups: types })
+    })
+    visibleGroups.sort(sortKey === 'name' ? byName(function (g) { return g.deptName }) : byNum)
+  }
 
   // ─── DRILL VIEW ───
   if (drillGroup) {
@@ -814,6 +886,24 @@ function Ledgers({ profile, onNavigateToExpenses }) {
         )}
         {expenseDetailModal}
       </div>
+    )
+  }
+
+  // A heading you can order by. The caret is faint until the column is the one
+  // doing the ordering, so the row reads as headings with an affordance rather
+  // than as a row of arrows.
+  function SortHead(props) {
+    var on = sortKey === props.k
+    return (
+      <button type="button" onClick={function () { toggleSort(props.k) }}
+        aria-label={"Sort by " + props.label}
+        className={"inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-[0.08em] transition-colors " +
+          (props.right ? "justify-end " : "") +
+          (on ? "text-indigo-600" : "text-slate-500 hover:text-slate-900")}>
+        {props.label}
+        <Icon name={on && sortDir === 'asc' ? 'chevronUp' : 'chevronDown'} size={12}
+          className={"shrink-0 " + (on ? "" : "opacity-30")} />
+      </button>
     )
   }
 
@@ -985,12 +1075,12 @@ function Ledgers({ profile, onNavigateToExpenses }) {
               up with each other. */}
           <div className="flex items-stretch bg-slate-50 border-b border-slate-200">
             <div className={"flex-1 " + COLS + " px-3 py-2.5"}>
-              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em]">Department / Type</span>
-              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] text-right">Acknowledged</span>
-              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] text-right">Pending</span>
-              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] text-right">Credit</span>
-              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] text-right">Net Total</span>
-              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] text-right">#</span>
+              <SortHead k="name" label="Department / Type" />
+              <SortHead k="committed" label="Acknowledged" right />
+              <SortHead k="pending" label="Pending" right />
+              <SortHead k="credit" label="Credit" right />
+              <SortHead k="total" label="Net Total" right />
+              <SortHead k="allocs" label="#" right />
             </div>
             <span className="shrink-0 px-2.5 py-2.5 text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em]">Export</span>
           </div>
@@ -1008,6 +1098,13 @@ function Ledgers({ profile, onNavigateToExpenses }) {
                           label beside them shifted a pixel on every expand. */}
                       <Icon name="chevronRight" size={14}
                         className={"shrink-0 text-slate-400 transition-transform duration-150 " + (deptCollapsed ? "" : "rotate-90")} />
+                      {/* A glyph for the level, not for the department. Which
+                          department it is, is what the name says; what a row is
+                          — a department, a type, a sub-type — is the thing three
+                          levels of the same table cannot say any other way. */}
+                      <span className="shrink-0 w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 inline-flex items-center justify-center">
+                        <Icon name="building" size={16} />
+                      </span>
                       <span className="text-[13.5px] font-bold text-slate-900 truncate">{g.deptName}</span>
                       <span className="shrink-0 min-w-[20px] px-1.5 py-0.5 rounded-md bg-slate-100 text-[10.5px] font-bold text-slate-500 tabular-nums text-center" data-notranslate>{g.typeGroups.length}</span>
                       {delta > 0 && (
@@ -1016,11 +1113,11 @@ function Ledgers({ profile, onNavigateToExpenses }) {
                         </span>
                       )}
                     </div>
-                    <span className="text-[12.5px] text-right font-semibold text-emerald-700 tabular-nums whitespace-nowrap" data-notranslate>{formatPoints(g.committed)}</span>
-                    <span className="text-[12.5px] text-right font-semibold text-amber-700 tabular-nums whitespace-nowrap" data-notranslate>{formatPoints(g.pending)}</span>
-                    <span className="text-[12.5px] text-right font-semibold text-rose-700 tabular-nums whitespace-nowrap" data-notranslate>{g.credit > 0 ? formatPoints(g.credit) : '—'}</span>
-                    <span className="text-[13px] text-right font-extrabold text-slate-900 tabular-nums whitespace-nowrap" data-notranslate>{formatPoints(g.total)}</span>
-                    <span className="text-[11px] text-right text-slate-400 tabular-nums" data-notranslate>{g.allocs}</span>
+                    <Money value={formatPoints(g.committed)} tone={TONES.committed} />
+                    <Money value={formatPoints(g.pending)} tone={TONES.pending} />
+                    <Money value={g.credit > 0 ? formatPoints(g.credit) : '—'} tone={TONES.credit} />
+                    <Money value={formatPoints(g.total)} tone={TONES.total} />
+                    <span className="text-[11.5px] text-right text-slate-400 tabular-nums self-center" data-notranslate>{g.allocs}</span>
                   </button>
                   <button onClick={function (e) { e.stopPropagation(); exportScopedPDF(g.deptId) }}
                     disabled={pdfBusy}
@@ -1042,14 +1139,17 @@ function Ledgers({ profile, onNavigateToExpenses }) {
                           <div className="flex items-center gap-2 min-w-0">
                             <Icon name="chevronRight" size={13}
                               className={"shrink-0 text-slate-400 transition-transform duration-150 " + (typeCollapsed ? "" : "rotate-90")} />
+                            <span className="shrink-0 w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-500 inline-flex items-center justify-center">
+                              <Icon name="box" size={14} />
+                            </span>
                             <span className="text-[12.5px] font-semibold text-slate-800 truncate">{typeName}</span>
                             <span className="shrink-0 min-w-[20px] px-1.5 py-0.5 rounded-md bg-white text-[10.5px] font-bold text-slate-500 tabular-nums text-center" data-notranslate>{t.subRows.length}</span>
                           </div>
-                          <span className="text-[12px] text-right text-emerald-700 tabular-nums whitespace-nowrap" data-notranslate>{formatPoints(t.committed)}</span>
-                          <span className="text-[12px] text-right text-amber-700 tabular-nums whitespace-nowrap" data-notranslate>{formatPoints(t.pending)}</span>
-                          <span className="text-[12px] text-right text-rose-700 tabular-nums whitespace-nowrap" data-notranslate>{t.credit > 0 ? formatPoints(t.credit) : '—'}</span>
-                          <span className="text-[12px] text-right font-bold text-slate-800 tabular-nums whitespace-nowrap" data-notranslate>{formatPoints(t.total)}</span>
-                          <span className="text-[11px] text-right text-slate-400 tabular-nums" data-notranslate>{t.allocs}</span>
+                          <Money value={formatPoints(t.committed)} tone={TONES.committed} />
+                          <Money value={formatPoints(t.pending)} tone={TONES.pending} />
+                          <Money value={t.credit > 0 ? formatPoints(t.credit) : '—'} tone={TONES.credit} />
+                          <Money value={formatPoints(t.total)} tone={TONES.total} />
+                          <span className="text-[11.5px] text-right text-slate-400 tabular-nums self-center" data-notranslate>{t.allocs}</span>
                         </button>
                         <button onClick={function (e) { e.stopPropagation(); exportScopedPDF(g.deptId, t.typeId) }}
                           disabled={pdfBusy}
@@ -1065,14 +1165,15 @@ function Ledgers({ profile, onNavigateToExpenses }) {
                           <div key={i} className="flex items-stretch border-t border-slate-100 hover:bg-indigo-50/60 transition-colors">
                             <button onClick={function () { openRow(g, r) }}
                               className={"flex-1 " + COLS + " items-center px-3 py-2 pl-14 text-left"}>
-                              <div className="min-w-0">
+                              <div className="flex items-center gap-2.5 min-w-0">
+                                <Icon name="fileText" size={14} className="shrink-0 text-slate-300" />
                                 <p className="text-[12.5px] text-slate-600 truncate">{subTypeName}</p>
                               </div>
-                              <span className="text-[12px] text-right text-emerald-700 tabular-nums whitespace-nowrap" data-notranslate>{formatPoints(r.committed)}</span>
-                              <span className="text-[12px] text-right text-amber-700 tabular-nums whitespace-nowrap" data-notranslate>{formatPoints(r.pending)}</span>
-                              <span className="text-[12px] text-right text-rose-700 tabular-nums whitespace-nowrap" data-notranslate>{r.credit > 0 ? formatPoints(r.credit) : '—'}</span>
-                              <span className="text-[12px] text-right font-bold text-slate-800 tabular-nums whitespace-nowrap" data-notranslate>{formatPoints(r.total)}</span>
-                              <span className="text-[11px] text-right text-slate-400 tabular-nums" data-notranslate>{r.allocs}</span>
+                              <Money value={formatPoints(r.committed)} tone={TONES.committed} plain />
+                              <Money value={formatPoints(r.pending)} tone={TONES.pending} plain />
+                              <Money value={r.credit > 0 ? formatPoints(r.credit) : '—'} tone={TONES.credit} plain />
+                              <Money value={formatPoints(r.total)} tone={TONES.total} plain bold />
+                              <span className="text-[11.5px] text-right text-slate-400 tabular-nums" data-notranslate>{r.allocs}</span>
                             </button>
                             <button onClick={function (e) { e.stopPropagation(); exportScopedPDF(g.deptId, r.typeId, r.subTypeId) }}
                               disabled={pdfBusy}
