@@ -557,6 +557,7 @@ function Ledgers({ profile, onNavigateToExpenses }) {
         4: { cellWidth: 18, halign: 'right' }, 5: { cellWidth: 18, halign: 'right' }, 6: { cellWidth: 20, halign: 'right' },
       },
       margin: { left: 10, right: 10 },
+      didParseCell: statementHooks.didParseCell,
       willDrawCell: statementHooks.willDrawCell,
       didDrawCell: statementHooks.didDrawCell,
       didDrawPage: function () {

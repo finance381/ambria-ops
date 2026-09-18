@@ -505,6 +505,7 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds, glass }) {
         // hooks instead of relying on autoTable's own single-style text flow, so the
         // Expense/Entered dates get their own labeled zones and every allocation
         // amount lands on one right edge regardless of how long its label is.
+        didParseCell: statementHooks.didParseCell,
         willDrawCell: statementHooks.willDrawCell,
         didDrawCell: statementHooks.didDrawCell,
         didDrawPage: function (data) {

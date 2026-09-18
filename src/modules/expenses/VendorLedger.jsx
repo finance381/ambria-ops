@@ -535,6 +535,23 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
         if (e.metadata && e.metadata.mode) chipParts.push(String(e.metadata.mode).toUpperCase())
         if (e.metadata && e.metadata.due_date) chipParts.push('Due ' + fmtD(e.metadata.due_date))
         if (chipParts.length) lines.push({ kind: 'chip', text: chipParts.join('   ·   ') })
+        // Per-allocation split for expense-linked rows — same breakdown the
+        // on-screen entry shows (e._breakdown, built in loadEntries), so the
+        // statement matches what opening the entry in the app shows.
+        if (e._breakdown && e._breakdown.allocations && e._breakdown.allocations.length > 0) {
+          e._breakdown.allocations.forEach(function (a) {
+            var vName = a.venue_id && e._venueNames ? e._venueNames[a.venue_id] : null
+            var parts = []
+            if (a.department) parts.push(a.department)
+            if (vName) parts.push(vName)
+            var label = parts.length > 0 ? parts.join(' · ') : '—'
+            if (a.remarks) label += ' — ' + a.remarks
+            lines.push({ kind: 'alloc', text: label, amount: fmtN(a.amount_paise || 0) })
+          })
+          if ((e._breakdown.tax_paise || 0) > 0) {
+            lines.push({ kind: 'foot', text: 'GST', amount: fmtN(e._breakdown.tax_paise) })
+          }
+        }
         return lines
       }
 
@@ -624,6 +641,7 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
           4: { cellWidth: 26, halign: 'right', fontStyle: 'bold' },
         },
         margin: { left: 10, right: 10 },
+        didParseCell: statementHooks.didParseCell,
         willDrawCell: statementHooks.willDrawCell,
         didDrawCell: statementHooks.didDrawCell,
         didDrawPage: function () {

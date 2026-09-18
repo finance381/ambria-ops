@@ -1472,6 +1472,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
           4: { cellWidth: 24, halign: 'right', fontStyle: 'bold' },
         },
         margin: { left: 10, right: 10 },
+        didParseCell: statementHooks.didParseCell,
         willDrawCell: statementHooks.willDrawCell,
         didDrawCell: statementHooks.didDrawCell,
         didDrawPage: function () {
