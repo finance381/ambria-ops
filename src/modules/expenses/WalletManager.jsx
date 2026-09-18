@@ -3307,10 +3307,18 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                             <span className="min-w-0 truncate">
                               {(a.department || 'Unassigned')}{allocType ? ' › ' + allocType + (allocSubType ? ' › ' + allocSubType : '') : ''}
                             </span>
-                            {/* The leader. A zero-height flex item in an
-                                items-center row sits on the middle line, and its
-                                bottom border is the dots. */}
-                            <span aria-hidden="true" className="flex-1 min-w-[1.5rem] border-b border-dotted border-slate-300" />
+                            {/* The leader, drawn rather than bordered. A dotted
+                                border only grows by growing its width, so a
+                                bigger dot is also a thicker rule and the browser
+                                decides the spacing; a repeated radial gradient
+                                sets the dot and the gap independently. */}
+                            <span aria-hidden="true" className="flex-1 min-w-[1.5rem] self-center h-[3px]"
+                              style={{
+                                backgroundImage: 'radial-gradient(circle, rgb(203 213 225) 1.5px, transparent 1.6px)',
+                                backgroundSize: '8px 3px',
+                                backgroundRepeat: 'repeat-x',
+                                backgroundPosition: 'center',
+                              }} />
                             <span className="shrink-0 font-bold text-slate-800 tabular-nums" data-notranslate>{formatPoints(a.amount_paise)}</span>
                           </p>
                         )
