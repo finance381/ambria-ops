@@ -134,6 +134,11 @@ function Ledgers({ profile, onNavigateToExpenses }) {
   var [collapsedDepts, setCollapsedDepts] = useState({})
   var [collapsedTypes, setCollapsedTypes] = useState({})
   var collapseInitializedRef = useRef(false)
+  // The filter block is sticky, so a row scrolled to the top of the window
+  // lands underneath it. Its height is not a constant — the toolbar wraps on a
+  // narrow window and the custom-range fields appear and disappear — so it is
+  // measured at the moment it is needed rather than written down anywhere.
+  var stickyRef = useRef(null)
   var [deptDelta, setDeptDelta] = useState({})
   var allocSnapshot = useRef({})
   var isFirstLoad = useRef(true)
@@ -459,12 +464,29 @@ function Ledgers({ profile, onNavigateToExpenses }) {
     setDrillUserFilter(''); setDrillStatusFilter(''); setDrillVenueFilter('')
   }
 
-  function toggleDept(deptKey, currentAllocs) {
+  // Opening a department brings it to the top of the window.
+  //
+  // A department a few rows down opens downwards, so everything it just
+  // revealed is below the fold — you press it and then go looking for what you
+  // pressed it for. Moving the row up puts its contents on the screen that
+  // asked for them.
+  //
+  // Only on the way open: collapsing already brings the rows below it up, and
+  // scrolling then would move the page under somebody who was reading it.
+  function toggleDept(deptKey, currentAllocs, rowEl) {
+    var opening = !!collapsedDepts[deptKey]
     setCollapsedDepts(function (prev) {
       var next = Object.assign({}, prev)
       next[deptKey] = !prev[deptKey]
       return next
     })
+    if (opening && rowEl) {
+      // The row does not move when it expands — the content grows underneath
+      // it — so this can be measured now rather than after the render.
+      var sticky = stickyRef.current ? stickyRef.current.offsetHeight : 0
+      var top = rowEl.getBoundingClientRect().top + window.scrollY - sticky - 8
+      window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
+    }
     allocSnapshot.current[deptKey] = currentAllocs
     setDeptDelta(function (prev) {
       var next = Object.assign({}, prev)
@@ -922,7 +944,7 @@ function Ledgers({ profile, onNavigateToExpenses }) {
         <p className="text-xs text-gray-400">Live financial tracker · {totals.allocs} allocation{totals.allocs !== 1 ? 's' : ''}</p>
       </div>
 
-      <div className="sticky top-0 z-10 bg-gray-50 pt-1 pb-3 border-b border-gray-200 space-y-2">
+      <div ref={stickyRef} className="sticky top-0 z-10 bg-gray-50 pt-1 pb-3 border-b border-gray-200 space-y-2">
         {/* Left-aligned, and the figure given the size of the thing it is. A
             9px label centred over a 16px number made four cards you had to lean
             in to read; ranged left they also line up with everything below
@@ -1078,9 +1100,9 @@ function Ledgers({ profile, onNavigateToExpenses }) {
             var deptCollapsed = collapsedDepts[g.key]
             var delta = deptDelta[g.key] || 0
             return (
-              <div key={g.key} className="border-t border-slate-100 first:border-t-0">
+              <div key={g.key} data-dept-row className="border-t border-slate-100 first:border-t-0">
                 <div className="flex items-stretch hover:bg-slate-50 transition-colors">
-                  <button onClick={function () { toggleDept(g.key, g.allocs) }}
+                  <button onClick={function (ev) { toggleDept(g.key, g.allocs, ev.currentTarget.closest('[data-dept-row]')) }}
                     className={"flex-1 " + COLS + " items-center px-3 py-2.5 text-left"}>
                     <div className="flex items-center gap-2 min-w-0">
                       {/* A drawn chevron that turns, not two different characters.
