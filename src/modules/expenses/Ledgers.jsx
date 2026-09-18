@@ -20,7 +20,11 @@ var STATUS_LABELS = { recorded: 'Recorded', flagged: 'Resubmit', acknowledged: '
 var COLS = 'grid grid-cols-[1fr_104px_104px_104px_120px_44px] gap-2'
 
 // The per-row export. Three of them, one per level.
-var PDF_BTN = 'shrink-0 px-2.5 inline-flex items-center gap-1 border-l border-slate-100 text-[11px] font-bold text-rose-600 hover:bg-rose-50 disabled:opacity-40 transition-colors'
+//
+// Neutral, like the two in the toolbar. Opening a PDF is not destructive, and
+// a column of red down the right-hand edge of a table reads as a column of
+// warnings — which was the loudest thing on a screen whose job is figures.
+var PDF_BTN = 'shrink-0 px-2.5 inline-flex items-center gap-1 border-l border-slate-100 text-[11px] font-bold text-slate-500 hover:bg-slate-50 hover:text-slate-900 disabled:opacity-40 transition-colors'
 var STATUS_COLORS = {
   recorded: 'bg-amber-100 text-amber-700',
   flagged: 'bg-orange-100 text-orange-700',
