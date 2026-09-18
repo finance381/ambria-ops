@@ -19,34 +19,24 @@ var STATUS_LABELS = { recorded: 'Recorded', flagged: 'Resubmit', acknowledged: '
 // eleven characters and 80px was cutting them to the edge of the cell.
 var COLS = 'grid grid-cols-[1fr_104px_104px_104px_120px_44px] gap-2'
 
-// A figure in a tint of its own meaning: settled, waiting, credited, and the
-// answer. The pill is what makes a column scannable — at the group levels the
-// eye is looking for magnitude, not for a precise number.
-//
-// Sub-type rows get `plain`, because a pill on every line of a long list is a
-// pattern of pills rather than a set of figures, and by then you are reading
-// the number rather than scanning the column.
-function Money({ value, tone, plain, bold }) {
-  var empty = value === 0
-  if (plain) {
-    return (
-      <span className={"text-[12.5px] text-right tabular-nums whitespace-nowrap " + (bold ? "font-bold text-slate-900 " : "") + tone.text}
-        data-notranslate>{value}</span>
-    )
-  }
+// A figure in the colour of its own meaning: settled, waiting, credited, and
+// the answer. The colour is on the number and nowhere else — a filled pill
+// behind every figure turns four columns into a wall of tinted blocks, and the
+// only part that differs between them, the number, then has to compete with
+// its own background to be read.
+function Money({ value, tone, bold }) {
   return (
-    <span className="text-right">
-      <span className={"inline-block px-2.5 py-1 rounded-lg text-[12.5px] font-bold tabular-nums whitespace-nowrap " +
-        (empty ? "text-slate-400" : tone.pill)} data-notranslate>{value}</span>
-    </span>
+    <span className={"text-right text-[12.5px] tabular-nums whitespace-nowrap " +
+      (bold ? "font-bold " : "font-semibold ") + tone}
+      data-notranslate>{value}</span>
   )
 }
 
 var TONES = {
-  committed: { pill: 'bg-emerald-50 text-emerald-700', text: 'text-emerald-700' },
-  pending:   { pill: 'bg-amber-50 text-amber-700',     text: 'text-amber-700' },
-  credit:    { pill: 'bg-rose-50 text-rose-700',       text: 'text-rose-700' },
-  total:     { pill: 'bg-indigo-50 text-indigo-700',   text: 'text-slate-900' },
+  committed: 'text-emerald-700',
+  pending:   'text-amber-700',
+  credit:    'text-rose-700',
+  total:     'text-slate-900',
 }
 
 // The per-row export. Three of them, one per level.
@@ -1116,7 +1106,7 @@ function Ledgers({ profile, onNavigateToExpenses }) {
                     <Money value={formatPoints(g.committed)} tone={TONES.committed} />
                     <Money value={formatPoints(g.pending)} tone={TONES.pending} />
                     <Money value={g.credit > 0 ? formatPoints(g.credit) : '—'} tone={TONES.credit} />
-                    <Money value={formatPoints(g.total)} tone={TONES.total} />
+                    <Money value={formatPoints(g.total)} tone={TONES.total} bold />
                     <span className="text-[11.5px] text-right text-slate-400 tabular-nums self-center" data-notranslate>{g.allocs}</span>
                   </button>
                   <button onClick={function (e) { e.stopPropagation(); exportScopedPDF(g.deptId) }}
@@ -1148,7 +1138,7 @@ function Ledgers({ profile, onNavigateToExpenses }) {
                           <Money value={formatPoints(t.committed)} tone={TONES.committed} />
                           <Money value={formatPoints(t.pending)} tone={TONES.pending} />
                           <Money value={t.credit > 0 ? formatPoints(t.credit) : '—'} tone={TONES.credit} />
-                          <Money value={formatPoints(t.total)} tone={TONES.total} />
+                          <Money value={formatPoints(t.total)} tone={TONES.total} bold />
                           <span className="text-[11.5px] text-right text-slate-400 tabular-nums self-center" data-notranslate>{t.allocs}</span>
                         </button>
                         <button onClick={function (e) { e.stopPropagation(); exportScopedPDF(g.deptId, t.typeId) }}
@@ -1169,10 +1159,10 @@ function Ledgers({ profile, onNavigateToExpenses }) {
                                 <Icon name="fileText" size={14} className="shrink-0 text-slate-300" />
                                 <p className="text-[12.5px] text-slate-600 truncate">{subTypeName}</p>
                               </div>
-                              <Money value={formatPoints(r.committed)} tone={TONES.committed} plain />
-                              <Money value={formatPoints(r.pending)} tone={TONES.pending} plain />
-                              <Money value={r.credit > 0 ? formatPoints(r.credit) : '—'} tone={TONES.credit} plain />
-                              <Money value={formatPoints(r.total)} tone={TONES.total} plain bold />
+                              <Money value={formatPoints(r.committed)} tone={TONES.committed} />
+                              <Money value={formatPoints(r.pending)} tone={TONES.pending} />
+                              <Money value={r.credit > 0 ? formatPoints(r.credit) : '—'} tone={TONES.credit} />
+                              <Money value={formatPoints(r.total)} tone={TONES.total} bold />
                               <span className="text-[11.5px] text-right text-slate-400 tabular-nums" data-notranslate>{r.allocs}</span>
                             </button>
                             <button onClick={function (e) { e.stopPropagation(); exportScopedPDF(g.deptId, r.typeId, r.subTypeId) }}
