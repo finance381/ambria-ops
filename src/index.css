@@ -258,10 +258,15 @@
 
      Two durations, both forward, so the bands slide past each other instead
      of moving as one drawing — that difference is what reads as water rather
-     than as a picture being dragged. */
+     than as a picture being dragged.
+
+     It travels left to right. Starting at -50% and ending at 0 is the same
+     seamless loop as the other way round — the band is drawn twice over, so
+     both ends of the travel are the identical frame — it just runs the other
+     way. */
   @keyframes ambria-wave-flow {
-    from { transform: translate3d(0, 0, 0); }
-    to { transform: translate3d(-50%, 0, 0); }
+    from { transform: translate3d(-50%, 0, 0); }
+    to { transform: translate3d(0, 0, 0); }
   }
   .ambria-wave-slow {
     animation: ambria-wave-flow 12s linear infinite;
