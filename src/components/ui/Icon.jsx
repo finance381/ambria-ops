@@ -121,4 +121,24 @@ function Icon({ name, size, className, strokeWidth, style }) {
   )
 }
 
+// The glyph for a field, picked off its own label.
+//
+// A sub-type can define any field it likes, so there is no map to look one up
+// in — but the handful that recur are named plainly enough to recognise, and
+// anything unrecognised gets the one that means "a written detail".
+//
+// It lives here because it answers a question about icon names, and because
+// two screens print these fields: the wallet ledger row and the ledger drill.
+// A second copy would be a second set of guesses.
+export function glyphForLabel(label) {
+  var l = String(label || '').toLowerCase()
+  if (l.indexOf('vendor') !== -1) return 'building'
+  if (l.indexOf('date') !== -1) return 'calendar'
+  if (l.indexOf('employee') !== -1 || l.indexOf('staff') !== -1 || l.indexOf('name') !== -1) return 'user'
+  if (l.indexOf('amount') !== -1 || l.indexOf('rate') !== -1) return 'rupee'
+  if (l.indexOf('event') !== -1) return 'calendar'
+  if (l.indexOf('venue') !== -1) return 'mapPin'
+  return 'fileText'
+}
+
 export default Icon

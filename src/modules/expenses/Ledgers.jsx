@@ -9,7 +9,7 @@ import { hasPerm } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
 import { useExpenseDetailModal } from '../../hooks/useExpenseDetailModal.jsx'
 import SearchField from '../../components/ui/SearchField'
-import Icon from '../../components/ui/Icon'
+import Icon, { glyphForLabel } from '../../components/ui/Icon'
 
 var STATUS_LABELS = { recorded: 'Recorded', flagged: 'Resubmit', acknowledged: 'Acknowledged', deducted: 'Deducted' }
 
@@ -809,34 +809,36 @@ function Ledgers({ profile, onNavigateToExpenses }) {
           <p className="mt-0.5 text-[12.5px] text-slate-500">{drillGroup.typeName} › {drillGroup.subTypeName}</p>
         </div>
 
-        {/* The same three-part tile the rest of this screen uses: colour on the
-            glyph and on the figure, not filling the card behind it. */}
+        {/* Three readings of one sub-type, so they get one shape. The card
+            carries a wash of its own colour here rather than sitting white:
+            there are three of them and nothing else on the row, so the tint is
+            telling them apart rather than competing with a table. */}
         <div className="grid grid-cols-3 gap-3">
-          <div className="flex items-center gap-3 px-4 py-3 bg-white border border-slate-200 rounded-xl">
-            <span className="shrink-0 w-9 h-9 rounded-lg bg-indigo-50 text-indigo-600 inline-flex items-center justify-center">
-              <Icon name="chart" size={17} />
+          <div className="flex items-center gap-3.5 px-4 py-3.5 rounded-2xl border bg-indigo-50/60 border-indigo-100">
+            <span className="shrink-0 w-11 h-11 rounded-xl inline-flex items-center justify-center bg-indigo-100 text-indigo-600">
+              <Icon name="chart" size={20} />
             </span>
             <div className="min-w-0">
-              <p className="text-[11px] font-semibold text-slate-500 leading-none">Total</p>
-              <p className="mt-1.5 text-[17px] font-bold text-slate-900 tabular-nums leading-none" data-notranslate>{formatPoints(drillGroup.total)}</p>
+              <p className="text-[12.5px] font-medium text-slate-500 leading-none">Total</p>
+              <p className="mt-2 text-[19px] font-extrabold text-indigo-700 tabular-nums leading-none" data-notranslate>{formatPoints(drillGroup.total)}</p>
             </div>
           </div>
-          <div className="flex items-center gap-3 px-4 py-3 bg-white border border-slate-200 rounded-xl">
-            <span className="shrink-0 w-9 h-9 rounded-lg bg-emerald-50 text-emerald-600 inline-flex items-center justify-center">
-              <Icon name="checkCircle" size={17} />
+          <div className="flex items-center gap-3.5 px-4 py-3.5 rounded-2xl border bg-emerald-50/60 border-emerald-100">
+            <span className="shrink-0 w-11 h-11 rounded-xl inline-flex items-center justify-center bg-emerald-100 text-emerald-600">
+              <Icon name="checkCircle" size={20} />
             </span>
             <div className="min-w-0">
-              <p className="text-[11px] font-semibold text-slate-500 leading-none">Committed</p>
-              <p className="mt-1.5 text-[17px] font-bold text-emerald-700 tabular-nums leading-none" data-notranslate>{formatPoints(drillGroup.committed)}</p>
+              <p className="text-[12.5px] font-medium text-slate-500 leading-none">Committed</p>
+              <p className="mt-2 text-[19px] font-extrabold text-emerald-700 tabular-nums leading-none" data-notranslate>{formatPoints(drillGroup.committed)}</p>
             </div>
           </div>
-          <div className="flex items-center gap-3 px-4 py-3 bg-white border border-slate-200 rounded-xl">
-            <span className="shrink-0 w-9 h-9 rounded-lg bg-amber-50 text-amber-600 inline-flex items-center justify-center">
-              <Icon name="clock" size={17} />
+          <div className="flex items-center gap-3.5 px-4 py-3.5 rounded-2xl border bg-amber-50/60 border-amber-100">
+            <span className="shrink-0 w-11 h-11 rounded-xl inline-flex items-center justify-center bg-amber-100 text-amber-600">
+              <Icon name="clock" size={20} />
             </span>
             <div className="min-w-0">
-              <p className="text-[11px] font-semibold text-slate-500 leading-none">Pending</p>
-              <p className="mt-1.5 text-[17px] font-bold text-amber-700 tabular-nums leading-none" data-notranslate>{formatPoints(drillGroup.pending)}</p>
+              <p className="text-[12.5px] font-medium text-slate-500 leading-none">Pending</p>
+              <p className="mt-2 text-[19px] font-extrabold text-amber-700 tabular-nums leading-none" data-notranslate>{formatPoints(drillGroup.pending)}</p>
             </div>
           </div>
         </div>
@@ -878,14 +880,15 @@ function Ledgers({ profile, onNavigateToExpenses }) {
             {drillRows.map(function (r) {
               return (
                 <div key={r.allocation_id} onClick={function () { openExpenseDetail(r.expense_id) }}
-                  className="bg-white border border-gray-200 rounded-xl p-3 cursor-pointer hover:bg-indigo-50/40 transition-colors">
-                  <div className="flex items-start justify-between">
+                  className="group bg-white border border-slate-200 rounded-2xl px-4 py-3.5 cursor-pointer hover:border-indigo-300 hover:shadow-[0_4px_14px_rgba(79,70,229,0.08)] transition-all duration-150">
+                  <div className="flex items-start gap-4">
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-xs text-gray-500">{formatDate(r.expense_date)}</span>
-                        <span className="text-[10px] text-gray-400">· logged {formatDateTime(r.created_at)}</span>
-                        <span className="text-xs font-semibold text-gray-700">{userMap[r.user_id] || '—'}</span>
-                        <span className={"text-[10px] px-1.5 py-0.5 rounded font-semibold " + (STATUS_COLORS[r.status] || 'bg-gray-100 text-gray-600')}>
+                      <div className="flex items-center gap-2 flex-wrap text-[12px]">
+                        <Icon name="calendar" size={14} className="shrink-0 text-slate-300" />
+                        <span className="font-semibold text-slate-700">{formatDate(r.expense_date)}</span>
+                        <span className="text-slate-400">· logged {formatDateTime(r.created_at)}</span>
+                        <span className="text-slate-400">by <span className="font-semibold text-slate-700">{userMap[r.user_id] || '—'}</span></span>
+                        <span className={"text-[10.5px] px-2 py-0.5 rounded-md font-bold " + (STATUS_COLORS[r.status] || 'bg-gray-100 text-gray-600')}>
                           {STATUS_LABELS[r.status] || r.status}
                         </span>
                         {(function () {
@@ -897,22 +900,33 @@ function Ledgers({ profile, onNavigateToExpenses }) {
                           )
                         })()}
                       </div>
-                      <p className="text-sm text-gray-800 truncate mt-1">{r.description || '—'}</p>
-                      {r.remarks && <p className="text-xs italic text-gray-500 mt-0.5">"{r.remarks}"</p>}
-                      {r.venue_id && <p className="text-[10px] text-gray-400 mt-0.5">Venue: {venueMap[r.venue_id] || '—'}</p>}
+                      <p className="mt-1.5 text-[14px] text-slate-800 truncate">{r.description || '—'}</p>
+                      {r.remarks && <p className="mt-1 text-[12px] italic text-slate-500">"{r.remarks}"</p>}
+                      {r.venue_id && <p className="mt-1 text-[11.5px] text-slate-400">Venue: {venueMap[r.venue_id] || '—'}</p>}
                       {r._fieldChips && r._fieldChips.length > 0 && (
-                        <div className="flex flex-wrap gap-1.5 mt-1">
+                        <div className="flex flex-wrap gap-2 mt-2.5">
                           {r._fieldChips.map(function (c, i) {
                             return (
-                              <span key={i} className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-100">
-                                {c.label}: <b>{c.value}</b>
+                              <span key={i} className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-50 border border-slate-100 text-[11.5px] text-slate-500">
+                                <Icon name={glyphForLabel(c.label)} size={13} className="shrink-0 text-slate-400" />
+                                {c.label}:
+                                <span className="font-bold text-indigo-700">{c.value}</span>
                               </span>
                             )
                           })}
                         </div>
                       )}
                     </div>
-                    <span className="text-sm font-bold text-gray-800 ml-3 flex-shrink-0">{formatPoints(r.amount_paise)}</span>
+                    {/* The figure gets a panel and a rule of its own. It was a
+                        bold number floating at the end of a paragraph, which is
+                        the one thing on this row you scan a column of. */}
+                    <div className="shrink-0 self-center flex items-stretch gap-4">
+                      <span aria-hidden="true" className="w-px self-stretch bg-slate-200" />
+                      <div className="px-4 py-2.5 rounded-xl bg-indigo-50/60 text-right">
+                        <p className="text-[11.5px] font-medium text-slate-500 leading-none">Amount</p>
+                        <p className="mt-2 text-[17px] font-extrabold text-slate-900 tabular-nums leading-none" data-notranslate>{formatPoints(r.amount_paise)}</p>
+                      </div>
+                    </div>
                   </div>
                 </div>
               )

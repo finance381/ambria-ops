@@ -20,7 +20,7 @@ import { registerPdfFont } from '../../lib/pdfFont'
 import { openOrSharePdf } from '../../lib/pdfOutput'
 import { plainParticularsLines, plainDateLines, makeStatementCellHooks } from '../../lib/pdfStatementTable'
 import ExpenseDetail from './ExpenseDetail'
-import Icon from '../../components/ui/Icon'
+import Icon, { glyphForLabel } from '../../components/ui/Icon'
 
 // A colour per person, hashed from the name rather than taken from the row
 // index — the same face has to be the same colour after a sort, a filter and
@@ -223,20 +223,6 @@ var REF_TYPE_MARKS = {
   salary_adjustment: { icon: 'bank',       tone: 'bg-amber-50 text-amber-600' },
 }
 
-// The glyph for a sub-type field, picked off its own label. A sub-type can
-// define any field it likes, so there is no map to look it up in — but the
-// handful that actually recur are named plainly enough to recognise, and
-// anything unrecognised gets the one that means "a written detail".
-function fieldGlyph(label) {
-  var l = String(label || '').toLowerCase()
-  if (l.indexOf('vendor') !== -1) return 'building'
-  if (l.indexOf('date') !== -1) return 'calendar'
-  if (l.indexOf('employee') !== -1 || l.indexOf('staff') !== -1 || l.indexOf('name') !== -1) return 'user'
-  if (l.indexOf('amount') !== -1 || l.indexOf('rate') !== -1) return 'rupee'
-  if (l.indexOf('event') !== -1) return 'calendar'
-  if (l.indexOf('venue') !== -1) return 'mapPin'
-  return 'fileText'
-}
 
 // A reading of the period. The four of them are the same shape on purpose —
 // they are four answers to one question, and giving each its own size or its
@@ -3289,7 +3275,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                       {pairs.map(function (pr, pi) {
                         return (
                           <span key={pi} className="inline-flex min-w-0 items-center gap-2.5 px-3 py-2 rounded-xl bg-slate-50 border border-slate-100">
-                            <Icon name={fieldGlyph(pr.label)} size={15} className="shrink-0 text-slate-400" />
+                            <Icon name={glyphForLabel(pr.label)} size={15} className="shrink-0 text-slate-400" />
                             <span className="inline-flex min-w-0 flex-col gap-1">
                               <span className="text-[9.5px] font-bold uppercase tracking-[0.06em] text-slate-400 leading-none">{pr.label}</span>
                               <span className="text-[12.5px] font-semibold text-slate-800 leading-none truncate">{pr.value}</span>
