@@ -3300,9 +3300,17 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                              lines the digits up inside it. */
                           <p key={ai} className="flex items-center gap-3 text-[12px] text-slate-500 leading-relaxed">
                             <Icon name="tag" size={14} className="shrink-0 text-slate-400" />
-                            <span className="flex-1 min-w-0 truncate">
+                            {/* The label sizes to its own text rather than
+                                taking the whole row, so there is something left
+                                for the leader to fill. It still shrinks and
+                                truncates when the text is longer than the room. */}
+                            <span className="min-w-0 truncate">
                               {(a.department || 'Unassigned')}{allocType ? ' › ' + allocType + (allocSubType ? ' › ' + allocSubType : '') : ''}
                             </span>
+                            {/* The leader. A zero-height flex item in an
+                                items-center row sits on the middle line, and its
+                                bottom border is the dots. */}
+                            <span aria-hidden="true" className="flex-1 min-w-[1.5rem] border-b border-dotted border-slate-300" />
                             <span className="shrink-0 font-bold text-slate-800 tabular-nums" data-notranslate>{formatPoints(a.amount_paise)}</span>
                           </p>
                         )
