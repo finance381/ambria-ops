@@ -102,7 +102,10 @@ export var PERM_GROUPS = [
   ]},
   { group: 'Finance', icon: '💰', scope: 'both', children: [
     { key: 'finance.wallet',         label: 'Wallet',         scope: 'both',
-      optional: [{ key: 'finance.wallet.admin', label: 'Manage all wallets (cross-user)' }] },
+      optional: [
+        { key: 'finance.wallet.admin', label: 'Manage all wallets (cross-user)' },
+        { key: 'finance.wallet.mark_checked', label: 'Mark entries as checked' },
+      ] },
     { key: 'finance.view_costs',     label: 'View Item Costs', scope: 'both',
       note: 'See ₹ rates on inventory items across the app' },
     { key: 'finance.expenses',       label: 'Expenses',       scope: 'both', dataScope: true, scopeOptions: FINANCE_SCOPE_OPTIONS,
