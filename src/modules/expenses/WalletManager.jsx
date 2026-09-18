@@ -2707,7 +2707,15 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     })
     var roleOptions = Object.keys(uniqueRoles).sort()
 
-    var filteredWallets = allWallets.filter(function (w) {
+    // Everything except the balance state. The four balance tabs each need to
+    // say how many they would give you, and a tab counting rows that its own
+    // filter has already removed would say nothing — +ve would read as the
+    // number of +ve wallets among the +ve wallets, which is all of them.
+    //
+    // The other filters still count, though: with a role picked, or a search
+    // typed, the question the tabs answer is how many of THESE are positive,
+    // not how many exist.
+    var walletsBeforeBalance = allWallets.filter(function (w) {
       var p = walletProfiles[w.user_id]
       if (walletSearch) {
         var matches = (p?.name || '').toLowerCase().indexOf(wSearchLower) !== -1 ||
@@ -2716,12 +2724,28 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
         if (!matches) return false
       }
       if (walletRoleFilter && (p?.role || '') !== walletRoleFilter) return false
-      var bal = w.balance_paise || 0
-      if (walletBalanceState === 'positive' && bal <= 0) return false
-      if (walletBalanceState === 'zero' && bal !== 0) return false
-      if (walletBalanceState === 'negative' && bal >= 0) return false
       if (walletPendingOnly && !(w._pendingCount > 0)) return false
       return true
+    })
+
+    function inBalanceState(w, state) {
+      var bal = w.balance_paise || 0
+      if (state === 'positive') return bal > 0
+      if (state === 'zero') return bal === 0
+      if (state === 'negative') return bal < 0
+      return true
+    }
+
+    var balanceCounts = { all: walletsBeforeBalance.length, positive: 0, zero: 0, negative: 0 }
+    walletsBeforeBalance.forEach(function (w) {
+      var bal = w.balance_paise || 0
+      if (bal > 0) balanceCounts.positive++
+      else if (bal === 0) balanceCounts.zero++
+      else balanceCounts.negative++
+    })
+
+    var filteredWallets = walletsBeforeBalance.filter(function (w) {
+      return inBalanceState(w, walletBalanceState)
     })
 
     if (walletSort === 'balance_desc') {
@@ -2781,12 +2805,17 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
         <div className={"flex items-center h-[52px] bg-indigo-50/70 rounded-2xl p-1 " + (inAdmin ? "shrink-0" : "flex-1 min-w-0")}>
           {[['all', 'All'], ['positive', '+ve'], ['zero', 'Zero'], ['negative', '−ve']].map(function (opt) {
             var active = walletBalanceState === opt[0]
+            var count = balanceCounts[opt[0]]
             return (
               <button key={opt[0]} type="button" onClick={function () { setWalletBalanceState(opt[0]) }}
                 aria-pressed={active}
-                className={(inAdmin ? "px-5 " : "flex-1 min-w-0 px-1 ") + "h-full text-[13px] font-bold rounded-xl transition-colors " +
+                className={(inAdmin ? "px-4 " : "flex-1 min-w-0 px-1 ") + "h-full inline-flex items-center justify-center gap-1.5 text-[13px] font-bold rounded-xl transition-colors " +
                   (active ? "bg-white text-indigo-700 shadow-[0_1px_3px_rgba(15,23,42,0.10)]" : "text-slate-500 hover:text-slate-800")}>
                 {opt[1]}
+                {/* Lighter than the label and never translated: it is a
+                    figure, and the word beside it is what you are choosing. */}
+                <span className={"text-[11px] font-bold tabular-nums " + (active ? "text-indigo-400" : "text-slate-400")}
+                  data-notranslate>{count}</span>
               </button>
             )
           })}
