@@ -23,6 +23,21 @@ var LEDGERS = [
   { key: 'gv',            label: 'JV Log',         icon: 'clock',           component: GVLog,           countTable: 'general_vouchers',  countFilter: function (q) { return q.eq('is_reversal', false).is('reversed_by_gv_id', null) },                     perm: 'finance.ledgers.gv' },
 ]
 
+// The counts outlive the bar that shows them. Six exact counts over six
+// tables are the slowest thing on this screen, and every opening of Finance
+// re-ran all six from nothing — so the bar sat there with no numbers on it
+// for as long as the slowest query took, every single time. Held here and
+// mirrored into sessionStorage, a second visit draws them immediately and the
+// refetch only corrects them.
+var COUNTS_KEY = 'ambria:ledger-counts'
+var countCache = (function () {
+  try {
+    var raw = sessionStorage.getItem(COUNTS_KEY)
+    var parsed = raw ? JSON.parse(raw) : null
+    return parsed && typeof parsed === 'object' ? parsed : {}
+  } catch { return {} }
+})()
+
 function LedgersHub(props) {
   var permsNew = (props.profile && props.profile.permsNew) || []
   var visible = LEDGERS.filter(function (l) {
@@ -31,26 +46,31 @@ function LedgersHub(props) {
   })
   var defaultKey = visible.length > 0 ? visible[0].key : 'expense'
   var [active, setActive] = useState(props.activeSubTab && visible.some(function (l) { return l.key === props.activeSubTab }) ? props.activeSubTab : defaultKey)
-  var [counts, setCounts] = useState({})
+  var [counts, setCounts] = useState(countCache)
 
   useEffect(function () {
     var alive = true
-    async function loadCounts() {
-      var results = await Promise.all(visible.map(async function (l) {
-        if (!l.countTable) return { key: l.key, count: null }
-        try {
-          var q = supabase.from(l.countTable).select('*', { count: 'exact', head: true })
-          if (l.countFilter) q = l.countFilter(q)
-          var { count } = await q
-          return { key: l.key, count: count || 0 }
-        } catch (_) { return { key: l.key, count: null } }
-      }))
-      if (!alive) return
-      var next = {}
-      results.forEach(function (r) { next[r.key] = r.count })
-      setCounts(next)
-    }
-    loadCounts()
+    // Each count lands on its own. Awaiting all six together meant the five
+    // that were already back sat on the slowest one before any of them could
+    // be drawn, which is most of the wait people were seeing.
+    visible.forEach(function (l) {
+      if (!l.countTable) return
+      var q = supabase.from(l.countTable).select('*', { count: 'exact', head: true })
+      if (l.countFilter) q = l.countFilter(q)
+      q.then(function (res) {
+        if (!alive) return
+        var c = (res && res.count) || 0
+        if (countCache[l.key] === c) return
+        countCache[l.key] = c
+        try { sessionStorage.setItem(COUNTS_KEY, JSON.stringify(countCache)) } catch { /* private window, blocked storage */ }
+        setCounts(function (prev) {
+          var next = {}
+          Object.keys(prev).forEach(function (k) { next[k] = prev[k] })
+          next[l.key] = c
+          return next
+        })
+      }, function () { /* a count that fails leaves the tab without one */ })
+    })
     return function () { alive = false }
   }, [])
 
@@ -83,11 +103,18 @@ function LedgersHub(props) {
                     ? "bg-indigo-50 text-indigo-700"
                     : "text-slate-600 hover:text-slate-900 hover:bg-slate-50")}>
                 <span>{l.label}</span>
-                {c != null && c > 0 && (
-                  <span data-notranslate
+                {/* The slot is held open for every tab that has a count to
+                    show, and merely made invisible until the number is in.
+                    Adding the chip once it arrived widened the tab under the
+                    pointer and shoved the rest of the bar along — the jump was
+                    half of what read as "still loading". Tabs that never have
+                    a count keep no slot. */}
+                {l.countTable && (
+                  <span data-notranslate aria-hidden={!c ? 'true' : undefined}
                     className={"min-w-[22px] px-1.5 py-1 rounded-lg text-[11px] font-bold tabular-nums text-center leading-none transition-colors " +
+                      (!c ? "invisible " : "") +
                       (isActive ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-500")}>
-                    {c > 999 ? Math.floor(c / 1000) + 'k' : c}
+                    {!c ? '—' : (c > 999 ? Math.floor(c / 1000) + 'k' : c)}
                   </span>
                 )}
               </button>
