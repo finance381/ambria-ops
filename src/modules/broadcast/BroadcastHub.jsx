@@ -65,10 +65,6 @@ function BroadcastHub({ profile, activeSubTab }) {
             </p>
           </div>
         </div>
-        <div className="hidden lg:block text-right shrink-0">
-          <p className="font-display text-[12.5px] font-extrabold text-indigo-600 leading-tight tracking-[-0.01em]">Create. Automate. Grow.</p>
-          <p className="text-[11px] text-slate-400 leading-snug">Smarter campaigns. Stronger connections.</p>
-        </div>
       </div>
 
       {/* Scrolls sideways rather than wrapping: a wrapped second row of tabs
