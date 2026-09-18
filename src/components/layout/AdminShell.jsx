@@ -455,16 +455,19 @@ function AdminShell({ profile, onSignOut }) {
         {/* Desktop only — the phone gets the fixed bar further down, which
             carries the drawer trigger this one has no need for.
 
-            Glass, not white: the page ground runs behind it, and an opaque
-            strip across the top of a tinted page reads as a piece of another
-            screen. Still frosted and still bordered, because content scrolls
-            underneath it. */}
+            Glass, and barely that: the page ground runs behind it, so any tint
+            of its own makes the top of the page a lighter strip than the band
+            below it — two surfaces where there is one page. At 40% white with a
+            border under it, that strip and the line across it were the first
+            things you saw. 20% and no border is enough to mute what scrolls
+            underneath without becoming a surface of its own; the blur does the
+            rest of that work. */}
         {/* The ruling only where there is ruled ground behind it. This bar has
             to paint its own copy because its backdrop-blur erases the one on the
             page, and on a section whose page is not ruled that copy would be
             lines floating on a bar and nowhere else. */}
         <div className={(active === 'expenses' ? 'ambria-grid ' : '') +
-          "hidden md:flex sticky top-0 z-30 shrink-0 h-14 items-center justify-between gap-4 px-8 bg-white/40 backdrop-blur-md border-b border-white/50"}>
+          "hidden md:flex sticky top-0 z-30 shrink-0 h-14 items-center justify-between gap-4 px-8 bg-white/20 backdrop-blur-md"}>
           {/* Two levels is all this shell has — the section, and the sub-tab
               inside it, which the tab row already shows. So the trail stops
               at the section rather than inventing depth. */}
