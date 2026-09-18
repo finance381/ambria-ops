@@ -3332,10 +3332,16 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                       <span key={fi} className="inline-flex items-center whitespace-nowrap">
                         {fi > 0 && <span aria-hidden="true" className="mx-3 w-px h-3.5 bg-slate-200" />}
                         <Icon name={f.icon} size={13} className="shrink-0 mr-1.5 text-slate-300" />
-                        {f.lead}
-                        {f.lead
-                          ? <span className="font-semibold text-slate-600">{f.text}</span>
-                          : f.text}
+                        {/* One span, not a bare "by " beside another element.
+                            A text run on its own is an anonymous flex item, and
+                            a flex item has its leading and trailing whitespace
+                            trimmed — which is where the space in "by " went. */}
+                        <span>
+                          {f.lead}
+                          {f.lead
+                            ? <span className="font-semibold text-slate-600">{f.text}</span>
+                            : f.text}
+                        </span>
                       </span>
                     )
                   })}
