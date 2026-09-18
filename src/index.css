@@ -146,6 +146,24 @@
 
      No border property — the ring is a shadow, so a row of these can sit on a
      busy ground without a hard rectangle around each one. */
+  /* The ruled ground, as a background anyone can paint.
+
+     background-attachment: fixed anchors it to the VIEWPORT rather than to the
+     element carrying it, which is the whole trick: the page backdrop is a fixed
+     element ruled from (0,0), and anything else that wants the same ruling has
+     to line up with that wherever it happens to sit. Fixed attachment means it
+     does, without knowing where it is.
+
+     It is here rather than inline because two places need the identical ruling
+     and a copy that drifts by a pixel is worse than no ruling at all. */
+  .ambria-grid {
+    background-image:
+      linear-gradient(rgba(15, 23, 42, 0.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(15, 23, 42, 0.05) 1px, transparent 1px);
+    background-size: 44px 44px;
+    background-attachment: fixed;
+  }
+
   .ambria-glass-card {
     background-color: color-mix(in oklab, #fff 40%, transparent);
     /* 6px, not 12: a heavier blur smears the diagonals behind the card into

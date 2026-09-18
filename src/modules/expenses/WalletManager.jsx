@@ -132,24 +132,6 @@ var DATE_TRIGGER = {
   padding: '12px 10px 12px 12px',
 }
 
-// A hairline grid, corner to corner. It is the one mark on this ground that is
-// actually drawn, and it is the reason the page reads as a surface rather than
-// as a colour: rules this faint are below the threshold you would call a
-// pattern, but they give the eye a scale, and a wash with a scale behind it
-// stops looking like an empty gradient.
-//
-// No mask. Fading it out left the grid showing in whichever corner the blobs
-// happened to be palest, which reads as a smudge rather than as a ruled ground
-// — if it is structure it has to hold everywhere, and if it cannot hold
-// everywhere it should not be there at all.
-var ADMIN_GRID = {
-  backgroundImage: [
-    'linear-gradient(rgba(15,23,42,0.05) 1px, transparent 1px)',
-    'linear-gradient(90deg, rgba(15,23,42,0.05) 1px, transparent 1px)',
-  ].join(', '),
-  backgroundSize: '44px 44px',
-}
-
 // Each blob is its own element rather than a background layer, so it can be
 // moved: a gradient cannot be animated without repainting it, but a div can be
 // translated on the compositor for nothing. They borrow ambria-glow-drift, the
@@ -188,7 +170,7 @@ function AdminBackdrop() {
           or it stops a third of the way up the screen and the ruling looks like
           it ran out of ink. So the floor goes under the grid, not over it. */}
       <div className="absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-b from-transparent to-[#f7f9fd]" />
-      <div className="absolute inset-0" style={ADMIN_GRID} />
+      <div className="absolute inset-0 ambria-grid" />
     </div>
   )
 }

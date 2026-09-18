@@ -459,7 +459,7 @@ function AdminShell({ profile, onSignOut }) {
             strip across the top of a tinted page reads as a piece of another
             screen. Still frosted and still bordered, because content scrolls
             underneath it. */}
-        <div className="hidden md:flex sticky top-0 z-30 shrink-0 h-14 items-center justify-between gap-4 px-8 bg-white/40 backdrop-blur-md border-b border-white/50">
+        <div className="ambria-grid hidden md:flex sticky top-0 z-30 shrink-0 h-14 items-center justify-between gap-4 px-8 bg-white/40 backdrop-blur-md border-b border-white/50">
           {/* Two levels is all this shell has — the section, and the sub-tab
               inside it, which the tab row already shows. So the trail stops
               at the section rather than inventing depth. */}
