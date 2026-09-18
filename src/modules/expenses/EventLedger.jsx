@@ -6,6 +6,7 @@ import { hasPerm } from '../../lib/permissions'
 import { useExpenseDetailModal } from '../../hooks/useExpenseDetailModal.jsx'
 import { deptOrder } from '../../lib/ui'
 import { DeptChip } from '../../components/ui/Badge'
+import CheckedStamp from '../../components/ui/CheckedStamp'
 
 var ENTRY_TYPES = [
   { key: 'all', label: 'All' },
@@ -51,6 +52,9 @@ function _buildGroups(rows) {
 function EventLedger(props) {
   var profile = props && props.profile
   var isAdmin = hasPerm(profile?.permsNew, 'finance.ledgers.event')
+  var isSysAdmin = hasPerm(profile?.permsNew, 'admin.dashboard')
+  var canMarkChecked = hasPerm(profile?.permsNew, 'finance.wallet.mark_checked')
+  var [checkingExpId, setCheckingExpId] = useState(null)
   var [currentEventIds, setCurrentEventIds] = useState([])
   var { openExpenseDetail, expenseDetailModal } = useExpenseDetailModal(profile, isAdmin, function () { loadEntries(currentEventIds) }, props && props.onNavigateToExpenses)
   var propEventId = props && props.eventId ? String(props.eventId) : null
@@ -165,17 +169,40 @@ function EventLedger(props) {
       }
     })
     var expenseDateById = {}
+    var expenseCheckById = {}
     if (expIds.length > 0) {
-      var { data: expRows } = await supabase.from('expenses').select('id, expense_date').in('id', expIds)
-      ;(expRows || []).forEach(function (e) { expenseDateById[e.id] = e.expense_date })
+      var { data: expRows } = await supabase.from('expenses').select('id, expense_date, checked_by, checked_at').in('id', expIds)
+      ;(expRows || []).forEach(function (e) {
+        expenseDateById[e.id] = e.expense_date
+        expenseCheckById[e.id] = { checked_by: e.checked_by, checked_at: e.checked_at }
+      })
     }
     rows = rows.map(function (r) {
       r._creatorName = nameById[r.created_by] || null
       r._entryDate = r.entry_type === 'expense' ? (expenseDateById[Number(r.reference_id)] || null) : null
+      var chk = r.entry_type === 'expense' ? expenseCheckById[Number(r.reference_id)] : null
+      r._checkedBy = chk ? chk.checked_by : null
+      r._checkedAt = chk ? chk.checked_at : null
       return r
     })
     setEntries(rows)
     setEntriesLoading(false)
+  }
+
+  async function toggleExpenseCheck(expenseId) {
+    if (checkingExpId) return
+    setCheckingExpId(expenseId)
+    var { data, error } = await supabase.rpc('fn_toggle_expense_check', { p_expense_id: expenseId })
+    setCheckingExpId(null)
+    if (error) { alert('Could not update: ' + error.message); return }
+    var nowChecked = !!data
+    setEntries(function (prev) { return prev.map(function (r) {
+      if (r.entry_type !== 'expense' || Number(r.reference_id) !== expenseId) return r
+      return Object.assign({}, r, {
+        _checkedBy: nowChecked ? profile.id : null,
+        _checkedAt: nowChecked ? new Date().toISOString() : null,
+      })
+    }) })
   }
 
   async function loadPlateEvents(ids) {
@@ -470,6 +497,18 @@ function EventLedger(props) {
                           <span className={"inline-block px-2 py-0.5 rounded text-xs font-medium " + badgeClass(e.entry_type, e.direction)}>
                             {e.entry_type}
                           </span>
+                          {isExpRow && (e._checkedBy || canMarkChecked) && (
+                            <span className="ml-1.5 inline-block" onClick={function (ev) { ev.stopPropagation() }}>
+                              <CheckedStamp
+                                checked={!!e._checkedBy}
+                                checkedAt={e._checkedAt}
+                                canToggle={canMarkChecked}
+                                canUncheck={e._checkedBy === profile?.id || isSysAdmin}
+                                busy={checkingExpId === Number(e.reference_id)}
+                                onToggle={function () { toggleExpenseCheck(Number(e.reference_id)) }}
+                              />
+                            </span>
+                          )}
                         </td>
                         <td className="px-3 py-2 text-xs text-gray-700">{e.payment_mode || '—'}</td>
                         <td className="px-3 py-2 text-right text-xs font-mono text-green-700">

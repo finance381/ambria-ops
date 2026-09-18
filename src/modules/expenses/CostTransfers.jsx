@@ -10,6 +10,7 @@ import VoiceInput from '../../components/ui/VoiceInput'
 import SearchField from '../../components/ui/SearchField'
 import EventDatePicker from '../../components/ui/EventDatePicker'
 import Icon from '../../components/ui/Icon'
+import CheckedStamp from '../../components/ui/CheckedStamp'
 import CameraCapture from '../../components/ui/CameraCapture'
 import { useAudioRecorder } from '../../hooks/useAudioRecorder'
 import { getReceiptUrl, isVoiceNotePath } from '../../lib/uploadHelper'
@@ -41,6 +42,9 @@ function makeEmptyForm() {
 
 function CostTransfers({ profile }) {
   var canCreate = hasPerm(profile?.permsNew, 'finance.cost_transfers')
+  var isAdmin = hasPerm(profile?.permsNew, 'admin.dashboard')
+  var canMarkChecked = hasPerm(profile?.permsNew, 'finance.wallet.mark_checked')
+  var [checkingTransferId, setCheckingTransferId] = useState(null)
   var [transfers, setTransfers] = useState([])
   var [loading, setLoading] = useState(true)
   var [showForm, setShowForm] = useState(false)
@@ -391,6 +395,22 @@ function CostTransfers({ profile }) {
     setReversing(null)
   }
 
+  async function toggleTransferCheck(t) {
+    if (checkingTransferId) return
+    setCheckingTransferId(t.id)
+    var { data, error } = await supabase.rpc('fn_toggle_cost_transfer_check', { p_id: t.id })
+    setCheckingTransferId(null)
+    if (error) { setError(error.message || 'Could not update'); return }
+    var nowChecked = !!data
+    setTransfers(function (prev) { return prev.map(function (x) {
+      if (x.id !== t.id) return x
+      return Object.assign({}, x, {
+        checked_by: nowChecked ? profile.id : null,
+        checked_at: nowChecked ? new Date().toISOString() : null,
+      })
+    }) })
+  }
+
   function toggleBatch(batchId) {
     setExpandedBatches(function (p) { return Object.assign({}, p, { [batchId]: !p[batchId] }) })
   }
@@ -487,6 +507,18 @@ function CostTransfers({ profile }) {
           {isReversal && <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 uppercase">Reversal</span>}
           {isReversed && <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded bg-gray-200 text-gray-600 uppercase">Reversed</span>}
           {r.edited_at && <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 uppercase">Edited</span>}
+          {(r.checked_by || canMarkChecked) && (
+            <span className="ml-1 inline-block">
+              <CheckedStamp
+                checked={!!r.checked_by}
+                checkedAt={r.checked_at}
+                canToggle={canMarkChecked}
+                canUncheck={r.checked_by === profile?.id || isAdmin}
+                busy={checkingTransferId === r.id}
+                onToggle={function () { toggleTransferCheck(r) }}
+              />
+            </span>
+          )}
         </td>
         <td className="px-3 py-2 text-right whitespace-nowrap">
           {canEdit && (
@@ -524,10 +556,20 @@ function CostTransfers({ profile }) {
         </div>
         {r.description && <div className="text-xs text-gray-500">{r.description}</div>}
         <div className="flex items-center justify-between pt-1">
-          <div className="flex gap-1">
+          <div className="flex items-center gap-1">
             {isReversal && <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 uppercase">Reversal</span>}
             {isReversed && <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-200 text-gray-600 uppercase">Reversed</span>}
             {r.edited_at && <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 uppercase">Edited</span>}
+            {(r.checked_by || canMarkChecked) && (
+              <CheckedStamp
+                checked={!!r.checked_by}
+                checkedAt={r.checked_at}
+                canToggle={canMarkChecked}
+                canUncheck={r.checked_by === profile?.id || isAdmin}
+                busy={checkingTransferId === r.id}
+                onToggle={function () { toggleTransferCheck(r) }}
+              />
+            )}
           </div>
           <div className="flex gap-3">
             {canEdit && (

@@ -287,6 +287,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   var canCreateTentativeEvent = hasPerm(permsNew, 'events.list.create_tentative')
   var canMarkChecked = hasPerm(permsNew, 'finance.wallet.mark_checked')
   var [checkingTxnId, setCheckingTxnId] = useState(null)
+  var [checkingExpId, setCheckingExpId] = useState(null)
   var activeVenues = useReferenceData().venues.filter(function (v) { return v.active }).slice().sort(function (a, b) { return (a.code || '').localeCompare(b.code || '') })
   var [walletView, setWalletView] = useState(null)
   var [allWallets, setAllWallets] = useState([])
@@ -537,7 +538,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     if (expRefIds.length > 0) {
       var expIdsNum = expRefIds.map(function (x) { return Number(x) }).filter(function (n) { return !isNaN(n) })
       var { data: eData } = await supabase.from('expenses')
-        .select('id, description, amount_paise, expense_date, event_id, vendor_name, metadata, expense_types(name, icon), expense_sub_types(name, extra_fields), expense_allocations(department, amount_paise, expense_types(name), expense_sub_types(name))')
+        .select('id, description, amount_paise, expense_date, event_id, vendor_name, metadata, checked_by, checked_at, expense_types(name, icon), expense_sub_types(name, extra_fields), expense_allocations(department, amount_paise, expense_types(name), expense_sub_types(name))')
         .in('id', expIdsNum)
       var eMap = {}
       var evIds = {}
@@ -664,13 +665,14 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     if (expRefIds.length > 0) {
       var expIdsNum = expRefIds.map(function (x) { return Number(x) }).filter(function (n) { return !isNaN(n) })
       var { data: eData } = await supabase.from('expenses')
-        .select('id, description, amount_paise, expense_date, event_id, vendor_name, metadata, status, expense_types(name, icon), expense_sub_types(name, extra_fields), expense_allocations(department, amount_paise, expense_types(name), expense_sub_types(name))')
+        .select('id, description, amount_paise, expense_date, event_id, vendor_name, metadata, status, checked_by, checked_at, expense_types(name, icon), expense_sub_types(name, extra_fields), expense_allocations(department, amount_paise, expense_types(name), expense_sub_types(name))')
         .in('id', expIdsNum)
       var eMap = {}
       var evIds = {}
       ;(eData || []).forEach(function (e) {
         eMap[e.id] = e
         if (e.event_id) evIds[e.event_id] = true
+        if (e.checked_by) cpIds[e.checked_by] = true
       })
       var evArr = Object.keys(evIds)
       if (evArr.length > 0) {
@@ -957,6 +959,34 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
         checked_at: nowChecked ? new Date().toISOString() : null,
       })
     }) })
+    if (nowChecked && profile && profile.id) {
+      setWalletProfiles(function (prev) {
+        if (prev[profile.id]) return prev
+        var next = Object.assign({}, prev); next[profile.id] = { id: profile.id, name: profile.name }; return next
+      })
+    }
+  }
+
+  // Expense/refund rows check the underlying expenses row itself, not this
+  // wallet_transactions row — an expense is shown from several other
+  // screens too (Expenses list, Ledgers, the detail modal), all reading the
+  // same expenses.id, so this has to change what they all see.
+  async function toggleExpenseCheck(expId) {
+    if (checkingExpId) return
+    setCheckingExpId(expId)
+    var { data, error } = await supabase.rpc('fn_toggle_expense_check', { p_expense_id: expId })
+    setCheckingExpId(null)
+    if (error) { alert('Could not update: ' + error.message); return }
+    var nowChecked = !!data
+    setExpenseRefs(function (prev) {
+      if (!prev[expId]) return prev
+      var next = Object.assign({}, prev)
+      next[expId] = Object.assign({}, next[expId], {
+        checked_by: nowChecked ? profile.id : null,
+        checked_at: nowChecked ? new Date().toISOString() : null,
+      })
+      return next
+    })
     if (nowChecked && profile && profile.id) {
       setWalletProfiles(function (prev) {
         if (prev[profile.id]) return prev
@@ -3255,7 +3285,18 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                   {EXP_STATUS_LABELS[expenseRefs[t.reference_id].status] || expenseRefs[t.reference_id].status}
                 </span>
               )}
-              {!isCancelled && (
+              {!isCancelled && isExpRow && t.reference_id && expenseRefs[t.reference_id] && (
+                <CheckedStamp
+                  checked={!!expenseRefs[t.reference_id].checked_by}
+                  checkerName={expenseRefs[t.reference_id].checked_by && walletProfiles[expenseRefs[t.reference_id].checked_by] ? walletProfiles[expenseRefs[t.reference_id].checked_by].name : null}
+                  checkedAt={expenseRefs[t.reference_id].checked_at}
+                  canToggle={canMarkChecked}
+                  canUncheck={expenseRefs[t.reference_id].checked_by === profile.id || isAdmin || isAuditor}
+                  busy={checkingExpId === t.reference_id}
+                  onToggle={function (ev) { ev.stopPropagation(); toggleExpenseCheck(t.reference_id) }}
+                />
+              )}
+              {!isCancelled && !isExpRow && (
                 <CheckedStamp
                   checked={!!t.checked_by}
                   checkerName={t.checked_by && walletProfiles[t.checked_by] ? walletProfiles[t.checked_by].name : null}

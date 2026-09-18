@@ -9,6 +9,7 @@ import { hasPerm } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
 import { useExpenseDetailModal } from '../../hooks/useExpenseDetailModal.jsx'
 import SearchField from '../../components/ui/SearchField'
+import CheckedStamp from '../../components/ui/CheckedStamp'
 
 var STATUS_LABELS = { recorded: 'Recorded', flagged: 'Resubmit', acknowledged: 'Acknowledged', deducted: 'Deducted' }
 var STATUS_COLORS = {
@@ -45,6 +46,9 @@ function getPresetRange(preset) {
 
 function Ledgers({ profile, onNavigateToExpenses }) {
   var isAdmin = hasPerm(profile?.permsNew, 'finance.ledgers.expense')
+  var isSysAdmin = hasPerm(profile?.permsNew, 'admin.dashboard')
+  var canMarkChecked = hasPerm(profile?.permsNew, 'finance.wallet.mark_checked')
+  var [checkingExpId, setCheckingExpId] = useState(null)
   var scopeDeptIds = isAdmin ? null : (profile?.event_dept_ids || [])
   var hasScope = !isAdmin && scopeDeptIds && scopeDeptIds.length > 0
   var { openExpenseDetail, expenseDetailModal } = useExpenseDetailModal(profile, isAdmin, function () { loadDrill(false) }, onNavigateToExpenses)
@@ -338,6 +342,20 @@ function Ledgers({ profile, onNavigateToExpenses }) {
     var hasMore = rows.length > PAGE_SIZE
     if (hasMore) rows = rows.slice(0, PAGE_SIZE)
 
+    // v_ledger doesn't expose expenses.checked_by/checked_at either — same
+    // follow-up pattern as the metadata fetch below, kept separate since this
+    // one always runs (not gated on the sub-type having extra fields).
+    if (rows.length > 0) {
+      var checkIds = Array.from(new Set(rows.map(function (r) { return r.expense_id }).filter(function (v) { return v != null })))
+      var checkRes = await supabase.from('expenses').select('id, checked_by, checked_at').in('id', checkIds)
+      var checkMap = {}
+      ;(checkRes.data || []).forEach(function (e) { checkMap[e.id] = e })
+      rows = rows.map(function (r) {
+        var c = checkMap[r.expense_id]
+        return Object.assign({}, r, { _checkedBy: c ? c.checked_by : null, _checkedAt: c ? c.checked_at : null })
+      })
+    }
+
     // Enrich with this sub-type's custom field values (e.g. which employee a
     // salary-type expense was paid to) — v_ledger doesn't expose expenses.metadata.
     var subType = drillGroup.subTypeId ? refData.expenseSubTypes.find(function (s) { return s.id === drillGroup.subTypeId }) : null
@@ -394,6 +412,22 @@ function Ledgers({ profile, onNavigateToExpenses }) {
     setDrillHasMore(hasMore)
     setDrillOffset(offset + rows.length)
     setDrillLoading(false)
+  }
+
+  async function toggleExpenseCheck(expenseId) {
+    if (checkingExpId) return
+    setCheckingExpId(expenseId)
+    var { data, error } = await supabase.rpc('fn_toggle_expense_check', { p_expense_id: expenseId })
+    setCheckingExpId(null)
+    if (error) { alert('Could not update: ' + error.message); return }
+    var nowChecked = !!data
+    setDrillRows(function (prev) { return prev.map(function (r) {
+      if (r.expense_id !== expenseId) return r
+      return Object.assign({}, r, {
+        _checkedBy: nowChecked ? profile.id : null,
+        _checkedAt: nowChecked ? new Date().toISOString() : null,
+      })
+    }) })
   }
 
   function openRow(g, r) {
@@ -769,6 +803,18 @@ function Ledgers({ profile, onNavigateToExpenses }) {
                             </span>
                           )
                         })()}
+                        {(r._checkedBy || canMarkChecked) && (
+                          <span onClick={function (ev) { ev.stopPropagation() }}>
+                            <CheckedStamp
+                              checked={!!r._checkedBy}
+                              checkedAt={r._checkedAt}
+                              canToggle={canMarkChecked}
+                              canUncheck={r._checkedBy === profile?.id || isSysAdmin}
+                              busy={checkingExpId === r.expense_id}
+                              onToggle={function () { toggleExpenseCheck(r.expense_id) }}
+                            />
+                          </span>
+                        )}
                       </div>
                       <p className="text-sm text-gray-800 truncate mt-1">{r.description || '—'}</p>
                       {r.remarks && <p className="text-xs italic text-gray-500 mt-0.5">"{r.remarks}"</p>}

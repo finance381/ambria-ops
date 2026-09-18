@@ -86,52 +86,31 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
     })
   }, [exp.id, exp.reviewed_by, exp.penalized_by, exp.acknowledged_by])
 
-  // The "checked" stamp lives on wallet_transactions (the debit this expense
-  // created), not on the expense row itself — same finance-controller review
-  // as the Wallet ledger row, surfaced here too. A resubmit debits the wallet
-  // again under the same reference_id, so the newest matching row is the one
-  // that reflects the current submission.
-  var [checkTxnId, setCheckTxnId] = useState(null)
-  var [checkedBy, setCheckedBy] = useState(null)
-  var [checkedAt, setCheckedAt] = useState(null)
+  // The "checked" stamp lives directly on the expense row — every screen
+  // that shows this expense (Wallet row, Expenses list, Expense/Event
+  // Ledger, this modal opened from any of them) is ultimately displaying
+  // the same expenses.id, so checking it anywhere has to change the one
+  // row they all read, not a copy tied to whichever ledger rendered it.
   var [checkedByName, setCheckedByName] = useState('')
   var [checkBusy, setCheckBusy] = useState(false)
 
   useEffect(function () {
+    setCheckedByName('')
+    if (!exp.checked_by) return
     var cancelled = false
-    setCheckTxnId(null); setCheckedBy(null); setCheckedAt(null); setCheckedByName('')
-    supabase.from('wallet_transactions')
-      .select('id, checked_by, checked_at')
-      .eq('reference_type', 'expense')
-      .eq('reference_id', String(exp.id))
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .then(function (res) {
-        if (cancelled) return
-        var row = res.data && res.data[0]
-        if (!row) return
-        setCheckTxnId(row.id)
-        setCheckedBy(row.checked_by)
-        setCheckedAt(row.checked_at)
-        if (row.checked_by) {
-          supabase.from('profiles').select('name').eq('id', row.checked_by).maybeSingle().then(function (r2) {
-            if (!cancelled) setCheckedByName((r2.data && r2.data.name) || '')
-          })
-        }
-      })
+    supabase.from('profiles').select('name').eq('id', exp.checked_by).maybeSingle().then(function (res) {
+      if (!cancelled) setCheckedByName((res.data && res.data.name) || '')
+    })
     return function () { cancelled = true }
-  }, [exp.id])
+  }, [exp.checked_by])
 
   async function toggleChecked() {
-    if (!checkTxnId || checkBusy) return
+    if (checkBusy) return
     setCheckBusy(true)
-    var { data, error } = await supabase.rpc('fn_toggle_wallet_check', { p_transaction_id: checkTxnId })
+    var { error } = await supabase.rpc('fn_toggle_expense_check', { p_expense_id: exp.id })
     setCheckBusy(false)
     if (error) { alert('Could not update: ' + error.message); return }
-    var nowChecked = !!data
-    setCheckedBy(nowChecked ? profile.id : null)
-    setCheckedAt(nowChecked ? new Date().toISOString() : null)
-    setCheckedByName(nowChecked ? (profile.name || '') : '')
+    if (onUpdated) onUpdated()
   }
 
   useEffect(function () {
