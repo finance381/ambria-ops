@@ -35,18 +35,18 @@ var COLS = 'grid grid-cols-[1fr_104px_104px_104px_120px_44px] gap-2'
 // right against it. Both edges are then straight: every "pts" starts on one
 // line, every figure ends on another.
 //
-// The unit is grey and unbolded whatever the figure is doing. It carries no
-// information — it is the same word in all twelve cells — and at the weight of
-// the number it was competing with it.
+// The unit takes the figure's colour — it belongs to that number, and in grey
+// it read as page furniture that happened to sit in the column. It stays a size
+// down and a weight down, so the pair still resolves to the figure first.
 function Money({ paise, tone, bold, dashWhenZero }) {
   var dash = paise == null || (dashWhenZero && !paise)
+  var colour = dash ? 'text-slate-300' : tone
   return (
     <span className="flex items-baseline justify-end gap-2 whitespace-nowrap" data-notranslate>
-      <span className={"text-[12.5px] tabular-nums " +
-        (dash ? "text-slate-300" : (bold ? "font-bold " : "font-semibold ") + tone)}>
+      <span className={"text-[12.5px] tabular-nums " + (bold ? "font-bold " : "font-semibold ") + colour}>
         {dash ? '—' : formatPointsPlain(paise)}
       </span>
-      <span className="w-[1.9rem] shrink-0 text-left text-[11.5px] font-medium text-slate-400">pts</span>
+      <span className={"w-[1.9rem] shrink-0 text-left text-[11.5px] font-medium " + colour}>pts</span>
     </span>
   )
 }
