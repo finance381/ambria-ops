@@ -153,7 +153,7 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
     var acknowledgerIdByExpId = {}
     if (expIds.length > 0) {
       var { data: exps } = await supabase.from('expenses')
-        .select('id, receipt_paths, receipt_path, amount_paise, tax_paise, user_id, acknowledged_by, expense_allocations(department, department_id, venue_id, amount_paise, remarks)')
+        .select('id, receipt_paths, receipt_path, amount_paise, tax_paise, user_id, acknowledged_by, expense_allocations(department, department_id, venue_id, amount_paise, remarks, expense_type_id, expense_sub_type_id)')
         .in('id', expIds)
       ;(exps || []).forEach(function (ex) {
         var paths = Array.isArray(ex.receipt_paths) && ex.receipt_paths.length > 0
@@ -179,6 +179,10 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
     })
     var venueNameById = {}
     refData.venues.forEach(function (v) { venueNameById[v.id] = v.name })
+    var expTypeNameById = {}
+    refData.expenseTypes.forEach(function (t) { expTypeNameById[t.id] = t.name })
+    var expSubTypeNameById = {}
+    refData.expenseSubTypes.forEach(function (st) { expSubTypeNameById[st.id] = st.name })
 
     // Profile name lookup — resolves ledger_entries.created_by plus, for expense-linked
     // rows, the submitter (expenses.user_id) and acknowledger (expenses.acknowledged_by).
@@ -209,6 +213,8 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
         if (breakdownByExpId[id]) {
           patch._breakdown = breakdownByExpId[id]
           patch._venueNames = venueNameById
+          patch._typeNames = expTypeNameById
+          patch._subTypeNames = expSubTypeNameById
         }
         if (submitterIdByExpId[id] && profileNameById[submitterIdByExpId[id]]) patch._submitterName = profileNameById[submitterIdByExpId[id]]
         if (acknowledgerIdByExpId[id] && profileNameById[acknowledgerIdByExpId[id]]) patch._acknowledgerName = profileNameById[acknowledgerIdByExpId[id]]
@@ -541,8 +547,12 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
         if (e._breakdown && e._breakdown.allocations && e._breakdown.allocations.length > 0) {
           e._breakdown.allocations.forEach(function (a) {
             var vName = a.venue_id && e._venueNames ? e._venueNames[a.venue_id] : null
+            var tName = a.expense_type_id && e._typeNames ? e._typeNames[a.expense_type_id] : null
+            var stName = a.expense_sub_type_id && e._subTypeNames ? e._subTypeNames[a.expense_sub_type_id] : null
+            var typeLabel = tName ? (tName + (stName ? ' › ' + stName : '')) : (stName || '')
             var parts = []
             if (a.department) parts.push(a.department)
+            if (typeLabel) parts.push(typeLabel)
             if (vName) parts.push(vName)
             var label = parts.length > 0 ? parts.join(' · ') : '—'
             if (a.remarks) label += ' — ' + a.remarks
@@ -857,8 +867,12 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
                             <div className="font-bold uppercase text-[9px] tracking-wider text-gray-500 mb-1">Allocation{b.allocations.length > 1 ? 's' : ''}</div>
                             {b.allocations.map(function (a, ai) {
                               var vName = a.venue_id && e._venueNames ? e._venueNames[a.venue_id] : null
+                              var tName = a.expense_type_id && e._typeNames ? e._typeNames[a.expense_type_id] : null
+                              var stName = a.expense_sub_type_id && e._subTypeNames ? e._subTypeNames[a.expense_sub_type_id] : null
+                              var typeLabel = tName ? (tName + (stName ? ' › ' + stName : '')) : (stName || '')
                               var parts = []
                               if (a.department) parts.push(a.department)
+                              if (typeLabel) parts.push(typeLabel)
                               if (vName) parts.push(vName)
                               return (
                                 <div key={ai} className="flex justify-between gap-2 text-gray-700 py-0.5">
