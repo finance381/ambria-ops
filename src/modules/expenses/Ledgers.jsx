@@ -47,7 +47,12 @@ function Money({ paise, tone, bold, dashWhenZero }) {
   var dash = paise == null || (dashWhenZero && !paise)
   var colour = dash ? 'text-slate-300' : tone
   return (
-    <span className="flex items-baseline justify-end gap-2 whitespace-nowrap" data-notranslate>
+    /* Centred under the heading rather than ranged against the cell edge.
+       It costs the straight right edge a column of figures normally wants —
+       the digits no longer stack — but the ask was for the figure to sit under
+       its own title, and a centred heading over ranged content is the version
+       that looked wrong. */
+    <span className="flex items-baseline justify-center gap-2 whitespace-nowrap" data-notranslate>
       <span className={"text-[12.5px] tabular-nums " + (bold ? "font-bold " : "font-semibold ") + colour}>
         {dash ? '—' : formatPointsPlain(paise)}
       </span>
@@ -1163,11 +1168,11 @@ function Ledgers({ profile, onNavigateToExpenses }) {
             <div className={"flex-1 " + COLS + " px-3 py-2.5"}>
               {/* Headings, not controls. */}
               <span className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em]">Department / Type</span>
-              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] text-right">Acknowledged</span>
-              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] text-right">Pending</span>
-              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] text-right">Credit</span>
-              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] text-right">Net Total</span>
-              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] text-right">#</span>
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] text-center">Acknowledged</span>
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] text-center">Pending</span>
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] text-center">Credit</span>
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] text-center">Net Total</span>
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] text-center">#</span>
             </div>
             <span className="shrink-0 px-2.5 py-2.5 text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em]">Export</span>
           </div>
@@ -1204,7 +1209,7 @@ function Ledgers({ profile, onNavigateToExpenses }) {
                     <Money paise={g.pending} tone={TONES.pending} />
                     <Money paise={g.credit} tone={TONES.credit} dashWhenZero />
                     <Money paise={g.total} tone={TONES.total} bold />
-                    <span className="text-[11.5px] text-right text-slate-400 tabular-nums self-center" data-notranslate>{g.allocs}</span>
+                    <span className="text-[11.5px] text-center text-slate-400 tabular-nums self-center" data-notranslate>{g.allocs}</span>
                   </button>
                   <button onClick={function (e) { e.stopPropagation(); exportScopedPDF(g.deptId) }}
                     disabled={pdfBusy}
@@ -1236,7 +1241,7 @@ function Ledgers({ profile, onNavigateToExpenses }) {
                           <Money paise={t.pending} tone={TONES.pending} />
                           <Money paise={t.credit} tone={TONES.credit} dashWhenZero />
                           <Money paise={t.total} tone={TONES.total} bold />
-                          <span className="text-[11.5px] text-right text-slate-400 tabular-nums self-center" data-notranslate>{t.allocs}</span>
+                          <span className="text-[11.5px] text-center text-slate-400 tabular-nums self-center" data-notranslate>{t.allocs}</span>
                         </button>
                         <button onClick={function (e) { e.stopPropagation(); exportScopedPDF(g.deptId, t.typeId) }}
                           disabled={pdfBusy}
@@ -1267,7 +1272,7 @@ function Ledgers({ profile, onNavigateToExpenses }) {
                               <Money paise={r.pending} tone={TONES.pending} />
                               <Money paise={r.credit} tone={TONES.credit} dashWhenZero />
                               <Money paise={r.total} tone={TONES.total} bold />
-                              <span className="text-[11.5px] text-right text-slate-400 tabular-nums" data-notranslate>{r.allocs}</span>
+                              <span className="text-[11.5px] text-center text-slate-400 tabular-nums" data-notranslate>{r.allocs}</span>
                             </button>
                             <button onClick={function (e) { e.stopPropagation(); exportScopedPDF(g.deptId, r.typeId, r.subTypeId) }}
                               disabled={pdfBusy}
