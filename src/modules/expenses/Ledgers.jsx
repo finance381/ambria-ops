@@ -939,11 +939,16 @@ function Ledgers({ profile, onNavigateToExpenses }) {
           <button type="button" onClick={function () { setPendingOnly(!pendingOnly) }} aria-pressed={pendingOnly}
             className={"h-9 px-3.5 inline-flex items-center gap-2 text-[12.5px] font-bold rounded-lg border transition-all duration-150 " +
               (pendingOnly
-                ? "bg-amber-50 border-amber-300 text-amber-800"
+                ? "bg-indigo-50 border-indigo-300 text-indigo-800"
                 : "bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:text-slate-900")}>
             {/* A switch, so its state is visible without having to remember
-                what the unpressed colour looked like. */}
-            <span aria-hidden="true" className={"w-8 h-[18px] rounded-full p-0.5 transition-colors " + (pendingOnly ? "bg-amber-500" : "bg-slate-300")}>
+                what the unpressed colour looked like.
+
+                Indigo, not amber. Amber is what this page says about money that
+                is pending — the figure, the column, the card. On a filter it was
+                saying the same colour about something else entirely: that the
+                filter is on, which everything else here says in indigo. */}
+            <span aria-hidden="true" className={"w-8 h-[18px] rounded-full p-0.5 transition-colors " + (pendingOnly ? "bg-indigo-600" : "bg-slate-300")}>
               <span className={"block w-[14px] h-[14px] rounded-full bg-white transition-transform " + (pendingOnly ? "translate-x-[14px]" : "")} />
             </span>
             Pending only
