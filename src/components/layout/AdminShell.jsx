@@ -313,6 +313,22 @@ function AdminShell({ profile, onSignOut }) {
   var _isVisible = visibleTabs.find(function (t) { return t.key === active }) != null
   var ActiveModule = _isVisible ? (MODULES[active] || null) : null
   var activeTab = ADMIN_TABS.find(function (t) { return t.key === active })
+
+  // The breadcrumb bar has two jobs that want opposite things. At the top of
+  // the page it should not be there at all — any tint of its own makes the top
+  // of the page a lighter strip than the band below it. Once the page moves it
+  // has to hide what is passing under it, which needs to be nearly opaque.
+  //
+  // So it is told which of the two it is doing. The window is the scroller —
+  // the shell root is min-h-screen with no overflow of its own — so scrollY is
+  // the whole of it.
+  var [pageScrolled, setPageScrolled] = useState(false)
+  useEffect(function () {
+    function onScroll() { setPageScrolled(window.scrollY > 4) }
+    onScroll()
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return function () { window.removeEventListener('scroll', onScroll) }
+  }, [])
   var activeLabel = activeTab?.label || ''
 
   // The icon inherits currentColor, so one colour per state covers both the
@@ -462,12 +478,18 @@ function AdminShell({ profile, onSignOut }) {
             things you saw. 20% and no border is enough to mute what scrolls
             underneath without becoming a surface of its own; the blur does the
             rest of that work. */}
-        {/* The ruling only where there is ruled ground behind it. This bar has
-            to paint its own copy because its backdrop-blur erases the one on the
-            page, and on a section whose page is not ruled that copy would be
-            lines floating on a bar and nowhere else. */}
-        <div className={(active === 'expenses' ? 'ambria-grid ' : '') +
-          "hidden md:flex sticky top-0 z-30 shrink-0 h-14 items-center justify-between gap-4 px-8 bg-white/20 backdrop-blur-md"}>
+        {/* Nothing of its own until the page moves, then frosted.
+
+            The ruling comes with the frosting rather than always: while the bar
+            is transparent the ground's own ruling shows through it, and a
+            second copy on top of that — pinned to the same viewport origin, so
+            landing exactly on it — would simply draw every line twice as dark.
+            Once the bar is opaque enough to hide the ground, it has to carry
+            the ruling itself, and only on a section whose page is ruled at all. */}
+        <div className={(pageScrolled
+          ? (active === 'expenses' ? 'ambria-grid ' : '') + 'bg-white/80 backdrop-blur-md shadow-[0_1px_12px_rgba(15,23,42,0.06)] '
+          : '') +
+          "hidden md:flex sticky top-0 z-30 shrink-0 h-14 items-center justify-between gap-4 px-8 transition-colors duration-200"}>
           {/* Two levels is all this shell has — the section, and the sub-tab
               inside it, which the tab row already shows. So the trail stops
               at the section rather than inventing depth. */}
