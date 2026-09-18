@@ -776,6 +776,11 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
             var isCredit = (e.credit_paise || 0) > 0
             var isDeleted = !!e.deleted_at
             var amt = isCredit ? (e.credit_paise || 0) : (e.debit_paise || 0)
+            // GST-driven fractional-rupee amounts (e.g. 7,584.84) are exact in the
+            // ledger, but the headline figure shows the same rounded whole-rupee
+            // total as "Grand total (rounded)" in the breakdown panel below, so the
+            // two don't visibly disagree on the same entry.
+            var headlineAmt = e._breakdown ? Math.round(e._breakdown.amount_paise / 100) * 100 : amt
             var kind = e.metadata && e.metadata.kind ? e.metadata.kind : e.ref_type
             var dotColor = isDeleted ? 'bg-gray-300' : isCredit ? 'bg-amber-500' : 'bg-green-500'
             var isExpRow = e.ref_type === 'expense' && e.ref_id && /^[0-9]+$/.test(String(e.ref_id)) && !isDeleted
@@ -889,7 +894,7 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
                 </div>
                 <div className="text-right flex-shrink-0">
                   <p className={"text-sm font-bold " + (isCredit ? "text-amber-800" : "text-green-700")}>
-                    {isCredit ? '+' : '−'}{formatPoints(amt)}
+                    {isCredit ? '+' : '−'}{formatPoints(headlineAmt)}
                   </p>
                   {!isDeleted && (
                     <p className="text-[10px] text-gray-400">Bal: {formatPoints(e.runningBalance)}</p>
