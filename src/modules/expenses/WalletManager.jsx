@@ -3286,8 +3286,15 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                     </div>
                   )}
                   {parts.length > 0 && <p className="mt-2 text-[11px] text-slate-500 leading-relaxed">{parts.join(' · ')}</p>}
+                  {/* Under a rule, and indented off it. The breakdown and the
+                      footer below it were two grey lines of much the same size,
+                      each led by a small grey glyph, so neither said what kind
+                      of thing it was — one is a division of the amount, the
+                      other is when it happened and who did it. The rule makes
+                      the breakdown read as belonging to the expense above it
+                      rather than as one more line in a grey stack. */}
                   {allocs.length > 0 && (
-                    <div className="mt-2 space-y-1">
+                    <div className="mt-2 pl-3 border-l-2 border-indigo-100 space-y-1">
                       {allocs.map(function (a, ai) {
                         var allocType = a.expense_types?.name || ''
                         var allocSubType = a.expense_sub_types?.name || ''
@@ -3305,14 +3312,17 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                              one under another. The label takes the room that is
                              left, the figure is pinned right, and tabular-nums
                              lines the digits up inside it. */
-                          <p key={ai} className="flex items-center gap-3 text-[12px] text-slate-500 leading-relaxed">
-                            <Icon name="tag" size={14} className="shrink-0 text-slate-400" />
+                          <p key={ai} className="flex items-center gap-3 text-[12px] leading-relaxed">
                             {/* The label sizes to its own text rather than
                                 taking the whole row, so there is something left
                                 for the leader to fill. It still shrinks and
-                                truncates when the text is longer than the room. */}
-                            <span className="min-w-0 truncate">
-                              {(a.department || 'Unassigned')}{allocType ? ' › ' + allocType + (allocSubType ? ' › ' + allocSubType : '') : ''}
+                                truncates when the text is longer than the room.
+                                The tag glyph went with the rule that replaced
+                                it: a small grey icon at the head of a grey line
+                                is exactly what the footer below already does. */}
+                            <span className="min-w-0 truncate text-slate-500">
+                              <span className="font-semibold text-slate-700">{a.department || 'Unassigned'}</span>
+                              {allocType ? ' › ' + allocType + (allocSubType ? ' › ' + allocSubType : '') : ''}
                             </span>
                             {/* The leader, drawn rather than bordered. A dotted
                                 border only grows by growing its width, so a
@@ -3350,13 +3360,15 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                 ref ? { icon: 'receipt', text: ref } : null,
                 who ? { icon: 'user', text: who, lead: 'by ' } : null,
               ].filter(Boolean)
-              // A wider gap above: everything before this says what the row is,
-              // and this says when it happened and who did it. A glyph apiece
-              // and a rule between them, because three kinds of fact in one grey
-              // string separated by middots is the thing that made this row hard
-              // to read in the first place.
+              // A rule above, not just a wider gap: everything before this says
+              // what the row is, and this says when it happened and who did it.
+              // A gap alone left it looking like one more line of the same grey
+              // material as the breakdown above — it is a footer, so it sits
+              // below something. A glyph apiece and a rule between the three,
+              // because three kinds of fact in one grey string separated by
+              // middots is what made this row hard to read in the first place.
               return (
-                <div className="mt-2.5 pt-0.5 flex flex-wrap items-center gap-y-1 text-[11.5px] text-slate-400 leading-relaxed">
+                <div className="mt-2.5 pt-2 border-t border-slate-100 flex flex-wrap items-center gap-y-1 text-[11.5px] text-slate-400 leading-relaxed">
                   {facts.map(function (f, fi) {
                     return (
                       <span key={fi} className="inline-flex items-center whitespace-nowrap">
