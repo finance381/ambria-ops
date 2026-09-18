@@ -338,6 +338,24 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   // a round trip every time somebody changes their mind.
   var [txnSort, setTxnSort] = useState('latest')
 
+  // Hold the page still while an overlay is open.
+  //
+  // These five are portalled straight to <body> rather than going through
+  // BottomSheet, which is the only thing in this app that was locking the
+  // page. So the page kept its scrollbar down the side of the overlay, and a
+  // wheel over the dark ground scrolled the list behind it.
+  //
+  // The previous value is put back rather than cleared, because a sheet may be
+  // holding its own lock underneath this one and clearing would let the page
+  // go while that sheet is still up.
+  var overlayOpen = !!(expenseDetailTarget || detailTarget || payDetailTarget || cancelTarget || enlargedWalletImg)
+  useEffect(function () {
+    if (!overlayOpen) return
+    var previous = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return function () { document.body.style.overflow = previous }
+  }, [overlayOpen])
+
   var [walletSearch, setWalletSearch] = useState('')
   var [walletRoleFilter, setWalletRoleFilter] = useState('')
   var [pdfBusy, setPdfBusy] = useState(false)
