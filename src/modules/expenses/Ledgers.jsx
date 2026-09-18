@@ -1248,8 +1248,15 @@ function Ledgers({ profile, onNavigateToExpenses }) {
                         var subTypeName = r.subTypeId ? (subTypeMap[r.subTypeId] || '—') : '—'
                         return (
                           <div key={i} className="flex items-stretch border-t border-slate-100 hover:bg-indigo-50/60 transition-colors">
+                            {/* pl-20, not pl-14. Indentation has to be measured
+                                from where the TEXT starts, not from where the
+                                padding does: the type row spends 45px on a
+                                chevron and an icon tile before its name begins,
+                                and the sub-type row only 24px. At pl-14 the
+                                sub-type's name actually started nine pixels to
+                                the LEFT of its own parent's. */}
                             <button onClick={function () { openRow(g, r) }}
-                              className={"flex-1 " + COLS + " items-center px-3 py-1.5 pl-14 text-left"}>
+                              className={"flex-1 " + COLS + " items-center px-3 py-1.5 pl-20 text-left"}>
                               <div className="flex items-center gap-2.5 min-w-0">
                                 <Icon name="fileText" size={14} className="shrink-0 text-slate-300" />
                                 <p className="text-[12.5px] text-slate-600 truncate">{subTypeName}</p>
