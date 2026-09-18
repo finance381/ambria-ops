@@ -800,36 +800,60 @@ function Ledgers({ profile, onNavigateToExpenses }) {
     return (
       <div className="space-y-4">
         <div>
-          <button onClick={closeDrill}
-            className="text-sm text-indigo-600 font-medium hover:text-indigo-800 transition-colors mb-1">← Back to Ledgers</button>
-          <h2 className="text-lg font-bold text-gray-900">{drillGroup.deptName}</h2>
-          <p className="text-xs text-gray-500">{drillGroup.typeName} › {drillGroup.subTypeName}</p>
+          <button type="button" onClick={closeDrill}
+            className="inline-flex items-center gap-1.5 h-8 -ml-2 px-2 mb-1 rounded-lg text-[13px] font-bold text-indigo-600 hover:bg-indigo-50 transition-colors">
+            <Icon name="arrowLeft" size={15} />
+            Back to Ledgers
+          </button>
+          <h2 className="font-display text-[19px] font-bold text-slate-900 leading-tight">{drillGroup.deptName}</h2>
+          <p className="mt-0.5 text-[12.5px] text-slate-500">{drillGroup.typeName} › {drillGroup.subTypeName}</p>
         </div>
 
-        <div className="grid grid-cols-3 gap-2">
-          <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-2 text-center">
-            <p className="text-[9px] font-bold text-indigo-400 uppercase">Total</p>
-            <p className="text-sm font-bold text-indigo-700">{formatPoints(drillGroup.total)}</p>
+        {/* The same three-part tile the rest of this screen uses: colour on the
+            glyph and on the figure, not filling the card behind it. */}
+        <div className="grid grid-cols-3 gap-3">
+          <div className="flex items-center gap-3 px-4 py-3 bg-white border border-slate-200 rounded-xl">
+            <span className="shrink-0 w-9 h-9 rounded-lg bg-indigo-50 text-indigo-600 inline-flex items-center justify-center">
+              <Icon name="chart" size={17} />
+            </span>
+            <div className="min-w-0">
+              <p className="text-[11px] font-semibold text-slate-500 leading-none">Total</p>
+              <p className="mt-1.5 text-[17px] font-bold text-slate-900 tabular-nums leading-none" data-notranslate>{formatPoints(drillGroup.total)}</p>
+            </div>
           </div>
-          <div className="bg-green-50 border border-green-200 rounded-lg p-2 text-center">
-            <p className="text-[9px] font-bold text-green-500 uppercase">Committed</p>
-            <p className="text-sm font-bold text-green-700">{formatPoints(drillGroup.committed)}</p>
+          <div className="flex items-center gap-3 px-4 py-3 bg-white border border-slate-200 rounded-xl">
+            <span className="shrink-0 w-9 h-9 rounded-lg bg-emerald-50 text-emerald-600 inline-flex items-center justify-center">
+              <Icon name="checkCircle" size={17} />
+            </span>
+            <div className="min-w-0">
+              <p className="text-[11px] font-semibold text-slate-500 leading-none">Committed</p>
+              <p className="mt-1.5 text-[17px] font-bold text-emerald-700 tabular-nums leading-none" data-notranslate>{formatPoints(drillGroup.committed)}</p>
+            </div>
           </div>
-          <div className="bg-amber-50 border border-amber-200 rounded-lg p-2 text-center">
-            <p className="text-[9px] font-bold text-amber-500 uppercase">Pending</p>
-            <p className="text-sm font-bold text-amber-700">{formatPoints(drillGroup.pending)}</p>
+          <div className="flex items-center gap-3 px-4 py-3 bg-white border border-slate-200 rounded-xl">
+            <span className="shrink-0 w-9 h-9 rounded-lg bg-amber-50 text-amber-600 inline-flex items-center justify-center">
+              <Icon name="clock" size={17} />
+            </span>
+            <div className="min-w-0">
+              <p className="text-[11px] font-semibold text-slate-500 leading-none">Pending</p>
+              <p className="mt-1.5 text-[17px] font-bold text-amber-700 tabular-nums leading-none" data-notranslate>{formatPoints(drillGroup.pending)}</p>
+            </div>
           </div>
         </div>
 
-        <div className="bg-white border border-gray-200 rounded-xl p-3">
-          <div className="grid grid-cols-3 gap-2">
+        {/* One row of controls at the size of the controls on the screen behind
+            this one, rather than three native selects at full height. */}
+        <div className="flex flex-wrap items-center gap-2.5">
+          <div className="contents">
             <select value={drillUserFilter} onChange={function (e) { setDrillUserFilter(e.target.value) }}
-              className="px-2 py-1.5 text-xs border border-gray-200 rounded-md" style={{ fontSize: '16px' }}>
+              aria-label="Filter by user"
+              className="h-9 px-3 bg-white border border-slate-200 rounded-lg text-[12.5px] text-slate-700 hover:border-slate-300 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-[border-color,box-shadow] duration-150 flex-1 min-w-[150px]" style={{ fontSize: '16px' }}>
               <option value="">All Users</option>
               {users.map(function (u) { return <option key={u.id} value={u.id}>{u.name}</option> })}
             </select>
             <select value={drillStatusFilter} onChange={function (e) { setDrillStatusFilter(e.target.value) }}
-              className="px-2 py-1.5 text-xs border border-gray-200 rounded-md" style={{ fontSize: '16px' }}>
+              aria-label="Filter by status"
+              className="h-9 px-3 bg-white border border-slate-200 rounded-lg text-[12.5px] text-slate-700 hover:border-slate-300 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-[border-color,box-shadow] duration-150 flex-1 min-w-[150px]" style={{ fontSize: '16px' }}>
               <option value="">All Status</option>
               <option value="recorded">Recorded</option>
               <option value="flagged">Resubmit</option>
@@ -837,7 +861,8 @@ function Ledgers({ profile, onNavigateToExpenses }) {
               <option value="deducted">Deducted</option>
             </select>
             <select value={drillVenueFilter} onChange={function (e) { setDrillVenueFilter(e.target.value) }}
-              className="px-2 py-1.5 text-xs border border-gray-200 rounded-md" style={{ fontSize: '16px' }}>
+              aria-label="Filter by venue"
+              className="h-9 px-3 bg-white border border-slate-200 rounded-lg text-[12.5px] text-slate-700 hover:border-slate-300 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-[border-color,box-shadow] duration-150 flex-1 min-w-[150px]" style={{ fontSize: '16px' }}>
               <option value="">All Venues</option>
               {venues.map(function (v) { return <option key={v.id} value={v.id}>{v.code ? (v.code + ' — ' + v.name) : v.name}</option> })}
             </select>
