@@ -135,11 +135,10 @@ function Ledgers({ profile, onNavigateToExpenses }) {
   var [sortDir, setSortDir] = useState('desc')
   function toggleSort(k) {
     // Same column again flips the direction; a new column starts on the way
-    // round that answers the question people ask first — biggest, and for a
-    // name, A to Z.
+    // round people ask first, which for a figure is biggest.
     if (sortKey === k) { setSortDir(sortDir === 'desc' ? 'asc' : 'desc'); return }
     setSortKey(k)
-    setSortDir(k === 'name' ? 'asc' : 'desc')
+    setSortDir('desc')
   }
   var [pdfBusy, setPdfBusy] = useState(false)
 
@@ -810,23 +809,22 @@ function Ledgers({ profile, onNavigateToExpenses }) {
   //
   // The name differs per level: a department has one, a type has one, a
   // sub-type has one, and they are three different fields.
+  // Every column that sorts is a figure now, so there is one comparator. The
+  // by-name branch went with the caret on Department / Type — nothing can set
+  // sortKey to 'name' any more, and a branch nothing can reach is a branch that
+  // stops being true without anyone finding out.
   if (sortKey) {
     var dir = sortDir === 'asc' ? 1 : -1
-    var byName = function (name) {
-      return function (a, b) { return dir * String(name(a) || '').localeCompare(String(name(b) || '')) }
-    }
     var byNum = function (a, b) { return dir * ((a[sortKey] || 0) - (b[sortKey] || 0)) }
-    var subName = function (r) { return r.subTypeId ? (subTypeMap[r.subTypeId] || '') : '' }
 
     visibleGroups = visibleGroups.map(function (g) {
       var types = g.typeGroups.map(function (t) {
-        var subs = t.subRows.slice().sort(sortKey === 'name' ? byName(subName) : byNum)
-        return Object.assign({}, t, { subRows: subs })
+        return Object.assign({}, t, { subRows: t.subRows.slice().sort(byNum) })
       })
-      types.sort(sortKey === 'name' ? byName(function (t) { return t.typeName }) : byNum)
+      types.sort(byNum)
       return Object.assign({}, g, { typeGroups: types })
     })
-    visibleGroups.sort(sortKey === 'name' ? byName(function (g) { return g.deptName }) : byNum)
+    visibleGroups.sort(byNum)
   }
 
   // ─── DRILL VIEW ───
@@ -1208,7 +1206,12 @@ function Ledgers({ profile, onNavigateToExpenses }) {
               up with each other. */}
           <div className="flex items-stretch bg-slate-50 border-b border-slate-200">
             <div className={"flex-1 " + COLS + " px-3 py-2.5"}>
-              <SortHead k="name" label="Department / Type" />
+              {/* A plain heading. It sorted by name, which is an order the tree
+                  is close to already and not one anybody came here to ask for —
+                  the caret was a control whose answer to being pressed was
+                  "much the same list". The figures still sort; those are
+                  questions worth asking. */}
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em]">Department / Type</span>
               <SortHead k="committed" label="Acknowledged" right />
               <SortHead k="pending" label="Pending" right />
               <SortHead k="credit" label="Credit" right />
