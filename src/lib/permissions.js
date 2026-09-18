@@ -104,7 +104,8 @@ export var PERM_GROUPS = [
     { key: 'finance.wallet',         label: 'Wallet',         scope: 'both',
       optional: [
         { key: 'finance.wallet.admin', label: 'Manage all wallets (cross-user)' },
-        { key: 'finance.wallet.mark_checked', label: 'Mark entries as checked' },
+        { key: 'finance.wallet.mark_checked', label: 'Mark entries as checked',
+          note: 'Also applies to vendor/salary ledger entries (Vendor Ledger, Salary Ledger, Payments), not just Wallet' },
       ] },
     { key: 'finance.view_costs',     label: 'View Item Costs', scope: 'both',
       note: 'See ₹ rates on inventory items across the app' },

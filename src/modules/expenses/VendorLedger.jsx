@@ -14,6 +14,7 @@ import { plainParticularsLines, plainDateLines, makeStatementCellHooks } from '.
 import { hasPerm } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
 import SearchField from '../../components/ui/SearchField'
+import CheckedStamp from '../../components/ui/CheckedStamp'
 
 function byName(a, b) { return (a.name || '').localeCompare(b.name || '') }
 
@@ -21,6 +22,8 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
   var permsNew = (profile && profile.permsNew) || []
   var isAdmin = hasPerm(permsNew, 'admin.dashboard')
   var canView = isAdmin || hasPerm(permsNew, 'finance.ledgers.vendor')
+  var canMarkChecked = hasPerm(permsNew, 'finance.wallet.mark_checked')
+  var [checkingEntryId, setCheckingEntryId] = useState(null)
 
   var [view, setView] = useState('list')  // 'list' | 'detail'
   var [vendors, setVendors] = useState([])
@@ -189,6 +192,7 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
     var profileIds = []
     rows.forEach(function (r) {
       if (r.created_by && profileIds.indexOf(r.created_by) === -1) profileIds.push(r.created_by)
+      if (r.checked_by && profileIds.indexOf(r.checked_by) === -1) profileIds.push(r.checked_by)
     })
     Object.keys(submitterIdByExpId).forEach(function (eid) {
       var id = submitterIdByExpId[eid]
@@ -207,6 +211,7 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
     var merged = rows.map(function (r) {
       var patch = {}
       if (r.created_by && profileNameById[r.created_by]) patch._creatorName = profileNameById[r.created_by]
+      if (r.checked_by && profileNameById[r.checked_by]) patch._checkedByName = profileNameById[r.checked_by]
       if (r.ref_type === 'expense' && r.ref_id) {
         var id = Number(r.ref_id)
         if (receiptsByExpId[id]) patch._sourceReceipts = receiptsByExpId[id]
@@ -289,6 +294,15 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
     })
     if (error) { alert('Reversal failed: ' + error.message); return }
     try { logActivity('LEDGER_REVERSE', 'entry #' + entryId) } catch (_) {}
+    if (selectedVendor) await loadEntries(selectedVendor, showDeleted)
+  }
+
+  async function toggleLedgerCheck(entryId) {
+    if (checkingEntryId) return
+    setCheckingEntryId(entryId)
+    var { error } = await supabase.rpc('fn_toggle_ledger_check', { p_entry_id: entryId })
+    setCheckingEntryId(null)
+    if (error) { alert('Could not update: ' + error.message); return }
     if (selectedVendor) await loadEntries(selectedVendor, showDeleted)
   }
 
@@ -898,6 +912,19 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
                   </p>
                   {!isDeleted && (
                     <p className="text-[10px] text-gray-400">Bal: {formatPoints(e.runningBalance)}</p>
+                  )}
+                  {!isDeleted && (
+                    <div className="mt-1 flex justify-end">
+                      <CheckedStamp
+                        checked={!!e.checked_by}
+                        checkerName={e._checkedByName}
+                        checkedAt={e.checked_at}
+                        canToggle={canMarkChecked}
+                        canUncheck={e.checked_by === profile.id || isAdmin}
+                        busy={checkingEntryId === e.id}
+                        onToggle={function (ev) { ev.stopPropagation(); toggleLedgerCheck(e.id) }}
+                      />
+                    </div>
                   )}
                   {isAdmin && !isDeleted && (
                     <button onClick={function (ev) { ev.stopPropagation(); reverseEntry(e.id) }}
