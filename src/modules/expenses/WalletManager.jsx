@@ -3125,7 +3125,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     return (
       <div key={t.id}
         onClick={handleRowClick}
-        className={"bg-white border rounded-lg p-3 " + rowBorderClass + (rowIsClickable ? " cursor-pointer hover:border-indigo-300 hover:bg-indigo-50/30 transition-colors" : "")}>
+        className={"bg-white border rounded-xl px-3.5 py-3 " + rowBorderClass + (rowIsClickable ? " cursor-pointer hover:border-indigo-300 hover:bg-indigo-50/30 transition-colors" : "")}>
         {/* justify-between was never doing the split — the left column is
             flex-1 and already pushes the figures right — so the row can simply
             gain a third child at the front. */}
@@ -3213,8 +3213,12 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
               if (t.reference_type === 'expense_refund' && e.amount_paise) parts.push('orig ' + formatPoints(e.amount_paise) + ' on ' + formatDate(e.expense_date))
               return (
                 <>
+                  {/* One rhythm down the row. Five lines at four pixels apart,
+                      every one of them grey and roughly the same size, is why
+                      this read as a block rather than as facts — nothing told
+                      the eye where one thing ended and the next began. */}
                   {(typeName || e._event_name) && (
-                    <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1">
                       {typeName && (
                         <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 text-[10px] font-bold">
                           {typeName + (subTypeName ? ' › ' + subTypeName : '')}
@@ -3229,7 +3233,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                     </p>
                   )}
                   {pairs.length > 0 && (
-                    <p className="mt-1 text-[11px] text-slate-500 leading-snug">
+                    <p className="mt-2 text-[11px] text-slate-500 leading-relaxed">
                       {pairs.map(function (pr, pi) {
                         return (
                           <span key={pi}>
@@ -3241,14 +3245,14 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                       })}
                     </p>
                   )}
-                  {parts.length > 0 && <p className="mt-1 text-[11px] text-slate-500">{parts.join(' · ')}</p>}
+                  {parts.length > 0 && <p className="mt-2 text-[11px] text-slate-500 leading-relaxed">{parts.join(' · ')}</p>}
                   {allocs.length > 0 && (
-                    <div className="mt-0.5 space-y-0.5">
+                    <div className="mt-2 space-y-1">
                       {allocs.map(function (a, ai) {
                         var allocType = a.expense_types?.name || ''
                         var allocSubType = a.expense_sub_types?.name || ''
                         return (
-                          <p key={ai} className="text-[10px] text-slate-500 tabular-nums">
+                          <p key={ai} className="text-[11px] text-slate-500 leading-relaxed tabular-nums">
                             {(a.department || 'Unassigned')}{allocType ? ' · ' + allocType + (allocSubType ? ' › ' + allocSubType : '') : ''} — {formatPoints(a.amount_paise)}
                           </p>
                         )
@@ -3266,8 +3270,10 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                 : ''
               var who = t.performed_by && walletProfiles[t.performed_by] ? walletProfiles[t.performed_by].name : ''
               var bits = [formatDate(t.created_at), time, ref].filter(Boolean)
+              // A wider gap above: everything before this says what the row is,
+              // and this says when it happened and who did it.
               return (
-                <p className="mt-1 text-[11px] text-slate-500 leading-snug">
+                <p className="mt-2.5 pt-0.5 text-[11px] text-slate-400 leading-relaxed">
                   {bits.map(function (b, bi) {
                     return (
                       <span key={bi} className="whitespace-nowrap">
