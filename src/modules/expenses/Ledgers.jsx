@@ -51,7 +51,11 @@ function Money({ paise, tone, bold, dashWhenZero }) {
       <span className={"text-[12.5px] tabular-nums " + (bold ? "font-bold " : "font-semibold ") + colour}>
         {dash ? '—' : formatPointsPlain(paise)}
       </span>
-      <span className={"w-[1.9rem] shrink-0 text-left text-[11.5px] font-medium " + colour}>pts</span>
+      {/* No fixed slot. It is the same three characters in every cell, so its
+          width is already constant — reserving more than it needs just left a
+          gap between it and the cell's right edge, which the headings above run
+          all the way to. Ending where they end is what lines the two up. */}
+      <span className={"shrink-0 text-[11.5px] font-medium " + colour}>pts</span>
     </span>
   )
 }
