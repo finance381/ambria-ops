@@ -3242,18 +3242,23 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                       )}
                     </p>
                   )}
+                  {/* Each field as its own unit, not one sentence with middots
+                      in it. Strung together, "Expense Details: Odc hk expense ·
+                      Vendor Name: Venue rental" is a line you have to read
+                      through to find the break in; stacked label over value,
+                      with real space between the pairs, the breaks are where
+                      the eye already is. */}
                   {pairs.length > 0 && (
-                    <p className="mt-2 text-[11px] text-slate-500 leading-relaxed">
+                    <div className="mt-2 flex flex-wrap gap-x-6 gap-y-2">
                       {pairs.map(function (pr, pi) {
                         return (
-                          <span key={pi}>
-                            {pi > 0 && <span className="text-slate-300"> · </span>}
-                            {pr.label + ': '}
-                            <span className="font-semibold text-slate-700">{pr.value}</span>
+                          <span key={pi} className="inline-flex min-w-0 flex-col gap-1">
+                            <span className="text-[9.5px] font-bold uppercase tracking-[0.06em] text-slate-400 leading-none">{pr.label}</span>
+                            <span className="text-[12px] font-semibold text-slate-700 leading-none">{pr.value}</span>
                           </span>
                         )
                       })}
-                    </p>
+                    </div>
                   )}
                   {parts.length > 0 && <p className="mt-2 text-[11px] text-slate-500 leading-relaxed">{parts.join(' · ')}</p>}
                   {allocs.length > 0 && (
@@ -3262,8 +3267,13 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                         var allocType = a.expense_types?.name || ''
                         var allocSubType = a.expense_sub_types?.name || ''
                         return (
-                          <p key={ai} className="text-[11px] text-slate-500 leading-relaxed tabular-nums">
-                            {(a.department || 'Unassigned')}{allocType ? ' · ' + allocType + (allocSubType ? ' › ' + allocSubType : '') : ''} — {formatPoints(a.amount_paise)}
+                          /* The figure is the point of the line — which
+                             department carries how much — so it is the part
+                             that is not grey. */
+                          <p key={ai} className="text-[11px] text-slate-500 leading-relaxed">
+                            {(a.department || 'Unassigned')}{allocType ? ' · ' + allocType + (allocSubType ? ' › ' + allocSubType : '') : ''}
+                            <span className="mx-1 text-slate-300">—</span>
+                            <span className="font-semibold text-slate-700 tabular-nums" data-notranslate>{formatPoints(a.amount_paise)}</span>
                           </p>
                         )
                       })}
