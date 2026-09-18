@@ -44,7 +44,7 @@ var TONES = {
 // Neutral, like the two in the toolbar. Opening a PDF is not destructive, and
 // a column of red down the right-hand edge of a table reads as a column of
 // warnings — which was the loudest thing on a screen whose job is figures.
-var PDF_BTN = 'shrink-0 self-center mr-3 h-8 px-3 inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white text-[11.5px] font-bold text-slate-600 hover:border-indigo-300 hover:text-indigo-700 disabled:opacity-40 transition-all duration-150'
+var PDF_BTN = 'shrink-0 self-center mr-3 h-7 px-2.5 inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white text-[11.5px] font-bold text-slate-600 hover:border-indigo-300 hover:text-indigo-700 disabled:opacity-40 transition-all duration-150'
 var STATUS_COLORS = {
   recorded: 'bg-amber-100 text-amber-700',
   flagged: 'bg-orange-100 text-orange-700',
@@ -1113,7 +1113,7 @@ function Ledgers({ profile, onNavigateToExpenses }) {
               <div key={g.key} data-dept-row className="border-t border-slate-100 first:border-t-0">
                 <div className="flex items-stretch hover:bg-slate-50 transition-colors">
                   <button onClick={function (ev) { toggleDept(g.key, g.allocs, ev.currentTarget.closest('[data-dept-row]')) }}
-                    className={"flex-1 " + COLS + " items-center px-3 py-2.5 text-left"}>
+                    className={"flex-1 " + COLS + " items-center px-3 py-2 text-left"}>
                     <div className="flex items-center gap-2 min-w-0">
                       {/* A drawn chevron that turns, not two different characters.
                           ▸ and ▾ are different glyphs at different widths, so the
@@ -1124,7 +1124,7 @@ function Ledgers({ profile, onNavigateToExpenses }) {
                           department it is, is what the name says; what a row is
                           — a department, a type, a sub-type — is the thing three
                           levels of the same table cannot say any other way. */}
-                      <span className="shrink-0 w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 inline-flex items-center justify-center">
+                      <span className="shrink-0 w-7 h-7 rounded-lg bg-indigo-50 text-indigo-600 inline-flex items-center justify-center">
                         <Icon name="building" size={16} />
                       </span>
                       <span className="text-[13.5px] font-bold text-slate-900 truncate">{g.deptName}</span>
@@ -1157,11 +1157,11 @@ function Ledgers({ profile, onNavigateToExpenses }) {
                     <div key={t.typeKey}>
                       <div className="flex items-stretch border-t border-slate-100 bg-slate-50/70 hover:bg-slate-100 transition-colors">
                         <button onClick={function () { toggleType(g.key, t.typeKey) }}
-                          className={"flex-1 " + COLS + " items-center px-3 py-2 pl-9 text-left"}>
+                          className={"flex-1 " + COLS + " items-center px-3 py-1.5 pl-9 text-left"}>
                           <div className="flex items-center gap-2 min-w-0">
                             <Icon name="chevronRight" size={13}
                               className={"shrink-0 text-slate-400 transition-transform duration-150 " + (typeCollapsed ? "" : "rotate-90")} />
-                            <span className="shrink-0 w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-500 inline-flex items-center justify-center">
+                            <span className="shrink-0 w-6 h-6 rounded-md bg-white border border-slate-200 text-slate-500 inline-flex items-center justify-center">
                               <Icon name="box" size={14} />
                             </span>
                             <span className="text-[12.5px] font-semibold text-slate-800 truncate">{typeName}</span>
@@ -1186,7 +1186,7 @@ function Ledgers({ profile, onNavigateToExpenses }) {
                         return (
                           <div key={i} className="flex items-stretch border-t border-slate-100 hover:bg-indigo-50/60 transition-colors">
                             <button onClick={function () { openRow(g, r) }}
-                              className={"flex-1 " + COLS + " items-center px-3 py-2 pl-14 text-left"}>
+                              className={"flex-1 " + COLS + " items-center px-3 py-1.5 pl-14 text-left"}>
                               <div className="flex items-center gap-2.5 min-w-0">
                                 <Icon name="fileText" size={14} className="shrink-0 text-slate-300" />
                                 <p className="text-[12.5px] text-slate-600 truncate">{subTypeName}</p>
