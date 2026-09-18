@@ -284,39 +284,23 @@ var REF_TYPE_MARKS = {
 // A reading of the period. The four of them are the same shape on purpose —
 // they are four answers to one question, and giving each its own size or its
 // own filled panel made them look like four unrelated facts.
-// A figure, and where it is a figure you can act on, the act.
+// A figure. Not a control — these report, and reporting is all they do.
 //
 // Translucent, so the ruled ground shows through rather than being covered by
 // an opaque panel. No backdrop blur: there can be a hundred of these surfaces
 // on one page and blurring each one is a GPU layer apiece, where plain alpha is
 // free.
-//
-// A tile with no onClick stays a div. The ledger's four — opening, credits,
-// debits, closing — are readings of a period and there is nothing to click
-// through to; giving them a button's cursor and focus ring would promise
-// something that is not there.
-function StatTile({ icon, tone, label, value, valueClass, onClick, active, hint }) {
-  var body = (
-    <>
+function StatTile({ icon, tone, label, value, valueClass }) {
+  return (
+    <div className="flex items-center gap-3 px-3.5 py-3 bg-white/75 border border-slate-200 rounded-xl">
       <span className={'shrink-0 w-9 h-9 rounded-lg inline-flex items-center justify-center ' + tone}>
         <Icon name={icon} size={17} />
       </span>
-      <div className="min-w-0 text-left">
+      <div className="min-w-0">
         <p className="text-[11px] font-semibold text-slate-500 leading-none">{label}</p>
         <p className={'mt-1.5 text-[16px] font-bold tabular-nums leading-none ' + valueClass} data-notranslate>{value}</p>
       </div>
-    </>
-  )
-  var shell = "flex items-center gap-3 px-3.5 py-3 bg-white/75 border rounded-xl "
-  if (!onClick) return <div className={shell + "border-slate-200"}>{body}</div>
-  return (
-    <button type="button" onClick={onClick} aria-pressed={!!active} title={hint}
-      className={shell + "w-full text-left transition-all hover:bg-white active:scale-[0.99] " +
-        (active
-          ? "border-indigo-400 ring-2 ring-indigo-500/20"
-          : "border-slate-200 hover:border-indigo-300")}>
-      {body}
-    </button>
+    </div>
   )
 }
 
@@ -356,13 +340,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   // rows and they are all in hand, so reordering them is free and does not cost
   // a round trip every time somebody changes their mind.
   var [txnSort, setTxnSort] = useState('latest')
-  // Where a summary tile sends you. The list is below the fold on a laptop once
-  // the tiles and the toolbar have had their rows, so changing the filter alone
-  // would answer the question off-screen.
-  var walletListRef = useRef(null)
-  function showWalletList() {
-    if (walletListRef.current) walletListRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
-  }
+
   var [walletSearch, setWalletSearch] = useState('')
   var [walletRoleFilter, setWalletRoleFilter] = useState('')
   var [pdfBusy, setPdfBusy] = useState(false)
@@ -2939,47 +2917,13 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                anybody has to do something today. */
             (function () {
               var total = filteredWallets.reduce(function (s, w) { return s + (w.balance_paise || 0) }, 0)
-              var negatives = filteredWallets.filter(function (w) { return (w.balance_paise || 0) < 0 }).length
-              var pending = filteredWallets.reduce(function (s, w) { return s + (w._pendingCount || 0) }, 0)
               return (
-                /* Each tile filters the list to the thing it counts, and takes
-                   you down to it. Clicking one that is already applied clears
-                   it — a filter you can only turn on is a trap, and these are
-                   the most inviting things on the page to click. */
-                <div className="relative mt-5 grid grid-cols-2 xl:grid-cols-4 gap-3">
+                <div className="relative mt-5 grid grid-cols-2 gap-3">
                   <StatTile icon="users" tone="bg-indigo-50 text-indigo-600" label="Wallets"
-                    value={String(filteredWallets.length)} valueClass="text-slate-900"
-                    hint="Show every wallet"
-                    active={!walletRoleFilter && walletBalanceState === 'all' && !walletPendingOnly && !walletSearch}
-                    onClick={function () {
-                      setWalletRoleFilter(''); setWalletBalanceState('all'); setWalletPendingOnly(false); setWalletSearch('')
-                      showWalletList()
-                    }} />
+                    value={String(filteredWallets.length)} valueClass="text-slate-900" />
                   <StatTile icon="banknote" tone={total < 0 ? "bg-red-50 text-red-600" : "bg-emerald-50 text-emerald-600"}
                     label="Total Points" value={formatPoints(total)}
-                    valueClass={total < 0 ? "text-red-700" : "text-slate-900"}
-                    hint="Sort by balance, highest first"
-                    active={walletSort === 'balance_desc'}
-                    onClick={function () {
-                      setWalletSort(walletSort === 'balance_desc' ? 'name' : 'balance_desc')
-                      showWalletList()
-                    }} />
-                  <StatTile icon="alert" tone="bg-rose-50 text-rose-600" label="In Deficit"
-                    value={String(negatives)} valueClass={negatives > 0 ? "text-rose-700" : "text-slate-900"}
-                    hint="Show only wallets in deficit"
-                    active={walletBalanceState === 'negative'}
-                    onClick={function () {
-                      setWalletBalanceState(walletBalanceState === 'negative' ? 'all' : 'negative')
-                      showWalletList()
-                    }} />
-                  <StatTile icon="clock" tone="bg-amber-50 text-amber-600" label="Pending"
-                    value={String(pending)} valueClass={pending > 0 ? "text-amber-700" : "text-slate-900"}
-                    hint="Show only wallets with something pending"
-                    active={walletPendingOnly}
-                    onClick={function () {
-                      setWalletPendingOnly(!walletPendingOnly)
-                      showWalletList()
-                    }} />
+                    valueClass={total < 0 ? "text-red-700" : "text-slate-900"} />
                 </div>
               )
             })()
@@ -3055,7 +2999,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
         {/* One column unless we are actually on the dashboard. md: measures the
             viewport and the phone shell is a 540px column inside it, so a bare
             md:grid-cols-2 gave the phone two 160px cards. */}
-        <div ref={walletListRef} className={"scroll-mt-4 space-y-2" + (inAdmin ? " md:space-y-0 md:grid md:grid-cols-2 xl:grid-cols-3 md:gap-2.5" : "")}>
+        <div className={"space-y-2" + (inAdmin ? " md:space-y-0 md:grid md:grid-cols-2 xl:grid-cols-3 md:gap-2.5" : "")}>
           {filteredWallets.map(function (w) {
             var p = walletProfiles[w.user_id] || {}
             return (
