@@ -843,22 +843,47 @@ function Ledgers({ profile, onNavigateToExpenses }) {
             9px label centred over a 16px number made four cards you had to lean
             in to read; ranged left they also line up with everything below
             them. */}
+        {/* The colour sits on the figure and on a glyph, not across the whole
+            card. Four filled panels shouted four different colours at a glance,
+            and the only part that differs between them — the number — had to
+            compete with its own background to be read. Same shape as the
+            wallet ledger uses for its four, so the two screens match. */}
         <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
-          <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3">
-            <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-[0.08em]">Debits Acknowledged</p>
-            <p className="mt-1.5 text-[19px] font-extrabold text-emerald-700 tabular-nums leading-none" data-notranslate>{formatPoints(totals.committed)}</p>
+          <div className="flex items-center gap-3 px-4 py-3 bg-white border border-slate-200 rounded-xl">
+            <span className="shrink-0 w-9 h-9 rounded-lg inline-flex items-center justify-center bg-emerald-50 text-emerald-600">
+              <Icon name="checkCircle" size={17} />
+            </span>
+            <div className="min-w-0">
+              <p className="text-[11px] font-semibold text-slate-500 leading-none">Debits Acknowledged</p>
+              <p className="mt-1.5 text-[17px] font-bold text-emerald-700 tabular-nums leading-none" data-notranslate>{formatPoints(totals.committed)}</p>
+            </div>
           </div>
-          <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
-            <p className="text-[10px] font-bold text-amber-600 uppercase tracking-[0.08em]">Debits Pending</p>
-            <p className="mt-1.5 text-[19px] font-extrabold text-amber-700 tabular-nums leading-none" data-notranslate>{formatPoints(totals.pending)}</p>
+          <div className="flex items-center gap-3 px-4 py-3 bg-white border border-slate-200 rounded-xl">
+            <span className="shrink-0 w-9 h-9 rounded-lg inline-flex items-center justify-center bg-amber-50 text-amber-600">
+              <Icon name="clock" size={17} />
+            </span>
+            <div className="min-w-0">
+              <p className="text-[11px] font-semibold text-slate-500 leading-none">Debits Pending</p>
+              <p className="mt-1.5 text-[17px] font-bold text-amber-700 tabular-nums leading-none" data-notranslate>{formatPoints(totals.pending)}</p>
+            </div>
           </div>
-          <div className="bg-rose-50 border border-rose-200 rounded-xl px-4 py-3">
-            <p className="text-[10px] font-bold text-rose-600 uppercase tracking-[0.08em]">Total Credits</p>
-            <p className="mt-1.5 text-[19px] font-extrabold text-rose-700 tabular-nums leading-none" data-notranslate>{formatPoints(totals.credit)}</p>
+          <div className="flex items-center gap-3 px-4 py-3 bg-white border border-slate-200 rounded-xl">
+            <span className="shrink-0 w-9 h-9 rounded-lg inline-flex items-center justify-center bg-rose-50 text-rose-600">
+              <Icon name="banknote" size={17} />
+            </span>
+            <div className="min-w-0">
+              <p className="text-[11px] font-semibold text-slate-500 leading-none">Total Credits</p>
+              <p className="mt-1.5 text-[17px] font-bold text-rose-700 tabular-nums leading-none" data-notranslate>{formatPoints(totals.credit)}</p>
+            </div>
           </div>
-          <div className="bg-indigo-50 border border-indigo-200 rounded-xl px-4 py-3">
-            <p className="text-[10px] font-bold text-indigo-600 uppercase tracking-[0.08em]">Net Total</p>
-            <p className="mt-1.5 text-[19px] font-extrabold text-indigo-700 tabular-nums leading-none" data-notranslate>{formatPoints(totals.total)}</p>
+          <div className="flex items-center gap-3 px-4 py-3 bg-white border border-slate-200 rounded-xl">
+            <span className="shrink-0 w-9 h-9 rounded-lg inline-flex items-center justify-center bg-indigo-50 text-indigo-600">
+              <Icon name="chart" size={17} />
+            </span>
+            <div className="min-w-0">
+              <p className="text-[11px] font-semibold text-slate-500 leading-none">Net Total</p>
+              <p className="mt-1.5 text-[17px] font-bold text-slate-900 tabular-nums leading-none" data-notranslate>{formatPoints(totals.total)}</p>
+            </div>
           </div>
         </div>
 
