@@ -24,11 +24,35 @@ var COLS = 'grid grid-cols-[1fr_104px_104px_104px_120px_44px] gap-2'
 // behind every figure turns four columns into a wall of tinted blocks, and the
 // only part that differs between them, the number, then has to compete with
 // its own background to be read.
-function Money({ value, tone, bold }) {
+// Aligned on the decimal point, not on the right edge.
+//
+// Ranging a money column right lines up the last character, which is only the
+// same thing when every figure has the same number of decimals. Here most are
+// whole and a few are not, so "7,82,310 pts" sat against "22,946.29 pts" with
+// their digits two places out — the column looked ragged down the middle even
+// though every row ended flush.
+//
+// The fraction goes in a slot of its own, 3ch wide and left-aligned, which is
+// exactly ".99" in tabular figures. A whole number leaves that slot empty and
+// still occupies it, so the units digit of every figure in the column lands on
+// the same vertical line.
+function Money({ paise, tone, bold, dashWhenZero }) {
+  var dash = paise == null || (dashWhenZero && !paise)
+  if (dash) {
+    return <span className="text-right text-[12.5px] text-slate-300" data-notranslate>—</span>
+  }
+  var neg = paise < 0
+  var abs = Math.abs(paise)
+  var whole = Math.floor(abs / 100)
+  var frac = abs % 100
   return (
     <span className={"text-right text-[12.5px] tabular-nums whitespace-nowrap " +
       (bold ? "font-bold " : "font-semibold ") + tone}
-      data-notranslate>{value}</span>
+      data-notranslate>
+      {(neg ? '−' : '') + whole.toLocaleString('en-IN')}
+      <span className="inline-block w-[3ch] text-left">{frac ? '.' + String(frac).padStart(2, '0') : ''}</span>
+      pts
+    </span>
   )
 }
 
@@ -1212,10 +1236,10 @@ function Ledgers({ profile, onNavigateToExpenses }) {
                         </span>
                       )}
                     </div>
-                    <Money value={formatPoints(g.committed)} tone={TONES.committed} />
-                    <Money value={formatPoints(g.pending)} tone={TONES.pending} />
-                    <Money value={g.credit > 0 ? formatPoints(g.credit) : '—'} tone={TONES.credit} />
-                    <Money value={formatPoints(g.total)} tone={TONES.total} bold />
+                    <Money paise={g.committed} tone={TONES.committed} />
+                    <Money paise={g.pending} tone={TONES.pending} />
+                    <Money paise={g.credit} tone={TONES.credit} dashWhenZero />
+                    <Money paise={g.total} tone={TONES.total} bold />
                     <span className="text-[11.5px] text-right text-slate-400 tabular-nums self-center" data-notranslate>{g.allocs}</span>
                   </button>
                   <button onClick={function (e) { e.stopPropagation(); exportScopedPDF(g.deptId) }}
@@ -1244,10 +1268,10 @@ function Ledgers({ profile, onNavigateToExpenses }) {
                             <span className="text-[12.5px] font-semibold text-slate-800 truncate">{typeName}</span>
                             <span className="shrink-0 min-w-[20px] px-1.5 py-0.5 rounded-md bg-white text-[10.5px] font-bold text-slate-500 tabular-nums text-center" data-notranslate>{t.subRows.length}</span>
                           </div>
-                          <Money value={formatPoints(t.committed)} tone={TONES.committed} />
-                          <Money value={formatPoints(t.pending)} tone={TONES.pending} />
-                          <Money value={t.credit > 0 ? formatPoints(t.credit) : '—'} tone={TONES.credit} />
-                          <Money value={formatPoints(t.total)} tone={TONES.total} bold />
+                          <Money paise={t.committed} tone={TONES.committed} />
+                          <Money paise={t.pending} tone={TONES.pending} />
+                          <Money paise={t.credit} tone={TONES.credit} dashWhenZero />
+                          <Money paise={t.total} tone={TONES.total} bold />
                           <span className="text-[11.5px] text-right text-slate-400 tabular-nums self-center" data-notranslate>{t.allocs}</span>
                         </button>
                         <button onClick={function (e) { e.stopPropagation(); exportScopedPDF(g.deptId, t.typeId) }}
@@ -1275,10 +1299,10 @@ function Ledgers({ profile, onNavigateToExpenses }) {
                                 <Icon name="fileText" size={14} className="shrink-0 text-slate-300" />
                                 <p className="text-[12.5px] text-slate-600 truncate">{subTypeName}</p>
                               </div>
-                              <Money value={formatPoints(r.committed)} tone={TONES.committed} />
-                              <Money value={formatPoints(r.pending)} tone={TONES.pending} />
-                              <Money value={r.credit > 0 ? formatPoints(r.credit) : '—'} tone={TONES.credit} />
-                              <Money value={formatPoints(r.total)} tone={TONES.total} bold />
+                              <Money paise={r.committed} tone={TONES.committed} />
+                              <Money paise={r.pending} tone={TONES.pending} />
+                              <Money paise={r.credit} tone={TONES.credit} dashWhenZero />
+                              <Money paise={r.total} tone={TONES.total} bold />
                               <span className="text-[11.5px] text-right text-slate-400 tabular-nums" data-notranslate>{r.allocs}</span>
                             </button>
                             <button onClick={function (e) { e.stopPropagation(); exportScopedPDF(g.deptId, r.typeId, r.subTypeId) }}
