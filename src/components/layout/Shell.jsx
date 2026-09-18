@@ -443,6 +443,10 @@ function Shell({ profile, onSignOut }) {
   // dense lists, where a calm ground matters more than a patterned one.
   var pageArt = !tab || tab === 'expenses'
   var waveArt = tab === 'broadcast'
+  // Screens whose own artwork starts at the top of the viewport, so the bar
+  // has to let it through rather than capping it with white.
+  var artHeader = pageArt || waveArt || tab === 'wallet'
+
 
   return (
     <div className={"relative isolate " + (tab === 'quote' ? "min-h-screen lg:h-screen lg:overflow-hidden" : "min-h-screen")}
@@ -454,7 +458,7 @@ function Shell({ profile, onSignOut }) {
           portalled to <body>, so it is no longer a fixed child of this header
           for backdrop-filter's containing block to capture. */}
       {tab !== 'quote' && (
-      <header className={"sticky top-0 z-40 border-b " + (pageArt || waveArt ? "bg-white/70 backdrop-blur-md border-white/60" : "bg-white border-slate-200")}>
+      <header className={"sticky top-0 z-40 " + (artHeader ? "bg-white/45 backdrop-blur-xl shadow-[0_1px_12px_rgba(15,23,42,0.05)]" : "border-b bg-white border-slate-200")}>
         <div className="max-w-[540px] mx-auto h-14 flex items-center gap-2 px-3">
           {(activeGroup || tab) && (
             <button

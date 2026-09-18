@@ -30,10 +30,17 @@ import pcBg from '../../assets/pc-bg.webp'
 // on how wide the page is: behind one 540px column of cards on a phone the
 // diagonals frame the content, but across a 1500px admin content area the
 // same diagonals cut straight through tables and card borders.
+// The flat colour below is the artwork averaged down to one pixel, so while the
+// file is still in flight the ground composites to the same tone the artwork
+// will — the page opens on its own colour rather than on white that later
+// darkens. fetchpriority tells the browser this one is worth the queue, since
+// by the time it is asked for, the lazy images further down the page have
+// already been queued.
 function PageBackdrop({ veil }) {
   return (
-    <div aria-hidden="true" className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
-      <img src={pcBg} alt="" className="w-full h-full object-cover object-center" />
+    <div aria-hidden="true" className="pointer-events-none fixed inset-0 -z-10 overflow-hidden" style={{ backgroundColor: '#afc5db' }}>
+      <img src={pcBg} alt="" fetchpriority="high" decoding="async"
+        className="w-full h-full object-cover object-center" />
       {/* A white scrim: the artwork is busiest at the corners and the cards
           need a calm ground to sit on, or every border competes with a
           diagonal behind it. */}

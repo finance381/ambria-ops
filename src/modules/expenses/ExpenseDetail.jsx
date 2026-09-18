@@ -22,7 +22,7 @@ function Row({ label, value, money }) {
   )
 }
 
-function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack, onUpdated, onEdit, onRaiseGV }) {
+function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack, backLabel, onUpdated, onEdit, onRaiseGV }) {
   var [saving, setSaving] = useState(false)
   var [rejectMode, setRejectMode] = useState(false)
   var [rejectReason, setRejectReason] = useState('')
@@ -378,11 +378,11 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
 
           The admin shell has no back arrow, only a breadcrumb, so there it
           has to provide its own or the screen is a dead end. */}
-      {inAdmin && onBack && (
+      {onBack && (
         <button type="button" onClick={onBack}
           className="inline-flex items-center gap-1.5 h-8 px-2 -ml-1 rounded-lg text-[13px] font-semibold text-slate-600 hover:bg-white hover:text-slate-900 transition-colors">
           <Icon name="arrowLeft" size={15} />
-          Back to expenses
+          {backLabel || 'Back to expenses'}
         </button>
       )}
       <div className="bg-white border border-slate-200 rounded-2xl px-4 py-3.5 shadow-[0_1px_2px_rgba(15,23,42,0.05)]">

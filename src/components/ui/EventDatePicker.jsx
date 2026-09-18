@@ -23,7 +23,7 @@ var VENUE_COLORS = {
 }
 var DEFAULT_DOT_COLOR = '#6366F1'
 
-function EventDatePicker({ value, onChange, label, collapsible, includePast, triggerStyle, plain }) {
+function EventDatePicker({ value, onChange, label, collapsible, includePast, triggerStyle, plain, placeholder }) {
   var today = new Date()
   var initDate = value ? new Date(value + 'T00:00:00') : today
   var [viewYear, setViewYear] = useState(initDate.getFullYear())
@@ -170,7 +170,9 @@ function EventDatePicker({ value, onChange, label, collapsible, includePast, tri
         <button type="button" ref={btnRef} onClick={function () { setOpen(!open) }}
           style={triggerStyle}
           className={"w-full flex items-center justify-between gap-2 px-3 py-2.5 border rounded-xl text-[13px] transition-shadow " + (value ? "border-indigo-300 bg-indigo-50 text-slate-900 font-semibold" : "border-slate-300 bg-white text-slate-500")}>
-          <span className="truncate">{value ? new Date(value + 'T00:00:00').getDate() + ' ' + shortMonths[new Date(value + 'T00:00:00').getMonth()] + ' ' + new Date(value + 'T00:00:00').getFullYear() : 'Select date'}</span>
+          {/* placeholder, because a pair of these standing for a range needs to
+              say which end each one is; on its own "Select date" is right. */}
+          <span className="truncate">{value ? new Date(value + 'T00:00:00').getDate() + ' ' + shortMonths[new Date(value + 'T00:00:00').getMonth()] + ' ' + new Date(value + 'T00:00:00').getFullYear() : (placeholder || 'Select date')}</span>
           <span className={"shrink-0 " + (value ? "text-indigo-500" : "text-slate-400")}><Icon name="calendar" size={14} /></span>
         </button>
       )}

@@ -3,15 +3,21 @@ import { createContext, useContext, useState, useEffect, useCallback } from 'rea
 var CACHE_PREFIX = 'hi_'
 var DEBOUNCE_MS = 400
 var ORIG_KEY = '__orig_text__'
+var DONE_KEY = '__hi_text__'
 var BATCH_SIZE = 40
 
 // Your Supabase Edge Function
 var TRANSLATE_FN = 'https://ptksdithbytzrznplfiq.supabase.co/functions/v1/translate'
 var ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
 
+// Brand and technical names only. Anything in here can NEVER be translated,
+// so a plain English word does not belong: 'events' was on this list and it
+// is the label on a menu tile, which is why Events sat in English beside
+// Inventory and Finance in Hindi. The table name it was presumably guarding
+// is not user-visible text and never reaches this function.
 var SKIP_WORDS = [
   'ambria', 'ops', 'admin', 'lms', 'pwa', 'csv', 'pdf', 'ppt', 'pptx',
-  'supabase', 'google', 'whatsapp', 'gmail', 'upi', 'events',
+  'supabase', 'google', 'whatsapp', 'gmail', 'upi',
 ]
 
 function shouldSkip(text) {
@@ -73,20 +79,38 @@ function loadDict() {
   return dictPromise
 }
 
+// localStorage.getItem is synchronous disk I/O, and this ran once per TEXT
+// NODE rather than once per unique string. Ninety wallet rows repeat the same
+// dozen labels, so a single pass made hundreds of identical reads, each one
+// followed by the regexes in looksBadTranslation — and the observer reruns the
+// whole pass on every burst of React commits.
+//
+// Misses are remembered too. Without that, every string the app has no
+// translation for goes back to storage on every pass, for the life of the tab,
+// and those are exactly the strings there are most of.
+var memo = new Map()
+
 function getCached(text) {
   // dictionary first: it is curated and cannot go stale behind a bad API answer
   if (DICT[text]) return DICT[text]
+  if (memo.has(text)) return memo.get(text)
+  var out = null
   try {
     var val = localStorage.getItem(CACHE_PREFIX + text)
     // Junk cached before this check existed is dropped on read, so a browser
     // that already stored a bad answer repairs itself instead of showing it.
-    if (val && looksBadTranslation(text, val)) { localStorage.removeItem(CACHE_PREFIX + text); return null }
-    return val
-  } catch (e) { return null }
+    if (val && looksBadTranslation(text, val)) localStorage.removeItem(CACHE_PREFIX + text)
+    else out = val
+  } catch (e) { out = null }
+  memo.set(text, out)
+  return out
 }
 
 function setCache(text, val) {
   if (looksBadTranslation(text, val)) return
+  // The memo has to learn it here too, or the pass that just fetched this
+  // string would read a stale miss on its next run.
+  memo.set(text, val)
   try { localStorage.setItem(CACHE_PREFIX + text, val) } catch (e) {}
 }
 
@@ -186,7 +210,7 @@ async function callTranslateFunction(texts) {
   }
 }
 
-async function batchTranslate(strings) {
+async function batchTranslate(strings, onBatch) {
   var allResults = {}
 
   // Split into batches of BATCH_SIZE
@@ -197,11 +221,16 @@ async function batchTranslate(strings) {
 
   function run(batch) {
     return callTranslateFunction(batch).then(function (results) {
+      var fresh = {}
       Object.keys(results).forEach(function (key) {
         if (looksBadTranslation(key, results[key])) return
         allResults[key] = results[key]
+        fresh[key] = results[key]
         setCache(key, results[key])
       })
+      // Paint what this batch answered instead of waiting for the slowest
+      // batch and the retry sleep behind it.
+      if (onBatch && Object.keys(fresh).length > 0) onBatch(fresh)
     })
   }
 
@@ -222,18 +251,44 @@ async function batchTranslate(strings) {
 }
 
 async function translatePage(root) {
+  // Painting the dictionary is synchronous once it is in memory, so the switch
+  // is instant for every string the app ships a translation for. Only the
+  // leftovers wait on a network round trip, and they now arrive in pieces.
   await loadDict()
   var nodeMap = {}
   var targetMap = {}
   var uncached = []
 
   getTextNodes(root).forEach(function (node) {
+    // React reuses text nodes rather than rebuilding them. Switching the
+    // expense list from Mine to All rewrites the same nodes with different
+    // content, so the original recorded on the first pass belongs to a row
+    // that is gone — and replace() could not find the NEW text inside that
+    // stale original, so the node was rewritten with the OLD row's words.
+    // That is what "Hindi is wrong on All" was: not a missing translation,
+    // a correct translation of the previous screen.
+    //
+    // Content that is neither the English we recorded nor the Hindi we
+    // painted means the node has been recycled; forget what we knew.
+    if (node[ORIG_KEY] != null &&
+        node.textContent !== node[ORIG_KEY] &&
+        node.textContent !== node[DONE_KEY]) {
+      delete node[ORIG_KEY]
+      delete node[DONE_KEY]
+    }
     var text = node.textContent.trim()
-    if (shouldSkip(text)) return
+    // The dictionary outranks the guards. shouldSkip is heuristics — an
+    // all-caps token is probably an acronym, a word on SKIP_WORDS is
+    // probably a brand — and heuristics have no way to know that HR and
+    // Admin are menu labels while LMS and GST are not. A dictionary entry is
+    // somebody deciding on purpose, so it wins; anything nobody has decided
+    // about still falls to the guards.
+    if (!DICT[text] && shouldSkip(text)) return
     if (!node[ORIG_KEY]) node[ORIG_KEY] = node.textContent
     var cached = getCached(text)
     if (cached) {
       node.textContent = node[ORIG_KEY].replace(text, cached)
+      node[DONE_KEY] = node.textContent
       return
     }
     if (!nodeMap[text]) { nodeMap[text] = []; uncached.push(text) }
@@ -242,7 +297,7 @@ async function translatePage(root) {
 
   collectAttrTargets(root).forEach(function (t) {
     var text = readTarget(t).trim()
-    if (!text || shouldSkip(text)) return
+    if (!text || (!DICT[text] && shouldSkip(text))) return
     var cached = getCached(text)
     if (cached) { writeTarget(t, text, cached); return }
     if (!targetMap[text]) { targetMap[text] = []; uncached.push(text) }
@@ -251,20 +306,24 @@ async function translatePage(root) {
 
   if (uncached.length === 0) return
 
+  function paint(results) {
+    Object.keys(results).forEach(function (original) {
+      var translated = results[original]
+      if (looksBadTranslation(original, translated)) return
+      ;(nodeMap[original] || []).forEach(function (node) {
+        if (node[ORIG_KEY] && node.parentElement) {
+          node.textContent = node[ORIG_KEY].replace(original, translated)
+          node[DONE_KEY] = node.textContent
+        }
+      })
+      ;(targetMap[original] || []).forEach(function (t) {
+        writeTarget(t, original, translated)
+      })
+    })
+  }
+
   var unique = [...new Set(uncached)]
-  var results = await batchTranslate(unique)
-  Object.keys(results).forEach(function (original) {
-    var translated = results[original]
-    if (looksBadTranslation(original, translated)) return
-    ;(nodeMap[original] || []).forEach(function (node) {
-      if (node[ORIG_KEY] && node.parentElement) {
-        node.textContent = node[ORIG_KEY].replace(original, translated)
-      }
-    })
-    ;(targetMap[original] || []).forEach(function (t) {
-      writeTarget(t, original, translated)
-    })
-  })
+  await batchTranslate(unique, paint)
 }
 
 function restorePage(root) {
@@ -272,6 +331,7 @@ function restorePage(root) {
     if (node[ORIG_KEY]) {
       node.textContent = node[ORIG_KEY]
       delete node[ORIG_KEY]
+      delete node[DONE_KEY]
     }
   })
   collectAttrTargets(root).forEach(restoreTarget)
@@ -281,7 +341,13 @@ var LangContext = createContext()
 
 export function LangProvider({ children }) {
   var [lang, setLang] = useState(function () {
-    try { return localStorage.getItem('ambria_lang') || 'en' } catch (e) { return 'en' }
+    var saved
+    try { saved = localStorage.getItem('ambria_lang') || 'en' } catch (e) { saved = 'en' }
+    // A session that reloads in Hindi used to import the dictionary only once
+    // the first translate pass asked for it, which put the whole first screen
+    // behind a module fetch. Start it here instead, before anything renders.
+    if (saved === 'hi') loadDict()
+    return saved
   })
 
   var translateRef = useCallback(function () {
@@ -293,18 +359,32 @@ export function LangProvider({ children }) {
   }, [lang])
 
   useEffect(function () {
-    var timeout = setTimeout(translateRef, DEBOUNCE_MS)
+    // Immediate on a language change; the debounce below is only for the
+    // observer, which fires in bursts as React commits.
+    translateRef()
+    var timeout = null
     var observer = new MutationObserver(function (mutations) {
       if (lang !== 'hi') return
-      var hasNewContent = mutations.some(function (m) { return m.addedNodes.length > 0 })
+      // characterData as well as addedNodes. A list that swaps its data
+      // without changing its shape — Mine to All, a status filter, the next
+      // page of results — rewrites existing text nodes in place and adds
+      // none, so watching only for new nodes meant those screens were never
+      // re-translated at all.
+      //
+      // This cannot loop on our own writes: what we write is Devanagari, and
+      // shouldSkip rejects Devanagari, so the pass a write triggers changes
+      // nothing and produces no further mutations.
+      var hasNewContent = mutations.some(function (m) {
+        return m.addedNodes.length > 0 || m.type === 'characterData'
+      })
       if (hasNewContent) {
-        clearTimeout(timeout)
+        if (timeout) clearTimeout(timeout)
         timeout = setTimeout(function () { translatePage(document.body) }, DEBOUNCE_MS)
       }
     })
-    observer.observe(document.body, { childList: true, subtree: true })
+    observer.observe(document.body, { childList: true, subtree: true, characterData: true })
     return function () {
-      clearTimeout(timeout)
+      if (timeout) clearTimeout(timeout)
       observer.disconnect()
     }
   }, [lang, translateRef])

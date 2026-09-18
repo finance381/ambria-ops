@@ -443,7 +443,11 @@ function Expenses({ profile, masterMode, inAdmin, deepLinkExpense, onDeepLinkHan
         isAdmin={isAdmin}
         isDeptApprover={isDeptApprover}
         inAdmin={inAdmin}
-        onBack={function () { setView(detailExp._fromApprove ? 'approve' : detailExp._fromAll ? 'all' : 'list'); setDetailExp(null) }}
+        /* Only on the dashboard: the phone shell's header already carries a
+           back arrow, and two of them is what this used to be. Plain block
+           comment, not a braced JSX one: a braced comment is invalid in an
+           attribute list, where it parses as a second expression. */
+        onBack={inAdmin ? function () { setView(detailExp._fromApprove ? 'approve' : detailExp._fromAll ? 'all' : 'list'); setDetailExp(null) } : undefined}
         onUpdated={function () { loadMyExpenses(false); loadApprovalExpenses(false); setView(detailExp._fromApprove ? 'approve' : detailExp._fromAll ? 'all' : 'list'); setDetailExp(null) }}
         onEdit={function () { setEditExp(detailExp); setView('form') }}
         onRaiseGV={function () { setView('gv') }}

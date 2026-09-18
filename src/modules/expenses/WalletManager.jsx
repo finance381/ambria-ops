@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { supabase } from '../../lib/supabase'
 import { formatDate, formatPoints } from '../../lib/format'
@@ -10,10 +10,159 @@ import EventDatePicker from '../../components/ui/EventDatePicker'
 import { useVoice } from '../../hooks/useVoice'
 import { useAudioRecorder } from '../../hooks/useAudioRecorder'
 import { generateCollectionReceiptPdf } from '../../lib/pdfReceipt'
+// Imported rather than read out of public/, for the same reasons PageBackdrop
+// gives: the base path is handled for us, and the content hash means a new
+// backdrop is never served from a stale cache. It was a 1.05MB PNG; as WebP at
+// quality 92 the same artwork is 23KB, which is why it used to be visibly
+// absent for a moment every time the wallet opened.
+import walletBg from '../../assets/wallet-bg.webp'
 import { registerPdfFont } from '../../lib/pdfFont'
 import { openOrSharePdf } from '../../lib/pdfOutput'
 import { plainParticularsLines, plainDateLines, makeStatementCellHooks } from '../../lib/pdfStatementTable'
 import ExpenseDetail from './ExpenseDetail'
+import Icon from '../../components/ui/Icon'
+
+// A colour per person, hashed from the name rather than taken from the row
+// index — the same face has to be the same colour after a sort, a filter and
+// a reload, or the colour is noise instead of a landmark.
+var AVATAR_TINTS = [
+  'bg-blue-100 text-blue-700',
+  'bg-rose-100 text-rose-700',
+  'bg-emerald-100 text-emerald-700',
+  'bg-amber-100 text-amber-700',
+  'bg-violet-100 text-violet-700',
+  'bg-teal-100 text-teal-700',
+]
+// A <select> takes its width from the longest option it holds, not from the
+// one selected — so "Name" sat in a box sized for "Balance high → low", with
+// the arrow stranded at the far right. The visible part is drawn from this
+// map instead, and the real select rides invisibly on top of it.
+var SORT_LABELS = {
+  name: 'Name',
+  balance_desc: 'Balance high → low',
+  balance_asc: 'Balance low → high',
+  pending: 'Most pending',
+  activity: 'Recent activity',
+}
+
+// The artwork every wallet screen sits on. It was inline in the list view,
+// so opening a wallet dropped you onto flat grey — the same screen, minus
+// its ground.
+//
+// fixed, so it holds still while the rows scroll. -z-10 works because the
+// phone shell root is relative + isolate; without that stacking context it
+// falls behind the body and disappears.
+//
+// 100% auto, not cover: cover sizes against both axes, and a fixed element
+// on a phone changes height every time the URL bar hides — which rescaled
+// the image mid-scroll and read as a zoom. Width cannot change while
+// scrolling, so sizing to it makes that impossible. The colour finishes the
+// bottom of a tall screen, where a width-sized image no longer reaches.
+// A proof photo, and what to show when there is not one after all.
+//
+// A storage object that 404s — deleted, or never uploaded because the
+// attach step failed — renders as the browser's broken-image glyph: a torn
+// page icon that reads as a broken PAGE, not a missing file. onError swaps
+// it for a placeholder that says which it is.
+//
+// alt was empty, so even the text fallback said nothing. It names the side
+// of the transfer now, which is the one thing the thumbnail is there to
+// tell you apart.
+function ProofThumb({ url, label, tone, onOpen }) {
+  var [failed, setFailed] = useState(false)
+  // A transfer proof can be a voice note instead of a photo, and then it has
+  // to play rather than be handed to <img> — which is the broken thumbnail
+  // this component exists to stop.
+  //
+  // isVoiceNotePath is the one rule for that in this codebase; a second,
+  // hand-rolled check here would be a place for the two to drift apart.
+  var isVoice = isVoiceNotePath(url)
+  if (isVoice) {
+    return (
+      /* w-full is what gives this a width at all. Without it the span is
+         shrink-to-fit, so it takes its width from the audio inside it while the
+         audio takes its width from the span — and the pair settle on nothing.
+         The player vanished and left only the badge, which is absolute and so
+         did not need a box to sit in.
+         min-w-0 is still needed alongside it: a native audio player has an
+         intrinsic minimum width of its own, and max-width cannot take it below
+         that, so on a narrow phone the control pushed the row past the screen
+         and the page could be swiped sideways into white space.
+         No height, so the browser draws the whole control rather than a strip
+         of one with the timeline dropped. */
+      <span className="relative block w-full min-w-0 max-w-[260px]">
+        <audio src={url} controls className="w-full min-w-0" />
+        <span className={"absolute -top-1 -left-1 px-1 rounded text-[8px] font-bold text-white " + tone}>{label}</span>
+      </span>
+    )
+  }
+  return (
+    <span className="relative inline-block shrink-0">
+      {failed ? (
+        <span title="Image unavailable"
+          className="w-10 h-10 rounded-lg border border-slate-200 bg-slate-50 inline-flex items-center justify-center text-slate-300">
+          <Icon name="gallery" size={16} />
+        </span>
+      ) : (
+        <button type="button" onClick={onOpen} className="block" aria-label={label + ' proof, tap to enlarge'}>
+          <img src={url} alt={label + ' proof'} loading="lazy"
+            onError={function () { setFailed(true) }}
+            className="w-10 h-10 rounded-lg border border-slate-200 bg-slate-50 object-cover" />
+        </button>
+      )}
+      <span className={"absolute -top-1 -left-1 px-1 rounded text-[8px] font-bold text-white " + tone}>{label}</span>
+    </span>
+  )
+}
+
+// The artwork's own bottom edge, read off the file: a dark sliver at one side,
+// a wash of #ecf0fd–#f4f6fe across the middle, and the leaf at the other. Laid
+// out left to right it continues the picture downwards, so the artwork can stop
+// where it stops and the screen still ends in the colours it was ending in.
+var WALLET_BG_FOOT = 'linear-gradient(to right, ' + [
+  '#a7b6ce 0%', '#edf0fd 4%', '#f4f6fe 25%', '#eef2fd 42%',
+  '#ecf0fd 60%', '#ecf0fe 90%', '#a2bbaf 95%', '#8baa9c 100%',
+].join(', ') + ')'
+
+// EventDatePicker draws its own bordered box. Inside the shared pill that is a
+// border within a border, so the trigger is flattened to just its contents —
+// inline, because these have to beat the classes the component sets itself.
+var DATE_TRIGGER = {
+  border: 0, background: 'transparent', borderRadius: 0,
+  padding: '12px 10px 12px 12px',
+}
+
+function WalletBackdrop() {
+  return (
+    // Two pieces stacked, the foot taking whatever the artwork leaves. As
+    // background layers the foot was painted across the whole element and the
+    // artwork over the top of it, so until the artwork arrived — and it is a
+    // megabyte — the edge colours it continues were the entire screen: a dark
+    // stripe down one side and a green one down the other. It can only ever be
+    // the part below the artwork, so it is laid out as that part.
+    //
+    // Nothing here is measured against height. The artwork is as wide as the
+    // element and as tall as its own proportions make it, so the element
+    // growing taller when the address bar retracts cannot resize it — that
+    // rescaling, over and over as the bar slid in and out, was the background
+    // appearing to zoom while the page scrolled. aspect-ratio means the box is
+    // the right size before the file is there rather than after, which is what
+    // keeps the foot at the foot while it loads.
+    <div aria-hidden="true" className="pointer-events-none fixed inset-0 -z-10 flex flex-col overflow-hidden"
+      style={{ backgroundColor: '#ecf0fd' }}>
+      <img src={walletBg} alt="" fetchpriority="high" decoding="async"
+        className="w-full shrink-0" style={{ aspectRatio: '977 / 1609' }} />
+      <div className="flex-1" style={{ backgroundImage: WALLET_BG_FOOT }} />
+    </div>
+  )
+}
+
+function avatarTint(name) {
+  var s = String(name || '')
+  var h = 0
+  for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0
+  return AVATAR_TINTS[h % AVATAR_TINTS.length]
+}
 import VoiceInput from '../../components/ui/VoiceInput'
 import { DeptChip } from '../../components/ui/Badge'
 import SearchField from '../../components/ui/SearchField'
@@ -21,8 +170,6 @@ import { pushBack, goBack } from '../../lib/backNav'
 import PaymentProofThumbs from '../../components/ledger/PaymentProofThumbs'
 import { hasPerm } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
-
-
 
 var REF_TYPE_LABELS = {
   expense: 'Expense',
@@ -68,7 +215,7 @@ var EXP_STATUS_COLORS = {
   deducted: 'bg-indigo-100 text-indigo-700',
 }
 
-function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, onClose, onBalanceChange, onOpenExpense, onNavigateToExpenses }) {
+function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, onClose, onBalanceChange, onOpenExpense, onNavigateToExpenses, inAdmin }) {
   var permsNew = (profile && profile.permsNew) || []
   var canCreateTentativeEvent = hasPerm(permsNew, 'events.list.create_tentative')
   var activeVenues = useReferenceData().venues.filter(function (v) { return v.active }).slice().sort(function (a, b) { return (a.code || '').localeCompare(b.code || '') })
@@ -149,6 +296,38 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   var [tentativeFunctionType, setTentativeFunctionType] = useState('')
   var [tentativeSaving, setTentativeSaving] = useState(false)
   var [eventTypeOptions, setEventTypeOptions] = useState([])
+
+  // ═══ one back control, not two ═══════════════════════════════════════════
+  // The shell header already has an arrow, and it pops backNav. These views
+  // are not routes — the same component swaps what it renders — so that arrow
+  // used to leave the whole Wallet tab from any depth, and the page had to
+  // carry its own button to step back one level. Two arrows, one above the
+  // other, doing different things.
+  //
+  // Now going deeper registers a handler, so the shell arrow steps back the
+  // way the page button did and the page button can go. Only on the phone:
+  // the admin shell has a breadcrumb and no arrow, so there the page button
+  // is still the only way out.
+  var viewDepthRef = useRef('wallets')
+  useEffect(function () {
+    var DEPTH = { wallets: 0, dashboard: 1, transactions: 2 }
+    var prev = viewDepthRef.current
+    viewDepthRef.current = walletView
+    if (inAdmin) return
+    if ((DEPTH[walletView] || 0) > (DEPTH[prev] || 0)) pushBack(function () { handleBack() })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [walletView, inAdmin])
+
+  // Opening a wallet from row sixty left you sixty rows down the new screen:
+  // the window keeps its scroll across a view swap, because nothing here
+  // navigates — the same component just renders something else.
+  //
+  // Only on the way IN. Coming back to the list deliberately does not reset,
+  // so you return to the row you tapped instead of the top of ninety.
+  useEffect(function () {
+    if (walletView === 'wallets') return
+    try { window.scrollTo({ top: 0 }) } catch (e) { window.scrollTo(0, 0) }
+  }, [walletView, selectedWallet && selectedWallet.id])
 
   useEffect(function () {
     if (isAdmin || isAuditor) {
@@ -906,6 +1085,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
               isAdmin={isAdmin}
               isDeptApprover={false}
               onBack={function () { closeExpenseDetail(false) }}
+              backLabel="Back to wallet"
               onUpdated={function () { closeExpenseDetail(true) }}
               onEdit={function () { var id = expenseDetailTarget.id; closeExpenseDetail(false); onNavigateToExpenses && onNavigateToExpenses(id, 'edit') }}
               onRaiseGV={function () { var id = expenseDetailTarget.id; closeExpenseDetail(false); onNavigateToExpenses && onNavigateToExpenses(id, 'gv') }}
@@ -1500,56 +1680,120 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     return (
       <BottomSheet open={true} onClose={function () { setIssueModal(null); setIssueImage(null) }} title={issueType === 'debit' ? 'Deduct Points' : 'Issue Points'}>
         <div className="space-y-4">
-          <div className="flex justify-end">
-            <div className="flex bg-gray-100 rounded-lg p-0.5">
-              <button onClick={function () { setIssueType('credit') }}
-                className={"px-3 py-1.5 text-xs font-bold rounded-md transition-colors " + (issueType === 'credit' ? "bg-white text-green-700 shadow-sm" : "text-gray-500")}>
-                + Credit
-              </button>
-              <button onClick={function () { setIssueType('debit') }}
-                className={"px-3 py-1.5 text-xs font-bold rounded-md transition-colors " + (issueType === 'debit' ? "bg-white text-red-700 shadow-sm" : "text-gray-500")}>
-                − Debit
-              </button>
-            </div>
+          {/* What this does, before anything that depends on it. */}
+          <div className="flex items-center bg-slate-100 rounded-xl p-1">
+            {[['credit', '+ Credit', 'text-emerald-700'], ['debit', '− Debit', 'text-red-700']].map(function (opt) {
+              var on = issueType === opt[0]
+              return (
+                <button key={opt[0]} type="button" onClick={function () { setIssueType(opt[0]) }}
+                  aria-pressed={on}
+                  className={"flex-1 h-9 text-[13px] font-bold rounded-lg transition-colors " +
+                    (on ? "bg-white shadow-sm " + opt[2] : "text-slate-500 hover:text-slate-800")}>
+                  {opt[1]}
+                </button>
+              )
+            })}
           </div>
-          <p className="text-sm text-gray-500">To: <span className="font-medium text-gray-800">{walletProfiles[issueModal.user_id]?.name || '—'}</span></p>
-          <p className="text-xs text-gray-400">Current balance: {formatPoints(issueModal.balance_paise)}</p>
+
+          {(function () {
+            var who = walletProfiles[issueModal.user_id] || {}
+            var bal = issueModal.balance_paise || 0
+            return (
+              <div className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 border border-slate-200">
+                <span className={"shrink-0 w-11 h-11 rounded-full inline-flex items-center justify-center text-[16px] font-bold " + avatarTint(who.name)}>
+                  {(who.name || '?').charAt(0).toUpperCase()}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[14px] font-bold text-slate-900 truncate">{who.name || '—'}</span>
+                  <span className="block text-[12px] text-slate-500">Current balance</span>
+                </span>
+                <span className={"shrink-0 px-3 py-1.5 rounded-full text-[13px] font-bold tabular-nums " +
+                  (bal < 0 ? "bg-red-100 text-red-700" : bal === 0 ? "bg-slate-200 text-slate-600" : "bg-emerald-100 text-emerald-700")}
+                  data-notranslate>{formatPoints(bal)}</span>
+              </div>
+            )
+          })()}
+
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Amount (Points)</label>
-            <input type="number" min="1" step="any" inputMode="decimal" value={issueAmount}
+            <label htmlFor="issue-amount" className="flex items-center gap-2 text-[13px] font-bold text-slate-800 mb-1.5">
+              <Icon name="rupee" size={15} className="shrink-0 text-slate-400" />
+              Amount (Points)
+              <span className="text-red-500">*</span>
+            </label>
+            <input id="issue-amount" type="number" min="1" step="any" inputMode="decimal" value={issueAmount}
               onChange={function (e) { setIssueAmount(e.target.value) }}
-              placeholder="0" className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              style={{ fontSize: '16px' }} />
+              placeholder="0"
+              className="w-full h-[52px] px-3.5 bg-white border border-slate-200 rounded-xl text-[20px] font-bold text-slate-900 tabular-nums placeholder:font-normal placeholder:text-slate-300 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-shadow"
+              style={{ fontSize: '20px' }} />
           </div>
+
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+            <label className="flex items-center gap-2 text-[13px] font-bold text-slate-800 mb-1.5">
+              <Icon name="fileText" size={15} className="shrink-0 text-slate-400" />
+              Description
+            </label>
             <VoiceInput type="text" value={issueDesc} onChange={function (e) { setIssueDesc(e.target.value) }}
               placeholder="e.g. Weekly allowance, Reimbursement..."
-              maxLength="300" className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+              maxLength="300"
+              className="w-full px-3.5 py-3 bg-white border border-slate-200 rounded-xl text-[14px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-shadow"
+              style={{ fontSize: '16px' }} />
           </div>
+
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">📷 Cash Photo</label>
+            <label className="flex items-center gap-2 text-[13px] font-bold text-slate-800 mb-1.5">
+              <Icon name="camera" size={15} className="shrink-0 text-slate-400" />
+              Cash Photo
+            </label>
             {issueImage ? (
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-green-600 font-medium truncate flex-1">✓ {issueImage.name}</span>
-                <button onClick={function () { setIssueImage(null) }}
-                  className="text-xs text-red-500 font-bold hover:text-red-700">✕</button>
+              <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-emerald-50 border border-emerald-200">
+                <Icon name="checkCircle" size={16} className="shrink-0 text-emerald-600" />
+                <span className="flex-1 min-w-0 text-[13px] font-medium text-emerald-800 truncate">{issueImage.name}</span>
+                <button type="button" onClick={function () { setIssueImage(null) }}
+                  aria-label="Remove photo"
+                  className="shrink-0 w-7 h-7 inline-flex items-center justify-center rounded-lg text-red-600 hover:bg-red-100 transition-colors">
+                  <Icon name="close" size={14} />
+                </button>
               </div>
             ) : (
-              <label className="block w-full py-2.5 text-center text-sm text-indigo-600 border border-dashed border-indigo-300 rounded-lg cursor-pointer hover:bg-indigo-50 transition-colors">
-                Tap to attach photo
+              <label className="flex flex-col items-center justify-center gap-1 w-full py-5 rounded-xl border-2 border-dashed border-slate-300 bg-white text-center cursor-pointer hover:border-indigo-400 hover:bg-indigo-50/40 transition-colors">
+                <span className="text-indigo-500"><Icon name="camera" size={20} /></span>
+                <span className="text-[13px] font-semibold text-indigo-600">Tap to attach photo</span>
+                <span className="text-[11px] text-slate-400">Proof of the cash handed over</span>
                 <input type="file" accept="image/*" capture="environment" className="sr-only"
                   onChange={function (e) { if (e.target.files?.[0]) setIssueImage(e.target.files[0]); e.target.value = '' }} />
               </label>
             )}
           </div>
-          <div className="flex gap-3 pt-2">
-            <button onClick={function () { setIssueModal(null); setIssueImage(null) }}
-              className="flex-1 py-3 text-sm text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors font-semibold">Cancel</button>
-            <button onClick={issuePoints} disabled={issueSaving || !issueAmount || Number(issueAmount) <= 0}
-              className="flex-1 py-3 text-sm text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition-colors font-semibold">
-              {issueSaving ? (issueType === 'debit' ? 'Deducting...' : 'Issuing...') : (issueType === 'debit' ? 'Deduct ' : 'Issue ') + (issueAmount && Number(issueAmount) > 0 ? Number(issueAmount).toLocaleString('en-IN') + ' pts' : '')}
+
+          <div className="flex gap-3 pt-1">
+            <button type="button" onClick={function () { setIssueModal(null); setIssueImage(null) }}
+              className="flex-1 h-12 rounded-xl text-[14px] font-bold text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 active:scale-[0.98] transition-all">
+              Cancel
             </button>
+            {(function () {
+              // Disabled until there is an amount, and it says so by being flat
+              // grey rather than a washed-out version of the live button — a pale
+              // purple button reads as "loading", not as "not yet".
+              var ready = !issueSaving && issueAmount && Number(issueAmount) > 0
+              var debit = issueType === 'debit'
+              return (
+                <button type="button" onClick={issuePoints} disabled={!ready}
+                  className={"flex-1 h-12 inline-flex items-center justify-center gap-1.5 rounded-xl text-[14px] font-bold text-white transition-all " +
+                    (!ready ? "bg-slate-300 cursor-not-allowed"
+                      : debit
+                        ? "bg-gradient-to-b from-red-500 to-red-600 shadow-[0_2px_8px_rgba(220,38,38,0.30)] hover:from-red-600 hover:to-red-700 active:scale-[0.98]"
+                        : "bg-gradient-to-b from-indigo-500 to-indigo-600 shadow-[0_2px_8px_rgba(79,70,229,0.30)] hover:from-indigo-600 hover:to-indigo-700 active:scale-[0.98]")}>
+                  {issueSaving
+                    ? (debit ? 'Deducting…' : 'Issuing…')
+                    : (
+                      <>
+                        {debit ? 'Deduct' : 'Issue'}
+                        {ready && <span className="tabular-nums" data-notranslate>{Number(issueAmount).toLocaleString('en-IN') + ' pts'}</span>}
+                      </>
+                    )}
+                </button>
+              )
+            })()}
           </div>
         </div>
       </BottomSheet>
@@ -1611,7 +1855,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
 
           {collectDate && (
             <div>
-              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">2. Select Function</label>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] mb-2">2. Select Function</label>
               {collectFunctionsLoading && <p className="text-xs text-gray-400">Loading...</p>}
               {!collectFunctionsLoading && collectEvents.length === 0 && (
                 <p className="text-xs text-gray-400 mb-2">No functions on this date</p>
@@ -1630,15 +1874,12 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                       <div key={ev.id} role="button" tabIndex={0}
                         onClick={function () { selectCollectFunction(String(ev.id)) }}
                         onKeyDown={function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectCollectFunction(String(ev.id)) } }}
-                        className={"w-full text-left px-3 py-2 rounded-lg border transition-colors cursor-pointer " +
-                          (selected ? "border-blue-600 bg-blue-50 border-2" : "border-gray-200 hover:border-gray-300 bg-white")}>
-                        <div className={"text-sm font-medium flex items-center gap-1.5 " + (selected ? "text-blue-900" : "text-gray-900")}>
-                          <span>{ev.event_name + (ev.client_name ? ' — ' + ev.client_name : '')}</span>
-                          {ev.is_tentative && (
-                            <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 border border-amber-200">Tentative</span>
-                          )}
+                        className={"w-full text-left px-3 py-2.5 rounded-xl border transition-colors cursor-pointer " +
+                          (selected ? "border-indigo-500 ring-1 ring-indigo-500 bg-indigo-50" : "border-slate-200 hover:border-slate-300 bg-white")}>
+                        <div className={"text-[13px] font-bold " + (selected ? "text-indigo-900" : "text-slate-900")}>
+                          {ev.event_name + (ev.client_name ? ' — ' + ev.client_name : '')}
                         </div>
-                        <div className={"text-xs " + (selected ? "text-blue-700" : "text-gray-500")}>
+                        <div className={"text-[12px] " + (selected ? "text-indigo-700" : "text-slate-500")}>
                           {(ev.venue_name || '') + (ev.session ? ' · ' + ev.session : '')}
                         </div>
                         {(ev.department || ev.contract_no) && (
@@ -1661,7 +1902,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                               <a href={"tel:" + String(ev.contact_number).replace(/[^0-9+]/g, '')}
                                 onClick={function (e) { e.stopPropagation() }}
                                 className="inline-flex items-center gap-1 text-indigo-600 hover:text-indigo-800 font-medium">
-                                <i className="ti ti-phone" style={{ fontSize: '13px' }} aria-hidden="true"></i>
+                                <Icon name="phone" size={13} className="shrink-0" />
                                 {ev.contact_number}
                               </a>
                             )}
@@ -1669,7 +1910,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                               <a href={"tel:" + String(ev.secondary_contact).replace(/[^0-9+]/g, '')}
                                 onClick={function (e) { e.stopPropagation() }}
                                 className="inline-flex items-center gap-1 text-indigo-600 hover:text-indigo-800">
-                                <i className="ti ti-phone" style={{ fontSize: '13px' }} aria-hidden="true"></i>
+                                <Icon name="phone" size={13} className="shrink-0" />
                                 {ev.secondary_contact}
                               </a>
                             )}
@@ -1689,29 +1930,47 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                 <p className="text-xs text-gray-400">Loading balance...</p>
               ) : (
                 <>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Pending Balance</div>
+                  <div className="flex items-center justify-between gap-3 mb-2">
+                    <div className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em]">Pending Balance</div>
                     <button type="button" onClick={function () { setShowActualCash(!showActualCash) }}
-                      className="text-[10px] text-indigo-600 hover:text-indigo-800 underline">
-                      {showActualCash ? 'LMS scale' : 'Actual ×10'}
+                      className="shrink-0 px-2 py-1 rounded-lg text-[11px] font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 transition-colors">
+                      {showActualCash ? 'Actual ×10' : 'LMS scale'}
                     </button>
                   </div>
-                  <div className="flex gap-3">
-                    <div className="flex-1">
-                      <div className="text-xs text-gray-500">💵 Cash{showActualCash && agrCashP > 0 ? ' (actual)' : ''}</div>
-                      <div className={"text-base font-semibold " + (pendCashP > 0 ? "text-red-600" : "text-green-600")}>
-                        {agrCashP > 0 ? formatPoints(pendCashP * (showActualCash ? 10 : 1)) : formatPoints(colCashP * (showActualCash ? 10 : 1)) + ' collected'}
+                  {/* Nil is slate, owed is red, settled is emerald. Three states,
+                      three answers — a dash in green used to mean both "nothing
+                      to collect" and "nothing here at all". */}
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
+                        <Icon name="banknote" size={13} className="shrink-0 text-slate-400" />
+                        Cash{showActualCash && agrCashP > 0 ? ' (actual)' : ''}
+                      </div>
+                      <div className={"mt-0.5 text-[15px] font-bold tabular-nums truncate " +
+                        (pendCashP > 0 ? "text-red-600" : (agrCashP > 0 || colCashP > 0) ? "text-emerald-600" : "text-slate-400")}
+                        data-notranslate>
+                        {agrCashP > 0 ? formatPoints(pendCashP * (showActualCash ? 10 : 1)) : (colCashP > 0 ? formatPoints(colCashP * (showActualCash ? 10 : 1)) + ' collected' : '—')}
                       </div>
                     </div>
-                    <div className="flex-1">
-                      <div className="text-xs text-gray-500">🏦 Bank</div>
-                      <div className={"text-base font-semibold " + (pendBankP > 0 ? "text-red-600" : "text-green-600")}>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
+                        <Icon name="bank" size={13} className="shrink-0 text-slate-400" />
+                        Bank
+                      </div>
+                      <div className={"mt-0.5 text-[15px] font-bold tabular-nums truncate " +
+                        (pendBankP > 0 ? "text-red-600" : (agrBankP > 0 || colBankP > 0) ? "text-emerald-600" : "text-slate-400")}
+                        data-notranslate>
                         {agrBankP > 0 ? formatPoints(pendBankP) : (colBankP > 0 ? formatPoints(colBankP) + ' collected' : '—')}
                       </div>
                     </div>
-                    <div className="flex-1">
-                      <div className="text-xs text-gray-500">🧾 Tax</div>
-                      <div className={"text-base font-semibold " + (pendTaxP > 0 ? "text-red-600" : "text-green-600")}>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
+                        <Icon name="receipt" size={13} className="shrink-0 text-slate-400" />
+                        Tax
+                      </div>
+                      <div className={"mt-0.5 text-[15px] font-bold tabular-nums truncate " +
+                        (pendTaxP > 0 ? "text-red-600" : taxP > 0 ? "text-emerald-600" : "text-slate-400")}
+                        data-notranslate>
                         {taxP > 0 ? formatPoints(pendTaxP) : '—'}
                       </div>
                     </div>
@@ -1726,17 +1985,21 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
 
           {collectEventId && (
             <div>
-              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">3. Payment Mode</label>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] mb-2">3. Payment Mode</label>
               <div className="grid grid-cols-2 gap-2">
                 <button type="button" onClick={function () { setCollectMode('cash') }}
-                  className={"py-2.5 rounded-lg border-2 text-sm font-semibold transition-colors " +
-                    (collectMode === 'cash' ? "border-blue-600 bg-blue-50 text-blue-900" : "border-gray-200 bg-white text-gray-600")}>
-                  💵 Cash
+                  aria-pressed={collectMode === 'cash'}
+                  className={"h-12 inline-flex items-center justify-center gap-2 rounded-xl border text-[14px] font-bold transition-colors " +
+                    (collectMode === 'cash' ? "border-indigo-500 ring-1 ring-indigo-500 bg-indigo-50 text-indigo-900" : "border-slate-200 bg-white text-slate-600 hover:border-slate-300")}>
+                  <Icon name="banknote" size={16} />
+                  Cash
                 </button>
                 <button type="button" onClick={function () { setCollectMode('bank') }}
-                  className={"py-2.5 rounded-lg border-2 text-sm font-semibold transition-colors " +
-                    (collectMode === 'bank' ? "border-blue-600 bg-blue-50 text-blue-900" : "border-gray-200 bg-white text-gray-600")}>
-                  🏦 Bank
+                  aria-pressed={collectMode === 'bank'}
+                  className={"h-12 inline-flex items-center justify-center gap-2 rounded-xl border text-[14px] font-bold transition-colors " +
+                    (collectMode === 'bank' ? "border-indigo-500 ring-1 ring-indigo-500 bg-indigo-50 text-indigo-900" : "border-slate-200 bg-white text-slate-600 hover:border-slate-300")}>
+                  <Icon name="bank" size={16} />
+                  Bank
                 </button>
               </div>
             </div>
@@ -1744,7 +2007,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
 
           {collectEventId && (
             <div>
-              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">4. Amount Received</label>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] mb-2">4. Amount Received</label>
               <input type="number" min="1" step="any" inputMode="decimal" value={collectAmount}
                 onChange={function (e) { setCollectAmount(e.target.value) }}
                 placeholder="0" className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -1766,18 +2029,24 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
               <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">6. Receipt Photo {collectMode === 'bank' && <span className="text-red-500">*</span>}{collectMode === 'cash' && <span className="text-gray-400 normal-case">(optional)</span>}</label>
               {collectImage ? (
                 <div className="flex items-center gap-2 px-3 py-2.5 border border-green-300 bg-green-50 rounded-lg">
-                  <span className="text-xs text-green-700 font-medium truncate flex-1">✓ {collectImage.name}</span>
-                  <button onClick={function () { setCollectImage(null) }} className="text-xs text-red-500 font-bold hover:text-red-700">✕</button>
+                  <Icon name="checkCircle" size={16} className="shrink-0 text-emerald-600" />
+                  <span className="flex-1 min-w-0 text-[13px] font-medium text-emerald-800 truncate">{collectImage.name}</span>
+                  <button type="button" onClick={function () { setCollectImage(null) }} aria-label="Remove photo"
+                    className="shrink-0 w-7 h-7 inline-flex items-center justify-center rounded-lg text-red-600 hover:bg-red-100 transition-colors">
+                    <Icon name="close" size={14} />
+                  </button>
                 </div>
               ) : (
                 <div className="grid grid-cols-2 gap-2">
-                  <label className="py-3 text-center text-sm text-gray-700 border border-dashed border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
-                    📷 Camera
+                  <label className="h-12 inline-flex items-center justify-center gap-2 text-[13px] font-bold text-slate-700 border border-slate-200 bg-white rounded-xl cursor-pointer hover:border-indigo-400 hover:text-indigo-600 transition-colors">
+                    <Icon name="camera" size={16} />
+                    Camera
                     <input type="file" accept="image/*" capture="environment" className="sr-only"
                       onChange={function (e) { if (e.target.files?.[0]) setCollectImage(e.target.files[0]); e.target.value = '' }} />
                   </label>
-                  <label className="py-3 text-center text-sm text-gray-700 border border-dashed border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
-                    🖼️ Gallery
+                  <label className="h-12 inline-flex items-center justify-center gap-2 text-[13px] font-bold text-slate-700 border border-slate-200 bg-white rounded-xl cursor-pointer hover:border-indigo-400 hover:text-indigo-600 transition-colors">
+                    <Icon name="gallery" size={16} />
+                    Gallery
                     <input type="file" accept="image/*" className="sr-only"
                       onChange={function (e) { if (e.target.files?.[0]) setCollectImage(e.target.files[0]); e.target.value = '' }} />
                   </label>
@@ -1786,13 +2055,26 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             </div>
           )}
 
-          <div className="flex gap-3 pt-2">
-            <button onClick={function () { setCollectModal(false) }}
-              className="flex-1 py-3 text-sm text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors font-semibold">Cancel</button>
-            <button onClick={submitCollection}
-              disabled={!canSubmit}
-              className="flex-1 py-3 text-sm text-white bg-blue-600 rounded-xl hover:bg-blue-700 disabled:opacity-50 transition-colors font-semibold">
-              {collectSaving ? 'Saving...' : 'Collect ' + (collectAmount && Number(collectAmount) > 0 ? Number(collectAmount).toLocaleString('en-IN') + ' pts' : '')}
+          <div className="flex gap-3 pt-1">
+            <button type="button" onClick={function () { setCollectModal(false) }}
+              className="flex-1 h-12 rounded-xl text-[14px] font-bold text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 active:scale-[0.98] transition-all">
+              Cancel
+            </button>
+            <button type="button" onClick={submitCollection} disabled={!canSubmit}
+              className={"flex-1 h-12 inline-flex items-center justify-center gap-1.5 rounded-xl text-[14px] font-bold text-white transition-all " +
+                (canSubmit
+                  ? "bg-gradient-to-b from-indigo-500 to-indigo-600 shadow-[0_2px_8px_rgba(79,70,229,0.30)] hover:from-indigo-600 hover:to-indigo-700 active:scale-[0.98]"
+                  : "bg-slate-300 cursor-not-allowed")}>
+              {collectSaving
+                ? 'Saving…'
+                : (
+                  <>
+                    Collect
+                    {collectAmount && Number(collectAmount) > 0 && (
+                      <span className="tabular-nums" data-notranslate>{Number(collectAmount).toLocaleString('en-IN') + ' pts'}</span>
+                    )}
+                  </>
+                )}
             </button>
           </div>
         </div>
@@ -1866,66 +2148,123 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     return (
       <BottomSheet open={true} onClose={closeTransfer} title="Transfer Cash">
         <div className="space-y-4">
-          <SearchDropdown label="Send to" required
-            items={transferUsers.map(function (u) { return { label: u.name, value: u.id } })}
-            value={transferTo}
-            onChange={function (val) { setTransferTo(val) }}
-            placeholder="Search user..." />
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Amount (Points)</label>
-            <input type="number" min="1" step="any" inputMode="decimal" value={transferAmount}
+            <label className="flex items-center gap-2 text-[13px] font-bold text-slate-800 mb-1.5">
+              <Icon name="user" size={15} className="shrink-0 text-slate-400" />
+              Send to
+              <span className="text-red-500">*</span>
+            </label>
+            <SearchDropdown
+              items={transferUsers.map(function (u) { return { label: u.name, value: u.id } })}
+              value={transferTo}
+              onChange={function (val) { setTransferTo(val) }}
+              placeholder="Search user..." />
+          </div>
+
+          <div>
+            <label htmlFor="transfer-amount" className="flex items-center gap-2 text-[13px] font-bold text-slate-800 mb-1.5">
+              <Icon name="rupee" size={15} className="shrink-0 text-slate-400" />
+              Amount (Points)
+              <span className="text-red-500">*</span>
+            </label>
+            <input id="transfer-amount" type="number" min="1" step="any" inputMode="decimal" value={transferAmount}
               onChange={function (e) { setTransferAmount(e.target.value) }}
-              placeholder="0" className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
-              style={{ fontSize: '16px' }} />
+              placeholder="0"
+              className="w-full h-[52px] px-3.5 bg-white border border-slate-200 rounded-xl text-[20px] font-bold text-slate-900 tabular-nums placeholder:font-normal placeholder:text-slate-300 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-shadow"
+              style={{ fontSize: '20px' }} />
             {transferAmount && Number(transferAmount) > 0 && Math.round(Number(transferAmount) * 100) > walletBalance && (
-              <p className="text-xs text-amber-700 mt-1">⚠ Wallet will go negative. Balance: {formatPoints(walletBalance)}</p>
+              <div className="mt-2 flex items-start gap-2 p-2.5 rounded-xl bg-amber-50 border border-amber-200">
+                <Icon name="alert" size={15} className="shrink-0 mt-px text-amber-600" />
+                <p className="text-[12px] text-amber-800 leading-snug">
+                  This takes your wallet negative. You have
+                  <span className="font-bold tabular-nums" data-notranslate>{' ' + formatPoints(walletBalance)}</span>.
+                </p>
+              </div>
             )}
           </div>
+
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+            <label className="flex items-center gap-2 text-[13px] font-bold text-slate-800 mb-1.5">
+              <Icon name="fileText" size={15} className="shrink-0 text-slate-400" />
+              Description
+            </label>
             <VoiceInput type="text" value={transferDesc} onChange={function (e) { setTransferDesc(e.target.value) }}
               placeholder="e.g. Repayment, Lunch money..." maxLength="300"
-              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+              className="w-full px-3.5 py-3 bg-white border border-slate-200 rounded-xl text-[14px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-shadow"
+              style={{ fontSize: '16px' }} />
           </div>
+
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Cash proof</label>
+            <label className="flex items-center gap-2 text-[13px] font-bold text-slate-800 mb-1.5">
+              <Icon name="camera" size={15} className="shrink-0 text-slate-400" />
+              Cash proof
+            </label>
             {transferImage ? (
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-green-600 font-medium truncate flex-1">✓ {transferImage.name}</span>
-                <button onClick={function () { setTransferImage(null) }} className="text-xs text-red-500 font-bold hover:text-red-700">✕</button>
+              <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-emerald-50 border border-emerald-200">
+                <Icon name="checkCircle" size={16} className="shrink-0 text-emerald-600" />
+                <span className="flex-1 min-w-0 text-[13px] font-medium text-emerald-800 truncate">{transferImage.name}</span>
+                <button type="button" onClick={function () { setTransferImage(null) }} aria-label="Remove photo"
+                  className="shrink-0 w-7 h-7 inline-flex items-center justify-center rounded-lg text-red-600 hover:bg-red-100 transition-colors">
+                  <Icon name="close" size={14} />
+                </button>
               </div>
             ) : transferRec.url ? (
-              <div className="flex items-center gap-2 p-2 rounded-lg bg-blue-50 border border-blue-200">
-                <audio src={transferRec.url} controls className="flex-1 h-8" />
-                <button onClick={transferRec.remove} className="text-xs text-red-500 font-bold hover:text-red-700 flex-shrink-0">✕</button>
+              <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-white border border-slate-200">
+                <audio src={transferRec.url} controls className="flex-1 min-w-0 h-8" />
+                <button type="button" onClick={transferRec.remove} aria-label="Remove voice note"
+                  className="shrink-0 w-7 h-7 inline-flex items-center justify-center rounded-lg text-red-600 hover:bg-red-100 transition-colors">
+                  <Icon name="trash" size={14} />
+                </button>
               </div>
             ) : transferRec.recording ? (
               <button type="button" onClick={transferRec.stop}
-                className="w-full py-2.5 rounded-lg bg-red-500 text-white text-sm font-medium animate-pulse flex items-center justify-center gap-2">
-                <span className="w-2.5 h-2.5 bg-white rounded-full" />Recording... Tap to stop
+                className="w-full h-12 inline-flex items-center justify-center gap-2 rounded-xl bg-red-500 text-[13px] font-bold text-white hover:bg-red-600 transition-colors">
+                <span className="w-2.5 h-2.5 rounded-full bg-white animate-pulse" />
+                Recording… tap to stop
               </button>
             ) : (
               <div className="grid grid-cols-2 gap-2">
-                <label className="py-2.5 text-center text-sm text-emerald-600 border border-dashed border-emerald-300 rounded-lg cursor-pointer hover:bg-emerald-50 transition-colors">
-                  📷 Photo
+                <label className="h-12 inline-flex items-center justify-center gap-2 text-[13px] font-bold text-slate-700 border border-slate-200 bg-white rounded-xl cursor-pointer hover:border-indigo-400 hover:text-indigo-600 transition-colors">
+                  <Icon name="camera" size={16} />
+                  Photo
                   <input type="file" accept="image/*" capture="environment" className="sr-only"
                     onChange={function (e) { if (e.target.files?.[0]) setTransferImage(e.target.files[0]); e.target.value = '' }} />
                 </label>
                 <button type="button" onClick={transferRec.start}
-                  className="py-2.5 text-center text-sm text-emerald-600 border border-dashed border-emerald-300 rounded-lg hover:bg-emerald-50 transition-colors">
-                  🎤 Voice note
+                  className="h-12 inline-flex items-center justify-center gap-2 text-[13px] font-bold text-slate-700 border border-slate-200 bg-white rounded-xl hover:border-indigo-400 hover:text-indigo-600 transition-colors">
+                  <Icon name="mic" size={16} />
+                  Voice note
                 </button>
               </div>
             )}
           </div>
-          <div className="flex gap-3 pt-2">
-            <button onClick={closeTransfer}
-              className="flex-1 py-3 text-sm text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors font-semibold">Cancel</button>
-            <button onClick={initiateTransfer}
-              disabled={transferSaving || !transferTo || !transferAmount || Number(transferAmount) <= 0}
-              className="flex-1 py-3 text-sm text-white bg-emerald-600 rounded-xl hover:bg-emerald-700 disabled:opacity-50 transition-colors font-semibold">
-              {transferSaving ? 'Sending...' : 'Send ' + (transferAmount && Number(transferAmount) > 0 ? Number(transferAmount).toLocaleString('en-IN') + ' pts' : '')}
+
+          <div className="flex gap-3 pt-1">
+            <button type="button" onClick={closeTransfer}
+              className="flex-1 h-12 rounded-xl text-[14px] font-bold text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 active:scale-[0.98] transition-all">
+              Cancel
             </button>
+            {(function () {
+              var ready = !transferSaving && transferTo && transferAmount && Number(transferAmount) > 0
+              return (
+                <button type="button" onClick={initiateTransfer} disabled={!ready}
+                  className={"flex-1 h-12 inline-flex items-center justify-center gap-1.5 rounded-xl text-[14px] font-bold text-white transition-all " +
+                    (ready
+                      ? "bg-gradient-to-b from-indigo-500 to-indigo-600 shadow-[0_2px_8px_rgba(79,70,229,0.30)] hover:from-indigo-600 hover:to-indigo-700 active:scale-[0.98]"
+                      : "bg-slate-300 cursor-not-allowed")}>
+                  {transferSaving
+                    ? 'Sending…'
+                    : (
+                      <>
+                        Send
+                        {transferAmount && Number(transferAmount) > 0 && (
+                          <span className="tabular-nums" data-notranslate>{Number(transferAmount).toLocaleString('en-IN') + ' pts'}</span>
+                        )}
+                      </>
+                    )}
+                </button>
+              )
+            })()}
           </div>
         </div>
       </BottomSheet>
@@ -2010,56 +2349,77 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     return (
       <div className="@container">
       <div className="space-y-4 max-w-2xl mx-auto @3xl:max-w-none">
-        <div>
-          <button onClick={handleBack}
-            className="text-sm text-indigo-600 font-medium hover:text-indigo-800 transition-colors mb-1">← Back</button>
-          <h2 className="text-lg font-bold text-gray-900">Wallet</h2>
-          <p className="text-xs text-gray-400">{profile.name || '—'} · <span className={"font-bold " + balColor}>{formatPoints(bal)}</span></p>
+        <WalletBackdrop />
+        <div className="space-y-2">
+          {inAdmin && (
+            <button type="button" onClick={handleBack}
+              className="inline-flex items-center gap-1.5 h-8 -ml-1 px-2 rounded-lg text-[13px] font-bold text-indigo-600 hover:bg-indigo-50 transition-colors">
+              <Icon name="arrowLeft" size={15} />
+              Back
+            </button>
+          )}
+          <div className="flex items-center gap-3">
+            <span className={"shrink-0 w-11 h-11 rounded-full inline-flex items-center justify-center text-[16px] font-bold " + avatarTint(profile.name)}>
+              {(profile.name || '?').charAt(0).toUpperCase()}
+            </span>
+            <div className="min-w-0">
+              <h2 className="font-display text-[19px] font-bold text-slate-900 leading-snug truncate">{profile.name || '—'}</h2>
+              <p className="text-[12px] text-slate-500">Your wallet</p>
+            </div>
+          </div>
         </div>
 
         <div className="space-y-4 @3xl:grid @3xl:grid-cols-12 @3xl:gap-5 @3xl:space-y-0 @3xl:items-start">
           <div className="@3xl:col-span-5 space-y-4">
 
         {/* Balance card */}
-        <div className={"border rounded-2xl p-5 " + balBg}>
-          <p className={"text-[11px] font-bold uppercase tracking-wider mb-1 " + balColor}>Balance</p>
-          <p className={"text-4xl font-bold " + balColor}>{formatPoints(bal)}</p>
-          <p className={"text-xs mt-2 " + balColor + " opacity-75"}>Last activity — {lastActivity}</p>
+        <div className="bg-white border border-slate-200 rounded-2xl shadow-[0_1px_2px_rgba(15,23,42,0.04)] p-5">
+          <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">Balance</p>
+          <p className={"mt-1 font-display text-[34px] font-extrabold tabular-nums leading-none " + balColor}
+            data-notranslate>{formatPoints(bal)}</p>
+          <p className="mt-2.5 text-[12px] text-slate-500">Last activity — {lastActivity}</p>
         </div>
 
         {/* 2x2 action grid */}
         <div className="grid grid-cols-2 gap-3">
-          <button onClick={openCollectModal}
-            className="py-5 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 active:bg-gray-100 transition-colors flex flex-col items-center gap-1.5">
-            <span className="text-xl text-blue-600">↓</span>
-            <span className="text-sm font-bold text-gray-800">Collect</span>
+          <button type="button" onClick={openCollectModal} className="relative py-4 bg-white border border-slate-200 rounded-2xl shadow-[0_1px_2px_rgba(15,23,42,0.04)] hover:border-slate-300 active:scale-[0.98] transition-all flex flex-col items-center justify-center gap-2">
+            <span className="w-10 h-10 rounded-full bg-blue-50 text-blue-600 inline-flex items-center justify-center">
+              <Icon name="download" size={18} />
+            </span>
+            <span className="text-[13px] font-bold text-slate-800">Collect</span>
           </button>
-          <button onClick={openTransferModal}
-            className="py-5 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 active:bg-gray-100 transition-colors flex flex-col items-center gap-1.5">
-            <span className="text-xl text-emerald-600">⇄</span>
-            <span className="text-sm font-bold text-gray-800">Transfer</span>
+          <button type="button" onClick={openTransferModal} className="relative py-4 bg-white border border-slate-200 rounded-2xl shadow-[0_1px_2px_rgba(15,23,42,0.04)] hover:border-slate-300 active:scale-[0.98] transition-all flex flex-col items-center justify-center gap-2">
+            <span className="w-10 h-10 rounded-full bg-emerald-50 text-emerald-600 inline-flex items-center justify-center">
+              <Icon name="transfer" size={18} />
+            </span>
+            <span className="text-[13px] font-bold text-slate-800">Transfer</span>
           </button>
-          <button onClick={function () { setWalletView('transactions'); openWalletTxns(selectedWallet) }}
-            className="py-5 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 active:bg-gray-100 transition-colors flex flex-col items-center gap-1.5">
-            <span className="text-xl text-gray-600">🕐</span>
-            <span className="text-sm font-bold text-gray-800">History</span>
+          <button type="button" onClick={function () { setWalletView('transactions'); openWalletTxns(selectedWallet) }} className="relative py-4 bg-white border border-slate-200 rounded-2xl shadow-[0_1px_2px_rgba(15,23,42,0.04)] hover:border-slate-300 active:scale-[0.98] transition-all flex flex-col items-center justify-center gap-2">
+            <span className="w-10 h-10 rounded-full bg-slate-100 text-slate-600 inline-flex items-center justify-center">
+              <Icon name="clock" size={18} />
+            </span>
+            <span className="text-[13px] font-bold text-slate-800">History</span>
           </button>
           {showIssueTile ? (
-            <button onClick={function () { setIssueModal(selectedWallet); setIssueAmount(''); setIssueDesc(''); setIssueType('credit') }}
-              className="py-5 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 active:bg-gray-100 transition-colors flex flex-col items-center gap-1.5">
-              <span className="text-xl text-indigo-600">+</span>
-              <span className="text-sm font-bold text-gray-800">Issue</span>
+            <button type="button" onClick={function () { setIssueModal(selectedWallet); setIssueAmount(''); setIssueDesc(''); setIssueType('credit') }} className="relative py-4 bg-white border border-slate-200 rounded-2xl shadow-[0_1px_2px_rgba(15,23,42,0.04)] hover:border-slate-300 active:scale-[0.98] transition-all flex flex-col items-center justify-center gap-2">
+      <span className="w-10 h-10 rounded-full bg-indigo-50 text-indigo-600 inline-flex items-center justify-center">
+        <Icon name="plus" size={18} />
+      </span>
+      <span className="text-[13px] font-bold text-slate-800">Issue</span>
             </button>
           ) : receiveCount > 0 ? (
-            <button onClick={function () { setWalletView('transactions'); openWalletTxns(selectedWallet) }}
-              className="py-5 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 active:bg-gray-100 transition-colors flex flex-col items-center gap-1.5 relative">
-              <span className="text-xl text-orange-600">📥</span>
-              <span className="text-sm font-bold text-gray-800">Receive</span>
-              <span className="absolute top-2 right-2 min-w-[20px] h-5 px-1.5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">{receiveCount}</span>
+            <button type="button" onClick={function () { setWalletView('transactions'); openWalletTxns(selectedWallet) }} className="relative py-4 bg-white border border-slate-200 rounded-2xl shadow-[0_1px_2px_rgba(15,23,42,0.04)] hover:border-slate-300 active:scale-[0.98] transition-all flex flex-col items-center justify-center gap-2">
+              <span className="w-10 h-10 rounded-full bg-amber-50 text-amber-600 inline-flex items-center justify-center">
+                <Icon name="inbox" size={18} />
+              </span>
+              <span className="text-[13px] font-bold text-slate-800">Receive</span>
+              <span className="absolute top-2 right-2 min-w-[20px] h-5 px-1.5 bg-red-500 text-white text-[10px] font-bold rounded-full inline-flex items-center justify-center tabular-nums">{receiveCount}</span>
             </button>
           ) : (
-            <div className="py-5 bg-gray-50 border border-dashed border-gray-200 rounded-xl flex items-center justify-center">
-              <span className="text-[11px] text-gray-400">No pending</span>
+            /* An empty slot, not a button that does nothing. Dashed and quiet,
+               so the grid keeps its shape without offering a fourth action. */
+            <div className="py-4 border border-dashed border-slate-200 rounded-2xl flex items-center justify-center">
+              <span className="text-[12px] text-slate-400">No pending</span>
             </div>
           )}
         </div>
@@ -2068,9 +2428,28 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
           <div className="@3xl:col-span-7">
         {/* Recent transactions */}
         <div>
-          <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-2">Recent Transactions</p>
+          {/* The heading carries the way to the rest of them. It listed five and
+             said nothing about there being more, so History was the only route
+             and it was two tiles away. */}
+          <div className="flex items-baseline justify-between gap-3 mb-2">
+            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em]">Recent Transactions</p>
+            {walletTxns.length > 5 && (
+              <button type="button" onClick={function () { setWalletView('transactions'); openWalletTxns(selectedWallet) }}
+                className="text-[12px] font-bold text-indigo-600 hover:text-indigo-800 transition-colors">
+                View all
+              </button>
+            )}
+          </div>
           {walletTxns.length === 0 ? (
-            <div className="py-6 text-center text-xs text-gray-400 bg-white border border-gray-200 rounded-xl">No transactions yet</div>
+            /* Says what would be here and how it gets here, rather than only
+               that there is nothing. */
+            <div className="py-8 px-4 text-center bg-white border border-slate-200 rounded-2xl">
+              <span className="inline-flex w-11 h-11 rounded-full bg-slate-100 text-slate-400 items-center justify-center">
+                <Icon name="receipt" size={19} />
+              </span>
+              <p className="mt-2.5 text-[13px] font-bold text-slate-700">No transactions yet</p>
+              <p className="mt-1 text-[12px] text-slate-500 leading-snug">Collecting cash or receiving a transfer will show up here.</p>
+            </div>
           ) : (
             <div className="space-y-2">
               {walletTxns.slice(0, 5).map(function (t) {
@@ -2156,7 +2535,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                       {isCancelled && t.cancelled_reason && (
                         <p className="text-[10px] text-rose-600 italic truncate">Reason: {t.cancelled_reason}</p>
                       )}
-                      <p className="text-[11px] text-gray-400">{formatDate(t.created_at)}</p>
+                      <p className="text-[11px] text-slate-500">{formatDate(t.created_at)}</p>
                       <div className="flex gap-1 flex-wrap mt-1" onClick={function (ev) { ev.stopPropagation() }}>
                         {t.reference_type === 'collection' && t.receipt_no && (
                           <button onClick={function (ev) { ev.stopPropagation(); printReceipt(t) }}
@@ -2259,117 +2638,212 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
 
     return (
       <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-lg font-bold text-gray-900">All Wallets</h2>
-            <div className="flex items-center gap-2 mt-1">
-              <p className="text-xs text-gray-400">{filteredWallets.length} wallets</p>
-              {!bulkMode && (
-                <button onClick={function () { setBulkMode(true); setBulkSelected({}) }}
-                  className="px-2 py-1 text-[10px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-md hover:bg-indigo-100 transition-colors">
-                  Bulk Issue
-                </button>
-              )}
-            </div>
+
+        {/* The artwork is the whole screen behind the list, not a strip behind
+            the title: the illustration sits at the top of a 977x1609 image and
+            the leaves run down both sides, so cropping it to a 280px band threw
+            away everything but the empty middle.
+
+            fixed, so it stays put while ninety rows scroll over it. -z-10 works
+            because the phone shell root is relative + isolate — without that
+            stacking context it would fall behind the body and vanish.
+
+            bg-top keeps the wallet anchored: cover on a portrait image in a
+            narrower portrait viewport crops the sides, and centring it would
+            push the illustration off the top on a short screen. */}
+        <WalletBackdrop />
+
+        <div className="relative -mx-4 px-4 pt-3 pb-5">
+
+          <h1 className="relative font-display text-[30px] font-extrabold text-slate-900 leading-none tracking-[-0.03em]">Wallet</h1>
+          <p className="relative mt-2 text-[14px] font-medium text-slate-500">Manage and track wallet balances</p>
+
+          {/* Two figures about the list as a whole, split down the middle. */}
+          <div className="relative mt-5 bg-white/85 backdrop-blur-sm border border-white/70 rounded-2xl shadow-[0_2px_10px_rgba(15,23,42,0.06)] px-4 py-3.5 flex items-center">
+            <button type="button" onClick={function () { setWalletRoleFilter(''); setWalletBalanceState('all'); setWalletPendingOnly(false) }}
+              className="flex-1 min-w-0 flex items-center gap-3 text-left">
+              <span className="shrink-0 w-10 h-10 rounded-2xl bg-indigo-100 text-indigo-600 inline-flex items-center justify-center">
+                <Icon name="wallet" size={19} />
+              </span>
+              <span className="min-w-0">
+                <span className="block font-display text-[17px] font-bold text-slate-900 leading-snug">All Wallets</span>
+                <span className="block text-[13px] font-medium text-slate-500 tabular-nums" data-notranslate>
+                  {filteredWallets.length} wallets
+                </span>
+              </span>
+            </button>
+
+            <span aria-hidden="true" className="shrink-0 w-px h-10 bg-slate-200 mx-2" />
+
+            {(function () {
+              // The sum of what is on screen, not of every wallet in the table:
+              // filter to one role and this has to follow, or it is answering a
+              // question nobody asked.
+              var total = filteredWallets.reduce(function (s, w) { return s + (w.balance_paise || 0) }, 0)
+              return (
+                <div className="flex-1 min-w-0 flex items-center gap-3">
+                  <span className={"shrink-0 w-10 h-10 rounded-2xl inline-flex items-center justify-center " +
+                    (total < 0 ? "bg-red-100 text-red-600" : "bg-emerald-100 text-emerald-600")}>
+                    <Icon name="banknote" size={19} />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block text-[13px] font-medium text-slate-500 leading-snug">Total Points</span>
+                    <span className={"block font-display text-[16px] font-bold tabular-nums leading-snug whitespace-nowrap " +
+                      (total < 0 ? "text-red-700" : "text-slate-900")} data-notranslate>{formatPoints(total)}</span>
+                  </span>
+                </div>
+              )
+            })()}
           </div>
         </div>
-        <SearchField
-          value={walletSearch}
-          onChange={function (v) { setWalletSearch(v) }}
-          placeholder="Search name, email, role..."
-          className="w-full"
-        />
 
-        <div className="flex flex-wrap items-center gap-2">
-          <select value={walletRoleFilter} onChange={function (e) { setWalletRoleFilter(e.target.value) }}
-            className="px-3 py-1.5 border border-gray-200 rounded-lg text-xs bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            style={{ fontSize: '16px' }}>
-            <option value="">All Roles</option>
-            {roleOptions.map(function (r) { return <option key={r} value={r}>{r}</option> })}
-          </select>
+        <div className="flex items-center gap-2">
+          {myWallet && (
+            <button type="button" onClick={function () {
+              setWalletProfiles(function (prev) { var n = Object.assign({}, prev); n[profile.id] = profile; return n })
+              var w = Object.assign({}, myWallet, { balance_paise: walletBalance })
+              setSelectedWallet(w)
+              setWalletView('dashboard')
+              loadRecentTxns(w)
+              loadTransfers()
+            }}
+              aria-label={'My wallet, ' + formatPoints(walletBalance)}
+              className={"inline-flex items-center gap-1.5 h-9 pl-3 pr-2.5 rounded-full border text-[13px] font-bold tabular-nums active:scale-95 transition-all " +
+                (walletBalance < 0
+                  ? "bg-red-50 border-red-200 text-red-700 hover:bg-red-100"
+                  : "bg-emerald-50 border-emerald-200 text-emerald-800 hover:bg-emerald-100")}>
+              <Icon name="wallet" size={15} />
+              <span data-notranslate>{formatPoints(walletBalance)}</span>
+              {pendingIncoming.length > 0 && (
+                <span className="min-w-[17px] h-[17px] px-1 rounded-full bg-amber-500 text-white text-[10px] font-bold inline-flex items-center justify-center">
+                  {pendingIncoming.length}
+                </span>
+              )}
+              <Icon name="chevronRight" size={14} className="opacity-60" />
+            </button>
+          )}
+          {!bulkMode && (
+            <button type="button" onClick={function () { setBulkMode(true); setBulkSelected({}) }}
+              className="inline-flex items-center gap-1.5 h-9 px-3 rounded-full border border-indigo-200 bg-indigo-50 text-indigo-700 text-[13px] font-bold hover:bg-indigo-100 active:scale-95 transition-all">
+              <Icon name="users" size={15} />
+              Bulk Issue
+            </button>
+          )}
+        </div>
+        {/* Search — a tall pill, the way the mockup has it. */}
+        <div className="relative">
+          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
+            <Icon name="search" size={19} />
+          </span>
+          <input type="text" value={walletSearch}
+            onChange={function (e) { setWalletSearch(e.target.value) }}
+            placeholder="Search name, email, role..."
+            className="w-full h-[52px] pl-12 pr-4 bg-white border border-slate-200 rounded-2xl text-[14px] text-slate-900 placeholder:text-slate-400 shadow-[0_1px_2px_rgba(15,23,42,0.04)] focus:outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/15 transition-shadow"
+            style={{ fontSize: '16px' }} />
+        </div>
 
-          <div className="inline-flex bg-gray-100 rounded-lg p-0.5">
-            {[['all', 'All'], ['positive', '+ ve'], ['zero', 'Zero'], ['negative', '− ve']].map(function (opt) {
+        <div className="flex items-center gap-2.5">
+          <div className="relative shrink-0">
+            <select value={walletRoleFilter} onChange={function (e) { setWalletRoleFilter(e.target.value) }}
+              className="appearance-none w-[9.5rem] h-[52px] pl-4 pr-9 bg-white border border-slate-200 rounded-2xl text-[14px] font-medium text-slate-700 shadow-[0_1px_2px_rgba(15,23,42,0.04)] focus:outline-none focus:border-indigo-400"
+              style={{ fontSize: '16px' }}>
+              <option value="">All Roles</option>
+              {roleOptions.map(function (r) { return <option key={r} value={r}>{r}</option> })}
+            </select>
+            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
+              <Icon name="chevronDown" size={16} />
+            </span>
+          </div>
+
+          <div className="flex-1 min-w-0 flex items-center h-[52px] bg-indigo-50/70 rounded-2xl p-1">
+            {[['all', 'All'], ['positive', '+ve'], ['zero', 'Zero'], ['negative', '−ve']].map(function (opt) {
               var active = walletBalanceState === opt[0]
-              var color = opt[0] === 'positive' ? 'text-green-700' : opt[0] === 'negative' ? 'text-red-700' : 'text-gray-700'
               return (
                 <button key={opt[0]} type="button" onClick={function () { setWalletBalanceState(opt[0]) }}
-                  className={"px-2.5 py-1 text-[11px] font-bold rounded-md transition-colors " + (active ? "bg-white shadow-sm " + color : "text-gray-500")}>
+                  aria-pressed={active}
+                  className={"flex-1 min-w-0 h-full px-1 text-[13px] font-bold rounded-xl transition-colors " +
+                    (active ? "bg-white text-indigo-700 shadow-[0_1px_3px_rgba(15,23,42,0.10)]" : "text-slate-500 hover:text-slate-800")}>
                   {opt[1]}
                 </button>
               )
             })}
           </div>
 
-          <label className="inline-flex items-center gap-1.5 text-xs text-gray-600 px-2.5 py-1.5 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 bg-white">
+        </div>
+
+        <div className="flex items-center justify-between gap-3">
+          <label className="inline-flex items-center gap-2.5 text-[14px] font-medium text-slate-600 cursor-pointer select-none">
             <input type="checkbox" checked={walletPendingOnly}
               onChange={function (e) { setWalletPendingOnly(e.target.checked) }}
-              className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
-            <span className="font-medium">Pending only</span>
+              className="w-5 h-5 rounded-md border-slate-300 accent-indigo-600" />
+            Pending only
           </label>
 
-          <select value={walletSort} onChange={function (e) { setWalletSort(e.target.value) }}
-            className="px-3 py-1.5 border border-gray-200 rounded-lg text-xs bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 ml-auto"
-            style={{ fontSize: '16px' }}>
-            <option value="name">Sort: Name</option>
-            <option value="balance_desc">Balance high → low</option>
-            <option value="balance_asc">Balance low → high</option>
-            <option value="pending">Most pending</option>
-            <option value="activity">Recent activity</option>
-          </select>
-
-          {filtersActive && (
-            <button type="button"
-              onClick={function () { setWalletRoleFilter(''); setWalletBalanceState('all'); setWalletPendingOnly(false); setWalletSort('name') }}
-              className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 px-2">
-              Clear
-            </button>
-          )}
+          <span className="inline-flex items-center gap-1.5 text-[14px] text-slate-500 shrink-0">
+            Sort by:
+            <span className="relative inline-flex items-center gap-1 font-bold text-slate-900">
+              <span data-notranslate>{SORT_LABELS[walletSort] || SORT_LABELS.name}</span>
+              <Icon name="chevronDown" size={15} className="text-slate-400" />
+              {/* The real control, invisible and exactly over the text it
+                  describes — so the tap target is the whole thing and the
+                  native picker still opens. */}
+              <select value={walletSort} onChange={function (e) { setWalletSort(e.target.value) }}
+                aria-label="Sort by"
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                style={{ fontSize: '16px' }}>
+                <option value="name">Name</option>
+                <option value="balance_desc">Balance high → low</option>
+                <option value="balance_asc">Balance low → high</option>
+                <option value="pending">Most pending</option>
+                <option value="activity">Recent activity</option>
+              </select>
+            </span>
+          </span>
         </div>
-        {myWallet && (
-          <div onClick={function () {
-            setWalletProfiles(function (prev) { var n = Object.assign({}, prev); n[profile.id] = profile; return n })
-            var w = Object.assign({}, myWallet, { balance_paise: walletBalance })
-            setSelectedWallet(w)
-            setWalletView('dashboard')
-            loadRecentTxns(w)
-            loadTransfers()
-          }}
-            className="relative bg-emerald-50 border border-emerald-200 rounded-xl p-4 flex items-center justify-between cursor-pointer active:scale-[0.98] transition-transform">
-            <div>
-              <p className="text-sm font-bold text-emerald-800">My Wallet</p>
-              <p className="text-xs text-emerald-600">{formatPoints(walletBalance)} · Open dashboard →</p>
-            </div>
-            {pendingIncoming.length > 0 && (
-              <span className="px-2.5 py-1 text-[10px] font-bold text-amber-700 bg-amber-100 border border-amber-300 rounded-full">{pendingIncoming.length} incoming</span>
-            )}
-          </div>
-        )}
 
-        <div className="space-y-2 md:space-y-0 md:grid md:grid-cols-2 md:gap-2">
+        {/* One column unless we are actually on the dashboard. md: measures the
+            viewport and the phone shell is a 540px column inside it, so a bare
+            md:grid-cols-2 gave the phone two 160px cards. */}
+        <div className={"space-y-2" + (inAdmin ? " md:space-y-0 md:grid md:grid-cols-2 md:gap-2" : "")}>
           {filteredWallets.map(function (w) {
             var p = walletProfiles[w.user_id] || {}
             return (
-              <div key={w.id} className="bg-white border border-gray-200 rounded-xl p-4 flex items-center justify-between">
+              <div key={w.id} className="relative bg-white border border-slate-200 rounded-2xl px-3.5 py-2.5 flex items-center gap-3 shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition-colors hover:border-slate-300">
                 {bulkMode && (
                   <input type="checkbox" checked={!!bulkSelected[w.user_id]}
                     onChange={function () { setBulkSelected(function (prev) { var n = Object.assign({}, prev); n[w.user_id] = !n[w.user_id]; return n }) }}
-                    className="w-5 h-5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 mr-3 flex-shrink-0" />
+                    className="w-5 h-5 shrink-0 rounded border-slate-300 accent-indigo-600" />
                 )}
+                {/* No initial here. On a list you scan by name it was a 52px disc
+                    repeating the first letter of the word beside it — and it took
+                    the width that forced the balance and the action onto separate
+                    lines. */}
                 <div className="flex-1 min-w-0 cursor-pointer" onClick={function () { if (!bulkMode) openWalletTxns(w) }}>
-                  <p className="text-sm font-semibold text-gray-900">{p.name || '—'}</p>
-                  <p className="text-xs text-gray-400">{p.email || '—'} · {p.role || '—'}</p>
+                  <span className="min-w-0 block">
+                    <span className="flex items-center gap-1.5 min-w-0">
+                      <span className="text-[15px] font-bold text-slate-900 truncate">{p.name || '—'}</span>
+                      {w._pendingCount > 0 && (
+                        <span className="shrink-0 min-w-[18px] h-[18px] px-1 rounded-full bg-amber-500 text-white text-[10px] font-bold inline-flex items-center justify-center tabular-nums"
+                          title={w._pendingCount + ' pending'}>{w._pendingCount}</span>
+                      )}
+                    </span>
+                    <span className="block text-[13px] text-slate-500 truncate">{p.role || '—'}</span>
+                  </span>
                 </div>
-                <div className="flex items-center gap-3 flex-shrink-0">
-                  {w._pendingCount > 0 && (
-                    <span className="px-2 py-0.5 text-[10px] font-bold text-amber-700 bg-amber-100 border border-amber-300 rounded-full">{w._pendingCount} pending</span>
-                  )}
-                  <span className={"text-sm font-bold " + ((w.balance_paise || 0) < 0 ? "text-red-600" : (w.balance_paise || 0) === 0 ? "text-gray-400" : "text-green-700")}>{formatPoints(w.balance_paise)}</span>
+
+                <div className="shrink-0 flex items-center gap-2">
+                  <span className={"px-3 py-1.5 rounded-full text-[13px] font-bold tabular-nums " +
+                    ((w.balance_paise || 0) < 0 ? "bg-red-100 text-red-700"
+                      : (w.balance_paise || 0) === 0 ? "bg-slate-100 text-slate-500"
+                      : "bg-emerald-100 text-emerald-700")}
+                    data-notranslate>{formatPoints(w.balance_paise)}</span>
                   <button onClick={function () { setIssueModal(w); setIssueAmount(''); setIssueDesc(''); setIssueType('credit') }}
-                    className="px-3 py-1.5 text-xs font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors">
-                    + Issue
+                    className="inline-flex items-center gap-1.5 h-9 px-3.5 rounded-xl text-[13px] font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 active:scale-[0.97] transition-all">
+                    <Icon name="plus" size={14} strokeWidth={2.6} />
+                    Issue
                   </button>
                 </div>
+
               </div>
             )
           })}
@@ -2418,65 +2892,108 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     var txnUser = walletProfiles[selectedWallet.user_id] || {}
     return (
       <div className="space-y-4">
-        <div>
-          <button onClick={goBack}
-            className="text-sm text-indigo-600 font-medium hover:text-indigo-800 transition-colors mb-1">{(isAdmin || isAuditor) ? '← Back to Wallets' : '← Back'}</button>
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-lg font-bold text-gray-900">{txnUser.name || '—'}</h2>
-              <p className="text-xs text-gray-400">{txnUser.email || '—'} · Balance: <span className={"font-bold " + ((selectedWallet.balance_paise || 0) < 0 ? "text-red-600" : "text-green-700")}>{formatPoints(selectedWallet.balance_paise)}</span></p>
-            </div>
-            <div className="flex gap-2">
-
-              {walletTxns.length > 0 && (
-                <button onClick={exportWalletCSV}
-                  className="px-3 py-1.5 text-xs font-bold text-green-600 bg-green-50 border border-green-200 rounded-lg hover:bg-green-100 transition-colors">
-                  📥 CSV
-                </button>
-              )}
-              {walletTxns.length > 0 && (
-                <button onClick={exportWalletPDF} disabled={pdfBusy}
-                  className="px-3 py-1.5 text-xs font-bold text-red-600 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 transition-colors disabled:opacity-40">
-                  {pdfBusy ? '⏳ Generating…' : '📄 PDF'}
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-        <div className="flex gap-2 items-end">
-          <div className="flex-1">
-            <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">From</label>
-            <input type="date" value={txnFrom} onChange={function (e) { setTxnFrom(e.target.value); openWalletTxns(null, e.target.value, null) }}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              style={{ fontSize: '16px' }} />
-          </div>
-          <div className="flex-1">
-            <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">To</label>
-            <input type="date" value={txnTo} onChange={function (e) { setTxnTo(e.target.value); openWalletTxns(null, null, e.target.value) }}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              style={{ fontSize: '16px' }} />
-          </div>
-          <div className="flex-1">
-            <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Type</label>
-            <select value={txnRefType} onChange={function (e) { setTxnRefType(e.target.value); openWalletTxns(null, null, null, e.target.value) }}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              style={{ fontSize: '16px' }}>
-              <option value="">All Types</option>
-              <option value="expense">Expenses</option>
-              <option value="expense_refund">Refunds</option>
-              <option value="collection">Collections</option>
-              <option value="transfer">Transfers</option>
-              <option value="issued">Issued (admin)</option>
-              <option value="deducted">Deducted (admin)</option>
-              <option value="opening">Opening</option>
-            </select>
-          </div>
-          {(txnFrom || txnTo) && (
-            <button onClick={function () { setTxnFrom(''); setTxnTo(''); openWalletTxns(null, '', '') }}
-              className="px-3 py-2 text-xs font-bold text-gray-500 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors mb-px">
-              Clear
+        <WalletBackdrop />
+        <div className="space-y-3">
+          {/* Only where nothing else offers a way back. This calls backNav's
+             goBack — the very same handler the phone shell's ← pops — so on a
+             phone it was the same button twice, one under the other. The admin
+             shell has a breadcrumb and no arrow, so there it is the only route
+             out and has to stay. */}
+          {inAdmin && (
+            <button type="button" onClick={goBack}
+              className="inline-flex items-center gap-1.5 h-8 -ml-1 px-2 rounded-lg text-[13px] font-bold text-indigo-600 hover:bg-indigo-50 transition-colors">
+              <Icon name="arrowLeft" size={15} />
+              {(isAdmin || isAuditor) ? 'Back to Wallets' : 'Back'}
             </button>
           )}
+
+          <div className="flex items-start gap-3">
+            <span className={"shrink-0 w-12 h-12 rounded-full inline-flex items-center justify-center text-[17px] font-bold " + avatarTint(txnUser.name)}>
+              {(txnUser.name || '?').charAt(0).toUpperCase()}
+            </span>
+            <div className="min-w-0 flex-1">
+              <h2 className="font-display text-[19px] font-bold text-slate-900 leading-snug truncate">{txnUser.name || '—'}</h2>
+              <p className="text-[12px] text-slate-500 truncate">{txnUser.email || '—'}</p>
+              <span className={"inline-flex mt-1.5 px-2.5 py-1 rounded-full text-[13px] font-bold tabular-nums " +
+                ((selectedWallet.balance_paise || 0) < 0 ? "bg-red-100 text-red-700"
+                  : (selectedWallet.balance_paise || 0) === 0 ? "bg-slate-100 text-slate-500"
+                  : "bg-emerald-100 text-emerald-700")}
+                data-notranslate>{formatPoints(selectedWallet.balance_paise)}</span>
+            </div>
+
+            {walletTxns.length > 0 && (
+              <div className="shrink-0 flex gap-2">
+                <button type="button" onClick={exportWalletCSV} title="Export CSV"
+                  className="inline-flex items-center gap-1.5 h-9 px-2.5 sm:px-3 rounded-xl text-[12px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 transition-colors">
+                  <Icon name="download" size={15} />
+                  <span className="hidden sm:inline">CSV</span>
+                </button>
+                <button type="button" onClick={exportWalletPDF} disabled={pdfBusy} title="Export PDF"
+                  className="inline-flex items-center gap-1.5 h-9 px-2.5 sm:px-3 rounded-xl text-[12px] font-bold text-red-700 bg-red-50 border border-red-200 hover:bg-red-100 disabled:opacity-60 transition-colors">
+                  <Icon name={pdfBusy ? 'refresh' : 'fileText'} size={14} />
+                  <span className="hidden sm:inline">{pdfBusy ? 'Generating…' : 'PDF'}</span>
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* One pill for the pair, not two: two bordered date fields side by
+            side do not fit a narrow phone, and stacking them spent two rows
+            on one question. Sharing a border pays for the second field. */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <div>
+            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-[0.08em] mb-1">Time Period</label>
+            {/* The app's own calendar, the same one the expense filters use.
+                A native date input was the wrong tool twice over: it would not
+                shrink to half a phone row without drawing an empty box, and it
+                took a date the moment its picker opened, because React's
+                onChange is the input event and that runs while the picker is
+                still up. This one fires on a tap and on nothing else. */}
+            <div className="flex items-stretch bg-white border border-slate-200 rounded-xl overflow-hidden">
+              <div className="flex-1 min-w-0">
+                <EventDatePicker value={txnFrom} placeholder="From" collapsible includePast plain
+                  triggerStyle={DATE_TRIGGER}
+                  onChange={function (v) { setTxnFrom(v); openWalletTxns(null, v, null) }} />
+              </div>
+              {/* A rule, not a dash: the two halves read as one field
+                  otherwise, and a dash on the baseline was easy to miss. */}
+              <span aria-hidden="true" className="shrink-0 self-stretch my-2 w-px bg-slate-200" />
+              <div className="flex-1 min-w-0">
+                <EventDatePicker value={txnTo} placeholder="To" collapsible includePast plain
+                  triggerStyle={DATE_TRIGGER}
+                  onChange={function (v) { setTxnTo(v); openWalletTxns(null, null, v) }} />
+              </div>
+            </div>
+          </div>
+          <div>
+            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-[0.08em] mb-1">Type</label>
+            <div className="flex gap-2">
+              <div className="relative flex-1 min-w-0">
+                <select value={txnRefType} onChange={function (e) { setTxnRefType(e.target.value); openWalletTxns(null, null, null, e.target.value) }}
+                  className="appearance-none w-full h-11 pl-3 pr-9 bg-white border border-slate-200 rounded-xl text-[13px] text-slate-900 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-shadow"
+                  style={{ fontSize: '16px' }}>
+                  <option value="">All Types</option>
+                  <option value="expense">Expenses</option>
+                  <option value="expense_refund">Refunds</option>
+                  <option value="collection">Collections</option>
+                  <option value="transfer">Transfers</option>
+                  <option value="issued">Issued (admin)</option>
+                  <option value="deducted">Deducted (admin)</option>
+                  <option value="opening">Opening</option>
+                </select>
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
+                  <Icon name="chevronDown" size={15} />
+                </span>
+              </div>
+              {(txnFrom || txnTo) && (
+                <button type="button" onClick={function () { setTxnFrom(''); setTxnTo(''); openWalletTxns(null, '', '') }}
+                  className="shrink-0 h-11 px-3 rounded-xl text-[12px] font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors">
+                  Clear
+                </button>
+              )}
+            </div>
+          </div>
         </div>
         {walletTxns.length > 0 && (function () {
           var chrono = walletTxns.slice().sort(function (a, b) {
@@ -2492,22 +3009,36 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
           var opening = oldest ? ((oldest.balance_after_paise || 0) - (oldest.type === 'credit' ? (oldest.amount_paise || 0) : -(oldest.amount_paise || 0))) : 0
           var closing = newest ? (newest.balance_after_paise || 0) : 0
           return (
+            /* Four readings of the same period, so they get one shape and one
+               type size. Closing stays dark because it is the answer the other
+               three are working towards, not a fourth number of equal weight. */
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-              <div className="bg-gray-50 border border-gray-200 rounded-lg p-2.5">
-                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Opening</p>
-                <p className={"text-sm font-bold mt-0.5 " + (opening < 0 ? "text-red-600" : "text-gray-900")}>{formatPoints(opening)}</p>
+              {/* One card, four times. The tint used to fill the whole chip, so
+                  four cards shouted four different colours at a glance and the
+                  figures — the only part that differs — had to compete with
+                  their own backgrounds. The colour now sits on the number and
+                  nowhere else; the labels are identical because they are the
+                  same kind of thing. */}
+              <div className="bg-white border border-slate-200 rounded-xl px-3 py-2">
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em]">Opening</p>
+                <p className={"mt-0.5 text-[13px] font-bold tabular-nums " + (opening < 0 ? "text-red-600" : "text-slate-900")}
+                  data-notranslate>{formatPoints(opening)}</p>
               </div>
-              <div className="bg-green-50 border border-green-200 rounded-lg p-2.5">
-                <p className="text-[10px] font-bold text-green-600 uppercase tracking-wider">Total Credits</p>
-                <p className="text-sm font-bold text-green-700 mt-0.5">+{formatPoints(totalCr)}</p>
+              <div className="bg-white border border-slate-200 rounded-xl px-3 py-2">
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em]">Total Credits</p>
+                <p className="mt-0.5 text-[13px] font-bold tabular-nums text-emerald-600" data-notranslate>+{formatPoints(totalCr)}</p>
               </div>
-              <div className="bg-red-50 border border-red-200 rounded-lg p-2.5">
-                <p className="text-[10px] font-bold text-red-600 uppercase tracking-wider">Total Debits</p>
-                <p className="text-sm font-bold text-red-700 mt-0.5">-{formatPoints(totalDb)}</p>
+              <div className="bg-white border border-slate-200 rounded-xl px-3 py-2">
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em]">Total Debits</p>
+                <p className="mt-0.5 text-[13px] font-bold tabular-nums text-red-600" data-notranslate>-{formatPoints(totalDb)}</p>
               </div>
-              <div className="bg-gray-900 border border-gray-900 rounded-lg p-2.5">
-                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Closing</p>
-                <p className={"text-sm font-bold mt-0.5 " + (closing < 0 ? "text-red-400" : "text-green-400")}>{formatPoints(closing)}</p>
+              {/* Closing is the answer the other three work towards, so it gets a
+                  firmer edge — not a filled panel, which made it read as a
+                  different kind of thing entirely. */}
+              <div className="bg-white border-2 border-slate-300 rounded-xl px-3 py-2">
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em]">Closing</p>
+                <p className={"mt-0.5 text-[13px] font-bold tabular-nums " + (closing < 0 ? "text-red-600" : "text-slate-900")}
+                  data-notranslate>{formatPoints(closing)}</p>
               </div>
             </div>
           )
@@ -2524,17 +3055,11 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold text-gray-900">{t._fromName} sent you {formatPoints(t.amount_paise)}</p>
                       <p className="text-xs text-gray-500 mt-0.5">{t.description || '—'} · {formatDate(t.created_at)}</p>
-                      {imgUrl && isVoice && (
-                        <div className="mt-1.5 flex items-center gap-1.5">
-                          <span className="text-[8px] bg-blue-600 text-white px-1 rounded font-bold">Sent</span>
-                          <audio src={imgUrl} controls className="h-7 max-w-[180px]" />
-                        </div>
-                      )}
-                      {imgUrl && !isVoice && (
-                        <div className="mt-1.5 relative inline-block cursor-pointer" onClick={function () { setEnlargedWalletImg(imgUrl) }}>
-                          <img src={imgUrl} alt="" className="w-10 h-10 rounded border border-gray-200 object-cover" />
-                          <span className="absolute -top-1 -left-1 text-[8px] bg-blue-600 text-white px-1 rounded font-bold">Sent</span>
-                        </div>
+                      {imgUrl && (
+                        <span className="block mt-1.5">
+                          <ProofThumb url={imgUrl} label="Sent" tone="bg-blue-600"
+                            onOpen={function () { setEnlargedWalletImg(imgUrl) }} />
+                        </span>
                       )}
                     </div>
                     <button onClick={function () { setTransferConfirmModal(t); setTransferConfirmImage(null); transferConfirmRec.cancel() }}
@@ -2555,7 +3080,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                 <div key={t.id} className="bg-white border border-gray-200 rounded-lg p-3">
                   <div className="flex items-start justify-between">
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm text-gray-800">Sent {formatPoints(t.amount_paise)} to {t._toName}</p>
+                      <p className="text-[14px] font-bold text-slate-900 leading-snug">Sent {formatPoints(t.amount_paise)} to {t._toName}</p>
                       <p className="text-xs text-gray-400 mt-0.5">{t.description || '—'} · {formatDate(t.created_at)}</p>
                     </div>
                     <button onClick={function () { cancelTransfer(t) }}
@@ -2638,7 +3163,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                           EP Cancel
                         </span>
                       )}
-                      <p className={"text-sm text-gray-800 " + (isCancelled ? "line-through" : "")}>
+                      <p className={"text-[14px] font-bold text-slate-900 leading-snug " + (isCancelled ? "line-through" : "")}>
                         {t.description || '—'}
                         {t.reference_type === 'transfer' && t.reference_id && transferParties[t.reference_id] && (function () {
                           var tr = transferParties[t.reference_id]
@@ -2676,36 +3201,61 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                       var subTypeName = e.expense_sub_types?.name || ''
                       var allocs = e.expense_allocations || []
                       var parts = []
-                      if (typeName) parts.push((e.expense_types?.icon ? e.expense_types.icon + ' ' : '') + typeName + (subTypeName ? ' › ' + subTypeName : ''))
-                      if (e._event_name) parts.push('🎯 ' + e._event_name)
+                      var pairs = []
                       var subFields = (e.expense_sub_types && e.expense_sub_types.extra_fields) || []
                       var meta = e.metadata || {}
-                      var extraFieldParts = []
                       var extraFieldValues = []
                       subFields.forEach(function (f) {
                         var val = meta[f.key]
                         if (val == null || val === '') return
                         var display = val
                         if (f.type === 'lookup' && f.source) display = expLookupLabels[f.source + ':' + String(val)] || val
-                        extraFieldParts.push((f.label || f.key) + ': ' + display)
+                        pairs.push({ label: f.label || f.key, value: String(display) })
                         extraFieldValues.push(String(display))
                       })
                       // The plain vendor_name column is a fallback shown to the same
                       // value a sub-type "vendor" lookup field already surfaces — skip
                       // it here when that's the case so the vendor name isn't repeated.
-                      if (e.vendor_name && extraFieldValues.indexOf(e.vendor_name) === -1) parts.push('Vendor: ' + e.vendor_name)
-                      parts = parts.concat(extraFieldParts)
+                      if (e.vendor_name && extraFieldValues.indexOf(e.vendor_name) === -1) pairs.unshift({ label: 'Vendor', value: e.vendor_name })
                       if (t.reference_type === 'expense_refund' && e.amount_paise) parts.push('orig ' + formatPoints(e.amount_paise) + ' on ' + formatDate(e.expense_date))
                       return (
                         <>
-                          {parts.length > 0 && <p className="text-[11px] text-indigo-600 mt-0.5">{parts.join(' · ')}</p>}
+                          {(typeName || e._event_name) && (
+                            <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+                              {typeName && (
+                                <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 text-[10px] font-bold">
+                                  {typeName + (subTypeName ? ' › ' + subTypeName : '')}
+                                </span>
+                              )}
+                              {e._event_name && (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-500">
+                                  <Icon name="calendar" size={11} />
+                                  {e._event_name}
+                                </span>
+                              )}
+                            </p>
+                          )}
+                          {pairs.length > 0 && (
+                            <p className="mt-1 text-[11px] text-slate-500 leading-snug">
+                              {pairs.map(function (pr, pi) {
+                                return (
+                                  <span key={pi}>
+                                    {pi > 0 && <span className="text-slate-300"> · </span>}
+                                    {pr.label + ': '}
+                                    <span className="font-semibold text-slate-700">{pr.value}</span>
+                                  </span>
+                                )
+                              })}
+                            </p>
+                          )}
+                          {parts.length > 0 && <p className="mt-1 text-[11px] text-slate-500">{parts.join(' · ')}</p>}
                           {allocs.length > 0 && (
                             <div className="mt-0.5 space-y-0.5">
                               {allocs.map(function (a, ai) {
                                 var allocType = a.expense_types?.name || ''
                                 var allocSubType = a.expense_sub_types?.name || ''
                                 return (
-                                  <p key={ai} className="text-[10px] text-gray-500">
+                                  <p key={ai} className="text-[10px] text-slate-500 tabular-nums">
                                     {(a.department || 'Unassigned')}{allocType ? ' · ' + allocType + (allocSubType ? ' › ' + allocSubType : '') : ''} — {formatPoints(a.amount_paise)}
                                   </p>
                                 )
@@ -2715,42 +3265,50 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                         </>
                       )
                     })()}
-                    <p className="text-[11px] text-gray-400">
-                      {formatDate(t.created_at)}
-                      {(function () {
-                        var d = new Date(t.created_at); if (isNaN(d)) return ''
-                        var hh = String(d.getHours()).padStart(2, '0'); var mm = String(d.getMinutes()).padStart(2, '0')
-                        return ' · ' + hh + ':' + mm
-                      })()}
-                      {t.reference_type ? ' · ' + (REF_TYPE_LABELS[t.reference_type] || t.reference_type) : ''}
-                      {t.reference_type && t.reference_id ? ' #' + String(t.reference_id).slice(0, 8) : ''}
-                      {t.performed_by && walletProfiles[t.performed_by] ? ' · by ' + walletProfiles[t.performed_by].name : ''}
-                    </p>
-                    {t.received_at && <p className="text-[10px] text-green-600 font-medium mt-0.5">✓ Confirmed {formatDate(t.received_at)}</p>}
-                    <div className="flex gap-2 mt-1.5 flex-wrap items-center">
-                      {issuedUrl && issuedIsVoice && (
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-[8px] bg-blue-600 text-white px-1 rounded font-bold">Sent</span>
-                          <audio src={issuedUrl} controls className="h-7 max-w-[180px]" />
-                        </div>
+                    {(function () {
+                      var d = new Date(t.created_at)
+                      var time = isNaN(d) ? '' : String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0')
+                      var ref = t.reference_type
+                        ? (REF_TYPE_LABELS[t.reference_type] || t.reference_type) + (t.reference_id ? ' #' + String(t.reference_id).slice(0, 8) : '')
+                        : ''
+                      var who = t.performed_by && walletProfiles[t.performed_by] ? walletProfiles[t.performed_by].name : ''
+                      var bits = [formatDate(t.created_at), time, ref].filter(Boolean)
+                      return (
+                        <p className="mt-1 text-[11px] text-slate-500 leading-snug">
+                          {bits.map(function (b, bi) {
+                            return (
+                              <span key={bi} className="whitespace-nowrap">
+                                {bi > 0 && <span className="text-slate-300"> · </span>}
+                                {b}
+                              </span>
+                            )
+                          })}
+                          {who && (
+                            <span className="whitespace-nowrap">
+                              <span className="text-slate-300"> · </span>
+                              by <span className="font-semibold text-slate-600">{who}</span>
+                            </span>
+                          )}
+                        </p>
+                      )
+                    })()}
+                    {t.received_at && (
+                      <p className="mt-1 flex items-center gap-1 text-[11px] font-semibold text-emerald-600">
+                        <Icon name="checkCircle" size={12} className="shrink-0" />
+                        Confirmed {formatDate(t.received_at)}
+                      </p>
+                    )}
+                    {/* wrap, because two players side by side on a phone each
+                        end up too narrow for the browser to draw a timeline
+                        in; stacked they each get the row. */}
+                    <div className="flex flex-wrap items-center gap-2 mt-1.5">
+                      {issuedUrl && (
+                        <ProofThumb url={issuedUrl} label="Sent" tone="bg-blue-600"
+                          onOpen={function () { setEnlargedWalletImg(issuedUrl) }} />
                       )}
-                      {issuedUrl && !issuedIsVoice && (
-                        <div className="relative cursor-pointer" onClick={function () { setEnlargedWalletImg(issuedUrl) }}>
-                          <img src={issuedUrl} alt="" className="w-10 h-10 rounded border border-gray-200 object-cover" />
-                          <span className="absolute -top-1 -left-1 text-[8px] bg-blue-600 text-white px-1 rounded font-bold">Sent</span>
-                        </div>
-                      )}
-                      {receivedUrl && receivedIsVoice && (
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-[8px] bg-green-600 text-white px-1 rounded font-bold">Rcvd</span>
-                          <audio src={receivedUrl} controls className="h-7 max-w-[180px]" />
-                        </div>
-                      )}
-                      {receivedUrl && !receivedIsVoice && (
-                        <div className="relative cursor-pointer" onClick={function () { setEnlargedWalletImg(receivedUrl) }}>
-                          <img src={receivedUrl} alt="" className="w-10 h-10 rounded border border-gray-200 object-cover" />
-                          <span className="absolute -top-1 -left-1 text-[8px] bg-green-600 text-white px-1 rounded font-bold">Rcvd</span>
-                        </div>
+                      {receivedUrl && (
+                        <ProofThumb url={receivedUrl} label="Rcvd" tone="bg-emerald-600"
+                          onOpen={function () { setEnlargedWalletImg(receivedUrl) }} />
                       )}
                     </div>
                     {isPayRow && t.reference_id && paymentRefs[t.reference_id] && (
@@ -2760,10 +3318,10 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                     )}
                   </div>
                   <div className="text-right flex-shrink-0 ml-2">
-                    <p className={"text-sm font-bold " + (isCredit ? "text-green-600" : "text-red-600")}>
+                    <p className={"text-[15px] font-bold tabular-nums " + (isCredit ? "text-emerald-600" : "text-red-600")} data-notranslate>
                       {isCredit ? '+' : '−'}{formatPoints(Math.abs(t.amount_paise))}
                     </p>
-                    <p className="text-[10px] text-gray-400">bal: {formatPoints(t.balance_after_paise)}</p>
+                    <p className="text-[11px] text-slate-400 tabular-nums" data-notranslate>bal: {formatPoints(t.balance_after_paise)}</p>
                     {canConfirm && (
                       <button onClick={function (ev) { ev.stopPropagation(); setReceiveModal(t); setReceiveImage(null) }}
                         className="mt-1.5 px-2 py-1 text-[10px] font-bold text-amber-700 bg-amber-100 border border-amber-300 rounded hover:bg-amber-200 transition-colors">
