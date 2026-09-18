@@ -1184,7 +1184,17 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     return createPortal((
       <div className="fixed inset-0 z-[9998] bg-black/70 flex items-start sm:items-center justify-center p-0 sm:p-4 overflow-y-auto"
         onClick={function () { closeExpenseDetail(false) }}>
-        <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-2xl p-4 sm:p-5 min-h-screen sm:min-h-0 sm:max-h-[92vh] overflow-y-auto"
+        {/* Wide enough for the detail to use its own two-column layout.
+
+            ExpenseDetail is a @container and splits into two columns at 48rem.
+            At max-w-2xl the container was about 630px, so it never did — every
+            panel stacked, the panel ran twice the height it needed, and a modal
+            that fits on a screen had a scrollbar down the side of it.
+
+            The height cap stays as a floor, not as the plan: an expense with a
+            dozen allocations can outgrow any screen, and without it the bottom
+            of the panel would be somewhere below the desk. */}
+        <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-5xl p-4 sm:p-5 min-h-screen sm:min-h-0 sm:max-h-[92vh] overflow-y-auto"
           onClick={function (ev) { ev.stopPropagation() }}>
           {expenseDetailLoading || expenseDetailTarget._placeholder ? (
             <div className="py-16 text-center text-sm text-gray-500">Loading expense…</div>
