@@ -2707,15 +2707,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     })
     var roleOptions = Object.keys(uniqueRoles).sort()
 
-    // Everything except the balance state. The four balance tabs each need to
-    // say how many they would give you, and a tab counting rows that its own
-    // filter has already removed would say nothing — +ve would read as the
-    // number of +ve wallets among the +ve wallets, which is all of them.
-    //
-    // The other filters still count, though: with a role picked, or a search
-    // typed, the question the tabs answer is how many of THESE are positive,
-    // not how many exist.
-    var walletsBeforeBalance = allWallets.filter(function (w) {
+    var filteredWallets = allWallets.filter(function (w) {
       var p = walletProfiles[w.user_id]
       if (walletSearch) {
         var matches = (p?.name || '').toLowerCase().indexOf(wSearchLower) !== -1 ||
@@ -2724,28 +2716,12 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
         if (!matches) return false
       }
       if (walletRoleFilter && (p?.role || '') !== walletRoleFilter) return false
+      var bal = w.balance_paise || 0
+      if (walletBalanceState === 'positive' && bal <= 0) return false
+      if (walletBalanceState === 'zero' && bal !== 0) return false
+      if (walletBalanceState === 'negative' && bal >= 0) return false
       if (walletPendingOnly && !(w._pendingCount > 0)) return false
       return true
-    })
-
-    function inBalanceState(w, state) {
-      var bal = w.balance_paise || 0
-      if (state === 'positive') return bal > 0
-      if (state === 'zero') return bal === 0
-      if (state === 'negative') return bal < 0
-      return true
-    }
-
-    var balanceCounts = { all: walletsBeforeBalance.length, positive: 0, zero: 0, negative: 0 }
-    walletsBeforeBalance.forEach(function (w) {
-      var bal = w.balance_paise || 0
-      if (bal > 0) balanceCounts.positive++
-      else if (bal === 0) balanceCounts.zero++
-      else balanceCounts.negative++
-    })
-
-    var filteredWallets = walletsBeforeBalance.filter(function (w) {
-      return inBalanceState(w, walletBalanceState)
     })
 
     if (walletSort === 'balance_desc') {
@@ -3014,28 +2990,15 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
         {/* One column unless we are actually on the dashboard. md: measures the
             viewport and the phone shell is a 540px column inside it, so a bare
             md:grid-cols-2 gave the phone two 160px cards. */}
-        {/* What the filters came back with, above the thing they filtered.
-            On the tabs the counts sat inside the words you press, which made
-            four buttons into eight things to read. Here it is one line, and it
-            names the split as well as the total — so All, +ve, Zero and −ve are
-            answered without having to press any of them. */}
-        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-[12px] text-slate-500">
-          <span>
-            Showing
-            <span className="mx-1 font-bold text-slate-900 tabular-nums" data-notranslate>{filteredWallets.length}</span>
-            {filteredWallets.length === allWallets.length ? 'wallets' : (
-              <>of <span className="font-bold text-slate-900 tabular-nums" data-notranslate>{allWallets.length}</span> wallets</>
-            )}
-          </span>
-          <span aria-hidden="true" className="text-slate-300">·</span>
-          <span className="tabular-nums" data-notranslate>
-            {balanceCounts.positive} +ve
-            <span className="mx-1.5 text-slate-300">·</span>
-            {balanceCounts.zero} zero
-            <span className="mx-1.5 text-slate-300">·</span>
-            {balanceCounts.negative} −ve
-          </span>
-        </div>
+        {/* What the filters came back with, above the thing they filtered. One
+            figure, for the filter that is actually on: which tab you picked is
+            already shown by the tab, and printing the other three beside it was
+            answering questions nobody had asked yet. */}
+        <p className="text-[12px] text-slate-500">
+          Showing
+          <span className="mx-1 font-bold text-slate-900 tabular-nums" data-notranslate>{filteredWallets.length}</span>
+          wallets
+        </p>
 
         <div className={"space-y-2" + (inAdmin ? " md:space-y-0 md:grid md:grid-cols-2 xl:grid-cols-3 md:gap-2.5" : "")}>
           {filteredWallets.map(function (w) {
