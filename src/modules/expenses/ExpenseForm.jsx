@@ -3160,9 +3160,17 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
                             return (
                               <div key={path} className="relative">
                                 {isVoice ? (
-                                  <div className="h-24 rounded-lg border border-blue-200 bg-white flex items-center justify-center text-blue-600"><Icon name="mic" size={24} /></div>
+                                  <a href={url} target="_blank" rel="noopener noreferrer"
+                                    className="h-24 rounded-lg border border-blue-200 bg-white flex items-center justify-center text-blue-600 hover:border-blue-400 hover:bg-blue-50 transition-colors"
+                                    title="Voice note — tap to play">
+                                    <Icon name="mic" size={24} />
+                                  </a>
                                 ) : isPdf ? (
-                                  <div className="h-24 rounded-lg border border-blue-200 bg-white flex items-center justify-center text-blue-600"><Icon name="fileText" size={24} /></div>
+                                  <a href={url} target="_blank" rel="noopener noreferrer"
+                                    className="h-24 rounded-lg border border-blue-200 bg-white flex items-center justify-center text-blue-600 hover:border-blue-400 hover:bg-blue-50 transition-colors"
+                                    title="PDF — tap to view">
+                                    <Icon name="fileText" size={24} />
+                                  </a>
                                 ) : (
                                   <img src={url} alt="Existing receipt"
                                     onClick={function () { setZoomImg(url) }}
@@ -3187,10 +3195,12 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
                         return (
                           <div key={rIdx} className="relative">
                             {isPdf ? (
-                              <div className="h-24 rounded-lg border border-slate-200 bg-slate-50 flex flex-col items-center justify-center text-slate-500 px-1">
+                              <a href={url} target="_blank" rel="noopener noreferrer"
+                                className="h-24 rounded-lg border border-slate-200 bg-slate-50 flex flex-col items-center justify-center text-slate-500 px-1 hover:border-indigo-400 hover:text-indigo-600 transition-colors"
+                                title="PDF — tap to view">
                                 <Icon name="fileText" size={22} />
                                 <span className="text-[10px] truncate max-w-full">{file.name}</span>
-                              </div>
+                              </a>
                             ) : (
                               <img src={url} alt={"Receipt " + (rIdx + 1)}
                                 onClick={function () { setZoomImg(url) }}
@@ -3202,7 +3212,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
                         )
                       })}
                     </div>
-                    <p className="text-[10px] text-slate-500 text-center mb-2">{entry.receiptFiles.length} receipt{entry.receiptFiles.length > 1 ? 's' : ''} attached · tap image to enlarge</p>
+                    <p className="text-[10px] text-slate-500 text-center mb-2">{entry.receiptFiles.length} receipt{entry.receiptFiles.length > 1 ? 's' : ''} attached · tap to view</p>
                     <div className="flex gap-2">
                       <label className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border border-slate-200 text-[12px] text-slate-500 hover:border-indigo-400 hover:text-indigo-600 cursor-pointer transition-colors">
                         <Icon name="gallery" className="w-4 h-4" /><span>Add more</span>
