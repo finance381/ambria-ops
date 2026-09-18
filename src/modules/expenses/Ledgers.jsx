@@ -887,9 +887,11 @@ function Ledgers({ profile, onNavigateToExpenses }) {
           </div>
         </div>
 
-        {/* One toolbar. The period, what to look in it for, and what to take
-            away with you were three separate rows of controls at three
-            different sizes. */}
+        {/* One row: the period, what to look in it for, and what to take away
+            with you. These were three separate rows of controls at three
+            different sizes, and then two. flex-wrap rather than a fixed track,
+            so the line breaks where the window makes it break instead of
+            where a breakpoint guessed it would. */}
         <div className="flex flex-wrap items-center gap-2.5">
           <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-xl">
             <PresetChip k="month" label="This month" />
@@ -905,7 +907,7 @@ function Ledgers({ profile, onNavigateToExpenses }) {
                 className="h-9 px-3 bg-white border border-slate-200 rounded-lg text-[12.5px] text-slate-700 hover:border-slate-300 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-[border-color,box-shadow] duration-150 flex-1 min-w-[130px]" style={{ fontSize: '16px' }} />
             </>
           )}
-          <div className="flex-1 min-w-[220px]">
+          <div className="flex-1 min-w-[180px]">
             <SearchField
               value={search}
               onChange={function (v) { setSearch(v) }}
@@ -913,9 +915,6 @@ function Ledgers({ profile, onNavigateToExpenses }) {
               className="w-full"
             />
           </div>
-        </div>
-
-        <div className="flex flex-wrap gap-2.5 items-center">
           <select value={userFilter} onChange={function (e) { setUserFilter(e.target.value) }}
             aria-label="Filter by user"
             className="h-9 px-3 bg-white border border-slate-200 rounded-lg text-[12.5px] text-slate-700 hover:border-slate-300 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-[border-color,box-shadow] duration-150 flex-1 min-w-[130px]" style={{ fontSize: '16px' }}>
