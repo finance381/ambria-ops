@@ -309,13 +309,22 @@ function PayVendorModal({ vendor, profile, onClose, onSuccess }) {
                     <div className="text-[10px] text-amber-700 text-center mt-0.5">{Math.round(dedImage.size / 1024)}KB</div>
                   </div>
                 ) : (
-                  <label className={"flex items-center justify-center gap-2 py-2 px-3 border-2 border-dashed rounded-lg text-xs font-medium cursor-pointer transition-colors " + (paySaving || dedImgBusy ? "border-gray-200 text-gray-400 cursor-not-allowed" : "border-amber-300 text-amber-700 hover:bg-amber-100")}>
-                    <input type="file" accept="image/*,.pdf" capture="environment"
-                      disabled={paySaving || dedImgBusy}
-                      onChange={handleDedImgAdd}
-                      className="hidden" />
-                    {dedImgBusy ? 'Compressing...' : '📷 Attach updated bill'}
-                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <label className={"flex items-center justify-center gap-1.5 py-2 px-2 border-2 border-dashed rounded-lg text-xs font-medium cursor-pointer transition-colors " + (paySaving || dedImgBusy ? "border-gray-200 text-gray-400 cursor-not-allowed" : "border-amber-300 text-amber-700 hover:bg-amber-100")}>
+                      <input type="file" accept="image/*" capture="environment"
+                        disabled={paySaving || dedImgBusy}
+                        onChange={handleDedImgAdd}
+                        className="hidden" />
+                      {dedImgBusy ? 'Compressing...' : '📷 Take Photo'}
+                    </label>
+                    <label className={"flex items-center justify-center gap-1.5 py-2 px-2 border-2 border-dashed rounded-lg text-xs font-medium cursor-pointer transition-colors " + (paySaving || dedImgBusy ? "border-gray-200 text-gray-400 cursor-not-allowed" : "border-amber-300 text-amber-700 hover:bg-amber-100")}>
+                      <input type="file" accept="image/*,.pdf"
+                        disabled={paySaving || dedImgBusy}
+                        onChange={handleDedImgAdd}
+                        className="hidden" />
+                      {dedImgBusy ? 'Compressing...' : '📎 Upload file'}
+                    </label>
+                  </div>
                 )}
               </div>
             </div>
@@ -327,13 +336,22 @@ function PayVendorModal({ vendor, profile, onClose, onSuccess }) {
             Payment Proof <span className="text-red-500">*</span>
             <span className="text-[10px] font-normal text-gray-400 ml-1">(auto-compressed to &lt;100KB)</span>
           </label>
-          <label className={"flex items-center justify-center gap-2 py-2.5 px-3 border-2 border-dashed rounded-lg text-sm font-medium cursor-pointer transition-colors " + (paySaving || payImgBusy ? "border-gray-200 text-gray-400 cursor-not-allowed" : "border-indigo-300 text-indigo-700 hover:bg-indigo-50")}>
-            <input type="file" accept="image/*,.pdf" capture="environment" multiple
-              disabled={paySaving || payImgBusy}
-              onChange={handlePayImgAdd}
-              className="hidden" />
-            {payImgBusy ? 'Compressing...' : ('📷 ' + (payImages.length === 0 ? 'Capture / choose file' : 'Add more'))}
-          </label>
+          <div className="grid grid-cols-2 gap-2">
+            <label className={"flex items-center justify-center gap-1.5 py-2.5 px-3 border-2 border-dashed rounded-lg text-sm font-medium cursor-pointer transition-colors " + (paySaving || payImgBusy ? "border-gray-200 text-gray-400 cursor-not-allowed" : "border-indigo-300 text-indigo-700 hover:bg-indigo-50")}>
+              <input type="file" accept="image/*" capture="environment" multiple
+                disabled={paySaving || payImgBusy}
+                onChange={handlePayImgAdd}
+                className="hidden" />
+              {payImgBusy ? 'Compressing...' : '📷 Take Photo'}
+            </label>
+            <label className={"flex items-center justify-center gap-1.5 py-2.5 px-3 border-2 border-dashed rounded-lg text-sm font-medium cursor-pointer transition-colors " + (paySaving || payImgBusy ? "border-gray-200 text-gray-400 cursor-not-allowed" : "border-indigo-300 text-indigo-700 hover:bg-indigo-50")}>
+              <input type="file" accept="image/*,.pdf" multiple
+                disabled={paySaving || payImgBusy}
+                onChange={handlePayImgAdd}
+                className="hidden" />
+              {payImgBusy ? 'Compressing...' : '📎 Upload file'}
+            </label>
+          </div>
           {payImages.length > 0 && (
             <div className="grid grid-cols-3 gap-2 mt-2">
               {payImages.map(function (f, i) {
