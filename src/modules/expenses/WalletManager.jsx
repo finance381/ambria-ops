@@ -2493,8 +2493,11 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
           <p className="mt-2.5 text-[12px] text-slate-500">Last activity — {lastActivity}</p>
         </div>
 
-        {/* 2x2 action grid */}
-        <div className="grid grid-cols-2 gap-3">
+        {/* Two up on a phone, four across once the page splits into columns.
+            At that point this column is about 600px and the tiles were sitting
+            two to a row at 300px each — a 40px glyph and one word in the middle
+            of a card wide enough for a sentence. */}
+        <div className="grid grid-cols-2 @3xl:grid-cols-4 gap-3">
           <button type="button" onClick={openCollectModal} className="relative py-4 bg-white border border-slate-200 rounded-2xl shadow-[0_1px_2px_rgba(15,23,42,0.04)] hover:border-slate-300 active:scale-[0.98] transition-all flex flex-col items-center justify-center gap-2">
             <span className="w-10 h-10 rounded-full bg-blue-50 text-blue-600 inline-flex items-center justify-center">
               <Icon name="download" size={18} />
