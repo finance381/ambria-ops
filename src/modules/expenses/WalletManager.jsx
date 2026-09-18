@@ -2806,8 +2806,15 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             return (
               <button key={opt[0]} type="button" onClick={function () { setWalletBalanceState(opt[0]) }}
                 aria-pressed={active}
-                className={(inAdmin ? "px-5 " : "flex-1 min-w-0 px-1 ") + "h-full text-[13px] font-bold rounded-xl transition-colors " +
-                  (active ? "bg-white text-indigo-700 shadow-[0_1px_3px_rgba(15,23,42,0.10)]" : "text-slate-500 hover:text-slate-800")}>
+                /* An inactive segment shows what it would become: the same
+                   white pill, at less than full strength. Darkening the text
+                   alone left the four of them looking like labels rather than
+                   like something you press. The active one does not answer the
+                   pointer, because pressing it again does nothing. */
+                className={(inAdmin ? "px-5 " : "flex-1 min-w-0 px-1 ") + "h-full text-[13px] font-bold rounded-xl transition-all duration-150 " +
+                  (active
+                    ? "bg-white text-indigo-700 shadow-[0_1px_3px_rgba(15,23,42,0.10)]"
+                    : "text-slate-500 hover:text-slate-900 hover:bg-white/70 hover:shadow-[0_1px_3px_rgba(15,23,42,0.06)]")}>
                 {opt[1]}
               </button>
             )
