@@ -2805,17 +2805,12 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
         <div className={"flex items-center h-[52px] bg-indigo-50/70 rounded-2xl p-1 " + (inAdmin ? "shrink-0" : "flex-1 min-w-0")}>
           {[['all', 'All'], ['positive', '+ve'], ['zero', 'Zero'], ['negative', '−ve']].map(function (opt) {
             var active = walletBalanceState === opt[0]
-            var count = balanceCounts[opt[0]]
             return (
               <button key={opt[0]} type="button" onClick={function () { setWalletBalanceState(opt[0]) }}
                 aria-pressed={active}
-                className={(inAdmin ? "px-4 " : "flex-1 min-w-0 px-1 ") + "h-full inline-flex items-center justify-center gap-1.5 text-[13px] font-bold rounded-xl transition-colors " +
+                className={(inAdmin ? "px-5 " : "flex-1 min-w-0 px-1 ") + "h-full text-[13px] font-bold rounded-xl transition-colors " +
                   (active ? "bg-white text-indigo-700 shadow-[0_1px_3px_rgba(15,23,42,0.10)]" : "text-slate-500 hover:text-slate-800")}>
                 {opt[1]}
-                {/* Lighter than the label and never translated: it is a
-                    figure, and the word beside it is what you are choosing. */}
-                <span className={"text-[11px] font-bold tabular-nums " + (active ? "text-indigo-400" : "text-slate-400")}
-                  data-notranslate>{count}</span>
               </button>
             )
           })}
@@ -3019,6 +3014,29 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
         {/* One column unless we are actually on the dashboard. md: measures the
             viewport and the phone shell is a 540px column inside it, so a bare
             md:grid-cols-2 gave the phone two 160px cards. */}
+        {/* What the filters came back with, above the thing they filtered.
+            On the tabs the counts sat inside the words you press, which made
+            four buttons into eight things to read. Here it is one line, and it
+            names the split as well as the total — so All, +ve, Zero and −ve are
+            answered without having to press any of them. */}
+        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-[12px] text-slate-500">
+          <span>
+            Showing
+            <span className="mx-1 font-bold text-slate-900 tabular-nums" data-notranslate>{filteredWallets.length}</span>
+            {filteredWallets.length === allWallets.length ? 'wallets' : (
+              <>of <span className="font-bold text-slate-900 tabular-nums" data-notranslate>{allWallets.length}</span> wallets</>
+            )}
+          </span>
+          <span aria-hidden="true" className="text-slate-300">·</span>
+          <span className="tabular-nums" data-notranslate>
+            {balanceCounts.positive} +ve
+            <span className="mx-1.5 text-slate-300">·</span>
+            {balanceCounts.zero} zero
+            <span className="mx-1.5 text-slate-300">·</span>
+            {balanceCounts.negative} −ve
+          </span>
+        </div>
+
         <div className={"space-y-2" + (inAdmin ? " md:space-y-0 md:grid md:grid-cols-2 xl:grid-cols-3 md:gap-2.5" : "")}>
           {filteredWallets.map(function (w) {
             var p = walletProfiles[w.user_id] || {}
