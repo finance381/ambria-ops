@@ -3312,10 +3312,10 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                                 bigger dot is also a thicker rule and the browser
                                 decides the spacing; a repeated radial gradient
                                 sets the dot and the gap independently. */}
-                            <span aria-hidden="true" className="flex-1 min-w-[1.5rem] self-center h-[3px]"
+                            <span aria-hidden="true" className="flex-1 min-w-[1.5rem] self-center h-[2px]"
                               style={{
-                                backgroundImage: 'radial-gradient(circle, rgb(203 213 225) 1.5px, transparent 1.6px)',
-                                backgroundSize: '8px 3px',
+                                backgroundImage: 'radial-gradient(circle, rgb(203 213 225) 1px, transparent 1.1px)',
+                                backgroundSize: '7px 2px',
                                 backgroundRepeat: 'repeat-x',
                                 backgroundPosition: 'center',
                               }} />
