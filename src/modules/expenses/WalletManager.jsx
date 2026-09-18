@@ -132,51 +132,11 @@ var DATE_TRIGGER = {
   padding: '12px 10px 12px 12px',
 }
 
-// Each blob is its own element rather than a background layer, so it can be
-// moved: a gradient cannot be animated without repainting it, but a div can be
-// translated on the compositor for nothing. They borrow ambria-glow-drift, the
-// header glow's motion — slow, eased, reversing, and small enough that it is
-// depth rather than movement. Different durations and offsets, so the three
-// never line up into a pulse.
-function DriftBlob({ className, colour, seconds, delay }) {
-  return (
-    <div aria-hidden="true"
-      className={'absolute rounded-full ambria-glow-drift ' + className}
-      style={{
-        backgroundImage: 'radial-gradient(closest-side, ' + colour + ', transparent)',
-        animationDuration: seconds + 's',
-        animationDelay: delay + 's',
-      }} />
-  )
-}
-
-// The desktop ground.
-//
-// A photograph does not survive this screen. On a phone the wallet is a tall
-// column and the artwork fills it; across a 1500px content area the same
-// artwork becomes a wallet lying under the ledger, with rows and figures
-// reading over the top of it. What belongs behind an admin page is not a
-// subject at all — a surface, with enough going on that it is not flat and
-// little enough that nobody reads it.
-function AdminBackdrop() {
-  return (
-    <div aria-hidden="true" className="pointer-events-none fixed inset-0 -z-10 overflow-hidden"
-      style={{ backgroundColor: '#f7f9fd' }}>
-      <DriftBlob className="-top-[28%] -left-[12%] w-[62%] h-[85%]" colour="rgba(99,102,241,0.20)" seconds={26} delay={0} />
-      <DriftBlob className="-top-[22%] -right-[10%] w-[55%] h-[78%]" colour="rgba(56,189,248,0.17)" seconds={33} delay={-9} />
-      <DriftBlob className="-bottom-[32%] left-[22%] w-[58%] h-[75%]" colour="rgba(139,92,246,0.14)" seconds={29} delay={-17} />
-      {/* The floor, and only the colour fades into it. The blobs have to, or
-          the page ends on an edge where the ground runs out; the grid must not,
-          or it stops a third of the way up the screen and the ruling looks like
-          it ran out of ink. So the floor goes under the grid, not over it. */}
-      <div className="absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-b from-transparent to-[#f7f9fd]" />
-      <div className="absolute inset-0 ambria-grid" />
-    </div>
-  )
-}
-
 function WalletBackdrop({ inAdmin }) {
-  if (inAdmin) return <AdminBackdrop />
+  // Nothing on the desktop. The wallet is one tab of Finance and the others
+  // are plain, so a ground here made this one screen look like it belonged to
+  // a different section.
+  if (inAdmin) return null
   return (
     // Two pieces stacked, the foot taking whatever the artwork leaves. As
     // background layers the foot was painted across the whole element and the

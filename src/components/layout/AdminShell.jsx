@@ -478,16 +478,12 @@ function AdminShell({ profile, onSignOut }) {
             things you saw. 20% and no border is enough to mute what scrolls
             underneath without becoming a surface of its own; the blur does the
             rest of that work. */}
-        {/* Nothing of its own until the page moves, then frosted.
-
-            The ruling comes with the frosting rather than always: while the bar
-            is transparent the ground's own ruling shows through it, and a
-            second copy on top of that — pinned to the same viewport origin, so
-            landing exactly on it — would simply draw every line twice as dark.
-            Once the bar is opaque enough to hide the ground, it has to carry
-            the ruling itself, and only on a section whose page is ruled at all. */}
+        {/* Nothing of its own until the page moves, then frosted. Any tint at
+            rest makes the top of the page a lighter strip than the band below
+            it, which reads as two surfaces; once the page moves it has to hide
+            what is passing underneath. */}
         <div className={(pageScrolled
-          ? (active === 'expenses' ? 'ambria-grid ' : '') + 'bg-white/55 backdrop-blur-2xl backdrop-saturate-150 shadow-[0_1px_12px_rgba(15,23,42,0.06)] '
+          ? 'bg-white/55 backdrop-blur-2xl backdrop-saturate-150 shadow-[0_1px_12px_rgba(15,23,42,0.06)] '
           : '') +
           "hidden md:flex sticky top-0 z-30 shrink-0 h-14 items-center justify-between gap-4 px-8 transition-colors duration-200"}>
           {/* Two levels is all this shell has — the section, and the sub-tab
