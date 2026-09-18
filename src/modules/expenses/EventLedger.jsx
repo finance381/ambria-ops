@@ -55,6 +55,8 @@ function EventLedger(props) {
   var isSysAdmin = hasPerm(profile?.permsNew, 'admin.dashboard')
   var canMarkChecked = hasPerm(profile?.permsNew, 'finance.wallet.mark_checked')
   var [checkingExpId, setCheckingExpId] = useState(null)
+  var [checkingTxnId, setCheckingTxnId] = useState(null)
+  var [collDetail, setCollDetail] = useState(null)
   var [currentEventIds, setCurrentEventIds] = useState([])
   var { openExpenseDetail, expenseDetailModal } = useExpenseDetailModal(profile, isAdmin, function () { loadEntries(currentEventIds) }, props && props.onNavigateToExpenses)
   var propEventId = props && props.eventId ? String(props.eventId) : null
@@ -154,11 +156,6 @@ function EventLedger(props) {
     var rows = data || []
     var creatorIds = []
     rows.forEach(function (r) { if (r.created_by && creatorIds.indexOf(r.created_by) === -1) creatorIds.push(r.created_by) })
-    var nameById = {}
-    if (creatorIds.length > 0) {
-      var { data: profRows } = await supabase.from('profiles').select('id, name').in('id', creatorIds)
-      ;(profRows || []).forEach(function (p) { nameById[p.id] = p.name || null })
-    }
     // Expense-linked entries carry their own user-entered date (expenses.expense_date),
     // distinct from created_at (when the ledger row was actually logged).
     var expIds = []
@@ -177,12 +174,38 @@ function EventLedger(props) {
         expenseCheckById[e.id] = { checked_by: e.checked_by, checked_at: e.checked_at }
       })
     }
+    // Collection entries carry a wallet_transactions.id in reference_id — that
+    // row is what actually holds the receipt image, mode and checked flag.
+    var collTxnIds = []
+    rows.forEach(function (r) {
+      if (r.entry_type === 'collection' && r.reference_id && collTxnIds.indexOf(r.reference_id) === -1) collTxnIds.push(r.reference_id)
+    })
+    var wtById = {}
+    if (collTxnIds.length > 0) {
+      var { data: wtRows } = await supabase.from('wallet_transactions')
+        .select('id, amount_paise, payment_mode, receipt_no, status, performed_by, received_image_path, checked_by, checked_at')
+        .in('id', collTxnIds)
+      ;(wtRows || []).forEach(function (w) {
+        wtById[w.id] = w
+        if (w.performed_by && creatorIds.indexOf(w.performed_by) === -1) creatorIds.push(w.performed_by)
+      })
+    }
+    var nameById = {}
+    if (creatorIds.length > 0) {
+      var { data: profRows } = await supabase.from('profiles').select('id, name').in('id', creatorIds)
+      ;(profRows || []).forEach(function (p) { nameById[p.id] = p.name || null })
+    }
     rows = rows.map(function (r) {
       r._creatorName = nameById[r.created_by] || null
       r._entryDate = r.entry_type === 'expense' ? (expenseDateById[Number(r.reference_id)] || null) : null
       var chk = r.entry_type === 'expense' ? expenseCheckById[Number(r.reference_id)] : null
       r._checkedBy = chk ? chk.checked_by : null
       r._checkedAt = chk ? chk.checked_at : null
+      var wt = r.entry_type === 'collection' ? wtById[r.reference_id] : null
+      if (wt) {
+        r._wt = wt
+        r._collectorName = nameById[wt.performed_by] || null
+      }
       return r
     })
     setEntries(rows)
@@ -203,6 +226,25 @@ function EventLedger(props) {
         _checkedAt: nowChecked ? new Date().toISOString() : null,
       })
     }) })
+  }
+
+  async function toggleCollectionCheck(txnId) {
+    if (checkingTxnId) return
+    setCheckingTxnId(txnId)
+    var { data, error } = await supabase.rpc('fn_toggle_wallet_check', { p_transaction_id: txnId })
+    setCheckingTxnId(null)
+    if (error) { alert('Could not update: ' + error.message); return }
+    var nowChecked = !!data
+    setEntries(function (prev) { return prev.map(function (r) {
+      if (r.entry_type !== 'collection' || r.reference_id !== txnId) return r
+      var wt = Object.assign({}, r._wt, { checked_by: nowChecked ? profile.id : null, checked_at: nowChecked ? new Date().toISOString() : null })
+      return Object.assign({}, r, { _wt: wt })
+    }) })
+    setCollDetail(function (prev) {
+      if (!prev || prev.row.reference_id !== txnId) return prev
+      var wt = Object.assign({}, prev.row._wt, { checked_by: nowChecked ? profile.id : null, checked_at: nowChecked ? new Date().toISOString() : null })
+      return Object.assign({}, prev, { row: Object.assign({}, prev.row, { _wt: wt }) })
+    })
   }
 
   async function loadPlateEvents(ids) {
@@ -485,10 +527,15 @@ function EventLedger(props) {
                 <tbody>
                   {filteredEntries().map(function (e) {
                     var isExpRow = e.entry_type === 'expense' && !!e.reference_id
+                    var isCollRow = e.entry_type === 'collection' && !!e._wt
+                    var isClickable = isExpRow || isCollRow
                     return (
                       <tr key={e.id}
-                        onClick={function () { if (isExpRow) openExpenseDetail(Number(e.reference_id)) }}
-                        className={"border-b border-gray-100 last:border-b-0" + (isExpRow ? " cursor-pointer hover:bg-indigo-50/40 transition-colors" : "")}>
+                        onClick={function () {
+                          if (isExpRow) openExpenseDetail(Number(e.reference_id))
+                          else if (isCollRow) setCollDetail({ row: e })
+                        }}
+                        className={"border-b border-gray-100 last:border-b-0" + (isClickable ? " cursor-pointer hover:bg-indigo-50/40 transition-colors" : "")}>
                         <td className="px-3 py-2 text-xs text-gray-600 whitespace-nowrap">
                           {e._entryDate ? formatDate(e._entryDate) : formatDate(e.created_at)}
                           <div className="text-[10px] text-gray-400">Logged {formatDateTime(e.created_at)}</div>
@@ -506,6 +553,18 @@ function EventLedger(props) {
                                 canUncheck={e._checkedBy === profile?.id || isSysAdmin}
                                 busy={checkingExpId === Number(e.reference_id)}
                                 onToggle={function () { toggleExpenseCheck(Number(e.reference_id)) }}
+                              />
+                            </span>
+                          )}
+                          {isCollRow && (e._wt.checked_by || canMarkChecked) && (
+                            <span className="ml-1.5 inline-block" onClick={function (ev) { ev.stopPropagation() }}>
+                              <CheckedStamp
+                                checked={!!e._wt.checked_by}
+                                checkedAt={e._wt.checked_at}
+                                canToggle={canMarkChecked}
+                                canUncheck={e._wt.checked_by === profile?.id || isSysAdmin}
+                                busy={checkingTxnId === e.reference_id}
+                                onToggle={function () { toggleCollectionCheck(e.reference_id) }}
                               />
                             </span>
                           )}
@@ -534,6 +593,81 @@ function EventLedger(props) {
         </div>
       )}
       {expenseDetailModal}
+      {collDetail && (function () {
+        var r = collDetail.row
+        var wt = r._wt
+        var isCancelled = wt.status === 'cancelled'
+        var imgUrl = wt.received_image_path
+          ? supabase.storage.from('receipts').getPublicUrl(wt.received_image_path).data?.publicUrl
+          : null
+        var contract = contractByEventId[r.event_id]
+        return (
+          <div className="fixed inset-0 z-[9998] bg-black/60 flex items-end sm:items-center justify-center p-0 sm:p-4"
+            onClick={function () { setCollDetail(null) }}>
+            <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md p-5 space-y-3 max-h-[90vh] overflow-y-auto"
+              onClick={function (ev) { ev.stopPropagation() }}>
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <h3 className="text-base font-bold text-gray-900">🎯 Event Collection</h3>
+                  {eventDetail && (
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      {eventDetail.event_name}{eventDetail.client_name ? ' · ' + eventDetail.client_name : ''}
+                      {contract && contract.department ? ' · ' + contract.department : ''}
+                    </p>
+                  )}
+                </div>
+                {isCancelled && <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-rose-100 text-rose-700">Cancelled</span>}
+              </div>
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div>
+                  <div className="text-[11px] text-gray-400 uppercase tracking-wide">Amount</div>
+                  <div className="font-semibold text-gray-900">{formatPoints(wt.amount_paise)}</div>
+                </div>
+                <div>
+                  <div className="text-[11px] text-gray-400 uppercase tracking-wide">Mode</div>
+                  <div className="font-semibold text-gray-900">{wt.payment_mode || '—'}</div>
+                </div>
+                <div>
+                  <div className="text-[11px] text-gray-400 uppercase tracking-wide">Collected by</div>
+                  <div className="font-semibold text-gray-900">{r._collectorName || '—'}</div>
+                </div>
+                <div>
+                  <div className="text-[11px] text-gray-400 uppercase tracking-wide">Date</div>
+                  <div className="font-semibold text-gray-900">{formatDateTime(r.created_at)}</div>
+                </div>
+                {wt.receipt_no && (
+                  <div className="col-span-2">
+                    <div className="text-[11px] text-gray-400 uppercase tracking-wide">Receipt No.</div>
+                    <div className="font-semibold text-gray-900">{wt.receipt_no}</div>
+                  </div>
+                )}
+              </div>
+              {imgUrl && (
+                <a href={imgUrl} target="_blank" rel="noopener noreferrer" className="block">
+                  <img src={imgUrl} alt="Receipt" className="w-full rounded-lg border border-gray-200" />
+                </a>
+              )}
+              {(wt.checked_by || canMarkChecked) && (
+                <div className="flex items-center justify-between pt-2 border-t border-gray-100">
+                  <span className="text-[12px] font-medium text-slate-500">Finance check</span>
+                  <CheckedStamp
+                    checked={!!wt.checked_by}
+                    checkedAt={wt.checked_at}
+                    canToggle={canMarkChecked}
+                    canUncheck={wt.checked_by === profile?.id || isSysAdmin}
+                    busy={checkingTxnId === r.reference_id}
+                    onToggle={function () { toggleCollectionCheck(r.reference_id) }}
+                  />
+                </div>
+              )}
+              <button onClick={function () { setCollDetail(null) }}
+                className="w-full py-2.5 rounded-lg text-sm font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 transition-colors">
+                Close
+              </button>
+            </div>
+          </div>
+        )
+      })()}
     </div>
   )
 }
