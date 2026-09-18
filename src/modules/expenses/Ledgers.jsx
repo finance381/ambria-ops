@@ -9,8 +9,18 @@ import { hasPerm } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
 import { useExpenseDetailModal } from '../../hooks/useExpenseDetailModal.jsx'
 import SearchField from '../../components/ui/SearchField'
+import Icon from '../../components/ui/Icon'
 
 var STATUS_LABELS = { recorded: 'Recorded', flagged: 'Resubmit', acknowledged: 'Acknowledged', deducted: 'Deducted' }
+
+// One template for the header and all three levels of row. It was written out
+// four times, which is four chances for a column to stop lining up with its own
+// heading. The money columns are wider than they were: a lakh in points is
+// eleven characters and 80px was cutting them to the edge of the cell.
+var COLS = 'grid grid-cols-[1fr_104px_104px_104px_120px_44px] gap-2'
+
+// The per-row export. Three of them, one per level.
+var PDF_BTN = 'shrink-0 px-2.5 inline-flex items-center gap-1 border-l border-slate-100 text-[11px] font-bold text-rose-600 hover:bg-rose-50 disabled:opacity-40 transition-colors'
 var STATUS_COLORS = {
   recorded: 'bg-amber-100 text-amber-700',
   flagged: 'bg-orange-100 text-orange-700',
@@ -806,8 +816,15 @@ function Ledgers({ profile, onNavigateToExpenses }) {
   function PresetChip(props) {
     var active = datePreset === props.k
     return (
-      <button onClick={function () { applyPreset(props.k) }}
-        className={"px-2.5 py-1 text-[11px] font-semibold rounded-md transition-colors " + (active ? "bg-gray-900 text-white" : "bg-white border border-gray-200 text-gray-500 hover:text-gray-800")}>
+      /* One group, so the four read as one choice. An unpicked one leans
+         towards the white pill it would become rather than only darkening its
+         text; the picked one does not answer the pointer, because pressing it
+         again does nothing. */
+      <button type="button" onClick={function () { applyPreset(props.k) }} aria-pressed={active}
+        className={"h-9 px-4 text-[12.5px] font-bold rounded-lg transition-all duration-150 " +
+          (active
+            ? "bg-white text-indigo-700 shadow-[0_1px_3px_rgba(15,23,42,0.10)]"
+            : "text-slate-500 hover:text-slate-900 hover:bg-white/70")}>
         {props.label}
       </button>
     )
@@ -822,77 +839,103 @@ function Ledgers({ profile, onNavigateToExpenses }) {
       </div>
 
       <div className="sticky top-0 z-10 bg-gray-50 pt-1 pb-3 border-b border-gray-200 space-y-2">
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <div className="bg-green-50 border border-green-200 rounded-xl px-3 py-2 text-center">
-            <p className="text-[9px] font-bold text-green-500 uppercase">Debits Acknowledged</p>
-            <p className="text-base font-bold text-green-700">{formatPoints(totals.committed)}</p>
+        {/* Left-aligned, and the figure given the size of the thing it is. A
+            9px label centred over a 16px number made four cards you had to lean
+            in to read; ranged left they also line up with everything below
+            them. */}
+        <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
+          <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3">
+            <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-[0.08em]">Debits Acknowledged</p>
+            <p className="mt-1.5 text-[19px] font-extrabold text-emerald-700 tabular-nums leading-none" data-notranslate>{formatPoints(totals.committed)}</p>
           </div>
-          <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 text-center">
-            <p className="text-[9px] font-bold text-amber-500 uppercase">Debits Pending</p>
-            <p className="text-base font-bold text-amber-700">{formatPoints(totals.pending)}</p>
+          <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+            <p className="text-[10px] font-bold text-amber-600 uppercase tracking-[0.08em]">Debits Pending</p>
+            <p className="mt-1.5 text-[19px] font-extrabold text-amber-700 tabular-nums leading-none" data-notranslate>{formatPoints(totals.pending)}</p>
           </div>
-          <div className="bg-rose-50 border border-rose-200 rounded-xl px-3 py-2 text-center">
-            <p className="text-[9px] font-bold text-rose-500 uppercase">Total Credits</p>
-            <p className="text-base font-bold text-rose-700">{formatPoints(totals.credit)}</p>
+          <div className="bg-rose-50 border border-rose-200 rounded-xl px-4 py-3">
+            <p className="text-[10px] font-bold text-rose-600 uppercase tracking-[0.08em]">Total Credits</p>
+            <p className="mt-1.5 text-[19px] font-extrabold text-rose-700 tabular-nums leading-none" data-notranslate>{formatPoints(totals.credit)}</p>
           </div>
-          <div className="bg-indigo-50 border border-indigo-200 rounded-xl px-3 py-2 text-center">
-            <p className="text-[9px] font-bold text-indigo-400 uppercase">Net Total</p>
-            <p className="text-base font-bold text-indigo-700">{formatPoints(totals.total)}</p>
+          <div className="bg-indigo-50 border border-indigo-200 rounded-xl px-4 py-3">
+            <p className="text-[10px] font-bold text-indigo-600 uppercase tracking-[0.08em]">Net Total</p>
+            <p className="mt-1.5 text-[19px] font-extrabold text-indigo-700 tabular-nums leading-none" data-notranslate>{formatPoints(totals.total)}</p>
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-1.5">
-          <PresetChip k="month" label="This month" />
-          <PresetChip k="lastMonth" label="Last month" />
-          <PresetChip k="ytd" label="YTD" />
-          <PresetChip k="custom" label="Custom" />
+        {/* One toolbar. The period, what to look in it for, and what to take
+            away with you were three separate rows of controls at three
+            different sizes. */}
+        <div className="flex flex-wrap items-center gap-2.5">
+          <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-xl">
+            <PresetChip k="month" label="This month" />
+            <PresetChip k="lastMonth" label="Last month" />
+            <PresetChip k="ytd" label="YTD" />
+            <PresetChip k="custom" label="Custom" />
+          </div>
           {datePreset === 'custom' && (
             <>
               <input type="date" value={dateFrom} onChange={function (e) { setDateFrom(e.target.value) }}
-                className="px-2 py-1 border border-gray-200 rounded-md text-[11px]" style={{ fontSize: '16px' }} />
+                className="h-9 px-3 bg-white border border-slate-200 rounded-lg text-[12.5px] text-slate-700 hover:border-slate-300 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-[border-color,box-shadow] duration-150 flex-1 min-w-[130px]" style={{ fontSize: '16px' }} />
               <input type="date" value={dateTo} onChange={function (e) { setDateTo(e.target.value) }}
-                className="px-2 py-1 border border-gray-200 rounded-md text-[11px]" style={{ fontSize: '16px' }} />
+                className="h-9 px-3 bg-white border border-slate-200 rounded-lg text-[12.5px] text-slate-700 hover:border-slate-300 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-[border-color,box-shadow] duration-150 flex-1 min-w-[130px]" style={{ fontSize: '16px' }} />
             </>
           )}
+          <div className="flex-1 min-w-[220px]">
+            <SearchField
+              value={search}
+              onChange={function (v) { setSearch(v) }}
+              placeholder="Search dept / type / sub-type..."
+              className="w-full"
+            />
+          </div>
         </div>
 
-        <SearchField
-          value={search}
-          onChange={function (v) { setSearch(v) }}
-          placeholder="Search dept / type / sub-type..."
-          className="w-full"
-        />
-
-        <div className="flex flex-wrap gap-1.5 items-center">
+        <div className="flex flex-wrap gap-2.5 items-center">
           <select value={userFilter} onChange={function (e) { setUserFilter(e.target.value) }}
-            className="px-2 py-1 text-[11px] border border-gray-200 rounded-md flex-1 min-w-[100px]" style={{ fontSize: '16px' }}>
+            aria-label="Filter by user"
+            className="h-9 px-3 bg-white border border-slate-200 rounded-lg text-[12.5px] text-slate-700 hover:border-slate-300 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-[border-color,box-shadow] duration-150 flex-1 min-w-[130px]" style={{ fontSize: '16px' }}>
             <option value="">All users</option>
             {users.map(function (u) { return <option key={u.id} value={u.id}>{u.name}</option> })}
           </select>
           <select value={venueFilter} onChange={function (e) { setVenueFilter(e.target.value) }}
-            className="px-2 py-1 text-[11px] border border-gray-200 rounded-md flex-1 min-w-[100px]" style={{ fontSize: '16px' }}>
+            aria-label="Filter by venue"
+            className="h-9 px-3 bg-white border border-slate-200 rounded-lg text-[12.5px] text-slate-700 hover:border-slate-300 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-[border-color,box-shadow] duration-150 flex-1 min-w-[130px]" style={{ fontSize: '16px' }}>
             <option value="">All venues</option>
             {venues.map(function (v) { return <option key={v.id} value={v.id}>{v.code ? (v.code + ' — ' + v.name) : v.name}</option> })}
           </select>
           <select value={statusFilter} onChange={function (e) { setStatusFilter(e.target.value) }}
-            className="px-2 py-1 text-[11px] border border-gray-200 rounded-md flex-1 min-w-[100px]" style={{ fontSize: '16px' }}>
+            aria-label="Filter by status"
+            className="h-9 px-3 bg-white border border-slate-200 rounded-lg text-[12.5px] text-slate-700 hover:border-slate-300 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-[border-color,box-shadow] duration-150 flex-1 min-w-[130px]" style={{ fontSize: '16px' }}>
             <option value="">All status</option>
             <option value="recorded">Recorded</option>
             <option value="flagged">Resubmit</option>
             <option value="acknowledged">Acknowledged</option>
             <option value="deducted">Deducted</option>
           </select>
-          <button onClick={function () { setPendingOnly(!pendingOnly) }}
-            className={"px-2 py-1 text-[11px] font-semibold rounded-md transition-colors " + (pendingOnly ? "bg-amber-100 border border-amber-300 text-amber-700" : "bg-white border border-gray-200 text-gray-500")}>
+          <button type="button" onClick={function () { setPendingOnly(!pendingOnly) }} aria-pressed={pendingOnly}
+            className={"h-9 px-3.5 inline-flex items-center gap-2 text-[12.5px] font-bold rounded-lg border transition-all duration-150 " +
+              (pendingOnly
+                ? "bg-amber-50 border-amber-300 text-amber-800"
+                : "bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:text-slate-900")}>
+            {/* A switch, so its state is visible without having to remember
+                what the unpressed colour looked like. */}
+            <span aria-hidden="true" className={"w-8 h-[18px] rounded-full p-0.5 transition-colors " + (pendingOnly ? "bg-amber-500" : "bg-slate-300")}>
+              <span className={"block w-[14px] h-[14px] rounded-full bg-white transition-transform " + (pendingOnly ? "translate-x-[14px]" : "")} />
+            </span>
             Pending only
           </button>
-          <button onClick={exportListCSV} disabled={!deptGroups.length}
-            className="px-2 py-1 text-[11px] font-semibold text-green-600 bg-green-50 border border-green-200 rounded-md hover:bg-green-100 disabled:opacity-40">
-            ↓ CSV
+          {/* Both of these do the same harmless thing, so they look the same.
+              Green and red on a pair of downloads read as a verdict on the file,
+              when the only difference is the format the word already names. */}
+          <button type="button" onClick={exportListCSV} disabled={!deptGroups.length}
+            className="h-9 px-3.5 inline-flex items-center gap-2 text-[12.5px] font-bold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 hover:border-slate-300 disabled:opacity-40 transition-all duration-150">
+            <Icon name="download" size={14} className="text-slate-400" />
+            CSV
           </button>
-          <button onClick={exportListPDF} disabled={!visibleGroups.length || pdfBusy}
-            className="px-2 py-1 text-[11px] font-semibold text-red-600 bg-red-50 border border-red-200 rounded-md hover:bg-red-100 disabled:opacity-40">
-            {pdfBusy ? '…' : '↓ PDF'}
+          <button type="button" onClick={exportListPDF} disabled={!visibleGroups.length || pdfBusy}
+            className="h-9 px-3.5 inline-flex items-center gap-2 text-[12.5px] font-bold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 hover:border-slate-300 disabled:opacity-40 transition-all duration-150">
+            <Icon name={pdfBusy ? 'refresh' : 'fileText'} size={14} className="text-slate-400" />
+            {pdfBusy ? 'Generating…' : 'PDF'}
           </button>
         </div>
       </div>
@@ -902,47 +945,56 @@ function Ledgers({ profile, onNavigateToExpenses }) {
       ) : visibleGroups.length === 0 ? (
         <p className="text-center text-sm text-gray-400 py-8">No matches in this range</p>
       ) : (
-        <div className="space-y-1.5">
-          <div className="flex items-stretch px-1">
-            <div className="flex-1 grid grid-cols-[1fr_80px_80px_80px_100px_36px] gap-2 px-3 pb-1">
-              <span></span>
-              <span className="text-[9px] font-bold text-gray-400 uppercase text-right">Acknowledged</span>
-              <span className="text-[9px] font-bold text-gray-400 uppercase text-right">Pending</span>
-              <span className="text-[9px] font-bold text-gray-400 uppercase text-right">Credit</span>
-              <span className="text-[9px] font-bold text-gray-400 uppercase text-right">Net Total</span>
-              <span className="text-[9px] font-bold text-gray-400 uppercase text-right">#</span>
+        <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
+          {/* One table, not a stack of cards. Every department used to carry its
+              own border and its own rounded corners, so four departments were
+              four objects with four sets of columns that only happened to line
+              up with each other. */}
+          <div className="flex items-stretch bg-slate-50 border-b border-slate-200">
+            <div className={"flex-1 " + COLS + " px-3 py-2.5"}>
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em]">Department / Type</span>
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] text-right">Acknowledged</span>
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] text-right">Pending</span>
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] text-right">Credit</span>
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] text-right">Net Total</span>
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] text-right">#</span>
             </div>
-            <span className="px-2 text-[9px] font-bold text-gray-400 uppercase">Export</span>
+            <span className="shrink-0 px-2.5 py-2.5 text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em]">Export</span>
           </div>
           {visibleGroups.map(function (g) {
             var deptCollapsed = collapsedDepts[g.key]
             var delta = deptDelta[g.key] || 0
             return (
-              <div key={g.key} className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-                <div className="flex items-stretch hover:bg-gray-50 transition-colors">
+              <div key={g.key} className="border-t border-slate-100 first:border-t-0">
+                <div className="flex items-stretch hover:bg-slate-50 transition-colors">
                   <button onClick={function () { toggleDept(g.key, g.allocs) }}
-                    className="flex-1 grid grid-cols-[1fr_80px_80px_80px_100px_36px] gap-2 items-center px-3 py-2 text-left">
+                    className={"flex-1 " + COLS + " items-center px-3 py-2.5 text-left"}>
                     <div className="flex items-center gap-2 min-w-0">
-                      <span className="text-xs text-gray-400 flex-shrink-0">{deptCollapsed ? '▸' : '▾'}</span>
-                      <span className="text-sm font-bold text-gray-900 truncate">{g.deptName}</span>
-                      <span className="text-[10px] text-gray-400 flex-shrink-0">{g.typeGroups.length}</span>
+                      {/* A drawn chevron that turns, not two different characters.
+                          ▸ and ▾ are different glyphs at different widths, so the
+                          label beside them shifted a pixel on every expand. */}
+                      <Icon name="chevronRight" size={14}
+                        className={"shrink-0 text-slate-400 transition-transform duration-150 " + (deptCollapsed ? "" : "rotate-90")} />
+                      <span className="text-[13.5px] font-bold text-slate-900 truncate">{g.deptName}</span>
+                      <span className="shrink-0 min-w-[20px] px-1.5 py-0.5 rounded-md bg-slate-100 text-[10.5px] font-bold text-slate-500 tabular-nums text-center" data-notranslate>{g.typeGroups.length}</span>
                       {delta > 0 && (
                         <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700 font-bold flex-shrink-0 animate-pulse">
                           +{delta}
                         </span>
                       )}
                     </div>
-                    <span className="text-xs text-right text-green-700 tabular-nums whitespace-nowrap">{formatPoints(g.committed)}</span>
-                    <span className="text-xs text-right text-amber-700 tabular-nums whitespace-nowrap">{formatPoints(g.pending)}</span>
-                    <span className="text-xs text-right text-rose-700 tabular-nums whitespace-nowrap">{g.credit > 0 ? formatPoints(g.credit) : '—'}</span>
-                    <span className="text-xs text-right font-bold text-gray-900 tabular-nums whitespace-nowrap">{formatPoints(g.total)}</span>
-                    <span className="text-[10px] text-right text-gray-400">{g.allocs}</span>
+                    <span className="text-[12.5px] text-right font-semibold text-emerald-700 tabular-nums whitespace-nowrap" data-notranslate>{formatPoints(g.committed)}</span>
+                    <span className="text-[12.5px] text-right font-semibold text-amber-700 tabular-nums whitespace-nowrap" data-notranslate>{formatPoints(g.pending)}</span>
+                    <span className="text-[12.5px] text-right font-semibold text-rose-700 tabular-nums whitespace-nowrap" data-notranslate>{g.credit > 0 ? formatPoints(g.credit) : '—'}</span>
+                    <span className="text-[13px] text-right font-extrabold text-slate-900 tabular-nums whitespace-nowrap" data-notranslate>{formatPoints(g.total)}</span>
+                    <span className="text-[11px] text-right text-slate-400 tabular-nums" data-notranslate>{g.allocs}</span>
                   </button>
                   <button onClick={function (e) { e.stopPropagation(); exportScopedPDF(g.deptId) }}
                     disabled={pdfBusy}
                     title="Open department PDF in new tab"
-                    className="px-2 border-l border-gray-100 text-[10px] font-semibold text-rose-500 hover:bg-rose-50 disabled:opacity-40">
-                    ↓ PDF
+                    className={PDF_BTN}>
+                    <Icon name="fileText" size={13} />
+                    PDF
                   </button>
                 </div>
                 {!deptCollapsed && g.typeGroups.map(function (t) {
@@ -951,47 +1003,50 @@ function Ledgers({ profile, onNavigateToExpenses }) {
                   var typeName = t.typeId ? (typeMap[t.typeId] || 'Untyped') : 'Untyped'
                   return (
                     <div key={t.typeKey}>
-                      <div className="flex items-stretch border-t border-gray-100 bg-gray-50 hover:bg-gray-100 transition-colors">
+                      <div className="flex items-stretch border-t border-slate-100 bg-slate-50/70 hover:bg-slate-100 transition-colors">
                         <button onClick={function () { toggleType(g.key, t.typeKey) }}
-                          className="flex-1 grid grid-cols-[1fr_80px_80px_80px_100px_36px] gap-2 items-center px-3 py-1.5 pl-9 text-left">
+                          className={"flex-1 " + COLS + " items-center px-3 py-2 pl-9 text-left"}>
                           <div className="flex items-center gap-2 min-w-0">
-                            <span className="text-[10px] text-gray-400 flex-shrink-0">{typeCollapsed ? '▸' : '▾'}</span>
-                            <span className="text-xs font-semibold text-gray-800 truncate">{typeName}</span>
-                            <span className="text-[10px] text-gray-400 flex-shrink-0">{t.subRows.length}</span>
+                            <Icon name="chevronRight" size={13}
+                              className={"shrink-0 text-slate-400 transition-transform duration-150 " + (typeCollapsed ? "" : "rotate-90")} />
+                            <span className="text-[12.5px] font-semibold text-slate-800 truncate">{typeName}</span>
+                            <span className="shrink-0 min-w-[20px] px-1.5 py-0.5 rounded-md bg-white text-[10.5px] font-bold text-slate-500 tabular-nums text-center" data-notranslate>{t.subRows.length}</span>
                           </div>
-                          <span className="text-[11px] text-right text-green-700 tabular-nums whitespace-nowrap">{formatPoints(t.committed)}</span>
-                          <span className="text-[11px] text-right text-amber-700 tabular-nums whitespace-nowrap">{formatPoints(t.pending)}</span>
-                          <span className="text-[11px] text-right text-rose-700 tabular-nums whitespace-nowrap">{t.credit > 0 ? formatPoints(t.credit) : '—'}</span>
-                          <span className="text-[11px] text-right font-bold text-gray-800 tabular-nums whitespace-nowrap">{formatPoints(t.total)}</span>
-                          <span className="text-[10px] text-right text-gray-400">{t.allocs}</span>
+                          <span className="text-[12px] text-right text-emerald-700 tabular-nums whitespace-nowrap" data-notranslate>{formatPoints(t.committed)}</span>
+                          <span className="text-[12px] text-right text-amber-700 tabular-nums whitespace-nowrap" data-notranslate>{formatPoints(t.pending)}</span>
+                          <span className="text-[12px] text-right text-rose-700 tabular-nums whitespace-nowrap" data-notranslate>{t.credit > 0 ? formatPoints(t.credit) : '—'}</span>
+                          <span className="text-[12px] text-right font-bold text-slate-800 tabular-nums whitespace-nowrap" data-notranslate>{formatPoints(t.total)}</span>
+                          <span className="text-[11px] text-right text-slate-400 tabular-nums" data-notranslate>{t.allocs}</span>
                         </button>
                         <button onClick={function (e) { e.stopPropagation(); exportScopedPDF(g.deptId, t.typeId) }}
                           disabled={pdfBusy}
                           title="Open expense-type PDF in new tab"
-                          className="px-2 border-l border-gray-100 text-[10px] font-semibold text-rose-500 hover:bg-rose-50 disabled:opacity-40">
-                          ↓ PDF
+                          className={PDF_BTN}>
+                          <Icon name="fileText" size={13} />
+                          PDF
                         </button>
                       </div>
                       {!typeCollapsed && t.subRows.map(function (r, i) {
                         var subTypeName = r.subTypeId ? (subTypeMap[r.subTypeId] || '—') : '—'
                         return (
-                          <div key={i} className="flex items-stretch border-t border-gray-100 hover:bg-indigo-50 transition-colors">
+                          <div key={i} className="flex items-stretch border-t border-slate-100 hover:bg-indigo-50/60 transition-colors">
                             <button onClick={function () { openRow(g, r) }}
-                              className="flex-1 grid grid-cols-[1fr_80px_80px_80px_100px_36px] gap-2 items-center px-3 py-2 pl-14 text-left">
+                              className={"flex-1 " + COLS + " items-center px-3 py-2 pl-14 text-left"}>
                               <div className="min-w-0">
-                                <p className="text-xs text-gray-700 truncate">{subTypeName}</p>
+                                <p className="text-[12.5px] text-slate-600 truncate">{subTypeName}</p>
                               </div>
-                              <span className="text-xs text-right text-green-700 tabular-nums whitespace-nowrap">{formatPoints(r.committed)}</span>
-                              <span className="text-xs text-right text-amber-700 tabular-nums whitespace-nowrap">{formatPoints(r.pending)}</span>
-                              <span className="text-xs text-right text-rose-700 tabular-nums whitespace-nowrap">{r.credit > 0 ? formatPoints(r.credit) : '—'}</span>
-                              <span className="text-xs text-right font-bold text-gray-800 tabular-nums whitespace-nowrap">{formatPoints(r.total)}</span>
-                              <span className="text-[10px] text-right text-gray-400">{r.allocs}</span>
+                              <span className="text-[12px] text-right text-emerald-700 tabular-nums whitespace-nowrap" data-notranslate>{formatPoints(r.committed)}</span>
+                              <span className="text-[12px] text-right text-amber-700 tabular-nums whitespace-nowrap" data-notranslate>{formatPoints(r.pending)}</span>
+                              <span className="text-[12px] text-right text-rose-700 tabular-nums whitespace-nowrap" data-notranslate>{r.credit > 0 ? formatPoints(r.credit) : '—'}</span>
+                              <span className="text-[12px] text-right font-bold text-slate-800 tabular-nums whitespace-nowrap" data-notranslate>{formatPoints(r.total)}</span>
+                              <span className="text-[11px] text-right text-slate-400 tabular-nums" data-notranslate>{r.allocs}</span>
                             </button>
                             <button onClick={function (e) { e.stopPropagation(); exportScopedPDF(g.deptId, r.typeId, r.subTypeId) }}
                               disabled={pdfBusy}
                               title="Open sub-type PDF in new tab"
-                              className="px-2 border-l border-gray-100 text-[10px] font-semibold text-rose-500 hover:bg-rose-50 disabled:opacity-40">
-                              ↓ PDF
+                              className={PDF_BTN}>
+                              <Icon name="fileText" size={13} />
+                              PDF
                             </button>
                           </div>
                         )
@@ -1003,6 +1058,16 @@ function Ledgers({ profile, onNavigateToExpenses }) {
             )
           })}
         </div>
+      )}
+
+      {visibleGroups.length > 0 && (
+        <p className="text-[12px] text-slate-500">
+          Showing
+          <span className="mx-1 font-bold text-slate-900 tabular-nums" data-notranslate>{visibleGroups.length}</span>
+          of
+          <span className="mx-1 font-bold text-slate-900 tabular-nums" data-notranslate>{deptGroups.length}</span>
+          departments
+        </p>
       )}
     </div>
   )
