@@ -15,9 +15,14 @@ var STATUS_LABELS = { recorded: 'Recorded', flagged: 'Resubmit', acknowledged: '
 
 // One template for the header and all three levels of row. It was written out
 // four times, which is four chances for a column to stop lining up with its own
-// heading. The money columns are wider than they were: a lakh in points is
-// eleven characters and 80px was cutting them to the edge of the cell.
-var COLS = 'grid grid-cols-[1fr_104px_104px_104px_120px_44px] gap-2'
+// heading.
+//
+// The money columns have to hold the figure AND its unit, which is what they
+// were last sized without: "1,08,919.65" is about 95px at 12.5px in tabular
+// figures, and the unit slot and its gap add another 38. At 104px the content
+// was wider than its own track, so it overflowed into the column beside it and
+// pushed Net Total off the end of the row.
+var COLS = 'grid grid-cols-[1fr_140px_140px_140px_150px_44px] gap-2'
 
 // A figure in the colour of its own meaning: settled, waiting, credited, and
 // the answer. The colour is on the number and nowhere else — a filled pill
