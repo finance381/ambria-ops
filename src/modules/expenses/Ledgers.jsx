@@ -809,12 +809,13 @@ function Ledgers({ profile, onNavigateToExpenses }) {
           <p className="mt-0.5 text-[12.5px] text-slate-500">{drillGroup.typeName} › {drillGroup.subTypeName}</p>
         </div>
 
-        {/* Three readings of one sub-type, so they get one shape. The card
-            carries a wash of its own colour here rather than sitting white:
-            there are three of them and nothing else on the row, so the tint is
-            telling them apart rather than competing with a table. */}
+        {/* Three readings of one sub-type, so they get one shape — the same one
+            the four figures at the top of the ledger take. The card stays white
+            and the colour sits on the glyph and the number: a filled card puts
+            the tint behind the only part that differs between the three, which
+            is the figure. */}
         <div className="grid grid-cols-3 gap-3">
-          <div className="flex items-center gap-3.5 px-4 py-3.5 rounded-2xl border bg-indigo-50/60 border-indigo-100">
+          <div className="flex items-center gap-3.5 px-4 py-3.5 rounded-2xl border bg-white border-slate-200">
             <span className="shrink-0 w-11 h-11 rounded-xl inline-flex items-center justify-center bg-indigo-100 text-indigo-600">
               <Icon name="chart" size={20} />
             </span>
@@ -823,7 +824,7 @@ function Ledgers({ profile, onNavigateToExpenses }) {
               <p className="mt-2 text-[19px] font-extrabold text-indigo-700 tabular-nums leading-none" data-notranslate>{formatPoints(drillGroup.total)}</p>
             </div>
           </div>
-          <div className="flex items-center gap-3.5 px-4 py-3.5 rounded-2xl border bg-emerald-50/60 border-emerald-100">
+          <div className="flex items-center gap-3.5 px-4 py-3.5 rounded-2xl border bg-white border-slate-200">
             <span className="shrink-0 w-11 h-11 rounded-xl inline-flex items-center justify-center bg-emerald-100 text-emerald-600">
               <Icon name="checkCircle" size={20} />
             </span>
@@ -832,7 +833,7 @@ function Ledgers({ profile, onNavigateToExpenses }) {
               <p className="mt-2 text-[19px] font-extrabold text-emerald-700 tabular-nums leading-none" data-notranslate>{formatPoints(drillGroup.committed)}</p>
             </div>
           </div>
-          <div className="flex items-center gap-3.5 px-4 py-3.5 rounded-2xl border bg-amber-50/60 border-amber-100">
+          <div className="flex items-center gap-3.5 px-4 py-3.5 rounded-2xl border bg-white border-slate-200">
             <span className="shrink-0 w-11 h-11 rounded-xl inline-flex items-center justify-center bg-amber-100 text-amber-600">
               <Icon name="clock" size={20} />
             </span>
@@ -926,7 +927,7 @@ function Ledgers({ profile, onNavigateToExpenses }) {
                         the one thing on this row you scan a column of. */}
                     <div className="shrink-0 self-center flex items-stretch gap-4">
                       <span aria-hidden="true" className="w-px self-stretch bg-slate-200" />
-                      <div className="px-4 py-2.5 rounded-xl bg-indigo-50/60 text-right">
+                      <div className="px-4 py-2.5 text-right">
                         <p className="text-[11.5px] font-medium text-slate-500 leading-none">Amount</p>
                         <p className="mt-2 text-[17px] font-extrabold text-slate-900 tabular-nums leading-none" data-notranslate>{formatPoints(r.amount_paise)}</p>
                       </div>
