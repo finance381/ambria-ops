@@ -12,15 +12,36 @@ export function useExpenseDetailModal(profile, isAdmin, onRefresh, onNavigateToE
   var [target, setTarget] = useState(null)
   var [loading, setLoading] = useState(false)
 
-  async function openExpenseDetail(expenseId) {
+  // `seed` is whatever the caller already has on screen.
+  //
+  // Every one of these overlays is opened from a row that was drawn from a
+  // query — the description, the amount, the date and the status are on the
+  // screen at the moment of the click. Waiting on a round trip before showing
+  // any of it meant a second of "Loading expense…" for facts you had just
+  // pressed.
+  //
+  // The fetch still runs, for the things a ledger row has no reason to carry:
+  // the receipts, the tax split, the allocations, who reviewed it and when. It
+  // replaces the seed when it lands. The id does not change, so ExpenseDetail
+  // is not remounted and nothing already drawn flickers.
+  //
+  // Callers with nothing to hand over simply pass nothing, and get the spinner
+  // they had before.
+  async function openExpenseDetail(expenseId, seed) {
     if (!expenseId) return
-    setLoading(true)
-    setTarget({ _placeholder: true, id: expenseId })
+    setLoading(!seed)
+    setTarget(seed ? Object.assign({}, seed, { id: expenseId }) : { _placeholder: true, id: expenseId })
     var { data: row, error } = await supabase.from('expenses')
       .select(EXPENSE_DETAIL_SELECT)
       .eq('id', Number(expenseId)).maybeSingle()
     setLoading(false)
-    if (error || !row) { alert('Expense not found: ' + (error?.message || 'missing')); setTarget(null); return }
+    if (error || !row) {
+      // With a seed on screen there is something to read and something to
+      // close; taking it away to announce a failed refresh is worse than the
+      // failure.
+      if (!seed) { alert('Expense not found: ' + (error?.message || 'missing')); setTarget(null) }
+      return
+    }
     setTarget(row)
   }
 
@@ -35,7 +56,17 @@ export function useExpenseDetailModal(profile, isAdmin, onRefresh, onNavigateToE
   var expenseDetailModal = !target ? null : createPortal((
     <div className="fixed inset-0 z-[9998] bg-black/70 flex items-start sm:items-center justify-center p-0 sm:p-4 overflow-y-auto"
       onClick={function () { closeExpenseDetail(false) }}>
-      <div className="relative bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-2xl p-4 sm:p-5 min-h-screen sm:min-h-0 sm:max-h-[92vh] overflow-y-auto"
+      {/* Wide enough for the detail to use its own two-column layout.
+
+          ExpenseDetail is a @container and splits into two columns at 48rem. At
+          max-w-2xl the container was about 630px once padding was off, so it
+          never did — every panel stacked, the panel ran twice the height it
+          needed, and a modal that fits on a screen had a scrollbar down the
+          side of it.
+
+          The height cap stays as a floor rather than as the plan: an expense
+          with a dozen allocations can outgrow any screen. */}
+      <div className="relative bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-5xl p-4 sm:p-5 min-h-screen sm:min-h-0 sm:max-h-[92vh] overflow-y-auto"
         onClick={function (ev) { ev.stopPropagation() }}>
         {/* The overlay owns its close control. It used to lean on the Back link
             inside ExpenseDetail, which left no way out on a phone, where the

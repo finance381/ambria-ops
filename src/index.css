@@ -117,6 +117,22 @@
   }
   .ambria-rise { animation: ambria-rise .2s cubic-bezier(.22,.61,.36,1) backwards; }
 
+  /* The press ripple. Spreads from where the pointer went down and fades as it
+     goes, so the control is clear again by the time whatever it does has
+     happened.
+
+     The dot is sized and placed in JS — it depends on the control and on where
+     inside it you pressed — and only the motion lives here. Eased out rather
+     than linear: ink spreads fastest the moment it lands. */
+  @keyframes ambria-ripple {
+    from { transform: scale(0); opacity: 0.18; }
+    to   { transform: scale(1); opacity: 0; }
+  }
+  .ambria-ripple-dot {
+    animation: ambria-ripple .55s cubic-bezier(.22,.61,.36,1) forwards;
+    will-change: transform, opacity;
+  }
+
   /* A frosted chip. Where .ambria-glass tints toward the canvas so a full-width
      bar reads as page furniture, this leans white: a small pill has to read as
      a raised object, not a hole in the page. The three shadows do the work a
@@ -419,5 +435,9 @@
        motion — nothing is communicated by it. */
     .ambria-wave-slow, .ambria-wave-fast, .ambria-wave-drift, .ambria-glow-drift,
     .ambria-rail-drift, .ambria-sheen { animation: none; }
+    /* The ripple is not drawn at all under reduced motion — ripple.js checks
+       the same query and never attaches its listener. This is the belt to that
+       brace, for a preference that changes after the page has loaded. */
+    .ambria-ripple-dot { animation: none; opacity: 0; }
   }
 }

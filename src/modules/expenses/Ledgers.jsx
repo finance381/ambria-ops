@@ -9,9 +9,90 @@ import { hasPerm } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
 import { useExpenseDetailModal } from '../../hooks/useExpenseDetailModal.jsx'
 import SearchField from '../../components/ui/SearchField'
+import Icon, { glyphForLabel } from '../../components/ui/Icon'
 import CheckedStamp from '../../components/ui/CheckedStamp'
 
 var STATUS_LABELS = { recorded: 'Recorded', flagged: 'Resubmit', acknowledged: 'Acknowledged', deducted: 'Deducted' }
+
+// One template for the header and all three levels of row. It was written out
+// four times, which is four chances for a column to stop lining up with its own
+// heading.
+//
+// The money columns have to hold the figure AND its unit, which is what they
+// were last sized without: "1,08,919.65" is about 95px at 12.5px in tabular
+// figures, and the unit slot and its gap add another 38. At 104px the content
+// was wider than its own track, so it overflowed into the column beside it and
+// pushed Net Total off the end of the row.
+var COLS = 'grid grid-cols-[1fr_140px_140px_140px_150px_44px] gap-2'
+
+// A figure in the colour of its own meaning: settled, waiting, credited, and
+// the answer. The colour is on the number and nowhere else — a filled pill
+// behind every figure turns four columns into a wall of tinted blocks, and the
+// only part that differs between them, the number, then has to compete with
+// its own background to be read.
+// The figure and its unit in two columns, not one string.
+//
+// "pts" after every number is the same three characters on every row, and
+// baked into the string it was pushing each figure left by however wide its
+// own number happened to be — so the units ran in a ragged line down the
+// column and the numbers ended wherever that left them.
+//
+// The unit gets a fixed slot at the right of the cell and the number ranges
+// right against it. Both edges are then straight: every "pts" starts on one
+// line, every figure ends on another.
+//
+// The unit takes the figure's colour — it belongs to that number, and in grey
+// it read as page furniture that happened to sit in the column. It stays a size
+// down and a weight down, so the pair still resolves to the figure first.
+function Money({ paise, tone, bold, dashWhenZero }) {
+  var dash = paise == null || (dashWhenZero && !paise)
+  var colour = dash ? 'text-slate-300' : tone
+  return (
+    /* Ranged right, with the heading above it ranged the same way. Centring put
+       each figure under the middle of its own title but left the column itself
+       ragged on both sides — and a money column is read down, not across, so
+       the edge the figures share matters more than the one they share with the
+       word above them. */
+    <span className="flex items-baseline justify-end gap-2 whitespace-nowrap" data-notranslate>
+      <span className={"text-[12.5px] tabular-nums " + (bold ? "font-bold " : "font-semibold ") + colour}>
+        {dash ? '—' : formatPointsPlain(paise)}
+      </span>
+      {/* No fixed slot. It is the same three characters in every cell, so its
+          width is already constant — reserving more than it needs just left a
+          gap between it and the cell's right edge, which the headings above run
+          all the way to. Ending where they end is what lines the two up. */}
+      <span className={"shrink-0 text-[11.5px] font-medium " + colour}>pts</span>
+    </span>
+  )
+}
+
+// formatPoints without its unit, since Money prints that separately.
+function formatPointsPlain(paise) {
+  var neg = paise < 0
+  var abs = Math.abs(paise)
+  var whole = Math.floor(abs / 100)
+  var frac = abs % 100
+  return (neg ? '−' : '') + whole.toLocaleString('en-IN') +
+    (frac ? '.' + String(frac).padStart(2, '0') : '')
+}
+
+var TONES = {
+  committed: 'text-emerald-700',
+  pending:   'text-amber-700',
+  credit:    'text-rose-700',
+  total:     'text-slate-900',
+}
+
+// The per-row export. Three of them, one per level.
+//
+// Neutral, like the two in the toolbar. Opening a PDF is not destructive, and
+// a column of red down the right-hand edge of a table reads as a column of
+// warnings — which was the loudest thing on a screen whose job is figures.
+// Both of these sit in the same box — a width and a right margin the heading
+// and the button agree on — so the column has one edge instead of the heading
+// keeping its own padding and the button its own margin.
+var EXPORT_COL = 'shrink-0 w-[74px] mr-3'
+var PDF_BTN = EXPORT_COL + ' self-center h-7 inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white text-[11.5px] font-bold text-slate-600 hover:border-indigo-300 hover:text-indigo-700 disabled:opacity-40 transition-all duration-150'
 var STATUS_COLORS = {
   recorded: 'bg-amber-100 text-amber-700',
   flagged: 'bg-orange-100 text-orange-700',
@@ -92,6 +173,11 @@ function Ledgers({ profile, onNavigateToExpenses }) {
   var [collapsedDepts, setCollapsedDepts] = useState({})
   var [collapsedTypes, setCollapsedTypes] = useState({})
   var collapseInitializedRef = useRef(false)
+  // The filter block is sticky, so a row scrolled to the top of the window
+  // lands underneath it. Its height is not a constant — the toolbar wraps on a
+  // narrow window and the custom-range fields appear and disappear — so it is
+  // measured at the moment it is needed rather than written down anywhere.
+  var stickyRef = useRef(null)
   var [deptDelta, setDeptDelta] = useState({})
   var allocSnapshot = useRef({})
   var isFirstLoad = useRef(true)
@@ -447,12 +533,33 @@ function Ledgers({ profile, onNavigateToExpenses }) {
     setDrillUserFilter(''); setDrillStatusFilter(''); setDrillVenueFilter('')
   }
 
-  function toggleDept(deptKey, currentAllocs) {
+  // Opening a department brings it to the top of the window.
+  //
+  // A department a few rows down opens downwards, so everything it just
+  // revealed is below the fold — you press it and then go looking for what you
+  // pressed it for. Moving the row up puts its contents on the screen that
+  // asked for them.
+  //
+  // Only on the way open: collapsing already brings the rows below it up, and
+  // scrolling then would move the page under somebody who was reading it.
+  function toggleDept(deptKey, currentAllocs, rowEl) {
+    var opening = !!collapsedDepts[deptKey]
     setCollapsedDepts(function (prev) {
       var next = Object.assign({}, prev)
       next[deptKey] = !prev[deptKey]
       return next
     })
+    if (opening && rowEl) {
+      // scroll-margin-top and scrollIntoView, rather than working out a target
+      // and calling scrollTo. Two things are pinned above this row — the
+      // shell's bar and this screen's filter block — and only one of them is a
+      // number this component can measure. Handing the browser a calc that
+      // names the other lets it resolve both, and find the right scroller while
+      // it is at it.
+      var sticky = stickyRef.current ? stickyRef.current.offsetHeight : 0
+      rowEl.style.scrollMarginTop = 'calc(var(--app-header-h, 0px) + ' + (sticky + 8) + 'px)'
+      rowEl.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
     allocSnapshot.current[deptKey] = currentAllocs
     setDeptDelta(function (prev) {
       var next = Object.assign({}, prev)
@@ -727,41 +834,77 @@ function Ledgers({ profile, onNavigateToExpenses }) {
     return Object.assign({}, g, { typeGroups: filteredTypes, deptName: deptName })
   }).filter(Boolean)
 
+  // The chosen column, applied at every level of the tree.
+  //
+  // Sorting only the departments would leave the types and sub-types inside
+  // them in whatever order they arrived, so ordering by Pending would put the
+  // biggest department first and then bury its biggest type somewhere in the
+  // middle — which is not what anybody clicking that heading is asking for.
+  //
+  // The name differs per level: a department has one, a type has one, a
+  // sub-type has one, and they are three different fields.
   // ─── DRILL VIEW ───
   if (drillGroup) {
     return (
       <div className="space-y-4">
         <div>
-          <button onClick={closeDrill}
-            className="text-sm text-indigo-600 font-medium hover:text-indigo-800 transition-colors mb-1">← Back to Ledgers</button>
-          <h2 className="text-lg font-bold text-gray-900">{drillGroup.deptName}</h2>
-          <p className="text-xs text-gray-500">{drillGroup.typeName} › {drillGroup.subTypeName}</p>
+          <button type="button" onClick={closeDrill}
+            className="inline-flex items-center gap-1.5 h-8 -ml-2 px-2 mb-1 rounded-lg text-[13px] font-bold text-indigo-600 hover:bg-indigo-50 transition-colors">
+            <Icon name="arrowLeft" size={15} />
+            Back to Ledgers
+          </button>
+          <h2 className="font-display text-[19px] font-bold text-slate-900 leading-tight">{drillGroup.deptName}</h2>
+          <p className="mt-0.5 text-[12.5px] text-slate-500">{drillGroup.typeName} › {drillGroup.subTypeName}</p>
         </div>
 
-        <div className="grid grid-cols-3 gap-2">
-          <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-2 text-center">
-            <p className="text-[9px] font-bold text-indigo-400 uppercase">Total</p>
-            <p className="text-sm font-bold text-indigo-700">{formatPoints(drillGroup.total)}</p>
+        {/* Three readings of one sub-type, so they get one shape — the same one
+            the four figures at the top of the ledger take. The card stays white
+            and the colour sits on the glyph and the number: a filled card puts
+            the tint behind the only part that differs between the three, which
+            is the figure. */}
+        <div className="grid grid-cols-3 gap-3">
+          <div className="flex items-center gap-3.5 px-4 py-3.5 rounded-2xl border bg-white border-slate-200">
+            <span className="shrink-0 w-11 h-11 rounded-xl inline-flex items-center justify-center bg-indigo-100 text-indigo-600">
+              <Icon name="chart" size={20} />
+            </span>
+            <div className="min-w-0">
+              <p className="text-[12.5px] font-medium text-slate-500 leading-none">Total</p>
+              <p className="mt-2 text-[19px] font-extrabold text-indigo-700 tabular-nums leading-none" data-notranslate>{formatPoints(drillGroup.total)}</p>
+            </div>
           </div>
-          <div className="bg-green-50 border border-green-200 rounded-lg p-2 text-center">
-            <p className="text-[9px] font-bold text-green-500 uppercase">Committed</p>
-            <p className="text-sm font-bold text-green-700">{formatPoints(drillGroup.committed)}</p>
+          <div className="flex items-center gap-3.5 px-4 py-3.5 rounded-2xl border bg-white border-slate-200">
+            <span className="shrink-0 w-11 h-11 rounded-xl inline-flex items-center justify-center bg-emerald-100 text-emerald-600">
+              <Icon name="checkCircle" size={20} />
+            </span>
+            <div className="min-w-0">
+              <p className="text-[12.5px] font-medium text-slate-500 leading-none">Committed</p>
+              <p className="mt-2 text-[19px] font-extrabold text-emerald-700 tabular-nums leading-none" data-notranslate>{formatPoints(drillGroup.committed)}</p>
+            </div>
           </div>
-          <div className="bg-amber-50 border border-amber-200 rounded-lg p-2 text-center">
-            <p className="text-[9px] font-bold text-amber-500 uppercase">Pending</p>
-            <p className="text-sm font-bold text-amber-700">{formatPoints(drillGroup.pending)}</p>
+          <div className="flex items-center gap-3.5 px-4 py-3.5 rounded-2xl border bg-white border-slate-200">
+            <span className="shrink-0 w-11 h-11 rounded-xl inline-flex items-center justify-center bg-amber-100 text-amber-600">
+              <Icon name="clock" size={20} />
+            </span>
+            <div className="min-w-0">
+              <p className="text-[12.5px] font-medium text-slate-500 leading-none">Pending</p>
+              <p className="mt-2 text-[19px] font-extrabold text-amber-700 tabular-nums leading-none" data-notranslate>{formatPoints(drillGroup.pending)}</p>
+            </div>
           </div>
         </div>
 
-        <div className="bg-white border border-gray-200 rounded-xl p-3">
-          <div className="grid grid-cols-3 gap-2">
+        {/* One row of controls at the size of the controls on the screen behind
+            this one, rather than three native selects at full height. */}
+        <div className="flex flex-wrap items-center gap-2.5">
+          <div className="contents">
             <select value={drillUserFilter} onChange={function (e) { setDrillUserFilter(e.target.value) }}
-              className="px-2 py-1.5 text-xs border border-gray-200 rounded-md" style={{ fontSize: '16px' }}>
+              aria-label="Filter by user"
+              className="h-9 px-3 bg-white border border-slate-200 rounded-lg text-[12.5px] text-slate-700 hover:border-slate-300 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-[border-color,box-shadow] duration-150 flex-1 min-w-[150px]" style={{ fontSize: '16px' }}>
               <option value="">All Users</option>
               {users.map(function (u) { return <option key={u.id} value={u.id}>{u.name}</option> })}
             </select>
             <select value={drillStatusFilter} onChange={function (e) { setDrillStatusFilter(e.target.value) }}
-              className="px-2 py-1.5 text-xs border border-gray-200 rounded-md" style={{ fontSize: '16px' }}>
+              aria-label="Filter by status"
+              className="h-9 px-3 bg-white border border-slate-200 rounded-lg text-[12.5px] text-slate-700 hover:border-slate-300 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-[border-color,box-shadow] duration-150 flex-1 min-w-[150px]" style={{ fontSize: '16px' }}>
               <option value="">All Status</option>
               <option value="recorded">Recorded</option>
               <option value="flagged">Resubmit</option>
@@ -769,7 +912,8 @@ function Ledgers({ profile, onNavigateToExpenses }) {
               <option value="deducted">Deducted</option>
             </select>
             <select value={drillVenueFilter} onChange={function (e) { setDrillVenueFilter(e.target.value) }}
-              className="px-2 py-1.5 text-xs border border-gray-200 rounded-md" style={{ fontSize: '16px' }}>
+              aria-label="Filter by venue"
+              className="h-9 px-3 bg-white border border-slate-200 rounded-lg text-[12.5px] text-slate-700 hover:border-slate-300 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-[border-color,box-shadow] duration-150 flex-1 min-w-[150px]" style={{ fontSize: '16px' }}>
               <option value="">All Venues</option>
               {venues.map(function (v) { return <option key={v.id} value={v.id}>{v.code ? (v.code + ' — ' + v.name) : v.name}</option> })}
             </select>
@@ -783,22 +927,38 @@ function Ledgers({ profile, onNavigateToExpenses }) {
         ) : (
           <div className="space-y-2">
             {drillRows.map(function (r) {
+              // The row hands over what it is already showing, so the overlay
+              // opens on it rather than on a spinner. amount_paise is this
+              // allocation's share rather than the expense's total, so it is
+              // deliberately not passed — a figure that changes under you a
+              // moment after it appears is worse than one that arrives late.
               return (
-                <div key={r.allocation_id} onClick={function () { openExpenseDetail(r.expense_id) }}
-                  className="bg-white border border-gray-200 rounded-xl p-3 cursor-pointer hover:bg-indigo-50/40 transition-colors">
-                  <div className="flex items-start justify-between">
+                <div key={r.allocation_id}
+                  onClick={function () {
+                    openExpenseDetail(r.expense_id, {
+                      description: r.description,
+                      expense_date: r.expense_date,
+                      status: r.status,
+                      user_id: r.user_id,
+                      created_at: r.created_at,
+                    })
+                  }}
+                  className="group bg-white border border-slate-200 rounded-2xl px-4 py-3.5 cursor-pointer hover:border-indigo-300 hover:shadow-[0_4px_14px_rgba(79,70,229,0.08)] transition-all duration-150">
+                  <div className="flex items-start gap-4">
                     <div className="flex-1 min-w-0">
+                      {/* What it was, first. The date and who logged it led the
+                          row and the description came second, so the line you
+                          read to know what you are looking at was the one line
+                          that was not at the top. */}
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-xs text-gray-500">{formatDate(r.expense_date)}</span>
-                        <span className="text-[10px] text-gray-400">· logged {formatDateTime(r.created_at)}</span>
-                        <span className="text-xs font-semibold text-gray-700">{userMap[r.user_id] || '—'}</span>
-                        <span className={"text-[10px] px-1.5 py-0.5 rounded font-semibold " + (STATUS_COLORS[r.status] || 'bg-gray-100 text-gray-600')}>
+                        <p className="text-[14px] font-semibold text-slate-900 truncate">{r.description || '—'}</p>
+                        <span className={"shrink-0 text-[10.5px] px-2 py-0.5 rounded-md font-bold " + (STATUS_COLORS[r.status] || 'bg-gray-100 text-gray-600')}>
                           {STATUS_LABELS[r.status] || r.status}
                         </span>
                         {(function () {
                           var sb = SOURCE_BADGES[r.source] || SOURCE_BADGES.allocation
                           return (
-                            <span className={"text-[9px] px-1.5 py-0.5 rounded border font-semibold " + sb.cls}>
+                            <span className={"shrink-0 text-[9.5px] px-1.5 py-0.5 rounded border font-semibold " + sb.cls}>
                               {sb.label}
                             </span>
                           )
@@ -816,22 +976,55 @@ function Ledgers({ profile, onNavigateToExpenses }) {
                           </span>
                         )}
                       </div>
-                      <p className="text-sm text-gray-800 truncate mt-1">{r.description || '—'}</p>
-                      {r.remarks && <p className="text-xs italic text-gray-500 mt-0.5">"{r.remarks}"</p>}
-                      {r.venue_id && <p className="text-[10px] text-gray-400 mt-0.5">Venue: {venueMap[r.venue_id] || '—'}</p>}
+                      {r.remarks && <p className="mt-1 text-[12px] italic text-slate-500">"{r.remarks}"</p>}
+                      {r.venue_id && <p className="mt-1 text-[11.5px] text-slate-400">Venue: {venueMap[r.venue_id] || '—'}</p>}
                       {r._fieldChips && r._fieldChips.length > 0 && (
-                        <div className="flex flex-wrap gap-1.5 mt-1">
+                        <div className="flex flex-wrap gap-2 mt-2.5">
                           {r._fieldChips.map(function (c, i) {
                             return (
-                              <span key={i} className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-100">
-                                {c.label}: <b>{c.value}</b>
+                              <span key={i} className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-50 border border-slate-100 text-[11.5px] text-slate-500">
+                                <Icon name={glyphForLabel(c.label)} size={13} className="shrink-0 text-slate-400" />
+                                {c.label}:
+                                {/* Weight, not colour. Indigo on the value made
+                                    every chip look like a link to somewhere, and
+                                    a row of them a row of links; the label is
+                                    already the quiet half of the pair. */}
+                                <span className="font-bold text-slate-800">{c.value}</span>
                               </span>
                             )
                           })}
                         </div>
                       )}
+                      {/* When and who, under everything that says what. A glyph
+                          apiece and a rule between them, rather than three kinds
+                          of fact in one grey string separated by middots. */}
+                      <div className="mt-2.5 flex flex-wrap items-center gap-y-1 text-[11.5px] text-slate-400">
+                        <span className="inline-flex items-center whitespace-nowrap">
+                          <Icon name="calendar" size={13} className="shrink-0 mr-1.5 text-slate-300" />
+                          {formatDate(r.expense_date)}
+                        </span>
+                        <span aria-hidden="true" className="mx-3 w-px h-3.5 bg-slate-200" />
+                        <span className="inline-flex items-center whitespace-nowrap">
+                          <Icon name="clock" size={13} className="shrink-0 mr-1.5 text-slate-300" />
+                          logged {formatDateTime(r.created_at)}
+                        </span>
+                        <span aria-hidden="true" className="mx-3 w-px h-3.5 bg-slate-200" />
+                        <span className="inline-flex items-center whitespace-nowrap">
+                          <Icon name="user" size={13} className="shrink-0 mr-1.5 text-slate-300" />
+                          <span>by <span className="font-semibold text-slate-600">{userMap[r.user_id] || '—'}</span></span>
+                        </span>
+                      </div>
                     </div>
-                    <span className="text-sm font-bold text-gray-800 ml-3 flex-shrink-0">{formatPoints(r.amount_paise)}</span>
+                    {/* The figure gets a panel and a rule of its own. It was a
+                        bold number floating at the end of a paragraph, which is
+                        the one thing on this row you scan a column of. */}
+                    <div className="shrink-0 self-center flex items-stretch gap-4">
+                      <span aria-hidden="true" className="w-px self-stretch bg-slate-200" />
+                      <div className="px-4 py-2.5 text-right">
+                        <p className="text-[11.5px] font-medium text-slate-500 leading-none">Amount</p>
+                        <p className="mt-2 text-[17px] font-extrabold text-slate-900 tabular-nums leading-none" data-notranslate>{formatPoints(r.amount_paise)}</p>
+                      </div>
+                    </div>
                   </div>
                 </div>
               )
@@ -852,8 +1045,15 @@ function Ledgers({ profile, onNavigateToExpenses }) {
   function PresetChip(props) {
     var active = datePreset === props.k
     return (
-      <button onClick={function () { applyPreset(props.k) }}
-        className={"px-2.5 py-1 text-[11px] font-semibold rounded-md transition-colors " + (active ? "bg-gray-900 text-white" : "bg-white border border-gray-200 text-gray-500 hover:text-gray-800")}>
+      /* One group, so the four read as one choice. An unpicked one leans
+         towards the white pill it would become rather than only darkening its
+         text; the picked one does not answer the pointer, because pressing it
+         again does nothing. */
+      <button type="button" onClick={function () { applyPreset(props.k) }} aria-pressed={active}
+        className={"h-9 px-4 text-[12.5px] font-bold rounded-lg transition-all duration-150 " +
+          (active
+            ? "bg-white text-indigo-700 shadow-[0_1px_3px_rgba(15,23,42,0.10)]"
+            : "text-slate-500 hover:text-slate-900 hover:bg-white/70")}>
         {props.label}
       </button>
     )
@@ -867,78 +1067,139 @@ function Ledgers({ profile, onNavigateToExpenses }) {
         <p className="text-xs text-gray-400">Live financial tracker · {totals.allocs} allocation{totals.allocs !== 1 ? 's' : ''}</p>
       </div>
 
-      <div className="sticky top-0 z-10 bg-gray-50 pt-1 pb-3 border-b border-gray-200 space-y-2">
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <div className="bg-green-50 border border-green-200 rounded-xl px-3 py-2 text-center">
-            <p className="text-[9px] font-bold text-green-500 uppercase">Debits Acknowledged</p>
-            <p className="text-base font-bold text-green-700">{formatPoints(totals.committed)}</p>
+      {/* top-0 put this underneath the shell's own sticky bar rather than below
+          it — both were pinned to the top of the window and the shell's is the
+          one in front, so the first rows of this block were behind it the whole
+          time you were scrolled. --app-header-h is what the shell publishes for
+          exactly this. */}
+      <div ref={stickyRef} className="sticky z-10 bg-gray-50 pt-1 pb-3 border-b border-gray-200 space-y-2"
+        style={{ top: 'var(--app-header-h, 0px)' }}>
+        {/* Left-aligned, and the figure given the size of the thing it is. A
+            9px label centred over a 16px number made four cards you had to lean
+            in to read; ranged left they also line up with everything below
+            them. */}
+        {/* The colour sits on the figure and on a glyph, not across the whole
+            card. Four filled panels shouted four different colours at a glance,
+            and the only part that differs between them — the number — had to
+            compete with its own background to be read. Same shape as the
+            wallet ledger uses for its four, so the two screens match. */}
+        <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
+          <div className="flex items-center gap-3 px-4 py-3 bg-white border border-slate-200 rounded-xl">
+            <span className="shrink-0 w-9 h-9 rounded-lg inline-flex items-center justify-center bg-emerald-50 text-emerald-600">
+              <Icon name="checkCircle" size={17} />
+            </span>
+            <div className="min-w-0">
+              <p className="text-[11px] font-semibold text-slate-500 leading-none">Debits Acknowledged</p>
+              <p className="mt-1.5 text-[17px] font-bold text-emerald-700 tabular-nums leading-none" data-notranslate>{formatPoints(totals.committed)}</p>
+            </div>
           </div>
-          <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 text-center">
-            <p className="text-[9px] font-bold text-amber-500 uppercase">Debits Pending</p>
-            <p className="text-base font-bold text-amber-700">{formatPoints(totals.pending)}</p>
+          <div className="flex items-center gap-3 px-4 py-3 bg-white border border-slate-200 rounded-xl">
+            <span className="shrink-0 w-9 h-9 rounded-lg inline-flex items-center justify-center bg-amber-50 text-amber-600">
+              <Icon name="clock" size={17} />
+            </span>
+            <div className="min-w-0">
+              <p className="text-[11px] font-semibold text-slate-500 leading-none">Debits Pending</p>
+              <p className="mt-1.5 text-[17px] font-bold text-amber-700 tabular-nums leading-none" data-notranslate>{formatPoints(totals.pending)}</p>
+            </div>
           </div>
-          <div className="bg-rose-50 border border-rose-200 rounded-xl px-3 py-2 text-center">
-            <p className="text-[9px] font-bold text-rose-500 uppercase">Total Credits</p>
-            <p className="text-base font-bold text-rose-700">{formatPoints(totals.credit)}</p>
+          <div className="flex items-center gap-3 px-4 py-3 bg-white border border-slate-200 rounded-xl">
+            <span className="shrink-0 w-9 h-9 rounded-lg inline-flex items-center justify-center bg-rose-50 text-rose-600">
+              <Icon name="banknote" size={17} />
+            </span>
+            <div className="min-w-0">
+              <p className="text-[11px] font-semibold text-slate-500 leading-none">Total Credits</p>
+              <p className="mt-1.5 text-[17px] font-bold text-rose-700 tabular-nums leading-none" data-notranslate>{formatPoints(totals.credit)}</p>
+            </div>
           </div>
-          <div className="bg-indigo-50 border border-indigo-200 rounded-xl px-3 py-2 text-center">
-            <p className="text-[9px] font-bold text-indigo-400 uppercase">Net Total</p>
-            <p className="text-base font-bold text-indigo-700">{formatPoints(totals.total)}</p>
+          <div className="flex items-center gap-3 px-4 py-3 bg-white border border-slate-200 rounded-xl">
+            <span className="shrink-0 w-9 h-9 rounded-lg inline-flex items-center justify-center bg-indigo-50 text-indigo-600">
+              <Icon name="chart" size={17} />
+            </span>
+            <div className="min-w-0">
+              <p className="text-[11px] font-semibold text-slate-500 leading-none">Net Total</p>
+              <p className="mt-1.5 text-[17px] font-bold text-slate-900 tabular-nums leading-none" data-notranslate>{formatPoints(totals.total)}</p>
+            </div>
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-1.5">
-          <PresetChip k="month" label="This month" />
-          <PresetChip k="lastMonth" label="Last month" />
-          <PresetChip k="ytd" label="YTD" />
-          <PresetChip k="custom" label="Custom" />
+        {/* One row: the period, what to look in it for, and what to take away
+            with you. These were three separate rows of controls at three
+            different sizes, and then two. flex-wrap rather than a fixed track,
+            so the line breaks where the window makes it break instead of
+            where a breakpoint guessed it would. */}
+        <div className="flex flex-wrap items-center gap-2.5">
+          <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-xl">
+            <PresetChip k="month" label="This month" />
+            <PresetChip k="lastMonth" label="Last month" />
+            <PresetChip k="ytd" label="YTD" />
+            <PresetChip k="custom" label="Custom" />
+          </div>
           {datePreset === 'custom' && (
             <>
               <input type="date" value={dateFrom} onChange={function (e) { setDateFrom(e.target.value) }}
-                className="px-2 py-1 border border-gray-200 rounded-md text-[11px]" style={{ fontSize: '16px' }} />
+                className="h-9 px-3 bg-white border border-slate-200 rounded-lg text-[12.5px] text-slate-700 hover:border-slate-300 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-[border-color,box-shadow] duration-150 flex-1 min-w-[130px]" style={{ fontSize: '16px' }} />
               <input type="date" value={dateTo} onChange={function (e) { setDateTo(e.target.value) }}
-                className="px-2 py-1 border border-gray-200 rounded-md text-[11px]" style={{ fontSize: '16px' }} />
+                className="h-9 px-3 bg-white border border-slate-200 rounded-lg text-[12.5px] text-slate-700 hover:border-slate-300 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-[border-color,box-shadow] duration-150 flex-1 min-w-[130px]" style={{ fontSize: '16px' }} />
             </>
           )}
-        </div>
-
-        <SearchField
-          value={search}
-          onChange={function (v) { setSearch(v) }}
-          placeholder="Search dept / type / sub-type..."
-          className="w-full"
-        />
-
-        <div className="flex flex-wrap gap-1.5 items-center">
+          <div className="flex-1 min-w-[180px]">
+            <SearchField
+              value={search}
+              onChange={function (v) { setSearch(v) }}
+              placeholder="Search dept / type / sub-type..."
+              className="w-full"
+            />
+          </div>
           <select value={userFilter} onChange={function (e) { setUserFilter(e.target.value) }}
-            className="px-2 py-1 text-[11px] border border-gray-200 rounded-md flex-1 min-w-[100px]" style={{ fontSize: '16px' }}>
+            aria-label="Filter by user"
+            className="h-9 px-3 bg-white border border-slate-200 rounded-lg text-[12.5px] text-slate-700 hover:border-slate-300 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-[border-color,box-shadow] duration-150 flex-1 min-w-[130px]" style={{ fontSize: '16px' }}>
             <option value="">All users</option>
             {users.map(function (u) { return <option key={u.id} value={u.id}>{u.name}</option> })}
           </select>
           <select value={venueFilter} onChange={function (e) { setVenueFilter(e.target.value) }}
-            className="px-2 py-1 text-[11px] border border-gray-200 rounded-md flex-1 min-w-[100px]" style={{ fontSize: '16px' }}>
+            aria-label="Filter by venue"
+            className="h-9 px-3 bg-white border border-slate-200 rounded-lg text-[12.5px] text-slate-700 hover:border-slate-300 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-[border-color,box-shadow] duration-150 flex-1 min-w-[130px]" style={{ fontSize: '16px' }}>
             <option value="">All venues</option>
             {venues.map(function (v) { return <option key={v.id} value={v.id}>{v.code ? (v.code + ' — ' + v.name) : v.name}</option> })}
           </select>
           <select value={statusFilter} onChange={function (e) { setStatusFilter(e.target.value) }}
-            className="px-2 py-1 text-[11px] border border-gray-200 rounded-md flex-1 min-w-[100px]" style={{ fontSize: '16px' }}>
+            aria-label="Filter by status"
+            className="h-9 px-3 bg-white border border-slate-200 rounded-lg text-[12.5px] text-slate-700 hover:border-slate-300 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-[border-color,box-shadow] duration-150 flex-1 min-w-[130px]" style={{ fontSize: '16px' }}>
             <option value="">All status</option>
             <option value="recorded">Recorded</option>
             <option value="flagged">Resubmit</option>
             <option value="acknowledged">Acknowledged</option>
             <option value="deducted">Deducted</option>
           </select>
-          <button onClick={function () { setPendingOnly(!pendingOnly) }}
-            className={"px-2 py-1 text-[11px] font-semibold rounded-md transition-colors " + (pendingOnly ? "bg-amber-100 border border-amber-300 text-amber-700" : "bg-white border border-gray-200 text-gray-500")}>
+          <button type="button" onClick={function () { setPendingOnly(!pendingOnly) }} aria-pressed={pendingOnly}
+            className={"h-9 px-3.5 inline-flex items-center gap-2 text-[12.5px] font-bold rounded-lg border transition-all duration-150 " +
+              (pendingOnly
+                ? "bg-indigo-50 border-indigo-300 text-indigo-800"
+                : "bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:text-slate-900")}>
+            {/* A switch, so its state is visible without having to remember
+                what the unpressed colour looked like.
+
+                Indigo, not amber. Amber is what this page says about money that
+                is pending — the figure, the column, the card. On a filter it was
+                saying the same colour about something else entirely: that the
+                filter is on, which everything else here says in indigo. */}
+            <span aria-hidden="true" className={"w-8 h-[18px] rounded-full p-0.5 transition-colors " + (pendingOnly ? "bg-indigo-600" : "bg-slate-300")}>
+              <span className={"block w-[14px] h-[14px] rounded-full bg-white transition-transform " + (pendingOnly ? "translate-x-[14px]" : "")} />
+            </span>
             Pending only
           </button>
-          <button onClick={exportListCSV} disabled={!deptGroups.length}
-            className="px-2 py-1 text-[11px] font-semibold text-green-600 bg-green-50 border border-green-200 rounded-md hover:bg-green-100 disabled:opacity-40">
-            ↓ CSV
+          {/* Both of these do the same harmless thing, so they look the same.
+              Green and red on a pair of downloads read as a verdict on the file,
+              when the only difference is the format the word already names. */}
+          <button type="button" onClick={exportListCSV} disabled={!deptGroups.length}
+            className="h-9 px-3.5 inline-flex items-center gap-2 text-[12.5px] font-bold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 hover:border-slate-300 disabled:opacity-40 transition-all duration-150">
+            <Icon name="download" size={14} className="text-slate-400" />
+            CSV
           </button>
-          <button onClick={exportListPDF} disabled={!visibleGroups.length || pdfBusy}
-            className="px-2 py-1 text-[11px] font-semibold text-red-600 bg-red-50 border border-red-200 rounded-md hover:bg-red-100 disabled:opacity-40">
-            {pdfBusy ? '…' : '↓ PDF'}
+          <button type="button" onClick={exportListPDF} disabled={!visibleGroups.length || pdfBusy}
+            className="h-9 px-3.5 inline-flex items-center gap-2 text-[12.5px] font-bold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 hover:border-slate-300 disabled:opacity-40 transition-all duration-150">
+            <Icon name={pdfBusy ? 'refresh' : 'fileText'} size={14} className="text-slate-400" />
+            {pdfBusy ? 'Generating…' : 'PDF'}
           </button>
         </div>
       </div>
@@ -948,47 +1209,64 @@ function Ledgers({ profile, onNavigateToExpenses }) {
       ) : visibleGroups.length === 0 ? (
         <p className="text-center text-sm text-gray-400 py-8">No matches in this range</p>
       ) : (
-        <div className="space-y-1.5">
-          <div className="flex items-stretch px-1">
-            <div className="flex-1 grid grid-cols-[1fr_80px_80px_80px_100px_36px] gap-2 px-3 pb-1">
-              <span></span>
-              <span className="text-[9px] font-bold text-gray-400 uppercase text-right">Acknowledged</span>
-              <span className="text-[9px] font-bold text-gray-400 uppercase text-right">Pending</span>
-              <span className="text-[9px] font-bold text-gray-400 uppercase text-right">Credit</span>
-              <span className="text-[9px] font-bold text-gray-400 uppercase text-right">Net Total</span>
-              <span className="text-[9px] font-bold text-gray-400 uppercase text-right">#</span>
+        <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
+          {/* One table, not a stack of cards. Every department used to carry its
+              own border and its own rounded corners, so four departments were
+              four objects with four sets of columns that only happened to line
+              up with each other. */}
+          <div className="flex items-stretch bg-slate-50 border-b border-slate-200">
+            <div className={"flex-1 " + COLS + " px-3 py-2.5"}>
+              {/* Headings, not controls. */}
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em]">Department / Type</span>
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] text-right">Acknowledged</span>
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] text-right">Pending</span>
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] text-right">Credit</span>
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] text-right">Net Total</span>
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] text-right">#</span>
             </div>
-            <span className="px-2 text-[9px] font-bold text-gray-400 uppercase">Export</span>
+            <span className={EXPORT_COL + " py-2.5 text-center text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em]"}>Export</span>
           </div>
           {visibleGroups.map(function (g) {
             var deptCollapsed = collapsedDepts[g.key]
             var delta = deptDelta[g.key] || 0
             return (
-              <div key={g.key} className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-                <div className="flex items-stretch hover:bg-gray-50 transition-colors">
-                  <button onClick={function () { toggleDept(g.key, g.allocs) }}
-                    className="flex-1 grid grid-cols-[1fr_80px_80px_80px_100px_36px] gap-2 items-center px-3 py-2 text-left">
+              <div key={g.key} data-dept-row className="border-t border-slate-100 first:border-t-0">
+                <div className="flex items-stretch hover:bg-slate-50 transition-colors">
+                  <button onClick={function (ev) { toggleDept(g.key, g.allocs, ev.currentTarget.closest('[data-dept-row]')) }}
+                    className={"flex-1 " + COLS + " items-center px-3 py-2 text-left"}>
                     <div className="flex items-center gap-2 min-w-0">
-                      <span className="text-xs text-gray-400 flex-shrink-0">{deptCollapsed ? '▸' : '▾'}</span>
-                      <span className="text-sm font-bold text-gray-900 truncate">{g.deptName}</span>
-                      <span className="text-[10px] text-gray-400 flex-shrink-0">{g.typeGroups.length}</span>
+                      {/* A drawn chevron that turns, not two different characters.
+                          ▸ and ▾ are different glyphs at different widths, so the
+                          label beside them shifted a pixel on every expand. */}
+                      <Icon name="chevronRight" size={14}
+                        className={"shrink-0 text-slate-400 transition-transform duration-150 " + (deptCollapsed ? "" : "rotate-90")} />
+                      {/* A glyph for the level, not for the department. Which
+                          department it is, is what the name says; what a row is
+                          — a department, a type, a sub-type — is the thing three
+                          levels of the same table cannot say any other way. */}
+                      <span className="shrink-0 w-7 h-7 rounded-lg bg-indigo-50 text-indigo-600 inline-flex items-center justify-center">
+                        <Icon name="building" size={16} />
+                      </span>
+                      <span className="text-[13.5px] font-bold text-slate-900 truncate">{g.deptName}</span>
+                      <span className="shrink-0 min-w-[20px] px-1.5 py-0.5 rounded-md bg-slate-100 text-[10.5px] font-bold text-slate-500 tabular-nums text-center" data-notranslate>{g.typeGroups.length}</span>
                       {delta > 0 && (
                         <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700 font-bold flex-shrink-0 animate-pulse">
                           +{delta}
                         </span>
                       )}
                     </div>
-                    <span className="text-xs text-right text-green-700 tabular-nums whitespace-nowrap">{formatPoints(g.committed)}</span>
-                    <span className="text-xs text-right text-amber-700 tabular-nums whitespace-nowrap">{formatPoints(g.pending)}</span>
-                    <span className="text-xs text-right text-rose-700 tabular-nums whitespace-nowrap">{g.credit > 0 ? formatPoints(g.credit) : '—'}</span>
-                    <span className="text-xs text-right font-bold text-gray-900 tabular-nums whitespace-nowrap">{formatPoints(g.total)}</span>
-                    <span className="text-[10px] text-right text-gray-400">{g.allocs}</span>
+                    <Money paise={g.committed} tone={TONES.committed} />
+                    <Money paise={g.pending} tone={TONES.pending} />
+                    <Money paise={g.credit} tone={TONES.credit} dashWhenZero />
+                    <Money paise={g.total} tone={TONES.total} bold />
+                    <span className="text-[11.5px] text-right text-slate-400 tabular-nums self-center" data-notranslate>{g.allocs}</span>
                   </button>
                   <button onClick={function (e) { e.stopPropagation(); exportScopedPDF(g.deptId) }}
                     disabled={pdfBusy}
                     title="Open department PDF in new tab"
-                    className="px-2 border-l border-gray-100 text-[10px] font-semibold text-rose-500 hover:bg-rose-50 disabled:opacity-40">
-                    ↓ PDF
+                    className={PDF_BTN}>
+                    <Icon name="fileText" size={13} />
+                    PDF
                   </button>
                 </div>
                 {!deptCollapsed && g.typeGroups.map(function (t) {
@@ -997,47 +1275,61 @@ function Ledgers({ profile, onNavigateToExpenses }) {
                   var typeName = t.typeId ? (typeMap[t.typeId] || 'Untyped') : 'Untyped'
                   return (
                     <div key={t.typeKey}>
-                      <div className="flex items-stretch border-t border-gray-100 bg-gray-50 hover:bg-gray-100 transition-colors">
+                      <div className="flex items-stretch border-t border-slate-100 bg-slate-50/70 hover:bg-slate-100 transition-colors">
                         <button onClick={function () { toggleType(g.key, t.typeKey) }}
-                          className="flex-1 grid grid-cols-[1fr_80px_80px_80px_100px_36px] gap-2 items-center px-3 py-1.5 pl-9 text-left">
+                          className={"flex-1 " + COLS + " items-center px-3 py-1.5 pl-9 text-left"}>
                           <div className="flex items-center gap-2 min-w-0">
-                            <span className="text-[10px] text-gray-400 flex-shrink-0">{typeCollapsed ? '▸' : '▾'}</span>
-                            <span className="text-xs font-semibold text-gray-800 truncate">{typeName}</span>
-                            <span className="text-[10px] text-gray-400 flex-shrink-0">{t.subRows.length}</span>
+                            <Icon name="chevronRight" size={13}
+                              className={"shrink-0 text-slate-400 transition-transform duration-150 " + (typeCollapsed ? "" : "rotate-90")} />
+                            <span className="shrink-0 w-6 h-6 rounded-md bg-white border border-slate-200 text-slate-500 inline-flex items-center justify-center">
+                              <Icon name="box" size={14} />
+                            </span>
+                            <span className="text-[12.5px] font-semibold text-slate-800 truncate">{typeName}</span>
+                            <span className="shrink-0 min-w-[20px] px-1.5 py-0.5 rounded-md bg-white text-[10.5px] font-bold text-slate-500 tabular-nums text-center" data-notranslate>{t.subRows.length}</span>
                           </div>
-                          <span className="text-[11px] text-right text-green-700 tabular-nums whitespace-nowrap">{formatPoints(t.committed)}</span>
-                          <span className="text-[11px] text-right text-amber-700 tabular-nums whitespace-nowrap">{formatPoints(t.pending)}</span>
-                          <span className="text-[11px] text-right text-rose-700 tabular-nums whitespace-nowrap">{t.credit > 0 ? formatPoints(t.credit) : '—'}</span>
-                          <span className="text-[11px] text-right font-bold text-gray-800 tabular-nums whitespace-nowrap">{formatPoints(t.total)}</span>
-                          <span className="text-[10px] text-right text-gray-400">{t.allocs}</span>
+                          <Money paise={t.committed} tone={TONES.committed} />
+                          <Money paise={t.pending} tone={TONES.pending} />
+                          <Money paise={t.credit} tone={TONES.credit} dashWhenZero />
+                          <Money paise={t.total} tone={TONES.total} bold />
+                          <span className="text-[11.5px] text-right text-slate-400 tabular-nums self-center" data-notranslate>{t.allocs}</span>
                         </button>
                         <button onClick={function (e) { e.stopPropagation(); exportScopedPDF(g.deptId, t.typeId) }}
                           disabled={pdfBusy}
                           title="Open expense-type PDF in new tab"
-                          className="px-2 border-l border-gray-100 text-[10px] font-semibold text-rose-500 hover:bg-rose-50 disabled:opacity-40">
-                          ↓ PDF
+                          className={PDF_BTN}>
+                          <Icon name="fileText" size={13} />
+                          PDF
                         </button>
                       </div>
                       {!typeCollapsed && t.subRows.map(function (r, i) {
                         var subTypeName = r.subTypeId ? (subTypeMap[r.subTypeId] || '—') : '—'
                         return (
-                          <div key={i} className="flex items-stretch border-t border-gray-100 hover:bg-indigo-50 transition-colors">
+                          <div key={i} className="flex items-stretch border-t border-slate-100 hover:bg-indigo-50/60 transition-colors">
+                            {/* pl-20, not pl-14. Indentation has to be measured
+                                from where the TEXT starts, not from where the
+                                padding does: the type row spends 45px on a
+                                chevron and an icon tile before its name begins,
+                                and the sub-type row only 24px. At pl-14 the
+                                sub-type's name actually started nine pixels to
+                                the LEFT of its own parent's. */}
                             <button onClick={function () { openRow(g, r) }}
-                              className="flex-1 grid grid-cols-[1fr_80px_80px_80px_100px_36px] gap-2 items-center px-3 py-2 pl-14 text-left">
-                              <div className="min-w-0">
-                                <p className="text-xs text-gray-700 truncate">{subTypeName}</p>
+                              className={"flex-1 " + COLS + " items-center px-3 py-1.5 pl-20 text-left"}>
+                              <div className="flex items-center gap-2.5 min-w-0">
+                                <Icon name="fileText" size={14} className="shrink-0 text-slate-300" />
+                                <p className="text-[12.5px] text-slate-600 truncate">{subTypeName}</p>
                               </div>
-                              <span className="text-xs text-right text-green-700 tabular-nums whitespace-nowrap">{formatPoints(r.committed)}</span>
-                              <span className="text-xs text-right text-amber-700 tabular-nums whitespace-nowrap">{formatPoints(r.pending)}</span>
-                              <span className="text-xs text-right text-rose-700 tabular-nums whitespace-nowrap">{r.credit > 0 ? formatPoints(r.credit) : '—'}</span>
-                              <span className="text-xs text-right font-bold text-gray-800 tabular-nums whitespace-nowrap">{formatPoints(r.total)}</span>
-                              <span className="text-[10px] text-right text-gray-400">{r.allocs}</span>
+                              <Money paise={r.committed} tone={TONES.committed} />
+                              <Money paise={r.pending} tone={TONES.pending} />
+                              <Money paise={r.credit} tone={TONES.credit} dashWhenZero />
+                              <Money paise={r.total} tone={TONES.total} bold />
+                              <span className="text-[11.5px] text-right text-slate-400 tabular-nums" data-notranslate>{r.allocs}</span>
                             </button>
                             <button onClick={function (e) { e.stopPropagation(); exportScopedPDF(g.deptId, r.typeId, r.subTypeId) }}
                               disabled={pdfBusy}
                               title="Open sub-type PDF in new tab"
-                              className="px-2 border-l border-gray-100 text-[10px] font-semibold text-rose-500 hover:bg-rose-50 disabled:opacity-40">
-                              ↓ PDF
+                              className={PDF_BTN}>
+                              <Icon name="fileText" size={13} />
+                              PDF
                             </button>
                           </div>
                         )
@@ -1049,6 +1341,16 @@ function Ledgers({ profile, onNavigateToExpenses }) {
             )
           })}
         </div>
+      )}
+
+      {visibleGroups.length > 0 && (
+        <p className="text-[12px] text-slate-500">
+          Showing
+          <span className="mx-1 font-bold text-slate-900 tabular-nums" data-notranslate>{visibleGroups.length}</span>
+          of
+          <span className="mx-1 font-bold text-slate-900 tabular-nums" data-notranslate>{deptGroups.length}</span>
+          departments
+        </p>
       )}
     </div>
   )
