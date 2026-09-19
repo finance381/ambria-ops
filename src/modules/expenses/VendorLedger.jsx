@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, memo } from 'react'
+import { useState, useEffect, useCallback, useDeferredValue, memo } from 'react'
 import { supabase } from '../../lib/supabase'
 import { logActivity } from '../../lib/logger'
 import { formatPoints, formatDate, formatDateTime } from '../../lib/format'
@@ -299,6 +299,18 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
   var [loading, setLoading] = useState(true)
   var [search, setSearch] = useState('')
   var [statusFilter, setStatusFilter] = useState('all')  // 'all' | 'with_balance' | 'incomplete' | 'overdue'
+
+  // The tile you press highlights on the frame you press it; the list it
+  // filters catches up after. Pressing a tile changes which of two hundred
+  // and sixty cards exist, and React was mounting that set before it could
+  // paint the press — so the tile looked dead for as long as the list took.
+  //
+  // Deferred, the urgent render is just the tile, and the list re-renders
+  // after, interruptibly. Typing in the search gets the same treatment for
+  // the same reason: a keystroke should not wait on a grid.
+  var deferredSearch = useDeferredValue(search)
+  var deferredStatus = useDeferredValue(statusFilter)
+  var listStale = deferredSearch !== search || deferredStatus !== statusFilter
 
   // Filter dropdowns (all optional, cascade where hierarchical)
   var [fExpType, setFExpType] = useState('')
@@ -612,14 +624,14 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
 
   // ── LIST VIEW ──
   if (view === 'list') {
-    var q = search.trim().toLowerCase()
+    var q = deferredSearch.trim().toLowerCase()
     var hasAnyDropdownFilter = !!(fExpType || fExpSubType || fCategory || fSubCategory)
     var filtered = vendors.filter(function (v) {
       if (!v.vendor_active) return false
       if (q && (v.vendor_name || '').toLowerCase().indexOf(q) === -1) return false
-      if (statusFilter === 'with_balance' && (v.balance_paise || 0) === 0) return false
-      if (statusFilter === 'incomplete' && v.vendor_status !== 'incomplete') return false
-      if (statusFilter === 'overdue' && (v.overdue_count || 0) === 0) return false
+      if (deferredStatus === 'with_balance' && (v.balance_paise || 0) === 0) return false
+      if (deferredStatus === 'incomplete' && v.vendor_status !== 'incomplete') return false
+      if (deferredStatus === 'overdue' && (v.overdue_count || 0) === 0) return false
       if (hasAnyDropdownFilter) {
         var tags = vendorTags[String(v.vendor_id)]
         if (!tags) return false
@@ -765,7 +777,8 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
             {vendors.length === 0 ? 'No vendors yet' : 'No vendors match your filter'}
           </p>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+          <div aria-busy={listStale}
+            className={"grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 transition-opacity duration-150 " + (listStale ? "opacity-60" : "")}>
             {sorted.map(function (v) {
               return <VendorCard key={v.vendor_id} v={v} onOpen={openVendor} />
             })}
