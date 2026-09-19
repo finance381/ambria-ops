@@ -554,7 +554,7 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
     if (selectedVendor) await loadEntries(selectedVendor, showDeleted)
   }
 
-  
+
 
   var [reverseTarget, setReverseTarget] = useState(null)
   var [reversingEntry, setReversingEntry] = useState(false)
@@ -1269,8 +1269,20 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
                     the column shared an edge with anything but the wall. */}
                 <div className="shrink-0 flex flex-col items-end gap-2.5">
                   <div className="text-right">
-                    <p className={"text-[16px] font-bold tabular-nums whitespace-nowrap " + (isCredit ? "text-amber-700" : "text-emerald-700")} data-notranslate>
+                    {/* Dark, and the word says which direction it is.
+
+                        The colour was fighting the sign: a credit raises what
+                        we owe this vendor, so it was amber with a "+" on it,
+                        and a debit pays them, so it was emerald with a "−".
+                        Correct by the ledger, and backwards to anyone who has
+                        read a bank statement, where + is the good one. Rather
+                        than pick which convention to break, the figure stops
+                        carrying the meaning and "Billed"/"Paid" carries it. */}
+                    <p className="text-[16px] font-bold tabular-nums whitespace-nowrap text-slate-900" data-notranslate>
                       {isCredit ? '+' : '−'}{formatPoints(headlineAmt)}
+                    </p>
+                    <p className={"mt-0.5 text-[11px] font-bold uppercase tracking-[0.04em] " + (isCredit ? "text-amber-600" : "text-emerald-600")}>
+                      {isCredit ? 'Billed' : 'Paid'}
                     </p>
                     {/* The two are different facts — what this entry was worth,
                         and what the vendor stood at after it — but only the
