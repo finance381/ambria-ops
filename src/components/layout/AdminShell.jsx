@@ -99,7 +99,10 @@ function SubTabs({ tabs, active, onChange }) {
                 // lift the label off the rule the whole row is aligned to.
                 // The grey underline previews where the indigo one will land,
                 // so the row does not jump when you commit.
-                : "text-slate-500 border-transparent rounded-t-lg hover:text-slate-900 hover:border-slate-300 hover:bg-slate-900/[0.04] hover:scale-[1.05]")}>
+                // One step darker than it was. At 13px semibold on white,
+                // slate-500 is a weight you glance past, and these are the
+                // labels you read to find out where you are.
+                : "text-slate-600 border-transparent rounded-t-lg hover:text-slate-900 hover:border-slate-300 hover:bg-slate-900/[0.04] hover:scale-[1.05]")}>
             {t.icon && <Icon name={t.icon} size={14} />}
             {t.label}
           </button>
