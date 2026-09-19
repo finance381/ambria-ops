@@ -80,7 +80,13 @@ function Tile({ icon, tone, label, value, valueClass, wide, small, tint, active,
   // shape instead of resting inside it. So the border never changes colour —
   // the face tints and the label and figure darken, and the tile still has
   // exactly one edge, the same one every tile has.
-  var box = 'text-left h-full flex flex-col justify-center border border-slate-200 rounded-2xl px-4 py-3.5 transition-colors duration-150 ' +
+  // justify-between, not justify-center. The tiles are all as tall as the
+  // tallest — the outstanding one, which carries an opening line and an overdue
+  // chip — so centring left the other five with their label and figure floating
+  // in the middle of a box with empty space above and below. Spread instead:
+  // the label sits on the top edge and the figure on the bottom, so all six
+  // line up twice and the height is used rather than padded around.
+  var box = 'text-left h-full flex flex-col justify-between gap-2 border border-slate-200 rounded-2xl px-4 py-3.5 transition-colors duration-150 ' +
     (wide ? 'lg:col-span-2 ' : '') +
     // `tint` is for the one tile on a screen that is the answer rather than a
     // reading — the outstanding balance on a vendor's own page. It is a face,
@@ -110,7 +116,7 @@ function Tile({ icon, tone, label, value, valueClass, wide, small, tint, active,
         </span>
         <p className={'min-w-0 truncate text-[11.5px] font-semibold ' + (active ? 'text-indigo-700' : 'text-slate-600')}>{label}</p>
       </div>
-      <p className={'mt-2 font-display font-extrabold tabular-nums leading-none whitespace-nowrap ' + (wide ? 'text-[24px] ' : small ? 'text-[19px] ' : 'text-[22px] ') + valueClass} data-notranslate>{value}</p>
+      <p className={'font-display font-extrabold tabular-nums leading-none whitespace-nowrap ' + (wide ? 'text-[24px] ' : small ? 'text-[19px] ' : 'text-[22px] ') + valueClass} data-notranslate>{value}</p>
       {children}
     </>
   )
@@ -1043,24 +1049,30 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
             red on the page. */}
         <Tile wide icon="wallet" tone="bg-slate-100 text-slate-600" label="Outstanding Balance"
           value={formatPoints(currentBalance)} valueClass={balanceColour(currentBalance)}>
-          {openingPaise !== 0 && (
-            <p className="mt-2 self-start text-[11.5px] font-semibold text-slate-500">
-              Includes opening: <span className="text-slate-700" data-notranslate>{formatPoints(Math.abs(openingPaise))} {openingPaise > 0 ? 'Cr' : 'Dr'}</span>
-            </p>
-          )}
-          {/* self-start, because the tile is a flex column and a flex item
-              stretches to the column's width by default — which is how a chip
-              ended up as a full-width bar. And the wording is one span rather
-              than a count beside a text run: three flex items meant the gap
-              fell between the number and the word after it as well as after
-              the glyph, so it read as "1  overdue". */}
-          {(vs.overdue_count || 0) > 0 && (
-            <p className="mt-2.5 self-start inline-flex items-center gap-1.5 h-6 px-2.5 rounded-md bg-rose-100 text-[11px] font-bold text-rose-700 whitespace-nowrap">
-              <Icon name="alert" size={12} className="shrink-0" />
-              <span>
-                <span data-notranslate>{vs.overdue_count}</span> overdue · earliest {formatDate(vs.earliest_due_date)}
-              </span>
-            </p>
+          {/* Both notes on one wrapping line rather than one under the other.
+              Stacked, they made this tile two rows taller than the five beside
+              it, and every one of those five stretched to match — which is
+              where all the empty space in the row came from.
+
+              The chip needs self-start of its own: inside a flex column a flex
+              item stretches to the column's width, which is how it ended up as
+              a full-width bar. */}
+          {(openingPaise !== 0 || (vs.overdue_count || 0) > 0) && (
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+              {openingPaise !== 0 && (
+                <p className="text-[11.5px] font-semibold text-slate-500">
+                  Includes opening: <span className="text-slate-700" data-notranslate>{formatPoints(Math.abs(openingPaise))} {openingPaise > 0 ? 'Cr' : 'Dr'}</span>
+                </p>
+              )}
+              {(vs.overdue_count || 0) > 0 && (
+                <p className="self-start inline-flex items-center gap-1.5 h-6 px-2.5 rounded-md bg-rose-100 text-[11px] font-bold text-rose-700 whitespace-nowrap">
+                  <Icon name="alert" size={12} className="shrink-0" />
+                  <span>
+                    <span data-notranslate>{vs.overdue_count}</span> overdue · earliest {formatDate(vs.earliest_due_date)}
+                  </span>
+                </p>
+              )}
+            </div>
           )}
         </Tile>
         <Tile small icon="banknote" tone="bg-emerald-50 text-emerald-600" label="Cash"
