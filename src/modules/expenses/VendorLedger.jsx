@@ -75,17 +75,18 @@ function Tile({ icon, tone, label, value, valueClass, wide, accent, active, onCl
   // and some of these are buttons: without it the plain ones sat pinned to the
   // top of a row the pressable ones were sitting in the middle of.
   //
-  // justify-between rather than centred, because every tile is as tall as the
-  // tallest and the tallest carries notes under its figure. Centred, the rest
-  // floated in the middle of a box with empty space above and below; spread,
-  // the label sits on the top edge and the figure on the bottom and all of
-  // them line up twice.
+  // Centred rather than spread. Every tile is as tall as the tallest, and the
+  // tallest carries notes under its figure — spread, that spare height all
+  // landed in one gap between a tile's label and its own number, which reads
+  // worse than the same height split evenly above and below the pair. The
+  // label and the figure belong together; the leftover room does not belong
+  // between them.
   //
   // And selection is a fill while `accent` is an edge. Two different jobs:
   // `active` is a state you toggled, so the whole face answers; `accent` marks
   // the one tile that is the page's answer rather than one of its readings,
   // which wants picking out, not flagging.
-  var box = 'text-left h-full flex flex-col justify-between gap-2.5 border rounded-2xl px-4 py-4 transition-colors duration-150 ' +
+  var box = 'text-left h-full flex flex-col justify-center gap-2.5 border rounded-2xl px-4 py-4 transition-colors duration-150 ' +
     (wide ? 'lg:col-span-2 ' : '') +
     // `accent` marks the one tile on a screen that is the answer rather than a
     // reading — the outstanding balance on a vendor's own page. An indigo edge
