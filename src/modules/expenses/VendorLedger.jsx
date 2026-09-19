@@ -158,7 +158,6 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
   var [search, setSearch] = useState('')
   var [statusFilter, setStatusFilter] = useState('all')  // 'all' | 'with_balance' | 'incomplete' | 'overdue'
   var [vendorSort, setVendorSort] = useState('outstanding_desc')
-  var [vendorLayout, setVendorLayout] = useState('cards')  // 'cards' | 'rows'
 
   // Filter dropdowns (all optional, cascade where hierarchical)
   var [fExpType, setFExpType] = useState('')
@@ -591,29 +590,6 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
       )
     }
 
-    function renderVendorRow(v) {
-      var bal = v.balance_paise || 0
-      return (
-        <button key={v.vendor_id} type="button" onClick={function () { openVendor(v) }}
-          className="group text-left w-full flex items-center gap-3 px-3.5 py-3 hover:bg-indigo-50/30 transition-colors">
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <p className="min-w-0 truncate text-[14.5px] font-bold text-slate-900 transition-colors group-hover:text-indigo-700">{v.vendor_name || '—'}</p>
-              {renderChips(v)}
-            </div>
-            <div className="mt-1 flex flex-wrap items-center gap-y-1 text-[11px] text-slate-500">
-              {renderFacts(v)}
-            </div>
-          </div>
-          <BalancePill paise={bal} />
-          {renderCallLink(v)}
-          <span aria-hidden="true" className="shrink-0 text-slate-300 group-hover:text-indigo-500 transition-colors">
-            <Icon name="chevronRight" size={16} />
-          </span>
-        </button>
-      )
-    }
-
     return (
       <div className="space-y-4">
         {/* Five readings of the same list, four of which are also the filter.
@@ -690,12 +666,11 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
                 placeholder="All" noVoice />
             </div>
 
-            {/* Sort and the layout switch sit on the same line as the filters
-                rather than on a row of their own. They are not labelled,
-                because each one says what it is in the control itself. */}
-            {/* The real sort control is invisible and sits exactly over the
-                words it describes, so the whole thing is the tap target and the
-                native picker still opens. */}
+            {/* Sort sits on the same line as the filters rather than on a row
+                of its own, and is not labelled because the control says what
+                it is. The real control is invisible and sits exactly over the
+                words it describes, so the whole thing is the tap target and
+                the native picker still opens. */}
             <span className="relative shrink-0 inline-flex items-center gap-1.5 h-10 px-3.5 rounded-xl border border-slate-200 text-[12.5px] text-slate-600">
               Sort by:
               <span className="font-bold text-slate-900">{VENDOR_SORTS[vendorSort]}</span>
@@ -707,19 +682,6 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
                 })}
               </select>
             </span>
-
-            <div className="shrink-0 inline-flex items-center gap-0.5 h-10 p-1 rounded-xl border border-slate-200">
-              {[{ k: 'cards', icon: 'box', label: 'Cards' }, { k: 'rows', icon: 'list', label: 'Rows' }].map(function (o) {
-                return (
-                  <button key={o.k} type="button" onClick={function () { setVendorLayout(o.k) }}
-                    aria-label={o.label} aria-pressed={vendorLayout === o.k}
-                    className={"w-9 h-full inline-flex items-center justify-center rounded-lg transition-colors " +
-                      (vendorLayout === o.k ? "bg-indigo-50 text-indigo-700" : "text-slate-400 hover:text-slate-700 hover:bg-slate-50")}>
-                    <Icon name={o.icon} size={15} />
-                  </button>
-                )
-              })}
-            </div>
 
             {/* Only when there is something to clear. The status filter has the
                 All tile to go back to; this is for the four dropdowns and the
@@ -741,13 +703,9 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
           <p className="text-slate-400 text-sm text-center py-12">
             {vendors.length === 0 ? 'No vendors yet' : 'No vendors match your filter'}
           </p>
-        ) : vendorLayout === 'cards' ? (
+        ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
             {sorted.map(renderVendorCard)}
-          </div>
-        ) : (
-          <div className="bg-white border border-slate-200 rounded-2xl divide-y divide-slate-100 overflow-hidden">
-            {sorted.map(renderVendorRow)}
           </div>
         )}
       </div>
