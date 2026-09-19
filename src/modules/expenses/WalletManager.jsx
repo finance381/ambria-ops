@@ -176,6 +176,11 @@ import CheckedStamp from '../../components/ui/CheckedStamp'
 import { hasPerm } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
 
+// Local (not UTC) y-m-d, same as the expense date picker — a straight
+// toISOString() would roll a late-night transfer back to the wrong day
+// for anyone west of Greenwich.
+function toYMD(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') }
+
 var REF_TYPE_LABELS = {
   expense: 'Expense',
   expense_refund: 'Refund',
@@ -335,6 +340,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   var [transferTo, setTransferTo] = useState('')
   var [transferToBalance, setTransferToBalance] = useState(null)
   var [transferAmount, setTransferAmount] = useState('')
+  var [transferDate, setTransferDate] = useState('')
   var [transferDesc, setTransferDesc] = useState('')
   var [transferImage, setTransferImage] = useState(null)
   var transferRec = useAudioRecorder()
@@ -848,6 +854,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     setTransferTo('')
     setTransferToBalance(null)
     setTransferAmount('')
+    setTransferDate(toYMD(new Date()))
     setTransferDesc('')
     setTransferImage(null)
     transferRec.cancel()
@@ -868,7 +875,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   }, [transferTo])
 
   async function initiateTransfer() {
-    if (transferSaving || !transferTo || !transferAmount || Number(transferAmount) <= 0) return
+    if (transferSaving || !transferTo || !transferAmount || Number(transferAmount) <= 0 || !transferDate) return
     setTransferSaving(true)
     var amountRupees = Math.round(Number(transferAmount) * 100)
     var imagePath = null
@@ -891,6 +898,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
       p_amount_paise: amountRupees,
       p_description: (transferDesc.trim() || 'Cash transfer') + ' → ' + toName,
       p_sender_image: imagePath,
+      p_transfer_date: transferDate || null,
     })
     if (error) { alert('Transfer failed: ' + error.message); setTransferSaving(false); return }
     try { await logActivity('WALLET_TRANSFER', toName + ' | ' + formatPoints(amountRupees)) } catch (_) {}
@@ -2345,6 +2353,32 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             )}
           </div>
 
+          {/* Bounded to today − 3 days, same as expense date: a transfer is
+              cash that already changed hands, and this records when. */}
+          {(function () {
+            var today = toYMD(new Date())
+            var minDate = toYMD(new Date(Date.now() - 3 * 86400000))
+            return (
+              <div>
+                <label htmlFor="transfer-date" className="flex items-center gap-2 text-[13px] font-bold text-slate-800 mb-1.5">
+                  <Icon name="calendar" size={15} className="shrink-0 text-slate-400" />
+                  Transfer Date
+                  <span className="text-red-500">*</span>
+                </label>
+                <input id="transfer-date" type="date" value={transferDate} min={minDate} max={today}
+                  onChange={function (e) {
+                    var v = e.target.value
+                    if (v && v < minDate) { setTransferDate(minDate); return }
+                    if (v && v > today) { setTransferDate(today); return }
+                    setTransferDate(v)
+                  }}
+                  className="w-full px-3.5 py-3 bg-white border border-slate-200 rounded-xl text-[14px] text-slate-900 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-shadow"
+                  style={{ fontSize: '16px' }} />
+                <p className="text-[10px] text-slate-500 mt-1">Today or up to 3 days back.</p>
+              </div>
+            )
+          })()}
+
           <div>
             <label htmlFor="transfer-amount" className="flex items-center gap-2 text-[13px] font-bold text-slate-800 mb-1.5">
               <Icon name="rupee" size={15} className="shrink-0 text-slate-400" />
@@ -2429,7 +2463,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
               Cancel
             </button>
             {(function () {
-              var ready = !transferSaving && transferTo && transferAmount && Number(transferAmount) > 0
+              var ready = !transferSaving && transferTo && transferAmount && Number(transferAmount) > 0 && transferDate
               return (
                 <button type="button" onClick={initiateTransfer} disabled={!ready}
                   className={"flex-1 h-12 inline-flex items-center justify-center gap-1.5 rounded-xl text-[14px] font-bold text-white transition-all " +
@@ -2728,7 +2762,11 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                       {isCancelled && t.cancelled_reason && (
                         <p className="text-[10px] text-rose-600 italic truncate">Reason: {t.cancelled_reason}</p>
                       )}
-                      <p className="text-[11px] text-slate-500">{formatDate(t.created_at)}</p>
+                      <p className="text-[11px] text-slate-500">
+                        {tr && tr.transfer_date && tr.transfer_date !== String(t.created_at).slice(0, 10)
+                          ? formatDate(tr.transfer_date)
+                          : formatDate(t.created_at)}
+                      </p>
                       <div className="flex gap-1 flex-wrap mt-1" onClick={function (ev) { ev.stopPropagation() }}>
                         {t.reference_type === 'collection' && t.receipt_no && (
                           <button onClick={function (ev) { ev.stopPropagation(); printReceipt(t) }}
@@ -3457,8 +3495,12 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
               // Date and time are one fact, so they are one item rather than two
               // separated as though they were unrelated.
               var when = formatDate(t.created_at) + (time ? ', ' + time : '')
+              // A backdated transfer carries its own date, distinct from when it
+              // was logged — same split as an expense's expense_date vs created_at.
+              var backdated = transferRow && transferRow.transfer_date && transferRow.transfer_date !== String(t.created_at).slice(0, 10)
               var facts = [
-                { icon: 'calendar', text: when },
+                backdated ? { icon: 'calendar', text: 'For ' + formatDate(transferRow.transfer_date) } : null,
+                { icon: backdated ? 'clock' : 'calendar', text: (backdated ? 'Logged ' : '') + when },
                 ref ? { icon: 'receipt', text: ref } : null,
                 who ? { icon: 'user', text: who, lead: 'by ' } : null,
               ].filter(Boolean)
