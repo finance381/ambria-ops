@@ -1098,14 +1098,18 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
         />
       )}
 
-      {/* Entries list */}
+      {/* Entries list. A card each, with space between them, rather than rows
+          sharing one box: two entries for the same vendor are often the same
+          words, the same amount and the same day, and a hairline between them
+          was the only thing saying where one ended — so a page of them read as
+          one long list of repeated text. */}
       {entriesLoading ? (
         <p className="text-slate-400 text-[13px] font-medium text-center py-10">Loading entries…</p>
       ) : displayEntries.length === 0 ? (
         <p className="text-slate-400 text-[13px] font-medium text-center py-10">No entries for this vendor.</p>
       ) : (
-        <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
-          {displayEntries.map(function (e, idx) {
+        <div className="space-y-3">
+          {displayEntries.map(function (e) {
             var isCredit = (e.credit_paise || 0) > 0
             var isDeleted = !!e.deleted_at
             var amt = isCredit ? (e.credit_paise || 0) : (e.debit_paise || 0)
@@ -1127,10 +1131,9 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
             return (
               <div key={e.id}
                 onClick={handleRowClick}
-                className={"flex items-start gap-3.5 px-4 py-4 " +
-                  (idx < displayEntries.length - 1 ? "border-b border-slate-100 " : "") +
-                  (isDeleted ? "opacity-50" : "") +
-                  (isExpRow ? " cursor-pointer hover:bg-indigo-50/40 transition-colors" : "")}>
+                className={"flex items-start gap-3.5 bg-white border border-slate-200 rounded-2xl px-4 py-4 transition-all duration-150 " +
+                  (isDeleted ? "opacity-50 " : "") +
+                  (isExpRow ? "cursor-pointer hover:border-indigo-300 hover:shadow-[0_4px_14px_rgba(79,70,229,0.08)]" : "")}>
                 <span aria-hidden="true" className={"shrink-0 w-2.5 h-2.5 rounded-full mt-2 " + dotColor} />
                 <div className="flex-1 min-w-0">
                   <p className={"text-[15px] font-bold text-slate-900 leading-snug " + (isDeleted ? "line-through" : "")}>
@@ -1213,7 +1216,7 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
                     // rest of this screen labels a box.
                     return (
                       <div className="mt-3.5 grid grid-cols-1 lg:grid-cols-3 gap-3 items-start">
-                        <div className="bg-white border border-slate-200 rounded-xl p-4">
+                        <div className="bg-slate-50 border border-slate-200/70 rounded-xl p-4">
                           <p className="flex items-center gap-2 mb-3 text-[11.5px] font-bold uppercase tracking-[0.06em] text-slate-500">
                             <Icon name="calculator" size={14} className="text-slate-400" />
                             Amount Breakdown
@@ -1235,7 +1238,7 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
                         </div>
 
                         {b.allocations && b.allocations.length > 0 && (
-                          <div className="lg:col-span-2 bg-white border border-slate-200 rounded-xl p-4">
+                          <div className="lg:col-span-2 bg-slate-50 border border-slate-200/70 rounded-xl p-4">
                             <p className="flex items-center gap-2 mb-3 text-[11.5px] font-bold uppercase tracking-[0.06em] text-slate-500">
                               <Icon name="split" size={14} className="text-slate-400" />
                               Allocation{b.allocations.length > 1 ? 's' : ''}
