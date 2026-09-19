@@ -19,14 +19,6 @@ import Icon from '../../components/ui/Icon'
 
 function byName(a, b) { return (a.name || '').localeCompare(b.name || '') }
 
-var VENDOR_SORTS = {
-  outstanding_desc: 'Outstanding (High to Low)',
-  outstanding_asc: 'Outstanding (Low to High)',
-  name: 'Name (A–Z)',
-  recent: 'Recent activity',
-  due: 'Earliest due',
-}
-
 // Outstanding is the ordinary state of a vendor ledger — nearly every row has
 // some — so colouring it said nothing and turned the whole grid amber. A
 // colour that is on everything is not a signal, it is a background.
@@ -144,7 +136,6 @@ function Fact({ icon, label, value, first }) {
   )
 }
 
-
 function VendorLedger({ profile, onNavigateToExpenses }) {
   var permsNew = (profile && profile.permsNew) || []
   var isAdmin = hasPerm(permsNew, 'admin.dashboard')
@@ -157,7 +148,6 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
   var [loading, setLoading] = useState(true)
   var [search, setSearch] = useState('')
   var [statusFilter, setStatusFilter] = useState('all')  // 'all' | 'with_balance' | 'incomplete' | 'overdue'
-  var [vendorSort, setVendorSort] = useState('outstanding_desc')
 
   // Filter dropdowns (all optional, cascade where hierarchical)
   var [fExpType, setFExpType] = useState('')
@@ -499,17 +489,11 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
     var outstandingClass = balanceColour(totalOutstanding)
     var hasDropdownFilter = !!(fExpType || fExpSubType || fCategory || fSubCategory)
 
+    // Most owed first, always. The order is not a control any more: the five
+    // it offered were four ways of not answering the question this list is
+    // opened to answer, and the one that did was already the default.
     var sorted = filtered.slice().sort(function (a, b) {
-      if (vendorSort === 'name') return (a.vendor_name || '').localeCompare(b.vendor_name || '')
-      if (vendorSort === 'recent') return String(b.last_entry_date || '').localeCompare(String(a.last_entry_date || ''))
-      if (vendorSort === 'due') {
-        // A vendor with nothing due sorts last. An empty date string compares
-        // below every real one, which would have put exactly the vendors with
-        // no deadline at the top of a list ordered by deadline.
-        return String(a.earliest_due_date || '9999-12-31').localeCompare(String(b.earliest_due_date || '9999-12-31'))
-      }
-      var diff = (a.balance_paise || 0) - (b.balance_paise || 0)
-      return vendorSort === 'outstanding_asc' ? diff : -diff
+      return (b.balance_paise || 0) - (a.balance_paise || 0)
     })
 
     function renderFacts(v) {
@@ -665,23 +649,6 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
                 value={fSubCategory} onChange={function (v) { setFSubCategory(v) }}
                 placeholder="All" noVoice />
             </div>
-
-            {/* Sort sits on the same line as the filters rather than on a row
-                of its own, and is not labelled because the control says what
-                it is. The real control is invisible and sits exactly over the
-                words it describes, so the whole thing is the tap target and
-                the native picker still opens. */}
-            <span className="relative shrink-0 inline-flex items-center gap-1.5 h-10 px-3.5 rounded-xl border border-slate-200 text-[12.5px] text-slate-600">
-              Sort by:
-              <span className="font-bold text-slate-900">{VENDOR_SORTS[vendorSort]}</span>
-              <Icon name="chevronDown" size={14} className="text-slate-400" />
-              <select value={vendorSort} onChange={function (e) { setVendorSort(e.target.value) }}
-                aria-label="Sort vendors" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer">
-                {Object.keys(VENDOR_SORTS).map(function (k) {
-                  return <option key={k} value={k}>{VENDOR_SORTS[k]}</option>
-                })}
-              </select>
-            </span>
 
             {/* Only when there is something to clear. The status filter has the
                 All tile to go back to; this is for the four dropdowns and the
