@@ -1315,8 +1315,8 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
                         the same figure printed twice, one under the other, reads
                         as a bug rather than a coincidence. */}
                     {!isDeleted && e.runningBalance !== headlineAmt && (
-                      <p className="mt-1 text-[12px] text-slate-400 tabular-nums whitespace-nowrap">
-                        Balance after: <span data-notranslate>{formatPoints(e.runningBalance)}</span>
+                      <p className="mt-1 text-[12px] font-medium text-slate-500 tabular-nums whitespace-nowrap">
+                        Balance after: <span className="font-bold text-slate-700" data-notranslate>{formatPoints(e.runningBalance)}</span>
                       </p>
                     )}
                   </div>
