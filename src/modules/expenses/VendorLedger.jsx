@@ -37,19 +37,32 @@ function balanceColour(paise) {
 
 // A figure, what it is, and the glyph that says which. The number carries the
 // colour; the tile around it does not.
-function Tile({ icon, tone, label, value, valueClass, wide, children }) {
-  return (
-    <div className={'bg-white border border-slate-200 rounded-2xl px-3.5 py-3 ' + (wide ? 'col-span-2' : '')}>
-      <div className="flex items-center gap-2.5">
-        <span aria-hidden="true" className={'shrink-0 w-8 h-8 rounded-lg inline-flex items-center justify-center ' + tone}>
-          <Icon name={icon} size={16} />
+//
+// Four of these are also the filter. A tile that already prints how many
+// vendors are overdue is a better button for "show me those" than a segment in
+// a bar underneath saying the same word without the count — so the tiles that
+// count a state can be pressed, and the two that are pure readings cannot.
+function Tile({ icon, tone, label, value, valueClass, wide, active, onClick, children }) {
+  var box = 'text-left bg-white border rounded-2xl px-4 py-3.5 transition-all duration-150 ' +
+    (wide ? 'lg:col-span-2 ' : '') +
+    (active ? 'border-indigo-400 ring-2 ring-indigo-100 ' : 'border-slate-200 ') +
+    (onClick ? 'hover:border-indigo-300 hover:bg-indigo-50/20 active:scale-[0.995] ' : '')
+  var inner = (
+    <>
+      <div className="flex items-center gap-3">
+        <span aria-hidden="true" className={'shrink-0 w-11 h-11 rounded-full inline-flex items-center justify-center ' + tone}>
+          <Icon name={icon} size={19} />
         </span>
-        <p className="min-w-0 truncate text-[11px] font-semibold text-slate-500">{label}</p>
+        <div className="min-w-0">
+          <p className="truncate text-[12px] font-semibold text-slate-500">{label}</p>
+          <p className={'mt-1.5 font-bold tabular-nums leading-none ' + (wide ? 'text-[20px] ' : 'text-[19px] ') + valueClass} data-notranslate>{value}</p>
+        </div>
       </div>
-      <p className={'mt-2 font-bold tabular-nums leading-none ' + (wide ? 'text-[21px] ' : 'text-[19px] ') + valueClass} data-notranslate>{value}</p>
       {children}
-    </div>
+    </>
   )
+  if (!onClick) return <div className={box}>{inner}</div>
+  return <button type="button" onClick={onClick} aria-pressed={!!active} className={box + 'w-full'}>{inner}</button>
 }
 
 // Chips stay white, with one exception. A coloured chip competes with the
@@ -553,37 +566,41 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
 
     return (
       <div className="space-y-4">
-        {/* No overdue banner. It counted the overdue vendors, which the tile
-            below already does, and its one action was to switch to the Overdue
-            filter, which is a segment in the bar below that. A strip of colour
-            across the top for something said twice underneath it. */}
-
-        {/* Five readings of the same list, the outstanding total given the room
-            the other four do not need. */}
-        <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
-          <Tile wide icon="wallet" tone="bg-indigo-50 text-indigo-600" label="Total Outstanding"
+        {/* Six readings of the same list, four of which are also the filter.
+            The segmented All / With Balance / Incomplete / Overdue bar is gone:
+            it repeated four words that were already up here with their counts
+            beside them, and a count is the part that tells you whether pressing
+            it is worth anything. */}
+        <div className="grid grid-cols-2 lg:grid-cols-7 gap-3">
+          <Tile wide icon="wallet" tone="bg-amber-50 text-amber-600" label="Total Outstanding"
             value={formatPoints(totalOutstanding)} valueClass={outstandingClass}>
             {(totalCash !== 0 || totalBank !== 0) && (
-              <div className="mt-2 flex flex-wrap items-center gap-y-1 text-[11px] text-slate-400">
+              <div className="mt-2.5 pt-2.5 border-t border-slate-100 flex flex-wrap items-center gap-y-1 text-[11px] text-slate-400">
                 <Fact first icon="banknote" label="Cash" value={formatPoints(totalCash)} />
                 <Fact icon="bank" label="Bank" value={formatPoints(totalBank)} />
               </div>
             )}
           </Tile>
-          <Tile icon="building" tone="bg-slate-100 text-slate-500" label="Total Vendors"
+          <Tile icon="list" tone="bg-indigo-50 text-indigo-600" label="All"
+            value={activeVendors.length} valueClass="text-indigo-700"
+            active={statusFilter === 'all'} onClick={function () { setStatusFilter('all') }} />
+          <Tile icon="building" tone="bg-blue-50 text-blue-600" label="Total Vendors"
             value={activeVendors.length} valueClass="text-slate-900" />
           <Tile icon="clock" tone="bg-rose-50 text-rose-600" label="Overdue Vendors"
-            value={overdueVendors.length} valueClass={overdueVendors.length > 0 ? 'text-rose-700' : 'text-slate-400'} />
+            value={overdueVendors.length} valueClass={overdueVendors.length > 0 ? 'text-rose-700' : 'text-slate-400'}
+            active={statusFilter === 'overdue'} onClick={function () { setStatusFilter('overdue') }} />
           <Tile icon="checkCircle" tone="bg-emerald-50 text-emerald-600" label="With Balance"
-            value={vendorsWithBalance} valueClass={vendorsWithBalance > 0 ? 'text-emerald-700' : 'text-slate-400'} />
+            value={vendorsWithBalance} valueClass={vendorsWithBalance > 0 ? 'text-emerald-700' : 'text-slate-400'}
+            active={statusFilter === 'with_balance'} onClick={function () { setStatusFilter('with_balance') }} />
           <Tile icon="fileText" tone="bg-amber-50 text-amber-600" label="Incomplete"
-            value={incompleteCount} valueClass={incompleteCount > 0 ? 'text-amber-700' : 'text-slate-400'} />
+            value={incompleteCount} valueClass={incompleteCount > 0 ? 'text-amber-700' : 'text-slate-400'}
+            active={statusFilter === 'incomplete'} onClick={function () { setStatusFilter('incomplete') }} />
         </div>
 
         {/* Everything that narrows the list, in one bar. Each control is
             labelled above rather than only inside it, so a dropdown reading
             "All" still says what it is all of. */}
-        <div className="bg-white border border-slate-200 rounded-2xl p-3.5 space-y-3">
+        <div className="bg-white border border-slate-200 rounded-2xl p-3.5">
           <div className="flex flex-wrap items-end gap-3">
             <div className="flex-[2] min-w-[220px]">
               <label className="block text-[11px] font-semibold text-slate-500 mb-1.5">Search</label>
@@ -619,45 +636,14 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
                 value={fSubCategory} onChange={function (v) { setFSubCategory(v) }}
                 placeholder="All" />
             </div>
-          </div>
 
-          <div className="flex flex-wrap items-center gap-3 pt-3 border-t border-slate-100">
-            <div className="flex gap-1 bg-slate-100 rounded-xl p-0.5">
-              {[
-                { key: 'all', label: 'All' },
-                { key: 'with_balance', label: 'With Balance' },
-                { key: 'incomplete', label: 'Incomplete' },
-                { key: 'overdue', label: 'Overdue' },
-              ].map(function (o) {
-                return (
-                  <button key={o.key} type="button" onClick={function () { setStatusFilter(o.key) }} aria-pressed={statusFilter === o.key}
-                    className={"px-3 py-1.5 text-[12px] font-bold rounded-lg transition-colors " +
-                      (statusFilter === o.key ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-900")}>
-                    {o.label}
-                  </button>
-                )
-              })}
-            </div>
-
-            <span className="text-[12px] text-slate-400" data-notranslate>
-              {sorted.length} of {activeVendors.length}
-            </span>
-
-            {(hasDropdownFilter || search || statusFilter !== 'all') && (
-              <button type="button"
-                onClick={function () { setSearch(''); setStatusFilter('all'); setFExpType(''); setFExpSubType(''); setFCategory(''); setFSubCategory('') }}
-                className="inline-flex items-center gap-1.5 text-[12px] font-bold text-indigo-600 hover:text-indigo-800 transition-colors">
-                <Icon name="close" size={13} />
-                Clear
-              </button>
-            )}
-
-            <span className="flex-1" />
-
-            {/* The real control is invisible and sits exactly over the words it
-                describes, so the whole thing is the tap target and the native
-                picker still opens. */}
-            <span className="relative shrink-0 inline-flex items-center gap-1.5 h-9 px-3 rounded-xl border border-slate-200 text-[12.5px] text-slate-500">
+            {/* Sort and the layout switch sit on the same line as the filters
+                rather than on a row of their own. They are not labelled,
+                because each one says what it is in the control itself. */}
+            {/* The real sort control is invisible and sits exactly over the
+                words it describes, so the whole thing is the tap target and the
+                native picker still opens. */}
+            <span className="relative shrink-0 inline-flex items-center gap-1.5 h-10 px-3.5 rounded-xl border border-slate-200 text-[12.5px] text-slate-500">
               Sort by:
               <span className="font-bold text-slate-900">{VENDOR_SORTS[vendorSort]}</span>
               <Icon name="chevronDown" size={14} className="text-slate-400" />
@@ -669,18 +655,30 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
               </select>
             </span>
 
-            <div className="shrink-0 inline-flex items-center gap-0.5 p-1 rounded-xl border border-slate-200">
+            <div className="shrink-0 inline-flex items-center gap-0.5 h-10 p-1 rounded-xl border border-slate-200">
               {[{ k: 'cards', icon: 'box', label: 'Cards' }, { k: 'rows', icon: 'list', label: 'Rows' }].map(function (o) {
                 return (
                   <button key={o.k} type="button" onClick={function () { setVendorLayout(o.k) }}
                     aria-label={o.label} aria-pressed={vendorLayout === o.k}
-                    className={"w-8 h-7 inline-flex items-center justify-center rounded-lg transition-colors " +
+                    className={"w-9 h-full inline-flex items-center justify-center rounded-lg transition-colors " +
                       (vendorLayout === o.k ? "bg-indigo-50 text-indigo-700" : "text-slate-400 hover:text-slate-700 hover:bg-slate-50")}>
                     <Icon name={o.icon} size={15} />
                   </button>
                 )
               })}
             </div>
+
+            {/* Only when there is something to clear. The status filter has the
+                All tile to go back to; this is for the four dropdowns and the
+                search, which have no tile of their own. */}
+            {(hasDropdownFilter || search) && (
+              <button type="button"
+                onClick={function () { setSearch(''); setFExpType(''); setFExpSubType(''); setFCategory(''); setFSubCategory('') }}
+                className="shrink-0 inline-flex items-center gap-1.5 h-10 px-3.5 rounded-xl border border-slate-200 text-[12.5px] font-bold text-indigo-600 hover:border-indigo-300 hover:bg-indigo-50 transition-colors">
+                <Icon name="close" size={13} />
+                Clear
+              </button>
+            )}
           </div>
         </div>
 
