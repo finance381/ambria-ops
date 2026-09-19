@@ -153,7 +153,11 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds, glass, prof
 
     var query = supabase.from('expenses')
       .select('id, user_id, batch_id, expense_type_id, expense_sub_type_id, amount_paise, tax_paise, description, status, expense_date, receipt_path, receipt_paths, created_at, rejection_reason, flag_reason, penalty_paise, penalized_at, penalized_by, reviewed_at, reviewed_by, acknowledged_at, acknowledged_by, deduction_type, vendor_name, travel_from, travel_to, travel_mode, metadata, event_id, deleted_at, delete_reason, deleted_by, checked_by, checked_at, payment_cash_paise, payment_credit_paise, payment_credit_cash_paise, payment_credit_bank_paise, cash_due_date, bank_due_date, expense_types(name, extra_fields), expense_sub_types(name, extra_fields), events(event_name, venue_name, function_date, pax), ' + allocEmbed)
+      // id tiebreaker: batch-submitted expenses share one created_at, and
+      // without it a later UPDATE (e.g. toggling checked_by) can shuffle ties
+      // on the next fetch/page.
       .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
       .range(offset, offset + PAGE_SIZE)
 
     if (allExpStatus === 'deleted') {
