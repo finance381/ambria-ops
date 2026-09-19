@@ -5,44 +5,72 @@ import PageWave from '../ui/PageWave'
 import Logo from '../ui/Logo'
 import Icon from '../ui/Icon'
 
-var RateCardEditor = lazy(function () { return import('../../modules/quote/RateCardEditor') })
-var PendingReview = lazy(function () { return import('../../modules/categories/PendingReview') })
-var Events = lazy(function () { return import('../../modules/events/Events') })
-var ExtraPlateCollect = lazy(function () { return import('../../modules/events/ExtraPlateCollect') })
-var AdminItems = lazy(function () { return import('../../modules/inventory/AdminItems') })
-var Categories = lazy(function () { return import('../../modules/categories/Categories') })
-var Users = lazy(function () { return import('../../modules/users/Users') })
-var ActivityLogs = lazy(function () { return import('../../modules/logs/ActivityLogs') })
-var Expenses = lazy(function () { return import('../../modules/expenses/Expenses') })
-var Payments = lazy(function () { return import('../../modules/expenses/Payments') })
-var Wallet = lazy(function () { return import('../../modules/expenses/Wallet') })
-var GVLog = lazy(function () { return import('../../modules/expenses/GVLog') })
-var Dashboard = lazy(function () { return import('../../modules/dashboard/Dashboard') })
-var Boxes = lazy(function () { return import('../../modules/boxes/Boxes') })
-var ProductionOrders = lazy(function () { return import('../../modules/production/ProductionOrders') })
-var Challans = lazy(function () { return import('../../modules/challans/Challans') })
-var Purchase = lazy(function () { return import('../../modules/purchase/Purchase') })
-var Calendar = lazy(function () { return import('../../modules/calendar/Calendar') })
-var Vendors = lazy(function () { return import('../../modules/vendors/Vendors') })
-var Requisitions = lazy(function () { return import('../../modules/requisitions/Requisitions') })
-var StaffRoles = lazy(function () { return import('../../modules/manpower/StaffRoles') })
-var Analytics = lazy(function () { return import('../../modules/analytics/Analytics') })
-var Overview = lazy(function () { return import('../../modules/overview/Overview') })
-var JobDepartments = lazy(function () { return import('../../modules/employees/JobDepartments') })
-var Employees = lazy(function () { return import('../../modules/employees/Employees') })
-var RoleTemplates = lazy(function () { return import('../../modules/users/RoleTemplates') })
-var EmployeeDocTypes = lazy(function () { return import('../../modules/employees/EmployeeDocTypes') })
-var SalaryLedger = lazy(function () { return import('../../modules/employees/SalaryLedger') })
-var SalaryPayouts = lazy(function () { return import('../../modules/expenses/SalaryPayouts') })
-var LedgersHub = lazy(function () { return import('../../modules/expenses/LedgersHub') })
-var Projects = lazy(function () { return import('../../modules/projects/Projects') })
-var Reviews = lazy(function () { return import('../../modules/reviews/Reviews') })
-var BroadcastHub = lazy(function () { return import('../../modules/broadcast/BroadcastHub') })
-var BroadcastTemplates = lazy(function () { return import('../../modules/broadcast/Templates') })
-var BroadcastContacts = lazy(function () { return import('../../modules/broadcast/Contacts') })
-var BroadcastCampaigns = lazy(function () { return import('../../modules/broadcast/Campaigns') })
-var BroadcastInbox = lazy(function () { return import('../../modules/broadcast/Inbox') })
-var BroadcastSettings = lazy(function () { return import('../../modules/broadcast/Settings') })
+// lazy(), but the importer stays reachable on the component it produced.
+//
+// A tab's code is only asked for once the tab is clicked, so every first visit
+// pays a round trip while the button sits there doing nothing. A pointer
+// arrives over a tab a good while before it presses it, which is enough time
+// to have the chunk on its way — and by the time the click lands the module is
+// usually already in the browser's cache, so the tab opens on the next frame.
+//
+// Calling load() again is free: a module that is already being fetched, or is
+// already in memory, resolves from the module map without touching the network.
+function lazyTab(load) {
+  var C = lazy(load)
+  C.load = load
+  return C
+}
+
+function prefetchTab(cfg) {
+  if (cfg && cfg.component && cfg.component.load) cfg.component.load()
+}
+
+var RateCardEditor = lazyTab(function () { return import('../../modules/quote/RateCardEditor') })
+var PendingReview = lazyTab(function () { return import('../../modules/categories/PendingReview') })
+var Events = lazyTab(function () { return import('../../modules/events/Events') })
+var ExtraPlateCollect = lazyTab(function () { return import('../../modules/events/ExtraPlateCollect') })
+var AdminItems = lazyTab(function () { return import('../../modules/inventory/AdminItems') })
+var Categories = lazyTab(function () { return import('../../modules/categories/Categories') })
+var Users = lazyTab(function () { return import('../../modules/users/Users') })
+var ActivityLogs = lazyTab(function () { return import('../../modules/logs/ActivityLogs') })
+var Expenses = lazyTab(function () { return import('../../modules/expenses/Expenses') })
+var Payments = lazyTab(function () { return import('../../modules/expenses/Payments') })
+var Wallet = lazyTab(function () { return import('../../modules/expenses/Wallet') })
+var GVLog = lazyTab(function () { return import('../../modules/expenses/GVLog') })
+var Dashboard = lazyTab(function () { return import('../../modules/dashboard/Dashboard') })
+var Boxes = lazyTab(function () { return import('../../modules/boxes/Boxes') })
+var ProductionOrders = lazyTab(function () { return import('../../modules/production/ProductionOrders') })
+var Challans = lazyTab(function () { return import('../../modules/challans/Challans') })
+var Purchase = lazyTab(function () { return import('../../modules/purchase/Purchase') })
+var Calendar = lazyTab(function () { return import('../../modules/calendar/Calendar') })
+var Vendors = lazyTab(function () { return import('../../modules/vendors/Vendors') })
+var Requisitions = lazyTab(function () { return import('../../modules/requisitions/Requisitions') })
+var StaffRoles = lazyTab(function () { return import('../../modules/manpower/StaffRoles') })
+var Analytics = lazyTab(function () { return import('../../modules/analytics/Analytics') })
+var Overview = lazyTab(function () { return import('../../modules/overview/Overview') })
+var JobDepartments = lazyTab(function () { return import('../../modules/employees/JobDepartments') })
+var Employees = lazyTab(function () { return import('../../modules/employees/Employees') })
+var RoleTemplates = lazyTab(function () { return import('../../modules/users/RoleTemplates') })
+var EmployeeDocTypes = lazyTab(function () { return import('../../modules/employees/EmployeeDocTypes') })
+var SalaryLedger = lazyTab(function () { return import('../../modules/employees/SalaryLedger') })
+var SalaryPayouts = lazyTab(function () { return import('../../modules/expenses/SalaryPayouts') })
+// Two round trips, not one: the hub arrives and only then asks for whichever
+// ledger is active, so warming the hub alone would still leave the second wait
+// in place. Expense is the tab it opens on, so it is fetched alongside the hub
+// rather than after it.
+var LedgersHub = lazyTab(function () {
+  var hub = import('../../modules/expenses/LedgersHub')
+  import('../../modules/expenses/Ledgers')
+  return hub
+})
+var Projects = lazyTab(function () { return import('../../modules/projects/Projects') })
+var Reviews = lazyTab(function () { return import('../../modules/reviews/Reviews') })
+var BroadcastHub = lazyTab(function () { return import('../../modules/broadcast/BroadcastHub') })
+var BroadcastTemplates = lazyTab(function () { return import('../../modules/broadcast/Templates') })
+var BroadcastContacts = lazyTab(function () { return import('../../modules/broadcast/Contacts') })
+var BroadcastCampaigns = lazyTab(function () { return import('../../modules/broadcast/Campaigns') })
+var BroadcastInbox = lazyTab(function () { return import('../../modules/broadcast/Inbox') })
+var BroadcastSettings = lazyTab(function () { return import('../../modules/broadcast/Settings') })
 
 function ExpenseTypesMaster(props) {
   return <Expenses profile={props.profile} masterMode={true} />
@@ -58,6 +86,11 @@ function SubTabs({ tabs, active, onChange }) {
       {tabs.map(function (t) {
         return (
           <button key={t.key} onClick={function () { onChange(t.key) }}
+            // The pointer reaching the tab is the signal to fetch its code.
+            // pointerenter covers a tap too — it fires on the finger landing,
+            // just before pointerdown, so a touch still gets a head start.
+            onPointerEnter={function () { prefetchTab(t) }}
+            onFocus={function () { prefetchTab(t) }}
             className={"shrink-0 sm:flex-1 sm:shrink sm:justify-center inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-2.5 text-[12.5px] sm:text-[13px] font-semibold border-b-2 -mb-px whitespace-nowrap origin-bottom transform-gpu transition-all duration-150 " +
               (active === t.key
                 ? "border-indigo-600 text-indigo-700"

@@ -2,14 +2,23 @@ import { useState, useEffect, lazy, Suspense } from 'react'
 import { supabase } from '../../lib/supabase'
 import { hasPerm } from '../../lib/permissions'
 
-var Ledgers = lazy(function () { return import('./Ledgers') })
-var EventLedger = lazy(function () { return import('./EventLedger') })
-var VendorLedger = lazy(function () { return import('./VendorLedger') })
-var InventoryLedger = lazy(function () { return import('./InventoryLedger') })
-var SalaryLedger = lazy(function () { return import('../employees/SalaryLedger') })
-var GVLog = lazy(function () { return import('./GVLog') })
-var CostTransfers = lazy(function () { return import('./CostTransfers') })
-var PaymentsLedger = lazy(function () { return import('./PaymentsLedger') })
+// lazy(), with the importer left reachable so a tab can be fetched while the
+// pointer is still on its way to it rather than after the click. Eight ledgers
+// mean eight chunks, and switching between them was a round trip every time.
+function lazyTab(load) {
+  var C = lazy(load)
+  C.load = load
+  return C
+}
+
+var Ledgers = lazyTab(function () { return import('./Ledgers') })
+var EventLedger = lazyTab(function () { return import('./EventLedger') })
+var VendorLedger = lazyTab(function () { return import('./VendorLedger') })
+var InventoryLedger = lazyTab(function () { return import('./InventoryLedger') })
+var SalaryLedger = lazyTab(function () { return import('../employees/SalaryLedger') })
+var GVLog = lazyTab(function () { return import('./GVLog') })
+var CostTransfers = lazyTab(function () { return import('./CostTransfers') })
+var PaymentsLedger = lazyTab(function () { return import('./PaymentsLedger') })
 
 // perm keys map 1:1 to PERM_GROUPS finance.ledgers children (permissions.js).
 var LEDGERS = [
@@ -98,6 +107,8 @@ function LedgersHub(props) {
             <div key={l.key} className="flex flex-1 items-center min-w-0">
               {li > 0 && <span aria-hidden="true" className="shrink-0 w-px h-5 bg-slate-200" />}
               <button type="button" onClick={function () { setActive(l.key) }} aria-pressed={isActive}
+                onPointerEnter={function () { if (l.component.load) l.component.load() }}
+                onFocus={function () { if (l.component.load) l.component.load() }}
                 className={"inline-flex items-center gap-2 h-9 px-3.5 mx-0.5 rounded-xl text-[13px] font-bold whitespace-nowrap transition-all duration-150 flex-1 justify-center " +
                   (isActive
                     ? "bg-indigo-50 text-indigo-700"
