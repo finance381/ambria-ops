@@ -58,6 +58,7 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
   var [entries, setEntries] = useState([])
   var [entriesLoading, setEntriesLoading] = useState(false)
   var [showDeleted, setShowDeleted] = useState(false)
+  var [paymentTypeFilter, setPaymentTypeFilter] = useState('all')  // 'all' | 'fnf' | 'advance'
   var { openExpenseDetail, expenseDetailModal } = useExpenseDetailModal(profile, isAdmin, function () {
     if (selectedVendor) loadEntries(selectedVendor, showDeleted)
   }, onNavigateToExpenses)
@@ -256,6 +257,7 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
     setSelectedVendor(v)
     setView('detail')
     setShowDeleted(false)
+    setPaymentTypeFilter('all')
     await loadEntries(v, false)
     // Fetch phones + contact name from vendors master (not in v_vendor_ledger view)
     try {
@@ -847,6 +849,11 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
     return Object.assign({}, e, { runningBalance: e.deleted_at ? null : running })
   })
   var displayEntries = withRunning.slice().reverse()
+  var fnfCount = displayEntries.filter(function (e) { return e.metadata && e.metadata.payment_type === 'fnf' }).length
+  var advanceCount = displayEntries.filter(function (e) { return e.metadata && e.metadata.payment_type === 'advance' }).length
+  var visibleEntries = paymentTypeFilter === 'all' ? displayEntries : displayEntries.filter(function (e) {
+    return e.metadata && e.metadata.payment_type === paymentTypeFilter
+  })
 
   var currentBalance = running
   var balColor = currentBalance > 0 ? 'text-amber-800' : currentBalance < 0 ? 'text-red-700' : 'text-gray-500'
@@ -908,6 +915,26 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
         </div>
       </div>
 
+      {/* Quick filter: which payments were FNF vs an advance (set on Pay Vendor) */}
+      {(fnfCount > 0 || advanceCount > 0) && (
+        <div className="flex gap-1.5">
+          {[
+            { k: 'all', l: 'All' },
+            { k: 'fnf', l: 'FNF (' + fnfCount + ')' },
+            { k: 'advance', l: 'Advance (' + advanceCount + ')' },
+          ].map(function (f) {
+            var active = paymentTypeFilter === f.k
+            return (
+              <button key={f.k} type="button" onClick={function () { setPaymentTypeFilter(f.k) }}
+                className={"px-3 py-1.5 rounded-full text-xs font-semibold transition-colors " +
+                  (active ? "bg-indigo-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200")}>
+                {f.l}
+              </button>
+            )
+          })}
+        </div>
+      )}
+
       {/* Admin toggle: show deleted */}
       {isAdmin && (
         <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
@@ -932,9 +959,11 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
         <p className="text-gray-400 text-sm text-center py-8">Loading entries...</p>
       ) : displayEntries.length === 0 ? (
         <p className="text-gray-400 text-sm text-center py-8">No entries for this vendor.</p>
+      ) : visibleEntries.length === 0 ? (
+        <p className="text-gray-400 text-sm text-center py-8">No entries match this filter.</p>
       ) : (
         <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-          {displayEntries.map(function (e, idx) {
+          {visibleEntries.map(function (e, idx) {
             var isCredit = (e.credit_paise || 0) > 0
             var isDeleted = !!e.deleted_at
             var amt = isCredit ? (e.credit_paise || 0) : (e.debit_paise || 0)
@@ -954,7 +983,7 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
               <div key={e.id}
                 onClick={handleRowClick}
                 className={"flex items-start gap-3 px-3 py-3 " +
-                  (idx < displayEntries.length - 1 ? "border-b border-gray-100 " : "") +
+                  (idx < visibleEntries.length - 1 ? "border-b border-gray-100 " : "") +
                   (isDeleted ? "opacity-50" : "") +
                   (isExpRow ? " cursor-pointer hover:bg-indigo-50/40 transition-colors" : "")}>
                 <div className={"w-2 h-2 rounded-full mt-1.5 flex-shrink-0 " + dotColor}></div>
@@ -979,13 +1008,19 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
                     var meta = e.metadata || {}
                     var m = meta.mode
                     var due = meta.due_date
+                    var pt = meta.payment_type
                     var isOverdueRow = kind === 'purchase' && due && due < new Date().toISOString().split('T')[0]
-                    if (!m && !due) return null
+                    if (!m && !due && !pt) return null
                     return (
                       <div className="flex gap-1.5 mt-1 flex-wrap">
                         {m && (
                           <span className="text-[10px] font-semibold px-1.5 py-0.5 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded">
                             {m === 'cash' ? '💵 Cash' : '🏦 Bank'}
+                          </span>
+                        )}
+                        {pt && (
+                          <span className={"text-[10px] font-semibold px-1.5 py-0.5 border rounded " + (pt === 'advance' ? "bg-purple-50 text-purple-700 border-purple-200" : "bg-teal-50 text-teal-700 border-teal-200")}>
+                            {pt === 'advance' ? 'Advance' : 'FNF'}
                           </span>
                         )}
                         {due && (
