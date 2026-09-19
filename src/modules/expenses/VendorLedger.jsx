@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { supabase } from '../../lib/supabase'
 import { logActivity } from '../../lib/logger'
 import { formatPoints, formatDate, formatDateTime } from '../../lib/format'
@@ -24,6 +25,15 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
   var canView = isAdmin || hasPerm(permsNew, 'finance.ledgers.vendor')
   var canMarkChecked = hasPerm(permsNew, 'finance.wallet.mark_checked')
   var [checkingEntryId, setCheckingEntryId] = useState(null)
+  // Same permission that gates the whole Vendors module — merging is a
+  // vendor-master-data operation, so it rides the same access rather than
+  // introducing a separate key.
+  var canManageVendors = isAdmin || hasPerm(permsNew, 'procurement.vendors')
+  var [showMergeModal, setShowMergeModal] = useState(false)
+  var [mergeSourceIds, setMergeSourceIds] = useState([])
+  var [mergeTargetId, setMergeTargetId] = useState('')
+  var [mergeSearch, setMergeSearch] = useState('')
+  var [mergeSaving, setMergeSaving] = useState(false)
 
   var [view, setView] = useState('list')  // 'list' | 'detail'
   var [vendors, setVendors] = useState([])
@@ -329,6 +339,114 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
     if (selectedVendor) await loadEntries(selectedVendor, showDeleted)
   }
 
+  function toggleMergeSource(vendorId) {
+    setMergeSourceIds(function (prev) {
+      if (prev.indexOf(vendorId) !== -1) return prev.filter(function (id) { return id !== vendorId })
+      return prev.concat([vendorId])
+    })
+    setMergeTargetId(function (prev) { return String(prev) === String(vendorId) ? '' : prev })
+  }
+
+  async function doMergeVendors() {
+    if (mergeSaving || mergeSourceIds.length === 0 || !mergeTargetId) return
+    var pool = vendors.filter(function (v) { return v.vendor_active })
+    var targetVendor = pool.find(function (v) { return String(v.vendor_id) === String(mergeTargetId) })
+    var sourceVendors = pool.filter(function (v) { return mergeSourceIds.indexOf(v.vendor_id) !== -1 })
+    var sourceNames = sourceVendors.map(function (v) { return v.vendor_name }).join(', ')
+    var totalEntries = sourceVendors.reduce(function (s, v) { return s + (v.entry_count || 0) }, 0)
+    var ok = window.confirm(
+      'Merge ' + sourceNames + ' into "' + (targetVendor ? targetVendor.vendor_name : '—') + '"?\n\n' +
+      totalEntries + ' ledger entries and every expense reference will move to the target. ' +
+      'The merged vendor(s) will be deactivated. This cannot be undone from here.'
+    )
+    if (!ok) return
+    setMergeSaving(true)
+    var { data, error } = await supabase.rpc('fn_merge_vendors', {
+      p_source_ids: mergeSourceIds,
+      p_target_id: Number(mergeTargetId),
+    })
+    setMergeSaving(false)
+    if (error) { alert('Merge failed: ' + error.message); return }
+    try { await logActivity('VENDOR_MERGE', sourceNames + ' -> ' + (targetVendor ? targetVendor.vendor_name : mergeTargetId)) } catch (_) {}
+    setShowMergeModal(false)
+    setMergeSourceIds([])
+    setMergeTargetId('')
+    setMergeSearch('')
+    await loadVendors()
+    var summary = (data && (data.ledger_entries_moved || 0)) + ' ledger entries and ' + (data && (data.expenses_updated || 0)) + ' expense reference(s) moved.'
+    alert('Merged. ' + summary)
+  }
+
+  function renderMergeModal() {
+    if (!showMergeModal) return null
+    var q = mergeSearch.trim().toLowerCase()
+    var pool = vendors.filter(function (v) { return v.vendor_active })
+    var searched = q ? pool.filter(function (v) { return (v.vendor_name || '').toLowerCase().indexOf(q) !== -1 }) : pool
+    var targetOptions = pool.filter(function (v) { return mergeSourceIds.indexOf(v.vendor_id) === -1 })
+    var sourceTotalEntries = pool
+      .filter(function (v) { return mergeSourceIds.indexOf(v.vendor_id) !== -1 })
+      .reduce(function (s, v) { return s + (v.entry_count || 0) }, 0)
+    var readyToMerge = mergeSourceIds.length > 0 && mergeTargetId
+
+    return createPortal((
+      <div className="fixed inset-0 z-[9998] bg-black/60 flex items-end sm:items-center justify-center p-0 sm:p-4"
+        onClick={function () { if (!mergeSaving) setShowMergeModal(false) }}>
+        <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-lg p-5 space-y-4 max-h-[90vh] overflow-y-auto"
+          onClick={function (ev) { ev.stopPropagation() }}>
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <h3 className="text-base font-bold text-gray-900">🔀 Merge Vendors</h3>
+              <p className="text-xs text-gray-500 mt-0.5">Fold duplicates into one. Every ledger entry and expense reference moves to the target you pick below.</p>
+            </div>
+            <button type="button" onClick={function () { setShowMergeModal(false) }}
+              className="w-7 h-7 rounded-full bg-gray-100 text-gray-500 flex items-center justify-center flex-shrink-0">✕</button>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-gray-600 mb-1">Vendors to merge (sources)</label>
+            <SearchField value={mergeSearch} onChange={function (v) { setMergeSearch(v) }} placeholder="Search vendors..." />
+            <div className="mt-2 border border-gray-200 rounded-lg max-h-52 overflow-y-auto divide-y divide-gray-100">
+              {searched.length === 0 && <p className="text-xs text-gray-400 text-center py-4">No vendors match</p>}
+              {searched.map(function (v) {
+                var checked = mergeSourceIds.indexOf(v.vendor_id) !== -1
+                return (
+                  <label key={v.vendor_id} className={"flex items-center gap-2 px-3 py-2 text-sm cursor-pointer " + (checked ? "bg-indigo-50" : "hover:bg-gray-50")}>
+                    <input type="checkbox" checked={checked} onChange={function () { toggleMergeSource(v.vendor_id) }} />
+                    <span className="flex-1 min-w-0 truncate">{v.vendor_name}</span>
+                    <span className="text-[11px] text-gray-400 flex-shrink-0">{v.entry_count || 0} entries · {formatPoints(v.balance_paise || 0)}</span>
+                  </label>
+                )
+              })}
+            </div>
+          </div>
+
+          {mergeSourceIds.length > 0 && (
+            <div>
+              <label className="block text-xs font-bold text-gray-600 mb-1">Merge into (target)</label>
+              <SearchDropdown
+                items={targetOptions.map(function (v) { return { label: v.vendor_name + ' (' + (v.entry_count || 0) + ' entries)', value: String(v.vendor_id) } })}
+                value={mergeTargetId ? String(mergeTargetId) : ''}
+                onChange={function (val) { setMergeTargetId(val) }}
+                placeholder="Search target vendor..." />
+              <p className="text-[11px] text-gray-500 mt-1">{sourceTotalEntries} entries from the selected vendor(s) will move here.</p>
+            </div>
+          )}
+
+          <div className="flex gap-2 pt-2 border-t border-gray-100">
+            <button type="button" onClick={function () { setShowMergeModal(false) }} disabled={mergeSaving}
+              className="flex-1 py-2.5 text-sm text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors font-medium disabled:opacity-50">
+              Cancel
+            </button>
+            <button type="button" onClick={doMergeVendors} disabled={!readyToMerge || mergeSaving}
+              className="flex-1 py-2.5 text-sm text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors font-medium">
+              {mergeSaving ? 'Merging...' : 'Merge Vendors'}
+            </button>
+          </div>
+        </div>
+      </div>
+    ), document.body)
+  }
+
   if (!canView) {
     return <p className="text-gray-400 text-sm text-center py-12">You don't have access to Vendor Ledger.</p>
   }
@@ -403,6 +521,12 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
             placeholder="Search vendors..."
             className="flex-1"
           />
+          {canManageVendors && (
+            <button onClick={function () { setShowMergeModal(true) }}
+              className="self-start px-3 py-2 text-xs font-bold rounded-lg bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors flex-shrink-0">
+              🔀 Merge Vendors
+            </button>
+          )}
           <div className="flex gap-1 bg-gray-100 rounded-lg p-0.5 self-start">
             {[
               { key: 'all', label: 'All' },
@@ -513,6 +637,7 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
             })}
           </div>
         )}
+        {renderMergeModal()}
       </div>
     )
   }
