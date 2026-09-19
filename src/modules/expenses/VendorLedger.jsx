@@ -1289,7 +1289,13 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
                     <p className={"text-[16px] font-bold tabular-nums whitespace-nowrap " + (isCredit ? "text-amber-700" : "text-emerald-700")} data-notranslate>
                       {isCredit ? '+' : '−'}{formatPoints(headlineAmt)}
                     </p>
-                    {!isDeleted && (
+                    {/* The two are different facts — what this entry was worth,
+                        and what the vendor stood at after it — but on the first
+                        entry of a vendor with no opening balance they are the
+                        same number, and printing it twice one under the other
+                        reads as a bug rather than as a coincidence. Shown when
+                        it says something the figure above it does not. */}
+                    {!isDeleted && e.runningBalance !== headlineAmt && (
                       <p className="mt-1 text-[12px] text-slate-400 tabular-nums whitespace-nowrap" data-notranslate>Bal: {formatPoints(e.runningBalance)}</p>
                     )}
                   </div>
@@ -1321,8 +1327,12 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
                   )}
                   {isAdmin && !isDeleted && (
                     <button onClick={function (ev) { ev.stopPropagation(); reverseEntry(e.id) }}
-                      className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-lg border border-slate-200 bg-white text-[11.5px] font-bold text-slate-600 hover:border-rose-300 hover:text-rose-700 hover:bg-rose-50 transition-colors">
-                      <Icon name="undo" size={12} />
+                      // The same box as the Checked stamp beside it: they sit
+                      // one under the other in a narrow column, so two chips a
+                      // few pixels different in height read as misaligned
+                      // rather than as two different kinds of thing.
+                      className="h-[22px] inline-flex items-center gap-1 px-2 rounded-md border border-slate-200 bg-white text-[9px] font-bold uppercase tracking-[0.04em] text-slate-600 hover:border-rose-300 hover:text-rose-700 hover:bg-rose-50 transition-colors">
+                      <Icon name="undo" size={10} />
                       Reverse
                     </button>
                   )}
