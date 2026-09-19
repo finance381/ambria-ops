@@ -550,7 +550,11 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
       var bal = v.balance_paise || 0
       return (
         <button key={v.vendor_id} type="button" onClick={function () { openVendor(v) }}
-          className="group text-left w-full bg-white border border-slate-200 rounded-2xl p-3.5 hover:border-indigo-300 hover:bg-indigo-50/20 active:scale-[0.995] transition-all duration-150">
+          // The card lifts off the page rather than only changing colour: a
+          // tint and a border tint are both flat, so on a grid of sixty the
+          // one under the pointer was a slightly different white. transform-gpu
+          // keeps the lift off the layout, and the press puts it back down.
+          className="group text-left w-full bg-white border border-slate-200 rounded-2xl p-3.5 transform-gpu transition-all duration-150 hover:border-indigo-300 hover:bg-indigo-50/30 hover:-translate-y-0.5 hover:shadow-[0_8px_20px_rgba(79,70,229,0.10)] active:translate-y-0 active:shadow-none active:scale-[0.995] focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/30">
           {/* No initial circle. A person's avatar stands in for a face you
               would recognise; a vendor's first letter is just the first letter
               of the name printed beside it, in a colour that means nothing. */}
@@ -566,7 +570,9 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
           <div className="mt-2 flex items-end gap-3">
             <div className="flex-1 min-w-0">{renderMoneyNotes(v)}</div>
             {renderCallLink(v)}
-            <span aria-hidden="true" className="shrink-0 self-center text-slate-300 group-hover:text-indigo-500 transition-colors">
+            {/* The chevron slides the way it points, so the card says where
+                pressing it goes rather than only that it can be pressed. */}
+            <span aria-hidden="true" className="shrink-0 self-center text-slate-300 transition-all duration-150 group-hover:text-indigo-500 group-hover:translate-x-0.5">
               <Icon name="chevronRight" size={16} />
             </span>
           </div>
