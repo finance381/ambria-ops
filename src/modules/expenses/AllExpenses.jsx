@@ -765,7 +765,7 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds, glass, prof
               <div key={exp.id}
                 onClick={function () { onOpenDetail(exp) }}
                 style={{ animationDelay: (Math.min(ei, 8) * 25) + 'ms' }}
-                className={"ambria-rise relative overflow-hidden rounded-2xl pl-4 pr-3.5 py-3 transform-gpu hover:shadow-lg hover:-translate-y-px hover:scale-[1.006] active:scale-100 cursor-pointer transition-all duration-150 " +
+                className={"ambria-rise relative overflow-hidden rounded-2xl pl-4.5 pr-4 py-3.5 transform-gpu hover:shadow-lg hover:-translate-y-px hover:scale-[1.006] active:scale-100 cursor-pointer transition-all duration-150 " +
                   (glass ? "ambria-glass-card" : "bg-white border border-slate-200 hover:border-indigo-200 active:bg-slate-50")}>
                 {/* 3px rail: status reads before a single word does and costs
                     no height, so the pill no longer has to shout from the
@@ -774,7 +774,7 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds, glass, prof
                   className={"absolute left-0 top-0 bottom-0 w-[3px] " + (exp.deleted_at ? 'bg-slate-400' : (STATUS_RAIL[exp.status] || 'bg-slate-300'))} />
                 <div className="flex items-start justify-between gap-2.5">
                   <div className="flex-1 min-w-0">
-                    <p className="text-[13.5px] font-semibold text-slate-900 leading-snug truncate">
+                    <p className="text-[14.5px] font-bold text-slate-900 leading-snug truncate">
                       {(function () {
                         var typeName = exp.expense_types?.name || ''
                         var subTypeName = exp.expense_sub_types?.name || ''
@@ -782,23 +782,23 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds, glass, prof
                       })()}
                     </p>
                     {exp.description && (
-                      <p className="text-[12px] text-slate-600 leading-snug mt-0.5 truncate">{exp.description}</p>
+                      <p className="text-[12.5px] text-slate-600 leading-snug mt-1 truncate">{exp.description}</p>
                     )}
                     {(function () {
                       var chips = extraFieldChips(exp)
                       var hasVendor = !!exp.vendor_name
                       if (chips.length === 0 && !hasVendor) return null
                       return (
-                        <div className="flex flex-wrap gap-1 mt-1.5">
+                        <div className="flex flex-wrap gap-1.5 mt-2">
                           {hasVendor && (
-                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-indigo-50 text-[10px]">
+                            <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-indigo-50 text-[11px]">
                               <span className="text-indigo-500">Vendor:</span>
                               <span className="text-indigo-800 font-medium">{exp.vendor_name}</span>
                             </span>
                           )}
                           {chips.map(function (c, i) {
                             return (
-                              <span key={i} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-100 text-[10px]">
+                              <span key={i} className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-slate-100 text-[11px]">
                                 <span className="text-slate-500">{c.label}:</span>
                                 <span className="text-slate-800 font-medium">{c.value}</span>
                               </span>
@@ -824,15 +824,15 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds, glass, prof
                       var oneAllocIsWhole = allocs.length === 1 &&
                         (allocs[0].amount_paise || 0) === exp.amount_paise
                       return (
-                        <div className="mt-1.5 border-t border-slate-100 pt-1.5">
-                          <div className="space-y-0.5">
+                        <div className="mt-2.5 border-t border-slate-100 pt-2">
+                          <div className="space-y-1">
                           {allocs.map(function (a, i) {
                             var venue = a.venue_id ? venueMap[a.venue_id] : ''
                             var dept = a.department || ''
                             var subType = a.expense_sub_type_id ? (expSubTypeMap[a.expense_sub_type_id] || '') : ''
                             var tail = (subType ? ' › ' + subType : '') + (a.remarks ? ' · ' + a.remarks : '')
                             return (
-                              <div key={i} className="flex items-center justify-between gap-2 text-[11px]">
+                              <div key={i} className="flex items-center justify-between gap-3 text-[12px]">
                                 <span className="text-slate-500 truncate">
                                   {venue ? '[' + venue + '] ' : ''}
                                   {dept ? <span className={deptInk(dept)}>{dept}</span> : null}
@@ -840,7 +840,7 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds, glass, prof
                                   {tail}
                                 </span>
                                 {!oneAllocIsWhole && (
-                                  <span className="text-slate-700 font-semibold tabular-nums flex-shrink-0">{formatPoints(a.amount_paise || 0)}</span>
+                                  <span className="shrink-0 text-slate-700 font-semibold tabular-nums">{formatPoints(a.amount_paise || 0)}</span>
                                 )}
                               </div>
                             )
@@ -850,7 +850,7 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds, glass, prof
                               not more rows of it, so they sit under the first
                               column on their own rule. */}
                           {tax > 0 && (
-                            <div className="mt-1 pt-1 border-t border-slate-100 space-y-0.5">
+                            <div className="mt-1.5 pt-1.5 border-t border-slate-100 space-y-1">
                               <div className="flex items-center justify-between gap-2 text-[11px]">
                                 <span className="text-slate-500">Subtotal</span>
                                 <span className="text-slate-700 font-semibold tabular-nums">{formatPoints(subtotal)}</span>
@@ -864,7 +864,7 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds, glass, prof
                         </div>
                       )
                     })()}
-                    <p className="mt-1.5 flex items-center gap-1.5 min-w-0">
+                    <p className="mt-2.5 flex items-center gap-2 min-w-0">
                       <span className={"shrink-0 text-[9.5px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded " + (exp.deleted_at ? "bg-slate-200 text-slate-600" : (APPROVAL_STATUS_COLORS[exp.status] || 'bg-slate-100 text-slate-600'))}>
                         {exp.deleted_at ? 'Deleted' : (APPROVAL_STATUS_LABELS[exp.status] || exp.status)}
                       </span>
@@ -880,7 +880,7 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds, glass, prof
                           />
                         </span>
                       )}
-                      <span className="text-[11px] text-slate-500 truncate">
+                      <span className="text-[12px] text-slate-500 truncate">
                         {(exp.profiles?.name || '—') + ' · '}
                         {formatDate(exp.expense_date)}
                       </span>
@@ -888,7 +888,7 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds, glass, prof
                     {(function () {
                       function actor(icon, tone, verb, who) {
                         return (
-                          <p className={"flex items-center gap-1.5 text-[11px] mt-1 " + tone}>
+                          <p className={"flex items-center gap-1.5 text-[12px] mt-1.5 " + tone}>
                             <Icon name={icon} size={12} />
                             <span className="truncate">{verb} <span className="font-semibold">{who}</span></span>
                           </p>
@@ -901,7 +901,7 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds, glass, prof
                       return null
                     })()}
                   </div>
-                  <span className="shrink-0 text-[14px] font-bold text-slate-900 tabular-nums tracking-[-0.01em]">
+                  <span className="shrink-0 text-[15.5px] font-bold text-slate-900 tabular-nums tracking-[-0.01em]">
                     {formatPoints(exp.amount_paise)}
                   </span>
                 </div>
