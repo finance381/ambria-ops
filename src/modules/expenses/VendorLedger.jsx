@@ -524,7 +524,7 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
       var opening = v._opening_paise || 0
       if (!cashBal && !bankBal && !opening) return null
       return (
-        <div className="mt-1.5 flex flex-wrap items-center gap-y-1 text-[11px] text-slate-500">
+        <div className="mt-2 flex flex-wrap items-center gap-y-1 text-[11px] text-slate-500">
           {cashBal !== 0 && <Fact first icon="banknote" label="Cash" value={formatPoints(cashBal)} />}
           {bankBal !== 0 && <Fact first={!cashBal} icon="bank" label="Bank" value={formatPoints(bankBal)} />}
           {opening !== 0 && <Fact first={!cashBal && !bankBal} icon="wallet" label="Opening" value={formatPoints(Math.abs(opening)) + (opening > 0 ? ' Cr' : ' Dr')} />}
@@ -567,17 +567,22 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
             {renderChips(v)}
             <BalancePill paise={bal} large />
           </div>
-          <div className="mt-2 flex items-end gap-3">
-            <div className="flex-1 min-w-0">{renderMoneyNotes(v)}</div>
+          {renderMoneyNotes(v)}
+          {/* The call button and the chevron end the card together, on the
+              footer's right. They used to sit on the money line, which left a
+              white box and an arrow floating in the middle of the card with
+              nothing either side of them and nothing under them — the card had
+              three rows and its two controls were parked on the second. */}
+          <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center gap-3">
+            <div className="flex-1 min-w-0 flex flex-wrap items-center gap-y-1 text-[11px] text-slate-500">
+              {renderFacts(v)}
+            </div>
             {renderCallLink(v)}
             {/* The chevron slides the way it points, so the card says where
                 pressing it goes rather than only that it can be pressed. */}
-            <span aria-hidden="true" className="shrink-0 self-center text-slate-300 transition-all duration-150 group-hover:text-indigo-500 group-hover:translate-x-0.5">
+            <span aria-hidden="true" className="shrink-0 text-slate-300 transition-all duration-150 group-hover:text-indigo-500 group-hover:translate-x-0.5">
               <Icon name="chevronRight" size={16} />
             </span>
-          </div>
-          <div className="mt-3 pt-2.5 border-t border-slate-100 flex flex-wrap items-center gap-y-1 text-[11px] text-slate-500">
-            {renderFacts(v)}
           </div>
         </button>
       )
