@@ -72,7 +72,12 @@ function Expenses({ profile, masterMode, inAdmin, deepLinkExpense, onDeepLinkHan
   var [approvalHasMore, setApprovalHasMore] = useState(false)
   var [loading, setLoading] = useState(true)
   var [loadingMore, setLoadingMore] = useState(false)
-  useRealtime(['expenses', 'expense_allocations'], function () { loadMyExpenses(false); loadApprovalExpenses(false) })
+  // silent: a background revalidation (someone else's change, or our own
+  // checked-toggle) should patch the data in without the full-page "Loading…"
+  // swap loadMyExpenses(false) normally does — that swap was unmounting the
+  // whole list (whichever tab was open) and remounting it a moment later,
+  // which is what looked like "the list re-renders and drops me to the top".
+  useRealtime(['expenses', 'expense_allocations'], function () { loadMyExpenses(false, true); loadApprovalExpenses(false) })
   var [detailExp, setDetailExp] = useState(null)
   var [statusFilter, setStatusFilter] = useState('')
   var [dateFrom, setDateFrom] = useState('')
@@ -172,10 +177,10 @@ function Expenses({ profile, masterMode, inAdmin, deepLinkExpense, onDeepLinkHan
     return function () { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deepLinkExpense])
-  async function loadMyExpenses(append) {
+  async function loadMyExpenses(append, silent) {
     var offset = append ? myExpenses.length : 0
-    if (!append) setLoading(true)
-    else setLoadingMore(true)
+    if (append) setLoadingMore(true)
+    else if (!silent) setLoading(true)
 
     var hasAllocFilter = !!(deptFilter || subDeptFilter || venueFilter)
     var allocEmbed = hasAllocFilter
@@ -205,7 +210,7 @@ function Expenses({ profile, masterMode, inAdmin, deepLinkExpense, onDeepLinkHan
     if (amountMax) query = query.lte('amount_paise', Math.round(Number(amountMax) * 100))
 
     var { data, error } = await query
-    if (error) { alert('Failed to load: ' + error.message); setLoading(false); setLoadingMore(false); return }
+    if (error) { if (!silent) alert('Failed to load: ' + error.message); if (!silent) setLoading(false); setLoadingMore(false); return }
 
     var rows = data || []
     var hasMore = rows.length > PAGE_SIZE
@@ -217,7 +222,7 @@ function Expenses({ profile, masterMode, inAdmin, deepLinkExpense, onDeepLinkHan
       setMyExpenses(rows)
     }
     setMyHasMore(hasMore)
-    setLoading(false)
+    if (!silent) setLoading(false)
     setLoadingMore(false)
   }
 
