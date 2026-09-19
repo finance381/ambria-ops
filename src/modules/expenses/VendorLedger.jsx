@@ -550,22 +550,10 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
 
     return (
       <div className="space-y-4">
-        {/* What is wrong, and the one control that acts on it. This is the only
-            tinted block on the page, because it is the only one asking for
-            something to be done. */}
-        {overdueVendors.length > 0 && (
-          <div className="flex items-center gap-2.5 bg-rose-50 border border-rose-200 rounded-2xl px-4 py-3">
-            <Icon name="alert" size={17} className="shrink-0 text-rose-600" />
-            <p className="flex-1 min-w-0 text-[13px] font-semibold text-rose-800">
-              <span data-notranslate>{overdueVendors.length}</span> vendor{overdueVendors.length !== 1 ? 's' : ''} with overdue payments
-            </p>
-            <button type="button" onClick={function () { setStatusFilter(statusFilter === 'overdue' ? 'all' : 'overdue') }}
-              className="shrink-0 inline-flex items-center gap-1 text-[12px] font-bold text-rose-700 hover:text-rose-900 transition-colors">
-              {statusFilter === 'overdue' ? 'Show all' : 'View overdue'}
-              <Icon name="arrowRight" size={14} />
-            </button>
-          </div>
-        )}
+        {/* No overdue banner. It counted the overdue vendors, which the tile
+            below already does, and its one action was to switch to the Overdue
+            filter, which is a segment in the bar below that. A strip of colour
+            across the top for something said twice underneath it. */}
 
         {/* Five readings of the same list, the outstanding total given the room
             the other four do not need. */}
