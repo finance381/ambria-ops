@@ -131,8 +131,9 @@ function PayVendorModal({ vendor, profile, onClose, onSuccess }) {
     var uploadedPaths = []
     for (var i = 0; i < payImages.length; i++) {
       var f = payImages[i]
-      var path = profile.id + '/paypf_' + clientUuid + '_' + i + '.jpg'
-      var up = await supabase.storage.from('receipts').upload(path, f, { upsert: true, contentType: 'image/jpeg' })
+      var fIsPdf = f.type === 'application/pdf'
+      var path = profile.id + '/paypf_' + clientUuid + '_' + i + (fIsPdf ? '.pdf' : '.jpg')
+      var up = await supabase.storage.from('receipts').upload(path, f, { upsert: true, contentType: fIsPdf ? 'application/pdf' : 'image/jpeg' })
       if (up.error) {
         setPayError('Image ' + (i + 1) + ' upload failed: ' + (up.error.message || 'unknown'))
         setPaySaving(false)
@@ -148,8 +149,9 @@ function PayVendorModal({ vendor, profile, onClose, onSuccess }) {
     // Optional deduction image — upload after payment proofs so it can piggyback the cleanup list
     var dedUploadedPath = null
     if (useDeduction && dedR > 0 && dedImage) {
-      var dedPath = profile.id + '/paydeduct_' + clientUuid + '.jpg'
-      var dedUp = await supabase.storage.from('receipts').upload(dedPath, dedImage, { upsert: true, contentType: 'image/jpeg' })
+      var dedIsPdf = dedImage.type === 'application/pdf'
+      var dedPath = profile.id + '/paydeduct_' + clientUuid + (dedIsPdf ? '.pdf' : '.jpg')
+      var dedUp = await supabase.storage.from('receipts').upload(dedPath, dedImage, { upsert: true, contentType: dedIsPdf ? 'application/pdf' : 'image/jpeg' })
       if (dedUp.error) {
         setPayError('Deduction image upload failed: ' + (dedUp.error.message || 'unknown'))
         setPaySaving(false)
@@ -292,19 +294,37 @@ function PayVendorModal({ vendor, profile, onClose, onSuccess }) {
                 </label>
                 {dedImage ? (
                   <div className="relative inline-block">
-                    <img src={URL.createObjectURL(dedImage)} alt="deduction proof" className="w-24 h-24 object-cover rounded border border-amber-300" />
+                    {dedImage.type === 'application/pdf' ? (
+                      <a href={URL.createObjectURL(dedImage)} target="_blank" rel="noopener noreferrer"
+                        className="w-24 h-24 flex flex-col items-center justify-center rounded border border-amber-300 bg-amber-50 text-amber-700 px-1 hover:border-amber-500 transition-colors"
+                        title="PDF — tap to view">
+                        📄
+                        <span className="text-[9px] truncate max-w-full">{dedImage.name}</span>
+                      </a>
+                    ) : (
+                      <img src={URL.createObjectURL(dedImage)} alt="deduction proof" className="w-24 h-24 object-cover rounded border border-amber-300" />
+                    )}
                     <button type="button" onClick={removeDedImg} disabled={paySaving}
                       className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white rounded-full text-xs font-bold flex items-center justify-center disabled:opacity-50">×</button>
                     <div className="text-[10px] text-amber-700 text-center mt-0.5">{Math.round(dedImage.size / 1024)}KB</div>
                   </div>
                 ) : (
-                  <label className={"flex items-center justify-center gap-2 py-2 px-3 border-2 border-dashed rounded-lg text-xs font-medium cursor-pointer transition-colors " + (paySaving || dedImgBusy ? "border-gray-200 text-gray-400 cursor-not-allowed" : "border-amber-300 text-amber-700 hover:bg-amber-100")}>
-                    <input type="file" accept="image/*" capture="environment"
-                      disabled={paySaving || dedImgBusy}
-                      onChange={handleDedImgAdd}
-                      className="hidden" />
-                    {dedImgBusy ? 'Compressing...' : '📷 Attach updated bill'}
-                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <label className={"flex items-center justify-center gap-1.5 py-2 px-2 border-2 border-dashed rounded-lg text-xs font-medium cursor-pointer transition-colors " + (paySaving || dedImgBusy ? "border-gray-200 text-gray-400 cursor-not-allowed" : "border-amber-300 text-amber-700 hover:bg-amber-100")}>
+                      <input type="file" accept="image/*" capture="environment"
+                        disabled={paySaving || dedImgBusy}
+                        onChange={handleDedImgAdd}
+                        className="hidden" />
+                      {dedImgBusy ? 'Compressing...' : '📷 Take Photo'}
+                    </label>
+                    <label className={"flex items-center justify-center gap-1.5 py-2 px-2 border-2 border-dashed rounded-lg text-xs font-medium cursor-pointer transition-colors " + (paySaving || dedImgBusy ? "border-gray-200 text-gray-400 cursor-not-allowed" : "border-amber-300 text-amber-700 hover:bg-amber-100")}>
+                      <input type="file" accept="image/*,.pdf"
+                        disabled={paySaving || dedImgBusy}
+                        onChange={handleDedImgAdd}
+                        className="hidden" />
+                      {dedImgBusy ? 'Compressing...' : '📎 Upload file'}
+                    </label>
+                  </div>
                 )}
               </div>
             </div>
@@ -316,20 +336,39 @@ function PayVendorModal({ vendor, profile, onClose, onSuccess }) {
             Payment Proof <span className="text-red-500">*</span>
             <span className="text-[10px] font-normal text-gray-400 ml-1">(auto-compressed to &lt;100KB)</span>
           </label>
-          <label className={"flex items-center justify-center gap-2 py-2.5 px-3 border-2 border-dashed rounded-lg text-sm font-medium cursor-pointer transition-colors " + (paySaving || payImgBusy ? "border-gray-200 text-gray-400 cursor-not-allowed" : "border-indigo-300 text-indigo-700 hover:bg-indigo-50")}>
-            <input type="file" accept="image/*" capture="environment" multiple
-              disabled={paySaving || payImgBusy}
-              onChange={handlePayImgAdd}
-              className="hidden" />
-            {payImgBusy ? 'Compressing...' : ('📷 ' + (payImages.length === 0 ? 'Capture / choose images' : 'Add more'))}
-          </label>
+          <div className="grid grid-cols-2 gap-2">
+            <label className={"flex items-center justify-center gap-1.5 py-2.5 px-3 border-2 border-dashed rounded-lg text-sm font-medium cursor-pointer transition-colors " + (paySaving || payImgBusy ? "border-gray-200 text-gray-400 cursor-not-allowed" : "border-indigo-300 text-indigo-700 hover:bg-indigo-50")}>
+              <input type="file" accept="image/*" capture="environment" multiple
+                disabled={paySaving || payImgBusy}
+                onChange={handlePayImgAdd}
+                className="hidden" />
+              {payImgBusy ? 'Compressing...' : '📷 Take Photo'}
+            </label>
+            <label className={"flex items-center justify-center gap-1.5 py-2.5 px-3 border-2 border-dashed rounded-lg text-sm font-medium cursor-pointer transition-colors " + (paySaving || payImgBusy ? "border-gray-200 text-gray-400 cursor-not-allowed" : "border-indigo-300 text-indigo-700 hover:bg-indigo-50")}>
+              <input type="file" accept="image/*,.pdf" multiple
+                disabled={paySaving || payImgBusy}
+                onChange={handlePayImgAdd}
+                className="hidden" />
+              {payImgBusy ? 'Compressing...' : '📎 Upload file'}
+            </label>
+          </div>
           {payImages.length > 0 && (
             <div className="grid grid-cols-3 gap-2 mt-2">
               {payImages.map(function (f, i) {
                 var url = URL.createObjectURL(f)
+                var isPdf = f.type === 'application/pdf'
                 return (
                   <div key={i} className="relative">
-                    <img src={url} alt={'proof ' + (i + 1)} className="w-full h-20 object-cover rounded border border-gray-200" />
+                    {isPdf ? (
+                      <a href={url} target="_blank" rel="noopener noreferrer"
+                        className="h-20 w-full rounded border border-gray-200 bg-gray-50 flex flex-col items-center justify-center text-gray-500 px-1 hover:border-indigo-400 hover:text-indigo-600 transition-colors"
+                        title="PDF — tap to view">
+                        📄
+                        <span className="text-[9px] truncate max-w-full">{f.name}</span>
+                      </a>
+                    ) : (
+                      <img src={url} alt={'proof ' + (i + 1)} className="w-full h-20 object-cover rounded border border-gray-200" />
+                    )}
                     <button type="button" onClick={function () { removePayImg(i) }} disabled={paySaving}
                       className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white rounded-full text-xs font-bold flex items-center justify-center disabled:opacity-50">×</button>
                     <div className="text-[10px] text-gray-500 text-center mt-0.5">{Math.round(f.size / 1024)}KB</div>
@@ -339,7 +378,7 @@ function PayVendorModal({ vendor, profile, onClose, onSuccess }) {
             </div>
           )}
           {payImages.length === 0 && (
-            <p className="text-[11px] text-amber-700 mt-1">At least one image required to pay.</p>
+            <p className="text-[11px] text-amber-700 mt-1">At least one proof (image or PDF) required to pay.</p>
           )}
         </div>
 

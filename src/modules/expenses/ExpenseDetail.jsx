@@ -8,6 +8,7 @@ import { hasPerm } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
 import VoiceInput from '../../components/ui/VoiceInput'
 import Icon from '../../components/ui/Icon'
+import CheckedStamp from '../../components/ui/CheckedStamp'
 
 // Label left, value right, hairline between. A py-2 row plus a divider costs
 // ~34px where the old space-y-3 pair cost ~44px, and the rule makes a long
@@ -84,6 +85,33 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
       setAcknowledgerName(exp.acknowledged_by ? (map[exp.acknowledged_by] || '—') : '')
     })
   }, [exp.id, exp.reviewed_by, exp.penalized_by, exp.acknowledged_by])
+
+  // The "checked" stamp lives directly on the expense row — every screen
+  // that shows this expense (Wallet row, Expenses list, Expense/Event
+  // Ledger, this modal opened from any of them) is ultimately displaying
+  // the same expenses.id, so checking it anywhere has to change the one
+  // row they all read, not a copy tied to whichever ledger rendered it.
+  var [checkedByName, setCheckedByName] = useState('')
+  var [checkBusy, setCheckBusy] = useState(false)
+
+  useEffect(function () {
+    setCheckedByName('')
+    if (!exp.checked_by) return
+    var cancelled = false
+    supabase.from('profiles').select('name').eq('id', exp.checked_by).maybeSingle().then(function (res) {
+      if (!cancelled) setCheckedByName((res.data && res.data.name) || '')
+    })
+    return function () { cancelled = true }
+  }, [exp.checked_by])
+
+  async function toggleChecked() {
+    if (checkBusy) return
+    setCheckBusy(true)
+    var { error } = await supabase.rpc('fn_toggle_expense_check', { p_expense_id: exp.id })
+    setCheckBusy(false)
+    if (error) { alert('Could not update: ' + error.message); return }
+    if (onUpdated) onUpdated()
+  }
 
   useEffect(function () {
     supabase.from('general_vouchers')
@@ -188,6 +216,7 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
   var canDelete = !isDeleted && ((exp.user_id === profile?.id && (exp.status === 'recorded' || exp.status === 'flagged')) || isAdmin)
   var canEdit = !isDeleted && exp.user_id === profile?.id && (exp.status === 'recorded' || exp.status === 'flagged')
   var canResubmit = !isDeleted && exp.user_id === profile?.id && exp.status === 'flagged'
+  var canMarkChecked = hasPerm(profile?.permsNew, 'finance.wallet.mark_checked')
   // GV rules:
   //  • recorded / flagged / deducted → admin OR anyone with finance_gv permission
   //  • acknowledged → admin OR auditor only (finance_gv perm not enough — locks stricter after ack)
@@ -823,6 +852,24 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
               )
             })}
           </div>
+        </div>
+      )}
+
+      {/* Lets an auditor see, before they act, whether the finance controller
+          already verified the allocation — separate from acknowledge/send
+          back/deduct, which is about the bill itself. */}
+      {(exp.checked_by || canMarkChecked) && (
+        <div className="flex items-center justify-between py-1">
+          <span className="text-[12px] font-medium text-slate-500">Finance check</span>
+          <CheckedStamp
+            checked={!!exp.checked_by}
+            checkerName={checkedByName}
+            checkedAt={exp.checked_at}
+            canToggle={canMarkChecked}
+            canUncheck={exp.checked_by === profile?.id || isAdmin || isAuditor}
+            busy={checkBusy}
+            onToggle={toggleChecked}
+          />
         </div>
       )}
 

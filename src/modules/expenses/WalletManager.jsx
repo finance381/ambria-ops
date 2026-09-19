@@ -172,6 +172,7 @@ import { DeptChip } from '../../components/ui/Badge'
 import SearchField from '../../components/ui/SearchField'
 import { pushBack, goBack } from '../../lib/backNav'
 import PaymentProofThumbs from '../../components/ledger/PaymentProofThumbs'
+import CheckedStamp from '../../components/ui/CheckedStamp'
 import { hasPerm } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
 
@@ -270,6 +271,9 @@ var EXP_STATUS_COLORS = {
 function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, onClose, onBalanceChange, onOpenExpense, onNavigateToExpenses, inAdmin }) {
   var permsNew = (profile && profile.permsNew) || []
   var canCreateTentativeEvent = hasPerm(permsNew, 'events.list.create_tentative')
+  var canMarkChecked = hasPerm(permsNew, 'finance.wallet.mark_checked')
+  var [checkingTxnId, setCheckingTxnId] = useState(null)
+  var [checkingExpId, setCheckingExpId] = useState(null)
   var activeVenues = useReferenceData().venues.filter(function (v) { return v.active }).slice().sort(function (a, b) { return (a.code || '').localeCompare(b.code || '') })
   var [walletView, setWalletView] = useState(null)
   var [allWallets, setAllWallets] = useState([])
@@ -329,6 +333,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   var [transferModal, setTransferModal] = useState(false)
   var [transferUsers, setTransferUsers] = useState([])
   var [transferTo, setTransferTo] = useState('')
+  var [transferToBalance, setTransferToBalance] = useState(null)
   var [transferAmount, setTransferAmount] = useState('')
   var [transferDesc, setTransferDesc] = useState('')
   var [transferImage, setTransferImage] = useState(null)
@@ -520,7 +525,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     if (expRefIds.length > 0) {
       var expIdsNum = expRefIds.map(function (x) { return Number(x) }).filter(function (n) { return !isNaN(n) })
       var { data: eData } = await supabase.from('expenses')
-        .select('id, description, amount_paise, expense_date, event_id, vendor_name, metadata, expense_types(name, icon), expense_sub_types(name, extra_fields), expense_allocations(department, amount_paise, expense_types(name), expense_sub_types(name))')
+        .select('id, description, amount_paise, expense_date, event_id, vendor_name, metadata, checked_by, checked_at, expense_types(name, icon), expense_sub_types(name, extra_fields), expense_allocations(department, amount_paise, expense_types(name), expense_sub_types(name))')
         .in('id', expIdsNum)
       var eMap = {}
       var evIds = {}
@@ -613,7 +618,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     var wid = (wallet || selectedWallet)?.id
     if (!wid) return
     var query = supabase.from('wallet_transactions')
-      .select('id, type, amount_paise, balance_after_paise, description, reference_type, reference_id, performed_by, created_at, issued_image_path, received_image_path, received_at, wallet_id, status, receipt_no, payment_mode, cancel_wallet_tx_id, cancelled_at, cancelled_by, cancelled_reason')
+      .select('id, type, amount_paise, balance_after_paise, description, reference_type, reference_id, performed_by, created_at, issued_image_path, received_image_path, received_at, wallet_id, status, receipt_no, payment_mode, cancel_wallet_tx_id, cancelled_at, cancelled_by, cancelled_reason, checked_by, checked_at')
       .eq('wallet_id', wid)
       .order('created_at', { ascending: false })
       .limit(500)
@@ -626,6 +631,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     var { data } = await query
     var txns = data || []
     var cpIds = {}
+    txns.forEach(function (t) { if (t.checked_by) cpIds[t.checked_by] = true })
     var tRefIds = txns.filter(function (t) { return t.reference_type === 'transfer' && t.reference_id }).map(function (t) { return t.reference_id })
     if (tRefIds.length > 0) {
       var { data: tData } = await supabase.from('wallet_transfers').select('*').in('id', tRefIds)
@@ -646,13 +652,14 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     if (expRefIds.length > 0) {
       var expIdsNum = expRefIds.map(function (x) { return Number(x) }).filter(function (n) { return !isNaN(n) })
       var { data: eData } = await supabase.from('expenses')
-        .select('id, description, amount_paise, expense_date, event_id, vendor_name, metadata, status, expense_types(name, icon), expense_sub_types(name, extra_fields), expense_allocations(department, amount_paise, expense_types(name), expense_sub_types(name))')
+        .select('id, description, amount_paise, expense_date, event_id, vendor_name, metadata, status, checked_by, checked_at, expense_types(name, icon), expense_sub_types(name, extra_fields), expense_allocations(department, amount_paise, expense_types(name), expense_sub_types(name))')
         .in('id', expIdsNum)
       var eMap = {}
       var evIds = {}
       ;(eData || []).forEach(function (e) {
         eMap[e.id] = e
         if (e.event_id) evIds[e.event_id] = true
+        if (e.checked_by) cpIds[e.checked_by] = true
       })
       var evArr = Object.keys(evIds)
       if (evArr.length > 0) {
@@ -839,6 +846,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   async function openTransferModal() {
     setTransferModal(true)
     setTransferTo('')
+    setTransferToBalance(null)
     setTransferAmount('')
     setTransferDesc('')
     setTransferImage(null)
@@ -848,6 +856,16 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
       setTransferUsers(data || [])
     }
   }
+
+  useEffect(function () {
+    if (!transferTo) { setTransferToBalance(null); return }
+    var cancelled = false
+    setTransferToBalance(undefined)  // loading
+    supabase.from('wallets').select('balance_paise').eq('user_id', transferTo).maybeSingle().then(function (res) {
+      if (!cancelled) setTransferToBalance(res.data?.balance_paise || 0)
+    })
+    return function () { cancelled = true }
+  }, [transferTo])
 
   async function initiateTransfer() {
     if (transferSaving || !transferTo || !transferAmount || Number(transferAmount) <= 0) return
@@ -923,6 +941,56 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     try { await logActivity('WALLET_TRANSFER_CANCEL', formatPoints(t.amount_paise)) } catch (_) {}
     refreshBalance()
     loadTransfers()
+  }
+
+  async function toggleWalletCheck(t) {
+    if (checkingTxnId) return
+    setCheckingTxnId(t.id)
+    var { data, error } = await supabase.rpc('fn_toggle_wallet_check', { p_transaction_id: t.id })
+    setCheckingTxnId(null)
+    if (error) { alert('Could not update: ' + error.message); return }
+    var nowChecked = !!data
+    setWalletTxns(function (prev) { return prev.map(function (x) {
+      if (x.id !== t.id) return x
+      return Object.assign({}, x, {
+        checked_by: nowChecked ? profile.id : null,
+        checked_at: nowChecked ? new Date().toISOString() : null,
+      })
+    }) })
+    if (nowChecked && profile && profile.id) {
+      setWalletProfiles(function (prev) {
+        if (prev[profile.id]) return prev
+        var next = Object.assign({}, prev); next[profile.id] = { id: profile.id, name: profile.name }; return next
+      })
+    }
+  }
+
+  // Expense/refund rows check the underlying expenses row itself, not this
+  // wallet_transactions row — an expense is shown from several other
+  // screens too (Expenses list, Ledgers, the detail modal), all reading the
+  // same expenses.id, so this has to change what they all see.
+  async function toggleExpenseCheck(expId) {
+    if (checkingExpId) return
+    setCheckingExpId(expId)
+    var { data, error } = await supabase.rpc('fn_toggle_expense_check', { p_expense_id: expId })
+    setCheckingExpId(null)
+    if (error) { alert('Could not update: ' + error.message); return }
+    var nowChecked = !!data
+    setExpenseRefs(function (prev) {
+      if (!prev[expId]) return prev
+      var next = Object.assign({}, prev)
+      next[expId] = Object.assign({}, next[expId], {
+        checked_by: nowChecked ? profile.id : null,
+        checked_at: nowChecked ? new Date().toISOString() : null,
+      })
+      return next
+    })
+    if (nowChecked && profile && profile.id) {
+      setWalletProfiles(function (prev) {
+        if (prev[profile.id]) return prev
+        var next = Object.assign({}, prev); next[profile.id] = { id: profile.id, name: profile.name }; return next
+      })
+    }
   }
 
   async function openCollectModal() {
@@ -2263,6 +2331,18 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
               value={transferTo}
               onChange={function (val) { setTransferTo(val) }}
               placeholder="Search user..." />
+            {transferTo && (
+              <p className="mt-1.5 text-[12px] text-slate-500">
+                Balance:{' '}
+                {transferToBalance === undefined ? (
+                  '…'
+                ) : (
+                  <span className={"font-bold tabular-nums " + (transferToBalance < 0 ? "text-red-600" : "text-slate-700")} data-notranslate>
+                    {formatPoints(transferToBalance)}
+                  </span>
+                )}
+              </p>
+            )}
           </div>
 
           <div>
@@ -3214,6 +3294,28 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                 <span className={"text-[9px] font-bold uppercase px-1.5 py-0.5 rounded " + (EXP_STATUS_COLORS[expenseRefs[t.reference_id].status] || 'bg-gray-100 text-gray-600')}>
                   {EXP_STATUS_LABELS[expenseRefs[t.reference_id].status] || expenseRefs[t.reference_id].status}
                 </span>
+              )}
+              {!isCancelled && isExpRow && t.reference_id && expenseRefs[t.reference_id] && (
+                <CheckedStamp
+                  checked={!!expenseRefs[t.reference_id].checked_by}
+                  checkerName={expenseRefs[t.reference_id].checked_by && walletProfiles[expenseRefs[t.reference_id].checked_by] ? walletProfiles[expenseRefs[t.reference_id].checked_by].name : null}
+                  checkedAt={expenseRefs[t.reference_id].checked_at}
+                  canToggle={canMarkChecked}
+                  canUncheck={expenseRefs[t.reference_id].checked_by === profile.id || isAdmin || isAuditor}
+                  busy={checkingExpId === t.reference_id}
+                  onToggle={function (ev) { ev.stopPropagation(); toggleExpenseCheck(t.reference_id) }}
+                />
+              )}
+              {!isCancelled && !isExpRow && (
+                <CheckedStamp
+                  checked={!!t.checked_by}
+                  checkerName={t.checked_by && walletProfiles[t.checked_by] ? walletProfiles[t.checked_by].name : null}
+                  checkedAt={t.checked_at}
+                  canToggle={canMarkChecked}
+                  canUncheck={t.checked_by === profile.id || isAdmin || isAuditor}
+                  busy={checkingTxnId === t.id}
+                  onToggle={function (ev) { ev.stopPropagation(); toggleWalletCheck(t) }}
+                />
               )}
             </div>
             {isCancelled && t.cancelled_reason && (

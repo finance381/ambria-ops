@@ -9,6 +9,12 @@ import { useReferenceData } from '../../lib/referenceData.jsx'
 import VoiceInput from '../../components/ui/VoiceInput'
 import SearchField from '../../components/ui/SearchField'
 import EventDatePicker from '../../components/ui/EventDatePicker'
+import Icon from '../../components/ui/Icon'
+import CheckedStamp from '../../components/ui/CheckedStamp'
+import CameraCapture from '../../components/ui/CameraCapture'
+import { useAudioRecorder } from '../../hooks/useAudioRecorder'
+import { getReceiptUrl, isVoiceNotePath } from '../../lib/uploadHelper'
+import { compressImage } from '../../lib/imageCompress'
 
 function byName(a, b) { return (a.name || '').localeCompare(b.name || '') }
 
@@ -36,6 +42,9 @@ function makeEmptyForm() {
 
 function CostTransfers({ profile }) {
   var canCreate = hasPerm(profile?.permsNew, 'finance.cost_transfers')
+  var isAdmin = hasPerm(profile?.permsNew, 'admin.dashboard')
+  var canMarkChecked = hasPerm(profile?.permsNew, 'finance.wallet.mark_checked')
+  var [checkingTransferId, setCheckingTransferId] = useState(null)
   var [transfers, setTransfers] = useState([])
   var [loading, setLoading] = useState(true)
   var [showForm, setShowForm] = useState(false)
@@ -47,6 +56,41 @@ function CostTransfers({ profile }) {
   var [editForm, setEditForm] = useState(null)
   var [editSaving, setEditSaving] = useState(false)
   var [editError, setEditError] = useState('')
+
+  // One proof slot per form — image/PDF or a voice note, same three ways in as
+  // the expense form (capture, upload, or record), mutually exclusive.
+  var [proofFile, setProofFile] = useState(null)
+  var proofRec = useAudioRecorder()
+  var [showCamera, setShowCamera] = useState(false)
+  var [editProofFile, setEditProofFile] = useState(null)
+  var editProofRec = useAudioRecorder()
+  var [editShowCamera, setEditShowCamera] = useState(false)
+  var [editRemoveReceipt, setEditRemoveReceipt] = useState(false)
+
+  function resetProof() {
+    setProofFile(null)
+    proofRec.remove()
+  }
+
+  // Uploads whichever of file/voice-note is set (they're mutually exclusive in
+  // the UI) and returns the storage path, or null if neither is set.
+  async function uploadTransferProof(file, rec) {
+    if (file) {
+      var isPdf = file.type === 'application/pdf'
+      var compressed = isPdf ? file : await compressImage(file, 150)
+      var path = profile.id + '/costxfer_' + Date.now() + (isPdf ? '.pdf' : '.jpg')
+      var up = await supabase.storage.from('receipts').upload(path, compressed, { upsert: true, contentType: isPdf ? 'application/pdf' : 'image/jpeg' })
+      if (up.error) throw new Error('Proof upload failed: ' + up.error.message)
+      return path
+    }
+    if (rec.blob) {
+      var vPath = profile.id + '/costxfer_' + Date.now() + '.webm'
+      var vUp = await supabase.storage.from('receipts').upload(vPath, rec.blob, { upsert: true, contentType: 'audio/webm' })
+      if (vUp.error) throw new Error('Voice note upload failed: ' + vUp.error.message)
+      return vPath
+    }
+    return null
+  }
 
   var [events, setEvents] = useState([])
   var [vendors, setVendors] = useState([])
@@ -274,6 +318,14 @@ function CostTransfers({ profile }) {
     }
 
     setSaving(true)
+    var receiptPath = null
+    try {
+      receiptPath = await uploadTransferProof(proofFile, proofRec)
+    } catch (err) {
+      setError(err.message || 'Proof upload failed')
+      setSaving(false)
+      return
+    }
     var selEvent = (isFunction && eventId) ? formEvents.find(function (e) { return String(e.id) === eventId }) : null
     var eventTag = selEvent ? { _event_id: selEvent.id, _event_name: selEvent.event_name } : null
     var fromMetaOut = eventTag ? Object.assign({}, form.from.meta || {}, eventTag) : (form.from.meta || {})
@@ -308,6 +360,7 @@ function CostTransfers({ profile }) {
           p_from_meta: fromMetaOut,
           p_to_meta: toMetaOut,
           p_batch_id: batchId,
+          p_receipt_path: receiptPath,
         })
         if (res.error) throw res.error
         try { logActivity('COST_TRANSFER_CREATE', '#' + res.data + ' Rs ' + amt.toFixed(2)) } catch (_) {}
@@ -323,6 +376,7 @@ function CostTransfers({ profile }) {
     setShowForm(false)
     setForm(makeEmptyForm())
     toggleFunction(false)
+    resetProof()
     loadTransfers()
     setSaving(false)
   }
@@ -339,6 +393,22 @@ function CostTransfers({ profile }) {
       loadTransfers()
     } catch (err) { setError(err.message || 'Reverse failed') }
     setReversing(null)
+  }
+
+  async function toggleTransferCheck(t) {
+    if (checkingTransferId) return
+    setCheckingTransferId(t.id)
+    var { data, error } = await supabase.rpc('fn_toggle_cost_transfer_check', { p_id: t.id })
+    setCheckingTransferId(null)
+    if (error) { setError(error.message || 'Could not update'); return }
+    var nowChecked = !!data
+    setTransfers(function (prev) { return prev.map(function (x) {
+      if (x.id !== t.id) return x
+      return Object.assign({}, x, {
+        checked_by: nowChecked ? profile.id : null,
+        checked_at: nowChecked ? new Date().toISOString() : null,
+      })
+    }) })
   }
 
   function toggleBatch(batchId) {
@@ -376,7 +446,11 @@ function CostTransfers({ profile }) {
       amount_pts: r.amount_paise != null ? (r.amount_paise / 100).toString() : '',
       description: r.description || '',
       effective_date: r.effective_date || '',
+      receipt_path: r.receipt_path || null,
     })
+    setEditProofFile(null)
+    editProofRec.remove()
+    setEditRemoveReceipt(false)
   }
 
   async function handleEditSave() {
@@ -388,6 +462,7 @@ function CostTransfers({ profile }) {
     if (!Number(editForm.amount_pts) || Number(editForm.amount_pts) <= 0) { setEditError('Amount must be positive'); return }
     setEditSaving(true)
     try {
+      var newReceiptPath = await uploadTransferProof(editProofFile, editProofRec)
       var res = await supabase.rpc('fn_edit_cost_transfer', {
         p_id: editTarget.id,
         p_amount_paise: Math.round(Number(editForm.amount_pts) * 100),
@@ -397,6 +472,8 @@ function CostTransfers({ profile }) {
         p_to_expense_sub_type_id: editForm.to.expense_sub_type_id ? Number(editForm.to.expense_sub_type_id) : null,
         p_description: editForm.description.trim(),
         p_effective_date: editForm.effective_date || null,
+        p_receipt_path: newReceiptPath,
+        p_remove_receipt: !newReceiptPath && editRemoveReceipt,
       })
       if (res.error) throw res.error
       try { logActivity('COST_TRANSFER_EDIT', '#' + editTarget.id) } catch (_) {}
@@ -430,6 +507,18 @@ function CostTransfers({ profile }) {
           {isReversal && <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 uppercase">Reversal</span>}
           {isReversed && <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded bg-gray-200 text-gray-600 uppercase">Reversed</span>}
           {r.edited_at && <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 uppercase">Edited</span>}
+          {(r.checked_by || canMarkChecked) && (
+            <span className="ml-1 inline-block">
+              <CheckedStamp
+                checked={!!r.checked_by}
+                checkedAt={r.checked_at}
+                canToggle={canMarkChecked}
+                canUncheck={r.checked_by === profile?.id || isAdmin}
+                busy={checkingTransferId === r.id}
+                onToggle={function () { toggleTransferCheck(r) }}
+              />
+            </span>
+          )}
         </td>
         <td className="px-3 py-2 text-right whitespace-nowrap">
           {canEdit && (
@@ -467,10 +556,20 @@ function CostTransfers({ profile }) {
         </div>
         {r.description && <div className="text-xs text-gray-500">{r.description}</div>}
         <div className="flex items-center justify-between pt-1">
-          <div className="flex gap-1">
+          <div className="flex items-center gap-1">
             {isReversal && <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 uppercase">Reversal</span>}
             {isReversed && <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-200 text-gray-600 uppercase">Reversed</span>}
             {r.edited_at && <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 uppercase">Edited</span>}
+            {(r.checked_by || canMarkChecked) && (
+              <CheckedStamp
+                checked={!!r.checked_by}
+                checkedAt={r.checked_at}
+                canToggle={canMarkChecked}
+                canUncheck={r.checked_by === profile?.id || isAdmin}
+                busy={checkingTransferId === r.id}
+                onToggle={function () { toggleTransferCheck(r) }}
+              />
+            )}
           </div>
           <div className="flex gap-3">
             {canEdit && (
@@ -656,7 +755,7 @@ function CostTransfers({ profile }) {
         </>
       )}
 
-      <Modal open={showForm} onClose={function () { setShowForm(false) }} title="New Cost Transfer">
+      <Modal open={showForm} onClose={function () { setShowForm(false); resetProof() }} title="New Cost Transfer">
         <div className="space-y-4">
           {/* For a Function? */}
           <div className="border border-gray-200 rounded-xl bg-white p-4 space-y-3">
@@ -768,10 +867,16 @@ function CostTransfers({ profile }) {
               className="w-full px-2 py-1.5 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-indigo-400" />
           </div>
 
+          <div>
+            <label className="block text-xs font-semibold text-gray-700 mb-1.5">Proof (optional)</label>
+            <ProofPicker file={proofFile} setFile={setProofFile} rec={proofRec}
+              disabled={saving} onOpenCamera={function () { setShowCamera(true) }} />
+          </div>
+
           {error && <p className="text-sm text-red-600">{error}</p>}
 
           <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
-            <button onClick={function () { setShowForm(false) }} className="px-3 py-1.5 text-sm text-gray-600 hover:text-gray-800">Cancel</button>
+            <button onClick={function () { setShowForm(false); resetProof() }} className="px-3 py-1.5 text-sm text-gray-600 hover:text-gray-800">Cancel</button>
             <button onClick={handleSave} disabled={saving}
               className="px-4 py-1.5 rounded-md bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 disabled:bg-indigo-300">
               {saving ? 'Saving...' : (form.to_rows.length > 1 ? 'Save ' + form.to_rows.length + ' Transfers' : 'Save Transfer')}
@@ -779,6 +884,12 @@ function CostTransfers({ profile }) {
           </div>
         </div>
       </Modal>
+      {showCamera && (
+        <CameraCapture
+          onCapture={function (file) { setProofFile(file); setShowCamera(false) }}
+          onClose={function () { setShowCamera(false) }}
+        />
+      )}
 
       <Modal open={!!editTarget} onClose={function () { setEditTarget(null); setEditForm(null) }} title={'Edit Transfer' + (editTarget ? ' #' + editTarget.id : '')}>
         {editForm && (
@@ -817,6 +928,14 @@ function CostTransfers({ profile }) {
                 className="w-full px-2 py-1.5 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-indigo-400" />
             </div>
 
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 mb-1.5">Proof (optional)</label>
+              <ProofPicker file={editProofFile} setFile={setEditProofFile} rec={editProofRec}
+                existingPath={editRemoveReceipt ? null : editForm.receipt_path}
+                onRemoveExisting={function () { setEditRemoveReceipt(true) }}
+                disabled={editSaving} onOpenCamera={function () { setEditShowCamera(true) }} />
+            </div>
+
             {editError && <p className="text-sm text-red-600">{editError}</p>}
 
             <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
@@ -829,6 +948,95 @@ function CostTransfers({ profile }) {
           </div>
         )}
       </Modal>
+      {editShowCamera && (
+        <CameraCapture
+          onCapture={function (file) { setEditProofFile(file); setEditShowCamera(false) }}
+          onClose={function () { setEditShowCamera(false) }}
+        />
+      )}
+    </div>
+  )
+}
+
+// One proof slot — image/PDF capture-or-upload, or a voice note — shared by
+// the create and edit forms. Mutually exclusive: picking one clears the
+// others, matching the single receipt_path column it feeds.
+function ProofPicker({ file, setFile, rec, existingPath, onRemoveExisting, disabled, onOpenCamera }) {
+  if (existingPath && !file && !rec.url) {
+    var existingUrl = getReceiptUrl(existingPath)
+    var existingIsVoice = isVoiceNotePath(existingPath)
+    return (
+      <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-slate-50 border border-slate-200">
+        {existingIsVoice ? (
+          <audio src={existingUrl} controls className="flex-1 min-w-0 h-8" />
+        ) : (
+          <a href={existingUrl} target="_blank" rel="noopener noreferrer" className="flex-1 min-w-0 text-[13px] font-medium text-indigo-700 truncate">📎 View attached proof</a>
+        )}
+        <button type="button" onClick={onRemoveExisting} disabled={disabled} aria-label="Remove proof"
+          className="shrink-0 w-7 h-7 inline-flex items-center justify-center rounded-lg text-red-600 hover:bg-red-100 disabled:opacity-50">
+          <Icon name="trash" size={14} />
+        </button>
+      </div>
+    )
+  }
+  if (file) {
+    var isPdf = file.type === 'application/pdf'
+    var url = URL.createObjectURL(file)
+    return (
+      <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-emerald-50 border border-emerald-200">
+        {isPdf ? (
+          <a href={url} target="_blank" rel="noopener noreferrer" className="flex-1 min-w-0 text-[13px] font-medium text-emerald-800 truncate">📄 {file.name}</a>
+        ) : (
+          <>
+            <img src={url} alt="proof" className="w-9 h-9 rounded object-cover shrink-0" />
+            <span className="flex-1 min-w-0 text-[13px] font-medium text-emerald-800 truncate">{file.name}</span>
+          </>
+        )}
+        <button type="button" onClick={function () { setFile(null) }} disabled={disabled} aria-label="Remove proof"
+          className="shrink-0 w-7 h-7 inline-flex items-center justify-center rounded-lg text-red-600 hover:bg-red-100 disabled:opacity-50">
+          <Icon name="trash" size={14} />
+        </button>
+      </div>
+    )
+  }
+  if (rec.url) {
+    return (
+      <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-white border border-slate-200">
+        <audio src={rec.url} controls className="flex-1 min-w-0 h-8" />
+        <button type="button" onClick={rec.remove} disabled={disabled} aria-label="Remove voice note"
+          className="shrink-0 w-7 h-7 inline-flex items-center justify-center rounded-lg text-red-600 hover:bg-red-100 disabled:opacity-50">
+          <Icon name="trash" size={14} />
+        </button>
+      </div>
+    )
+  }
+  if (rec.recording) {
+    return (
+      <button type="button" onClick={rec.stop}
+        className="w-full h-11 inline-flex items-center justify-center gap-2 rounded-xl bg-red-500 text-[13px] font-bold text-white hover:bg-red-600 transition-colors">
+        <span className="w-2.5 h-2.5 rounded-full bg-white animate-pulse" />
+        Recording… tap to stop
+      </button>
+    )
+  }
+  return (
+    <div className="grid grid-cols-3 gap-2">
+      <button type="button" disabled={disabled} onClick={onOpenCamera}
+        className="h-11 inline-flex items-center justify-center gap-1.5 text-[12.5px] font-bold text-slate-700 border border-slate-200 bg-white rounded-xl hover:border-indigo-400 hover:text-indigo-600 transition-colors disabled:opacity-50">
+        <Icon name="camera" size={15} />
+        Capture
+      </button>
+      <label className={"h-11 inline-flex items-center justify-center gap-1.5 text-[12.5px] font-bold text-slate-700 border border-slate-200 bg-white rounded-xl transition-colors " + (disabled ? "opacity-50" : "cursor-pointer hover:border-indigo-400 hover:text-indigo-600")}>
+        <Icon name="gallery" size={15} />
+        Upload
+        <input type="file" accept="image/*,.pdf" className="sr-only" disabled={disabled}
+          onChange={function (e) { if (e.target.files && e.target.files[0]) setFile(e.target.files[0]); e.target.value = '' }} />
+      </label>
+      <button type="button" disabled={disabled} onClick={rec.start}
+        className="h-11 inline-flex items-center justify-center gap-1.5 text-[12.5px] font-bold text-slate-700 border border-slate-200 bg-white rounded-xl hover:border-indigo-400 hover:text-indigo-600 transition-colors disabled:opacity-50">
+        <Icon name="mic" size={15} />
+        Record
+      </button>
     </div>
   )
 }

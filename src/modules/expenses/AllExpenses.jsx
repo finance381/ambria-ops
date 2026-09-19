@@ -11,6 +11,8 @@ import { useReferenceData } from '../../lib/referenceData.jsx'
 import { deptInk, STATUS_RAIL } from '../../lib/ui'
 import Icon from '../../components/ui/Icon'
 import SearchField from '../../components/ui/SearchField'
+import CheckedStamp from '../../components/ui/CheckedStamp'
+import { hasPerm } from '../../lib/permissions'
 
 function byName(a, b) { return (a.name || '').localeCompare(b.name || '') }
 
@@ -59,7 +61,9 @@ var _savedFilters = {
   dept: '', expType: '', expSubType: '', venue: '', user: '', amountMin: '', amountMax: ''
 }
 
-function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds, glass }) {
+function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds, glass, profile, isAdmin }) {
+  var canMarkChecked = hasPerm(profile?.permsNew, 'finance.wallet.mark_checked')
+  var [checkingExpId, setCheckingExpId] = useState(null)
   var [allExps, setAllExps] = useState([])
   var [allExpHasMore, setAllExpHasMore] = useState(false)
   var [allExpStatus, setAllExpStatus] = useState(function () { return _savedFilters.status })
@@ -148,7 +152,7 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds, glass }) {
       : 'expense_allocations(department, department_id, venue_id, amount_paise, expense_type_id, expense_sub_type_id, remarks)'
 
     var query = supabase.from('expenses')
-      .select('id, user_id, batch_id, expense_type_id, expense_sub_type_id, amount_paise, tax_paise, description, status, expense_date, receipt_path, receipt_paths, created_at, rejection_reason, flag_reason, penalty_paise, penalized_at, penalized_by, reviewed_at, reviewed_by, acknowledged_at, acknowledged_by, deduction_type, vendor_name, travel_from, travel_to, travel_mode, metadata, event_id, deleted_at, delete_reason, deleted_by, payment_cash_paise, payment_credit_paise, payment_credit_cash_paise, payment_credit_bank_paise, cash_due_date, bank_due_date, expense_types(name, extra_fields), expense_sub_types(name, extra_fields), events(event_name, venue_name, function_date, pax), ' + allocEmbed)
+      .select('id, user_id, batch_id, expense_type_id, expense_sub_type_id, amount_paise, tax_paise, description, status, expense_date, receipt_path, receipt_paths, created_at, rejection_reason, flag_reason, penalty_paise, penalized_at, penalized_by, reviewed_at, reviewed_by, acknowledged_at, acknowledged_by, deduction_type, vendor_name, travel_from, travel_to, travel_mode, metadata, event_id, deleted_at, delete_reason, deleted_by, checked_by, checked_at, payment_cash_paise, payment_credit_paise, payment_credit_cash_paise, payment_credit_bank_paise, cash_due_date, bank_due_date, expense_types(name, extra_fields), expense_sub_types(name, extra_fields), events(event_name, venue_name, function_date, pax), ' + allocEmbed)
       .order('created_at', { ascending: false })
       .range(offset, offset + PAGE_SIZE)
 
@@ -238,6 +242,22 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds, glass }) {
         setAllExpFullCount(totalRes.count || 0)
       }
     }
+  }
+
+  async function toggleExpenseCheck(exp) {
+    if (checkingExpId) return
+    setCheckingExpId(exp.id)
+    var { data, error } = await supabase.rpc('fn_toggle_expense_check', { p_expense_id: exp.id })
+    setCheckingExpId(null)
+    if (error) { alert('Could not update: ' + error.message); return }
+    var nowChecked = !!data
+    setAllExps(function (prev) { return prev.map(function (x) {
+      if (x.id !== exp.id) return x
+      return Object.assign({}, x, {
+        checked_by: nowChecked ? profile.id : null,
+        checked_at: nowChecked ? new Date().toISOString() : null,
+      })
+    }) })
   }
 
   function exportAllExpCSV() {
@@ -848,6 +868,18 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds, glass }) {
                       <span className={"shrink-0 text-[9.5px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded " + (exp.deleted_at ? "bg-slate-200 text-slate-600" : (APPROVAL_STATUS_COLORS[exp.status] || 'bg-slate-100 text-slate-600'))}>
                         {exp.deleted_at ? 'Deleted' : (APPROVAL_STATUS_LABELS[exp.status] || exp.status)}
                       </span>
+                      {!exp.deleted_at && (exp.checked_by || canMarkChecked) && (
+                        <span className="shrink-0" onClick={function (ev) { ev.stopPropagation() }}>
+                          <CheckedStamp
+                            checked={!!exp.checked_by}
+                            checkedAt={exp.checked_at}
+                            canToggle={canMarkChecked}
+                            canUncheck={exp.checked_by === profile?.id || isAdmin}
+                            busy={checkingExpId === exp.id}
+                            onToggle={function () { toggleExpenseCheck(exp) }}
+                          />
+                        </span>
+                      )}
                       <span className="text-[11px] text-slate-500 truncate">
                         {(exp.profiles?.name || '—') + ' · '}
                         {formatDate(exp.expense_date)}

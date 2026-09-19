@@ -14,6 +14,7 @@ import { plainParticularsLines, plainDateLines, makeStatementCellHooks } from '.
 import { hasPerm } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
 import SearchField from '../../components/ui/SearchField'
+import CheckedStamp from '../../components/ui/CheckedStamp'
 
 function byName(a, b) { return (a.name || '').localeCompare(b.name || '') }
 
@@ -21,6 +22,8 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
   var permsNew = (profile && profile.permsNew) || []
   var isAdmin = hasPerm(permsNew, 'admin.dashboard')
   var canView = isAdmin || hasPerm(permsNew, 'finance.ledgers.vendor')
+  var canMarkChecked = hasPerm(permsNew, 'finance.wallet.mark_checked')
+  var [checkingEntryId, setCheckingEntryId] = useState(null)
 
   var [view, setView] = useState('list')  // 'list' | 'detail'
   var [vendors, setVendors] = useState([])
@@ -151,9 +154,10 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
     var breakdownByExpId = {}  // { [expId]: { amount_paise, tax_paise, allocations: [...] } }
     var submitterIdByExpId = {}
     var acknowledgerIdByExpId = {}
+    var expCheckByExpId = {}  // { [expId]: { checked_by, checked_at } } — the expense's own check, not this ledger row's
     if (expIds.length > 0) {
       var { data: exps } = await supabase.from('expenses')
-        .select('id, receipt_paths, receipt_path, amount_paise, tax_paise, user_id, acknowledged_by, expense_allocations(department, department_id, venue_id, amount_paise, remarks, expense_type_id, expense_sub_type_id)')
+        .select('id, receipt_paths, receipt_path, amount_paise, tax_paise, user_id, acknowledged_by, checked_by, checked_at, expense_allocations(department, department_id, venue_id, amount_paise, remarks, expense_type_id, expense_sub_type_id)')
         .in('id', expIds)
       ;(exps || []).forEach(function (ex) {
         var paths = Array.isArray(ex.receipt_paths) && ex.receipt_paths.length > 0
@@ -165,6 +169,7 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
           tax_paise: ex.tax_paise || 0,
           allocations: ex.expense_allocations || []
         }
+        expCheckByExpId[ex.id] = { checked_by: ex.checked_by, checked_at: ex.checked_at }
         if (ex.user_id) submitterIdByExpId[ex.id] = ex.user_id
         if (ex.acknowledged_by) acknowledgerIdByExpId[ex.id] = ex.acknowledged_by
       })
@@ -189,6 +194,7 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
     var profileIds = []
     rows.forEach(function (r) {
       if (r.created_by && profileIds.indexOf(r.created_by) === -1) profileIds.push(r.created_by)
+      if (r.checked_by && profileIds.indexOf(r.checked_by) === -1) profileIds.push(r.checked_by)
     })
     Object.keys(submitterIdByExpId).forEach(function (eid) {
       var id = submitterIdByExpId[eid]
@@ -197,6 +203,10 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
     Object.keys(acknowledgerIdByExpId).forEach(function (eid) {
       var id = acknowledgerIdByExpId[eid]
       if (profileIds.indexOf(id) === -1) profileIds.push(id)
+    })
+    Object.keys(expCheckByExpId).forEach(function (eid) {
+      var id = expCheckByExpId[eid].checked_by
+      if (id && profileIds.indexOf(id) === -1) profileIds.push(id)
     })
     var profileNameById = {}
     if (profileIds.length > 0) {
@@ -207,6 +217,7 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
     var merged = rows.map(function (r) {
       var patch = {}
       if (r.created_by && profileNameById[r.created_by]) patch._creatorName = profileNameById[r.created_by]
+      if (r.checked_by && profileNameById[r.checked_by]) patch._checkedByName = profileNameById[r.checked_by]
       if (r.ref_type === 'expense' && r.ref_id) {
         var id = Number(r.ref_id)
         if (receiptsByExpId[id]) patch._sourceReceipts = receiptsByExpId[id]
@@ -218,6 +229,10 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
         }
         if (submitterIdByExpId[id] && profileNameById[submitterIdByExpId[id]]) patch._submitterName = profileNameById[submitterIdByExpId[id]]
         if (acknowledgerIdByExpId[id] && profileNameById[acknowledgerIdByExpId[id]]) patch._acknowledgerName = profileNameById[acknowledgerIdByExpId[id]]
+        if (expCheckByExpId[id]) {
+          patch._expChecked = expCheckByExpId[id]
+          patch._expCheckedByName = expCheckByExpId[id].checked_by ? (profileNameById[expCheckByExpId[id].checked_by] || null) : null
+        }
       }
       if (Object.keys(patch).length > 0) return Object.assign({}, r, patch)
       return r
@@ -289,6 +304,28 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
     })
     if (error) { alert('Reversal failed: ' + error.message); return }
     try { logActivity('LEDGER_REVERSE', 'entry #' + entryId) } catch (_) {}
+    if (selectedVendor) await loadEntries(selectedVendor, showDeleted)
+  }
+
+  async function toggleLedgerCheck(entryId) {
+    if (checkingEntryId) return
+    setCheckingEntryId(entryId)
+    var { error } = await supabase.rpc('fn_toggle_ledger_check', { p_entry_id: entryId })
+    setCheckingEntryId(null)
+    if (error) { alert('Could not update: ' + error.message); return }
+    if (selectedVendor) await loadEntries(selectedVendor, showDeleted)
+  }
+
+  // Purchase entries (ref_type='expense') check the underlying expenses row
+  // itself, same as everywhere else that shows an expense — not this
+  // ledger_entries row's own checked_by, which is for vendor_payment/
+  // vendor_deduction rows that have no expenses row to attach to.
+  async function toggleExpenseCheck(expenseId) {
+    if (checkingEntryId) return
+    setCheckingEntryId(expenseId)
+    var { error } = await supabase.rpc('fn_toggle_expense_check', { p_expense_id: expenseId })
+    setCheckingEntryId(null)
+    if (error) { alert('Could not update: ' + error.message); return }
     if (selectedVendor) await loadEntries(selectedVendor, showDeleted)
   }
 
@@ -898,6 +935,32 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
                   </p>
                   {!isDeleted && (
                     <p className="text-[10px] text-gray-400">Bal: {formatPoints(e.runningBalance)}</p>
+                  )}
+                  {!isDeleted && isExpRow && e._expChecked && (
+                    <div className="mt-1 flex justify-end">
+                      <CheckedStamp
+                        checked={!!e._expChecked.checked_by}
+                        checkerName={e._expCheckedByName}
+                        checkedAt={e._expChecked.checked_at}
+                        canToggle={canMarkChecked}
+                        canUncheck={e._expChecked.checked_by === profile.id || isAdmin}
+                        busy={checkingEntryId === Number(e.ref_id)}
+                        onToggle={function (ev) { ev.stopPropagation(); toggleExpenseCheck(Number(e.ref_id)) }}
+                      />
+                    </div>
+                  )}
+                  {!isDeleted && !isExpRow && (
+                    <div className="mt-1 flex justify-end">
+                      <CheckedStamp
+                        checked={!!e.checked_by}
+                        checkerName={e._checkedByName}
+                        checkedAt={e.checked_at}
+                        canToggle={canMarkChecked}
+                        canUncheck={e.checked_by === profile.id || isAdmin}
+                        busy={checkingEntryId === e.id}
+                        onToggle={function (ev) { ev.stopPropagation(); toggleLedgerCheck(e.id) }}
+                      />
+                    </div>
                   )}
                   {isAdmin && !isDeleted && (
                     <button onClick={function (ev) { ev.stopPropagation(); reverseEntry(e.id) }}
