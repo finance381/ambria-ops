@@ -958,65 +958,94 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
 
   return (
     <div className="space-y-4">
-      <button onClick={backToList} className="text-sm text-indigo-600 font-medium hover:text-indigo-800 transition-colors">
-        ← Back to vendors
-      </button>
+      {/* A bar of its own for the two things that are about the page rather
+          than the vendor: where you came from, and the actions that have no
+          room on the header card. */}
+      <div className="flex items-center justify-between gap-3">
+        <button type="button" onClick={backToList}
+          className="inline-flex items-center gap-1.5 h-9 -ml-1 px-2 rounded-lg text-[13px] font-bold text-indigo-600 hover:bg-indigo-50 transition-colors">
+          <Icon name="arrowLeft" size={15} />
+          Vendors
+        </button>
+        {vs._phone && (
+          <a href={'tel:' + vs._phone.replace(/[^0-9+]/g, '')}
+            title={'Call ' + (vs._contact || vs.vendor_name || 'vendor') + (vs._phone2 ? ' · alt: ' + vs._phone2 : '')}
+            className="shrink-0 inline-flex items-center gap-2 h-9 px-3.5 rounded-xl border border-slate-300 bg-white text-[13px] font-bold text-slate-700 hover:border-emerald-300 hover:text-emerald-700 no-underline transition-colors">
+            <Icon name="phone" size={15} />
+            Call
+          </a>
+        )}
+      </div>
 
-      {/* Vendor header card */}
-      <div className="bg-white border border-gray-200 rounded-xl p-4">
-        <div className="flex items-start justify-between gap-3 mb-3">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <h3 className="text-base font-bold text-gray-900 truncate">{vs.vendor_name || '—'}</h3>
-              {vs.vendor_status === 'incomplete' && (
-                <span className="text-[10px] font-bold uppercase px-2 py-0.5 bg-amber-100 text-amber-700 rounded">Incomplete</span>
-              )}
-            </div>
-            <p className="text-[11px] text-gray-500 mt-1">Vendor #{vs.vendor_id}</p>
+      {/* Who this is, and the two things you came here to do. The emoji are
+          gone: a glyph from the set the rest of the app draws from sits on the
+          text's baseline and takes its colour, which a font-dependent picture
+          of a banknote does not. */}
+      <div className="flex flex-wrap items-center gap-4 bg-white border border-slate-200 rounded-2xl px-5 py-4">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <h2 className="font-display text-[19px] font-bold text-slate-900 truncate">{vs.vendor_name || '—'}</h2>
+            {vs.vendor_status === 'incomplete' && (
+              <span className="shrink-0 h-6 inline-flex items-center px-2.5 rounded-md bg-amber-100 text-[10.5px] font-bold uppercase tracking-[0.04em] text-amber-700">
+                Incomplete
+              </span>
+            )}
           </div>
-          <button onClick={payVendor}
-            className="px-3 py-2 text-xs font-bold rounded-lg transition-colors flex-shrink-0 bg-indigo-600 text-white hover:bg-indigo-700">
-            💸 Pay Vendor
+          <p className="mt-1 text-[12px] text-slate-500" data-notranslate>Vendor #{vs.vendor_id}</p>
+        </div>
+        <div className="shrink-0 flex items-center gap-2">
+          <button type="button" onClick={payVendor}
+            className="inline-flex items-center gap-2 h-10 px-4 rounded-xl text-[13px] font-bold text-white bg-indigo-600 hover:bg-indigo-700 active:scale-[0.98] transition-all">
+            <Icon name="banknote" size={15} />
+            Pay Vendor
           </button>
-          {vs._phone && (
-            <a href={'tel:' + vs._phone.replace(/[^0-9+]/g, '')}
-              title={'Call ' + (vs._contact || vs.vendor_name || 'vendor') + (vs._phone2 ? ' · alt: ' + vs._phone2 : '')}
-              className="px-3 py-2 text-xs font-bold rounded-lg transition-colors flex-shrink-0 bg-green-600 text-white hover:bg-green-700 no-underline">
-              📞 Call
-            </a>
-          )}
-          <button onClick={exportVendorPDF}
+          <button type="button" onClick={exportVendorPDF}
             disabled={pdfBusy || !entries || entries.length === 0}
-            className="px-3 py-2 text-sm font-bold rounded-lg transition-colors bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 disabled:opacity-40 disabled:cursor-not-allowed">
-            {pdfBusy ? 'Building…' : '📄 PDF'}
+            className="inline-flex items-center gap-2 h-10 px-4 rounded-xl text-[13px] font-bold text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 hover:text-slate-900 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed transition-all">
+            <Icon name={pdfBusy ? 'refresh' : 'fileText'} size={15} />
+            {pdfBusy ? 'Building…' : 'PDF'}
           </button>
         </div>
-        <div className="border-t border-gray-100 pt-3">
-          <p className="text-[11px] font-bold uppercase tracking-wider text-gray-500 mb-0.5">Outstanding Balance</p>
-          <p className={"text-3xl font-bold " + balColor}>{formatPoints(currentBalance)}</p>
+      </div>
+
+      {/* Six readings of this vendor, the balance given the room the other five
+          do not need. They were a paragraph under the name — a 3xl figure, then
+          two facts in one grey line, then a red strip — which is a lot of
+          different shapes for six numbers. */}
+      <div className="grid grid-cols-2 lg:grid-cols-7 gap-3">
+        <Tile wide icon="wallet" tone="bg-amber-50 text-amber-600" label="Outstanding Balance"
+          value={formatPoints(currentBalance)} valueClass={balanceColour(currentBalance)}>
           {openingPaise !== 0 && (
-            <p className={"text-[11px] font-semibold mt-0.5 " + (openingPaise > 0 ? "text-amber-700" : "text-green-700")}>
-              Includes opening: {formatPoints(Math.abs(openingPaise))} {openingPaise > 0 ? 'Cr' : 'Dr'}
+            <p className="mt-2 text-[11.5px] font-semibold text-slate-500">
+              Includes opening: <span className="text-slate-700" data-notranslate>{formatPoints(Math.abs(openingPaise))} {openingPaise > 0 ? 'Cr' : 'Dr'}</span>
             </p>
           )}
-          {((vs.cash_balance_paise || 0) !== 0 || (vs.bank_balance_paise || 0) !== 0) && (
-            <div className="flex gap-3 mt-2 text-xs">
-              <span className="text-gray-600">💵 Cash: <span className="font-semibold text-gray-900">{formatPoints(vs.cash_balance_paise || 0)}</span></span>
-              <span className="text-gray-600">🏦 Bank: <span className="font-semibold text-gray-900">{formatPoints(vs.bank_balance_paise || 0)}</span></span>
-            </div>
-          )}
           {(vs.overdue_count || 0) > 0 && (
-            <div className="mt-2 inline-flex items-center gap-1.5 px-2 py-1 bg-red-50 border border-red-200 rounded text-[11px] text-red-700 font-medium">
-              ⚠ {vs.overdue_count} overdue · earliest {vs.earliest_due_date}
-            </div>
+            <p className="mt-2 inline-flex items-center gap-1.5 h-6 px-2.5 rounded-md bg-rose-100 text-[11px] font-bold text-rose-700">
+              <Icon name="alert" size={12} />
+              <span data-notranslate>{vs.overdue_count}</span> overdue · earliest {vs.earliest_due_date}
+            </p>
           )}
-        </div>
+        </Tile>
+        <Tile icon="banknote" tone="bg-emerald-50 text-emerald-600" label="Cash"
+          value={formatPoints(vs.cash_balance_paise || 0)} valueClass="text-slate-900" />
+        <Tile icon="bank" tone="bg-indigo-50 text-indigo-600" label="Bank"
+          value={formatPoints(vs.bank_balance_paise || 0)} valueClass="text-slate-900" />
+        <Tile icon="fileText" tone="bg-slate-100 text-slate-500" label="Total Entries"
+          value={entries.length} valueClass="text-slate-900" />
+        <Tile icon="calendar" tone="bg-violet-50 text-violet-600" label="Last Entry"
+          value={vs.last_entry_date ? formatDate(vs.last_entry_date) : '—'}
+          valueClass={vs.last_entry_date ? 'text-slate-900' : 'text-slate-400'} />
+        <Tile icon="clock" tone="bg-rose-50 text-rose-600" label="Earliest Due"
+          value={vs.earliest_due_date ? formatDate(vs.earliest_due_date) : '—'}
+          valueClass={vs.earliest_due_date ? 'text-slate-900' : 'text-slate-400'} />
       </div>
 
       {/* Admin toggle: show deleted */}
       {isAdmin && (
-        <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
+        <label className="inline-flex items-center gap-2 text-[12px] font-medium text-slate-600 cursor-pointer">
           <input type="checkbox" checked={showDeleted}
+            className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500/30"
             onChange={function (e) { toggleShowDeleted(e.target.checked) }} />
           Show deleted entries (audit)
         </label>
@@ -1087,15 +1116,22 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
                     var isOverdueRow = kind === 'purchase' && due && due < new Date().toISOString().split('T')[0]
                     if (!m && !due) return null
                     return (
-                      <div className="flex gap-1.5 mt-1 flex-wrap">
+                      <div className="flex gap-1.5 mt-1.5 flex-wrap">
+                        {/* Glyphs from the set the rest of the app draws from,
+                            not emoji. An emoji is a picture the font picks, so
+                            it sits off the baseline, keeps its own colour and
+                            is a different size on every machine — three things
+                            a chip this small cannot absorb. */}
                         {m && (
-                          <span className="text-[10px] font-semibold px-1.5 py-0.5 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded">
-                            {m === 'cash' ? '💵 Cash' : '🏦 Bank'}
+                          <span className="h-6 inline-flex items-center gap-1.5 px-2.5 rounded-md bg-indigo-50 text-[10.5px] font-bold text-indigo-700">
+                            <Icon name={m === 'cash' ? 'banknote' : 'bank'} size={12} />
+                            {m === 'cash' ? 'Cash' : 'Bank'}
                           </span>
                         )}
                         {due && (
-                          <span className={"text-[10px] font-semibold px-1.5 py-0.5 border rounded " + (isOverdueRow ? "bg-red-50 text-red-700 border-red-200" : "bg-gray-50 text-gray-700 border-gray-200")}>
-                            {isOverdueRow ? '⚠ Due ' : 'Due '}{due}
+                          <span className={"h-6 inline-flex items-center gap-1.5 px-2.5 rounded-md text-[10.5px] font-bold " + (isOverdueRow ? "bg-rose-100 text-rose-700" : "bg-slate-100 text-slate-600")}>
+                            <Icon name={isOverdueRow ? 'alert' : 'clock'} size={12} />
+                            Due {due}
                           </span>
                         )}
                       </div>
@@ -1117,42 +1153,60 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
                     var roundedTotalPaise = Math.round(totalPaise / 100) * 100
                     var roundOffPaise = roundedTotalPaise - totalPaise
                     var hasRoundOff = roundOffPaise !== 0
+                    // Two cards, side by side once there is room. The breakdown
+                    // is a short column of totals and the allocations are a
+                    // long column of lines, so stacking them made a tall narrow
+                    // strip with a lot of empty space beside the first half of
+                    // it. Each gets a heading with its own glyph, the way the
+                    // rest of this screen labels a box.
                     return (
-                      <div className="mt-2 p-2.5 bg-gray-50 border border-gray-200 rounded-lg space-y-2">
-                        <div className="text-[11px]">
-                          <div className="font-bold uppercase text-[9px] tracking-wider text-gray-500 mb-1">Amount breakdown</div>
-                          <div className="flex justify-between text-gray-700"><span>Base</span><span>{formatPoints(basePaise)}</span></div>
-                          {taxPaise > 0 && (
-                            <div className="flex justify-between text-gray-700"><span>GST</span><span>{formatPoints(taxPaise)}</span></div>
-                          )}
-                          <div className="flex justify-between text-gray-700 pt-1 border-t border-gray-200 mt-1"><span>Sub-total</span><span>{formatPoints(totalPaise)}</span></div>
-                          {hasRoundOff && (
-                            <div className="flex justify-between text-amber-700"><span>Round off</span><span>{roundOffPaise > 0 ? '+' : ''}{formatPoints(roundOffPaise)}</span></div>
-                          )}
-                          <div className="flex justify-between font-bold text-gray-900 pt-1 border-t border-gray-300 mt-1">
-                            <span>Grand total{hasRoundOff ? ' (rounded)' : ''}</span>
-                            <span>{formatPoints(roundedTotalPaise)}</span>
+                      <div className="mt-3 grid grid-cols-1 lg:grid-cols-2 gap-3 items-start">
+                        <div className="bg-white border border-slate-200 rounded-xl p-3.5">
+                          <p className="flex items-center gap-2 mb-2.5 text-[11px] font-bold uppercase tracking-[0.06em] text-slate-500">
+                            <Icon name="calculator" size={14} className="text-slate-400" />
+                            Amount Breakdown
+                          </p>
+                          <div className="text-[12px] space-y-1" data-notranslate>
+                            <div className="flex justify-between gap-3 text-slate-600"><span>Base</span><span className="tabular-nums">{formatPoints(basePaise)}</span></div>
+                            {taxPaise > 0 && (
+                              <div className="flex justify-between gap-3 text-slate-600"><span>GST</span><span className="tabular-nums">{formatPoints(taxPaise)}</span></div>
+                            )}
+                            <div className="flex justify-between gap-3 text-slate-600 pt-1.5 border-t border-slate-100"><span>Sub-total</span><span className="tabular-nums">{formatPoints(totalPaise)}</span></div>
+                            {hasRoundOff && (
+                              <div className="flex justify-between gap-3 text-amber-700"><span>Round off</span><span className="tabular-nums">{roundOffPaise > 0 ? '+' : ''}{formatPoints(roundOffPaise)}</span></div>
+                            )}
+                            <div className="flex justify-between gap-3 pt-1.5 border-t border-slate-200 text-[12.5px] font-bold text-slate-900">
+                              <span>Grand total{hasRoundOff ? ' (rounded)' : ''}</span>
+                              <span className="tabular-nums">{formatPoints(roundedTotalPaise)}</span>
+                            </div>
                           </div>
                         </div>
+
                         {b.allocations && b.allocations.length > 0 && (
-                          <div className="text-[11px] pt-2 border-t border-gray-200">
-                            <div className="font-bold uppercase text-[9px] tracking-wider text-gray-500 mb-1">Allocation{b.allocations.length > 1 ? 's' : ''}</div>
-                            {b.allocations.map(function (a, ai) {
-                              var vName = a.venue_id && e._venueNames ? e._venueNames[a.venue_id] : null
-                              var tName = a.expense_type_id && e._typeNames ? e._typeNames[a.expense_type_id] : null
-                              var stName = a.expense_sub_type_id && e._subTypeNames ? e._subTypeNames[a.expense_sub_type_id] : null
-                              var typeLabel = tName ? (tName + (stName ? ' › ' + stName : '')) : (stName || '')
-                              var parts = []
-                              if (a.department) parts.push(a.department)
-                              if (typeLabel) parts.push(typeLabel)
-                              if (vName) parts.push(vName)
-                              return (
-                                <div key={ai} className="flex justify-between gap-2 text-gray-700 py-0.5">
-                                  <span className="truncate">{parts.length > 0 ? parts.join(' · ') : '—'}{a.remarks ? ' — ' + a.remarks : ''}</span>
-                                  <span className="flex-shrink-0 font-medium">{formatPoints(a.amount_paise || 0)}</span>
-                                </div>
-                              )
-                            })}
+                          <div className="bg-white border border-slate-200 rounded-xl p-3.5">
+                            <p className="flex items-center gap-2 mb-2.5 text-[11px] font-bold uppercase tracking-[0.06em] text-slate-500">
+                              <Icon name="split" size={14} className="text-slate-400" />
+                              Allocation{b.allocations.length > 1 ? 's' : ''}
+                            </p>
+                            <div className="space-y-1.5">
+                              {b.allocations.map(function (a, ai) {
+                                var vName = a.venue_id && e._venueNames ? e._venueNames[a.venue_id] : null
+                                var tName = a.expense_type_id && e._typeNames ? e._typeNames[a.expense_type_id] : null
+                                var stName = a.expense_sub_type_id && e._subTypeNames ? e._subTypeNames[a.expense_sub_type_id] : null
+                                var typeLabel = tName ? (tName + ' › ' + stName) : (stName || '')
+                                if (tName && !stName) typeLabel = tName
+                                var parts = []
+                                if (a.department) parts.push(a.department)
+                                if (typeLabel) parts.push(typeLabel)
+                                if (vName) parts.push(vName)
+                                return (
+                                  <div key={ai} className="flex justify-between gap-3 text-[12px] text-slate-600 leading-snug">
+                                    <span className="min-w-0">{parts.length > 0 ? parts.join(' · ') : '—'}{a.remarks ? ' — ' + a.remarks : ''}</span>
+                                    <span className="shrink-0 font-semibold tabular-nums text-slate-800" data-notranslate>{formatPoints(a.amount_paise || 0)}</span>
+                                  </div>
+                                )
+                              })}
+                            </div>
                           </div>
                         )}
                       </div>
@@ -1194,8 +1248,9 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
                   )}
                   {isAdmin && !isDeleted && (
                     <button onClick={function (ev) { ev.stopPropagation(); reverseEntry(e.id) }}
-                      className="text-[10px] text-red-500 hover:text-red-700 mt-1 font-medium">
-                      ↩ Reverse
+                      className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-bold text-rose-600 hover:text-rose-800 transition-colors">
+                      <Icon name="undo" size={12} />
+                      Reverse
                     </button>
                   )}
                 </div>
