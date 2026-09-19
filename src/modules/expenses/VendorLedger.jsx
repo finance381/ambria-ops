@@ -1115,7 +1115,10 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
             // two don't visibly disagree on the same entry.
             var headlineAmt = e._breakdown ? Math.round(e._breakdown.amount_paise / 100) * 100 : amt
             var kind = e.metadata && e.metadata.kind ? e.metadata.kind : e.ref_type
-            var dotColor = isDeleted ? 'bg-slate-300' : isCredit ? 'bg-amber-500' : 'bg-emerald-500'
+            // The same two colours as the figure on the right of the row. The
+            // dot was amber where the figure is red, so one row was marked in
+            // two colours for one fact.
+            var dotColor = isDeleted ? 'bg-slate-300' : isCredit ? 'bg-rose-500' : 'bg-emerald-500'
             var isExpRow = e.ref_type === 'expense' && e.ref_id && /^[0-9]+$/.test(String(e.ref_id)) && !isDeleted
             function handleRowClick() {
               if (!isExpRow) return
@@ -1269,19 +1272,19 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
                     the column shared an edge with anything but the wall. */}
                 <div className="shrink-0 flex flex-col items-end gap-2.5">
                   <div className="text-right">
-                    {/* Dark, and the word says which direction it is.
+                    {/* The sign carries the colour: + is red and − is green.
+                        A credit is a bill arriving, so what it does to this
+                        vendor's balance is the direction you want flagged, and
+                        a debit is us paying it off. Amber was the softer read
+                        of the same thing; red says it plainly.
 
-                        The colour was fighting the sign: a credit raises what
-                        we owe this vendor, so it was amber with a "+" on it,
-                        and a debit pays them, so it was emerald with a "−".
-                        Correct by the ledger, and backwards to anyone who has
-                        read a bank statement, where + is the good one. Rather
-                        than pick which convention to break, the figure stops
-                        carrying the meaning and "Billed"/"Paid" carries it. */}
-                    <p className="text-[16px] font-bold tabular-nums whitespace-nowrap text-slate-900" data-notranslate>
+                        "Billed" / "Paid" stays under it, because the sign says
+                        which way the number moved and the word says what
+                        actually happened. */}
+                    <p className={"text-[16px] font-bold tabular-nums whitespace-nowrap " + (isCredit ? "text-rose-600" : "text-emerald-600")} data-notranslate>
                       {isCredit ? '+' : '−'}{formatPoints(headlineAmt)}
                     </p>
-                    <p className={"mt-0.5 text-[11px] font-bold uppercase tracking-[0.04em] " + (isCredit ? "text-amber-600" : "text-emerald-600")}>
+                    <p className={"mt-0.5 text-[11px] font-bold uppercase tracking-[0.04em] " + (isCredit ? "text-rose-500" : "text-emerald-500")}>
                       {isCredit ? 'Billed' : 'Paid'}
                     </p>
                     {/* The two are different facts — what this entry was worth,
