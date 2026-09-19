@@ -541,7 +541,6 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
 
   var [showPayModal, setShowPayModal] = useState(false)
   var [pdfBusy, setPdfBusy] = useState(false)
-  var [moreOpen, setMoreOpen] = useState(false)
 
   function payVendor() {
     if (!selectedVendor) return
@@ -969,48 +968,17 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
 
   return (
     <div className="space-y-4">
-      {/* A bar of its own for the two things that are about the page rather
-          than the vendor: where you came from, and the actions that have no
-          room on the header card. */}
-      <div className="flex items-center justify-between gap-3">
-        <button type="button" onClick={backToList}
-          className="inline-flex items-center gap-1.5 h-9 -ml-1 px-2 rounded-lg text-[13px] font-bold text-indigo-600 hover:bg-indigo-50 transition-colors">
-          <Icon name="arrowLeft" size={15} />
-          Vendors
-        </button>
-        {/* One overflow menu rather than a third and fourth button on the
-            header card. Rendered only when it has something in it: a menu that
-            opens on nothing is worse than no menu. */}
-        {vs._phone && (
-          <div className="relative shrink-0">
-            <button type="button" onClick={function () { setMoreOpen(!moreOpen) }}
-              aria-label="More actions" aria-expanded={moreOpen}
-              className="inline-flex items-center gap-1.5 h-9 px-3 rounded-xl border border-slate-300 bg-white text-[13px] font-bold text-slate-700 hover:bg-slate-50 hover:text-slate-900 transition-colors">
-              <Icon name="more" size={16} />
-              More Actions
-              <Icon name="chevronDown" size={14} className="text-slate-400" />
-            </button>
-            {moreOpen && (
-              <>
-                <div className="fixed inset-0 z-20" onClick={function () { setMoreOpen(false) }} />
-                <div className="absolute right-0 top-full mt-1.5 z-30 w-56 py-1 bg-white border border-slate-200 rounded-xl shadow-[0_8px_24px_rgba(15,23,42,0.12)] overflow-hidden">
-                  <a href={'tel:' + vs._phone.replace(/[^0-9+]/g, '')}
-                    onClick={function () { setMoreOpen(false) }}
-                    className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left no-underline hover:bg-slate-50 transition-colors">
-                    <span className="shrink-0 text-slate-400"><Icon name="phone" size={15} /></span>
-                    <span className="min-w-0">
-                      <span className="block text-[12.5px] font-semibold text-slate-800">Call vendor</span>
-                      <span className="block text-[11px] text-slate-500 truncate" data-notranslate>{vs._contact || vs._phone}</span>
-                    </span>
-                  </a>
-                </div>
-              </>
-            )}
-          </div>
-        )}
-      </div>
+      {/* Just where you came from. The overflow menu that used to sit on
+          the right held one item, and a menu you have to open to reach a
+          single action is two presses for what a button does in one — the
+          call moved onto the header card beside the other two. */}
+      <button type="button" onClick={backToList}
+        className="inline-flex items-center gap-1.5 h-9 -ml-1 px-2 rounded-lg text-[13px] font-bold text-indigo-600 hover:bg-indigo-50 transition-colors">
+        <Icon name="arrowLeft" size={15} />
+        Vendors
+      </button>
 
-      {/* Who this is, and the two things you came here to do. The emoji are
+      {/* Who this is, and the three things you came here to do. The emoji are
           gone: a glyph from the set the rest of the app draws from sits on the
           text's baseline and takes its colour, which a font-dependent picture
           of a banknote does not. */}
@@ -1040,6 +1008,14 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
             <Icon name="banknote" size={15} />
             Pay Vendor
           </button>
+          {vs._phone && (
+            <a href={'tel:' + vs._phone.replace(/[^0-9+]/g, '')}
+              title={'Call ' + (vs._contact || vs.vendor_name || 'vendor') + (vs._phone2 ? ' · alt: ' + vs._phone2 : '')}
+              className="inline-flex items-center gap-2 h-10 px-4 rounded-xl text-[13px] font-bold text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 hover:text-slate-900 active:scale-[0.98] no-underline transition-all">
+              <Icon name="phone" size={15} />
+              Call
+            </a>
+          )}
           <button type="button" onClick={exportVendorPDF}
             disabled={pdfBusy || !entries || entries.length === 0}
             className="inline-flex items-center gap-2 h-10 px-4 rounded-xl text-[13px] font-bold text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 hover:text-slate-900 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed transition-all">
