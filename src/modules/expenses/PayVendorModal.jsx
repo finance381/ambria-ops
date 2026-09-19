@@ -5,6 +5,16 @@ import { logActivity } from '../../lib/logger'
 import { compressImage } from '../../lib/imageCompress'
 import { formatDate, formatPoints } from '../../lib/format'
 import VoiceInput from '../../components/ui/VoiceInput'
+import Icon from '../../components/ui/Icon'
+import EventDatePicker from '../../components/ui/EventDatePicker'
+
+// One label and one field for the whole form, so a row cannot drift out of
+// line with the row above it — every field was writing its own px-3 py-2 and
+// its own focus ring, and the deduction block a second set in amber.
+var LABEL = 'block text-[11px] font-semibold text-slate-600 mb-1.5'
+var FIELD = 'w-full h-11 px-3 bg-white border border-slate-300 rounded-xl text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-shadow'
+// The two file buttons, and the pair inside the deduction block.
+var PICK = 'h-11 inline-flex items-center justify-center gap-2 rounded-xl border border-dashed text-[12.5px] font-bold cursor-pointer transition-colors'
 
 function PayVendorModal({ vendor, profile, onClose, onSuccess }) {
   var [payMode, setPayMode] = useState('')
@@ -193,33 +203,46 @@ function PayVendorModal({ vendor, profile, onClose, onSuccess }) {
   return createPortal((
     <div className="fixed inset-0 z-[9998] bg-black/60 flex items-end sm:items-center justify-center p-0 sm:p-4"
       onClick={function () { if (!paySaving) onClose() }}>
-      <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md p-5 space-y-3 max-h-[90vh] overflow-y-auto"
+      <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md p-5 space-y-4 max-h-[90vh] overflow-y-auto ambria-thin-scroll"
         onClick={function (ev) { ev.stopPropagation() }}>
-        <div className="flex items-center justify-between">
-          <h3 className="text-base font-bold text-gray-900">Pay Vendor</h3>
-          <button onClick={function () { if (!paySaving) onClose() }}
-            className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
+        {/* Title and who it is about in one block, so the vendor's name is
+            under the heading rather than pulled back up into it with -mt-2. */}
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h3 className="font-display text-[17px] font-bold text-slate-900">Pay Vendor</h3>
+            <p className="mt-0.5 text-[12.5px] text-slate-500 truncate">{vendor.vendor_name}</p>
+          </div>
+          <button onClick={function () { if (!paySaving) onClose() }} aria-label="Close"
+            className="shrink-0 w-8 h-8 inline-flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors">
+            <Icon name="close" size={16} />
+          </button>
         </div>
-        <p className="text-xs text-gray-500 -mt-2">{vendor.vendor_name}</p>
 
         {payError && (
-          <div className="p-2 rounded-lg bg-red-50 border border-red-200 text-red-700 text-xs">{payError}</div>
+          <p className="flex items-start gap-2 px-3 py-2.5 rounded-xl bg-rose-50 border border-rose-200 text-[12.5px] font-semibold text-rose-700">
+            <span className="shrink-0 mt-px"><Icon name="alert" size={14} /></span>
+            {payError}
+          </p>
         )}
 
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Pay Via <span className="text-red-500">*</span></label>
-          <div className="flex gap-2">
-            {[{ v: 'cash', label: '💵 Cash', bal: vendor.cash_balance_paise || 0 },
-              { v: 'bank', label: '🏦 Bank', bal: vendor.bank_balance_paise || 0 }].map(function (opt) {
+          <label className={LABEL}>Pay via <span className="text-rose-500">*</span></label>
+          <div className="grid grid-cols-2 gap-2">
+            {[{ v: 'cash', label: 'Cash', icon: 'banknote', bal: vendor.cash_balance_paise || 0 },
+              { v: 'bank', label: 'Bank', icon: 'bank', bal: vendor.bank_balance_paise || 0 }].map(function (opt) {
               var active = payMode === opt.v
               return (
-                <button key={opt.v} type="button"
+                <button key={opt.v} type="button" aria-pressed={active}
                   onClick={function () { chooseMode(opt.v, opt.bal) }}
-                  className={"flex-1 px-3 py-2 rounded-lg text-sm font-semibold border transition-colors " + (active ? "bg-indigo-600 text-white border-indigo-600" : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50")}>
-                  <div>{opt.label}</div>
-                  <div className={"text-[10px] font-normal mt-0.5 " + (active ? "text-indigo-100" : "text-gray-500")}>
+                  className={"px-3 py-2.5 rounded-xl border text-left transition-colors " +
+                    (active ? "bg-indigo-50 border-indigo-300" : "bg-white border-slate-300 hover:bg-slate-50")}>
+                  <span className={"flex items-center gap-2 text-[13.5px] font-bold " + (active ? "text-indigo-700" : "text-slate-800")}>
+                    <Icon name={opt.icon} size={15} className={active ? "text-indigo-500" : "text-slate-400"} />
+                    {opt.label}
+                  </span>
+                  <span className={"block mt-0.5 text-[11.5px] tabular-nums " + (active ? "text-indigo-600" : "text-slate-500")} data-notranslate>
                     Owed: {(opt.bal / 100).toLocaleString('en-IN', { maximumFractionDigits: 2 })} pts
-                  </div>
+                  </span>
                 </button>
               )
             })}
@@ -227,58 +250,62 @@ function PayVendorModal({ vendor, profile, onClose, onSuccess }) {
         </div>
 
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Amount (pts) <span className="text-red-500">*</span></label>
+          <label className={LABEL}>Amount (pts) <span className="text-rose-500">*</span></label>
           <input type="number" inputMode="decimal" value={payAmount}
             onChange={function (ev) { setPayAmount(ev.target.value) }}
             placeholder="0" min="0" step="any"
-            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-indigo-300"
+            className={FIELD + ' tabular-nums'}
             style={{ fontSize: '16px' }} />
         </div>
 
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Payment Date</label>
-          <input type="date" value={payDate}
-            onChange={function (ev) { setPayDate(ev.target.value) }}
-            max={new Date().toISOString().split('T')[0]}
-            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-indigo-300"
-            style={{ fontSize: '16px' }} />
+          <label className={LABEL}>Payment date</label>
+          {/* The app's own picker. <input type="date"> renders mm/dd/yyyy in US
+              order whatever the locale, which on a form where every other date
+              on the screen reads "19 Sept 2026" is the one that looks wrong. */}
+          <EventDatePicker value={payDate} placeholder="Payment date" collapsible includePast plain
+            onChange={function (v) { setPayDate(v) }} />
         </div>
 
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Description</label>
+          <label className={LABEL}>Description</label>
           <VoiceInput type="text" value={payDescription}
             onChange={function (ev) { setPayDescription(ev.target.value) }}
             placeholder="Payment to vendor"
-            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-indigo-300" />
+            className={FIELD} />
         </div>
 
         <div>
-          <label className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer">
+          <label className="flex items-center gap-2.5 text-[12.5px] font-medium text-slate-700 cursor-pointer">
             <input type="checkbox" checked={useDeduction}
+              className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500/30"
               onChange={function (ev) { setUseDeduction(ev.target.checked); if (!ev.target.checked) { setDeductionAmount(''); setDeductionReason(''); setDedImage(null) } }} />
             Deduct from bill (discount / quality issue)
           </label>
+          {/* Indented under a rule rather than tinted amber throughout. The
+              amber fields were saying "warning" on every one of them, when what
+              they are is a sub-form of the payment above. */}
           {useDeduction && (
-            <div className="mt-2 space-y-2 pl-5 border-l-2 border-amber-200">
+            <div className="mt-3 space-y-3 pl-4 border-l-2 border-amber-200">
               <input type="number" inputMode="decimal" value={deductionAmount}
                 onChange={function (ev) { setDeductionAmount(ev.target.value) }}
                 placeholder="Deduction amount (pts)" min="0" step="any"
-                className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm bg-amber-50 focus:ring-2 focus:ring-amber-300"
+                className={FIELD + ' tabular-nums'}
                 style={{ fontSize: '16px' }} />
               <VoiceInput type="text" value={deductionReason}
                 onChange={function (ev) { setDeductionReason(ev.target.value) }}
                 placeholder="Reason (required)"
-                className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm bg-amber-50 focus:ring-2 focus:ring-amber-300" />
+                className={FIELD} />
               <div>
-                <label className="block text-[11px] font-medium text-amber-800 mb-1">
+                <label className={LABEL}>
                   Which bill is this discount against?
                   {sourceBills.length === 0 && !sourceBillsLoading && <span className="text-[10px] font-normal text-amber-600 ml-1">(no bills found — deduction won't be credited to an expense type)</span>}
                 </label>
                 {sourceBillsLoading ? (
-                  <p className="text-xs text-amber-600">Loading bills...</p>
+                  <p className="text-[12.5px] text-slate-500">Loading bills…</p>
                 ) : sourceBills.length > 0 ? (
                   <select value={sourceExpenseId} onChange={function (ev) { setSourceExpenseId(ev.target.value) }}
-                    className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm bg-amber-50 focus:ring-2 focus:ring-amber-300"
+                    className={FIELD}
                     style={{ fontSize: '16px' }}>
                     <option value="">Select bill...</option>
                     {sourceBills.map(function (b) {
@@ -288,41 +315,46 @@ function PayVendorModal({ vendor, profile, onClose, onSuccess }) {
                 ) : null}
               </div>
               <div>
-                <label className="block text-[11px] font-medium text-amber-800 mb-1">
-                  Updated Bill / Deduction Proof
-                  <span className="text-[10px] font-normal text-amber-600 ml-1">(optional)</span>
+                <label className={LABEL}>
+                  Updated bill / deduction proof
+                  <span className="ml-1 font-normal text-slate-400">(optional)</span>
                 </label>
                 {dedImage ? (
                   <div className="relative inline-block">
                     {dedImage.type === 'application/pdf' ? (
                       <a href={URL.createObjectURL(dedImage)} target="_blank" rel="noopener noreferrer"
-                        className="w-24 h-24 flex flex-col items-center justify-center rounded border border-amber-300 bg-amber-50 text-amber-700 px-1 hover:border-amber-500 transition-colors"
+                        className="w-24 h-24 flex flex-col items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-500 px-1 hover:border-indigo-400 hover:text-indigo-600 transition-colors"
                         title="PDF — tap to view">
-                        📄
-                        <span className="text-[10px] truncate max-w-full">{dedImage.name}</span>
+                        <Icon name="fileText" size={20} />
+                        <span className="mt-1 text-[10px] truncate max-w-full">{dedImage.name}</span>
                       </a>
                     ) : (
-                      <img src={URL.createObjectURL(dedImage)} alt="deduction proof" className="w-24 h-24 object-cover rounded border border-amber-300" />
+                      <img src={URL.createObjectURL(dedImage)} alt="deduction proof" className="w-24 h-24 object-cover rounded-xl border border-slate-200" />
                     )}
                     <button type="button" onClick={removeDedImg} disabled={paySaving}
-                      className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white rounded-full text-xs font-bold flex items-center justify-center disabled:opacity-50">×</button>
-                    <div className="text-[10px] text-amber-700 text-center mt-0.5">{Math.round(dedImage.size / 1024)}KB</div>
+                      aria-label="Remove"
+                      className="absolute -top-2 -right-2 w-6 h-6 bg-rose-600 text-white rounded-full inline-flex items-center justify-center shadow-sm hover:bg-rose-700 disabled:opacity-50 transition-colors">
+                      <Icon name="close" size={12} strokeWidth={3} />
+                    </button>
+                    <div className="mt-1 text-[10px] text-slate-500 text-center tabular-nums">{Math.round(dedImage.size / 1024)}KB</div>
                   </div>
                 ) : (
                   <div className="grid grid-cols-2 gap-2">
-                    <label className={"flex items-center justify-center gap-1.5 py-2 px-2 border-2 border-dashed rounded-lg text-xs font-medium cursor-pointer transition-colors " + (paySaving || dedImgBusy ? "border-gray-200 text-gray-400 cursor-not-allowed" : "border-amber-300 text-amber-700 hover:bg-amber-100")}>
+                    <label className={PICK + ' ' + (paySaving || dedImgBusy ? "border-slate-200 text-slate-400 cursor-not-allowed" : "border-slate-300 text-slate-700 hover:border-indigo-400 hover:text-indigo-700 hover:bg-indigo-50")}>
                       <input type="file" accept="image/*" capture="environment"
                         disabled={paySaving || dedImgBusy}
                         onChange={handleDedImgAdd}
                         className="hidden" />
-                      {dedImgBusy ? 'Compressing...' : '📷 Take Photo'}
+                      <Icon name={dedImgBusy ? 'refresh' : 'camera'} size={15} />
+                      {dedImgBusy ? 'Compressing…' : 'Take photo'}
                     </label>
-                    <label className={"flex items-center justify-center gap-1.5 py-2 px-2 border-2 border-dashed rounded-lg text-xs font-medium cursor-pointer transition-colors " + (paySaving || dedImgBusy ? "border-gray-200 text-gray-400 cursor-not-allowed" : "border-amber-300 text-amber-700 hover:bg-amber-100")}>
+                    <label className={PICK + ' ' + (paySaving || dedImgBusy ? "border-slate-200 text-slate-400 cursor-not-allowed" : "border-slate-300 text-slate-700 hover:border-indigo-400 hover:text-indigo-700 hover:bg-indigo-50")}>
                       <input type="file" accept="image/*,.pdf"
                         disabled={paySaving || dedImgBusy}
                         onChange={handleDedImgAdd}
                         className="hidden" />
-                      {dedImgBusy ? 'Compressing...' : '📎 Upload file'}
+                      <Icon name={dedImgBusy ? 'refresh' : 'paperclip'} size={15} />
+                      {dedImgBusy ? 'Compressing…' : 'Upload file'}
                     </label>
                   </div>
                 )}
@@ -332,24 +364,26 @@ function PayVendorModal({ vendor, profile, onClose, onSuccess }) {
         </div>
 
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">
-            Payment Proof <span className="text-red-500">*</span>
-            <span className="text-[10px] font-normal text-gray-400 ml-1">(auto-compressed to &lt;100KB)</span>
+          <label className={LABEL}>
+            Payment proof <span className="text-rose-500">*</span>
+            <span className="ml-1 font-normal text-slate-400">(auto-compressed to &lt;100KB)</span>
           </label>
           <div className="grid grid-cols-2 gap-2">
-            <label className={"flex items-center justify-center gap-1.5 py-2.5 px-3 border-2 border-dashed rounded-lg text-sm font-medium cursor-pointer transition-colors " + (paySaving || payImgBusy ? "border-gray-200 text-gray-400 cursor-not-allowed" : "border-indigo-300 text-indigo-700 hover:bg-indigo-50")}>
+            <label className={PICK + ' ' + (paySaving || payImgBusy ? "border-slate-200 text-slate-400 cursor-not-allowed" : "border-slate-300 text-slate-700 hover:border-indigo-400 hover:text-indigo-700 hover:bg-indigo-50")}>
               <input type="file" accept="image/*" capture="environment" multiple
                 disabled={paySaving || payImgBusy}
                 onChange={handlePayImgAdd}
                 className="hidden" />
-              {payImgBusy ? 'Compressing...' : '📷 Take Photo'}
+              <Icon name={payImgBusy ? 'refresh' : 'camera'} size={15} />
+              {payImgBusy ? 'Compressing…' : 'Take photo'}
             </label>
-            <label className={"flex items-center justify-center gap-1.5 py-2.5 px-3 border-2 border-dashed rounded-lg text-sm font-medium cursor-pointer transition-colors " + (paySaving || payImgBusy ? "border-gray-200 text-gray-400 cursor-not-allowed" : "border-indigo-300 text-indigo-700 hover:bg-indigo-50")}>
+            <label className={PICK + ' ' + (paySaving || payImgBusy ? "border-slate-200 text-slate-400 cursor-not-allowed" : "border-slate-300 text-slate-700 hover:border-indigo-400 hover:text-indigo-700 hover:bg-indigo-50")}>
               <input type="file" accept="image/*,.pdf" multiple
                 disabled={paySaving || payImgBusy}
                 onChange={handlePayImgAdd}
                 className="hidden" />
-              {payImgBusy ? 'Compressing...' : '📎 Upload file'}
+              <Icon name={payImgBusy ? 'refresh' : 'paperclip'} size={15} />
+              {payImgBusy ? 'Compressing…' : 'Upload file'}
             </label>
           </div>
           {payImages.length > 0 && (
@@ -361,36 +395,43 @@ function PayVendorModal({ vendor, profile, onClose, onSuccess }) {
                   <div key={i} className="relative">
                     {isPdf ? (
                       <a href={url} target="_blank" rel="noopener noreferrer"
-                        className="h-20 w-full rounded border border-gray-200 bg-gray-50 flex flex-col items-center justify-center text-gray-500 px-1 hover:border-indigo-400 hover:text-indigo-600 transition-colors"
+                        className="h-20 w-full rounded-xl border border-slate-200 bg-slate-50 flex flex-col items-center justify-center text-slate-500 px-1 hover:border-indigo-400 hover:text-indigo-600 transition-colors"
                         title="PDF — tap to view">
-                        📄
-                        <span className="text-[10px] truncate max-w-full">{f.name}</span>
+                        <Icon name="fileText" size={20} />
+                        <span className="mt-1 text-[10px] truncate max-w-full">{f.name}</span>
                       </a>
                     ) : (
-                      <img src={url} alt={'proof ' + (i + 1)} className="w-full h-20 object-cover rounded border border-gray-200" />
+                      <img src={url} alt={'proof ' + (i + 1)} className="w-full h-20 object-cover rounded-xl border border-slate-200" />
                     )}
                     <button type="button" onClick={function () { removePayImg(i) }} disabled={paySaving}
-                      className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white rounded-full text-xs font-bold flex items-center justify-center disabled:opacity-50">×</button>
-                    <div className="text-[10px] text-gray-500 text-center mt-0.5">{Math.round(f.size / 1024)}KB</div>
+                      aria-label="Remove"
+                      className="absolute -top-2 -right-2 w-6 h-6 bg-rose-600 text-white rounded-full inline-flex items-center justify-center shadow-sm hover:bg-rose-700 disabled:opacity-50 transition-colors">
+                      <Icon name="close" size={12} strokeWidth={3} />
+                    </button>
+                    <div className="mt-1 text-[10px] text-slate-500 text-center tabular-nums">{Math.round(f.size / 1024)}KB</div>
                   </div>
                 )
               })}
             </div>
           )}
           {payImages.length === 0 && (
-            <p className="text-[11px] text-amber-700 mt-1">At least one proof (image or PDF) required to pay.</p>
+            <p className="mt-2 flex items-center gap-1.5 text-[11.5px] font-semibold text-amber-700">
+              <Icon name="alert" size={13} className="shrink-0" />
+              At least one proof (image or PDF) is required to pay.
+            </p>
           )}
         </div>
 
-        <div className="flex gap-2 pt-2">
+        <div className="flex gap-2 pt-1">
           <button onClick={function () { if (!paySaving) onClose() }}
             disabled={paySaving}
-            className="flex-1 py-2.5 text-sm font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 disabled:opacity-50">
+            className="flex-1 h-11 text-[13px] font-bold text-slate-700 bg-white border border-slate-300 rounded-xl hover:bg-slate-50 disabled:opacity-40 transition-colors">
             Cancel
           </button>
           <button onClick={submitPayment} disabled={paySaving}
-            className="flex-1 py-2.5 text-sm font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50">
-            {paySaving ? 'Paying...' : 'Pay Vendor'}
+            className="flex-1 h-11 inline-flex items-center justify-center gap-2 text-[13px] font-bold text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 active:scale-[0.98] disabled:opacity-40 transition-all">
+            <Icon name={paySaving ? 'refresh' : 'banknote'} size={15} />
+            {paySaving ? 'Paying…' : 'Pay Vendor'}
           </button>
         </div>
       </div>
