@@ -52,13 +52,16 @@ function Tile({ icon, tone, label, value, valueClass, wide, children }) {
   )
 }
 
-// Chips stay white. A coloured chip competes with the coloured figure beside
-// it, and the figure is the one worth colouring — so the chip says which state
-// it is with a word and a glyph instead of a tint.
-function StateChip({ icon, label }) {
+// Chips stay white, with one exception. A coloured chip competes with the
+// coloured figure beside it, so a state that is merely a state — incomplete,
+// no activity — says so with a word and a glyph. Overdue is not a state, it is
+// a deadline that has passed, and it is the only one worth finding by colour
+// while scanning a page of them.
+function StateChip({ icon, label, alarm }) {
   return (
-    <span className="shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white border border-slate-200 text-[10px] font-bold uppercase tracking-[0.04em] text-slate-500 whitespace-nowrap">
-      <Icon name={icon} size={11} className="text-slate-400" />
+    <span className={"shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[10px] font-bold uppercase tracking-[0.04em] whitespace-nowrap " +
+      (alarm ? "bg-rose-50 border-rose-200 text-rose-700" : "bg-white border-slate-200 text-slate-500")}>
+      <Icon name={icon} size={11} className={alarm ? "text-rose-500" : "text-slate-400"} />
       {label}
     </span>
   )
@@ -459,10 +462,10 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
 
     function renderChips(v) {
       var chips = []
-      if ((v.overdue_count || 0) > 0) chips.push({ icon: 'alert', label: 'Overdue' })
+      if ((v.overdue_count || 0) > 0) chips.push({ icon: 'alert', label: 'Overdue', alarm: true })
       if (v.vendor_status === 'incomplete') chips.push({ icon: 'fileText', label: 'Incomplete' })
       if (chips.length === 0 && (v.entry_count || 0) === 0) chips.push({ icon: 'clock', label: 'No activity' })
-      return chips.map(function (c, ci) { return <StateChip key={ci} icon={c.icon} label={c.label} /> })
+      return chips.map(function (c, ci) { return <StateChip key={ci} icon={c.icon} label={c.label} alarm={c.alarm} /> })
     }
 
     function renderMoneyNotes(v) {
