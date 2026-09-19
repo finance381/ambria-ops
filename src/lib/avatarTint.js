@@ -5,8 +5,9 @@
 // moved, which is exactly the sort of change the eye reads as "this is a
 // different one".
 //
-// Lifted out of WalletManager, which is no longer the only screen with a
-// column of names down the left.
+// Lifted out of WalletManager so it is not tied to one screen. It is the only
+// caller again — the vendor list took its initial circles back off — but the
+// tint belongs with the other shared helpers either way.
 var AVATAR_TINTS = [
   'bg-blue-100 text-blue-700',
   'bg-rose-100 text-rose-700',
@@ -21,8 +22,4 @@ export function avatarTint(name) {
   var h = 0
   for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0
   return AVATAR_TINTS[h % AVATAR_TINTS.length]
-}
-
-export function avatarInitial(name) {
-  return String(name || '?').trim().charAt(0).toUpperCase() || '?'
 }

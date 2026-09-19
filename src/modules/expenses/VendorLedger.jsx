@@ -16,7 +16,6 @@ import { useReferenceData } from '../../lib/referenceData.jsx'
 import SearchField from '../../components/ui/SearchField'
 import CheckedStamp from '../../components/ui/CheckedStamp'
 import Icon from '../../components/ui/Icon'
-import { avatarTint, avatarInitial } from '../../lib/avatarTint'
 
 function byName(a, b) { return (a.name || '').localeCompare(b.name || '') }
 
@@ -519,10 +518,10 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
       return (
         <button key={v.vendor_id} type="button" onClick={function () { openVendor(v) }}
           className="group text-left w-full bg-white border border-slate-200 rounded-2xl p-3.5 hover:border-indigo-300 hover:bg-indigo-50/20 active:scale-[0.995] transition-all duration-150">
+          {/* No initial circle. A person's avatar stands in for a face you
+              would recognise; a vendor's first letter is just the first letter
+              of the name printed beside it, in a colour that means nothing. */}
           <div className="flex items-start gap-3">
-            <span aria-hidden="true" className={"shrink-0 w-10 h-10 rounded-full inline-flex items-center justify-center text-[15px] font-bold " + avatarTint(v.vendor_name)}>
-              {avatarInitial(v.vendor_name)}
-            </span>
             <div className="flex-1 min-w-0">
               <div className="flex items-start gap-2">
                 <p className="flex-1 min-w-0 text-[13.5px] font-bold text-slate-900 truncate">{v.vendor_name || '—'}</p>
@@ -548,9 +547,6 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
       return (
         <button key={v.vendor_id} type="button" onClick={function () { openVendor(v) }}
           className="group text-left w-full flex items-center gap-3 px-3.5 py-3 hover:bg-indigo-50/30 transition-colors">
-          <span aria-hidden="true" className={"shrink-0 w-9 h-9 rounded-full inline-flex items-center justify-center text-[14px] font-bold " + avatarTint(v.vendor_name)}>
-            {avatarInitial(v.vendor_name)}
-          </span>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
               <p className="min-w-0 truncate text-[13.5px] font-bold text-slate-900">{v.vendor_name || '—'}</p>
