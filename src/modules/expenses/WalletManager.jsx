@@ -84,7 +84,7 @@ function ProofThumb({ url, label, tone, onOpen }) {
          of one with the timeline dropped. */
       <span className="relative block w-full min-w-0 max-w-[260px]">
         <audio src={url} controls className="w-full min-w-0" />
-        <span className={"absolute -top-1 -left-1 px-1 rounded text-[8px] font-bold text-white " + tone}>{label}</span>
+        <span className={"absolute -top-1 -left-1 px-1 rounded text-[10px] font-bold text-white " + tone}>{label}</span>
       </span>
     )
   }
@@ -102,7 +102,7 @@ function ProofThumb({ url, label, tone, onOpen }) {
             className="w-10 h-10 rounded-lg border border-slate-200 bg-slate-50 object-cover" />
         </button>
       )}
-      <span className={"absolute -top-1 -left-1 px-1 rounded text-[8px] font-bold text-white " + tone}>{label}</span>
+      <span className={"absolute -top-1 -left-1 px-1 rounded text-[10px] font-bold text-white " + tone}>{label}</span>
     </span>
   )
 }
@@ -1316,7 +1316,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
           </div>
           {isCancelled && (
             <div className="p-2 rounded bg-rose-50 border border-rose-200 text-rose-700 text-xs">
-              <span className="font-bold uppercase text-[9px] tracking-wider">Cancelled</span>
+              <span className="font-bold uppercase text-[10px] tracking-wider">Cancelled</span>
               {(t.cancelled_reason || (epcRow && epcRow.cancelled_reason)) && (
                 <div className="mt-0.5">Reason: {t.cancelled_reason || epcRow.cancelled_reason}</div>
               )}
@@ -2703,13 +2703,13 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5">
                         {t.reference_type && (
-                          <span className={"text-[9px] font-bold uppercase px-1.5 py-0.5 rounded border flex-shrink-0 " + (REF_TYPE_STYLES[t.reference_type] || 'bg-gray-100 text-gray-700 border-gray-300')}>
+                          <span className={"text-[10px] font-bold uppercase px-1.5 py-0.5 rounded border flex-shrink-0 " + (REF_TYPE_STYLES[t.reference_type] || 'bg-gray-100 text-gray-700 border-gray-300')}>
                             {REF_TYPE_LABELS[t.reference_type] || t.reference_type}
                           </span>
                         )}
                         <p className={"text-sm font-bold text-gray-800 truncate " + (isCancelled ? "line-through" : "")}>{t.description || (isCredit ? 'Credit' : 'Debit')}</p>
-                        {t.status === 'pending' && <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded flex-shrink-0">Pending</span>}
-                        {isCancelled && <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 bg-rose-100 text-rose-700 rounded flex-shrink-0">Cancelled</span>}
+                        {t.status === 'pending' && <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded flex-shrink-0">Pending</span>}
+                        {isCancelled && <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 bg-rose-100 text-rose-700 rounded flex-shrink-0">Cancelled</span>}
                       </div>
                       {enrichLine}
                       {isCancelled && t.cancelled_reason && (
@@ -3241,17 +3241,17 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               {t.reference_type && (
-                <span className={"text-[9px] font-bold uppercase px-1.5 py-0.5 rounded border " + (REF_TYPE_STYLES[t.reference_type] || 'bg-gray-100 text-gray-700 border-gray-300')}>
+                <span className={"text-[10px] font-bold uppercase px-1.5 py-0.5 rounded border " + (REF_TYPE_STYLES[t.reference_type] || 'bg-gray-100 text-gray-700 border-gray-300')}>
                   {REF_TYPE_LABELS[t.reference_type] || t.reference_type}
                 </span>
               )}
               {isEpc && (
-                <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded border bg-emerald-50 text-emerald-700 border-emerald-200">
+                <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded border bg-emerald-50 text-emerald-700 border-emerald-200">
                   Extra Plates
                 </span>
               )}
               {isEpcCancel && (
-                <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded border bg-rose-50 text-rose-700 border-rose-200">
+                <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded border bg-rose-50 text-rose-700 border-rose-200">
                   EP Cancel
                 </span>
               )}
@@ -3267,18 +3267,18 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                 {isEpc && ' · ' + epcHit.epc.extras_charged + ' extras'}
               </p>
               {t.reference_type === 'collection' && t.payment_mode && (
-                <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 border border-emerald-200">
+                <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 border border-emerald-200">
                   {t.payment_mode}
                 </span>
               )}
               {t.status === 'pending' && (
-                <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded">Pending</span>
+                <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded">Pending</span>
               )}
               {isCancelled && (
-                <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 bg-rose-100 text-rose-700 rounded">Cancelled</span>
+                <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 bg-rose-100 text-rose-700 rounded">Cancelled</span>
               )}
               {(t.reference_type === 'expense' || t.reference_type === 'expense_refund') && t.reference_id && expenseRefs[t.reference_id] && expenseRefs[t.reference_id].status && (
-                <span className={"text-[9px] font-bold uppercase px-1.5 py-0.5 rounded " + (EXP_STATUS_COLORS[expenseRefs[t.reference_id].status] || 'bg-gray-100 text-gray-600')}>
+                <span className={"text-[10px] font-bold uppercase px-1.5 py-0.5 rounded " + (EXP_STATUS_COLORS[expenseRefs[t.reference_id].status] || 'bg-gray-100 text-gray-600')}>
                   {EXP_STATUS_LABELS[expenseRefs[t.reference_id].status] || expenseRefs[t.reference_id].status}
                 </span>
               )}
@@ -3366,7 +3366,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                           <span key={pi} className="inline-flex min-w-0 items-center gap-2.5 px-3 py-2 rounded-xl bg-slate-50 border border-slate-100">
                             <Icon name={glyphForLabel(pr.label)} size={15} className="shrink-0 text-slate-400" />
                             <span className="inline-flex min-w-0 flex-col gap-1">
-                              <span className="text-[9.5px] font-bold uppercase tracking-[0.06em] text-slate-400 leading-none">{pr.label}</span>
+                              <span className="text-[10px] font-bold uppercase tracking-[0.06em] text-slate-400 leading-none">{pr.label}</span>
                               <span className="text-[12.5px] font-semibold text-slate-800 leading-none truncate">{pr.value}</span>
                             </span>
                           </span>

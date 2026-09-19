@@ -435,7 +435,7 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
             </p>
           </div>
           <div className="shrink-0 text-right">
-            <span className={"text-[9.5px] font-bold uppercase tracking-[0.08em] px-2 py-1 rounded-full " + (APPROVAL_STATUS_COLORS[exp.status] || 'bg-slate-100 text-slate-600')}>
+            <span className={"text-[10px] font-bold uppercase tracking-[0.08em] px-2 py-1 rounded-full " + (APPROVAL_STATUS_COLORS[exp.status] || 'bg-slate-100 text-slate-600')}>
               {APPROVAL_STATUS_LABELS[exp.status] || exp.status}
             </span>
             {exp.status === 'acknowledged' && acknowledgerName && (
@@ -784,7 +784,7 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
                     </button>
                     {canReverse && (
                       <button onClick={function () { setReverseGvTarget(gv) }} disabled={reversing}
-                        className="shrink-0 h-[22px] inline-flex items-center gap-1 px-2 rounded-md border border-slate-200 bg-white text-[9px] font-bold uppercase tracking-[0.04em] text-slate-600 hover:border-rose-300 hover:text-rose-700 hover:bg-rose-50 transition-colors disabled:opacity-40">
+                        className="shrink-0 h-[22px] inline-flex items-center gap-1 px-2 rounded-md border border-slate-200 bg-white text-[10px] font-bold uppercase tracking-[0.04em] text-slate-600 hover:border-rose-300 hover:text-rose-700 hover:bg-rose-50 transition-colors disabled:opacity-40">
                         <Icon name={reversing ? 'refresh' : 'reverse'} size={10} />
                         Reverse
                       </button>

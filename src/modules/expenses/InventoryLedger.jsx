@@ -485,7 +485,7 @@ function InventoryLedger({ profile }) {
                       (isExp ? "cursor-pointer hover:bg-indigo-50/40 transition-colors" : "")}>
                     <div className="text-gray-600">
                       {h.txn_date ? formatDate(h.txn_date) : '—'}
-                      {h._loggedAt && <div className="text-[9px] text-gray-400">Logged {formatDateTime(h._loggedAt)}</div>}
+                      {h._loggedAt && <div className="text-[10px] text-gray-400">Logged {formatDateTime(h._loggedAt)}</div>}
                     </div>
                     <div className="min-w-0">
                       <p className="font-semibold text-gray-900 truncate">{h.vendor_name || '—'}</p>

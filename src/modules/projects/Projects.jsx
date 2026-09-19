@@ -274,7 +274,7 @@ function Projects({ profile }) {
               var active = i === wizardStep
               return (
                 <div key={s.key} className="flex-1 text-center">
-                  <span className={"text-[9px] font-bold leading-tight " + (active ? "text-indigo-600" : done ? "text-gray-500" : "text-gray-300")}>
+                  <span className={"text-[10px] font-bold leading-tight " + (active ? "text-indigo-600" : done ? "text-gray-500" : "text-gray-300")}>
                     {done ? '✓ ' : ''}{s.label}
                   </span>
                 </div>

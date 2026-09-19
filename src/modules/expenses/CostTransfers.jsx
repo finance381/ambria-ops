@@ -530,7 +530,7 @@ function CostTransfers({ profile }) {
           )}
           {canReverse ? (
             <button onClick={function () { setReverseTarget(r.id) }} disabled={reversing === r.id}
-              className="h-[22px] inline-flex items-center gap-1 px-2 rounded-md border border-slate-200 bg-white text-[9px] font-bold uppercase tracking-[0.04em] text-slate-600 hover:border-rose-300 hover:text-rose-700 hover:bg-rose-50 transition-colors disabled:opacity-40">
+              className="h-[22px] inline-flex items-center gap-1 px-2 rounded-md border border-slate-200 bg-white text-[10px] font-bold uppercase tracking-[0.04em] text-slate-600 hover:border-rose-300 hover:text-rose-700 hover:bg-rose-50 transition-colors disabled:opacity-40">
               <Icon name={reversing === r.id ? 'refresh' : 'reverse'} size={10} />
               {reversing === r.id ? 'Reversing…' : 'Reverse'}
             </button>
@@ -582,7 +582,7 @@ function CostTransfers({ profile }) {
             )}
             {canReverse && (
               <button onClick={function () { setReverseTarget(r.id) }} disabled={reversing === r.id}
-                className="h-[22px] inline-flex items-center gap-1 px-2 rounded-md border border-slate-200 bg-white text-[9px] font-bold uppercase tracking-[0.04em] text-slate-600 hover:border-rose-300 hover:text-rose-700 hover:bg-rose-50 transition-colors disabled:opacity-40">
+                className="h-[22px] inline-flex items-center gap-1 px-2 rounded-md border border-slate-200 bg-white text-[10px] font-bold uppercase tracking-[0.04em] text-slate-600 hover:border-rose-300 hover:text-rose-700 hover:bg-rose-50 transition-colors disabled:opacity-40">
                 <Icon name={reversing === r.id ? 'refresh' : 'reverse'} size={10} />
                 {reversing === r.id ? 'Reversing…' : 'Reverse'}
               </button>

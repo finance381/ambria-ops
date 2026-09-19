@@ -540,7 +540,7 @@ function PaymentCard({ title, rows, total, expanded, onToggleExpand, onPay, onOp
                                 <div className="w-full h-full flex items-center justify-center text-gray-500 text-base">📄</div>
                               )}
                               {receipts.length > 1 && (
-                                <span className="absolute bottom-0 right-0 text-[8px] font-bold text-white bg-indigo-600 px-1 rounded-tl leading-none py-0.5">+{receipts.length - 1}</span>
+                                <span className="absolute bottom-0 right-0 text-[10px] font-bold text-white bg-indigo-600 px-1 rounded-tl leading-none py-0.5">+{receipts.length - 1}</span>
                               )}
                             </button>
                           ) : (
@@ -549,7 +549,7 @@ function PaymentCard({ title, rows, total, expanded, onToggleExpand, onPay, onOp
                           <span className="text-gray-700 truncate flex-1">
                             {formatDate(p.entry_date)} · {p.description}
                           </span>
-                          <span className={"text-[9px] font-semibold px-1 py-0.5 border rounded flex-shrink-0 " + pChip.cls}>
+                          <span className={"text-[10px] font-semibold px-1 py-0.5 border rounded flex-shrink-0 " + pChip.cls}>
                             {pChip.label}
                           </span>
                           <span className="font-semibold text-gray-900 flex-shrink-0">{formatPoints(portion)}</span>

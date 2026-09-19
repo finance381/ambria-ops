@@ -243,7 +243,7 @@ function RoleTemplates({ profile }) {
                   </p>
                 </div>
                 {!t.seeded && (
-                  <span className="text-[9px] font-bold text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">
+                  <span className="text-[10px] font-bold text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">
                     NO TEMPLATE
                   </span>
                 )}
@@ -256,7 +256,7 @@ function RoleTemplates({ profile }) {
                 </div>
                 <p className="text-[10px] text-gray-400 mt-0.5">{(t.mobile_permissions || []).length}m · {(t.desktop_permissions || []).length}d keys</p>
                 {_tVenues.length > 0 && (
-                  <span className="inline-block mt-1.5 text-[9px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-1.5 py-0.5 rounded">
+                  <span className="inline-block mt-1.5 text-[10px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-1.5 py-0.5 rounded">
                     {_tVenues.length} venue{_tVenues.length === 1 ? '' : 's'}
                   </span>
                 )}

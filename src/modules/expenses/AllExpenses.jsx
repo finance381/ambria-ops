@@ -865,7 +865,7 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds, glass, prof
                       )
                     })()}
                     <p className="mt-2.5 flex items-center gap-2 min-w-0">
-                      <span className={"shrink-0 text-[9.5px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded " + (exp.deleted_at ? "bg-slate-200 text-slate-600" : (APPROVAL_STATUS_COLORS[exp.status] || 'bg-slate-100 text-slate-600'))}>
+                      <span className={"shrink-0 text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded " + (exp.deleted_at ? "bg-slate-200 text-slate-600" : (APPROVAL_STATUS_COLORS[exp.status] || 'bg-slate-100 text-slate-600'))}>
                         {exp.deleted_at ? 'Deleted' : (APPROVAL_STATUS_LABELS[exp.status] || exp.status)}
                       </span>
                       {!exp.deleted_at && (exp.checked_by || canMarkChecked) && (

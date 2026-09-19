@@ -201,7 +201,7 @@ function ProjectLedger({ profile, project, onBack }) {
                       <td className="px-3 py-2 text-xs text-gray-700">{e.description || '—'}{isReversed && <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded bg-gray-200 text-gray-600 uppercase">Reversed</span>}</td>
                       <td className="px-3 py-2 text-right">
                         {canReverse ? (
-                          <button onClick={function () { setReverseTarget(e) }} className="h-[22px] inline-flex items-center gap-1 px-2 rounded-md border border-slate-200 bg-white text-[9px] font-bold uppercase tracking-[0.04em] text-slate-600 hover:border-rose-300 hover:text-rose-700 hover:bg-rose-50 transition-colors">
+                          <button onClick={function () { setReverseTarget(e) }} className="h-[22px] inline-flex items-center gap-1 px-2 rounded-md border border-slate-200 bg-white text-[10px] font-bold uppercase tracking-[0.04em] text-slate-600 hover:border-rose-300 hover:text-rose-700 hover:bg-rose-50 transition-colors">
                             <Icon name="reverse" size={10} />
                             Reverse
                           </button>

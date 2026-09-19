@@ -2014,7 +2014,7 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, ve
                                 </div>
                               )
                             })}
-                            <p className="text-[9px] text-gray-400 text-center">Tap to auto-fill vendor & rate</p>
+                            <p className="text-[10px] text-gray-400 text-center">Tap to auto-fill vendor & rate</p>
                           </div>
                         )}
                         {!rateLoading && rateHistory.length === 0 && (

@@ -150,7 +150,7 @@ function AllocationRows(props) {
                 {complete ? (
                   <div className="text-[13px] font-semibold text-slate-900 tabular-nums shrink-0">{chip.right}</div>
                 ) : (
-                  <span className="shrink-0 text-[9.5px] font-bold uppercase tracking-[0.08em] px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 ring-1 ring-amber-300/70">Incomplete</span>
+                  <span className="shrink-0 text-[10px] font-bold uppercase tracking-[0.08em] px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 ring-1 ring-amber-300/70">Incomplete</span>
                 )}
                 <Icon name="edit" className="w-3.5 h-3.5 shrink-0 text-slate-300" />
               </button>

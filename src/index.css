@@ -68,6 +68,34 @@
        on a challan number or an amount. Deliberately not text-rendering:
        optimizeLegibility, which costs scroll performance on long lists. */
     font-feature-settings: 'ss02';
+
+    /* Inter's own default line-height is about 1.2, and most of this app is set
+       with an arbitrary size — text-[11px], text-[13px] — which carries no
+       line-height with it, unlike text-sm and text-xs. So the majority of the
+       UI was being set solid, and two lines of an 11px note sat almost touching.
+       1.45 is loose enough to read and tight enough for a dense ops screen.
+       Anything that wants otherwise already says leading-none or leading-snug,
+       and every fixed-height chip and button centres its own line. */
+    line-height: 1.45;
+
+    /* Better line breaking, no layout cost: the browser avoids leaving a single
+       word alone on the last line of a paragraph. */
+    text-wrap: pretty;
+  }
+
+  /* Headings get the display face without every one of them having to ask. The
+     utility classes still win where a heading wants something else — base-layer
+     rules lose to utilities in Tailwind whatever their specificity — so this is
+     a floor, not an override.
+
+     `balance` rather than `pretty`: a heading is short enough for the browser to
+     even out its lines, which is what stops a two-line card title breaking after
+     one word. */
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-display);
+    letter-spacing: -0.015em;
+    line-height: 1.25;
+    text-wrap: balance;
   }
 
   /* Browsers hand form controls the system face by default, which would leave

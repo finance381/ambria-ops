@@ -299,7 +299,7 @@ function PayVendorModal({ vendor, profile, onClose, onSuccess }) {
                         className="w-24 h-24 flex flex-col items-center justify-center rounded border border-amber-300 bg-amber-50 text-amber-700 px-1 hover:border-amber-500 transition-colors"
                         title="PDF — tap to view">
                         📄
-                        <span className="text-[9px] truncate max-w-full">{dedImage.name}</span>
+                        <span className="text-[10px] truncate max-w-full">{dedImage.name}</span>
                       </a>
                     ) : (
                       <img src={URL.createObjectURL(dedImage)} alt="deduction proof" className="w-24 h-24 object-cover rounded border border-amber-300" />
@@ -364,7 +364,7 @@ function PayVendorModal({ vendor, profile, onClose, onSuccess }) {
                         className="h-20 w-full rounded border border-gray-200 bg-gray-50 flex flex-col items-center justify-center text-gray-500 px-1 hover:border-indigo-400 hover:text-indigo-600 transition-colors"
                         title="PDF — tap to view">
                         📄
-                        <span className="text-[9px] truncate max-w-full">{f.name}</span>
+                        <span className="text-[10px] truncate max-w-full">{f.name}</span>
                       </a>
                     ) : (
                       <img src={url} alt={'proof ' + (i + 1)} className="w-full h-20 object-cover rounded border border-gray-200" />

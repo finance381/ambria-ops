@@ -1336,7 +1336,7 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
                       // one under the other in a narrow column, so two chips a
                       // few pixels different in height read as misaligned
                       // rather than as two different kinds of thing.
-                      className="h-[22px] inline-flex items-center gap-1 px-2 rounded-md border border-slate-200 bg-white text-[9px] font-bold uppercase tracking-[0.04em] text-slate-600 hover:border-rose-300 hover:text-rose-700 hover:bg-rose-50 transition-colors">
+                      className="h-[22px] inline-flex items-center gap-1 px-2 rounded-md border border-slate-200 bg-white text-[10px] font-bold uppercase tracking-[0.04em] text-slate-600 hover:border-rose-300 hover:text-rose-700 hover:bg-rose-50 transition-colors">
                       <Icon name="reverse" size={10} />
                       Reverse
                     </button>

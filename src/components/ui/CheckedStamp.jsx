@@ -12,7 +12,7 @@ function CheckedStamp({ checked, checkerName, checkedAt, canToggle, canUncheck, 
     if (!canToggle) return null
     return (
       <button type="button" disabled={busy} onClick={onToggle}
-        className="h-[22px] inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-[0.04em] px-2 rounded-md border border-dashed border-slate-300 text-slate-400 hover:border-emerald-300 hover:text-emerald-600 hover:bg-emerald-50 transition-colors disabled:opacity-50">
+        className="h-[22px] inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-[0.04em] px-2 rounded-md border border-dashed border-slate-300 text-slate-400 hover:border-emerald-300 hover:text-emerald-600 hover:bg-emerald-50 transition-colors disabled:opacity-50">
         <Icon name="checkCircle" size={10} />
         Mark checked
       </button>
@@ -29,7 +29,7 @@ function CheckedStamp({ checked, checkerName, checkedAt, canToggle, canUncheck, 
   // it sits on.
   return (
     <button type="button" disabled={busy || !interactive} onClick={interactive ? onToggle : undefined} title={title}
-      className={"h-[22px] inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-[0.04em] px-2 rounded-md border border-emerald-200 bg-emerald-50 text-emerald-700 transition-colors" +
+      className={"h-[22px] inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-[0.04em] px-2 rounded-md border border-emerald-200 bg-emerald-50 text-emerald-700 transition-colors" +
         (interactive ? " cursor-pointer hover:bg-emerald-100 hover:border-emerald-300" : " cursor-default")}>
       <Icon name="checkCircle" size={10} />
       Checked

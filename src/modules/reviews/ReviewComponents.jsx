@@ -40,7 +40,7 @@ var EDIT_SOURCE_TABLE = { inventory: 'inventory', item_receipt: 'catering_store'
 // ---- PriorityPill ----
 function PriorityPill({ priority }) {
   if (!priority || priority === 'normal') return null
-  return <span className={"text-[9px] font-bold uppercase px-1.5 py-0.5 rounded " + (PRIORITY_CLS[priority] || '')}>{priority}</span>
+  return <span className={"text-[10px] font-bold uppercase px-1.5 py-0.5 rounded " + (PRIORITY_CLS[priority] || '')}>{priority}</span>
 }
 
 // ---- DomainIcon ----

@@ -568,7 +568,7 @@ function Shell({ profile, onSignOut }) {
                     </span>
                     <span className="min-w-0 flex-1">
                       <span className="block text-[13px] font-semibold text-slate-900 leading-snug truncate">{profile.name}</span>
-                      <span className={"inline-block mt-1 text-[9.5px] px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wider " + (ROLE_COLORS[profile.role] || '')}>
+                      <span className={"inline-block mt-1 text-[10px] px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wider " + (ROLE_COLORS[profile.role] || '')}>
                         {profile.role}
                       </span>
                     </span>

@@ -363,10 +363,10 @@ function Reviews({ profile }) {
                 <span className="relative inline-block">
                   <DomainIcon domain={d} className="text-[18px]" />
                   {count > 0 && (
-                    <span className="absolute -top-1.5 -right-2.5 bg-red-500 text-white text-[8px] font-bold rounded-full min-w-[14px] h-3.5 px-0.5 flex items-center justify-center">{count > 9 ? '9+' : count}</span>
+                    <span className="absolute -top-1.5 -right-2.5 bg-red-500 text-white text-[10px] font-bold rounded-full min-w-[14px] h-3.5 px-0.5 flex items-center justify-center">{count > 9 ? '9+' : count}</span>
                   )}
                 </span>
-                <span className="text-[9px] font-semibold mt-0.5 whitespace-nowrap">{MOBILE_TAB_LABEL[d] || meta.label}</span>
+                <span className="text-[10px] font-semibold mt-0.5 whitespace-nowrap">{MOBILE_TAB_LABEL[d] || meta.label}</span>
               </button>
             )
           })}

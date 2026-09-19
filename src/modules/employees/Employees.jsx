@@ -886,7 +886,7 @@ function ChipMultiFilter({ label, options, selected, onToggle, onClear }) {
                     (checked ? "bg-indigo-50 text-indigo-700 font-medium" : "text-gray-700 hover:bg-gray-50")}>
                   <span className={"w-3.5 h-3.5 rounded border flex items-center justify-center " +
                     (checked ? "bg-indigo-600 border-indigo-600 text-white" : "border-gray-300")}>
-                    {checked && <span className="text-[9px]">✓</span>}
+                    {checked && <span className="text-[10px]">✓</span>}
                   </span>
                   {o.label}
                 </button>

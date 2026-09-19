@@ -74,7 +74,7 @@ function PhotoThumb({ photo, onDelete }) {
       ) : (
         <div className="w-24 h-24 bg-gray-100 rounded-lg flex items-center justify-center text-gray-400 text-xs">...</div>
       )}
-      <p className="text-[9px] text-gray-400 mt-0.5 text-center truncate w-24">
+      <p className="text-[10px] text-gray-400 mt-0.5 text-center truncate w-24">
         {photo.profiles?.name || ''}
       </p>
       {onDelete && (

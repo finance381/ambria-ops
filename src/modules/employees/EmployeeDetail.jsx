@@ -259,7 +259,7 @@ function EmployeeDetail({ employeeId, jobDepartments, managers, profile, onEdit,
                         {meta.reason ? ' · ' + meta.reason : ''}
                       </p>
                       {meta.mode && (
-                        <span className="inline-block mt-1 text-[9px] font-semibold px-1.5 py-0.5 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded">
+                        <span className="inline-block mt-1 text-[10px] font-semibold px-1.5 py-0.5 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded">
                           {meta.mode === 'cash' ? '💵 Cash' : '🏦 Bank'}
                         </span>
                       )}

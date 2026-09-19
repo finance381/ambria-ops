@@ -77,7 +77,7 @@ function ConversationRow({ conv, active, onClick }) {
           <span className="flex items-center gap-1 shrink-0">
             {conv.unread_count > 0 && (
               <span data-notranslate
-                className="inline-flex items-center justify-center min-w-[17px] h-[17px] px-1 rounded-full bg-indigo-600 text-white text-[9.5px] font-bold">
+                className="inline-flex items-center justify-center min-w-[17px] h-[17px] px-1 rounded-full bg-indigo-600 text-white text-[10px] font-bold">
                 {conv.unread_count}
               </span>
             )}

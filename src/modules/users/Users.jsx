@@ -671,7 +671,7 @@ function Users({ profile }) {
                             if (!v) return null
                             return (
                               <span key={vid}
-                                className="text-[9px] font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 px-1 py-0 rounded"
+                                className="text-[10px] font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 px-1 py-0 rounded"
                                 title={v.name}>{v.code}</span>
                             )
                           })}

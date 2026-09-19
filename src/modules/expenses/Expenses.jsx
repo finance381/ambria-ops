@@ -950,7 +950,7 @@ function Expenses({ profile, masterMode, inAdmin, deepLinkExpense, onDeepLinkHan
                   {/* status chip rides the meta line rather than claiming a
                       second row in the amount column */}
                   <p className="mt-1 flex items-center gap-1.5 min-w-0">
-                    <span className={"shrink-0 text-[9.5px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded " + (APPROVAL_STATUS_COLORS[exp.status] || 'bg-slate-100 text-slate-600')}>
+                    <span className={"shrink-0 text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded " + (APPROVAL_STATUS_COLORS[exp.status] || 'bg-slate-100 text-slate-600')}>
                       {APPROVAL_STATUS_LABELS[exp.status] || exp.status}
                     </span>
                     <span className="text-[11px] text-slate-500 truncate">

@@ -958,7 +958,7 @@ function Ledgers({ profile, onNavigateToExpenses }) {
                         {(function () {
                           var sb = SOURCE_BADGES[r.source] || SOURCE_BADGES.allocation
                           return (
-                            <span className={"shrink-0 text-[9.5px] px-1.5 py-0.5 rounded border font-semibold " + sb.cls}>
+                            <span className={"shrink-0 text-[10px] px-1.5 py-0.5 rounded border font-semibold " + sb.cls}>
                               {sb.label}
                             </span>
                           )

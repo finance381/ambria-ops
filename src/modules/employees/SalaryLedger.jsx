@@ -307,7 +307,7 @@ function SalaryLedger({ profile }) {
                             var name = jdMap[id]
                             if (!name) return null
                             return (
-                              <span key={id} className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-white/70 text-gray-700 border border-gray-200">
+                              <span key={id} className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-white/70 text-gray-700 border border-gray-200">
                                 {name}
                               </span>
                             )
@@ -317,10 +317,10 @@ function SalaryLedger({ profile }) {
                     </div>
                     <div className="flex gap-1 flex-shrink-0">
                       {isStale && (
-                        <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded">{days}d</span>
+                        <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded">{days}d</span>
                       )}
                       {isTerminated && (
-                        <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 bg-gray-200 text-gray-600 rounded">{e.employee_status}</span>
+                        <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 bg-gray-200 text-gray-600 rounded">{e.employee_status}</span>
                       )}
                     </div>
                   </div>
@@ -505,7 +505,7 @@ function SalaryLedger({ profile }) {
                   )}
                   {isAdmin && !isDeleted && (
                     <button onClick={function (ev) { ev.stopPropagation(); setReverseTarget(e.id) }}
-                      className="mt-1.5 h-[22px] inline-flex items-center gap-1 px-2 rounded-md border border-slate-200 bg-white text-[9px] font-bold uppercase tracking-[0.04em] text-slate-600 hover:border-rose-300 hover:text-rose-700 hover:bg-rose-50 transition-colors">
+                      className="mt-1.5 h-[22px] inline-flex items-center gap-1 px-2 rounded-md border border-slate-200 bg-white text-[10px] font-bold uppercase tracking-[0.04em] text-slate-600 hover:border-rose-300 hover:text-rose-700 hover:bg-rose-50 transition-colors">
                       <Icon name="reverse" size={10} />
                       Reverse
                     </button>
