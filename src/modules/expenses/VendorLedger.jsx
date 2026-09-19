@@ -1051,14 +1051,22 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
           value={formatPoints(currentBalance)}
           valueClass={currentBalance < 0 ? "text-emerald-700" : currentBalance ? "text-amber-700" : "text-slate-400"}>
           {openingPaise !== 0 && (
-            <p className="mt-2 text-[11.5px] font-semibold text-slate-500">
+            <p className="mt-2 self-start text-[11.5px] font-semibold text-slate-500">
               Includes opening: <span className="text-slate-700" data-notranslate>{formatPoints(Math.abs(openingPaise))} {openingPaise > 0 ? 'Cr' : 'Dr'}</span>
             </p>
           )}
+          {/* self-start, because the tile is a flex column and a flex item
+              stretches to the column's width by default — which is how a chip
+              ended up as a full-width bar. And the wording is one span rather
+              than a count beside a text run: three flex items meant the gap
+              fell between the number and the word after it as well as after
+              the glyph, so it read as "1  overdue". */}
           {(vs.overdue_count || 0) > 0 && (
-            <p className="mt-2 inline-flex items-center gap-1.5 h-6 px-2.5 rounded-md bg-rose-100 text-[11px] font-bold text-rose-700">
-              <Icon name="alert" size={12} />
-              <span data-notranslate>{vs.overdue_count}</span> overdue · earliest {vs.earliest_due_date}
+            <p className="mt-2.5 self-start inline-flex items-center gap-1.5 h-6 px-2.5 rounded-md bg-rose-100 text-[11px] font-bold text-rose-700 whitespace-nowrap">
+              <Icon name="alert" size={12} className="shrink-0" />
+              <span>
+                <span data-notranslate>{vs.overdue_count}</span> overdue · earliest {formatDate(vs.earliest_due_date)}
+              </span>
             </p>
           )}
         </Tile>
