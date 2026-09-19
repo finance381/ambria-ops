@@ -781,8 +781,9 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
                     </button>
                     {canReverse && (
                       <button onClick={function () { reverseGv(gv) }} disabled={reversing}
-                        className="text-[11px] font-bold text-red-600 bg-red-50 border border-red-200 rounded px-2 py-1 hover:bg-red-100 disabled:opacity-50 flex-shrink-0">
-                        ↺ Reverse
+                        className="shrink-0 h-[22px] inline-flex items-center gap-1 px-2 rounded-md border border-slate-200 bg-white text-[9px] font-bold uppercase tracking-[0.04em] text-slate-600 hover:border-rose-300 hover:text-rose-700 hover:bg-rose-50 transition-colors disabled:opacity-40">
+                        <Icon name={reversing ? 'refresh' : 'reverse'} size={10} />
+                        Reverse
                       </button>
                     )}
                   </div>
