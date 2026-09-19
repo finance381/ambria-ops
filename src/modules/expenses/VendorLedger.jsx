@@ -53,7 +53,7 @@ function BalancePill({ paise, large }) {
   return (
     <span data-notranslate
       className={'shrink-0 inline-flex items-center rounded-full font-bold tabular-nums whitespace-nowrap ' +
-        (large ? 'h-7 px-3 text-[14px] ' : 'h-6 px-2.5 text-[12.5px] ') + tone}>
+        (large ? 'h-8 px-3.5 text-[15px] ' : 'h-6 px-2.5 text-[12.5px] ') + tone}>
       {formatPoints(paise)}
     </span>
   )
@@ -124,7 +124,7 @@ function StateChip({ icon, label, alarm }) {
     // two rose lines with a paler rose between them, which is what made it look
     // furred. The white one keeps its hairline, because without it there is
     // nothing at all between the chip and the card.
-    <span className={"shrink-0 h-[22px] inline-flex items-center gap-1 px-2 rounded-md text-[10px] font-bold uppercase tracking-[0.04em] whitespace-nowrap " +
+    <span className={"shrink-0 h-6 inline-flex items-center gap-1.5 px-2.5 rounded-md text-[10.5px] font-bold uppercase tracking-[0.04em] whitespace-nowrap " +
       (alarm ? "bg-rose-100 text-rose-700" : "bg-white border border-slate-200 text-slate-600")}>
       <Icon name={icon} size={11} className={alarm ? "text-rose-600" : "text-slate-500"} />
       {label}
@@ -138,7 +138,7 @@ function Fact({ icon, label, value, first }) {
   return (
     <span className="shrink-0 inline-flex items-center whitespace-nowrap">
       {!first && <span aria-hidden="true" className="mx-2 w-px h-3.5 bg-slate-200" />}
-      <Icon name={icon} size={12} className="shrink-0 mr-1 text-slate-400" />
+      <Icon name={icon} size={13} className="shrink-0 mr-1.5 text-slate-400" />
       {label ? label + ':' : ''}
       <span className="ml-1 font-semibold text-slate-700" data-notranslate>{value}</span>
     </span>
@@ -182,7 +182,7 @@ function renderMoneyNotes(v) {
   var opening = v._opening_paise || 0
   if (!cashBal && !bankBal && !opening) return null
   return (
-    <div className="mt-2 flex flex-wrap items-center gap-y-1 text-[11px] text-slate-500">
+    <div className="mt-2.5 flex flex-wrap items-center gap-y-1 text-[11.5px] text-slate-500">
       {cashBal !== 0 && <Fact first icon="banknote" label="Cash" value={formatPoints(cashBal)} />}
       {bankBal !== 0 && <Fact first={!cashBal} icon="bank" label="Bank" value={formatPoints(bankBal)} />}
       {opening !== 0 && <Fact first={!cashBal && !bankBal} icon="wallet" label="Opening" value={formatPoints(Math.abs(opening)) + (opening > 0 ? ' Cr' : ' Dr')} />}
@@ -196,8 +196,8 @@ function renderCallLink(v) {
     <a href={'tel:' + v._phone.replace(/[^0-9+]/g, '')}
       onClick={function (ev) { ev.stopPropagation() }}
       title={'Call ' + (v._contact || v.vendor_name || 'vendor') + (v._phone2 ? ' · alt: ' + v._phone2 : '')}
-      className="shrink-0 w-8 h-8 inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:border-emerald-300 hover:text-emerald-700 no-underline transition-colors">
-      <Icon name="phone" size={14} />
+      className="shrink-0 w-9 h-9 inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:border-emerald-300 hover:text-emerald-700 no-underline transition-colors">
+      <Icon name="phone" size={15} />
     </a>
   )
 }
@@ -212,7 +212,7 @@ function VendorCardInner({ v, onOpen }) {
       // tint and a border tint are both flat, so on a grid of sixty the
       // one under the pointer was a slightly different white. transform-gpu
       // keeps the lift off the layout, and the press puts it back down.
-      className="group text-left w-full bg-white border border-slate-200 rounded-2xl p-3.5 transform-gpu transition-all duration-150 hover:border-indigo-300 hover:bg-indigo-50/30 hover:-translate-y-0.5 hover:shadow-[0_8px_20px_rgba(79,70,229,0.10)] active:translate-y-0 active:shadow-none active:scale-[0.995] focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/30">
+      className="group text-left w-full bg-white border border-slate-200 rounded-2xl p-4 transform-gpu transition-all duration-150 hover:border-indigo-300 hover:bg-indigo-50/30 hover:-translate-y-0.5 hover:shadow-[0_8px_20px_rgba(79,70,229,0.10)] active:translate-y-0 active:shadow-none active:scale-[0.995] focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/30">
       {/* No initial circle. A person's avatar stands in for a face you
           would recognise; a vendor's first letter is just the first letter
           of the name printed beside it, in a colour that means nothing. */}
@@ -226,7 +226,7 @@ function VendorCardInner({ v, onOpen }) {
           each starting at the same y and ending somewhere else. One centre
           line puts them on one line. */}
       <div className="flex items-center gap-2">
-        <p className="flex-1 min-w-0 text-[14.5px] font-bold text-slate-900 truncate transition-colors group-hover:text-indigo-700">{v.vendor_name || '—'}</p>
+        <p className="flex-1 min-w-0 text-[15.5px] font-bold text-slate-900 truncate transition-colors group-hover:text-indigo-700">{v.vendor_name || '—'}</p>
         {renderChips(v)}
         <BalancePill paise={bal} large />
       </div>
@@ -236,17 +236,17 @@ function VendorCardInner({ v, onOpen }) {
           white box and an arrow floating in the middle of the card with
           nothing either side of them and nothing under them — the card had
           three rows and its two controls were parked on the second. */}
-      <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center gap-3">
+      <div className="mt-3.5 pt-3 border-t border-slate-100 flex items-center gap-3">
         {/* One line, and it stays one: nowrap plus a min-w-0 that lets it
             be clipped rather than pushing the two controls off the end. */}
-        <div className="flex-1 min-w-0 flex flex-nowrap items-center overflow-hidden text-[11px] text-slate-500">
+        <div className="flex-1 min-w-0 flex flex-nowrap items-center overflow-hidden text-[11.5px] text-slate-500">
           {renderFacts(v)}
         </div>
         {renderCallLink(v)}
         {/* The chevron slides the way it points, so the card says where
             pressing it goes rather than only that it can be pressed. */}
         <span aria-hidden="true" className="shrink-0 text-slate-300 transition-all duration-150 group-hover:text-indigo-500 group-hover:translate-x-0.5">
-          <Icon name="chevronRight" size={16} />
+          <Icon name="chevronRight" size={17} />
         </span>
       </div>
     </button>
