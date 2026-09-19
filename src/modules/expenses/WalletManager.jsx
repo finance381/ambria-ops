@@ -286,6 +286,12 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     if (ev) ev.stopPropagation()
     setExpandedTxnIds(function (prev) { var next = Object.assign({}, prev); next[id] = !next[id]; return next })
   }
+  // Master override: when on, every row's allocation breakdown shows
+  // regardless of its own entry in expandedTxnIds.
+  var [expandAllTxns, setExpandAllTxns] = useState(false)
+  // A transaction row for a deleted expense stays in the ledger for audit
+  // (the debit already happened), but clutters the everyday view.
+  var [showDeletedTxns, setShowDeletedTxns] = useState(false)
   var activeVenues = useReferenceData().venues.filter(function (v) { return v.active }).slice().sort(function (a, b) { return (a.code || '').localeCompare(b.code || '') })
   var [walletView, setWalletView] = useState(null)
   var [allWallets, setAllWallets] = useState([])
@@ -538,7 +544,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     if (expRefIds.length > 0) {
       var expIdsNum = expRefIds.map(function (x) { return Number(x) }).filter(function (n) { return !isNaN(n) })
       var { data: eData } = await supabase.from('expenses')
-        .select('id, description, amount_paise, expense_date, event_id, vendor_name, metadata, checked_by, checked_at, expense_types(name, icon), expense_sub_types(name, extra_fields), expense_allocations(department, amount_paise, expense_types(name), expense_sub_types(name))')
+        .select('id, description, amount_paise, expense_date, event_id, vendor_name, metadata, checked_by, checked_at, deleted_at, expense_types(name, icon), expense_sub_types(name, extra_fields), expense_allocations(department, amount_paise, expense_types(name), expense_sub_types(name))')
         .in('id', expIdsNum)
       var eMap = {}
       var evIds = {}
@@ -665,7 +671,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     if (expRefIds.length > 0) {
       var expIdsNum = expRefIds.map(function (x) { return Number(x) }).filter(function (n) { return !isNaN(n) })
       var { data: eData } = await supabase.from('expenses')
-        .select('id, description, amount_paise, expense_date, event_id, vendor_name, metadata, status, checked_by, checked_at, expense_types(name, icon), expense_sub_types(name, extra_fields), expense_allocations(department, amount_paise, expense_types(name), expense_sub_types(name))')
+        .select('id, description, amount_paise, expense_date, event_id, vendor_name, metadata, status, checked_by, checked_at, deleted_at, expense_types(name, icon), expense_sub_types(name, extra_fields), expense_allocations(department, amount_paise, expense_types(name), expense_sub_types(name))')
         .in('id', expIdsNum)
       var eMap = {}
       var evIds = {}
@@ -3459,7 +3465,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                     </div>
                   )}
                   {parts.length > 0 && <p className="mt-2 text-[11px] text-slate-500 leading-relaxed">{parts.join(' · ')}</p>}
-                  {allocs.length > 0 && (
+                  {allocs.length > 0 && !expandAllTxns && (
                     <button type="button" onClick={function (ev) { toggleTxnExpanded(t.id, ev) }}
                       className="mt-2 inline-flex items-center gap-1 text-[10.5px] font-semibold text-indigo-600 hover:text-indigo-800">
                       <Icon name={expandedTxnIds[t.id] ? 'chevronDown' : 'chevronRight'} size={11} />
@@ -3473,7 +3479,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                       other is when it happened and who did it. The rule makes
                       the breakdown read as belonging to the expense above it
                       rather than as one more line in a grey stack. */}
-                  {allocs.length > 0 && !!expandedTxnIds[t.id] && (
+                  {allocs.length > 0 && (expandAllTxns || !!expandedTxnIds[t.id]) && (
                     <div className="mt-2 pl-3 border-l-2 border-indigo-100 space-y-1">
                       {allocs.map(function (a, ai) {
                         var allocType = a.expense_types?.name || ''
@@ -3650,8 +3656,16 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     })()
 
     var sortedTxns = (function () {
-      if (txnSort === 'latest') return walletTxns
-      var rows = walletTxns.slice()
+      // The debit already happened, so a deleted expense's transaction stays
+      // in the ledger for audit rather than being removed — just hidden from
+      // the everyday view unless asked for.
+      var visible = showDeletedTxns ? walletTxns : walletTxns.filter(function (t) {
+        var isExpRow = (t.reference_type === 'expense' || t.reference_type === 'expense_refund') && t.reference_id
+        var xp = isExpRow ? expenseRefs[t.reference_id] : null
+        return !(xp && xp.deleted_at)
+      })
+      if (txnSort === 'latest') return visible
+      var rows = visible.slice()
       if (txnSort === 'oldest') {
         return rows.sort(function (a, b) { return new Date(a.created_at) - new Date(b.created_at) })
       }
@@ -3796,7 +3810,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-slate-200">
               <div className="min-w-0">
                 <h3 className="font-display text-[15px] font-bold text-slate-900">
-                  Transactions <span data-notranslate>({walletTxns.length})</span>
+                  Transactions <span data-notranslate>({sortedTxns.length})</span>
                 </h3>
                 <p className="mt-0.5 text-[12px] text-slate-500">Showing all wallet transactions for the selected period</p>
               </div>
@@ -3819,8 +3833,26 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                 </span>
               )}
             </div>
-            {walletTxns.length === 0 ? (
-              <p className="px-5 py-14 text-center text-[13px] font-medium text-slate-400">No transactions yet</p>
+            {walletTxns.length > 0 && (
+              <div className="flex flex-wrap items-center gap-4 px-5 py-2.5 border-b border-slate-100">
+                <label className="flex items-center gap-2 text-[12.5px] text-slate-600 cursor-pointer">
+                  <input type="checkbox" checked={showDeletedTxns}
+                    onChange={function (e) { setShowDeletedTxns(e.target.checked) }}
+                    className="w-4 h-4 accent-indigo-600" />
+                  Show deleted expenses
+                </label>
+                <label className="flex items-center gap-2 text-[12.5px] text-slate-600 cursor-pointer">
+                  <input type="checkbox" checked={expandAllTxns}
+                    onChange={function (e) { setExpandAllTxns(e.target.checked) }}
+                    className="w-4 h-4 accent-indigo-600" />
+                  Expand all allocation details
+                </label>
+              </div>
+            )}
+            {sortedTxns.length === 0 ? (
+              <p className="px-5 py-14 text-center text-[13px] font-medium text-slate-400">
+                {walletTxns.length === 0 ? 'No transactions yet' : 'No transactions match — try "Show deleted expenses"'}
+              </p>
             ) : (
               <div className="p-3 space-y-2">{sortedTxns.map(renderTxnRow)}</div>
             )}
@@ -4046,9 +4078,29 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             <p className="text-gray-400 text-sm">No transactions yet</p>
           </div>
         )}
-        <div className="space-y-2">
-          {sortedTxns.map(renderTxnRow)}
-        </div>
+        {walletTxns.length > 0 && (
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-1">
+            <label className="flex items-center gap-2 text-[12.5px] text-slate-600 cursor-pointer">
+              <input type="checkbox" checked={showDeletedTxns}
+                onChange={function (e) { setShowDeletedTxns(e.target.checked) }}
+                className="w-4 h-4 accent-indigo-600" />
+              Show deleted expenses
+            </label>
+            <label className="flex items-center gap-2 text-[12.5px] text-slate-600 cursor-pointer">
+              <input type="checkbox" checked={expandAllTxns}
+                onChange={function (e) { setExpandAllTxns(e.target.checked) }}
+                className="w-4 h-4 accent-indigo-600" />
+              Expand all allocation details
+            </label>
+          </div>
+        )}
+        {sortedTxns.length === 0 && walletTxns.length > 0 ? (
+          <p className="text-center text-[13px] font-medium text-slate-400 py-8">No transactions match — try "Show deleted expenses"</p>
+        ) : (
+          <div className="space-y-2">
+            {sortedTxns.map(renderTxnRow)}
+          </div>
+        )}
         {renderIssueModal()}
         {renderReceiveModal()}
         {renderCollectModal()}
