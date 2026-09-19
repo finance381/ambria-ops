@@ -279,6 +279,13 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   var canMarkChecked = hasPerm(permsNew, 'finance.wallet.mark_checked')
   var [checkingTxnId, setCheckingTxnId] = useState(null)
   var [checkingExpId, setCheckingExpId] = useState(null)
+  // Which transaction rows have their allocation breakdown expanded —
+  // collapsed by default so the History list fits more rows on screen.
+  var [expandedTxnIds, setExpandedTxnIds] = useState({})
+  function toggleTxnExpanded(id, ev) {
+    if (ev) ev.stopPropagation()
+    setExpandedTxnIds(function (prev) { var next = Object.assign({}, prev); next[id] = !next[id]; return next })
+  }
   var activeVenues = useReferenceData().venues.filter(function (v) { return v.active }).slice().sort(function (a, b) { return (a.code || '').localeCompare(b.code || '') })
   var [walletView, setWalletView] = useState(null)
   var [allWallets, setAllWallets] = useState([])
@@ -3452,6 +3459,13 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                     </div>
                   )}
                   {parts.length > 0 && <p className="mt-2 text-[11px] text-slate-500 leading-relaxed">{parts.join(' · ')}</p>}
+                  {allocs.length > 0 && (
+                    <button type="button" onClick={function (ev) { toggleTxnExpanded(t.id, ev) }}
+                      className="mt-2 inline-flex items-center gap-1 text-[10.5px] font-semibold text-indigo-600 hover:text-indigo-800">
+                      <Icon name={expandedTxnIds[t.id] ? 'chevronDown' : 'chevronRight'} size={11} />
+                      {expandedTxnIds[t.id] ? 'Hide allocation details' : 'Allocation details'}
+                    </button>
+                  )}
                   {/* Under a rule, and indented off it. The breakdown and the
                       footer below it were two grey lines of much the same size,
                       each led by a small grey glyph, so neither said what kind
@@ -3459,7 +3473,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                       other is when it happened and who did it. The rule makes
                       the breakdown read as belonging to the expense above it
                       rather than as one more line in a grey stack. */}
-                  {allocs.length > 0 && (
+                  {allocs.length > 0 && !!expandedTxnIds[t.id] && (
                     <div className="mt-2 pl-3 border-l-2 border-indigo-100 space-y-1">
                       {allocs.map(function (a, ai) {
                         var allocType = a.expense_types?.name || ''
