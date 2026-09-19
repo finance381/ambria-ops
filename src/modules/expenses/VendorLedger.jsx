@@ -68,7 +68,7 @@ function BalancePill({ paise, large }) {
 // vendors are overdue is a better button for "show me those" than a segment in
 // a bar underneath saying the same word without the count — so the tiles that
 // count a state can be pressed, and the two that are pure readings cannot.
-function Tile({ icon, tone, label, value, valueClass, wide, accent, active, onClick, children }) {
+function Tile({ icon, tone, label, value, valueClass, wide, active, onClick, children }) {
   // Three things this box has been taught, in the order it learned them.
   //
   // h-full, because a <button> centres its own contents and a <div> does not,
@@ -82,17 +82,15 @@ function Tile({ icon, tone, label, value, valueClass, wide, accent, active, onCl
   // label and the figure belong together; the leftover room does not belong
   // between them.
   //
-  // And selection is a fill while `accent` is an edge. Two different jobs:
-  // `active` is a state you toggled, so the whole face answers; `accent` marks
-  // the one tile that is the page's answer rather than one of its readings,
-  // which wants picking out, not flagging.
+  // And the border never changes colour. Every edge tried on the one tile that
+  // is a page's headline read as an outline round it rather than as emphasis —
+  // the eye tracks a coloured line round the shape instead of resting inside
+  // it. That tile is picked out by its glyph badge and by having twice the
+  // width, which is enough. Only `active`, a state you toggled, changes
+  // anything, and it changes the face rather than the edge.
   var box = 'text-left h-full flex flex-col justify-center gap-2.5 border rounded-2xl px-4 py-4 transition-colors duration-150 ' +
     (wide ? 'lg:col-span-2 ' : '') +
-    // `accent` marks the one tile on a screen that is the answer rather than a
-    // reading — the outstanding balance on a vendor's own page. An indigo edge
-    // rather than a fill, so it is picked out without becoming a warning: it is
-    // not a state, it is the headline.
-    (accent && !active ? 'border-indigo-300 ' : 'border-slate-200 ') +
+    'border-slate-200 ' +
     (active ? 'bg-indigo-50 ' : 'bg-white ') +
     (onClick && !active ? 'hover:bg-slate-50 ' : '') +
     // The browser draws its own ring on a focused button, and clicking one
@@ -1054,7 +1052,7 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
             the ordinary state of a vendor ledger — the thing that is
             actually wrong is the overdue note under it, which is the one
             red on the page. */}
-        <Tile wide accent icon="wallet" tone="bg-indigo-50 text-indigo-600" label="Outstanding Balance"
+        <Tile wide icon="wallet" tone="bg-indigo-50 text-indigo-600" label="Outstanding Balance"
           value={formatPoints(currentBalance)} valueClass={balanceColour(currentBalance)}>
           {/* Both notes on one wrapping line rather than one under the other.
               Stacked, they made this tile two rows taller than the five beside
