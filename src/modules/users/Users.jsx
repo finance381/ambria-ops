@@ -118,6 +118,10 @@ function Users({ profile }) {
         expense_type_ids: p.expense_type_ids || [],
         expense_sub_type_ids: p.expense_sub_type_ids || [],
         venue_ids: p.venue_ids || [],
+        mobile_permissions: p.mobile_permissions || [],
+        desktop_permissions: p.desktop_permissions || [],
+        data_scopes: p.data_scopes || {},
+        review_scopes: p.review_scopes || {},
         active: null,
       }
     }))
