@@ -27,6 +27,16 @@ var PAGE_SIZE = 20
 // per-allocation types back to the entry-level one on re-edit).
 var ALLOC_COLS = 'department, department_id, venue_id, amount_paise, expense_type_id, expense_sub_type_id'
 
+// One label and one field, written once, so the filter panel cannot drift out
+// of alignment with itself the way it had.
+//
+// The label is sentence case at 11px rather than 10px bold uppercase with the
+// tracking opened up. Small caps set wide is a style for one word standing
+// alone; down a panel of seven of them it turns every label into a heading and
+// makes the fields underneath look like the smaller thing on the row.
+var FILTER_LABEL = 'block text-[11px] font-semibold text-slate-600 mb-1.5'
+var FILTER_FIELD = 'w-full min-w-0 h-10 px-3 bg-white border border-slate-300 rounded-xl text-[13px] text-slate-900 placeholder:text-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-shadow'
+
 // One backdrop for every view of this section — Mine, Review, All and the form
 // all render it, so they read as one screen you tab between rather than four.
 //
@@ -45,11 +55,6 @@ var ALLOC_COLS = 'department, department_id, venue_id, amount_paise, expense_typ
 //
 // `onClick` makes it a button, because a count of things waiting on you is
 // a place to go, not a fact to read.
-// One label and one field, written once, so the filter panel cannot drift
-// out of alignment with itself the way it had.
-var FILTER_LABEL = 'block text-[10px] font-bold text-slate-600 uppercase tracking-[0.06em] mb-1.5'
-var FILTER_FIELD = 'w-full min-w-0 h-10 px-3 bg-white border border-slate-300 rounded-xl text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-shadow'
-
 function StatTile({ label, value, sub, accent, onClick }) {
   var body = (
     <>
