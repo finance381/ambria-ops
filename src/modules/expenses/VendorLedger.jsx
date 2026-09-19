@@ -93,30 +93,24 @@ function Tile({ icon, tone, label, value, valueClass, wide, small, tint, active,
     (onClick ? 'focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/30 ' : '')
   var inner = (
     <>
-      <div className="flex items-center gap-3">
-        <span aria-hidden="true" className={'shrink-0 w-11 h-11 rounded-full inline-flex items-center justify-center ' + tone}>
-          <Icon name={icon} size={19} />
+      {/* The glyph shares its line with the label, and the figure gets the
+          whole tile under them.
+
+          Beside the badge it had the tile's width minus 44px of circle, 12px
+          of gap and 32px of padding — about a hundred pixels in a seventh of
+          the grid — so "3,95,000 pts" was cut off mid-unit. The label is the
+          part that can be truncated; the number is not.
+
+          No negative tracking on it either: formatPoints returns one string,
+          so tightening the letters tightened the space before "pts" too and
+          pulled the unit onto the last digit. */}
+      <div className="flex items-center gap-2.5">
+        <span aria-hidden="true" className={'shrink-0 w-9 h-9 rounded-full inline-flex items-center justify-center ' + tone}>
+          <Icon name={icon} size={17} />
         </span>
-        {/* The figure in the display face, set larger and with the tracking
-            pulled in — at 19px in the body face beside a 12px label the two
-            were close enough in weight to read as one block of text. The
-            label loses half a point and keeps its colour, so the figure is
-            clearly the thing and the label is clearly what it is called. */}
-        <div className="min-w-0">
-          <p className={'truncate text-[11.5px] font-semibold ' + (active ? 'text-indigo-700' : 'text-slate-600')}>{label}</p>
-          {/* One line. At 22px in a seventh of the grid, "4,51,413 pts" and
-              "17 Sept 2026" both ran to two — and a tile whose figure wraps is
-              taller than the five beside it. The wide one keeps its size
-              because it has twice the room; the rest come down, and truncate
-              rather than wrap if a number ever outgrows even that. */}
-          {/* No negative tracking. formatPoints returns one string — "3,95,000
-              pts" — so tightening the letters tightened the space before the
-              unit too, and at 24px extrabold that pulled "pts" onto the last
-              digit. The figures are tabular and set in the display face; they
-              do not need the help. */}
-          <p className={'mt-1.5 font-display font-extrabold tabular-nums leading-none whitespace-nowrap truncate ' + (wide ? 'text-[24px] ' : small ? 'text-[18px] ' : 'text-[22px] ') + valueClass} data-notranslate>{value}</p>
-        </div>
+        <p className={'min-w-0 truncate text-[11.5px] font-semibold ' + (active ? 'text-indigo-700' : 'text-slate-600')}>{label}</p>
       </div>
+      <p className={'mt-2 font-display font-extrabold tabular-nums leading-none whitespace-nowrap ' + (wide ? 'text-[24px] ' : small ? 'text-[19px] ' : 'text-[22px] ') + valueClass} data-notranslate>{value}</p>
       {children}
     </>
   )
