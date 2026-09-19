@@ -109,7 +109,12 @@ function Tile({ icon, tone, label, value, valueClass, wide, small, tint, active,
               taller than the five beside it. The wide one keeps its size
               because it has twice the room; the rest come down, and truncate
               rather than wrap if a number ever outgrows even that. */}
-          <p className={'mt-1.5 font-display font-extrabold tabular-nums leading-none tracking-[-0.02em] whitespace-nowrap truncate ' + (wide ? 'text-[24px] ' : small ? 'text-[18px] ' : 'text-[22px] ') + valueClass} data-notranslate>{value}</p>
+          {/* No negative tracking. formatPoints returns one string — "3,95,000
+              pts" — so tightening the letters tightened the space before the
+              unit too, and at 24px extrabold that pulled "pts" onto the last
+              digit. The figures are tabular and set in the display face; they
+              do not need the help. */}
+          <p className={'mt-1.5 font-display font-extrabold tabular-nums leading-none whitespace-nowrap truncate ' + (wide ? 'text-[24px] ' : small ? 'text-[18px] ' : 'text-[22px] ') + valueClass} data-notranslate>{value}</p>
         </div>
       </div>
       {children}

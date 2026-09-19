@@ -901,7 +901,7 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds, glass, prof
                       return null
                     })()}
                   </div>
-                  <span className="shrink-0 text-[15.5px] font-bold text-slate-900 tabular-nums tracking-[-0.01em]">
+                  <span className="shrink-0 text-[15.5px] font-bold text-slate-900 tabular-nums">
                     {formatPoints(exp.amount_paise)}
                   </span>
                 </div>
