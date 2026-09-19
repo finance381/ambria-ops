@@ -999,6 +999,13 @@ function Expenses({ profile, masterMode, inAdmin, deepLinkExpense, onDeepLinkHan
                   <p className="text-[10px] text-green-600 mt-0.5">By {profileMap[exp.acknowledged_by] || '—'}{exp.acknowledged_at ? ' · ' + formatDate(exp.acknowledged_at) : ''}</p>
                 </div>
               )}
+              {(exp.payment_credit_paise || 0) > 0 && (
+                <p className="mt-1 flex items-center gap-1.5 text-[11px]">
+                  <span className="text-emerald-600 font-medium">Paid now {formatPoints(exp.payment_cash_paise || 0)}</span>
+                  <span className="text-slate-300">·</span>
+                  <span className="text-amber-600 font-medium">On credit {formatPoints(exp.payment_credit_paise)}</span>
+                </p>
+              )}
               {(function () {
                 var paths = (exp.receipt_paths && exp.receipt_paths.length > 0) ? exp.receipt_paths : (exp.receipt_path ? [exp.receipt_path] : [])
                 if (paths.length === 0) return null

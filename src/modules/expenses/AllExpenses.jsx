@@ -868,6 +868,23 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds, glass, prof
                         </div>
                       )
                     })()}
+                    {/* Split-payment purchases put part of the bill on vendor
+                        credit rather than debiting the wallet in full — worth
+                        showing here, not just in the vendor ledger, since the
+                        card's headline amount alone doesn't say how much of
+                        it actually left the wallet just now. */}
+                    {(exp.payment_credit_paise || 0) > 0 && (
+                      <div className="mt-1 pt-1 border-t border-slate-100 space-y-0.5">
+                        <div className="flex items-center justify-between gap-2 text-[11px]">
+                          <span className="text-emerald-600">Paid now (cash)</span>
+                          <span className="text-emerald-700 font-semibold tabular-nums">{formatPoints(exp.payment_cash_paise || 0)}</span>
+                        </div>
+                        <div className="flex items-center justify-between gap-2 text-[11px]">
+                          <span className="text-amber-600">On vendor credit</span>
+                          <span className="text-amber-700 font-semibold tabular-nums">{formatPoints(exp.payment_credit_paise)}</span>
+                        </div>
+                      </div>
+                    )}
                     <p className="mt-1.5 flex items-center gap-1.5 min-w-0">
                       <span className={"shrink-0 text-[9.5px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded " + (exp.deleted_at ? "bg-slate-200 text-slate-600" : (APPROVAL_STATUS_COLORS[exp.status] || 'bg-slate-100 text-slate-600'))}>
                         {exp.deleted_at ? 'Deleted' : (APPROVAL_STATUS_LABELS[exp.status] || exp.status)}
