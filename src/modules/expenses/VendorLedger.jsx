@@ -143,12 +143,14 @@ function StateChip({ icon, label, alarm }) {
 
 // One fact in a footer: a glyph, what it is, and the value in the darker grey
 // so the value is what you land on rather than its label.
-function Fact({ icon, label, value, first }) {
+// `label` reads "Last: 17 Sep 26"; `lead` reads "by Ompal Sharma" — the same
+// shape without the colon, for the facts that are a phrase rather than a field.
+function Fact({ icon, label, value, lead, first }) {
   return (
     <span className="shrink-0 inline-flex items-center whitespace-nowrap">
       {!first && <span aria-hidden="true" className="mx-2 w-px h-3.5 bg-slate-200" />}
       <Icon name={icon} size={13} className="shrink-0 mr-1.5 text-slate-400" />
-      {label ? label + ':' : ''}
+      {label ? label + ':' : (lead || '')}
       <span className="ml-1 font-semibold text-slate-700" data-notranslate>{value}</span>
     </span>
   )
@@ -1148,19 +1150,31 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
                   <p className={"text-[15px] font-bold text-slate-900 leading-snug " + (isDeleted ? "line-through" : "")}>
                     {e.description || (isCredit ? 'Credit' : 'Debit')}
                   </p>
-                  <p className="mt-1 text-[12.5px] text-slate-500">
-                    {formatDate(e.entry_date)} · {kind} #{e.ref_id}
-                    {e._creatorName && ' · by ' + e._creatorName}
-                    {isDeleted && ' · deleted'}
-                  </p>
-                  <p className="mt-0.5 text-[12px] text-slate-400">Logged {formatDateTime(e.created_at)}</p>
-                  {(e._submitterName || e._acknowledgerName) && (
-                    <p className="mt-0.5 text-[12px] text-slate-400">
-                      {e._submitterName && 'Submitted by ' + e._submitterName}
-                      {e._submitterName && e._acknowledgerName && ' · '}
-                      {e._acknowledgerName && 'Acknowledged by ' + e._acknowledgerName}
-                    </p>
-                  )}
+                  {/* One band, not three stacked lines. Date and reference on
+                      one, "Logged …" on another and "Submitted by …" on a
+                      third gave three runs of grey text at almost the same
+                      size with nothing to say which was which — and the name
+                      appeared on two of them. A glyph apiece and a rule
+                      between says what kind of fact each one is, and the band
+                      wraps instead of growing a new line per fact. */}
+                  {(function () {
+                    var facts = [
+                      { icon: 'calendar', value: formatDate(e.entry_date) },
+                      { icon: 'receipt', value: kind + (e.ref_id ? ' #' + e.ref_id : '') },
+                      e._creatorName ? { icon: 'user', lead: 'by', value: e._creatorName } : null,
+                      { icon: 'clock', label: 'Logged', value: formatDateTime(e.created_at) },
+                      e._submitterName ? { icon: 'send', lead: 'Submitted by', value: e._submitterName } : null,
+                      e._acknowledgerName ? { icon: 'checkCircle', lead: 'Acknowledged by', value: e._acknowledgerName } : null,
+                      isDeleted ? { icon: 'trash', value: 'Deleted' } : null,
+                    ].filter(Boolean)
+                    return (
+                      <div className="mt-1.5 flex flex-wrap items-center gap-y-1.5 text-[12px] text-slate-500">
+                        {facts.map(function (f, fi) {
+                          return <Fact key={fi} first={fi === 0} icon={f.icon} label={f.label} lead={f.lead} value={f.value} />
+                        })}
+                      </div>
+                    )
+                  })()}
                   {(function () {
                     var meta = e.metadata || {}
                     var m = meta.mode
@@ -1168,7 +1182,7 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
                     var isOverdueRow = kind === 'purchase' && due && due < new Date().toISOString().split('T')[0]
                     if (!m && !due) return null
                     return (
-                      <div className="flex gap-1.5 mt-1.5 flex-wrap">
+                      <div className="flex gap-1.5 mt-2.5 flex-wrap">
                         {/* Glyphs from the set the rest of the app draws from,
                             not emoji. An emoji is a picture the font picks, so
                             it sits off the baseline, keeps its own colour and
