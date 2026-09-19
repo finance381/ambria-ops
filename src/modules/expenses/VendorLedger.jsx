@@ -16,6 +16,7 @@ import { useReferenceData } from '../../lib/referenceData.jsx'
 import SearchField from '../../components/ui/SearchField'
 import CheckedStamp from '../../components/ui/CheckedStamp'
 import Icon from '../../components/ui/Icon'
+import { ON, OFF } from '../../lib/ui'
 
 function byName(a, b) { return (a.name || '').localeCompare(b.name || '') }
 
@@ -154,6 +155,7 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
   var [fExpSubType, setFExpSubType] = useState('')
   var [fCategory, setFCategory] = useState('')
   var [fSubCategory, setFSubCategory] = useState('')
+  var [filtersOpen, setFiltersOpen] = useState(false)
   var refData = useReferenceData()
   var expenseTypes = refData.expenseTypes.slice().sort(byName)
   var expenseSubTypes = refData.expenseSubTypes.slice().sort(byName)
@@ -487,7 +489,8 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
     var activeVendors = vendors.filter(function (v) { return v.vendor_active })
     var incompleteCount = activeVendors.filter(function (v) { return v.vendor_status === 'incomplete' }).length
     var outstandingClass = balanceColour(totalOutstanding)
-    var hasDropdownFilter = !!(fExpType || fExpSubType || fCategory || fSubCategory)
+    var dropdownFilterCount = [fExpType, fExpSubType, fCategory, fSubCategory].filter(Boolean).length
+    var hasDropdownFilter = dropdownFilterCount > 0
 
     // Most owed first, always. The order is not a control any more: the five
     // it offered were four ways of not answering the question this list is
@@ -610,58 +613,70 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
             active={statusFilter === 'incomplete'} onClick={function () { setStatusFilter('incomplete') }} />
         </div>
 
-        {/* Everything that narrows the list, in one bar. Each control is
-            labelled above rather than only inside it, so a dropdown reading
-            "All" still says what it is all of. */}
-        <div className="bg-white border border-slate-200 rounded-2xl p-3.5">
-          <div className="flex flex-wrap items-end gap-3">
-            <div className="flex-[2] min-w-[220px]">
-              <label className="block text-[11px] font-semibold text-slate-600 mb-1.5">Search</label>
+        {/* The search stays out, because it is the one you reach for without
+            thinking. The four dropdowns go behind the funnel: they are a
+            narrowing you do occasionally, and out on the bar they were four
+            boxes reading "All" taking three-quarters of the width to say that
+            nothing was filtered.
+
+            The funnel carries the count, so a closed panel still tells you how
+            many filters are on — otherwise hiding them hides the fact that the
+            list is not showing everything. */}
+        <div className="bg-white border border-slate-200 rounded-2xl p-3.5 space-y-3">
+          <div className="flex items-center gap-2">
+            <div className="flex-1 min-w-0">
               <SearchField value={search} onChange={function (v) { setSearch(v) }} placeholder="Search vendors..." />
             </div>
-            <div className="flex-1 min-w-[150px]">
-              <label className="block text-[11px] font-semibold text-slate-600 mb-1.5">Expense type</label>
-              <SearchDropdown
-                items={expenseTypes.map(function (t) { return { label: t.name, value: String(t.id) } })}
-                value={fExpType} onChange={function (v) { setFExpType(v) }}
-                placeholder="All" noVoice />
-            </div>
-            <div className="flex-1 min-w-[150px]">
-              <label className="block text-[11px] font-semibold text-slate-600 mb-1.5">Expense sub-type</label>
-              <SearchDropdown
-                items={(fExpType ? expenseSubTypes.filter(function (st) { return String(st.expense_type_id) === String(fExpType) }) : expenseSubTypes)
-                  .map(function (st) { return { label: st.name, value: String(st.id) } })}
-                value={fExpSubType} onChange={function (v) { setFExpSubType(v) }}
-                placeholder="All" noVoice />
-            </div>
-            <div className="flex-1 min-w-[150px]">
-              <label className="block text-[11px] font-semibold text-slate-600 mb-1.5">Item category</label>
-              <SearchDropdown
-                items={categories.map(function (c) { return { label: c.name, value: String(c.id) } })}
-                value={fCategory} onChange={function (v) { setFCategory(v) }}
-                placeholder="All" noVoice />
-            </div>
-            <div className="flex-1 min-w-[150px]">
-              <label className="block text-[11px] font-semibold text-slate-600 mb-1.5">Item sub-category</label>
-              <SearchDropdown
-                items={(fCategory ? subCategories.filter(function (sc) { return String(sc.category_id) === String(fCategory) }) : subCategories)
-                  .map(function (sc) { return { label: sc.name, value: String(sc.id) } })}
-                value={fSubCategory} onChange={function (v) { setFSubCategory(v) }}
-                placeholder="All" noVoice />
-            </div>
-
-            {/* Only when there is something to clear. The status filter has the
-                All tile to go back to; this is for the four dropdowns and the
-                search, which have no tile of their own. */}
+            <button type="button" onClick={function () { setFiltersOpen(!filtersOpen) }}
+              aria-label="Filters" aria-expanded={filtersOpen}
+              className={"shrink-0 h-10 px-3 inline-flex items-center gap-1.5 rounded-xl border text-[12.5px] font-semibold transition-colors " +
+                (filtersOpen || dropdownFilterCount > 0 ? ON : OFF)}>
+              <Icon name="filter" size={16} />
+              {dropdownFilterCount > 0 && <span className="tabular-nums" data-notranslate>{dropdownFilterCount}</span>}
+            </button>
             {(hasDropdownFilter || search) && (
-              <button type="button"
+              <button type="button" aria-label="Clear filters"
                 onClick={function () { setSearch(''); setFExpType(''); setFExpSubType(''); setFCategory(''); setFSubCategory('') }}
-                className="shrink-0 inline-flex items-center gap-1.5 h-10 px-3.5 rounded-xl border border-slate-200 text-[12.5px] font-bold text-indigo-600 hover:border-indigo-300 hover:bg-indigo-50 transition-colors">
-                <Icon name="close" size={13} />
-                Clear
+                className="shrink-0 h-10 w-10 inline-flex items-center justify-center rounded-xl border border-slate-300 text-slate-500 hover:border-rose-300 hover:text-rose-600 transition-colors">
+                <Icon name="close" size={16} />
               </button>
             )}
           </div>
+
+          {filtersOpen && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 pt-3 border-t border-slate-100">
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-600 mb-1.5">Expense type</label>
+                <SearchDropdown
+                  items={expenseTypes.map(function (t) { return { label: t.name, value: String(t.id) } })}
+                  value={fExpType} onChange={function (v) { setFExpType(v) }}
+                  placeholder="All" noVoice />
+              </div>
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-600 mb-1.5">Expense sub-type</label>
+                <SearchDropdown
+                  items={(fExpType ? expenseSubTypes.filter(function (st) { return String(st.expense_type_id) === String(fExpType) }) : expenseSubTypes)
+                    .map(function (st) { return { label: st.name, value: String(st.id) } })}
+                  value={fExpSubType} onChange={function (v) { setFExpSubType(v) }}
+                  placeholder="All" noVoice />
+              </div>
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-600 mb-1.5">Item category</label>
+                <SearchDropdown
+                  items={categories.map(function (c) { return { label: c.name, value: String(c.id) } })}
+                  value={fCategory} onChange={function (v) { setFCategory(v) }}
+                  placeholder="All" noVoice />
+              </div>
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-600 mb-1.5">Item sub-category</label>
+                <SearchDropdown
+                  items={(fCategory ? subCategories.filter(function (sc) { return String(sc.category_id) === String(fCategory) }) : subCategories)
+                    .map(function (sc) { return { label: sc.name, value: String(sc.id) } })}
+                  value={fSubCategory} onChange={function (v) { setFSubCategory(v) }}
+                  placeholder="All" noVoice />
+              </div>
+            </div>
+          )}
         </div>
 
         {loading ? (
