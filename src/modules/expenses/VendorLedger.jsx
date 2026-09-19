@@ -16,6 +16,7 @@ import { hasPerm } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
 import SearchField from '../../components/ui/SearchField'
 import CheckedStamp from '../../components/ui/CheckedStamp'
+import Icon from '../../components/ui/Icon'
 
 function byName(a, b) { return (a.name || '').localeCompare(b.name || '') }
 
@@ -59,6 +60,13 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
   var [entriesLoading, setEntriesLoading] = useState(false)
   var [showDeleted, setShowDeleted] = useState(false)
   var [paymentTypeFilter, setPaymentTypeFilter] = useState('all')  // 'all' | 'fnf' | 'advance'
+  // Which entries have their amount-breakdown/allocation panel expanded —
+  // collapsed by default so a vendor with many purchases fits more rows.
+  var [expandedEntryIds, setExpandedEntryIds] = useState({})
+  function toggleEntryExpanded(id, ev) {
+    if (ev) ev.stopPropagation()
+    setExpandedEntryIds(function (prev) { var next = Object.assign({}, prev); next[id] = !next[id]; return next })
+  }
   var { openExpenseDetail, expenseDetailModal } = useExpenseDetailModal(profile, isAdmin, function () {
     if (selectedVendor) loadEntries(selectedVendor, showDeleted)
   }, onNavigateToExpenses)
@@ -1039,7 +1047,14 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
                       <LedgerSourceMedia paths={e._sourceReceipts} />
                     </div>
                   )}
-                  {e._breakdown && (function () {
+                  {e._breakdown && (
+                    <button type="button" onClick={function (ev) { toggleEntryExpanded(e.id, ev) }}
+                      className="mt-1.5 inline-flex items-center gap-1 text-[10.5px] font-semibold text-indigo-600 hover:text-indigo-800">
+                      <Icon name={expandedEntryIds[e.id] ? 'chevronDown' : 'chevronRight'} size={11} />
+                      {expandedEntryIds[e.id] ? 'Hide details' : 'Amount & allocation details'}
+                    </button>
+                  )}
+                  {e._breakdown && !!expandedEntryIds[e.id] && (function () {
                     var b = e._breakdown
                     var totalPaise = b.amount_paise
                     var taxPaise = b.tax_paise || 0

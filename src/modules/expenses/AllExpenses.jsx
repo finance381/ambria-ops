@@ -64,6 +64,13 @@ var _savedFilters = {
 function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds, glass, profile, isAdmin }) {
   var canMarkChecked = hasPerm(profile?.permsNew, 'finance.wallet.mark_checked')
   var [checkingExpId, setCheckingExpId] = useState(null)
+  // Which cards have their allocation/payment breakdown expanded — collapsed
+  // by default so a long list of purchases doesn't take a screen each.
+  var [expandedIds, setExpandedIds] = useState({})
+  function toggleExpanded(id, ev) {
+    if (ev) ev.stopPropagation()
+    setExpandedIds(function (prev) { var next = Object.assign({}, prev); next[id] = !next[id]; return next })
+  }
   var [allExps, setAllExps] = useState([])
   var [allExpHasMore, setAllExpHasMore] = useState(false)
   var [allExpStatus, setAllExpStatus] = useState(function () { return _savedFilters.status })
@@ -812,6 +819,19 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds, glass, prof
                       )
                     })()}
                     {(function () {
+                      var hasAllocs = (exp.expense_allocations || []).length > 0
+                      var hasSplit = (exp.payment_credit_paise || 0) > 0
+                      if (!hasAllocs && !hasSplit) return null
+                      var isExpanded = !!expandedIds[exp.id]
+                      return (
+                        <button type="button" onClick={function (ev) { toggleExpanded(exp.id, ev) }}
+                          className="mt-1.5 inline-flex items-center gap-1 text-[10.5px] font-semibold text-indigo-600 hover:text-indigo-800">
+                          <Icon name={isExpanded ? 'chevronDown' : 'chevronRight'} size={11} />
+                          {isExpanded ? 'Hide details' : 'Allocation & payment details'}
+                        </button>
+                      )
+                    })()}
+                    {!!expandedIds[exp.id] && (function () {
                       var allocs = exp.expense_allocations || []
                       if (allocs.length === 0) return null
                       var subtotal = allocs.reduce(function (s, a) { return s + (a.amount_paise || 0) }, 0)
@@ -873,7 +893,7 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds, glass, prof
                         showing here, not just in the vendor ledger, since the
                         card's headline amount alone doesn't say how much of
                         it actually left the wallet just now. */}
-                    {(exp.payment_credit_paise || 0) > 0 && (
+                    {!!expandedIds[exp.id] && (exp.payment_credit_paise || 0) > 0 && (
                       <div className="mt-1 pt-1 border-t border-slate-100 space-y-0.5">
                         <div className="flex items-center justify-between gap-2 text-[11px]">
                           <span className="text-emerald-600">Paid now (cash)</span>
