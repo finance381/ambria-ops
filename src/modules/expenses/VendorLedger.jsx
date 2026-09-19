@@ -18,6 +18,7 @@ import CheckedStamp from '../../components/ui/CheckedStamp'
 import Icon from '../../components/ui/Icon'
 import { avatarTint } from '../../lib/avatarTint'
 import { ON, OFF } from '../../lib/ui'
+import ReverseDialog from '../../components/ui/ReverseDialog'
 
 function byName(a, b) { return (a.name || '').localeCompare(b.name || '') }
 
@@ -555,14 +556,20 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
 
   
 
-  async function reverseEntry(entryId) {
-    var reason = prompt('Reason for reversal (optional)?')
-    if (reason === null) return
+  var [reverseTarget, setReverseTarget] = useState(null)
+  var [reversingEntry, setReversingEntry] = useState(false)
+
+  async function reverseEntry(reason) {
+    var entryId = reverseTarget
+    if (!entryId) return
+    setReversingEntry(true)
     var { error } = await supabase.rpc('reverse_ledger_entry', {
       p_entry_id: entryId,
-      p_reason: (reason || '').trim() || null
+      p_reason: reason
     })
+    setReversingEntry(false)
     if (error) { alert('Reversal failed: ' + error.message); return }
+    setReverseTarget(null)
     try { logActivity('LEDGER_REVERSE', 'entry #' + entryId) } catch (_) {}
     if (selectedVendor) await loadEntries(selectedVendor, showDeleted)
   }
@@ -1302,7 +1309,7 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
                     </div>
                   )}
                   {isAdmin && !isDeleted && (
-                    <button onClick={function (ev) { ev.stopPropagation(); reverseEntry(e.id) }}
+                    <button onClick={function (ev) { ev.stopPropagation(); setReverseTarget(e.id) }}
                       // The same box as the Checked stamp beside it: they sit
                       // one under the other in a narrow column, so two chips a
                       // few pixels different in height read as misaligned
@@ -1318,6 +1325,13 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
           })}
         </div>
       )}
+      <ReverseDialog
+        open={!!reverseTarget}
+        busy={reversingEntry}
+        onClose={function () { setReverseTarget(null) }}
+        onConfirm={reverseEntry}
+        reasonLabel="Reason for reversal"
+      />
       {expenseDetailModal}
     </div>
   )

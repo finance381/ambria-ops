@@ -15,6 +15,7 @@ import CameraCapture from '../../components/ui/CameraCapture'
 import { useAudioRecorder } from '../../hooks/useAudioRecorder'
 import { getReceiptUrl, isVoiceNotePath } from '../../lib/uploadHelper'
 import { compressImage } from '../../lib/imageCompress'
+import ReverseDialog from '../../components/ui/ReverseDialog'
 
 function byName(a, b) { return (a.name || '').localeCompare(b.name || '') }
 
@@ -381,9 +382,11 @@ function CostTransfers({ profile }) {
     setSaving(false)
   }
 
-  async function handleReverse(id) {
-    if (reversing) return
-    if (!window.confirm('Reverse this cost transfer? A new offsetting entry will be created.')) return
+  var [reverseTarget, setReverseTarget] = useState(null)
+
+  async function handleReverse() {
+    var id = reverseTarget
+    if (reversing || !id) return
     setReversing(id)
     setError('')
     try {
@@ -393,6 +396,7 @@ function CostTransfers({ profile }) {
       loadTransfers()
     } catch (err) { setError(err.message || 'Reverse failed') }
     setReversing(null)
+    setReverseTarget(null)
   }
 
   async function toggleTransferCheck(t) {
@@ -525,7 +529,7 @@ function CostTransfers({ profile }) {
             <button onClick={function () { openEdit(r) }} className="text-xs text-indigo-600 hover:text-indigo-800 mr-3">Edit</button>
           )}
           {canReverse ? (
-            <button onClick={function () { handleReverse(r.id) }} disabled={reversing === r.id}
+            <button onClick={function () { setReverseTarget(r.id) }} disabled={reversing === r.id}
               className="h-[22px] inline-flex items-center gap-1 px-2 rounded-md border border-slate-200 bg-white text-[9px] font-bold uppercase tracking-[0.04em] text-slate-600 hover:border-rose-300 hover:text-rose-700 hover:bg-rose-50 transition-colors disabled:opacity-40">
               <Icon name={reversing === r.id ? 'refresh' : 'reverse'} size={10} />
               {reversing === r.id ? 'Reversing…' : 'Reverse'}
@@ -577,7 +581,7 @@ function CostTransfers({ profile }) {
               <button onClick={function () { openEdit(r) }} className="text-xs text-indigo-600 hover:text-indigo-800 font-medium">Edit</button>
             )}
             {canReverse && (
-              <button onClick={function () { handleReverse(r.id) }} disabled={reversing === r.id}
+              <button onClick={function () { setReverseTarget(r.id) }} disabled={reversing === r.id}
                 className="h-[22px] inline-flex items-center gap-1 px-2 rounded-md border border-slate-200 bg-white text-[9px] font-bold uppercase tracking-[0.04em] text-slate-600 hover:border-rose-300 hover:text-rose-700 hover:bg-rose-50 transition-colors disabled:opacity-40">
                 <Icon name={reversing === r.id ? 'refresh' : 'reverse'} size={10} />
                 {reversing === r.id ? 'Reversing…' : 'Reverse'}
@@ -950,6 +954,14 @@ function CostTransfers({ profile }) {
           </div>
         )}
       </Modal>
+      <ReverseDialog
+        open={!!reverseTarget}
+        busy={reversing === reverseTarget}
+        onClose={function () { setReverseTarget(null) }}
+        onConfirm={handleReverse}
+        title="Reverse this cost transfer"
+        description="This posts a new offsetting transfer. The original stays on the record — nothing is deleted."
+      />
       {editShowCamera && (
         <CameraCapture
           onCapture={function (file) { setEditProofFile(file); setEditShowCamera(false) }}

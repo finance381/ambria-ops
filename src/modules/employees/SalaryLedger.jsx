@@ -11,6 +11,7 @@ import { hasPerm } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
 import { useExpenseDetailModal } from '../../hooks/useExpenseDetailModal.jsx'
 import Icon from '../../components/ui/Icon'
+import ReverseDialog from '../../components/ui/ReverseDialog'
 
 function SalaryLedger({ profile }) {
   var permsNew = (profile && profile.permsNew) || []
@@ -163,14 +164,20 @@ function SalaryLedger({ profile }) {
     loadEmployees()
   }
 
-  async function reverseEntry(entryId) {
-    var reason = prompt('Reason for reversal (optional)?')
-    if (reason === null) return
+  var [reverseTarget, setReverseTarget] = useState(null)
+  var [reversingEntry, setReversingEntry] = useState(false)
+
+  async function reverseEntry(reason) {
+    var entryId = reverseTarget
+    if (!entryId) return
+    setReversingEntry(true)
     var { error } = await supabase.rpc('reverse_ledger_entry', {
       p_entry_id: entryId,
-      p_reason: (reason || '').trim() || null
+      p_reason: reason
     })
+    setReversingEntry(false)
     if (error) { alert('Reversal failed: ' + error.message); return }
+    setReverseTarget(null)
     try { logActivity('LEDGER_REVERSE', 'salary entry #' + entryId) } catch (_) {}
     if (selectedEmp) await loadEntries(selectedEmp, showDeleted)
   }
@@ -497,7 +504,7 @@ function SalaryLedger({ profile }) {
                     <p className="text-[10px] text-gray-400">Bal: {formatPoints(e.runningBalance)}</p>
                   )}
                   {isAdmin && !isDeleted && (
-                    <button onClick={function (ev) { ev.stopPropagation(); reverseEntry(e.id) }}
+                    <button onClick={function (ev) { ev.stopPropagation(); setReverseTarget(e.id) }}
                       className="mt-1.5 h-[22px] inline-flex items-center gap-1 px-2 rounded-md border border-slate-200 bg-white text-[9px] font-bold uppercase tracking-[0.04em] text-slate-600 hover:border-rose-300 hover:text-rose-700 hover:bg-rose-50 transition-colors">
                       <Icon name="reverse" size={10} />
                       Reverse
@@ -509,6 +516,13 @@ function SalaryLedger({ profile }) {
           })}
         </div>
       )}
+      <ReverseDialog
+        open={!!reverseTarget}
+        busy={reversingEntry}
+        onClose={function () { setReverseTarget(null) }}
+        onConfirm={reverseEntry}
+        reasonLabel="Reason for reversal"
+      />
       {expenseDetailModal}
     </div>
   )

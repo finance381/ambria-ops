@@ -7,6 +7,7 @@ import { logActivity } from '../../lib/logger'
 import SearchDropdown from '../../components/ui/SearchDropdown'
 import VoiceInput from '../../components/ui/VoiceInput'
 import Icon from '../../components/ui/Icon'
+import ReverseDialog from '../../components/ui/ReverseDialog'
 
 var TYPE_LABEL = {
   advance: 'Advance', running_bill: 'Running Bill', retention: 'Retention',
@@ -89,8 +90,13 @@ function ProjectLedger({ profile, project, onBack }) {
     load()
   }
 
-  async function reverseEntry(e) {
-    if (!window.confirm('Reverse this entry? This posts a new offsetting entry — it does not delete the original.')) return
+  var [reverseTarget, setReverseTarget] = useState(null)
+  var [reversingEntry, setReversingEntry] = useState(false)
+
+  async function reverseEntry() {
+    var e = reverseTarget
+    if (!e || reversingEntry) return
+    setReversingEntry(true)
     var { error: insErr } = await supabase.from('project_ledger').insert({
       project_id: project.id,
       entry_type: 'reversal',
@@ -101,7 +107,9 @@ function ProjectLedger({ profile, project, onBack }) {
       description: 'Reversal of #' + e.id + (e.description ? ': ' + e.description : ''),
       reversal_of: e.id,
     })
+    setReversingEntry(false)
     if (insErr) { alert('Reverse failed: ' + insErr.message); return }
+    setReverseTarget(null)
     try { await logActivity('PROJECT_LEDGER_REVERSE', project.name + ' | entry #' + e.id) } catch (_) {}
     load()
   }
@@ -193,7 +201,7 @@ function ProjectLedger({ profile, project, onBack }) {
                       <td className="px-3 py-2 text-xs text-gray-700">{e.description || '—'}{isReversed && <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded bg-gray-200 text-gray-600 uppercase">Reversed</span>}</td>
                       <td className="px-3 py-2 text-right">
                         {canReverse ? (
-                          <button onClick={function () { reverseEntry(e) }} className="h-[22px] inline-flex items-center gap-1 px-2 rounded-md border border-slate-200 bg-white text-[9px] font-bold uppercase tracking-[0.04em] text-slate-600 hover:border-rose-300 hover:text-rose-700 hover:bg-rose-50 transition-colors">
+                          <button onClick={function () { setReverseTarget(e) }} className="h-[22px] inline-flex items-center gap-1 px-2 rounded-md border border-slate-200 bg-white text-[9px] font-bold uppercase tracking-[0.04em] text-slate-600 hover:border-rose-300 hover:text-rose-700 hover:bg-rose-50 transition-colors">
                             <Icon name="reverse" size={10} />
                             Reverse
                           </button>
@@ -264,6 +272,13 @@ function ProjectLedger({ profile, project, onBack }) {
           </div>
         </div>
       ), document.body)}
+      <ReverseDialog
+        open={!!reverseTarget}
+        busy={reversingEntry}
+        onClose={function () { setReverseTarget(null) }}
+        onConfirm={reverseEntry}
+        description="This posts a new offsetting entry against this project. The original stays in the ledger — nothing is deleted."
+      />
     </div>
   )
 }

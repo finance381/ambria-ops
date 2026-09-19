@@ -9,6 +9,7 @@ import { useReferenceData } from '../../lib/referenceData.jsx'
 import VoiceInput from '../../components/ui/VoiceInput'
 import Icon from '../../components/ui/Icon'
 import CheckedStamp from '../../components/ui/CheckedStamp'
+import ReverseDialog from '../../components/ui/ReverseDialog'
 
 // Label left, value right, hairline between. A py-2 row plus a divider costs
 // ~34px where the old space-y-3 pair cost ~44px, and the rule makes a long
@@ -264,13 +265,15 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
     })
   }
 
-  async function reverseGv(gv) {
-    if (reversing) return
-    var reason = window.prompt('Reason for reversing ' + gv.gv_number + '?')
-    if (!reason || reason.trim().length < 3) return
+  var [reverseGvTarget, setReverseGvTarget] = useState(null)
+
+  async function reverseGv(reason) {
+    var gv = reverseGvTarget
+    if (reversing || !gv || !reason) return
     setReversing(true)
-    var { data, error } = await supabase.rpc('fn_reverse_gv', { p_gv_id: gv.id, p_reason: reason.trim() })
+    var { data, error } = await supabase.rpc('fn_reverse_gv', { p_gv_id: gv.id, p_reason: reason })
     setReversing(false)
+    setReverseGvTarget(null)
     if (error) { alert('Failed: ' + error.message); return }
     try { await logActivity({ action: 'gv_reverse', entity: 'expense', entity_id: exp.id, meta: { gv_number: data?.gv_number, reverses: gv.gv_number } }) } catch (e) {}
     if (onUpdated) onUpdated()
@@ -780,7 +783,7 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
                       <p className="text-[11px] text-slate-600 mt-0.5 line-clamp-2">{gv.reason}</p>
                     </button>
                     {canReverse && (
-                      <button onClick={function () { reverseGv(gv) }} disabled={reversing}
+                      <button onClick={function () { setReverseGvTarget(gv) }} disabled={reversing}
                         className="shrink-0 h-[22px] inline-flex items-center gap-1 px-2 rounded-md border border-slate-200 bg-white text-[9px] font-bold uppercase tracking-[0.04em] text-slate-600 hover:border-rose-300 hover:text-rose-700 hover:bg-rose-50 transition-colors disabled:opacity-40">
                         <Icon name={reversing ? 'refresh' : 'reverse'} size={10} />
                         Reverse
@@ -1046,6 +1049,16 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
           </div>
         </div>
       )}
+      <ReverseDialog
+        open={!!reverseGvTarget}
+        busy={reversing}
+        onClose={function () { setReverseGvTarget(null) }}
+        onConfirm={reverseGv}
+        title={'Reverse ' + (reverseGvTarget ? reverseGvTarget.gv_number : 'this JV')}
+        description="This posts a reversing JV against the same expense. The original JV stays on the record."
+        reasonLabel="Reason for reversing"
+        reasonRequired
+      />
         </div>
       </div>
     </div>
