@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useId } from 'react'
 import Icon from './Icon'
 
-function SearchDropdown({ items, value, onChange, onAdd, onInputChange, placeholder, allowAdd, label, labelIcon, required, error, voiceLang, id }) {
+function SearchDropdown({ items, value, onChange, onAdd, onInputChange, placeholder, allowAdd, label, labelIcon, required, error, voiceLang, noVoice, id }) {
   // Tie the label to the input so tapping the label focuses the field, and so a
   // screen reader announces which field it is reading. Nothing was associated
   // before, which on a phone is a daily miss -- the label is a big, obvious
@@ -225,20 +225,25 @@ function SearchDropdown({ items, value, onChange, onAdd, onInputChange, placehol
               </button>
             )}
           </div>
-          <button
-            type="button"
-            onClick={startVoice}
-            className={
-              "w-11 shrink-0 rounded-xl border flex items-center justify-center transition-colors " +
-              (listening
-                ? "bg-red-500 border-red-500 text-white animate-pulse"
-                : "bg-white border-slate-300 text-slate-500 hover:border-indigo-400 hover:text-indigo-600")
-            }
-            aria-label={listening ? 'Stop voice input' : 'Voice input'}
-            title="Voice input"
-          >
-            <Icon name="mic" className="w-[18px] h-[18px]" />
-          </button>
+          {/* Dictation earns its button where someone is filling a form with
+              their hands full. On a row of filters it is four more buttons
+              than there are filters, so a screen can turn it off. */}
+          {!noVoice && (
+            <button
+              type="button"
+              onClick={startVoice}
+              className={
+                "w-11 shrink-0 rounded-xl border flex items-center justify-center transition-colors " +
+                (listening
+                  ? "bg-red-500 border-red-500 text-white animate-pulse"
+                  : "bg-white border-slate-300 text-slate-500 hover:border-indigo-400 hover:text-indigo-600")
+              }
+              aria-label={listening ? 'Stop voice input' : 'Voice input'}
+              title="Voice input"
+            >
+              <Icon name="mic" className="w-[18px] h-[18px]" />
+            </button>
+          )}
         </div>
 
         {open && (filtered.length > 0 || showAddOption) && (

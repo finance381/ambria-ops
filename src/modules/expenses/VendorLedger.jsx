@@ -616,7 +616,7 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
               <SearchDropdown
                 items={expenseTypes.map(function (t) { return { label: t.name, value: String(t.id) } })}
                 value={fExpType} onChange={function (v) { setFExpType(v) }}
-                placeholder="All" />
+                placeholder="All" noVoice />
             </div>
             <div className="flex-1 min-w-[150px]">
               <label className="block text-[11px] font-semibold text-slate-600 mb-1.5">Expense sub-type</label>
@@ -624,14 +624,14 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
                 items={(fExpType ? expenseSubTypes.filter(function (st) { return String(st.expense_type_id) === String(fExpType) }) : expenseSubTypes)
                   .map(function (st) { return { label: st.name, value: String(st.id) } })}
                 value={fExpSubType} onChange={function (v) { setFExpSubType(v) }}
-                placeholder="All" />
+                placeholder="All" noVoice />
             </div>
             <div className="flex-1 min-w-[150px]">
               <label className="block text-[11px] font-semibold text-slate-600 mb-1.5">Item category</label>
               <SearchDropdown
                 items={categories.map(function (c) { return { label: c.name, value: String(c.id) } })}
                 value={fCategory} onChange={function (v) { setFCategory(v) }}
-                placeholder="All" />
+                placeholder="All" noVoice />
             </div>
             <div className="flex-1 min-w-[150px]">
               <label className="block text-[11px] font-semibold text-slate-600 mb-1.5">Item sub-category</label>
@@ -639,7 +639,7 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
                 items={(fCategory ? subCategories.filter(function (sc) { return String(sc.category_id) === String(fCategory) }) : subCategories)
                   .map(function (sc) { return { label: sc.name, value: String(sc.id) } })}
                 value={fSubCategory} onChange={function (v) { setFSubCategory(v) }}
-                placeholder="All" />
+                placeholder="All" noVoice />
             </div>
 
             {/* Sort and the layout switch sit on the same line as the filters
