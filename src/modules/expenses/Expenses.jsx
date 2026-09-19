@@ -14,6 +14,7 @@ import { hasPerm } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
 import Icon from '../../components/ui/Icon'
 import { T, CARD, FIELD_SEARCH, ON, OFF, BTN, STATUS_RAIL } from '../../lib/ui'
+import EventDatePicker from '../../components/ui/EventDatePicker'
 import { deptInk } from '../../lib/ui'
 
 
@@ -44,6 +45,11 @@ var ALLOC_COLS = 'department, department_id, venue_id, amount_paise, expense_typ
 //
 // `onClick` makes it a button, because a count of things waiting on you is
 // a place to go, not a fact to read.
+// One label and one field, written once, so the filter panel cannot drift
+// out of alignment with itself the way it had.
+var FILTER_LABEL = 'block text-[10px] font-bold text-slate-600 uppercase tracking-[0.06em] mb-1.5'
+var FILTER_FIELD = 'w-full min-w-0 h-10 px-3 bg-white border border-slate-300 rounded-xl text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-shadow'
+
 function StatTile({ label, value, sub, accent, onClick }) {
   var body = (
     <>
@@ -70,6 +76,12 @@ function Expenses({ profile, masterMode, inAdmin, deepLinkExpense, onDeepLinkHan
   var [myHasMore, setMyHasMore] = useState(false)
   var [approvalHasMore, setApprovalHasMore] = useState(false)
   var [loading, setLoading] = useState(true)
+  // Two different waits. `loading` is the one where there is nothing on the
+  // screen yet; `refreshing` is a re-read with the last answer still in front
+  // of you. They were the same flag, and the whole page was being replaced by
+  // the word "Loading…" every time a filter was touched — which is why
+  // picking a department looked like the page had reloaded.
+  var [refreshing, setRefreshing] = useState(false)
   var [loadingMore, setLoadingMore] = useState(false)
   useRealtime(['expenses', 'expense_allocations'], function () { loadMyExpenses(false); loadApprovalExpenses(false) })
   var [detailExp, setDetailExp] = useState(null)
@@ -135,7 +147,9 @@ function Expenses({ profile, masterMode, inAdmin, deepLinkExpense, onDeepLinkHan
     })
   }, [])
 
-   useEffect(function () {
+  // The wallet balance does not depend on a single one of the filters, and it
+  // was being re-read on every one of them.
+  useEffect(function () {
     supabase.from('wallets').select('balance_paise').eq('user_id', profile.id).maybeSingle()
       .then(function (res) {
         // `|| 0` alone collapsed three different situations into "0 pts": a real
@@ -145,8 +159,13 @@ function Expenses({ profile, masterMode, inAdmin, deepLinkExpense, onDeepLinkHan
         if (!res.data) { console.warn('WALLET_MISSING for user', profile.id); setWalletBalance(null); return }
         setWalletBalance(res.data.balance_paise || 0)
       })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile.id])
+
+  useEffect(function () {
     loadMyExpenses(false)
     loadApprovalExpenses(false)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [statusFilter, dateFrom, dateTo, expSearchDebounced, deptFilter, subDeptFilter, venueFilter, userFilter, amountMin, amountMax])
 
   // A ledger screen (Ledgers, Vendor Ledger, Wallet) sent the user here to edit
@@ -171,7 +190,7 @@ function Expenses({ profile, masterMode, inAdmin, deepLinkExpense, onDeepLinkHan
   }, [deepLinkExpense])
   async function loadMyExpenses(append) {
     var offset = append ? myExpenses.length : 0
-    if (!append) setLoading(true)
+    if (!append) setRefreshing(true)
     else setLoadingMore(true)
 
     var hasAllocFilter = !!(deptFilter || subDeptFilter || venueFilter)
@@ -196,7 +215,7 @@ function Expenses({ profile, masterMode, inAdmin, deepLinkExpense, onDeepLinkHan
     if (amountMax) query = query.lte('amount_paise', Math.round(Number(amountMax) * 100))
 
     var { data, error } = await query
-    if (error) { alert('Failed to load: ' + error.message); setLoading(false); setLoadingMore(false); return }
+    if (error) { alert('Failed to load: ' + error.message); setLoading(false); setRefreshing(false); setLoadingMore(false); return }
 
     var rows = data || []
     var hasMore = rows.length > PAGE_SIZE
@@ -209,6 +228,7 @@ function Expenses({ profile, masterMode, inAdmin, deepLinkExpense, onDeepLinkHan
     }
     setMyHasMore(hasMore)
     setLoading(false)
+    setRefreshing(false)
     setLoadingMore(false)
   }
 
@@ -711,16 +731,31 @@ function Expenses({ profile, masterMode, inAdmin, deepLinkExpense, onDeepLinkHan
               )}
             </div>
             {filtersOpen && (
-              <div className={CARD + " p-3 space-y-3"}>
+              /* One grid, four columns on a desktop and one on a phone, with
+                 every control the same height and its label above it. It used
+                 to be a two-column grid that some fields opted out of, so a
+                 full-width Venue sat between two half-width rows and nothing
+                 below lined up with anything above.
+
+                 The dates are the app's own picker rather than <input
+                 type="date">. The native one renders "mm/dd/yyyy" in US order
+                 whatever the locale, has an intrinsic minimum width that does
+                 not fit a narrow column, and looks nothing like the three
+                 dropdowns above it. */
+              <div className={CARD + " p-4 space-y-4"}>
                 {view === 'list' && (
                   <div>
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-[0.06em] mb-1">Status</label>
+                    <label className={FILTER_LABEL}>Status</label>
                     <div className="flex gap-2 flex-wrap">
                       {['', 'recorded', 'acknowledged', 'flagged', 'deducted'].map(function (s) {
-                        var label = s ? APPROVAL_STATUS_LABELS[s] : 'All'
+                        // 'deducted' printed an empty pill for as long as it has
+                        // been in this list: it is a real status, with a rail
+                        // colour of its own, that no one had given a label.
+                        var label = s ? (APPROVAL_STATUS_LABELS[s] || s) : 'All'
                         return (
-                          <button key={s} onClick={function () { setStatusFilter(s === statusFilter ? '' : s) }}
-                            className={"px-3 py-1.5 text-[11px] font-bold rounded-full border transition-colors " +
+                          <button key={s} type="button" onClick={function () { setStatusFilter(s === statusFilter ? '' : s) }}
+                            aria-pressed={statusFilter === s}
+                            className={"px-3.5 h-8 text-[11.5px] font-bold rounded-full border transition-colors " +
                               (statusFilter === s ? ON : OFF)}>
                             {label}
                           </button>
@@ -729,62 +764,74 @@ function Expenses({ profile, masterMode, inAdmin, deepLinkExpense, onDeepLinkHan
                     </div>
                   </div>
                 )}
-                {view === 'approve' && userOptions.length > 0 && (
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+                  {view === 'approve' && userOptions.length > 0 && (
+                    <div>
+                      <label className={FILTER_LABEL}>User</label>
+                      <FilterDropdown value={userFilter} placeholder="All users"
+                        options={userOptions.map(function (u) { return { label: u.name || '—', value: String(u.id) } })}
+                        onChange={setUserFilter} />
+                    </div>
+                  )}
                   <div>
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-[0.06em] mb-1">User</label>
-                    <FilterDropdown value={userFilter} placeholder="All users"
-                      options={userOptions.map(function (u) { return { label: u.name || '—', value: String(u.id) } })}
-                      onChange={setUserFilter} />
-                  </div>
-                )}
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-[0.06em] mb-1">Department</label>
+                    <label className={FILTER_LABEL}>Department</label>
                     <FilterDropdown value={deptFilter} placeholder="All departments"
                       options={deptOptions.map(function (d) { return { label: d.name, value: String(d.id) } })}
                       onChange={function (v) { setDeptFilter(v); setSubDeptFilter('') }} />
                   </div>
                   <div>
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-[0.06em] mb-1">Sub-Dept</label>
+                    <label className={FILTER_LABEL}>Sub-dept</label>
                     <FilterDropdown value={subDeptFilter} placeholder="All sub-depts"
                       options={subDeptFiltered.map(function (sd) { return { label: sd.name, value: String(sd.id) } })}
                       onChange={setSubDeptFilter} />
                   </div>
-                  <div className="col-span-2">
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-[0.06em] mb-1">Venue</label>
+                  <div>
+                    <label className={FILTER_LABEL}>Venue</label>
                     <FilterDropdown value={venueFilter} placeholder="All venues"
                       options={venueOptions.map(function (v) { return { label: v.code + ' — ' + v.name, value: String(v.id) } })}
                       onChange={setVenueFilter} />
                   </div>
+
+                  {/* Two halves of one question, so they share a cell and a
+                      label instead of being two fields that happen to sit next
+                      to each other. */}
                   <div>
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-[0.06em] mb-1">Min (pts)</label>
-                    <input type="number" min="0" step="any" inputMode="decimal" value={amountMin}
-                      onChange={function (e) { setAmountMin(e.target.value) }}
-                      placeholder="0"
-                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-[13px] text-slate-900 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
-                      style={{ fontSize: '16px' }} />
+                    <label className={FILTER_LABEL}>Amount (pts)</label>
+                    <div className="flex items-center gap-2">
+                      <input type="number" min="0" step="any" inputMode="decimal" value={amountMin}
+                        onChange={function (e) { setAmountMin(e.target.value) }}
+                        aria-label="Minimum amount in points"
+                        placeholder="Min"
+                        className={FILTER_FIELD}
+                        style={{ fontSize: '16px' }} />
+                      <span aria-hidden="true" className="shrink-0 text-slate-300">
+                        <Icon name="arrowRight" className="w-3.5 h-3.5" />
+                      </span>
+                      <input type="number" min="0" step="any" inputMode="decimal" value={amountMax}
+                        onChange={function (e) { setAmountMax(e.target.value) }}
+                        aria-label="Maximum amount in points"
+                        placeholder="Max"
+                        className={FILTER_FIELD}
+                        style={{ fontSize: '16px' }} />
+                    </div>
                   </div>
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-[0.06em] mb-1">Max (pts)</label>
-                    <input type="number" min="0" step="any" inputMode="decimal" value={amountMax}
-                      onChange={function (e) { setAmountMax(e.target.value) }}
-                      placeholder="∞"
-                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-[13px] text-slate-900 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
-                      style={{ fontSize: '16px' }} />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-[0.06em] mb-1">From</label>
-                    <input type="date" value={dateFrom}
-                      onChange={function (e) { setDateFrom(e.target.value) }}
-                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-[13px] text-slate-900 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
-                      style={{ fontSize: '16px' }} />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-[0.06em] mb-1">To</label>
-                    <input type="date" value={dateTo}
-                      onChange={function (e) { setDateTo(e.target.value) }}
-                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-[13px] text-slate-900 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
-                      style={{ fontSize: '16px' }} />
+
+                  <div className="sm:col-span-2">
+                    <label className={FILTER_LABEL}>Date range</label>
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 min-w-0">
+                        <EventDatePicker value={dateFrom} placeholder="From date" collapsible includePast plain
+                          onChange={function (v) { setDateFrom(v) }} />
+                      </div>
+                      <span aria-hidden="true" className="shrink-0 text-slate-300">
+                        <Icon name="arrowRight" className="w-3.5 h-3.5" />
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <EventDatePicker value={dateTo} placeholder="To date" collapsible includePast plain
+                          onChange={function (v) { setDateTo(v) }} />
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -817,7 +864,12 @@ function Expenses({ profile, masterMode, inAdmin, deepLinkExpense, onDeepLinkHan
         </div>
       )}
 
-      {view !== 'all' && <div className="space-y-3">
+      {/* A re-read keeps the last answer on the screen and dims it, rather than
+          replacing the whole page with the word "Loading…". What is under the
+          dim is the previous filter's result, so it is not offered to the
+          pointer until the new one lands. */}
+      {view !== 'all' && <div aria-busy={refreshing}
+        className={"space-y-3 transition-opacity duration-150 " + (refreshing ? "opacity-50 pointer-events-none" : "")}>
         {(function () {
           // Group by batch_id (submission unit); legacy null-batch rows are singleton groups
           var groups = {}
