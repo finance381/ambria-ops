@@ -59,7 +59,7 @@ function Tile({ icon, tone, label, value, valueClass, wide, active, onClick, chi
           <Icon name={icon} size={19} />
         </span>
         <div className="min-w-0">
-          <p className="truncate text-[12px] font-semibold text-slate-500">{label}</p>
+          <p className="truncate text-[12px] font-semibold text-slate-600">{label}</p>
           <p className={'mt-1.5 font-bold tabular-nums leading-none ' + (wide ? 'text-[20px] ' : 'text-[19px] ') + valueClass} data-notranslate>{value}</p>
         </div>
       </div>
@@ -78,8 +78,8 @@ function Tile({ icon, tone, label, value, valueClass, wide, active, onClick, chi
 function StateChip({ icon, label, alarm }) {
   return (
     <span className={"shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[10px] font-bold uppercase tracking-[0.04em] whitespace-nowrap " +
-      (alarm ? "bg-rose-50 border-rose-200 text-rose-700" : "bg-white border-slate-200 text-slate-500")}>
-      <Icon name={icon} size={11} className={alarm ? "text-rose-500" : "text-slate-400"} />
+      (alarm ? "bg-rose-50 border-rose-200 text-rose-700" : "bg-white border-slate-200 text-slate-600")}>
+      <Icon name={icon} size={11} className={alarm ? "text-rose-500" : "text-slate-500"} />
       {label}
     </span>
   )
@@ -91,9 +91,9 @@ function Fact({ icon, label, value, first }) {
   return (
     <span className="inline-flex items-center whitespace-nowrap">
       {!first && <span aria-hidden="true" className="mx-2.5 w-px h-3.5 bg-slate-200" />}
-      <Icon name={icon} size={12} className="shrink-0 mr-1.5 text-slate-300" />
+      <Icon name={icon} size={12} className="shrink-0 mr-1.5 text-slate-400" />
       {label ? label + ': ' : ''}
-      <span className="ml-1 font-semibold text-slate-600" data-notranslate>{value}</span>
+      <span className="ml-1 font-semibold text-slate-700" data-notranslate>{value}</span>
     </span>
   )
 }
@@ -492,7 +492,7 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
       var opening = v._opening_paise || 0
       if (!cashBal && !bankBal && !opening) return null
       return (
-        <div className="mt-1.5 flex flex-wrap items-center gap-y-1 text-[11px] text-slate-400">
+        <div className="mt-1.5 flex flex-wrap items-center gap-y-1 text-[11px] text-slate-500">
           {cashBal !== 0 && <Fact first icon="banknote" label="Cash" value={formatPoints(cashBal)} />}
           {bankBal !== 0 && <Fact first={!cashBal} icon="bank" label="Bank" value={formatPoints(bankBal)} />}
           {opening !== 0 && <Fact first={!cashBal && !bankBal} icon="wallet" label="Opening" value={formatPoints(Math.abs(opening)) + (opening > 0 ? ' Cr' : ' Dr')} />}
@@ -536,7 +536,7 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
               <Icon name="chevronRight" size={16} />
             </span>
           </div>
-          <div className="mt-3 pt-2.5 border-t border-slate-100 flex flex-wrap items-center gap-y-1 text-[11px] text-slate-400">
+          <div className="mt-3 pt-2.5 border-t border-slate-100 flex flex-wrap items-center gap-y-1 text-[11px] text-slate-500">
             {renderFacts(v)}
           </div>
         </button>
@@ -556,7 +556,7 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
               <p className="min-w-0 truncate text-[13.5px] font-bold text-slate-900">{v.vendor_name || '—'}</p>
               {renderChips(v)}
             </div>
-            <div className="mt-1 flex flex-wrap items-center gap-y-1 text-[11px] text-slate-400">
+            <div className="mt-1 flex flex-wrap items-center gap-y-1 text-[11px] text-slate-500">
               {renderFacts(v)}
             </div>
           </div>
@@ -580,7 +580,7 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
           <Tile wide icon="wallet" tone="bg-amber-50 text-amber-600" label="Total Outstanding"
             value={formatPoints(totalOutstanding)} valueClass={outstandingClass}>
             {(totalCash !== 0 || totalBank !== 0) && (
-              <div className="mt-2.5 pt-2.5 border-t border-slate-100 flex flex-wrap items-center gap-y-1 text-[11px] text-slate-400">
+              <div className="mt-2.5 pt-2.5 border-t border-slate-100 flex flex-wrap items-center gap-y-1 text-[11px] text-slate-500">
                 <Fact first icon="banknote" label="Cash" value={formatPoints(totalCash)} />
                 <Fact icon="bank" label="Bank" value={formatPoints(totalBank)} />
               </div>
@@ -608,18 +608,18 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
         <div className="bg-white border border-slate-200 rounded-2xl p-3.5">
           <div className="flex flex-wrap items-end gap-3">
             <div className="flex-[2] min-w-[220px]">
-              <label className="block text-[11px] font-semibold text-slate-500 mb-1.5">Search</label>
+              <label className="block text-[11px] font-semibold text-slate-600 mb-1.5">Search</label>
               <SearchField value={search} onChange={function (v) { setSearch(v) }} placeholder="Search vendors..." />
             </div>
             <div className="flex-1 min-w-[150px]">
-              <label className="block text-[11px] font-semibold text-slate-500 mb-1.5">Expense type</label>
+              <label className="block text-[11px] font-semibold text-slate-600 mb-1.5">Expense type</label>
               <SearchDropdown
                 items={expenseTypes.map(function (t) { return { label: t.name, value: String(t.id) } })}
                 value={fExpType} onChange={function (v) { setFExpType(v) }}
                 placeholder="All" />
             </div>
             <div className="flex-1 min-w-[150px]">
-              <label className="block text-[11px] font-semibold text-slate-500 mb-1.5">Expense sub-type</label>
+              <label className="block text-[11px] font-semibold text-slate-600 mb-1.5">Expense sub-type</label>
               <SearchDropdown
                 items={(fExpType ? expenseSubTypes.filter(function (st) { return String(st.expense_type_id) === String(fExpType) }) : expenseSubTypes)
                   .map(function (st) { return { label: st.name, value: String(st.id) } })}
@@ -627,14 +627,14 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
                 placeholder="All" />
             </div>
             <div className="flex-1 min-w-[150px]">
-              <label className="block text-[11px] font-semibold text-slate-500 mb-1.5">Item category</label>
+              <label className="block text-[11px] font-semibold text-slate-600 mb-1.5">Item category</label>
               <SearchDropdown
                 items={categories.map(function (c) { return { label: c.name, value: String(c.id) } })}
                 value={fCategory} onChange={function (v) { setFCategory(v) }}
                 placeholder="All" />
             </div>
             <div className="flex-1 min-w-[150px]">
-              <label className="block text-[11px] font-semibold text-slate-500 mb-1.5">Item sub-category</label>
+              <label className="block text-[11px] font-semibold text-slate-600 mb-1.5">Item sub-category</label>
               <SearchDropdown
                 items={(fCategory ? subCategories.filter(function (sc) { return String(sc.category_id) === String(fCategory) }) : subCategories)
                   .map(function (sc) { return { label: sc.name, value: String(sc.id) } })}
@@ -648,7 +648,7 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
             {/* The real sort control is invisible and sits exactly over the
                 words it describes, so the whole thing is the tap target and the
                 native picker still opens. */}
-            <span className="relative shrink-0 inline-flex items-center gap-1.5 h-10 px-3.5 rounded-xl border border-slate-200 text-[12.5px] text-slate-500">
+            <span className="relative shrink-0 inline-flex items-center gap-1.5 h-10 px-3.5 rounded-xl border border-slate-200 text-[12.5px] text-slate-600">
               Sort by:
               <span className="font-bold text-slate-900">{VENDOR_SORTS[vendorSort]}</span>
               <Icon name="chevronDown" size={14} className="text-slate-400" />
