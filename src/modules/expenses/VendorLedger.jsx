@@ -1279,15 +1279,22 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
                     )
                   })()}
                 </div>
-                <div className="shrink-0 text-right">
-                  <p className={"text-[16px] font-bold tabular-nums " + (isCredit ? "text-amber-700" : "text-emerald-700")} data-notranslate>
-                    {isCredit ? '+' : '−'}{formatPoints(headlineAmt)}
-                  </p>
-                  {!isDeleted && (
-                    <p className="mt-0.5 text-[12px] text-slate-400 tabular-nums" data-notranslate>Bal: {formatPoints(e.runningBalance)}</p>
-                  )}
+                {/* One column, aligned to its right edge, with the figure
+                    and its running balance as one block and the two controls
+                    as another. They were four right-aligned things at four
+                    sizes with a different margin under each, so nothing in
+                    the column shared an edge with anything but the wall. */}
+                <div className="shrink-0 flex flex-col items-end gap-2.5">
+                  <div className="text-right">
+                    <p className={"text-[16px] font-bold tabular-nums whitespace-nowrap " + (isCredit ? "text-amber-700" : "text-emerald-700")} data-notranslate>
+                      {isCredit ? '+' : '−'}{formatPoints(headlineAmt)}
+                    </p>
+                    {!isDeleted && (
+                      <p className="mt-1 text-[12px] text-slate-400 tabular-nums whitespace-nowrap" data-notranslate>Bal: {formatPoints(e.runningBalance)}</p>
+                    )}
+                  </div>
                   {!isDeleted && isExpRow && e._expChecked && (
-                    <div className="mt-2 flex justify-end">
+                    <div className="flex justify-end">
                       <CheckedStamp
                         checked={!!e._expChecked.checked_by}
                         checkerName={e._expCheckedByName}
@@ -1300,7 +1307,7 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
                     </div>
                   )}
                   {!isDeleted && !isExpRow && (
-                    <div className="mt-2 flex justify-end">
+                    <div className="flex justify-end">
                       <CheckedStamp
                         checked={!!e.checked_by}
                         checkerName={e._checkedByName}
@@ -1314,7 +1321,7 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
                   )}
                   {isAdmin && !isDeleted && (
                     <button onClick={function (ev) { ev.stopPropagation(); reverseEntry(e.id) }}
-                      className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-bold text-rose-600 hover:text-rose-800 transition-colors">
+                      className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-lg border border-slate-200 bg-white text-[11.5px] font-bold text-slate-600 hover:border-rose-300 hover:text-rose-700 hover:bg-rose-50 transition-colors">
                       <Icon name="undo" size={12} />
                       Reverse
                     </button>
