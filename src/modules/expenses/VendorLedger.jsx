@@ -16,6 +16,7 @@ import { useReferenceData } from '../../lib/referenceData.jsx'
 import SearchField from '../../components/ui/SearchField'
 import CheckedStamp from '../../components/ui/CheckedStamp'
 import Icon from '../../components/ui/Icon'
+import { avatarTint } from '../../lib/avatarTint'
 import { ON, OFF } from '../../lib/ui'
 
 function byName(a, b) { return (a.name || '').localeCompare(b.name || '') }
@@ -66,7 +67,7 @@ function BalancePill({ paise, large }) {
 // vendors are overdue is a better button for "show me those" than a segment in
 // a bar underneath saying the same word without the count — so the tiles that
 // count a state can be pressed, and the two that are pure readings cannot.
-function Tile({ icon, tone, label, value, valueClass, wide, active, onClick, children }) {
+function Tile({ icon, tone, label, value, valueClass, wide, tint, active, onClick, children }) {
   // h-full and an explicit centre on every tile, because a <button> centres
   // its own contents and a <div> does not. Four of these are buttons and two
   // are not, and the outstanding tile is taller than all of them — so the two
@@ -80,7 +81,10 @@ function Tile({ icon, tone, label, value, valueClass, wide, active, onClick, chi
   // exactly one edge, the same one every tile has.
   var box = 'text-left h-full flex flex-col justify-center border border-slate-200 rounded-2xl px-4 py-3.5 transition-colors duration-150 ' +
     (wide ? 'lg:col-span-2 ' : '') +
-    (active ? 'bg-indigo-50 ' : 'bg-white ') +
+    // `tint` is for the one tile on a screen that is the answer rather than a
+    // reading — the outstanding balance on a vendor's own page. It is a face,
+    // not a border, for the same reason the picked tile is.
+    (active ? 'bg-indigo-50 ' : (tint || 'bg-white ')) +
     (onClick && !active ? 'hover:bg-slate-50 ' : '') +
     // The browser draws its own ring on a focused button, and clicking one
     // leaves it focused. Replaced with a ring that only shows for the keyboard,
@@ -530,6 +534,7 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
 
   var [showPayModal, setShowPayModal] = useState(false)
   var [pdfBusy, setPdfBusy] = useState(false)
+  var [moreOpen, setMoreOpen] = useState(false)
 
   function payVendor() {
     if (!selectedVendor) return
@@ -954,7 +959,6 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
   var displayEntries = withRunning.slice().reverse()
 
   var currentBalance = running
-  var balColor = currentBalance > 0 ? 'text-amber-800' : currentBalance < 0 ? 'text-red-700' : 'text-gray-500'
 
   return (
     <div className="space-y-4">
@@ -967,13 +971,35 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
           <Icon name="arrowLeft" size={15} />
           Vendors
         </button>
+        {/* One overflow menu rather than a third and fourth button on the
+            header card. Rendered only when it has something in it: a menu that
+            opens on nothing is worse than no menu. */}
         {vs._phone && (
-          <a href={'tel:' + vs._phone.replace(/[^0-9+]/g, '')}
-            title={'Call ' + (vs._contact || vs.vendor_name || 'vendor') + (vs._phone2 ? ' · alt: ' + vs._phone2 : '')}
-            className="shrink-0 inline-flex items-center gap-2 h-9 px-3.5 rounded-xl border border-slate-300 bg-white text-[13px] font-bold text-slate-700 hover:border-emerald-300 hover:text-emerald-700 no-underline transition-colors">
-            <Icon name="phone" size={15} />
-            Call
-          </a>
+          <div className="relative shrink-0">
+            <button type="button" onClick={function () { setMoreOpen(!moreOpen) }}
+              aria-label="More actions" aria-expanded={moreOpen}
+              className="inline-flex items-center gap-1.5 h-9 px-3 rounded-xl border border-slate-300 bg-white text-[13px] font-bold text-slate-700 hover:bg-slate-50 hover:text-slate-900 transition-colors">
+              <Icon name="more" size={16} />
+              More Actions
+              <Icon name="chevronDown" size={14} className="text-slate-400" />
+            </button>
+            {moreOpen && (
+              <>
+                <div className="fixed inset-0 z-20" onClick={function () { setMoreOpen(false) }} />
+                <div className="absolute right-0 top-full mt-1.5 z-30 w-56 py-1 bg-white border border-slate-200 rounded-xl shadow-[0_8px_24px_rgba(15,23,42,0.12)] overflow-hidden">
+                  <a href={'tel:' + vs._phone.replace(/[^0-9+]/g, '')}
+                    onClick={function () { setMoreOpen(false) }}
+                    className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left no-underline hover:bg-slate-50 transition-colors">
+                    <span className="shrink-0 text-slate-400"><Icon name="phone" size={15} /></span>
+                    <span className="min-w-0">
+                      <span className="block text-[12.5px] font-semibold text-slate-800">Call vendor</span>
+                      <span className="block text-[11px] text-slate-500 truncate" data-notranslate>{vs._contact || vs._phone}</span>
+                    </span>
+                  </a>
+                </div>
+              </>
+            )}
+          </div>
         )}
       </div>
 
@@ -982,6 +1008,14 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
           text's baseline and takes its colour, which a font-dependent picture
           of a banknote does not. */}
       <div className="flex flex-wrap items-center gap-4 bg-white border border-slate-200 rounded-2xl px-5 py-4">
+        {/* One initial circle here, where the list has none. On the list it
+            was sixty first letters in six colours down the left of a column
+            you read by name; here it is the one thing on the page that says
+            which vendor you are looking at, so a mark beside the name helps
+            rather than repeats. */}
+        <span aria-hidden="true" className={'shrink-0 w-12 h-12 rounded-full inline-flex items-center justify-center text-[17px] font-bold ' + avatarTint(vs.vendor_name)}>
+          {(vs.vendor_name || '?').trim().charAt(0).toUpperCase() || '?'}
+        </span>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2.5 flex-wrap">
             <h2 className="font-display text-[19px] font-bold text-slate-900 truncate">{vs.vendor_name || '—'}</h2>
@@ -1013,8 +1047,9 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
           two facts in one grey line, then a red strip — which is a lot of
           different shapes for six numbers. */}
       <div className="grid grid-cols-2 lg:grid-cols-7 gap-3">
-        <Tile wide icon="wallet" tone="bg-amber-50 text-amber-600" label="Outstanding Balance"
-          value={formatPoints(currentBalance)} valueClass={balanceColour(currentBalance)}>
+        <Tile wide tint="bg-amber-50/70 " icon="wallet" tone="bg-amber-100 text-amber-600" label="Outstanding Balance"
+          value={formatPoints(currentBalance)}
+          valueClass={currentBalance < 0 ? "text-emerald-700" : currentBalance ? "text-amber-700" : "text-slate-400"}>
           {openingPaise !== 0 && (
             <p className="mt-2 text-[11.5px] font-semibold text-slate-500">
               Includes opening: <span className="text-slate-700" data-notranslate>{formatPoints(Math.abs(openingPaise))} {openingPaise > 0 ? 'Cr' : 'Dr'}</span>
@@ -1160,7 +1195,7 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
                     // it. Each gets a heading with its own glyph, the way the
                     // rest of this screen labels a box.
                     return (
-                      <div className="mt-3 grid grid-cols-1 lg:grid-cols-2 gap-3 items-start">
+                      <div className="mt-3 grid grid-cols-1 lg:grid-cols-3 gap-3 items-start">
                         <div className="bg-white border border-slate-200 rounded-xl p-3.5">
                           <p className="flex items-center gap-2 mb-2.5 text-[11px] font-bold uppercase tracking-[0.06em] text-slate-500">
                             <Icon name="calculator" size={14} className="text-slate-400" />
@@ -1183,7 +1218,7 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
                         </div>
 
                         {b.allocations && b.allocations.length > 0 && (
-                          <div className="bg-white border border-slate-200 rounded-xl p-3.5">
+                          <div className="lg:col-span-2 bg-white border border-slate-200 rounded-xl p-3.5">
                             <p className="flex items-center gap-2 mb-2.5 text-[11px] font-bold uppercase tracking-[0.06em] text-slate-500">
                               <Icon name="split" size={14} className="text-slate-400" />
                               Allocation{b.allocations.length > 1 ? 's' : ''}
