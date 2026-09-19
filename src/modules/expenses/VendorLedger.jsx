@@ -53,7 +53,7 @@ function BalancePill({ paise, large }) {
   return (
     <span data-notranslate
       className={'shrink-0 inline-flex items-center rounded-full font-bold tabular-nums whitespace-nowrap ' +
-        (large ? 'px-3 py-1.5 text-[14px] ' : 'px-2.5 py-1 text-[12.5px] ') + tone}>
+        (large ? 'h-7 px-3 text-[14px] ' : 'h-6 px-2.5 text-[12.5px] ') + tone}>
       {formatPoints(paise)}
     </span>
   )
@@ -116,7 +116,9 @@ function Tile({ icon, tone, label, value, valueClass, wide, active, onClick, chi
 // while scanning a page of them.
 function StateChip({ icon, label, alarm }) {
   return (
-    <span className={"shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[10px] font-bold uppercase tracking-[0.04em] whitespace-nowrap " +
+    // A fixed height rather than padding, so two chips side by side are the
+    // same height whatever is in them, and neither is taller than the line.
+    <span className={"shrink-0 h-[22px] inline-flex items-center gap-1 px-2 rounded-md border text-[10px] font-bold uppercase tracking-[0.04em] whitespace-nowrap " +
       (alarm ? "bg-rose-50 border-rose-200 text-rose-700" : "bg-white border-slate-200 text-slate-600")}>
       <Icon name={icon} size={11} className={alarm ? "text-rose-500" : "text-slate-500"} />
       {label}
@@ -574,7 +576,12 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
               the wallet list sets a row. As a 19px figure on its own line the
               amount was the headline and the vendor it belonged to was the
               caption — which is backwards for a list you scan by name. */}
-          <div className="flex items-start gap-2">
+          {/* items-center, not items-start. The name, the chips and the pill
+              are three different heights, so aligning their tops staggered
+              them down the line — a 14.5px name, an 18px chip and a 30px pill
+              each starting at the same y and ending somewhere else. One centre
+              line puts them on one line. */}
+          <div className="flex items-center gap-2">
             <p className="flex-1 min-w-0 text-[14.5px] font-bold text-slate-900 truncate transition-colors group-hover:text-indigo-700">{v.vendor_name || '—'}</p>
             {renderChips(v)}
             <BalancePill paise={bal} large />
