@@ -128,10 +128,10 @@ function StateChip({ icon, label, alarm }) {
 // so the value is what you land on rather than its label.
 function Fact({ icon, label, value, first }) {
   return (
-    <span className="inline-flex items-center whitespace-nowrap">
-      {!first && <span aria-hidden="true" className="mx-2.5 w-px h-3.5 bg-slate-200" />}
-      <Icon name={icon} size={12} className="shrink-0 mr-1.5 text-slate-400" />
-      {label ? label + ': ' : ''}
+    <span className="shrink-0 inline-flex items-center whitespace-nowrap">
+      {!first && <span aria-hidden="true" className="mx-2 w-px h-3.5 bg-slate-200" />}
+      <Icon name={icon} size={12} className="shrink-0 mr-1 text-slate-400" />
+      {label ? label + ':' : ''}
       <span className="ml-1 font-semibold text-slate-700" data-notranslate>{value}</span>
     </span>
   )
@@ -499,11 +499,23 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
       return (b.balance_paise || 0) - (a.balance_paise || 0)
     })
 
+    // Three facts on one line in a third of the grid's width, so each one is
+    // cut to what it cannot lose: "Earliest due" becomes "Due", and the dates
+    // drop to a two-digit year. With the full labels and "17 Sept 2026" twice,
+    // the line wrapped and the card grew a fourth row to hold half a date.
+    function shortDate(s) {
+      if (!s) return ''
+      var d = new Date(s)
+      if (isNaN(d)) return ''
+      return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: '2-digit' })
+    }
+
     function renderFacts(v) {
+      var n = v.entry_count || 0
       var facts = [
-        { icon: 'fileText', value: (v.entry_count || 0) + ' entries' },
-        v.last_entry_date ? { icon: 'calendar', label: 'Last', value: formatDate(v.last_entry_date) } : null,
-        v.earliest_due_date ? { icon: 'clock', label: 'Earliest due', value: formatDate(v.earliest_due_date) } : null,
+        { icon: 'fileText', value: n + (n === 1 ? ' entry' : ' entries') },
+        v.last_entry_date ? { icon: 'calendar', label: 'Last', value: shortDate(v.last_entry_date) } : null,
+        v.earliest_due_date ? { icon: 'clock', label: 'Due', value: shortDate(v.earliest_due_date) } : null,
       ].filter(Boolean)
       return facts.map(function (f, fi) {
         return <Fact key={fi} first={fi === 0} icon={f.icon} label={f.label} value={f.value} />
@@ -574,7 +586,9 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
               nothing either side of them and nothing under them — the card had
               three rows and its two controls were parked on the second. */}
           <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center gap-3">
-            <div className="flex-1 min-w-0 flex flex-wrap items-center gap-y-1 text-[11px] text-slate-500">
+            {/* One line, and it stays one: nowrap plus a min-w-0 that lets it
+                be clipped rather than pushing the two controls off the end. */}
+            <div className="flex-1 min-w-0 flex flex-nowrap items-center overflow-hidden text-[11px] text-slate-500">
               {renderFacts(v)}
             </div>
             {renderCallLink(v)}
