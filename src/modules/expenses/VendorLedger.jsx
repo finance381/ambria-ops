@@ -68,30 +68,31 @@ function BalancePill({ paise, large }) {
 // vendors are overdue is a better button for "show me those" than a segment in
 // a bar underneath saying the same word without the count — so the tiles that
 // count a state can be pressed, and the two that are pure readings cannot.
-function Tile({ icon, tone, label, value, valueClass, wide, small, tint, active, onClick, children }) {
-  // h-full and an explicit centre on every tile, because a <button> centres
-  // its own contents and a <div> does not. Four of these are buttons and two
-  // are not, and the outstanding tile is taller than all of them — so the two
-  // plain ones were pinned to the top of a row the buttons were sitting in the
-  // middle of, and the labels stopped lining up across the row.
-  // The picked tile is a fill, not an outline. Every outline tried here read
-  // as a focus artefact rather than a choice: a ring is a second border drawn
-  // outside the first, and a tinted border is a line the eye tracks round the
-  // shape instead of resting inside it. So the border never changes colour —
-  // the face tints and the label and figure darken, and the tile still has
-  // exactly one edge, the same one every tile has.
-  // justify-between, not justify-center. The tiles are all as tall as the
-  // tallest — the outstanding one, which carries an opening line and an overdue
-  // chip — so centring left the other five with their label and figure floating
-  // in the middle of a box with empty space above and below. Spread instead:
-  // the label sits on the top edge and the figure on the bottom, so all six
-  // line up twice and the height is used rather than padded around.
-  var box = 'text-left h-full flex flex-col justify-between gap-2 border border-slate-200 rounded-2xl px-4 py-3.5 transition-colors duration-150 ' +
+function Tile({ icon, tone, label, value, valueClass, wide, accent, active, onClick, children }) {
+  // Three things this box has been taught, in the order it learned them.
+  //
+  // h-full, because a <button> centres its own contents and a <div> does not,
+  // and some of these are buttons: without it the plain ones sat pinned to the
+  // top of a row the pressable ones were sitting in the middle of.
+  //
+  // justify-between rather than centred, because every tile is as tall as the
+  // tallest and the tallest carries notes under its figure. Centred, the rest
+  // floated in the middle of a box with empty space above and below; spread,
+  // the label sits on the top edge and the figure on the bottom and all of
+  // them line up twice.
+  //
+  // And selection is a fill while `accent` is an edge. Two different jobs:
+  // `active` is a state you toggled, so the whole face answers; `accent` marks
+  // the one tile that is the page's answer rather than one of its readings,
+  // which wants picking out, not flagging.
+  var box = 'text-left h-full flex flex-col justify-between gap-2.5 border rounded-2xl px-4 py-4 transition-colors duration-150 ' +
     (wide ? 'lg:col-span-2 ' : '') +
-    // `tint` is for the one tile on a screen that is the answer rather than a
-    // reading — the outstanding balance on a vendor's own page. It is a face,
-    // not a border, for the same reason the picked tile is.
-    (active ? 'bg-indigo-50 ' : (tint || 'bg-white ')) +
+    // `accent` marks the one tile on a screen that is the answer rather than a
+    // reading — the outstanding balance on a vendor's own page. An indigo edge
+    // rather than a fill, so it is picked out without becoming a warning: it is
+    // not a state, it is the headline.
+    (accent && !active ? 'border-indigo-300 ' : 'border-slate-200 ') +
+    (active ? 'bg-indigo-50 ' : 'bg-white ') +
     (onClick && !active ? 'hover:bg-slate-50 ' : '') +
     // The browser draws its own ring on a focused button, and clicking one
     // leaves it focused. Replaced with a ring that only shows for the keyboard,
@@ -114,9 +115,14 @@ function Tile({ icon, tone, label, value, valueClass, wide, small, tint, active,
         <span aria-hidden="true" className={'shrink-0 w-9 h-9 rounded-full inline-flex items-center justify-center ' + tone}>
           <Icon name={icon} size={17} />
         </span>
-        <p className={'min-w-0 truncate text-[11.5px] font-semibold ' + (active ? 'text-indigo-700' : 'text-slate-600')}>{label}</p>
+        <p className={'min-w-0 truncate text-[13px] font-semibold ' + (active ? 'text-indigo-700' : 'text-slate-600')}>{label}</p>
       </div>
-      <p className={'font-display font-extrabold tabular-nums leading-none whitespace-nowrap ' + (wide ? 'text-[24px] ' : small ? 'text-[19px] ' : 'text-[22px] ') + valueClass} data-notranslate>{value}</p>
+      {/* One size for every tile in a row, whichever is wide. The five narrow
+          ones had come down to fit beside the glyph badge; now that the figure
+          has the tile to itself it does not need to, and five small numbers
+          next to one large one read as five lesser facts rather than as the
+          same fact six times. */}
+      <p className={'font-display font-extrabold tabular-nums leading-none whitespace-nowrap ' + (wide ? 'text-[25px] ' : 'text-[23px] ') + valueClass} data-notranslate>{value}</p>
       {children}
     </>
   )
@@ -1047,7 +1053,7 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
             the ordinary state of a vendor ledger — the thing that is
             actually wrong is the overdue note under it, which is the one
             red on the page. */}
-        <Tile wide icon="wallet" tone="bg-slate-100 text-slate-600" label="Outstanding Balance"
+        <Tile wide accent icon="wallet" tone="bg-indigo-50 text-indigo-600" label="Outstanding Balance"
           value={formatPoints(currentBalance)} valueClass={balanceColour(currentBalance)}>
           {/* Both notes on one wrapping line rather than one under the other.
               Stacked, they made this tile two rows taller than the five beside
@@ -1057,34 +1063,33 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
               The chip needs self-start of its own: inside a flex column a flex
               item stretches to the column's width, which is how it ended up as
               a full-width bar. */}
-          {(openingPaise !== 0 || (vs.overdue_count || 0) > 0) && (
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-              {openingPaise !== 0 && (
-                <p className="text-[11.5px] font-semibold text-slate-500">
-                  Includes opening: <span className="text-slate-700" data-notranslate>{formatPoints(Math.abs(openingPaise))} {openingPaise > 0 ? 'Cr' : 'Dr'}</span>
-                </p>
-              )}
-              {(vs.overdue_count || 0) > 0 && (
-                <p className="self-start inline-flex items-center gap-1.5 h-6 px-2.5 rounded-md bg-rose-100 text-[11px] font-bold text-rose-700 whitespace-nowrap">
-                  <Icon name="alert" size={12} className="shrink-0" />
-                  <span>
-                    <span data-notranslate>{vs.overdue_count}</span> overdue · earliest {formatDate(vs.earliest_due_date)}
-                  </span>
-                </p>
-              )}
-            </div>
+          {openingPaise !== 0 && (
+            <p className="-mt-1 text-[12.5px] font-semibold text-slate-500">
+              Includes opening: <span className="text-slate-700" data-notranslate>{formatPoints(Math.abs(openingPaise))} {openingPaise > 0 ? 'Cr' : 'Dr'}</span>
+            </p>
+          )}
+          {/* self-start, because inside a flex column a flex item stretches to
+              the column's width — which is how this chip once ended up drawn as
+              a full-width bar. */}
+          {(vs.overdue_count || 0) > 0 && (
+            <p className="self-start inline-flex items-center gap-1.5 h-7 px-2.5 rounded-lg bg-rose-100 text-[12px] font-bold text-rose-700 whitespace-nowrap">
+              <Icon name="alert" size={13} className="shrink-0" />
+              <span>
+                <span data-notranslate>{vs.overdue_count}</span> overdue · earliest {formatDate(vs.earliest_due_date)}
+              </span>
+            </p>
           )}
         </Tile>
-        <Tile small icon="banknote" tone="bg-emerald-50 text-emerald-600" label="Cash"
+        <Tile icon="banknote" tone="bg-emerald-50 text-emerald-600" label="Cash"
           value={formatPoints(vs.cash_balance_paise || 0)} valueClass="text-slate-900" />
-        <Tile small icon="bank" tone="bg-indigo-50 text-indigo-600" label="Bank"
+        <Tile icon="bank" tone="bg-indigo-50 text-indigo-600" label="Bank"
           value={formatPoints(vs.bank_balance_paise || 0)} valueClass="text-slate-900" />
-        <Tile small icon="fileText" tone="bg-slate-100 text-slate-500" label="Total Entries"
+        <Tile icon="fileText" tone="bg-slate-100 text-slate-500" label="Total Entries"
           value={entries.length} valueClass="text-slate-900" />
-        <Tile small icon="calendar" tone="bg-violet-50 text-violet-600" label="Last Entry"
+        <Tile icon="calendar" tone="bg-violet-50 text-violet-600" label="Last Entry"
           value={vs.last_entry_date ? shortDate(vs.last_entry_date) : '—'}
           valueClass={vs.last_entry_date ? 'text-slate-900' : 'text-slate-400'} />
-        <Tile small icon="clock" tone="bg-rose-50 text-rose-600" label="Earliest Due"
+        <Tile icon="clock" tone="bg-rose-50 text-rose-600" label="Earliest Due"
           value={vs.earliest_due_date ? shortDate(vs.earliest_due_date) : '—'}
           valueClass={vs.earliest_due_date ? 'text-slate-900' : 'text-slate-400'} />
       </div>
