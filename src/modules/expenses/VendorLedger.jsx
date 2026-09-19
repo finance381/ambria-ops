@@ -1115,11 +1115,11 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
 
       {/* Entries list */}
       {entriesLoading ? (
-        <p className="text-gray-400 text-sm text-center py-8">Loading entries...</p>
+        <p className="text-slate-400 text-[13px] font-medium text-center py-10">Loading entries…</p>
       ) : displayEntries.length === 0 ? (
-        <p className="text-gray-400 text-sm text-center py-8">No entries for this vendor.</p>
+        <p className="text-slate-400 text-[13px] font-medium text-center py-10">No entries for this vendor.</p>
       ) : (
-        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+        <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
           {displayEntries.map(function (e, idx) {
             var isCredit = (e.credit_paise || 0) > 0
             var isDeleted = !!e.deleted_at
@@ -1130,7 +1130,7 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
             // two don't visibly disagree on the same entry.
             var headlineAmt = e._breakdown ? Math.round(e._breakdown.amount_paise / 100) * 100 : amt
             var kind = e.metadata && e.metadata.kind ? e.metadata.kind : e.ref_type
-            var dotColor = isDeleted ? 'bg-gray-300' : isCredit ? 'bg-amber-500' : 'bg-green-500'
+            var dotColor = isDeleted ? 'bg-slate-300' : isCredit ? 'bg-amber-500' : 'bg-emerald-500'
             var isExpRow = e.ref_type === 'expense' && e.ref_id && /^[0-9]+$/.test(String(e.ref_id)) && !isDeleted
             function handleRowClick() {
               if (!isExpRow) return
@@ -1139,23 +1139,23 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
             return (
               <div key={e.id}
                 onClick={handleRowClick}
-                className={"flex items-start gap-3 px-3 py-3 " +
-                  (idx < displayEntries.length - 1 ? "border-b border-gray-100 " : "") +
+                className={"flex items-start gap-3.5 px-4 py-4 " +
+                  (idx < displayEntries.length - 1 ? "border-b border-slate-100 " : "") +
                   (isDeleted ? "opacity-50" : "") +
                   (isExpRow ? " cursor-pointer hover:bg-indigo-50/40 transition-colors" : "")}>
-                <div className={"w-2 h-2 rounded-full mt-1.5 flex-shrink-0 " + dotColor}></div>
+                <span aria-hidden="true" className={"shrink-0 w-2.5 h-2.5 rounded-full mt-2 " + dotColor} />
                 <div className="flex-1 min-w-0">
-                  <p className={"text-sm font-medium text-gray-900 " + (isDeleted ? "line-through" : "")}>
+                  <p className={"text-[15px] font-bold text-slate-900 leading-snug " + (isDeleted ? "line-through" : "")}>
                     {e.description || (isCredit ? 'Credit' : 'Debit')}
                   </p>
-                  <p className="text-[11px] text-gray-500 mt-0.5">
+                  <p className="mt-1 text-[12.5px] text-slate-500">
                     {formatDate(e.entry_date)} · {kind} #{e.ref_id}
                     {e._creatorName && ' · by ' + e._creatorName}
                     {isDeleted && ' · deleted'}
                   </p>
-                  <p className="text-[10px] text-gray-400 mt-0.5">Logged {formatDateTime(e.created_at)}</p>
+                  <p className="mt-0.5 text-[12px] text-slate-400">Logged {formatDateTime(e.created_at)}</p>
                   {(e._submitterName || e._acknowledgerName) && (
-                    <p className="text-[11px] text-gray-400 mt-0.5">
+                    <p className="mt-0.5 text-[12px] text-slate-400">
                       {e._submitterName && 'Submitted by ' + e._submitterName}
                       {e._submitterName && e._acknowledgerName && ' · '}
                       {e._acknowledgerName && 'Acknowledged by ' + e._acknowledgerName}
@@ -1212,13 +1212,13 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
                     // it. Each gets a heading with its own glyph, the way the
                     // rest of this screen labels a box.
                     return (
-                      <div className="mt-3 grid grid-cols-1 lg:grid-cols-3 gap-3 items-start">
-                        <div className="bg-white border border-slate-200 rounded-xl p-3.5">
-                          <p className="flex items-center gap-2 mb-2.5 text-[11px] font-bold uppercase tracking-[0.06em] text-slate-500">
+                      <div className="mt-3.5 grid grid-cols-1 lg:grid-cols-3 gap-3 items-start">
+                        <div className="bg-white border border-slate-200 rounded-xl p-4">
+                          <p className="flex items-center gap-2 mb-3 text-[11.5px] font-bold uppercase tracking-[0.06em] text-slate-500">
                             <Icon name="calculator" size={14} className="text-slate-400" />
                             Amount Breakdown
                           </p>
-                          <div className="text-[12px] space-y-1" data-notranslate>
+                          <div className="text-[13px] space-y-1.5" data-notranslate>
                             <div className="flex justify-between gap-3 text-slate-600"><span>Base</span><span className="tabular-nums">{formatPoints(basePaise)}</span></div>
                             {taxPaise > 0 && (
                               <div className="flex justify-between gap-3 text-slate-600"><span>GST</span><span className="tabular-nums">{formatPoints(taxPaise)}</span></div>
@@ -1227,7 +1227,7 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
                             {hasRoundOff && (
                               <div className="flex justify-between gap-3 text-amber-700"><span>Round off</span><span className="tabular-nums">{roundOffPaise > 0 ? '+' : ''}{formatPoints(roundOffPaise)}</span></div>
                             )}
-                            <div className="flex justify-between gap-3 pt-1.5 border-t border-slate-200 text-[12.5px] font-bold text-slate-900">
+                            <div className="flex justify-between gap-3 pt-2 border-t border-slate-200 text-[13.5px] font-bold text-slate-900">
                               <span>Grand total{hasRoundOff ? ' (rounded)' : ''}</span>
                               <span className="tabular-nums">{formatPoints(roundedTotalPaise)}</span>
                             </div>
@@ -1235,12 +1235,12 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
                         </div>
 
                         {b.allocations && b.allocations.length > 0 && (
-                          <div className="lg:col-span-2 bg-white border border-slate-200 rounded-xl p-3.5">
-                            <p className="flex items-center gap-2 mb-2.5 text-[11px] font-bold uppercase tracking-[0.06em] text-slate-500">
+                          <div className="lg:col-span-2 bg-white border border-slate-200 rounded-xl p-4">
+                            <p className="flex items-center gap-2 mb-3 text-[11.5px] font-bold uppercase tracking-[0.06em] text-slate-500">
                               <Icon name="split" size={14} className="text-slate-400" />
                               Allocation{b.allocations.length > 1 ? 's' : ''}
                             </p>
-                            <div className="space-y-1.5">
+                            <div className="space-y-2">
                               {b.allocations.map(function (a, ai) {
                                 var vName = a.venue_id && e._venueNames ? e._venueNames[a.venue_id] : null
                                 var tName = a.expense_type_id && e._typeNames ? e._typeNames[a.expense_type_id] : null
@@ -1252,7 +1252,7 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
                                 if (typeLabel) parts.push(typeLabel)
                                 if (vName) parts.push(vName)
                                 return (
-                                  <div key={ai} className="flex justify-between gap-3 text-[12px] text-slate-600 leading-snug">
+                                  <div key={ai} className="flex justify-between gap-4 text-[13px] text-slate-600 leading-snug">
                                     <span className="min-w-0">{parts.length > 0 ? parts.join(' · ') : '—'}{a.remarks ? ' — ' + a.remarks : ''}</span>
                                     <span className="shrink-0 font-semibold tabular-nums text-slate-800" data-notranslate>{formatPoints(a.amount_paise || 0)}</span>
                                   </div>
@@ -1265,15 +1265,15 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
                     )
                   })()}
                 </div>
-                <div className="text-right flex-shrink-0">
-                  <p className={"text-sm font-bold " + (isCredit ? "text-amber-800" : "text-green-700")}>
+                <div className="shrink-0 text-right">
+                  <p className={"text-[16px] font-bold tabular-nums " + (isCredit ? "text-amber-700" : "text-emerald-700")} data-notranslate>
                     {isCredit ? '+' : '−'}{formatPoints(headlineAmt)}
                   </p>
                   {!isDeleted && (
-                    <p className="text-[10px] text-gray-400">Bal: {formatPoints(e.runningBalance)}</p>
+                    <p className="mt-0.5 text-[12px] text-slate-400 tabular-nums" data-notranslate>Bal: {formatPoints(e.runningBalance)}</p>
                   )}
                   {!isDeleted && isExpRow && e._expChecked && (
-                    <div className="mt-1 flex justify-end">
+                    <div className="mt-2 flex justify-end">
                       <CheckedStamp
                         checked={!!e._expChecked.checked_by}
                         checkerName={e._expCheckedByName}
@@ -1286,7 +1286,7 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
                     </div>
                   )}
                   {!isDeleted && !isExpRow && (
-                    <div className="mt-1 flex justify-end">
+                    <div className="mt-2 flex justify-end">
                       <CheckedStamp
                         checked={!!e.checked_by}
                         checkerName={e._checkedByName}
