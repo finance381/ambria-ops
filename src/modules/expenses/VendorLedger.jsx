@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback, memo } from 'react'
 import { supabase } from '../../lib/supabase'
 import { logActivity } from '../../lib/logger'
 import { formatPoints, formatDate, formatDateTime } from '../../lib/format'
@@ -138,6 +138,126 @@ function Fact({ icon, label, value, first }) {
     </span>
   )
 }
+
+// Three facts on one line in a third of the grid's width, so each one is
+// cut to what it cannot lose: "Earliest due" becomes "Due", and the dates
+// drop to a two-digit year. With the full labels and "17 Sept 2026" twice,
+// the line wrapped and the card grew a fourth row to hold half a date.
+function shortDate(s) {
+  if (!s) return ''
+  var d = new Date(s)
+  if (isNaN(d)) return ''
+  return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: '2-digit' })
+}
+
+function renderFacts(v) {
+  var n = v.entry_count || 0
+  var facts = [
+    { icon: 'fileText', value: n + (n === 1 ? ' entry' : ' entries') },
+    v.last_entry_date ? { icon: 'calendar', label: 'Last', value: shortDate(v.last_entry_date) } : null,
+    v.earliest_due_date ? { icon: 'clock', label: 'Due', value: shortDate(v.earliest_due_date) } : null,
+  ].filter(Boolean)
+  return facts.map(function (f, fi) {
+    return <Fact key={fi} first={fi === 0} icon={f.icon} label={f.label} value={f.value} />
+  })
+}
+
+function renderChips(v) {
+  var chips = []
+  if ((v.overdue_count || 0) > 0) chips.push({ icon: 'alert', label: 'Overdue', alarm: true })
+  if (v.vendor_status === 'incomplete') chips.push({ icon: 'fileText', label: 'Incomplete' })
+  if (chips.length === 0 && (v.entry_count || 0) === 0) chips.push({ icon: 'clock', label: 'No activity' })
+  return chips.map(function (c, ci) { return <StateChip key={ci} icon={c.icon} label={c.label} alarm={c.alarm} /> })
+}
+
+function renderMoneyNotes(v) {
+  var cashBal = v.cash_balance_paise || 0
+  var bankBal = v.bank_balance_paise || 0
+  var opening = v._opening_paise || 0
+  if (!cashBal && !bankBal && !opening) return null
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-y-1 text-[11px] text-slate-500">
+      {cashBal !== 0 && <Fact first icon="banknote" label="Cash" value={formatPoints(cashBal)} />}
+      {bankBal !== 0 && <Fact first={!cashBal} icon="bank" label="Bank" value={formatPoints(bankBal)} />}
+      {opening !== 0 && <Fact first={!cashBal && !bankBal} icon="wallet" label="Opening" value={formatPoints(Math.abs(opening)) + (opening > 0 ? ' Cr' : ' Dr')} />}
+    </div>
+  )
+}
+
+function renderCallLink(v) {
+  if (!v._phone) return null
+  return (
+    <a href={'tel:' + v._phone.replace(/[^0-9+]/g, '')}
+      onClick={function (ev) { ev.stopPropagation() }}
+      title={'Call ' + (v._contact || v.vendor_name || 'vendor') + (v._phone2 ? ' · alt: ' + v._phone2 : '')}
+      className="shrink-0 w-8 h-8 inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:border-emerald-300 hover:text-emerald-700 no-underline transition-colors">
+      <Icon name="phone" size={14} />
+    </a>
+  )
+}
+
+// A card and a row are the same facts in two shapes, in the same order:
+// who, what state it is in, how much, then the history under a rule.
+function VendorCardInner({ v, onOpen }) {
+  var bal = v.balance_paise || 0
+  return (
+    <button type="button" onClick={function () { onOpen(v) }}
+      // The card lifts off the page rather than only changing colour: a
+      // tint and a border tint are both flat, so on a grid of sixty the
+      // one under the pointer was a slightly different white. transform-gpu
+      // keeps the lift off the layout, and the press puts it back down.
+      className="group text-left w-full bg-white border border-slate-200 rounded-2xl p-3.5 transform-gpu transition-all duration-150 hover:border-indigo-300 hover:bg-indigo-50/30 hover:-translate-y-0.5 hover:shadow-[0_8px_20px_rgba(79,70,229,0.10)] active:translate-y-0 active:shadow-none active:scale-[0.995] focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/30">
+      {/* No initial circle. A person's avatar stands in for a face you
+          would recognise; a vendor's first letter is just the first letter
+          of the name printed beside it, in a colour that means nothing. */}
+      {/* The name leads and the balance sits beside it in a pill, the way
+          the wallet list sets a row. As a 19px figure on its own line the
+          amount was the headline and the vendor it belonged to was the
+          caption — which is backwards for a list you scan by name. */}
+      {/* items-center, not items-start. The name, the chips and the pill
+          are three different heights, so aligning their tops staggered
+          them down the line — a 14.5px name, an 18px chip and a 30px pill
+          each starting at the same y and ending somewhere else. One centre
+          line puts them on one line. */}
+      <div className="flex items-center gap-2">
+        <p className="flex-1 min-w-0 text-[14.5px] font-bold text-slate-900 truncate transition-colors group-hover:text-indigo-700">{v.vendor_name || '—'}</p>
+        {renderChips(v)}
+        <BalancePill paise={bal} large />
+      </div>
+      {renderMoneyNotes(v)}
+      {/* The call button and the chevron end the card together, on the
+          footer's right. They used to sit on the money line, which left a
+          white box and an arrow floating in the middle of the card with
+          nothing either side of them and nothing under them — the card had
+          three rows and its two controls were parked on the second. */}
+      <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center gap-3">
+        {/* One line, and it stays one: nowrap plus a min-w-0 that lets it
+            be clipped rather than pushing the two controls off the end. */}
+        <div className="flex-1 min-w-0 flex flex-nowrap items-center overflow-hidden text-[11px] text-slate-500">
+          {renderFacts(v)}
+        </div>
+        {renderCallLink(v)}
+        {/* The chevron slides the way it points, so the card says where
+            pressing it goes rather than only that it can be pressed. */}
+        <span aria-hidden="true" className="shrink-0 text-slate-300 transition-all duration-150 group-hover:text-indigo-500 group-hover:translate-x-0.5">
+          <Icon name="chevronRight" size={16} />
+        </span>
+      </div>
+    </button>
+  )
+}
+
+
+// memo, because the grid holds one of these per vendor and the page re-renders
+// for things that have nothing to do with any of them — opening the filter panel,
+// typing in the search. Without it, every keystroke rebuilt two hundred and sixty
+// cards before the panel could paint, which is the delay that showed up as the
+// funnel being slow to open.
+//
+// The vendor objects come straight out of the loaded rows, so their identity
+// survives filtering and sorting; onOpen is wrapped in useCallback for the same
+// reason. If either really changes, the card re-renders.
+var VendorCard = memo(VendorCardInner)
 
 function VendorLedger({ profile, onNavigateToExpenses }) {
   var permsNew = (profile && profile.permsNew) || []
@@ -364,7 +484,7 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
     setEntriesLoading(false)
   }
 
-  async function openVendor(v) {
+  var openVendor = useCallback(async function (v) {
     setSelectedVendor(v)
     setView('detail')
     setShowDeleted(false)
@@ -387,7 +507,8 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
       }
     } catch (_) {}
     try { logActivity('VENDOR_LEDGER_VIEW', v.vendor_name + ' (id ' + v.vendor_id + ')') } catch (_) {}
-  }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   function toggleShowDeleted(next) {
     setShowDeleted(next)
@@ -501,114 +622,6 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
       return (b.balance_paise || 0) - (a.balance_paise || 0)
     })
 
-    // Three facts on one line in a third of the grid's width, so each one is
-    // cut to what it cannot lose: "Earliest due" becomes "Due", and the dates
-    // drop to a two-digit year. With the full labels and "17 Sept 2026" twice,
-    // the line wrapped and the card grew a fourth row to hold half a date.
-    function shortDate(s) {
-      if (!s) return ''
-      var d = new Date(s)
-      if (isNaN(d)) return ''
-      return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: '2-digit' })
-    }
-
-    function renderFacts(v) {
-      var n = v.entry_count || 0
-      var facts = [
-        { icon: 'fileText', value: n + (n === 1 ? ' entry' : ' entries') },
-        v.last_entry_date ? { icon: 'calendar', label: 'Last', value: shortDate(v.last_entry_date) } : null,
-        v.earliest_due_date ? { icon: 'clock', label: 'Due', value: shortDate(v.earliest_due_date) } : null,
-      ].filter(Boolean)
-      return facts.map(function (f, fi) {
-        return <Fact key={fi} first={fi === 0} icon={f.icon} label={f.label} value={f.value} />
-      })
-    }
-
-    function renderChips(v) {
-      var chips = []
-      if ((v.overdue_count || 0) > 0) chips.push({ icon: 'alert', label: 'Overdue', alarm: true })
-      if (v.vendor_status === 'incomplete') chips.push({ icon: 'fileText', label: 'Incomplete' })
-      if (chips.length === 0 && (v.entry_count || 0) === 0) chips.push({ icon: 'clock', label: 'No activity' })
-      return chips.map(function (c, ci) { return <StateChip key={ci} icon={c.icon} label={c.label} alarm={c.alarm} /> })
-    }
-
-    function renderMoneyNotes(v) {
-      var cashBal = v.cash_balance_paise || 0
-      var bankBal = v.bank_balance_paise || 0
-      var opening = v._opening_paise || 0
-      if (!cashBal && !bankBal && !opening) return null
-      return (
-        <div className="mt-2 flex flex-wrap items-center gap-y-1 text-[11px] text-slate-500">
-          {cashBal !== 0 && <Fact first icon="banknote" label="Cash" value={formatPoints(cashBal)} />}
-          {bankBal !== 0 && <Fact first={!cashBal} icon="bank" label="Bank" value={formatPoints(bankBal)} />}
-          {opening !== 0 && <Fact first={!cashBal && !bankBal} icon="wallet" label="Opening" value={formatPoints(Math.abs(opening)) + (opening > 0 ? ' Cr' : ' Dr')} />}
-        </div>
-      )
-    }
-
-    function renderCallLink(v) {
-      if (!v._phone) return null
-      return (
-        <a href={'tel:' + v._phone.replace(/[^0-9+]/g, '')}
-          onClick={function (ev) { ev.stopPropagation() }}
-          title={'Call ' + (v._contact || v.vendor_name || 'vendor') + (v._phone2 ? ' · alt: ' + v._phone2 : '')}
-          className="shrink-0 w-8 h-8 inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:border-emerald-300 hover:text-emerald-700 no-underline transition-colors">
-          <Icon name="phone" size={14} />
-        </a>
-      )
-    }
-
-    // A card and a row are the same facts in two shapes, in the same order:
-    // who, what state it is in, how much, then the history under a rule.
-    function renderVendorCard(v) {
-      var bal = v.balance_paise || 0
-      return (
-        <button key={v.vendor_id} type="button" onClick={function () { openVendor(v) }}
-          // The card lifts off the page rather than only changing colour: a
-          // tint and a border tint are both flat, so on a grid of sixty the
-          // one under the pointer was a slightly different white. transform-gpu
-          // keeps the lift off the layout, and the press puts it back down.
-          className="group text-left w-full bg-white border border-slate-200 rounded-2xl p-3.5 transform-gpu transition-all duration-150 hover:border-indigo-300 hover:bg-indigo-50/30 hover:-translate-y-0.5 hover:shadow-[0_8px_20px_rgba(79,70,229,0.10)] active:translate-y-0 active:shadow-none active:scale-[0.995] focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/30">
-          {/* No initial circle. A person's avatar stands in for a face you
-              would recognise; a vendor's first letter is just the first letter
-              of the name printed beside it, in a colour that means nothing. */}
-          {/* The name leads and the balance sits beside it in a pill, the way
-              the wallet list sets a row. As a 19px figure on its own line the
-              amount was the headline and the vendor it belonged to was the
-              caption — which is backwards for a list you scan by name. */}
-          {/* items-center, not items-start. The name, the chips and the pill
-              are three different heights, so aligning their tops staggered
-              them down the line — a 14.5px name, an 18px chip and a 30px pill
-              each starting at the same y and ending somewhere else. One centre
-              line puts them on one line. */}
-          <div className="flex items-center gap-2">
-            <p className="flex-1 min-w-0 text-[14.5px] font-bold text-slate-900 truncate transition-colors group-hover:text-indigo-700">{v.vendor_name || '—'}</p>
-            {renderChips(v)}
-            <BalancePill paise={bal} large />
-          </div>
-          {renderMoneyNotes(v)}
-          {/* The call button and the chevron end the card together, on the
-              footer's right. They used to sit on the money line, which left a
-              white box and an arrow floating in the middle of the card with
-              nothing either side of them and nothing under them — the card had
-              three rows and its two controls were parked on the second. */}
-          <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center gap-3">
-            {/* One line, and it stays one: nowrap plus a min-w-0 that lets it
-                be clipped rather than pushing the two controls off the end. */}
-            <div className="flex-1 min-w-0 flex flex-nowrap items-center overflow-hidden text-[11px] text-slate-500">
-              {renderFacts(v)}
-            </div>
-            {renderCallLink(v)}
-            {/* The chevron slides the way it points, so the card says where
-                pressing it goes rather than only that it can be pressed. */}
-            <span aria-hidden="true" className="shrink-0 text-slate-300 transition-all duration-150 group-hover:text-indigo-500 group-hover:translate-x-0.5">
-              <Icon name="chevronRight" size={16} />
-            </span>
-          </div>
-        </button>
-      )
-    }
-
     return (
       <div className="space-y-4">
         {/* Five readings of the same list, four of which are also the filter.
@@ -719,7 +732,9 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
           </p>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
-            {sorted.map(renderVendorCard)}
+            {sorted.map(function (v) {
+              return <VendorCard key={v.vendor_id} v={v} onOpen={openVendor} />
+            })}
           </div>
         )}
       </div>
