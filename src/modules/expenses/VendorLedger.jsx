@@ -118,9 +118,15 @@ function StateChip({ icon, label, alarm }) {
   return (
     // A fixed height rather than padding, so two chips side by side are the
     // same height whatever is in them, and neither is taller than the line.
-    <span className={"shrink-0 h-[22px] inline-flex items-center gap-1 px-2 rounded-md border text-[10px] font-bold uppercase tracking-[0.04em] whitespace-nowrap " +
-      (alarm ? "bg-rose-50 border-rose-200 text-rose-700" : "bg-white border-slate-200 text-slate-600")}>
-      <Icon name={icon} size={11} className={alarm ? "text-rose-500" : "text-slate-500"} />
+    //
+    // Only the white one is outlined. A tint already gives a chip its edge, so
+    // a border round the rose one was a second edge a pixel inside the first —
+    // two rose lines with a paler rose between them, which is what made it look
+    // furred. The white one keeps its hairline, because without it there is
+    // nothing at all between the chip and the card.
+    <span className={"shrink-0 h-[22px] inline-flex items-center gap-1 px-2 rounded-md text-[10px] font-bold uppercase tracking-[0.04em] whitespace-nowrap " +
+      (alarm ? "bg-rose-100 text-rose-700" : "bg-white border border-slate-200 text-slate-600")}>
+      <Icon name={icon} size={11} className={alarm ? "text-rose-600" : "text-slate-500"} />
       {label}
     </span>
   )
