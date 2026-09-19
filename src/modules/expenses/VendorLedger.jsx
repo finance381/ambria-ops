@@ -1273,13 +1273,18 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
                       {isCredit ? '+' : '−'}{formatPoints(headlineAmt)}
                     </p>
                     {/* The two are different facts — what this entry was worth,
-                        and what the vendor stood at after it — but on the first
-                        entry of a vendor with no opening balance they are the
-                        same number, and printing it twice one under the other
-                        reads as a bug rather than as a coincidence. Shown when
-                        it says something the figure above it does not. */}
+                        and what the vendor stood at after it — but only the
+                        second carried a label, and "Bal" made both of them read
+                        as a balance. "Balance after" says which one it is and
+                        what it is after.
+                        Still hidden when the two are the same number, which they
+                        are on a vendor's first entry with no opening balance:
+                        the same figure printed twice, one under the other, reads
+                        as a bug rather than a coincidence. */}
                     {!isDeleted && e.runningBalance !== headlineAmt && (
-                      <p className="mt-1 text-[12px] text-slate-400 tabular-nums whitespace-nowrap" data-notranslate>Bal: {formatPoints(e.runningBalance)}</p>
+                      <p className="mt-1 text-[12px] text-slate-400 tabular-nums whitespace-nowrap">
+                        Balance after: <span data-notranslate>{formatPoints(e.runningBalance)}</span>
+                      </p>
                     )}
                   </div>
                   {!isDeleted && isExpRow && e._expChecked && (
