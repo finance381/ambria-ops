@@ -11,7 +11,7 @@ import EventDatePicker from '../../components/ui/EventDatePicker'
 // One label and one field for the whole form, so a row cannot drift out of
 // line with the row above it — every field was writing its own px-3 py-2 and
 // its own focus ring, and the deduction block a second set in amber.
-var LABEL = 'block text-[11px] font-semibold text-slate-600 mb-1.5'
+var LABEL = 'block text-[12px] font-semibold text-slate-600 mb-1.5'
 var FIELD = 'w-full h-11 px-3 bg-white border border-slate-300 rounded-xl text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-shadow'
 // The two file buttons, and the pair inside the deduction block.
 var PICK = 'h-11 inline-flex items-center justify-center gap-2 rounded-xl border border-dashed text-[12.5px] font-bold cursor-pointer transition-colors'
@@ -263,7 +263,7 @@ function PayVendorModal({ vendor, profile, onClose, onSuccess }) {
           {/* The app's own picker. <input type="date"> renders mm/dd/yyyy in US
               order whatever the locale, which on a form where every other date
               on the screen reads "19 Sept 2026" is the one that looks wrong. */}
-          <EventDatePicker value={payDate} placeholder="Payment date" collapsible includePast plain
+          <EventDatePicker value={payDate} placeholder="Payment date" collapsible includePast plain neutral
             onChange={function (v) { setPayDate(v) }} />
         </div>
 
@@ -282,36 +282,50 @@ function PayVendorModal({ vendor, profile, onClose, onSuccess }) {
               onChange={function (ev) { setUseDeduction(ev.target.checked); if (!ev.target.checked) { setDeductionAmount(''); setDeductionReason(''); setDedImage(null) } }} />
             Deduct from bill (discount / quality issue)
           </label>
-          {/* Indented under a rule rather than tinted amber throughout. The
-              amber fields were saying "warning" on every one of them, when what
-              they are is a sub-form of the payment above. */}
+          {/* A card of its own rather than fields hanging off a rule. It is a
+              form inside a form — four of its own questions — and on a tint it
+              is clear where it starts and stops without an amber edge shouting
+              about it. Its fields get real labels too: a placeholder is gone
+              the moment you type into it, which is exactly when you want to
+              check what you are filling in. */}
           {useDeduction && (
-            <div className="mt-3 space-y-3 pl-4 border-l-2 border-amber-200">
-              <input type="number" inputMode="decimal" value={deductionAmount}
-                onChange={function (ev) { setDeductionAmount(ev.target.value) }}
-                placeholder="Deduction amount (pts)" min="0" step="any"
-                className={FIELD + ' tabular-nums'}
-                style={{ fontSize: '16px' }} />
-              <VoiceInput type="text" value={deductionReason}
-                onChange={function (ev) { setDeductionReason(ev.target.value) }}
-                placeholder="Reason (required)"
-                className={FIELD} />
+            <div className="mt-3 p-3.5 space-y-3 bg-slate-50 border border-slate-200 rounded-xl">
+              <div>
+                <label className={LABEL}>Deduction amount (pts) <span className="text-rose-500">*</span></label>
+                <input type="number" inputMode="decimal" value={deductionAmount}
+                  onChange={function (ev) { setDeductionAmount(ev.target.value) }}
+                  placeholder="0" min="0" step="any"
+                  className={FIELD + ' tabular-nums'}
+                  style={{ fontSize: '16px' }} />
+              </div>
+              <div>
+                <label className={LABEL}>Reason <span className="text-rose-500">*</span></label>
+                <VoiceInput type="text" value={deductionReason}
+                  onChange={function (ev) { setDeductionReason(ev.target.value) }}
+                  placeholder="Why is this being deducted?"
+                  className={FIELD} />
+              </div>
               <div>
                 <label className={LABEL}>
                   Which bill is this discount against?
-                  {sourceBills.length === 0 && !sourceBillsLoading && <span className="text-[10px] font-normal text-amber-600 ml-1">(no bills found — deduction won't be credited to an expense type)</span>}
+                  {sourceBills.length === 0 && !sourceBillsLoading && <span className="ml-1 font-normal text-slate-400">(no bills found — the deduction will not be credited to an expense type)</span>}
                 </label>
                 {sourceBillsLoading ? (
                   <p className="text-[12.5px] text-slate-500">Loading bills…</p>
                 ) : sourceBills.length > 0 ? (
-                  <select value={sourceExpenseId} onChange={function (ev) { setSourceExpenseId(ev.target.value) }}
-                    className={FIELD}
-                    style={{ fontSize: '16px' }}>
-                    <option value="">Select bill...</option>
-                    {sourceBills.map(function (b) {
-                      return <option key={b.id} value={b.id}>{formatDate(b.expense_date)} — {b.description || 'Expense #' + b.id} ({formatPoints(b.amount_paise)})</option>
-                    })}
-                  </select>
+                  <div className="relative">
+                    <select value={sourceExpenseId} onChange={function (ev) { setSourceExpenseId(ev.target.value) }}
+                      className={FIELD + ' appearance-none pr-10'}
+                      style={{ fontSize: '16px' }}>
+                      <option value="">Select bill…</option>
+                      {sourceBills.map(function (b) {
+                        return <option key={b.id} value={b.id}>{formatDate(b.expense_date)} — {b.description || 'Expense #' + b.id} ({formatPoints(b.amount_paise)})</option>
+                      })}
+                    </select>
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
+                      <Icon name="chevronDown" size={15} />
+                    </span>
+                  </div>
                 ) : null}
               </div>
               <div>

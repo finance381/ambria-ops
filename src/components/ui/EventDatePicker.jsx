@@ -23,7 +23,7 @@ var VENUE_COLORS = {
 }
 var DEFAULT_DOT_COLOR = '#6366F1'
 
-function EventDatePicker({ value, onChange, label, collapsible, includePast, triggerStyle, plain, placeholder }) {
+function EventDatePicker({ value, onChange, label, collapsible, includePast, triggerStyle, plain, neutral, placeholder }) {
   var today = new Date()
   var initDate = value ? new Date(value + 'T00:00:00') : today
   var [viewYear, setViewYear] = useState(initDate.getFullYear())
@@ -169,11 +169,16 @@ function EventDatePicker({ value, onChange, label, collapsible, includePast, tri
       {collapsible && (
         <button type="button" ref={btnRef} onClick={function () { setOpen(!open) }}
           style={triggerStyle}
-          className={"w-full flex items-center justify-between gap-2 px-3 py-2.5 border rounded-xl text-[13px] transition-shadow " + (value ? "border-indigo-300 bg-indigo-50 text-slate-900 font-semibold" : "border-slate-300 bg-white text-slate-500")}>
+          /* Indigo marks a date that has been SET, which is what a filter
+             wants: the control says a narrowing is in force. On a form
+             field that is born with today in it, the same fill says the
+             opposite — every other field on the form is white and this one
+             looks picked. `neutral` is for those. */
+          className={"w-full flex items-center justify-between gap-2 px-3 py-2.5 border rounded-xl text-[13px] transition-shadow " + ((value && !neutral) ? "border-indigo-300 bg-indigo-50 text-slate-900 font-semibold" : (value ? "border-slate-300 bg-white text-slate-900 font-semibold" : "border-slate-300 bg-white text-slate-500"))}>
           {/* placeholder, because a pair of these standing for a range needs to
               say which end each one is; on its own "Select date" is right. */}
           <span className="truncate">{value ? new Date(value + 'T00:00:00').getDate() + ' ' + shortMonths[new Date(value + 'T00:00:00').getMonth()] + ' ' + new Date(value + 'T00:00:00').getFullYear() : (placeholder || 'Select date')}</span>
-          <span className={"shrink-0 " + (value ? "text-indigo-500" : "text-slate-400")}><Icon name="calendar" size={14} /></span>
+          <span className={"shrink-0 " + ((value && !neutral) ? "text-indigo-500" : "text-slate-400")}><Icon name="calendar" size={14} /></span>
         </button>
       )}
       {open && (function () {
