@@ -47,16 +47,20 @@ function Tile({ icon, tone, label, value, valueClass, wide, active, onClick, chi
   // are not, and the outstanding tile is taller than all of them — so the two
   // plain ones were pinned to the top of a row the buttons were sitting in the
   // middle of, and the labels stopped lining up across the row.
-  // The picked tile fills rather than outlines. A ring is a second border
-  // drawn outside the first, so the selected tile grew a halo that sat in the
-  // gap between it and its neighbours and read as a focus artefact rather than
-  // a choice. A tinted face and one darker border say the same thing inside
-  // the shape the tile already had.
-  var box = 'text-left h-full flex flex-col justify-center border rounded-2xl px-4 py-3.5 transition-all duration-150 ' +
+  // The picked tile is a fill, not an outline. Every outline tried here read
+  // as a focus artefact rather than a choice: a ring is a second border drawn
+  // outside the first, and a tinted border is a line the eye tracks round the
+  // shape instead of resting inside it. So the border never changes colour —
+  // the face tints and the label and figure darken, and the tile still has
+  // exactly one edge, the same one every tile has.
+  var box = 'text-left h-full flex flex-col justify-center border border-slate-200 rounded-2xl px-4 py-3.5 transition-colors duration-150 ' +
     (wide ? 'lg:col-span-2 ' : '') +
-    (active ? 'border-indigo-300 bg-indigo-50/70 ' : 'border-slate-200 bg-white ') +
-    (onClick && !active ? 'hover:border-indigo-200 hover:bg-indigo-50/30 active:scale-[0.995] ' : '') +
-    (onClick && active ? 'active:scale-[0.995] ' : '')
+    (active ? 'bg-indigo-50 ' : 'bg-white ') +
+    (onClick && !active ? 'hover:bg-slate-50 ' : '') +
+    // The browser draws its own ring on a focused button, and clicking one
+    // leaves it focused. Replaced with a ring that only shows for the keyboard,
+    // so a pointer never leaves a blue outline sitting on the tile it pressed.
+    (onClick ? 'focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/30 ' : '')
   var inner = (
     <>
       <div className="flex items-center gap-3">
@@ -69,7 +73,7 @@ function Tile({ icon, tone, label, value, valueClass, wide, active, onClick, chi
             label loses half a point and keeps its colour, so the figure is
             clearly the thing and the label is clearly what it is called. */}
         <div className="min-w-0">
-          <p className="truncate text-[11.5px] font-semibold text-slate-600">{label}</p>
+          <p className={'truncate text-[11.5px] font-semibold ' + (active ? 'text-indigo-700' : 'text-slate-600')}>{label}</p>
           <p className={'mt-1.5 font-display font-extrabold tabular-nums leading-none tracking-[-0.02em] ' + (wide ? 'text-[24px] ' : 'text-[22px] ') + valueClass} data-notranslate>{value}</p>
         </div>
       </div>
