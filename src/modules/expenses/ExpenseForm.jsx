@@ -1413,6 +1413,22 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
           return 'Entry ' + (i + 1) + ': Bank payment due date is required'
         }
       }
+      // Allocation rows are a manual amount per row, not an automatic split —
+      // nothing stopped someone from typing the full amount into two rows
+      // instead of dividing it between them, silently doubling what the
+      // ledgers show against those departments while the wallet only ever
+      // debited the entry's real total.
+      var _allocRowsForCheck = (e.allocations || []).filter(function (a) { return a.venueId || a.departmentId })
+      if (_allocRowsForCheck.length > 0) {
+        var _allocSumPaise = _allocRowsForCheck.reduce(function (s, a) { return s + (a.amountRupees ? Math.round(Number(a.amountRupees) * 100) : 0) }, 0)
+        var _entryBasePaise = e.isItemPurchase ? Math.round(computeItemsTotal(e) * 100) : Math.round(Number(e.amount || 0) * 100)
+        var _entryTaxPaise = e.taxAmount ? Math.round(Number(e.taxAmount) * 100) : 0
+        var _entryTotalPaise = _entryBasePaise + _entryTaxPaise
+        if (_allocSumPaise > _entryTotalPaise) {
+          return 'Entry ' + (i + 1) + ': Allocations total ' + (_allocSumPaise / 100).toLocaleString('en-IN') +
+            ' but the entry is only ' + (_entryTotalPaise / 100).toLocaleString('en-IN') + ' — fix the split'
+        }
+      }
     }
     // Wallet negative allowed — inline warning shown near the submit bar, no hard block here.
     return null
