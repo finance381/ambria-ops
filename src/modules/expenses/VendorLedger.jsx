@@ -1047,9 +1047,13 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
           two facts in one grey line, then a red strip — which is a lot of
           different shapes for six numbers. */}
       <div className="grid grid-cols-2 lg:grid-cols-7 gap-3">
-        <Tile wide tint="bg-amber-50/70 " icon="wallet" tone="bg-amber-100 text-amber-600" label="Outstanding Balance"
-          value={formatPoints(currentBalance)}
-          valueClass={currentBalance < 0 ? "text-emerald-700" : currentBalance ? "text-amber-700" : "text-slate-400"}>
+        {/* White, like the five beside it. The amber face and the amber
+            figure made this tile a warning, and an outstanding balance is
+            the ordinary state of a vendor ledger — the thing that is
+            actually wrong is the overdue note under it, which is the one
+            red on the page. */}
+        <Tile wide icon="wallet" tone="bg-slate-100 text-slate-600" label="Outstanding Balance"
+          value={formatPoints(currentBalance)} valueClass={balanceColour(currentBalance)}>
           {openingPaise !== 0 && (
             <p className="mt-2 self-start text-[11.5px] font-semibold text-slate-500">
               Includes opening: <span className="text-slate-700" data-notranslate>{formatPoints(Math.abs(openingPaise))} {openingPaise > 0 ? 'Cr' : 'Dr'}</span>
@@ -1062,8 +1066,8 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
               fell between the number and the word after it as well as after
               the glyph, so it read as "1  overdue". */}
           {(vs.overdue_count || 0) > 0 && (
-            <p className="mt-2.5 self-start inline-flex items-center gap-1.5 h-6 px-2.5 rounded-md bg-white border border-slate-200 text-[11px] font-bold text-slate-600 whitespace-nowrap">
-              <Icon name="alert" size={12} className="shrink-0 text-slate-500" />
+            <p className="mt-2.5 self-start inline-flex items-center gap-1.5 h-6 px-2.5 rounded-md bg-rose-100 text-[11px] font-bold text-rose-700 whitespace-nowrap">
+              <Icon name="alert" size={12} className="shrink-0" />
               <span>
                 <span data-notranslate>{vs.overdue_count}</span> overdue · earliest {formatDate(vs.earliest_due_date)}
               </span>
