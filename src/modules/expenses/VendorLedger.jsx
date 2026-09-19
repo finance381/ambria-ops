@@ -15,8 +15,68 @@ import { hasPerm } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
 import SearchField from '../../components/ui/SearchField'
 import CheckedStamp from '../../components/ui/CheckedStamp'
+import Icon from '../../components/ui/Icon'
+import { avatarTint, avatarInitial } from '../../lib/avatarTint'
 
 function byName(a, b) { return (a.name || '').localeCompare(b.name || '') }
+
+var VENDOR_SORTS = {
+  outstanding_desc: 'Outstanding (High to Low)',
+  outstanding_asc: 'Outstanding (Low to High)',
+  name: 'Name (A–Z)',
+  recent: 'Recent activity',
+  due: 'Earliest due',
+}
+
+// The figure is the one thing that keeps a colour. Money still owed reads
+// amber, money owed the other way reads rose, and a settled vendor is grey
+// rather than a colour that suggests there is something to do about it.
+function balanceColour(paise) {
+  return paise > 0 ? 'text-amber-700' : paise < 0 ? 'text-rose-700' : 'text-slate-400'
+}
+
+// A figure, what it is, and the glyph that says which. The number carries the
+// colour; the tile around it does not.
+function Tile({ icon, tone, label, value, valueClass, wide, children }) {
+  return (
+    <div className={'bg-white border border-slate-200 rounded-2xl px-3.5 py-3 ' + (wide ? 'col-span-2' : '')}>
+      <div className="flex items-center gap-2.5">
+        <span aria-hidden="true" className={'shrink-0 w-8 h-8 rounded-lg inline-flex items-center justify-center ' + tone}>
+          <Icon name={icon} size={16} />
+        </span>
+        <p className="min-w-0 truncate text-[11px] font-semibold text-slate-500">{label}</p>
+      </div>
+      <p className={'mt-2 font-bold tabular-nums leading-none ' + (wide ? 'text-[21px] ' : 'text-[19px] ') + valueClass} data-notranslate>{value}</p>
+      {children}
+    </div>
+  )
+}
+
+// Chips stay white. A coloured chip competes with the coloured figure beside
+// it, and the figure is the one worth colouring — so the chip says which state
+// it is with a word and a glyph instead of a tint.
+function StateChip({ icon, label }) {
+  return (
+    <span className="shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white border border-slate-200 text-[10px] font-bold uppercase tracking-[0.04em] text-slate-500 whitespace-nowrap">
+      <Icon name={icon} size={11} className="text-slate-400" />
+      {label}
+    </span>
+  )
+}
+
+// One fact in a footer: a glyph, what it is, and the value in the darker grey
+// so the value is what you land on rather than its label.
+function Fact({ icon, label, value, first }) {
+  return (
+    <span className="inline-flex items-center whitespace-nowrap">
+      {!first && <span aria-hidden="true" className="mx-2.5 w-px h-3.5 bg-slate-200" />}
+      <Icon name={icon} size={12} className="shrink-0 mr-1.5 text-slate-300" />
+      {label ? label + ': ' : ''}
+      <span className="ml-1 font-semibold text-slate-600" data-notranslate>{value}</span>
+    </span>
+  )
+}
+
 
 function VendorLedger({ profile, onNavigateToExpenses }) {
   var permsNew = (profile && profile.permsNew) || []
@@ -29,7 +89,9 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
   var [vendors, setVendors] = useState([])
   var [loading, setLoading] = useState(true)
   var [search, setSearch] = useState('')
-  var [statusFilter, setStatusFilter] = useState('all')  // 'all' | 'with_balance' | 'incomplete'
+  var [statusFilter, setStatusFilter] = useState('all')  // 'all' | 'with_balance' | 'incomplete' | 'overdue'
+  var [vendorSort, setVendorSort] = useState('outstanding_desc')
+  var [vendorLayout, setVendorLayout] = useState('cards')  // 'cards' | 'rows'
 
   // Filter dropdowns (all optional, cascade where hierarchical)
   var [fExpType, setFExpType] = useState('')
@@ -342,6 +404,7 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
       if (q && (v.vendor_name || '').toLowerCase().indexOf(q) === -1) return false
       if (statusFilter === 'with_balance' && (v.balance_paise || 0) === 0) return false
       if (statusFilter === 'incomplete' && v.vendor_status !== 'incomplete') return false
+      if (statusFilter === 'overdue' && (v.overdue_count || 0) === 0) return false
       if (hasAnyDropdownFilter) {
         var tags = vendorTags[String(v.vendor_id)]
         if (!tags) return false
@@ -365,152 +428,284 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
     var vendorsWithBalance = vendors.filter(function (v) { return v.vendor_active && (v.balance_paise || 0) !== 0 }).length
     var overdueVendors = vendors.filter(function (v) { return v.vendor_active && (v.overdue_count || 0) > 0 })
 
+    var activeVendors = vendors.filter(function (v) { return v.vendor_active })
+    var incompleteCount = activeVendors.filter(function (v) { return v.vendor_status === 'incomplete' }).length
+    var outstandingClass = balanceColour(totalOutstanding)
+    var hasDropdownFilter = !!(fExpType || fExpSubType || fCategory || fSubCategory)
+
+    var sorted = filtered.slice().sort(function (a, b) {
+      if (vendorSort === 'name') return (a.vendor_name || '').localeCompare(b.vendor_name || '')
+      if (vendorSort === 'recent') return String(b.last_entry_date || '').localeCompare(String(a.last_entry_date || ''))
+      if (vendorSort === 'due') {
+        // A vendor with nothing due sorts last. An empty date string compares
+        // below every real one, which would have put exactly the vendors with
+        // no deadline at the top of a list ordered by deadline.
+        return String(a.earliest_due_date || '9999-12-31').localeCompare(String(b.earliest_due_date || '9999-12-31'))
+      }
+      var diff = (a.balance_paise || 0) - (b.balance_paise || 0)
+      return vendorSort === 'outstanding_asc' ? diff : -diff
+    })
+
+    function renderFacts(v) {
+      var facts = [
+        { icon: 'fileText', value: (v.entry_count || 0) + ' entries' },
+        v.last_entry_date ? { icon: 'calendar', label: 'Last', value: formatDate(v.last_entry_date) } : null,
+        v.earliest_due_date ? { icon: 'clock', label: 'Earliest due', value: formatDate(v.earliest_due_date) } : null,
+      ].filter(Boolean)
+      return facts.map(function (f, fi) {
+        return <Fact key={fi} first={fi === 0} icon={f.icon} label={f.label} value={f.value} />
+      })
+    }
+
+    function renderChips(v) {
+      var chips = []
+      if ((v.overdue_count || 0) > 0) chips.push({ icon: 'alert', label: 'Overdue' })
+      if (v.vendor_status === 'incomplete') chips.push({ icon: 'fileText', label: 'Incomplete' })
+      if (chips.length === 0 && (v.entry_count || 0) === 0) chips.push({ icon: 'clock', label: 'No activity' })
+      return chips.map(function (c, ci) { return <StateChip key={ci} icon={c.icon} label={c.label} /> })
+    }
+
+    function renderMoneyNotes(v) {
+      var cashBal = v.cash_balance_paise || 0
+      var bankBal = v.bank_balance_paise || 0
+      var opening = v._opening_paise || 0
+      if (!cashBal && !bankBal && !opening) return null
+      return (
+        <div className="mt-1.5 flex flex-wrap items-center gap-y-1 text-[11px] text-slate-400">
+          {cashBal !== 0 && <Fact first icon="banknote" label="Cash" value={formatPoints(cashBal)} />}
+          {bankBal !== 0 && <Fact first={!cashBal} icon="bank" label="Bank" value={formatPoints(bankBal)} />}
+          {opening !== 0 && <Fact first={!cashBal && !bankBal} icon="wallet" label="Opening" value={formatPoints(Math.abs(opening)) + (opening > 0 ? ' Cr' : ' Dr')} />}
+        </div>
+      )
+    }
+
+    function renderCallLink(v) {
+      if (!v._phone) return null
+      return (
+        <a href={'tel:' + v._phone.replace(/[^0-9+]/g, '')}
+          onClick={function (ev) { ev.stopPropagation() }}
+          title={'Call ' + (v._contact || v.vendor_name || 'vendor') + (v._phone2 ? ' · alt: ' + v._phone2 : '')}
+          className="shrink-0 w-8 h-8 inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:border-emerald-300 hover:text-emerald-700 no-underline transition-colors">
+          <Icon name="phone" size={14} />
+        </a>
+      )
+    }
+
+    // A card and a row are the same facts in two shapes, in the same order:
+    // who, what state it is in, how much, then the history under a rule.
+    function renderVendorCard(v) {
+      var bal = v.balance_paise || 0
+      return (
+        <button key={v.vendor_id} type="button" onClick={function () { openVendor(v) }}
+          className="group text-left w-full bg-white border border-slate-200 rounded-2xl p-3.5 hover:border-indigo-300 hover:bg-indigo-50/20 active:scale-[0.995] transition-all duration-150">
+          <div className="flex items-start gap-3">
+            <span aria-hidden="true" className={"shrink-0 w-10 h-10 rounded-full inline-flex items-center justify-center text-[15px] font-bold " + avatarTint(v.vendor_name)}>
+              {avatarInitial(v.vendor_name)}
+            </span>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-start gap-2">
+                <p className="flex-1 min-w-0 text-[13.5px] font-bold text-slate-900 truncate">{v.vendor_name || '—'}</p>
+                {renderChips(v)}
+              </div>
+              <p className={"mt-1.5 text-[19px] font-bold tabular-nums leading-none " + balanceColour(bal)} data-notranslate>{formatPoints(bal)}</p>
+              {renderMoneyNotes(v)}
+            </div>
+            {renderCallLink(v)}
+            <span aria-hidden="true" className="shrink-0 self-center text-slate-300 group-hover:text-indigo-500 transition-colors">
+              <Icon name="chevronRight" size={16} />
+            </span>
+          </div>
+          <div className="mt-3 pt-2.5 border-t border-slate-100 flex flex-wrap items-center gap-y-1 text-[11px] text-slate-400">
+            {renderFacts(v)}
+          </div>
+        </button>
+      )
+    }
+
+    function renderVendorRow(v) {
+      var bal = v.balance_paise || 0
+      return (
+        <button key={v.vendor_id} type="button" onClick={function () { openVendor(v) }}
+          className="group text-left w-full flex items-center gap-3 px-3.5 py-3 hover:bg-indigo-50/30 transition-colors">
+          <span aria-hidden="true" className={"shrink-0 w-9 h-9 rounded-full inline-flex items-center justify-center text-[14px] font-bold " + avatarTint(v.vendor_name)}>
+            {avatarInitial(v.vendor_name)}
+          </span>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <p className="min-w-0 truncate text-[13.5px] font-bold text-slate-900">{v.vendor_name || '—'}</p>
+              {renderChips(v)}
+            </div>
+            <div className="mt-1 flex flex-wrap items-center gap-y-1 text-[11px] text-slate-400">
+              {renderFacts(v)}
+            </div>
+          </div>
+          {renderCallLink(v)}
+          <p className={"shrink-0 text-[16px] font-bold tabular-nums " + balanceColour(bal)} data-notranslate>{formatPoints(bal)}</p>
+          <span aria-hidden="true" className="shrink-0 text-slate-300 group-hover:text-indigo-500 transition-colors">
+            <Icon name="chevronRight" size={16} />
+          </span>
+        </button>
+      )
+    }
+
     return (
       <div className="space-y-4">
-        {/* Overdue banner */}
+        {/* What is wrong, and the one control that acts on it. This is the only
+            tinted block on the page, because it is the only one asking for
+            something to be done. */}
         {overdueVendors.length > 0 && (
-          <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-center gap-2">
-            <span className="text-lg">⚠</span>
-            <p className="text-sm text-red-700 font-medium">
-              {overdueVendors.length} vendor{overdueVendors.length !== 1 ? 's' : ''} with overdue payments
+          <div className="flex items-center gap-2.5 bg-rose-50 border border-rose-200 rounded-2xl px-4 py-3">
+            <Icon name="alert" size={17} className="shrink-0 text-rose-600" />
+            <p className="flex-1 min-w-0 text-[13px] font-semibold text-rose-800">
+              <span data-notranslate>{overdueVendors.length}</span> vendor{overdueVendors.length !== 1 ? 's' : ''} with overdue payments
             </p>
+            <button type="button" onClick={function () { setStatusFilter(statusFilter === 'overdue' ? 'all' : 'overdue') }}
+              className="shrink-0 inline-flex items-center gap-1 text-[12px] font-bold text-rose-700 hover:text-rose-900 transition-colors">
+              {statusFilter === 'overdue' ? 'Show all' : 'View overdue'}
+              <Icon name="arrowRight" size={14} />
+            </button>
           </div>
         )}
 
-        {/* Summary card */}
-        <div className="bg-white border border-gray-200 rounded-xl p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-[11px] font-bold uppercase tracking-wider text-gray-500 mb-0.5">Total Outstanding</p>
-              <p className="text-2xl font-bold text-amber-800">{formatPoints(totalOutstanding)}</p>
-              <div className="flex gap-3 mt-1.5 text-[11px]">
-                <span className="text-gray-600">💵 Cash: <span className="font-semibold text-gray-900">{formatPoints(totalCash)}</span></span>
-                <span className="text-gray-600">🏦 Bank: <span className="font-semibold text-gray-900">{formatPoints(totalBank)}</span></span>
+        {/* Five readings of the same list, the outstanding total given the room
+            the other four do not need. */}
+        <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
+          <Tile wide icon="wallet" tone="bg-indigo-50 text-indigo-600" label="Total Outstanding"
+            value={formatPoints(totalOutstanding)} valueClass={outstandingClass}>
+            {(totalCash !== 0 || totalBank !== 0) && (
+              <div className="mt-2 flex flex-wrap items-center gap-y-1 text-[11px] text-slate-400">
+                <Fact first icon="banknote" label="Cash" value={formatPoints(totalCash)} />
+                <Fact icon="bank" label="Bank" value={formatPoints(totalBank)} />
               </div>
-            </div>
-            <div className="text-right">
-              <p className="text-[11px] text-gray-500">Vendors with balance</p>
-              <p className="text-lg font-bold text-gray-800">{vendorsWithBalance}</p>
-            </div>
-          </div>
+            )}
+          </Tile>
+          <Tile icon="building" tone="bg-slate-100 text-slate-500" label="Total Vendors"
+            value={activeVendors.length} valueClass="text-slate-900" />
+          <Tile icon="clock" tone="bg-rose-50 text-rose-600" label="Overdue Vendors"
+            value={overdueVendors.length} valueClass={overdueVendors.length > 0 ? 'text-rose-700' : 'text-slate-400'} />
+          <Tile icon="checkCircle" tone="bg-emerald-50 text-emerald-600" label="With Balance"
+            value={vendorsWithBalance} valueClass={vendorsWithBalance > 0 ? 'text-emerald-700' : 'text-slate-400'} />
+          <Tile icon="fileText" tone="bg-amber-50 text-amber-600" label="Incomplete"
+            value={incompleteCount} valueClass={incompleteCount > 0 ? 'text-amber-700' : 'text-slate-400'} />
         </div>
 
-        {/* Filter row */}
-        <div className="flex flex-col sm:flex-row gap-2">
-          <SearchField
-            value={search}
-            onChange={function (v) { setSearch(v) }}
-            placeholder="Search vendors..."
-            className="flex-1"
-          />
-          <div className="flex gap-1 bg-gray-100 rounded-lg p-0.5 self-start">
-            {[
-              { key: 'all', label: 'All' },
-              { key: 'with_balance', label: 'With Balance' },
-              { key: 'incomplete', label: 'Incomplete' }
-            ].map(function (s) {
-              return (
-                <button key={s.key} onClick={function () { setStatusFilter(s.key) }}
-                  className={"px-3 py-1.5 text-xs font-semibold rounded-md transition-colors " +
-                    (statusFilter === s.key ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700")}>
-                  {s.label}
-                </button>
-              )
-            })}
+        {/* Everything that narrows the list, in one bar. Each control is
+            labelled above rather than only inside it, so a dropdown reading
+            "All" still says what it is all of. */}
+        <div className="bg-white border border-slate-200 rounded-2xl p-3.5 space-y-3">
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="flex-[2] min-w-[220px]">
+              <label className="block text-[11px] font-semibold text-slate-500 mb-1.5">Search</label>
+              <SearchField value={search} onChange={function (v) { setSearch(v) }} placeholder="Search vendors..." />
+            </div>
+            <div className="flex-1 min-w-[150px]">
+              <label className="block text-[11px] font-semibold text-slate-500 mb-1.5">Expense type</label>
+              <SearchDropdown
+                items={expenseTypes.map(function (t) { return { label: t.name, value: String(t.id) } })}
+                value={fExpType} onChange={function (v) { setFExpType(v) }}
+                placeholder="All" />
+            </div>
+            <div className="flex-1 min-w-[150px]">
+              <label className="block text-[11px] font-semibold text-slate-500 mb-1.5">Expense sub-type</label>
+              <SearchDropdown
+                items={(fExpType ? expenseSubTypes.filter(function (st) { return String(st.expense_type_id) === String(fExpType) }) : expenseSubTypes)
+                  .map(function (st) { return { label: st.name, value: String(st.id) } })}
+                value={fExpSubType} onChange={function (v) { setFExpSubType(v) }}
+                placeholder="All" />
+            </div>
+            <div className="flex-1 min-w-[150px]">
+              <label className="block text-[11px] font-semibold text-slate-500 mb-1.5">Item category</label>
+              <SearchDropdown
+                items={categories.map(function (c) { return { label: c.name, value: String(c.id) } })}
+                value={fCategory} onChange={function (v) { setFCategory(v) }}
+                placeholder="All" />
+            </div>
+            <div className="flex-1 min-w-[150px]">
+              <label className="block text-[11px] font-semibold text-slate-500 mb-1.5">Item sub-category</label>
+              <SearchDropdown
+                items={(fCategory ? subCategories.filter(function (sc) { return String(sc.category_id) === String(fCategory) }) : subCategories)
+                  .map(function (sc) { return { label: sc.name, value: String(sc.id) } })}
+                value={fSubCategory} onChange={function (v) { setFSubCategory(v) }}
+                placeholder="All" />
+            </div>
           </div>
-        </div>
 
-        {/* Advanced filters */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
-          <SearchDropdown
-            items={expenseTypes.map(function (t) { return { label: t.name, value: String(t.id) } })}
-            value={fExpType} onChange={function (v) { setFExpType(v) }}
-            placeholder="Expense type" />
-          <SearchDropdown
-            items={(fExpType ? expenseSubTypes.filter(function (st) { return String(st.expense_type_id) === String(fExpType) }) : expenseSubTypes)
-              .map(function (st) { return { label: st.name, value: String(st.id) } })}
-            value={fExpSubType} onChange={function (v) { setFExpSubType(v) }}
-            placeholder="Expense sub-type" />
-          <SearchDropdown
-            items={categories.map(function (c) { return { label: c.name, value: String(c.id) } })}
-            value={fCategory} onChange={function (v) { setFCategory(v) }}
-            placeholder="Item category" />
-          <SearchDropdown
-            items={(fCategory ? subCategories.filter(function (sc) { return String(sc.category_id) === String(fCategory) }) : subCategories)
-              .map(function (sc) { return { label: sc.name, value: String(sc.id) } })}
-            value={fSubCategory} onChange={function (v) { setFSubCategory(v) }}
-            placeholder="Item sub-category" />
-        </div>
-        {(fExpType || fExpSubType || fCategory || fSubCategory) && (
-          <div className="flex items-center justify-between text-xs">
-            <span className="text-gray-500">
-              {filtered.length} of {vendors.filter(function (v) { return v.vendor_active }).length} vendors match
+          <div className="flex flex-wrap items-center gap-3 pt-3 border-t border-slate-100">
+            <div className="flex gap-1 bg-slate-100 rounded-xl p-0.5">
+              {[
+                { key: 'all', label: 'All' },
+                { key: 'with_balance', label: 'With Balance' },
+                { key: 'incomplete', label: 'Incomplete' },
+                { key: 'overdue', label: 'Overdue' },
+              ].map(function (o) {
+                return (
+                  <button key={o.key} type="button" onClick={function () { setStatusFilter(o.key) }} aria-pressed={statusFilter === o.key}
+                    className={"px-3 py-1.5 text-[12px] font-bold rounded-lg transition-colors " +
+                      (statusFilter === o.key ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-900")}>
+                    {o.label}
+                  </button>
+                )
+              })}
+            </div>
+
+            <span className="text-[12px] text-slate-400" data-notranslate>
+              {sorted.length} of {activeVendors.length}
             </span>
-            <button type="button"
-              onClick={function () { setFExpType(''); setFExpSubType(''); setFCategory(''); setFSubCategory('') }}
-              className="text-indigo-600 hover:text-indigo-800 font-semibold">✕ Clear filters</button>
-          </div>
-        )}
 
-        {/* List */}
+            {(hasDropdownFilter || search || statusFilter !== 'all') && (
+              <button type="button"
+                onClick={function () { setSearch(''); setStatusFilter('all'); setFExpType(''); setFExpSubType(''); setFCategory(''); setFSubCategory('') }}
+                className="inline-flex items-center gap-1.5 text-[12px] font-bold text-indigo-600 hover:text-indigo-800 transition-colors">
+                <Icon name="close" size={13} />
+                Clear
+              </button>
+            )}
+
+            <span className="flex-1" />
+
+            {/* The real control is invisible and sits exactly over the words it
+                describes, so the whole thing is the tap target and the native
+                picker still opens. */}
+            <span className="relative shrink-0 inline-flex items-center gap-1.5 h-9 px-3 rounded-xl border border-slate-200 text-[12.5px] text-slate-500">
+              Sort by:
+              <span className="font-bold text-slate-900">{VENDOR_SORTS[vendorSort]}</span>
+              <Icon name="chevronDown" size={14} className="text-slate-400" />
+              <select value={vendorSort} onChange={function (e) { setVendorSort(e.target.value) }}
+                aria-label="Sort vendors" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer">
+                {Object.keys(VENDOR_SORTS).map(function (k) {
+                  return <option key={k} value={k}>{VENDOR_SORTS[k]}</option>
+                })}
+              </select>
+            </span>
+
+            <div className="shrink-0 inline-flex items-center gap-0.5 p-1 rounded-xl border border-slate-200">
+              {[{ k: 'cards', icon: 'box', label: 'Cards' }, { k: 'rows', icon: 'list', label: 'Rows' }].map(function (o) {
+                return (
+                  <button key={o.k} type="button" onClick={function () { setVendorLayout(o.k) }}
+                    aria-label={o.label} aria-pressed={vendorLayout === o.k}
+                    className={"w-8 h-7 inline-flex items-center justify-center rounded-lg transition-colors " +
+                      (vendorLayout === o.k ? "bg-indigo-50 text-indigo-700" : "text-slate-400 hover:text-slate-700 hover:bg-slate-50")}>
+                    <Icon name={o.icon} size={15} />
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+
         {loading ? (
-          <p className="text-gray-400 text-sm text-center py-12">Loading vendors...</p>
-        ) : filtered.length === 0 ? (
-          <p className="text-gray-400 text-sm text-center py-12">
+          <p className="text-slate-400 text-sm text-center py-12">Loading vendors...</p>
+        ) : sorted.length === 0 ? (
+          <p className="text-slate-400 text-sm text-center py-12">
             {vendors.length === 0 ? 'No vendors yet' : 'No vendors match your filter'}
           </p>
+        ) : vendorLayout === 'cards' ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+            {sorted.map(renderVendorCard)}
+          </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {filtered.map(function (v) {
-              var bal = v.balance_paise || 0
-              var balColor = bal > 0 ? 'text-amber-800' : bal < 0 ? 'text-red-700' : 'text-gray-500'
-              var balBg = bal > 0 ? 'bg-amber-50 border-amber-200' : bal < 0 ? 'bg-red-50 border-red-200' : 'bg-gray-50 border-gray-200'
-              var cashBal = v.cash_balance_paise || 0
-              var bankBal = v.bank_balance_paise || 0
-              var isOverdue = (v.overdue_count || 0) > 0
-              return (
-                <button key={v.vendor_id} onClick={function () { openVendor(v) }}
-                  className={"text-left border rounded-xl p-3 hover:shadow-sm active:scale-[0.99] transition-all w-full " + balBg + (isOverdue ? " ring-2 ring-red-300" : "")}>
-                  <div className="flex items-start justify-between gap-2 mb-2">
-                    <p className="text-sm font-bold text-gray-900 truncate flex-1">{v.vendor_name || '—'}</p>
-                    <div className="flex gap-1 flex-shrink-0 items-center">
-                      {isOverdue && (
-                        <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 bg-red-100 text-red-700 rounded">⚠ Overdue</span>
-                      )}
-                      {v.vendor_status === 'incomplete' && (
-                        <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded">Incomplete</span>
-                      )}
-                      {v._phone && (
-                        <a href={'tel:' + v._phone.replace(/[^0-9+]/g, '')}
-                          onClick={function (ev) { ev.stopPropagation() }}
-                          title={'Call ' + (v._contact || v.vendor_name || 'vendor') + (v._phone2 ? ' · alt: ' + v._phone2 : '')}
-                          className="text-[10px] font-bold px-2 py-0.5 bg-green-600 text-white rounded hover:bg-green-700 no-underline">
-                          📞
-                        </a>
-                      )}
-                    </div>
-                  </div>
-                  <p className={"text-lg font-bold " + balColor}>{formatPoints(bal)}</p>
-                  {(cashBal !== 0 || bankBal !== 0) && (
-                    <div className="flex gap-2 mt-1 text-[10px] text-gray-600">
-                      {cashBal !== 0 && <span>💵 {formatPoints(cashBal)}</span>}
-                      {bankBal !== 0 && <span>🏦 {formatPoints(bankBal)}</span>}
-                    </div>
-                  )}
-                  <p className="text-[11px] text-gray-500 mt-1">
-                    {(v.entry_count || 0) > 0
-                      ? (v.entry_count + ' entries · last ' + (v.last_entry_date || '—'))
-                      : 'No activity'}
-                    {v.earliest_due_date && ' · earliest due ' + v.earliest_due_date}
-                  </p>
-                  {v._opening_paise !== 0 && (
-                    <p className={"text-[10px] font-semibold mt-0.5 " + (v._opening_paise > 0 ? "text-amber-700" : "text-green-700")}>
-                      Opening: {formatPoints(Math.abs(v._opening_paise))} {v._opening_paise > 0 ? 'Cr' : 'Dr'}
-                    </p>
-                  )}
-                </button>
-              )
-            })}
+          <div className="bg-white border border-slate-200 rounded-2xl divide-y divide-slate-100 overflow-hidden">
+            {sorted.map(renderVendorRow)}
           </div>
         )}
       </div>

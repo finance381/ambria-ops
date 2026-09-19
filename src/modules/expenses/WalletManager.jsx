@@ -25,14 +25,6 @@ import Icon, { glyphForLabel } from '../../components/ui/Icon'
 // A colour per person, hashed from the name rather than taken from the row
 // index — the same face has to be the same colour after a sort, a filter and
 // a reload, or the colour is noise instead of a landmark.
-var AVATAR_TINTS = [
-  'bg-blue-100 text-blue-700',
-  'bg-rose-100 text-rose-700',
-  'bg-emerald-100 text-emerald-700',
-  'bg-amber-100 text-amber-700',
-  'bg-violet-100 text-violet-700',
-  'bg-teal-100 text-teal-700',
-]
 // A <select> takes its width from the longest option it holds, not from the
 // one selected — so "Name" sat in a box sized for "Balance high → low", with
 // the arrow stranded at the far right. The visible part is drawn from this
@@ -161,12 +153,6 @@ function WalletBackdrop({ inAdmin }) {
   )
 }
 
-function avatarTint(name) {
-  var s = String(name || '')
-  var h = 0
-  for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0
-  return AVATAR_TINTS[h % AVATAR_TINTS.length]
-}
 import VoiceInput from '../../components/ui/VoiceInput'
 import { DeptChip } from '../../components/ui/Badge'
 import SearchField from '../../components/ui/SearchField'
@@ -175,6 +161,7 @@ import PaymentProofThumbs from '../../components/ledger/PaymentProofThumbs'
 import CheckedStamp from '../../components/ui/CheckedStamp'
 import { hasPerm } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
+import { avatarTint } from '../../lib/avatarTint'
 
 var REF_TYPE_LABELS = {
   expense: 'Expense',
