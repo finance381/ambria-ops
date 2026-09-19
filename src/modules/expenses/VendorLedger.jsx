@@ -582,12 +582,17 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
 
     return (
       <div className="space-y-4">
-        {/* Six readings of the same list, four of which are also the filter.
+        {/* Five readings of the same list, four of which are also the filter.
             The segmented All / With Balance / Incomplete / Overdue bar is gone:
             it repeated four words that were already up here with their counts
             beside them, and a count is the part that tells you whether pressing
-            it is worth anything. */}
-        <div className="grid grid-cols-2 lg:grid-cols-7 gap-3">
+            it is worth anything.
+
+            There is no Total Vendors tile, because All was already printing
+            that number — the filter that shows every vendor and the count of
+            every vendor are the same figure, and it was on the screen twice,
+            side by side. */}
+        <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
           <Tile wide icon="wallet" tone="bg-amber-50 text-amber-600" label="Total Outstanding"
             value={formatPoints(totalOutstanding)} valueClass={outstandingClass}>
             {(totalCash !== 0 || totalBank !== 0) && (
@@ -597,11 +602,9 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
               </div>
             )}
           </Tile>
-          <Tile icon="list" tone="bg-indigo-50 text-indigo-600" label="All"
+          <Tile icon="list" tone="bg-indigo-50 text-indigo-600" label="All vendors"
             value={activeVendors.length} valueClass="text-indigo-700"
             active={statusFilter === 'all'} onClick={function () { setStatusFilter('all') }} />
-          <Tile icon="building" tone="bg-blue-50 text-blue-600" label="Total Vendors"
-            value={activeVendors.length} valueClass="text-slate-900" />
           <Tile icon="clock" tone="bg-rose-50 text-rose-600" label="Overdue Vendors"
             value={overdueVendors.length} valueClass={overdueVendors.length > 0 ? 'text-rose-700' : 'text-slate-400'}
             active={statusFilter === 'overdue'} onClick={function () { setStatusFilter('overdue') }} />
