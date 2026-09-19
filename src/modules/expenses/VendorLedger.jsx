@@ -27,11 +27,20 @@ var VENDOR_SORTS = {
   due: 'Earliest due',
 }
 
-// The figure is the one thing that keeps a colour. Money still owed reads
-// amber, money owed the other way reads rose, and a settled vendor is grey
-// rather than a colour that suggests there is something to do about it.
+// Outstanding is the ordinary state of a vendor ledger — nearly every row has
+// some — so colouring it said nothing and turned the whole grid amber. A
+// colour that is on everything is not a signal, it is a background.
+//
+// The figure is dark by default, which is what an amount you simply want to
+// read should be, and takes a colour only where the colour means something:
+// emerald when the balance runs the other way and the money is owed to us,
+// grey when there is nothing outstanding at all. Overdue is not in here — it
+// has its own chip on the same line, and saying it twice in two reds was half
+// of what made this loud.
 function balanceColour(paise) {
-  return paise > 0 ? 'text-amber-700' : paise < 0 ? 'text-rose-700' : 'text-slate-400'
+  if (paise < 0) return 'text-emerald-700'
+  if (!paise) return 'text-slate-400'
+  return 'text-slate-900'
 }
 
 // A figure, what it is, and the glyph that says which. The number carries the
