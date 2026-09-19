@@ -13,6 +13,7 @@ import { pushBack, goBack as navBack } from '../../lib/backNav'
 import { hasPerm } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
 import Icon from '../../components/ui/Icon'
+import CheckedStamp from '../../components/ui/CheckedStamp'
 import { T, CARD, FIELD_SEARCH, ON, OFF, BTN, STATUS_RAIL } from '../../lib/ui'
 import { deptInk } from '../../lib/ui'
 
@@ -106,6 +107,8 @@ function Expenses({ profile, masterMode, inAdmin, deepLinkExpense, onDeepLinkHan
   var isDeptApprover = hasPerm(profile?.permsNew, 'review.dept.approve')
   var hasExpenseApprove = hasPerm(profile?.permsNew, 'finance.expenses.approve')
   var showApproveTab = isAdmin || isAuditor || hasExpenseApprove
+  var canMarkChecked = hasPerm(profile?.permsNew, 'finance.wallet.mark_checked')
+  var [checkingExpId, setCheckingExpId] = useState(null)
 
   useEffect(function () {
     var timer = setTimeout(function () { setExpSearchDebounced(expSearch) }, 400)
@@ -265,6 +268,24 @@ function Expenses({ profile, masterMode, inAdmin, deepLinkExpense, onDeepLinkHan
     }
     setApprovalHasMore(hasMore)
     setLoadingMore(false)
+  }
+
+  async function toggleExpenseCheck(exp) {
+    if (checkingExpId) return
+    setCheckingExpId(exp.id)
+    var { data, error } = await supabase.rpc('fn_toggle_expense_check', { p_expense_id: exp.id })
+    setCheckingExpId(null)
+    if (error) { alert('Could not update: ' + error.message); return }
+    var nowChecked = !!data
+    var patch = function (list) { return list.map(function (x) {
+      if (x.id !== exp.id) return x
+      return Object.assign({}, x, {
+        checked_by: nowChecked ? profile.id : null,
+        checked_at: nowChecked ? new Date().toISOString() : null,
+      })
+    }) }
+    setMyExpenses(patch)
+    setApprovalExpenses(patch)
   }
 
   function openDetail(exp) {
@@ -896,6 +917,18 @@ function Expenses({ profile, masterMode, inAdmin, deepLinkExpense, onDeepLinkHan
                     <span className={"shrink-0 text-[9.5px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded " + (APPROVAL_STATUS_COLORS[exp.status] || 'bg-slate-100 text-slate-600')}>
                       {APPROVAL_STATUS_LABELS[exp.status] || exp.status}
                     </span>
+                    {(exp.checked_by || canMarkChecked) && (
+                      <span className="shrink-0" onClick={function (ev) { ev.stopPropagation() }}>
+                        <CheckedStamp
+                          checked={!!exp.checked_by}
+                          checkedAt={exp.checked_at}
+                          canToggle={canMarkChecked}
+                          canUncheck={exp.checked_by === profile?.id || isAdmin}
+                          busy={checkingExpId === exp.id}
+                          onToggle={function () { toggleExpenseCheck(exp) }}
+                        />
+                      </span>
+                    )}
                     <span className="text-[11px] text-slate-500 truncate">
                       {view === 'approve' && !isSingleton && grp.submitter ? grp.submitter + ' · ' : ''}
                       {(function () {
