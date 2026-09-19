@@ -43,6 +43,29 @@ function balanceColour(paise) {
   return 'text-slate-900'
 }
 
+// The balance as a pill, the way the wallet list prints one: contained,
+// tabular, and sitting on the same line as the name rather than below it as a
+// headline of its own.
+//
+// The wallet's red is for a negative balance, because there a negative means
+// somebody is overdrawn. Here a positive is the ordinary case — we owe nearly
+// every vendor something — so it takes the plain slate pill, and the emerald
+// is kept for the balance running the other way, which is the one worth
+// noticing. Overdue has its chip on the same line and does not need a second
+// colour here.
+function BalancePill({ paise, large }) {
+  var tone = paise < 0 ? 'bg-emerald-50 text-emerald-700'
+    : !paise ? 'bg-slate-100 text-slate-400'
+    : 'bg-slate-100 text-slate-800'
+  return (
+    <span data-notranslate
+      className={'shrink-0 inline-flex items-center rounded-full font-bold tabular-nums whitespace-nowrap ' +
+        (large ? 'px-3 py-1.5 text-[14px] ' : 'px-2.5 py-1 text-[12.5px] ') + tone}>
+      {formatPoints(paise)}
+    </span>
+  )
+}
+
 // A figure, what it is, and the glyph that says which. The number carries the
 // colour; the tile around it does not.
 //
@@ -545,15 +568,17 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
           {/* No initial circle. A person's avatar stands in for a face you
               would recognise; a vendor's first letter is just the first letter
               of the name printed beside it, in a colour that means nothing. */}
-          <div className="flex items-start gap-3">
-            <div className="flex-1 min-w-0">
-              <div className="flex items-start gap-2">
-                <p className="flex-1 min-w-0 text-[13.5px] font-bold text-slate-900 truncate">{v.vendor_name || '—'}</p>
-                {renderChips(v)}
-              </div>
-              <p className={"mt-1.5 text-[19px] font-bold tabular-nums leading-none " + balanceColour(bal)} data-notranslate>{formatPoints(bal)}</p>
-              {renderMoneyNotes(v)}
-            </div>
+          {/* The name leads and the balance sits beside it in a pill, the way
+              the wallet list sets a row. As a 19px figure on its own line the
+              amount was the headline and the vendor it belonged to was the
+              caption — which is backwards for a list you scan by name. */}
+          <div className="flex items-start gap-2">
+            <p className="flex-1 min-w-0 text-[14.5px] font-bold text-slate-900 truncate transition-colors group-hover:text-indigo-700">{v.vendor_name || '—'}</p>
+            {renderChips(v)}
+            <BalancePill paise={bal} large />
+          </div>
+          <div className="mt-2 flex items-end gap-3">
+            <div className="flex-1 min-w-0">{renderMoneyNotes(v)}</div>
             {renderCallLink(v)}
             <span aria-hidden="true" className="shrink-0 self-center text-slate-300 group-hover:text-indigo-500 transition-colors">
               <Icon name="chevronRight" size={16} />
@@ -573,15 +598,15 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
           className="group text-left w-full flex items-center gap-3 px-3.5 py-3 hover:bg-indigo-50/30 transition-colors">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
-              <p className="min-w-0 truncate text-[13.5px] font-bold text-slate-900">{v.vendor_name || '—'}</p>
+              <p className="min-w-0 truncate text-[14.5px] font-bold text-slate-900 transition-colors group-hover:text-indigo-700">{v.vendor_name || '—'}</p>
               {renderChips(v)}
             </div>
             <div className="mt-1 flex flex-wrap items-center gap-y-1 text-[11px] text-slate-500">
               {renderFacts(v)}
             </div>
           </div>
+          <BalancePill paise={bal} />
           {renderCallLink(v)}
-          <p className={"shrink-0 text-[16px] font-bold tabular-nums " + balanceColour(bal)} data-notranslate>{formatPoints(bal)}</p>
           <span aria-hidden="true" className="shrink-0 text-slate-300 group-hover:text-indigo-500 transition-colors">
             <Icon name="chevronRight" size={16} />
           </span>
