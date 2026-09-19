@@ -43,7 +43,12 @@ function balanceColour(paise) {
 // a bar underneath saying the same word without the count — so the tiles that
 // count a state can be pressed, and the two that are pure readings cannot.
 function Tile({ icon, tone, label, value, valueClass, wide, active, onClick, children }) {
-  var box = 'text-left bg-white border rounded-2xl px-4 py-3.5 transition-all duration-150 ' +
+  // h-full and an explicit centre on every tile, because a <button> centres
+  // its own contents and a <div> does not. Four of these are buttons and two
+  // are not, and the outstanding tile is taller than all of them — so the two
+  // plain ones were pinned to the top of a row the buttons were sitting in the
+  // middle of, and the labels stopped lining up across the row.
+  var box = 'text-left h-full flex flex-col justify-center bg-white border rounded-2xl px-4 py-3.5 transition-all duration-150 ' +
     (wide ? 'lg:col-span-2 ' : '') +
     (active ? 'border-indigo-400 ring-2 ring-indigo-100 ' : 'border-slate-200 ') +
     (onClick ? 'hover:border-indigo-300 hover:bg-indigo-50/20 active:scale-[0.995] ' : '')
