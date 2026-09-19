@@ -67,7 +67,7 @@ function BalancePill({ paise, large }) {
 // vendors are overdue is a better button for "show me those" than a segment in
 // a bar underneath saying the same word without the count — so the tiles that
 // count a state can be pressed, and the two that are pure readings cannot.
-function Tile({ icon, tone, label, value, valueClass, wide, tint, active, onClick, children }) {
+function Tile({ icon, tone, label, value, valueClass, wide, small, tint, active, onClick, children }) {
   // h-full and an explicit centre on every tile, because a <button> centres
   // its own contents and a <div> does not. Four of these are buttons and two
   // are not, and the outstanding tile is taller than all of them — so the two
@@ -103,7 +103,12 @@ function Tile({ icon, tone, label, value, valueClass, wide, tint, active, onClic
             clearly the thing and the label is clearly what it is called. */}
         <div className="min-w-0">
           <p className={'truncate text-[11.5px] font-semibold ' + (active ? 'text-indigo-700' : 'text-slate-600')}>{label}</p>
-          <p className={'mt-1.5 font-display font-extrabold tabular-nums leading-none tracking-[-0.02em] ' + (wide ? 'text-[24px] ' : 'text-[22px] ') + valueClass} data-notranslate>{value}</p>
+          {/* One line. At 22px in a seventh of the grid, "4,51,413 pts" and
+              "17 Sept 2026" both ran to two — and a tile whose figure wraps is
+              taller than the five beside it. The wide one keeps its size
+              because it has twice the room; the rest come down, and truncate
+              rather than wrap if a number ever outgrows even that. */}
+          <p className={'mt-1.5 font-display font-extrabold tabular-nums leading-none tracking-[-0.02em] whitespace-nowrap truncate ' + (wide ? 'text-[24px] ' : small ? 'text-[18px] ' : 'text-[22px] ') + valueClass} data-notranslate>{value}</p>
         </div>
       </div>
       {children}
@@ -1074,17 +1079,17 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
             </p>
           )}
         </Tile>
-        <Tile icon="banknote" tone="bg-emerald-50 text-emerald-600" label="Cash"
+        <Tile small icon="banknote" tone="bg-emerald-50 text-emerald-600" label="Cash"
           value={formatPoints(vs.cash_balance_paise || 0)} valueClass="text-slate-900" />
-        <Tile icon="bank" tone="bg-indigo-50 text-indigo-600" label="Bank"
+        <Tile small icon="bank" tone="bg-indigo-50 text-indigo-600" label="Bank"
           value={formatPoints(vs.bank_balance_paise || 0)} valueClass="text-slate-900" />
-        <Tile icon="fileText" tone="bg-slate-100 text-slate-500" label="Total Entries"
+        <Tile small icon="fileText" tone="bg-slate-100 text-slate-500" label="Total Entries"
           value={entries.length} valueClass="text-slate-900" />
-        <Tile icon="calendar" tone="bg-violet-50 text-violet-600" label="Last Entry"
-          value={vs.last_entry_date ? formatDate(vs.last_entry_date) : '—'}
+        <Tile small icon="calendar" tone="bg-violet-50 text-violet-600" label="Last Entry"
+          value={vs.last_entry_date ? shortDate(vs.last_entry_date) : '—'}
           valueClass={vs.last_entry_date ? 'text-slate-900' : 'text-slate-400'} />
-        <Tile icon="clock" tone="bg-rose-50 text-rose-600" label="Earliest Due"
-          value={vs.earliest_due_date ? formatDate(vs.earliest_due_date) : '—'}
+        <Tile small icon="clock" tone="bg-rose-50 text-rose-600" label="Earliest Due"
+          value={vs.earliest_due_date ? shortDate(vs.earliest_due_date) : '—'}
           valueClass={vs.earliest_due_date ? 'text-slate-900' : 'text-slate-400'} />
       </div>
 
