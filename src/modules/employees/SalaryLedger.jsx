@@ -10,6 +10,7 @@ import LedgerSourceMedia from '../../components/ledger/LedgerSourceMedia'
 import { hasPerm } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
 import { useExpenseDetailModal } from '../../hooks/useExpenseDetailModal.jsx'
+import Icon from '../../components/ui/Icon'
 
 function SalaryLedger({ profile }) {
   var permsNew = (profile && profile.permsNew) || []
@@ -497,8 +498,9 @@ function SalaryLedger({ profile }) {
                   )}
                   {isAdmin && !isDeleted && (
                     <button onClick={function (ev) { ev.stopPropagation(); reverseEntry(e.id) }}
-                      className="text-[10px] text-red-500 hover:text-red-700 mt-1 font-medium">
-                      ↩ Reverse
+                      className="mt-1.5 h-[22px] inline-flex items-center gap-1 px-2 rounded-md border border-slate-200 bg-white text-[9px] font-bold uppercase tracking-[0.04em] text-slate-600 hover:border-rose-300 hover:text-rose-700 hover:bg-rose-50 transition-colors">
+                      <Icon name="reverse" size={10} />
+                      Reverse
                     </button>
                   )}
                 </div>
