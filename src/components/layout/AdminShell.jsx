@@ -314,6 +314,17 @@ function AdminShell({ profile, onSignOut }) {
   var permsNew = profile.permsNew || []
   var visibleTabs = ADMIN_TABS.filter(function (t) { return tabAllowed(t, permsNew) })
 
+  // TabbedSection only re-syncs its own `sub` state from activeSubTab when
+  // that prop is truthy (see its useEffect) — passing null there is a no-op,
+  // it will not snap back to the first pill. So jumping to a section's
+  // landing sub-tab from the breadcrumb needs the actual key, not null.
+  function defaultSubTabKey(tabKey) {
+    var cfg = SUB_TAB_CONFIG[tabKey]
+    if (!cfg) return null
+    var visible = cfg.filter(function (c) { return subTabAllowed(c, permsNew) })
+    return visible.length > 0 ? visible[0].key : null
+  }
+
   var _defaultTab = visibleTabs.length > 0 ? visibleTabs[0].key : null
   var [active, setActive] = useState(_defaultTab)
   var [subTab, setSubTab] = useState(null)
@@ -504,9 +515,25 @@ function AdminShell({ profile, onSignOut }) {
               sections with no sub-tabs (Overview, Analytics, Projects, ...)
               never set it, so the trail stops at the section for those. */}
           <nav aria-label="Breadcrumb" className="flex items-center gap-2 min-w-0 text-[13px]">
-            <span className="text-slate-400" aria-hidden="true"><Icon name="home" size={15} /></span>
+            <button
+              onClick={function () {
+                var home = visibleTabs.find(function (t) { return t.key === 'overview' }) || visibleTabs[0]
+                if (!home) return
+                setActive(home.key); setSubTab(null); setSubTabMeta(null)
+              }}
+              aria-label="Home" className="text-slate-400 hover:text-indigo-600 transition-colors">
+              <Icon name="home" size={15} />
+            </button>
             <span className="text-slate-300" aria-hidden="true">/</span>
-            <span className={subTabMeta ? "text-slate-500 truncate" : "font-semibold text-slate-900 truncate"}>{activeLabel}</span>
+            {subTabMeta ? (
+              <button
+                onClick={function () { setSubTab(defaultSubTabKey(active)); setSubTabMeta(null) }}
+                className="text-slate-500 hover:text-indigo-600 font-medium truncate transition-colors">
+                {activeLabel}
+              </button>
+            ) : (
+              <span className="font-semibold text-slate-900 truncate">{activeLabel}</span>
+            )}
             {subTabMeta && (
               <>
                 <span className="text-slate-300" aria-hidden="true">/</span>
