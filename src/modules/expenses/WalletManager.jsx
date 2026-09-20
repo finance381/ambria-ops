@@ -172,6 +172,7 @@ import { DeptChip } from '../../components/ui/Badge'
 import SearchField from '../../components/ui/SearchField'
 import { pushBack, goBack } from '../../lib/backNav'
 import PaymentProofThumbs from '../../components/ledger/PaymentProofThumbs'
+import LedgerSourceMedia from '../../components/ledger/LedgerSourceMedia'
 import CheckedStamp from '../../components/ui/CheckedStamp'
 import { hasPerm } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
@@ -671,7 +672,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     if (expRefIds.length > 0) {
       var expIdsNum = expRefIds.map(function (x) { return Number(x) }).filter(function (n) { return !isNaN(n) })
       var { data: eData } = await supabase.from('expenses')
-        .select('id, description, amount_paise, expense_date, event_id, vendor_name, metadata, status, checked_by, checked_at, deleted_at, expense_types(name, icon), expense_sub_types(name, extra_fields), expense_allocations(department, amount_paise, expense_types(name), expense_sub_types(name))')
+        .select('id, description, amount_paise, expense_date, event_id, vendor_name, metadata, status, checked_by, checked_at, deleted_at, receipt_path, receipt_paths, expense_types(name, icon), expense_sub_types(name, extra_fields), expense_allocations(department, amount_paise, expense_types(name), expense_sub_types(name))')
         .in('id', expIdsNum)
       var eMap = {}
       var evIds = {}
@@ -702,9 +703,10 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
       return PAYMENT_REF_TYPES.indexOf(tt.reference_type) !== -1 && tt.reference_id
     }).map(function (tt) { return tt.reference_id })
     if (payRefIds.length > 0) {
-      var { data: leData } = await supabase.from('ledger_entries').select('id, metadata').in('id', payRefIds)
+      // Matched on ref_id, not id — see openPaymentDetail for why.
+      var { data: leData } = await supabase.from('ledger_entries').select('id, ref_id, metadata').in('ref_id', payRefIds)
       var leMap = {}
-      ;(leData || []).forEach(function (le) { leMap[le.id] = le })
+      ;(leData || []).forEach(function (le) { leMap[le.ref_id] = le })
       setPaymentRefs(leMap)
     } else {
       setPaymentRefs({})
@@ -1464,9 +1466,12 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   async function openPaymentDetail(t) {
     setPayDetailTarget({ txn: t, entry: null, partyName: '', loading: true })
     if (!t.reference_id) { setPayDetailTarget({ txn: t, entry: null, partyName: '', loading: false }); return }
+    // wallet_transactions.reference_id for a payment row is the shared UUID
+    // (v_ref_id in pay_vendor / the salary-payment equivalent) — that value
+    // lives on ledger_entries.ref_id, not its own bigint id column.
     var { data: entry } = await supabase.from('ledger_entries')
       .select('id, ledger_type, party_id, entry_date, created_at, description, debit_paise, ref_type, metadata')
-      .eq('id', t.reference_id).maybeSingle()
+      .eq('ref_id', t.reference_id).maybeSingle()
     if (!entry) { setPayDetailTarget({ txn: t, entry: null, partyName: '', loading: false }); return }
     var partyName = ''
     if (entry.ledger_type === 'vendor') {
@@ -3422,6 +3427,9 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
               // it here when that's the case so the vendor name isn't repeated.
               if (e.vendor_name && extraFieldValues.indexOf(e.vendor_name) === -1) pairs.unshift({ label: 'Vendor', value: e.vendor_name })
               if (t.reference_type === 'expense_refund' && e.amount_paise) parts.push('orig ' + formatPoints(e.amount_paise) + ' on ' + formatDate(e.expense_date))
+              var sourceReceipts = Array.isArray(e.receipt_paths) && e.receipt_paths.length > 0
+                ? e.receipt_paths
+                : (e.receipt_path ? [e.receipt_path] : [])
               return (
                 <>
                   {/* One rhythm down the row. Five lines at four pixels apart,
@@ -3465,6 +3473,11 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                     </div>
                   )}
                   {parts.length > 0 && <p className="mt-2 text-[11px] text-slate-500 leading-relaxed">{parts.join(' · ')}</p>}
+                  {sourceReceipts.length > 0 && (
+                    <div onClick={function (ev) { ev.stopPropagation() }}>
+                      <LedgerSourceMedia paths={sourceReceipts} />
+                    </div>
+                  )}
                   {allocs.length > 0 && !expandAllTxns && (
                     <button type="button" onClick={function (ev) { toggleTxnExpanded(t.id, ev) }}
                       className="mt-2 inline-flex items-center gap-1 text-[10.5px] font-semibold text-indigo-600 hover:text-indigo-800">
