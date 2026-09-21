@@ -370,18 +370,18 @@ function PaymentsLedger({ profile }) {
     [{ k: 'in',   label: 'Income',  on: dirFilter === 'in',    run: function () { setDirFilter(dirFilter === 'in' ? 'all' : 'in') }, tone: 'emerald' },
      { k: 'out',  label: 'Expense', on: dirFilter === 'out',   run: function () { setDirFilter(dirFilter === 'out' ? 'all' : 'out') }, tone: 'rose' }],
   ]
-  // Pressed changes the writing, not the pill. Filling the whole shape put a
-  // block of colour in a toolbar of white controls, loud out of proportion to
-  // a filter being on; the word itself carrying its colour says the same thing
-  // at the size the thing deserves. Resting, every pill is the same grey —
-  // five colours sitting there unpressed would each be claiming something is
-  // already in force.
+  // Pressed colours the writing and the outline around it — a hairline and a
+  // word, not a filled shape. A fill put a block of colour into a toolbar of
+  // white controls, loud out of proportion to a filter being on; an outline is
+  // the same statement at the weight the thing deserves. Resting, every pill
+  // is grey: five colours sitting there unpressed would each be claiming
+  // something is already in force.
   var QUICK_TONE = {
-    indigo:  'text-indigo-600',
-    amber:   'text-amber-600',
-    sky:     'text-sky-600',
-    emerald: 'text-emerald-600',
-    rose:    'text-rose-600',
+    indigo:  'border-indigo-400 text-indigo-600',
+    amber:   'border-amber-400 text-amber-600',
+    sky:     'border-sky-400 text-sky-600',
+    emerald: 'border-emerald-400 text-emerald-600',
+    rose:    'border-rose-400 text-rose-600',
   }
 
   return (
@@ -415,8 +415,8 @@ function PaymentsLedger({ profile }) {
                       {group.map(function (q) {
                         return (
                           <button key={q.k} type="button" onClick={q.run} aria-pressed={q.on}
-                            className={'h-8 px-3 rounded-full border border-slate-300 bg-white text-[12px] font-bold transition-colors hover:bg-slate-50 ' +
-                              (q.on ? QUICK_TONE[q.tone] : 'text-slate-600 hover:text-slate-900')}>
+                            className={'h-8 px-3 rounded-full border bg-white text-[12px] font-bold transition-colors hover:bg-slate-50 ' +
+                              (q.on ? QUICK_TONE[q.tone] : 'border-slate-300 text-slate-600 hover:text-slate-900')}>
                             {q.label}
                           </button>
                         )
