@@ -743,7 +743,7 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
           <Tile wide icon="wallet" tone="bg-amber-50 text-amber-600" label="Total Outstanding"
             value={loading ? '—' : formatPoints(totalOutstanding)} valueClass={loading ? 'text-slate-300' : outstandingClass}>
             {(totalCash !== 0 || totalBank !== 0) && (
-              <div className="mt-2.5 pt-2.5 border-t border-slate-100 flex flex-wrap items-center gap-y-1 text-[11px] text-slate-500">
+              <div className="mt-3 pt-3 border-t border-slate-100 flex flex-wrap items-center gap-y-1 text-[12.5px] text-slate-500">
                 <Fact first icon="banknote" label="Cash" value={formatPoints(totalCash)} />
                 <Fact icon="bank" label="Bank" value={formatPoints(totalBank)} />
               </div>
