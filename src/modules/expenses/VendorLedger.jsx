@@ -556,8 +556,13 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
     setVendorTags(finalMap)
   }
 
-  async function loadVendors() {
-    setLoading(true)
+  // `silent`: refresh what is on the screen without taking it away first. The
+  // skeleton is for a screen that has nothing on it yet; a re-read on the way
+  // back from a vendor already has the whole list, and replacing it with
+  // placeholders to fetch the same rows again is a worse answer than a stale
+  // figure for a quarter of a second.
+  async function loadVendors(silent) {
+    if (!silent) setLoading(true)
 
     // Both reads at once. The second one was filtered by .in('id', …) on the
     // ids the first returned, which is what made it wait for them — but the
@@ -775,7 +780,11 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
     setView('list')
     setSelectedVendor(null)
     setEntries([])
-    loadVendors()  // refresh in case something changed
+    // Back to a screenful. The cards were unmounted while the detail view was
+    // up, so returning renders them all over again — and renderLimit had grown
+    // to cover the whole list before we left it.
+    setRenderLimit(FIRST_PAINT)
+    loadVendors(true)  // refresh in case something changed, without blanking it
   }
 
   var [showPayModal, setShowPayModal] = useState(false)
@@ -788,7 +797,7 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
 
   async function onPaymentSuccess() {
     setShowPayModal(false)
-    await loadVendors()
+    await loadVendors(true)
     if (selectedVendor) await loadEntries(selectedVendor, showDeleted)
   }
 
@@ -867,7 +876,7 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
     setMergeSourceIds([])
     setMergeTargetId('')
     setMergeSearch('')
-    await loadVendors()
+    await loadVendors(true)
     var summary = (data && (data.ledger_entries_moved || 0)) + ' ledger entries and ' + (data && (data.expenses_updated || 0)) + ' expense reference(s) moved.'
     alert('Merged. ' + summary)
   }
