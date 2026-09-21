@@ -40,6 +40,13 @@ var SOURCE_META = {
 
 // The clock time a row was logged at, for the quiet date line under the
 // particulars — not a second "Logged ..." sentence of its own.
+// The column heading already says pts. Repeating it on every row is the same
+// word three hundred and eighty-nine times, in the one column where the
+// figures need to line up.
+function pts(paise) {
+  return formatPoints(paise).replace(' pts', '')
+}
+
 function timeOf(ts) {
   if (!ts) return ''
   var d = new Date(ts)
@@ -544,19 +551,20 @@ function PaymentsLedger({ profile }) {
           </div>
         ) : (
           <div className="overflow-x-auto ambria-thin-scroll">
-            {/* Left to itself the browser splits a table by content, and the
-                short columns — a date, two chips, a word — each take a share of
-                a very wide panel, leaving the particulars, the one column that
-                wants room, squeezed against its neighbour. Everything but the
-                particulars is pinned to what it needs. */}
-            <table className="w-full min-w-[960px]">
+            {/* Pinning every column but one made that one the drain: on a
+                1600px panel the particulars held seven hundred pixels of
+                nothing after a six-word line, while the chips beside it sat
+                jammed against their own edges. Proportions instead, so the
+                slack is shared out and every column's spare space reads as
+                padding rather than as a hole in one of them. */}
+            <table className="w-full min-w-[960px] table-fixed">
               <colgroup>
-                <col style={{ width: '48px' }} />
-                <col />
-                <col style={{ width: '214px' }} />
-                <col style={{ width: '104px' }} />
-                <col style={{ width: '176px' }} />
-                <col style={{ width: '146px' }} />
+                <col className="w-[3%]" />
+                <col className="w-[36%]" />
+                <col className="w-[20%]" />
+                <col className="w-[9%]" />
+                <col className="w-[16%]" />
+                <col className="w-[16%]" />
               </colgroup>
               <thead className="sticky top-0 z-10 bg-slate-50 border-y border-slate-200">
                 <tr>
@@ -599,10 +607,10 @@ function PaymentsLedger({ profile }) {
                             out of words long before it runs out of column.
                             Capped, the slack becomes the gutter before the
                             chips rather than a hole inside the sentence. */}
-                        <div className="max-w-[560px]">
-                          <p className="font-display text-[13px] font-bold text-slate-900 leading-snug">{r.party_name}</p>
+                        <div className="min-w-0">
+                          <p className="font-display text-[13px] font-bold text-slate-900 leading-snug break-words">{r.party_name}</p>
                           {r.description && (
-                            <p className="mt-0.5 text-[12px] text-slate-500 leading-snug">{r.description}</p>
+                            <p className="mt-0.5 text-[12px] text-slate-500 leading-snug break-words">{r.description}</p>
                           )}
                           {/* A ledger without a date on the row is a list of
                               amounts. With the column gone it says it here,
@@ -637,14 +645,25 @@ function PaymentsLedger({ profile }) {
                       </td>
 
                       <td className="px-3 py-2.5 align-top">
+                        {/* On a wallet-funded expense the spender and the
+                            recorder are the same person, so this column was
+                            printing the name already bold two columns to the
+                            left. It still says it — the column has to be
+                            readable straight down — but quietly. */}
                         {who
-                          ? <span className="block min-w-0 text-[12px] font-bold text-slate-700 truncate">{who}</span>
+                          ? (
+                            <span title={who === r.party_name ? 'Same as the party' : undefined}
+                              className={'block min-w-0 text-[12px] truncate ' +
+                                (who === r.party_name ? 'font-medium text-slate-400' : 'font-bold text-slate-700')}>
+                              {who}
+                            </span>
+                          )
                           : <span className="text-[12px] text-slate-300">—</span>}
                       </td>
 
                       <td className="px-3 py-2.5 align-top text-right whitespace-nowrap">
                         <span data-notranslate className={'text-[14px] font-bold tabular-nums ' + (isIn ? 'text-emerald-700' : 'text-rose-700')}>
-                          {isIn ? '+ ' : '− '}{formatPoints(r.amount_paise || 0)}
+                          {isIn ? '+ ' : '− '}{pts(r.amount_paise || 0)}
                         </span>
                       </td>
                     </tr>
