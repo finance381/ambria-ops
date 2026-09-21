@@ -740,9 +740,14 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
         if (shownAllocations.length === 0) return null
         return (
         <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-[0_1px_2px_rgba(15,23,42,0.05)]">
-          <div className="px-4 py-2 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
-            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.1em]">Allocations</p>
-            <p className="text-xs font-bold text-slate-700">{formatPoints(shownAllocations.reduce(function (s, a) { return s + (a.amount_paise || 0) }, 0))}</p>
+          <div className="px-4 py-2 bg-slate-50 border-b border-slate-200 flex items-center justify-between gap-3">
+            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.1em]">
+              Allocations
+              <span className="ml-1.5 text-slate-400" data-notranslate>({shownAllocations.length})</span>
+            </p>
+            <p className="text-xs font-bold text-slate-700 tabular-nums" data-notranslate>
+              {formatPoints(shownAllocations.reduce(function (s, a) { return s + (a.amount_paise || 0) }, 0))}
+            </p>
           </div>
           <div className="divide-y divide-slate-100">
             {shownAllocations.map(function (a) {
@@ -751,20 +756,41 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
               var subTypeLabel = a.expense_sub_type_id && allocVenues['est_' + a.expense_sub_type_id] ? allocVenues['est_' + a.expense_sub_type_id] : null
               var venueLabel = a.venue_id && allocVenues['v_' + a.venue_id] ? allocVenues['v_' + a.venue_id] : null
               var subVenueLabel = a.sub_venue_id && allocVenues['sv_' + a.sub_venue_id] ? allocVenues['sv_' + a.sub_venue_id] : null
+              // Four lines of the same size and nearly the same grey, stacked
+              // flush left, read as one paragraph — you have to parse each one
+              // to learn what it is. They are four different kinds of thing, so
+              // each gets its own mark: the department leads at heading weight,
+              // the account path carries a tag, the venue a pin, and the note
+              // sits behind a rule instead of in faint italics.
               return (
-                <div key={a.id} className="px-4 py-2.5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium text-slate-800">{deptLabel}</span>
-                    {a.amount_paise > 0 && <span className="text-sm font-bold text-slate-900">{formatPoints(a.amount_paise)}</span>}
+                <div key={a.id} className="px-4 py-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1 space-y-1">
+                      <p className="font-display text-[13.5px] font-bold text-slate-900 leading-snug">{deptLabel}</p>
+                      {(typeLabel || subTypeLabel) && (
+                        <p className="flex items-center gap-1.5 text-[11.5px] font-semibold text-indigo-600">
+                          <Icon name="tag" size={11} className="shrink-0 text-indigo-400" />
+                          <span className="min-w-0 truncate">
+                            {typeLabel || '—'}
+                            {subTypeLabel && <><span className="mx-1 text-indigo-300">›</span>{subTypeLabel}</>}
+                          </span>
+                        </p>
+                      )}
+                      {venueLabel && (
+                        <p className="flex items-center gap-1.5 text-[11.5px] font-medium text-slate-500">
+                          <Icon name="mapPin" size={11} className="shrink-0 text-slate-400" />
+                          <span className="min-w-0 truncate">{venueLabel}{subVenueLabel ? ' › ' + subVenueLabel : ''}</span>
+                        </p>
+                      )}
+                    </div>
+                    {a.amount_paise > 0 && (
+                      <span className="shrink-0 text-[14px] font-bold text-slate-900 tabular-nums leading-snug" data-notranslate>
+                        {formatPoints(a.amount_paise)}
+                      </span>
+                    )}
                   </div>
-                  {(typeLabel || subTypeLabel) && (
-                    <p className="text-[11px] text-indigo-600 font-medium mt-0.5">{typeLabel || '—'}{subTypeLabel ? ' › ' + subTypeLabel : ''}</p>
-                  )}
-                  {venueLabel && (
-                    <p className="text-[11px] text-slate-500 mt-0.5">{venueLabel}{subVenueLabel ? ' › ' + subVenueLabel : ''}</p>
-                  )}
                   {a.remarks && (
-                    <p className="text-[11px] text-slate-500 italic mt-0.5">"{a.remarks}"</p>
+                    <p className="mt-2 border-l-2 border-slate-200 pl-2.5 text-[11.5px] leading-snug text-slate-600">{a.remarks}</p>
                   )}
                 </div>
               )
