@@ -169,6 +169,14 @@ import { avatarTint } from '../../lib/avatarTint'
 // for anyone west of Greenwich.
 function toYMD(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') }
 
+// ExpenseForm's edit flow posts a top-up/refund wallet_transactions row
+// (description "Expense edited: +/-N pts") whenever an edit changes an
+// expense's amount, so the balance stays correct. It's a real ledger entry —
+// CSV/PDF exports and the running balance still need it — but on screen it
+// just doubles up every edited expense as a second, noisier row right next
+// to the original. Hidden from the on-screen lists only.
+function isExpenseEditTxn(t) { return typeof t.description === 'string' && t.description.indexOf('Expense edited:') === 0 }
+
 var REF_TYPE_LABELS = {
   expense: 'Expense',
   expense_refund: 'Refund',
@@ -2565,6 +2573,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     var balBg = bal < 0 ? 'bg-red-50 border-red-200' : bal === 0 ? 'bg-gray-50 border-gray-200' : 'bg-green-50 border-green-200'
     var lastTxn = walletTxns[0]
     var lastActivity = lastTxn ? formatDate(lastTxn.created_at) : 'none yet'
+    var previewTxns = walletTxns.filter(function (t) { return !isExpenseEditTxn(t) })
     var receiveCount = pendingIncoming.length + pendingIssues.length
     // Pending confirmations take priority over the Issue shortcut — otherwise an admin/
     // auditor's own incoming transfers never surface on their dashboard at all.
@@ -2665,14 +2674,14 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
              and it was two tiles away. */}
           <div className="flex items-baseline justify-between gap-3 mb-2">
             <p className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em]">Recent Transactions</p>
-            {walletTxns.length > 5 && (
+            {previewTxns.length > 5 && (
               <button type="button" onClick={function () { setWalletView('transactions'); openWalletTxns(selectedWallet) }}
                 className="text-[12px] font-bold text-indigo-600 hover:text-indigo-800 transition-colors">
                 View all
               </button>
             )}
           </div>
-          {walletTxns.length === 0 ? (
+          {previewTxns.length === 0 ? (
             /* Says what would be here and how it gets here, rather than only
                that there is nothing. */
             <div className="py-8 px-4 text-center bg-white border border-slate-200 rounded-2xl @3xl:flex-1 @3xl:flex @3xl:flex-col @3xl:items-center @3xl:justify-center">
@@ -3658,7 +3667,9 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
       // The debit already happened, so a deleted expense's transaction stays
       // in the ledger for audit rather than being removed — just hidden from
       // the everyday view unless asked for.
-      var visible = showDeletedTxns ? walletTxns : walletTxns.filter(function (t) {
+      var visible = walletTxns.filter(function (t) {
+        if (isExpenseEditTxn(t)) return false
+        if (showDeletedTxns) return true
         var isExpRow = (t.reference_type === 'expense' || t.reference_type === 'expense_refund') && t.reference_id
         var xp = isExpRow ? expenseRefs[t.reference_id] : null
         return !(xp && xp.deleted_at)
