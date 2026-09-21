@@ -1832,7 +1832,7 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
                     reading as one ragged block. */}
                 <span aria-hidden="true" className="self-stretch shrink-0 w-px bg-slate-200" />
                 {anyEntryChecked && (
-                  <span className="shrink-0 w-[120px] self-center flex items-center justify-center"
+                  <span className="shrink-0 w-[160px] self-center flex items-center justify-center"
                     onClick={function (ev) { ev.stopPropagation() }}>
                     {!isDeleted && checkedProps.checked && renderChecked('stamp')}
                   </span>

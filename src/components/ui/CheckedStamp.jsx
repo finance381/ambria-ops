@@ -43,13 +43,14 @@ function CheckedStamp({ checked, checkerName, checkedAt, canToggle, canUncheck, 
     // production. The import also content-hashes it, so a new stamp is never
     // served from a stale cache.
     //
-    // The file is 240px wide for a 120px slot — exactly 2x — which is what a retina
-    // screen wants. The original was 1290px and 925KB, which is most of a megabyte to
-    // draw something the size of a thumbnail.
+    // The file is 360px wide for a 160px slot, so it still has more pixels
+    // than a retina screen asks for. It is cut from the 1290px original that
+    // came in at 925KB — most of a megabyte to draw something the size of a
+    // thumbnail.
     return (
       <button type="button" disabled={busy || !interactive} onClick={interactive ? onToggle : undefined} title={title}
         aria-label={title}
-        className={"shrink-0 w-[120px] h-[120px] inline-flex items-center justify-center transition-opacity " +
+        className={"shrink-0 w-[160px] h-[160px] inline-flex items-center justify-center transition-opacity " +
           (interactive ? "cursor-pointer opacity-90 hover:opacity-100" : "cursor-default opacity-80")}>
         <img src={checkedStamp} alt="" aria-hidden="true" draggable="false"
           className="w-full h-full object-contain select-none" />

@@ -1040,7 +1040,7 @@ function Ledgers({ profile, onNavigateToExpenses }) {
                           whether it has been checked is a verdict on that
                           rather than another label beside the description. */}
                       {anyDrillChecked && (
-                        <span className="shrink-0 w-[120px] self-center flex items-center justify-center"
+                        <span className="shrink-0 w-[160px] self-center flex items-center justify-center"
                           onClick={function (ev) { ev.stopPropagation() }}>
                           {r._checkedBy && (
                             <CheckedStamp
