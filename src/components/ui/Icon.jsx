@@ -38,10 +38,6 @@ var PATHS = {
   bank: <><path d="M3 10 12 4l9 6" /><path d="M5 10v9M19 10v9M9.5 10v9M14.5 10v9" /><path d="M3 20h18" /></>,
   receipt: <><path d="M6 3v18l2-1.4 2 1.4 2-1.4 2 1.4 2-1.4 2 1.4V3l-2 1.4L14 3l-2 1.4L10 3 8 4.4 6 3Z" /><path d="M9 9h6M9 13h4" /></>,
   chart: <><path d="M3 3v18h18" /><path d="M7 15v3M12 10v8M17 6v12" /></>,
-  // Two arrows facing opposite ways — a sort control, not a funnel. The
-  // dropdown that picks newest-first or highest-first was wearing the filter
-  // icon, which is the thing beside it that narrows the list.
-  sort: <><path d="M7 4v16" /><path d="m3 8 4-4 4 4" /><path d="M17 20V4" /><path d="m13 16 4 4 4-4" /></>,
   fileText: <><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5Z" /><path d="M14 3v5h5" /><path d="M9 13h6M9 17h4" /></>,
   paperclip: <path d="M21 11.5 12.5 20a5 5 0 0 1-7-7l8-8a3.5 3.5 0 0 1 5 5l-8 8a2 2 0 0 1-3-3l7.5-7.5" />,
   tag: <><path d="M3 12V5a2 2 0 0 1 2-2h7l9 9-9 9-9-9Z" /><circle cx="7.5" cy="7.5" r="1.3" /></>,

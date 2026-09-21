@@ -54,13 +54,6 @@ function timeOf(ts) {
   return d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true })
 }
 
-var SORTS = [
-  { k: 'date_desc', label: 'Date (Newest)' },
-  { k: 'date_asc',  label: 'Date (Oldest)' },
-  { k: 'amt_desc',  label: 'Amount (High)' },
-  { k: 'amt_asc',   label: 'Amount (Low)' },
-]
-
 function PaymentsLedger({ profile }) {
   var permsNew = (profile && profile.permsNew) || []
   var canView = hasPerm(permsNew, 'finance.payments')
@@ -74,7 +67,6 @@ function PaymentsLedger({ profile }) {
   var [dirFilter, setDirFilter] = useState('all') // 'all' | 'in' | 'out'
   var [search, setSearch] = useState('')
   var [typeFilter, setTypeFilter] = useState('')
-  var [sortKey, setSortKey] = useState('date_desc')
   var [showMore, setShowMore] = useState(false)
   var [page, setPage] = useState(1)
   var [detailTarget, setDetailTarget] = useState(null) // { row, event, collectorName, loading } — vendor/salary/collection rows
@@ -286,14 +278,12 @@ function PaymentsLedger({ profile }) {
       }
       return true
     })
-    out.sort(function (a, b) {
-      if (sortKey === 'amt_desc') return (b.amount_paise || 0) - (a.amount_paise || 0)
-      if (sortKey === 'amt_asc') return (a.amount_paise || 0) - (b.amount_paise || 0)
-      var d = (a.logged_at || '').localeCompare(b.logged_at || '')
-      return sortKey === 'date_asc' ? d : -d
-    })
+    // Newest first, always. A ledger is read from the last thing that
+    // happened backwards, and the four orders behind the dropdown were three
+    // nobody chose and the one it already had.
+    out.sort(function (a, b) { return (b.logged_at || '').localeCompare(a.logged_at || '') })
     return out
-  }, [rows, modeFilter, dirFilter, typeFilter, search, sortKey])
+  }, [rows, modeFilter, dirFilter, typeFilter, search])
 
   // Every type present in the range, so the filter cannot offer one that
   // returns nothing — and how many rows are behind each, so pressing one is a
@@ -311,7 +301,7 @@ function PaymentsLedger({ profile }) {
   }, [rows])
 
   // Any narrowing makes the page you were on meaningless.
-  useEffect(function () { setPage(1) }, [modeFilter, dirFilter, typeFilter, search, sortKey, dateFrom, dateTo])
+  useEffect(function () { setPage(1) }, [modeFilter, dirFilter, typeFilter, search, dateFrom, dateTo])
 
   var PAGE_SIZE = 25
   var pageCount = Math.max(1, Math.ceil(visible.length / PAGE_SIZE))
@@ -515,16 +505,6 @@ function PaymentsLedger({ profile }) {
                   </span>
                 )
               })}
-            </div>
-            <div className="relative">
-              <select value={sortKey} onChange={function (ev) { setSortKey(ev.target.value) }}
-                aria-label="Sort transactions"
-                className="h-9 pl-8 pr-7 rounded-xl border border-slate-300 bg-white text-[12.5px] font-bold text-slate-700 appearance-none focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 hover:bg-slate-50 transition-colors">
-                {SORTS.map(function (o) { return <option key={o.k} value={o.k}>{o.label}</option> })}
-              </select>
-              {/* A funnel is the control beside this one. This is a sort. */}
-              <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"><Icon name="sort" size={13} /></span>
-              <span className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"><Icon name="chevronDown" size={13} /></span>
             </div>
           </div>
         </div>
