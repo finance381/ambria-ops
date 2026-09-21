@@ -169,6 +169,43 @@ import { avatarTint } from '../../lib/avatarTint'
 // for anyone west of Greenwich.
 function toYMD(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') }
 
+// One expense can have several wallet_transactions rows behind it — the
+// original debit, an "Expense edited: +/-N" diff row if it was amended
+// later, even a flag→refund→reinstate cycle. Each row is individually
+// correct for the running balance (CSV/PDF exports and the balance math
+// still want every row), but shown separately on screen they scatter one
+// expense across N cards, each carrying only its own partial amount —
+// which never matches the allocation breakdown attached to it, since that
+// breakdown always reflects the expense's current, fully-settled total.
+// This folds every row sharing one expense into a single card: the net
+// amount across the whole group always reconciles with the current total
+// by construction (every one of those RPCs exists specifically to keep the
+// wallet in sync with the expense), and the balance snapshot comes from
+// whichever row in the group happened most recently.
+function mergeExpenseWalletRows(txns) {
+  var groups = {}
+  var out = []
+  txns.forEach(function (t) {
+    var isExpRow = (t.reference_type === 'expense' || t.reference_type === 'expense_refund') && t.reference_id
+    if (!isExpRow) { out.push(t); return }
+    if (!groups[t.reference_id]) groups[t.reference_id] = []
+    groups[t.reference_id].push(t)
+  })
+  Object.keys(groups).forEach(function (key) {
+    var rows = groups[key].slice().sort(function (a, b) { return new Date(a.created_at) - new Date(b.created_at) })
+    if (rows.length === 1) { out.push(rows[0]); return }
+    var latest = rows[rows.length - 1]
+    var net = rows.reduce(function (s, r) { return s + (r.type === 'credit' ? -(r.amount_paise || 0) : (r.amount_paise || 0)) }, 0)
+    out.push(Object.assign({}, rows[0], {
+      amount_paise: Math.abs(net),
+      type: net < 0 ? 'credit' : 'debit',
+      balance_after_paise: latest.balance_after_paise,
+      _sortAt: latest.created_at,
+    }))
+  })
+  return out
+}
+
 var REF_TYPE_LABELS = {
   expense: 'Expense',
   expense_refund: 'Refund',
@@ -2571,6 +2608,8 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     var balBg = bal < 0 ? 'bg-red-50 border-red-200' : bal === 0 ? 'bg-gray-50 border-gray-200' : 'bg-green-50 border-green-200'
     var lastTxn = walletTxns[0]
     var lastActivity = lastTxn ? formatDate(lastTxn.created_at) : 'none yet'
+    var previewTxns = mergeExpenseWalletRows(walletTxns)
+      .sort(function (a, b) { return new Date(b._sortAt || b.created_at) - new Date(a._sortAt || a.created_at) })
     var receiveCount = pendingIncoming.length + pendingIssues.length
     // Pending confirmations take priority over the Issue shortcut — otherwise an admin/
     // auditor's own incoming transfers never surface on their dashboard at all.
@@ -2671,14 +2710,14 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
              and it was two tiles away. */}
           <div className="flex items-baseline justify-between gap-3 mb-2">
             <p className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em]">Recent Transactions</p>
-            {walletTxns.length > 5 && (
+            {previewTxns.length > 5 && (
               <button type="button" onClick={function () { setWalletView('transactions'); openWalletTxns(selectedWallet) }}
                 className="text-[12px] font-bold text-indigo-600 hover:text-indigo-800 transition-colors">
                 View all
               </button>
             )}
           </div>
-          {walletTxns.length === 0 ? (
+          {previewTxns.length === 0 ? (
             /* Says what would be here and how it gets here, rather than only
                that there is nothing. */
             <div className="py-8 px-4 text-center bg-white border border-slate-200 rounded-2xl @3xl:flex-1 @3xl:flex @3xl:flex-col @3xl:items-center @3xl:justify-center">
@@ -2690,7 +2729,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             </div>
           ) : (
             <div className="space-y-2">
-              {walletTxns.slice(0, 5).map(function (t) {
+              {previewTxns.slice(0, 5).map(function (t) {
                 var isCredit = t.type === 'credit'
                 var isExpKind = t.reference_type === 'expense' || t.reference_type === 'expense_refund'
                 var xp = isExpKind && t.reference_id ? expenseRefs[t.reference_id] : null
@@ -3664,17 +3703,20 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
       // The debit already happened, so a deleted expense's transaction stays
       // in the ledger for audit rather than being removed — just hidden from
       // the everyday view unless asked for.
-      var visible = showDeletedTxns ? walletTxns : walletTxns.filter(function (t) {
+      var visible = walletTxns.filter(function (t) {
+        if (showDeletedTxns) return true
         var isExpRow = (t.reference_type === 'expense' || t.reference_type === 'expense_refund') && t.reference_id
         var xp = isExpRow ? expenseRefs[t.reference_id] : null
         return !(xp && xp.deleted_at)
       })
-      if (txnSort === 'latest') return visible
-      var rows = visible.slice()
+      var rows = mergeExpenseWalletRows(visible)
       if (txnSort === 'oldest') {
-        return rows.sort(function (a, b) { return new Date(a.created_at) - new Date(b.created_at) })
+        return rows.sort(function (a, b) { return new Date(a._sortAt || a.created_at) - new Date(b._sortAt || b.created_at) })
       }
-      return rows.sort(function (a, b) { return (b.amount_paise || 0) - (a.amount_paise || 0) })
+      if (txnSort === 'amount') {
+        return rows.sort(function (a, b) { return (b.amount_paise || 0) - (a.amount_paise || 0) })
+      }
+      return rows.sort(function (a, b) { return new Date(b._sortAt || b.created_at) - new Date(a._sortAt || a.created_at) })
     })()
 
     function resetTxnFilters() {
