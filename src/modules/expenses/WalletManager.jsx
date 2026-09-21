@@ -3563,12 +3563,12 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
               // because three kinds of fact in one grey string separated by
               // middots is what made this row hard to read in the first place.
               return (
-                <div className="mt-2.5 pt-2 border-t border-slate-100 flex flex-wrap items-center gap-y-1 text-[11.5px] text-slate-400 leading-relaxed">
+                <div className="mt-2.5 pt-2 border-t border-slate-100 flex flex-wrap items-center gap-y-1 text-[12px] font-semibold text-slate-500 leading-relaxed">
                   {facts.map(function (f, fi) {
                     return (
                       <span key={fi} className="inline-flex items-center whitespace-nowrap">
                         {fi > 0 && <span aria-hidden="true" className="mx-3 w-px h-3.5 bg-slate-200" />}
-                        <Icon name={f.icon} size={13} className="shrink-0 mr-1.5 text-slate-300" />
+                        <Icon name={f.icon} size={13} className="shrink-0 mr-1.5 text-slate-400" />
                         {/* One span, not a bare "by " beside another element.
                             A text run on its own is an anonymous flex item, and
                             a flex item has its leading and trailing whitespace
@@ -3576,7 +3576,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                         <span>
                           {f.lead}
                           {f.lead
-                            ? <span className="font-semibold text-slate-600">{f.text}</span>
+                            ? <span className="font-bold text-slate-700">{f.text}</span>
                             : f.text}
                         </span>
                       </span>
