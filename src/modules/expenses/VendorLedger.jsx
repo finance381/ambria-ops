@@ -100,8 +100,13 @@ function Tile({ icon, tone, label, value, valueClass, wide, active, onClick, chi
   // it. That tile is picked out by its glyph badge and by having twice the
   // width, which is enough. Only `active`, a state you toggled, changes
   // anything, and it changes the face rather than the edge.
-  var box = 'h-full flex flex-col items-center justify-center text-center gap-2.5 border rounded-2xl px-4 py-4 transition-colors duration-150 ' +
-    (wide ? 'lg:col-span-2 ' : '') +
+  // The narrow tiles centre, so a short figure sits under the words that
+  // name it rather than starting at the padding while the label starts
+  // after a badge. The wide one does not: it is twice as long, and it
+  // carries a rule with two more facts under it — centre that and nothing
+  // in the tile shares an edge with anything else in it.
+  var box = 'h-full flex flex-col justify-center gap-2.5 border rounded-2xl px-4 py-4 transition-colors duration-150 ' +
+    (wide ? 'lg:col-span-2 items-start text-left ' : 'items-center text-center ') +
     'border-slate-200 ' +
     (active ? 'bg-indigo-50 ' : 'bg-white ') +
     (onClick && !active ? 'hover:bg-slate-50 ' : '') +
