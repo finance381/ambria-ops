@@ -254,16 +254,27 @@ function VendorCardInner({ v, onOpen }) {
           the wallet list sets a row. As a 19px figure on its own line the
           amount was the headline and the vendor it belonged to was the
           caption — which is backwards for a list you scan by name. */}
-      {/* items-center, not items-start. The name, the chips and the pill
-          are three different heights, so aligning their tops staggered
-          them down the line — a 14.5px name, an 18px chip and a 30px pill
-          each starting at the same y and ending somewhere else. One centre
-          line puts them on one line. */}
-      <div className="flex items-center gap-2">
+      {/* The chips get their own line. Between the name and the pill they had
+          no fixed edge to sit against: the name takes what is left, so a chip
+          began wherever that name ended, and it ended against a pill whose
+          width is whatever the balance happens to be. Across a grid of sixty
+          cards no two chips landed in the same place, and a card with two of
+          them pushed everything again.
+
+          On their own line they all start at the card's left padding, which is
+          the one x every card shares.
+
+          items-center on the name row, because a 15.5px name and a 30px pill
+          are different heights and aligning their tops staggers them. */}
+      <div className="flex items-center gap-3">
         <p className="flex-1 min-w-0 text-[15.5px] font-bold text-slate-900 truncate transition-colors group-hover:text-indigo-700">{v.vendor_name || '—'}</p>
-        {renderChips(v)}
         <BalancePill paise={bal} large />
       </div>
+      {(function () {
+        var chips = renderChips(v)
+        if (chips.length === 0) return null
+        return <div className="mt-2 flex flex-wrap items-center gap-1.5">{chips}</div>
+      })()}
       {renderMoneyNotes(v)}
       {/* The call button and the chevron end the card together, on the
           footer's right. They used to sit on the money line, which left a
