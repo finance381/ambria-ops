@@ -1050,7 +1050,10 @@ function Ledgers({ profile, onNavigateToExpenses }) {
                           )}
                         </span>
                       )}
-                      <div className="px-4 py-2.5 text-right">
+                      {/* min-w for the same reason as the vendor ledger's: a
+                          panel sized to its own figure puts the rule beside it
+                          in a different place on every row. */}
+                      <div className="min-w-[124px] px-4 py-2.5 text-right">
                         <p className="text-[11.5px] font-medium text-slate-500 leading-none">Amount</p>
                         <p className="mt-2 text-[17px] font-extrabold text-slate-900 tabular-nums leading-none" data-notranslate>{formatPoints(r.amount_paise)}</p>
                       </div>
