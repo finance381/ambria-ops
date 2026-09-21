@@ -53,12 +53,12 @@ function EventCalendar({ value, onChange, year, month, onMonthChange, byDate, lo
   var tail = cells.length % 7
   if (tail) for (var j = 1; j <= 7 - tail; j++) cells.push({ day: j, current: false })
 
-  // The legend names the venues this month actually has a dot for. A fixed
-  // list of four explained colours that were not on the grid and stayed silent
-  // about the ones that were.
+  // The legend names every venue this month has a dot for. A fixed list of
+  // four explained colours that were not on the grid and stayed silent about
+  // the ones that were; capping it at five brought the same fault back in a
+  // smaller way, with three colours on the grid and a "+3" that named none of
+  // them. It wraps instead.
   var legend = (venues || []).slice().sort()
-  var legendShown = legend.slice(0, 5)
-  var legendRest = legend.length - legendShown.length
 
   var picked = value ? new Date(value + 'T00:00:00') : null
 
@@ -161,8 +161,8 @@ function EventCalendar({ value, onChange, year, month, onMonthChange, byDate, lo
       </div>
 
       <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-t border-slate-100 bg-slate-50/60">
-        <div className="flex items-center gap-2.5 flex-wrap">
-          {legendShown.map(function (v) {
+        <div className="flex items-center gap-x-2.5 gap-y-1 flex-wrap">
+          {legend.map(function (v) {
             return (
               <span key={v} title={v} className="inline-flex items-center gap-1.5 text-[11.5px] font-bold text-slate-600">
                 <span className="w-2 h-2 rounded-full" style={{ background: venueColor(v) }} />
@@ -170,11 +170,6 @@ function EventCalendar({ value, onChange, year, month, onMonthChange, byDate, lo
               </span>
             )
           })}
-          {legendRest > 0 && (
-            <span data-notranslate title={legend.slice(5).join(', ')} className="text-[11px] font-bold text-slate-400">
-              +{legendRest}
-            </span>
-          )}
           {legend.length === 0 && !loading && (
             <span className="text-[11px] font-semibold text-slate-400">No venues booked</span>
           )}
