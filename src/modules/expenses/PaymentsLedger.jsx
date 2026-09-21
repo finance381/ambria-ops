@@ -645,19 +645,13 @@ function PaymentsLedger({ profile }) {
                       </td>
 
                       <td className="px-3 py-2.5 align-top">
-                        {/* On a wallet-funded expense the spender and the
-                            recorder are the same person, so this column was
-                            printing the name already bold two columns to the
-                            left. It still says it — the column has to be
-                            readable straight down — but quietly. */}
+                        {/* Every name at one weight. Dimming the ones that
+                            repeat the party — a wallet-funded expense is spent
+                            and recorded by the same person — made two thirds of
+                            the column look disabled, and a column you read
+                            straight down cannot be half faded. */}
                         {who
-                          ? (
-                            <span title={who === r.party_name ? 'Same as the party' : undefined}
-                              className={'block min-w-0 text-[12px] truncate ' +
-                                (who === r.party_name ? 'font-medium text-slate-400' : 'font-bold text-slate-700')}>
-                              {who}
-                            </span>
-                          )
+                          ? <span className="block min-w-0 text-[12px] font-bold text-slate-700 truncate">{who}</span>
                           : <span className="text-[12px] text-slate-300">—</span>}
                       </td>
 
