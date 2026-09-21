@@ -358,12 +358,17 @@ function PaymentsLedger({ profile }) {
     return <p className="text-gray-400 text-sm text-center py-8">No access</p>
   }
 
-  var QUICK = [
-    { k: 'all',    label: 'All',     on: quickActive,              run: function () { setModeFilter('all'); setDirFilter('all'); setTypeFilter('') }, tone: 'indigo' },
-    { k: 'cash',   label: 'Cash',    on: modeFilter === 'cash',    run: function () { setModeFilter(modeFilter === 'cash' ? 'all' : 'cash') }, tone: 'amber' },
-    { k: 'bank',   label: 'Bank',    on: modeFilter === 'bank',    run: function () { setModeFilter(modeFilter === 'bank' ? 'all' : 'bank') }, tone: 'sky' },
-    { k: 'in',     label: 'Income',  on: dirFilter === 'in',       run: function () { setDirFilter(dirFilter === 'in' ? 'all' : 'in') }, tone: 'emerald' },
-    { k: 'out',    label: 'Expense', on: dirFilter === 'out',      run: function () { setDirFilter(dirFilter === 'out' ? 'all' : 'out') }, tone: 'rose' },
+  // Five pills in one row read as five of the same thing, one of which you
+  // pick. They are three things: a reset, a pair asking where the money sat,
+  // and a pair asking which way it moved — and the two pairs are independent,
+  // so Cash and Income can be on together. Grouped behind rules, the row says
+  // that without a sentence explaining it.
+  var QUICK_GROUPS = [
+    [{ k: 'all',  label: 'All',     on: quickActive,           run: function () { setModeFilter('all'); setDirFilter('all'); setTypeFilter('') }, tone: 'indigo' }],
+    [{ k: 'cash', label: 'Cash',    on: modeFilter === 'cash', run: function () { setModeFilter(modeFilter === 'cash' ? 'all' : 'cash') }, tone: 'amber' },
+     { k: 'bank', label: 'Bank',    on: modeFilter === 'bank', run: function () { setModeFilter(modeFilter === 'bank' ? 'all' : 'bank') }, tone: 'sky' }],
+    [{ k: 'in',   label: 'Income',  on: dirFilter === 'in',    run: function () { setDirFilter(dirFilter === 'in' ? 'all' : 'in') }, tone: 'emerald' },
+     { k: 'out',  label: 'Expense', on: dirFilter === 'out',   run: function () { setDirFilter(dirFilter === 'out' ? 'all' : 'out') }, tone: 'rose' }],
   ]
   // Resting, every pill is the same grey: the strip is a row of options, and
   // five colours sitting there unpressed would each be claiming something is
@@ -400,14 +405,23 @@ function PaymentsLedger({ profile }) {
 
           <div className="flex items-center gap-2">
             <span className="text-[12px] font-bold text-slate-500">Quick Filters</span>
-            <div className="flex flex-wrap items-center gap-1.5">
-              {QUICK.map(function (q) {
+            <div className="flex flex-wrap items-center gap-2.5">
+              {QUICK_GROUPS.map(function (group, gi) {
                 return (
-                  <button key={q.k} type="button" onClick={q.run} aria-pressed={q.on}
-                    className={'h-8 px-3 rounded-full border text-[12px] font-bold transition-colors ' +
-                      (q.on ? QUICK_TONE[q.tone] : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900')}>
-                    {q.label}
-                  </button>
+                  <div key={gi} className="flex items-center gap-2.5">
+                    {gi > 0 && <span aria-hidden="true" className="w-px h-5 bg-slate-200" />}
+                    <div className="flex items-center gap-1.5">
+                      {group.map(function (q) {
+                        return (
+                          <button key={q.k} type="button" onClick={q.run} aria-pressed={q.on}
+                            className={'h-8 px-3 rounded-full border text-[12px] font-bold transition-colors ' +
+                              (q.on ? QUICK_TONE[q.tone] : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900')}>
+                            {q.label}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
                 )
               })}
             </div>
