@@ -514,9 +514,8 @@ function PaymentsLedger({ profile }) {
                 a very wide panel, leaving the particulars, the one column that
                 wants room, squeezed against its neighbour. Everything but the
                 particulars is pinned to what it needs. */}
-            <table className="w-full min-w-[1040px]">
+            <table className="w-full min-w-[960px]">
               <colgroup>
-                <col style={{ width: '118px' }} />
                 <col style={{ width: '48px' }} />
                 <col />
                 <col style={{ width: '214px' }} />
@@ -526,7 +525,6 @@ function PaymentsLedger({ profile }) {
               </colgroup>
               <thead className="sticky top-0 z-10 bg-slate-50 border-y border-slate-200">
                 <tr>
-                  <th className="px-3 py-2.5 text-left text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500 whitespace-nowrap">Date</th>
                   <th className="px-3 py-2.5"><span className="sr-only">Direction</span></th>
                   <th className="px-3 py-2.5 text-left text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500 whitespace-nowrap">Particulars</th>
                   {['Type', 'Mode', 'Added by'].map(function (h, hi) {
@@ -540,27 +538,13 @@ function PaymentsLedger({ profile }) {
                 </tr>
               </thead>
               <tbody>
-                {pageRows.map(function (r, ri) {
-                  // A ledger sorted by date prints the same date down seven
-                  // rows, and the eye reads seven dates before noticing they
-                  // are one. Repeats are dropped and the day gets a heavier
-                  // rule above it — but only while the sort is by date, since
-                  // under an amount sort the dates are not grouped and
-                  // hiding one would hide a real difference.
-                  var byDate = sortKey === 'date_desc' || sortKey === 'date_asc'
-                  var sameDay = byDate && ri > 0 && pageRows[ri - 1].date === r.date
+                {pageRows.map(function (r) {
                   var isIn = r.direction === 'in'
                   var src = SOURCE_META[r.source] || { label: r.source, dot: 'bg-slate-400', cls: 'bg-slate-50 text-slate-700 border-slate-200' }
                   var who = r.recorded_by || r.collector_name || ''
                   return (
                     <tr key={r.key} onClick={function () { openRow(r) }}
-                      className={'last:border-b-0 cursor-pointer hover:bg-indigo-50/40 transition-colors ' +
-                        (byDate && !sameDay && ri > 0 ? 'border-t border-slate-200 ' : '') +
-                        'border-b border-slate-100'}>
-                      <td className="px-3 py-2.5 align-top whitespace-nowrap" data-notranslate>
-                        {!sameDay && <div className="text-[13px] font-bold text-slate-700">{formatDate(r.date)}</div>}
-                        <div className="text-[11px] text-slate-400">{timeOf(r.logged_at)}</div>
-                      </td>
+                      className="border-b border-slate-100 last:border-b-0 cursor-pointer hover:bg-indigo-50/40 transition-colors">
 
                       {/* Which way the money went, before you have read a word
                           of the row. The sign on the amount says the same thing
@@ -585,6 +569,12 @@ function PaymentsLedger({ profile }) {
                           {r.description && (
                             <p className="mt-0.5 text-[12px] text-slate-500 leading-snug">{r.description}</p>
                           )}
+                          {/* A ledger without a date on the row is a list of
+                              amounts. With the column gone it says it here,
+                              quietly, under the thing it dates. */}
+                          <p className="mt-0.5 text-[11px] text-slate-400" data-notranslate>
+                            {formatDate(r.date)}{timeOf(r.logged_at) ? ' · ' + timeOf(r.logged_at) : ''}
+                          </p>
                         </div>
                       </td>
 
