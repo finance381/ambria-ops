@@ -1480,8 +1480,13 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
                   )}
                   {e._breakdown && (
                     <button type="button" onClick={function (ev) { toggleEntryExpanded(e.id, ev) }}
-                      className="mt-1.5 inline-flex items-center gap-1 text-[10.5px] font-semibold text-indigo-600 hover:text-indigo-800">
-                      <Icon name={expandedEntryIds[e.id] ? 'chevronDown' : 'chevronRight'} size={11} />
+                      aria-expanded={!!expandedEntryIds[e.id]}
+                      className="mt-3 inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-slate-200 bg-white text-[12px] font-bold text-slate-600 hover:border-indigo-300 hover:text-indigo-700 hover:bg-indigo-50 transition-colors">
+                      {/* One chevron that turns, rather than swapping a
+                          right-pointing glyph for a down-pointing one: the turn
+                          is what says it is the same control in two states. */}
+                      <Icon name="chevronRight" size={13}
+                        className={"transition-transform duration-150 " + (expandedEntryIds[e.id] ? "rotate-90" : "")} />
                       {expandedEntryIds[e.id] ? 'Hide details' : 'Amount & allocation details'}
                     </button>
                   )}
