@@ -356,14 +356,20 @@ function PaymentsLedger({ profile }) {
 
   var QUICK = [
     { k: 'all',    label: 'All',     on: quickActive,              run: function () { setModeFilter('all'); setDirFilter('all'); setTypeFilter('') }, tone: 'indigo' },
-    { k: 'cash',   label: 'Cash',    on: modeFilter === 'cash',    run: function () { setModeFilter(modeFilter === 'cash' ? 'all' : 'cash') }, tone: 'slate' },
-    { k: 'bank',   label: 'Bank',    on: modeFilter === 'bank',    run: function () { setModeFilter(modeFilter === 'bank' ? 'all' : 'bank') }, tone: 'slate' },
+    { k: 'cash',   label: 'Cash',    on: modeFilter === 'cash',    run: function () { setModeFilter(modeFilter === 'cash' ? 'all' : 'cash') }, tone: 'amber' },
+    { k: 'bank',   label: 'Bank',    on: modeFilter === 'bank',    run: function () { setModeFilter(modeFilter === 'bank' ? 'all' : 'bank') }, tone: 'sky' },
     { k: 'in',     label: 'Income',  on: dirFilter === 'in',       run: function () { setDirFilter(dirFilter === 'in' ? 'all' : 'in') }, tone: 'emerald' },
     { k: 'out',    label: 'Expense', on: dirFilter === 'out',      run: function () { setDirFilter(dirFilter === 'out' ? 'all' : 'out') }, tone: 'rose' },
   ]
+  // Resting, every pill is the same grey: the strip is a row of options, and
+  // five colours sitting there unpressed would each be claiming something is
+  // already in force. The colour is the answer to pressing one. Cash and Bank
+  // used to fill grey even pressed — the two that say what kind of money this
+  // is were the only two that could not say it in colour.
   var QUICK_TONE = {
     indigo:  'border-indigo-300 bg-indigo-50 text-indigo-700',
-    slate:   'border-slate-400 bg-slate-100 text-slate-800',
+    amber:   'border-amber-300 bg-amber-50 text-amber-800',
+    sky:     'border-sky-300 bg-sky-50 text-sky-800',
     emerald: 'border-emerald-300 bg-emerald-50 text-emerald-700',
     rose:    'border-rose-300 bg-rose-50 text-rose-700',
   }
