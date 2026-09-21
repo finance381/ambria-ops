@@ -470,24 +470,34 @@ function PaymentsLedger({ profile }) {
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {/* What the range came to, which is the reason anyone opens a
-                ledger over a date range in the first place. */}
-            {[{ l: 'In', v: totals.in, c: 'text-emerald-700' },
-              { l: 'Out', v: totals.out, c: 'text-rose-700' },
-              { l: 'Net', v: totals.net, c: totals.net < 0 ? 'text-rose-700' : 'text-slate-900' }].map(function (t) {
-              return (
-                <span key={t.l} className="inline-flex items-baseline gap-1.5 h-8 px-2.5 rounded-lg bg-slate-100">
-                  <span className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500">{t.l}</span>
-                  <span data-notranslate className={'text-[12.5px] font-bold tabular-nums ' + t.c}>{formatPoints(t.v)}</span>
-                </span>
-              )
-            })}
+                ledger over a date range in the first place. Three loose grey
+                chips read as three unrelated numbers; in and out are the two
+                halves of one sum and net is what they come to, so they are one
+                object divided by rules, each half tinted the way its column of
+                amounts already is. */}
+            <div className="inline-flex items-stretch rounded-xl border border-slate-200 overflow-hidden">
+              {[{ l: 'In', v: totals.in, bg: 'bg-emerald-50/70', lc: 'text-emerald-600', c: 'text-emerald-700' },
+                { l: 'Out', v: totals.out, bg: 'bg-rose-50/70', lc: 'text-rose-600', c: 'text-rose-700' },
+                { l: 'Net', v: totals.net, bg: 'bg-slate-50', lc: 'text-slate-500', c: totals.net < 0 ? 'text-rose-700' : 'text-slate-900' }].map(function (t, ti) {
+                return (
+                  <span key={t.l} className="flex items-stretch">
+                    {ti > 0 && <span aria-hidden="true" className="w-px bg-slate-200" />}
+                    <span className={'inline-flex items-baseline gap-1.5 px-3 py-1.5 ' + t.bg}>
+                      <span className={'text-[11px] font-bold uppercase tracking-[0.08em] ' + t.lc}>{t.l}</span>
+                      <span data-notranslate className={'text-[13px] font-bold tabular-nums ' + t.c}>{formatPoints(t.v)}</span>
+                    </span>
+                  </span>
+                )
+              })}
+            </div>
             <div className="relative">
               <select value={sortKey} onChange={function (ev) { setSortKey(ev.target.value) }}
                 aria-label="Sort transactions"
-                className="h-8 pl-8 pr-7 rounded-lg border border-slate-300 bg-white text-[12px] font-bold text-slate-700 appearance-none focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20">
+                className="h-9 pl-8 pr-7 rounded-xl border border-slate-300 bg-white text-[12.5px] font-bold text-slate-700 appearance-none focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 hover:bg-slate-50 transition-colors">
                 {SORTS.map(function (o) { return <option key={o.k} value={o.k}>{o.label}</option> })}
               </select>
-              <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"><Icon name="filter" size={13} /></span>
+              {/* A funnel is the control beside this one. This is a sort. */}
+              <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"><Icon name="sort" size={13} /></span>
               <span className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"><Icon name="chevronDown" size={13} /></span>
             </div>
           </div>
