@@ -463,15 +463,37 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
       }
     })
 
+    // The names the ENTRIES themselves point at are known already, so that
+    // lookup does not have to wait for the expenses one. Two round trips at
+    // once rather than one after the other; only the names that turn out to be
+    // reachable solely through an expense need a third, and most of the time
+    // they are people who already appear on an entry.
+    var entryProfileIds = []
+    rows.forEach(function (r) {
+      if (r.created_by && entryProfileIds.indexOf(r.created_by) === -1) entryProfileIds.push(r.created_by)
+      if (r.checked_by && entryProfileIds.indexOf(r.checked_by) === -1) entryProfileIds.push(r.checked_by)
+    })
+
+    var expsP = expIds.length > 0
+      ? supabase.from('expenses')
+        .select('id, receipt_paths, receipt_path, amount_paise, tax_paise, user_id, acknowledged_by, checked_by, checked_at, expense_allocations(department, department_id, venue_id, amount_paise, remarks, expense_type_id, expense_sub_type_id)')
+        .in('id', expIds)
+      : Promise.resolve({ data: [] })
+    var namesP = entryProfileIds.length > 0
+      ? supabase.from('profiles').select('id, name').in('id', entryProfileIds)
+      : Promise.resolve({ data: [] })
+    var both = await Promise.all([expsP, namesP])
+
+    var profileNameById = {}
+    ;(both[1].data || []).forEach(function (pr) { profileNameById[pr.id] = pr.name || null })
+
     var receiptsByExpId = {}
     var breakdownByExpId = {}  // { [expId]: { amount_paise, tax_paise, allocations: [...] } }
     var submitterIdByExpId = {}
     var acknowledgerIdByExpId = {}
     var expCheckByExpId = {}  // { [expId]: { checked_by, checked_at } } — the expense's own check, not this ledger row's
-    if (expIds.length > 0) {
-      var { data: exps } = await supabase.from('expenses')
-        .select('id, receipt_paths, receipt_path, amount_paise, tax_paise, user_id, acknowledged_by, checked_by, checked_at, expense_allocations(department, department_id, venue_id, amount_paise, remarks, expense_type_id, expense_sub_type_id)')
-        .in('id', expIds)
+    {
+      var exps = both[0].data
       ;(exps || []).forEach(function (ex) {
         var paths = Array.isArray(ex.receipt_paths) && ex.receipt_paths.length > 0
           ? ex.receipt_paths
@@ -502,28 +524,19 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
     var expSubTypeNameById = {}
     refData.expenseSubTypes.forEach(function (st) { expSubTypeNameById[st.id] = st.name })
 
-    // Profile name lookup — resolves ledger_entries.created_by plus, for expense-linked
-    // rows, the submitter (expenses.user_id) and acknowledger (expenses.acknowledged_by).
-    var profileIds = []
-    rows.forEach(function (r) {
-      if (r.created_by && profileIds.indexOf(r.created_by) === -1) profileIds.push(r.created_by)
-      if (r.checked_by && profileIds.indexOf(r.checked_by) === -1) profileIds.push(r.checked_by)
-    })
-    Object.keys(submitterIdByExpId).forEach(function (eid) {
-      var id = submitterIdByExpId[eid]
-      if (profileIds.indexOf(id) === -1) profileIds.push(id)
-    })
-    Object.keys(acknowledgerIdByExpId).forEach(function (eid) {
-      var id = acknowledgerIdByExpId[eid]
-      if (profileIds.indexOf(id) === -1) profileIds.push(id)
-    })
-    Object.keys(expCheckByExpId).forEach(function (eid) {
-      var id = expCheckByExpId[eid].checked_by
-      if (id && profileIds.indexOf(id) === -1) profileIds.push(id)
-    })
-    var profileNameById = {}
-    if (profileIds.length > 0) {
-      var { data: pRows } = await supabase.from('profiles').select('id, name').in('id', profileIds)
+    // Only the names that an expense introduced and the entries did not — the
+    // submitter, the acknowledger, whoever checked the bill. Usually nobody.
+    var extraIds = []
+    function wantName(id) {
+      if (!id) return
+      if (Object.prototype.hasOwnProperty.call(profileNameById, id)) return
+      if (extraIds.indexOf(id) === -1) extraIds.push(id)
+    }
+    Object.keys(submitterIdByExpId).forEach(function (eid) { wantName(submitterIdByExpId[eid]) })
+    Object.keys(acknowledgerIdByExpId).forEach(function (eid) { wantName(acknowledgerIdByExpId[eid]) })
+    Object.keys(expCheckByExpId).forEach(function (eid) { wantName(expCheckByExpId[eid].checked_by) })
+    if (extraIds.length > 0) {
+      var { data: pRows } = await supabase.from('profiles').select('id, name').in('id', extraIds)
       ;(pRows || []).forEach(function (p) { profileNameById[p.id] = p.name || null })
     }
 
@@ -559,12 +572,19 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
     setSelectedVendor(v)
     setView('detail')
     setShowDeleted(false)
-    await loadEntries(v, false)
-    // Fetch phones + contact name from vendors master (not in v_vendor_ledger view)
+
+    // Both reads start now. The vendor master carries the phone, the contact
+    // and the opening balance — none of which the ledger read has anything to
+    // say about — and it was queued behind the whole of it, so the header sat
+    // without a Call button and the balance sat without its opening for the
+    // length of three round trips it had no stake in.
+    var contactP = supabase.from('vendors')
+      .select('phone, phone2, contact, opening_balance_paise')
+      .eq('id', v.vendor_id).maybeSingle()
+    var entriesP = loadEntries(v, false)
+
     try {
-      var contactRes = await supabase.from('vendors')
-        .select('phone, phone2, contact, opening_balance_paise')
-        .eq('id', v.vendor_id).maybeSingle()
+      var contactRes = await contactP
       if (contactRes.data) {
         setSelectedVendor(function (prev) {
           if (!prev || prev.vendor_id !== v.vendor_id) return prev
@@ -577,6 +597,7 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
         })
       }
     } catch (_) {}
+    await entriesP
     try { logActivity('VENDOR_LEDGER_VIEW', v.vendor_name + ' (id ' + v.vendor_id + ')') } catch (_) {}
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
