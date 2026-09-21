@@ -43,13 +43,13 @@ function CheckedStamp({ checked, checkerName, checkedAt, canToggle, canUncheck, 
     // production. The import also content-hashes it, so a new stamp is never
     // served from a stale cache.
     //
-    // The file is 240px wide for a 118px slot — enough for a 2x screen and no
+    // The file is 240px wide for a 96px slot — enough for a 2x screen and no
     // more. The original was 1290px and 925KB, which is most of a megabyte to
     // draw something the size of a thumbnail.
     return (
       <button type="button" disabled={busy || !interactive} onClick={interactive ? onToggle : undefined} title={title}
         aria-label={title}
-        className={"shrink-0 w-[118px] h-[118px] inline-flex items-center justify-center transition-opacity " +
+        className={"shrink-0 w-[96px] h-[96px] inline-flex items-center justify-center transition-opacity " +
           (interactive ? "cursor-pointer opacity-90 hover:opacity-100" : "cursor-default opacity-80")}>
         <img src={checkedStamp} alt="" aria-hidden="true" draggable="false"
           className="w-full h-full object-contain select-none" />

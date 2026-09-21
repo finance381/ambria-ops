@@ -1538,22 +1538,25 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
                       </div>
                     )
                   })()}
-                  <div onClick={function (ev) { ev.stopPropagation() }}>
-                    <PaymentProofThumbs meta={e.metadata} />
-                  </div>
-                  {e._sourceReceipts && e._sourceReceipts.length > 0 && (
-                    <div onClick={function (ev) { ev.stopPropagation() }}>
-                      <LedgerSourceMedia paths={e._sourceReceipts} />
-                    </div>
-                  )}
-                  {/* The disclosure and the stamp share the line, which is
-                      where the row's empty space was: a short button on the
-                      left and, on a checked entry, a lot of nothing to its
-                      right. The stamp is big because it is the one thing on
-                      the row you are meant to see from across a desk. */}
-                  {(e._breakdown || (!isDeleted && checkedProps.checked)) && (
-                    <div className="mt-3 flex items-center justify-between gap-4">
-                      {e._breakdown ? (
+                  {/* The proof and the disclosure on one line. Stacked, a
+                      40px thumbnail sat alone on a row of its own with a
+                      button underneath it on another, which is two rows to
+                      say one thing.
+
+                      Both thumbnail components carry their own mt-1.5, which
+                      inside a flex row offsets them from the button rather
+                      than spacing them from anything — so the row cancels it. */}
+                  {(e._breakdown || (e.metadata && Object.keys(e.metadata).length > 0) || (e._sourceReceipts && e._sourceReceipts.length > 0)) && (
+                    <div className="mt-3 flex flex-wrap items-center gap-3 [&>div]:!mt-0">
+                      <div onClick={function (ev) { ev.stopPropagation() }}>
+                        <PaymentProofThumbs meta={e.metadata} />
+                      </div>
+                      {e._sourceReceipts && e._sourceReceipts.length > 0 && (
+                        <div onClick={function (ev) { ev.stopPropagation() }}>
+                          <LedgerSourceMedia paths={e._sourceReceipts} />
+                        </div>
+                      )}
+                      {e._breakdown && (
                         <button type="button" onClick={function (ev) { toggleEntryExpanded(e.id, ev) }}
                           aria-expanded={!!expandedEntryIds[e.id]}
                           className="shrink-0 inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-slate-200 bg-white text-[12px] font-bold text-slate-600 hover:border-indigo-300 hover:text-indigo-700 hover:bg-indigo-50 transition-colors">
@@ -1565,11 +1568,6 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
                             className={"transition-transform duration-150 " + (expandedEntryIds[e.id] ? "rotate-90" : "")} />
                           {expandedEntryIds[e.id] ? 'Hide details' : 'Amount & allocation details'}
                         </button>
-                      ) : <span />}
-                      {!isDeleted && checkedProps.checked && (
-                        <span onClick={function (ev) { ev.stopPropagation() }}>
-                          {renderChecked('stamp')}
-                        </span>
                       )}
                     </div>
                   )}
@@ -1646,6 +1644,18 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
                     as another. They were four right-aligned things at four
                     sizes with a different margin under each, so nothing in
                     the column shared an edge with anything but the wall. */}
+                {/* A rule, then the stamp, then the figures. What is left of
+                    the rule describes the entry; what is right of it is what
+                    the entry came to and what can be done about it, and the
+                    stamp belongs on that side — it is a verdict, not a detail.
+                    The rule itself is what stops two columns of unrelated text
+                    reading as one ragged block. */}
+                <span aria-hidden="true" className="self-stretch shrink-0 w-px bg-slate-200" />
+                {!isDeleted && checkedProps.checked && (
+                  <span className="shrink-0 self-center" onClick={function (ev) { ev.stopPropagation() }}>
+                    {renderChecked('stamp')}
+                  </span>
+                )}
                 <div className="shrink-0 flex flex-col items-end gap-2.5">
                   <div className="text-right">
                     {/* The sign carries the colour: + is red and − is green.
