@@ -988,13 +988,13 @@ function Ledgers({ profile, onNavigateToExpenses }) {
                         )}
                       </div>
                       {r.remarks && <p className="mt-1 text-[12px] italic text-slate-500">"{r.remarks}"</p>}
-                      {r.venue_id && <p className="mt-1 text-[11.5px] text-slate-400">Venue: {venueMap[r.venue_id] || '—'}</p>}
+                      {r.venue_id && <p className="mt-1 text-[11.5px] text-slate-500">Venue: <span className="font-semibold text-slate-700">{venueMap[r.venue_id] || '—'}</span></p>}
                       {r._fieldChips && r._fieldChips.length > 0 && (
                         <div className="flex flex-wrap gap-2 mt-2.5">
                           {r._fieldChips.map(function (c, i) {
                             return (
-                              <span key={i} className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-50 border border-slate-100 text-[11.5px] text-slate-500">
-                                <Icon name={glyphForLabel(c.label)} size={13} className="shrink-0 text-slate-400" />
+                              <span key={i} className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-[11.5px] text-slate-600">
+                                <Icon name={glyphForLabel(c.label)} size={13} className="shrink-0 text-slate-500" />
                                 {c.label}:
                                 {/* Weight, not colour. Indigo on the value made
                                     every chip look like a link to somewhere, and
@@ -1009,20 +1009,25 @@ function Ledgers({ profile, onNavigateToExpenses }) {
                       {/* When and who, under everything that says what. A glyph
                           apiece and a rule between them, rather than three kinds
                           of fact in one grey string separated by middots. */}
-                      <div className="mt-2.5 flex flex-wrap items-center gap-y-1 text-[11.5px] text-slate-400">
+                      {/* Each fact carries its own value in the darker grey,
+                          the way the vendor ledger's footer does. It was one
+                          flat slate-400 with slate-300 glyphs and weight only
+                          on the name at the end, so two of the three facts read
+                          as background and the third as the only thing said. */}
+                      <div className="mt-2.5 flex flex-wrap items-center gap-y-1 text-[11.5px] text-slate-500">
                         <span className="inline-flex items-center whitespace-nowrap">
-                          <Icon name="calendar" size={13} className="shrink-0 mr-1.5 text-slate-300" />
-                          {formatDate(r.expense_date)}
+                          <Icon name="calendar" size={13} className="shrink-0 mr-1.5 text-slate-400" />
+                          <span className="font-semibold text-slate-700">{formatDate(r.expense_date)}</span>
                         </span>
                         <span aria-hidden="true" className="mx-3 w-px h-3.5 bg-slate-200" />
                         <span className="inline-flex items-center whitespace-nowrap">
-                          <Icon name="clock" size={13} className="shrink-0 mr-1.5 text-slate-300" />
-                          logged {formatDateTime(r.created_at)}
+                          <Icon name="clock" size={13} className="shrink-0 mr-1.5 text-slate-400" />
+                          logged&nbsp;<span className="font-semibold text-slate-700">{formatDateTime(r.created_at)}</span>
                         </span>
                         <span aria-hidden="true" className="mx-3 w-px h-3.5 bg-slate-200" />
                         <span className="inline-flex items-center whitespace-nowrap">
-                          <Icon name="user" size={13} className="shrink-0 mr-1.5 text-slate-300" />
-                          <span>by <span className="font-semibold text-slate-600">{userMap[r.user_id] || '—'}</span></span>
+                          <Icon name="user" size={13} className="shrink-0 mr-1.5 text-slate-400" />
+                          <span>by&nbsp;<span className="font-semibold text-slate-700">{userMap[r.user_id] || '—'}</span></span>
                         </span>
                       </div>
                     </div>
