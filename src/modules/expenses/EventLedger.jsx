@@ -174,6 +174,7 @@ function EventLedger(props) {
   var [monthMonth, setMonthMonth] = useState(_now.getMonth())
   var [monthRows, setMonthRows] = useState([])
   var [monthLoading, setMonthLoading] = useState(true)
+  var [showPastDays, setShowPastDays] = useState(false)
 
   // One read per month, not one per month plus one per date. A month of
   // events is a few dozen rows, and holding them means the calendar's dots,
@@ -452,6 +453,15 @@ function EventLedger(props) {
     if (monthByDate[d].venues.indexOf(v) === -1) monthByDate[d].venues.push(v)
   })
   var monthDays = Object.keys(monthByDate).sort()
+  // The list opens on what is still to come. Reading it is planning — what
+  // is on tonight, what is on this week — and a month that starts on the 1st
+  // spends its top half on days that have already happened. The earlier days
+  // are one press away rather than gone, and a month entirely in the past
+  // shows all of itself, because "from today" would leave it empty.
+  var todayIso = isoDate(new Date())
+  var pastDays = monthDays.filter(function (d) { return d < todayIso })
+  var aheadDays = monthDays.filter(function (d) { return d >= todayIso })
+  var listedDays = (showPastDays || aheadDays.length === 0) ? monthDays : aheadDays
   var monthVenues = []
   monthRows.forEach(function (r) {
     if (r.venue_name && monthVenues.indexOf(r.venue_name) === -1) monthVenues.push(r.venue_name)
@@ -1168,6 +1178,7 @@ function EventLedger(props) {
               year={monthYear} month={monthMonth}
               onMonthChange={function (y, m) {
                 setMonthYear(y); setMonthMonth(m)
+                setShowPastDays(false)
                 // Paging away from the month a selected date lives in would
                 // leave "Events on 21 September" beside October's grid, and
                 // then empty it as the new month arrived. Browsing months is
@@ -1221,9 +1232,18 @@ function EventLedger(props) {
                   </div>
                 )}
 
-                {!monthLoading && monthDays.length > 0 && (
+                {!monthLoading && listedDays.length > 0 && (
                   <div className="divide-y divide-slate-100 max-h-[min(72vh,660px)] overflow-y-auto ambria-thin-scroll overscroll-contain">
-                    {monthDays.map(function (d) {
+                    {pastDays.length > 0 && aheadDays.length > 0 && (
+                      <button type="button" onClick={function () { setShowPastDays(!showPastDays) }}
+                        className="w-full px-4 py-2 flex items-center justify-center gap-1.5 text-[12px] font-bold text-slate-500 hover:text-indigo-700 hover:bg-indigo-50/40 transition-colors">
+                        <Icon name={showPastDays ? 'chevronUp' : 'chevronDown'} size={13} />
+                        {showPastDays
+                          ? 'Hide earlier days'
+                          : (<span><span data-notranslate>{pastDays.length}</span> earlier {pastDays.length === 1 ? 'day' : 'days'} this month</span>)}
+                      </button>
+                    )}
+                    {listedDays.map(function (d) {
                       var info = monthByDate[d]
                       var when = new Date(d + 'T00:00:00')
                       var isToday = d === isoDate(new Date())
