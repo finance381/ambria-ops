@@ -5,6 +5,9 @@ import { formatPoints, formatDate, formatDateTime } from '../../lib/format'
 import { useRealtime } from '../../lib/useRealtime'
 import { hasPerm } from '../../lib/permissions'
 import SearchField from '../../components/ui/SearchField'
+import Icon from '../../components/ui/Icon'
+import EventDatePicker from '../../components/ui/EventDatePicker'
+import { CARD } from '../../lib/ui'
 import { useExpenseDetailModal } from '../../hooks/useExpenseDetailModal.jsx'
 import PaymentProofThumbs from '../../components/ledger/PaymentProofThumbs'
 import { getReceiptUrl, isVoiceNotePath } from '../../lib/uploadHelper'
@@ -25,6 +28,23 @@ var TYPE_META = {
   expense_refund:     { label: 'Expense Refund',           direction: 'in',  cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
 }
 
+// What the name on a row refers to. The chips said the transaction type but
+// never what the name beside them was, so "Carpet Sharma" and "WEDDING" —
+// a vendor and an event — read as the same kind of thing.
+var SOURCE_META = {
+  vendor:     { label: 'Vendor',   dot: 'bg-violet-500',  cls: 'bg-violet-50 text-violet-700 border-violet-200' },
+  salary:     { label: 'Employee', dot: 'bg-sky-500',     cls: 'bg-sky-50 text-sky-700 border-sky-200' },
+  collection: { label: 'Event',    dot: 'bg-emerald-500', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+  expense:    { label: 'Staff',    dot: 'bg-amber-500',   cls: 'bg-amber-50 text-amber-700 border-amber-200' },
+}
+
+var SORTS = [
+  { k: 'date_desc', label: 'Date (Newest)' },
+  { k: 'date_asc',  label: 'Date (Oldest)' },
+  { k: 'amt_desc',  label: 'Amount (High)' },
+  { k: 'amt_asc',   label: 'Amount (Low)' },
+]
+
 function PaymentsLedger({ profile }) {
   var permsNew = (profile && profile.permsNew) || []
   var canView = hasPerm(permsNew, 'finance.payments')
@@ -37,6 +57,9 @@ function PaymentsLedger({ profile }) {
   var [modeFilter, setModeFilter] = useState('all') // 'all' | 'cash' | 'bank'
   var [dirFilter, setDirFilter] = useState('all') // 'all' | 'in' | 'out'
   var [search, setSearch] = useState('')
+  var [typeFilter, setTypeFilter] = useState('')
+  var [sortKey, setSortKey] = useState('date_desc')
+  var [showMore, setShowMore] = useState(false)
   var [detailTarget, setDetailTarget] = useState(null) // { row, event, collectorName, loading } — vendor/salary/collection rows
   var [enlargedImg, setEnlargedImg] = useState(null)
   var { openExpenseDetail, expenseDetailModal } = useExpenseDetailModal(profile, isAdmin, function () { load() })
@@ -223,14 +246,64 @@ function PaymentsLedger({ profile }) {
   function closeDetail() { setDetailTarget(null) }
 
   var visible = useMemo(function () {
-    var searchLower = search.trim().toLowerCase()
-    return rows.filter(function (r) {
+    var q = search.trim().toLowerCase()
+    var out = rows.filter(function (r) {
       if (modeFilter !== 'all' && r.mode !== modeFilter) return false
       if (dirFilter !== 'all' && r.direction !== dirFilter) return false
-      if (searchLower && (r.party_name || '').toLowerCase().indexOf(searchLower) === -1 && (r.description || '').toLowerCase().indexOf(searchLower) === -1) return false
+      if (typeFilter && r.type_label !== typeFilter) return false
+      if (q) {
+        // The collector and the type are on the row, so they are worth
+        // searching: "who took this" is a question people actually ask of
+        // this screen, and it used to match nothing.
+        var hay = [r.party_name, r.description, r.collector_name, r.type_label].join(' ').toLowerCase()
+        if (hay.indexOf(q) === -1) return false
+      }
       return true
     })
-  }, [rows, modeFilter, dirFilter, search])
+    out.sort(function (a, b) {
+      if (sortKey === 'amt_desc') return (b.amount_paise || 0) - (a.amount_paise || 0)
+      if (sortKey === 'amt_asc') return (a.amount_paise || 0) - (b.amount_paise || 0)
+      var d = (a.logged_at || '').localeCompare(b.logged_at || '')
+      return sortKey === 'date_asc' ? d : -d
+    })
+    return out
+  }, [rows, modeFilter, dirFilter, typeFilter, search, sortKey])
+
+  // Every type present in the range, so the filter cannot offer one that
+  // returns nothing.
+  var typesPresent = useMemo(function () {
+    var seen = []
+    rows.forEach(function (r) { if (r.type_label && seen.indexOf(r.type_label) === -1) seen.push(r.type_label) })
+    return seen.sort()
+  }, [rows])
+
+  var quickActive = modeFilter === 'all' && dirFilter === 'all' && !typeFilter
+
+  function exportCsv() {
+    function esc(v) {
+      var t = String(v == null ? '' : v)
+      if (t.indexOf(',') !== -1 || t.indexOf('"') !== -1 || t.indexOf('\n') !== -1) return '"' + t.replace(/"/g, '""') + '"'
+      return t
+    }
+    var head = ['Date', 'Logged', 'Type', 'Party', 'Party kind', 'Mode', 'Direction', 'Points', 'Recorded by', 'Description']
+    // Points as a number: a spreadsheet cannot add up "80,000 pts".
+    var body = visible.map(function (r) {
+      return [
+        formatDate(r.date), formatDateTime(r.logged_at), r.type_label, r.party_name,
+        (SOURCE_META[r.source] || {}).label || r.source, r.mode, r.direction === 'in' ? 'In' : 'Out',
+        (r.direction === 'in' ? 1 : -1) * ((r.amount_paise || 0) / 100),
+        r.collector_name || '', r.description || '',
+      ].map(esc).join(',')
+    })
+    var csv = head.join(',') + '\n' + body.join('\n') + '\n'
+    var blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    var url = URL.createObjectURL(blob)
+    var a = document.createElement('a')
+    a.href = url
+    a.download = 'cash-bank-' + dateFrom + '-to-' + dateTo + '.csv'
+    a.click()
+    URL.revokeObjectURL(url)
+  }
 
   var totals = useMemo(function () {
     var totalIn = 0, totalOut = 0
@@ -245,82 +318,211 @@ function PaymentsLedger({ profile }) {
     return <p className="text-gray-400 text-sm text-center py-8">No access</p>
   }
 
-  return (
-    <div className="space-y-3">
-      <div>
-        <h2 className="text-lg font-bold text-gray-900">Cash & Bank Ledger</h2>
-        <p className="text-xs text-gray-400">
-          {visible.length} transaction{visible.length !== 1 ? 's' : ''} · In {formatPoints(totals.in)} · Out {formatPoints(totals.out)} · Net {formatPoints(totals.net)}
-        </p>
-      </div>
+  var QUICK = [
+    { k: 'all',    label: 'All',     on: quickActive,              run: function () { setModeFilter('all'); setDirFilter('all'); setTypeFilter('') }, tone: 'indigo' },
+    { k: 'cash',   label: 'Cash',    on: modeFilter === 'cash',    run: function () { setModeFilter(modeFilter === 'cash' ? 'all' : 'cash') }, tone: 'slate' },
+    { k: 'bank',   label: 'Bank',    on: modeFilter === 'bank',    run: function () { setModeFilter(modeFilter === 'bank' ? 'all' : 'bank') }, tone: 'slate' },
+    { k: 'in',     label: 'Income',  on: dirFilter === 'in',       run: function () { setDirFilter(dirFilter === 'in' ? 'all' : 'in') }, tone: 'emerald' },
+    { k: 'out',    label: 'Expense', on: dirFilter === 'out',      run: function () { setDirFilter(dirFilter === 'out' ? 'all' : 'out') }, tone: 'rose' },
+  ]
+  var QUICK_TONE = {
+    indigo:  'border-indigo-300 bg-indigo-50 text-indigo-700',
+    slate:   'border-slate-400 bg-slate-100 text-slate-800',
+    emerald: 'border-emerald-300 bg-emerald-50 text-emerald-700',
+    rose:    'border-rose-300 bg-rose-50 text-rose-700',
+  }
 
-      <div className="bg-white border border-gray-200 rounded-xl p-3 space-y-2">
-        <SearchField
-          value={search}
-          onChange={function (v) { setSearch(v) }}
-          placeholder="Search vendor, employee, event, or description..."
-          className="w-full"
-        />
-        <div className="flex flex-wrap items-center gap-2">
-          <input type="date" value={dateFrom} onChange={function (ev) { setDateFrom(ev.target.value) }}
-            className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs bg-white focus:ring-2 focus:ring-indigo-300" style={{ fontSize: '16px' }} />
-          <span className="text-xs text-gray-400">to</span>
-          <input type="date" value={dateTo} onChange={function (ev) { setDateTo(ev.target.value) }}
-            className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs bg-white focus:ring-2 focus:ring-indigo-300" style={{ fontSize: '16px' }} />
-          <div className="inline-flex bg-gray-100 rounded-lg p-0.5">
-            {[['all', 'All'], ['in', 'In'], ['out', 'Out']].map(function (opt) {
-              var active = dirFilter === opt[0]
-              return (
-                <button key={opt[0]} type="button" onClick={function () { setDirFilter(opt[0]) }}
-                  className={"px-2.5 py-1 text-[11px] font-bold rounded-md transition-colors " + (active ? "bg-white shadow-sm text-gray-900" : "text-gray-500")}>
-                  {opt[1]}
-                </button>
-              )
-            })}
+  return (
+    <div className="@container space-y-3">
+      <div className={CARD + ' px-4 py-3'}>
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
+          <div className="flex items-center gap-2">
+            <span className="text-[12px] font-bold text-slate-500">Date Range</span>
+            {/* The app's own picker. <input type="date"> renders mm/dd/yyyy in
+                US order whatever the locale, which next to "08 Dec 2025"
+                everywhere else on the screen is the one that looks wrong. */}
+            <div className="w-[136px]">
+              <EventDatePicker value={dateFrom} onChange={function (v) { if (v) setDateFrom(v) }}
+                collapsible includePast plain neutral placeholder="From" />
+            </div>
+            <Icon name="arrowRight" size={14} className="shrink-0 text-slate-400" />
+            <div className="w-[136px]">
+              <EventDatePicker value={dateTo} onChange={function (v) { if (v) setDateTo(v) }}
+                collapsible includePast plain neutral placeholder="To" />
+            </div>
           </div>
-          <div className="inline-flex bg-gray-100 rounded-lg p-0.5 ml-auto">
-            {[['all', 'All'], ['cash', '💵 Cash'], ['bank', '🏦 Bank']].map(function (opt) {
-              var active = modeFilter === opt[0]
-              return (
-                <button key={opt[0]} type="button" onClick={function () { setModeFilter(opt[0]) }}
-                  className={"px-2.5 py-1 text-[11px] font-bold rounded-md transition-colors " + (active ? "bg-white shadow-sm text-gray-900" : "text-gray-500")}>
-                  {opt[1]}
-                </button>
-              )
-            })}
+
+          <div className="flex items-center gap-2">
+            <span className="text-[12px] font-bold text-slate-500">Quick Filters</span>
+            <div className="flex flex-wrap items-center gap-1.5">
+              {QUICK.map(function (q) {
+                return (
+                  <button key={q.k} type="button" onClick={q.run} aria-pressed={q.on}
+                    className={'h-8 px-3 rounded-full border text-[12px] font-bold transition-colors ' +
+                      (q.on ? QUICK_TONE[q.tone] : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900')}>
+                    {q.label}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 ml-auto">
+            <button type="button" onClick={function () { setShowMore(!showMore) }} aria-pressed={showMore}
+              className={'h-9 px-3 inline-flex items-center gap-1.5 rounded-xl border text-[12.5px] font-bold transition-colors ' +
+                (showMore || typeFilter
+                  ? 'border-indigo-300 bg-indigo-50 text-indigo-700'
+                  : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900')}>
+              <Icon name="filter" size={14} />
+              More Filters
+              <Icon name={showMore ? 'chevronUp' : 'chevronDown'} size={13} />
+            </button>
+            <button type="button" onClick={exportCsv} disabled={visible.length === 0}
+              title="Export everything shown, in the order it is shown"
+              className="h-9 px-3.5 inline-flex items-center gap-1.5 rounded-xl text-[12.5px] font-bold text-white bg-indigo-600 hover:bg-indigo-700 active:scale-[0.98] disabled:opacity-40 disabled:hover:bg-indigo-600 transition-all">
+              <Icon name="download" size={14} />
+              Export
+            </button>
           </div>
         </div>
+
+        {showMore && (
+          <div className="mt-3 pt-3 border-t border-slate-100 grid gap-3 @3xl:grid-cols-2">
+            <div>
+              <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500 mb-1.5">Search</p>
+              <SearchField value={search} onChange={function (v) { setSearch(v) }}
+                placeholder="Vendor, employee, event, who recorded it, description..." className="w-full" />
+            </div>
+            <div>
+              <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500 mb-1.5">Transaction type</p>
+              <div className="flex flex-wrap gap-1.5">
+                <button type="button" onClick={function () { setTypeFilter('') }}
+                  className={'h-8 px-2.5 rounded-lg border text-[12px] font-bold transition-colors ' +
+                    (typeFilter === '' ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50')}>
+                  Any
+                </button>
+                {typesPresent.map(function (t) {
+                  return (
+                    <button key={t} type="button" onClick={function () { setTypeFilter(typeFilter === t ? '' : t) }}
+                      className={'h-8 px-2.5 rounded-lg border text-[12px] font-bold transition-colors ' +
+                        (typeFilter === t ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50')}>
+                      {t}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
-      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+      <div className={CARD + ' overflow-hidden'}>
+        <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-b border-slate-100">
+          <div className="min-w-0">
+            <p className="font-display text-[15px] font-bold text-slate-900">
+              Showing <span data-notranslate className="tabular-nums">{visible.length}</span> transaction{visible.length === 1 ? '' : 's'}
+            </p>
+            <p className="text-[12px] font-semibold text-slate-400" data-notranslate>
+              from {formatDate(dateFrom)} to {formatDate(dateTo)}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {/* What the range came to, which is the reason anyone opens a
+                ledger over a date range in the first place. */}
+            {[{ l: 'In', v: totals.in, c: 'text-emerald-700' },
+              { l: 'Out', v: totals.out, c: 'text-rose-700' },
+              { l: 'Net', v: totals.net, c: totals.net < 0 ? 'text-rose-700' : 'text-slate-900' }].map(function (t) {
+              return (
+                <span key={t.l} className="inline-flex items-baseline gap-1.5 h-8 px-2.5 rounded-lg bg-slate-100">
+                  <span className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500">{t.l}</span>
+                  <span data-notranslate className={'text-[12.5px] font-bold tabular-nums ' + t.c}>{formatPoints(t.v)}</span>
+                </span>
+              )
+            })}
+            <div className="relative">
+              <select value={sortKey} onChange={function (ev) { setSortKey(ev.target.value) }}
+                aria-label="Sort transactions"
+                className="h-8 pl-8 pr-7 rounded-lg border border-slate-300 bg-white text-[12px] font-bold text-slate-700 appearance-none focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20">
+                {SORTS.map(function (o) { return <option key={o.k} value={o.k}>{o.label}</option> })}
+              </select>
+              <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"><Icon name="filter" size={13} /></span>
+              <span className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"><Icon name="chevronDown" size={13} /></span>
+            </div>
+          </div>
+        </div>
+
         {loading ? (
-          <p className="text-gray-400 text-sm text-center py-8">Loading...</p>
+          <div className="p-4 space-y-2.5">
+            {[0, 1, 2, 3, 4].map(function (i) { return <div key={i} className="ambria-skeleton h-[68px] rounded-xl" /> })}
+          </div>
         ) : visible.length === 0 ? (
-          <p className="text-gray-400 text-sm text-center py-8">No transactions in this range.</p>
+          <div className="px-4 py-16 text-center">
+            <Icon name="banknote" size={26} className="mx-auto text-slate-300" />
+            <p className="mt-2 text-[13px] font-bold text-slate-600">No transactions in this range</p>
+            <p className="mt-0.5 text-[12px] font-medium text-slate-400">Widen the dates, or clear the quick filters.</p>
+          </div>
         ) : (
-          <div className="divide-y divide-gray-100">
+          <div className="divide-y divide-slate-100">
             {visible.map(function (r) {
               var isIn = r.direction === 'in'
+              var src = SOURCE_META[r.source] || { label: r.source, dot: 'bg-slate-400', cls: 'bg-slate-50 text-slate-700 border-slate-200' }
               return (
-                <div key={r.key} onClick={function () { openRow(r) }}
-                  className="px-4 py-2.5 flex items-center justify-between gap-2 cursor-pointer hover:bg-indigo-50/40 transition-colors">
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-gray-900 truncate">{r.party_name}</p>
-                    <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                      <span className="text-[10px] text-gray-500">{formatDate(r.date)}</span>
-                      <span className="text-[10px] font-semibold px-1.5 py-0.5 border rounded bg-gray-50 text-gray-700 border-gray-200">
-                        {r.mode === 'cash' ? '💵 Cash' : '🏦 Bank'}
+                <div key={r.key} role="button" tabIndex={0} onClick={function () { openRow(r) }}
+                  onKeyDown={function (ev) { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); openRow(r) } }}
+                  className="px-4 py-3 flex items-start gap-3.5 cursor-pointer hover:bg-indigo-50/40 transition-colors">
+                  {/* Which way the money went, before you have read a word of
+                      the row. The sign on the amount says the same thing at the
+                      far end of a very wide line, which is a long way to carry
+                      one character. */}
+                  <span className={'shrink-0 w-9 h-9 rounded-full inline-flex items-center justify-center ' +
+                    (isIn ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600')}>
+                    <Icon name="arrowRight" size={16} className={isIn ? 'rotate-90' : '-rotate-90'} />
+                  </span>
+
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
+                      <span className="min-w-0 truncate font-display text-[14px] font-bold text-slate-900">{r.party_name}</span>
+                      <span className="shrink-0 inline-flex items-center gap-1 h-[22px] px-2 rounded-md border border-slate-200 bg-slate-50 text-[11px] font-bold text-slate-600">
+                        <Icon name={r.mode === 'cash' ? 'banknote' : 'bank'} size={11} className="text-slate-400" />
+                        {r.mode === 'cash' ? 'Cash' : 'Bank'}
                       </span>
-                      <span className={"text-[10px] font-semibold px-1.5 py-0.5 border rounded " + r.type_cls}>
+                      <span className={'shrink-0 inline-flex items-center gap-1.5 h-[22px] px-2 rounded-md border text-[11px] font-bold ' + src.cls}>
+                        <span aria-hidden="true" className={'w-1.5 h-1.5 rounded-full ' + src.dot} />
+                        {src.label}
+                      </span>
+                      <span className={'shrink-0 inline-flex items-center h-[22px] px-2 rounded-md border text-[11px] font-bold ' + r.type_cls}>
                         {r.type_label}
                       </span>
-                      {r.collector_name && <span className="text-[10px] text-gray-500 truncate">👤 {r.collector_name}</span>}
-                      {r.description && <span className="text-[10px] text-gray-400 truncate">{r.description}</span>}
                     </div>
-                    <p className="text-[10px] text-gray-400 mt-0.5">Logged {formatDateTime(r.logged_at)}</p>
+
+                    {/* One line of facts divided by rules. Four greys separated
+                        by nothing but a gap read as four columns of a table
+                        that is not there. */}
+                    {(function () {
+                      var facts = []
+                      if (r.collector_name) facts.push('By ' + r.collector_name)
+                      if (r.description) facts.push(r.description)
+                      facts.push(formatDate(r.date))
+                      return (
+                        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+                          {facts.map(function (f, i) {
+                            return (
+                              <span key={i} className="flex items-center gap-2.5 min-w-0">
+                                {i > 0 && <span aria-hidden="true" className="w-px h-3.5 bg-slate-200" />}
+                                <span className="min-w-0 truncate text-[12px] font-semibold text-slate-500">{f}</span>
+                              </span>
+                            )
+                          })}
+                        </div>
+                      )
+                    })()}
+
+                    <p className="text-[11px] text-slate-400" data-notranslate>Logged {formatDateTime(r.logged_at)}</p>
                   </div>
-                  <p className={"text-sm font-bold flex-shrink-0 " + (isIn ? "text-green-700" : "text-gray-900")}>
-                    {isIn ? '+' : '-'}{formatPoints(r.amount_paise || 0)}
+
+                  <p data-notranslate className={'shrink-0 text-[15px] font-bold tabular-nums whitespace-nowrap ' +
+                    (isIn ? 'text-emerald-700' : 'text-rose-700')}>
+                    {isIn ? '+ ' : '− '}{formatPoints(r.amount_paise || 0)}
                   </p>
                 </div>
               )
@@ -347,7 +549,7 @@ function PaymentsLedger({ profile }) {
               <div className="space-y-1.5 text-sm">
                 <div className="flex justify-between"><span className="text-gray-500">Party</span><span className="font-medium text-gray-800">{r.party_name}</span></div>
                 <div className="flex justify-between"><span className="text-gray-500">Date</span><span className="font-medium text-gray-800">{formatDate(r.date)}</span></div>
-                <div className="flex justify-between"><span className="text-gray-500">Mode</span><span className="font-medium text-gray-800">{r.mode === 'cash' ? '💵 Cash' : '🏦 Bank'}</span></div>
+                <div className="flex justify-between"><span className="text-gray-500">Mode</span><span className="font-medium text-gray-800">{r.mode === 'cash' ? 'Cash' : 'Bank'}</span></div>
                 {r.description && (
                   <div className="flex justify-between gap-3"><span className="text-gray-500 flex-shrink-0">Description</span><span className="font-medium text-gray-800 text-right">{r.description}</span></div>
                 )}
