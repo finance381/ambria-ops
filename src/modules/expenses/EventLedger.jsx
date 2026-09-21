@@ -784,28 +784,27 @@ function EventLedger(props) {
       )}
 
       <div className={CARD + ' p-4 @3xl:p-5'}>
-        <div className="flex items-start gap-3.5">
+        <div className="flex items-start gap-4">
           <span className="shrink-0 w-11 h-11 rounded-2xl bg-indigo-50 text-indigo-600 inline-flex items-center justify-center">
             <Icon name="users" size={20} />
           </span>
-          <div className="min-w-0 flex-1">
-            <div className="flex items-start justify-between gap-3">
+
+          <div className="min-w-0 flex-1 space-y-1.5">
+            {/* The departments belong beside the name, not on a line of their
+                own: one small chip was taking a whole row of a very wide card,
+                and what kind of event it is reads as part of which event it
+                is. */}
+            <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
               <h2 className="min-w-0 font-display text-[21px] font-bold text-slate-900 leading-tight tracking-[-0.015em]">
                 {eventDetail.event_name || 'Event'}
                 {eventDetail.client_name ? ' — ' + eventDetail.client_name : ''}
               </h2>
-              {/* events.status is 'active' on every row in the table, so it
-                  cannot tell anyone anything. is_tentative can: it is the
-                  difference between a booking LMS has a contract for and one
-                  somebody entered by hand ahead of the paperwork. */}
-              <span className={'shrink-0 h-6 px-2.5 inline-flex items-center rounded-lg text-[11px] font-bold uppercase tracking-[0.08em] ' +
-                (eventDetail.is_tentative ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700')}>
-                {eventDetail.is_tentative ? 'Tentative' : 'Confirmed'}
-              </span>
+              {contracts.map(function (c) { return <DeptChip key={c.id} name={c.department} /> })}
             </div>
+
             {(eventDetail.venue_name || eventDetail.session) && (
-              <p className="mt-1 flex items-center gap-1.5 text-[13px] font-medium text-slate-500">
-                <Icon name="mapPin" size={12} className="shrink-0 text-slate-400" />
+              <p className="flex items-center gap-1.5 text-[13px] font-semibold text-slate-500">
+                <Icon name="mapPin" size={13} className="shrink-0 text-slate-400" />
                 <span className="min-w-0 truncate">
                   {eventDetail.venue_name || ''}
                   {eventDetail.venue_name && eventDetail.session ? ' · ' : ''}
@@ -813,18 +812,58 @@ function EventLedger(props) {
                 </span>
               </p>
             )}
-            <div className="mt-2 flex flex-wrap items-center gap-1.5">
-              {contracts.map(function (c) { return <DeptChip key={c.id} name={c.department} /> })}
-            </div>
-            <div className="mt-2 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[12px] text-slate-500">
-              {contracts.filter(function (c) { return c.contract_no }).map(function (c) {
-                return <span key={c.id} className="font-semibold text-slate-600" data-notranslate>#{c.contract_no}</span>
-              })}
-              {eventDetail.created_user_name && <span>by {eventDetail.created_user_name}</span>}
-              {(eventDetail.function_date || eventDetail.contract_date) && (
-                <span data-notranslate>{longDate(eventDetail.function_date || eventDetail.contract_date)}</span>
-              )}
-            </div>
+
+            {/* Three facts separated by nothing but a gap read as three
+                columns of a table that is not there. A middle dot says they
+                are one line. */}
+            {(function () {
+              var facts = []
+              contracts.forEach(function (c) {
+                if (c.contract_no) facts.push(<span key={'n' + c.id} className="font-bold text-slate-600" data-notranslate>#{c.contract_no}</span>)
+              })
+              if (eventDetail.created_user_name) facts.push(<span key="by">by {eventDetail.created_user_name}</span>)
+              if (eventDetail.contract_date) facts.push(<span key="booked" data-notranslate>booked {longDate(eventDetail.contract_date)}</span>)
+              if (facts.length === 0) return null
+              return (
+                <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-slate-500">
+                  {facts.map(function (f, i) {
+                    return i === 0 ? f : [<span key={'s' + i} aria-hidden="true" className="text-slate-300">·</span>, f]
+                  })}
+                </p>
+              )
+            })()}
+          </div>
+
+          {/* The date is what an event is filed under and what everyone asks
+              for first, and it was the last grey item on the last grey line.
+              It takes the right edge, which the card had spare, with the one
+              thing the ledger cannot tell you from the numbers above it. */}
+          <div className="shrink-0 flex flex-col items-end gap-2">
+            {/* events.status is 'active' on every row in the table, so it
+                cannot tell anyone anything. is_tentative can: it is the
+                difference between a booking LMS has a contract for and one
+                somebody entered by hand ahead of the paperwork. */}
+            <span className={'h-6 px-2.5 inline-flex items-center rounded-lg text-[11px] font-bold uppercase tracking-[0.08em] ' +
+              (eventDetail.is_tentative ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700')}>
+              {eventDetail.is_tentative ? 'Tentative' : 'Confirmed'}
+            </span>
+            {(function () {
+              var raw = eventDetail.function_date || eventDetail.contract_date
+              if (!raw) return null
+              var d = new Date(String(raw).slice(0, 10) + 'T00:00:00')
+              if (isNaN(d)) return null
+              return (
+                <div className="w-[74px] rounded-xl bg-slate-100 px-2 py-2 text-center">
+                  <p data-notranslate className="font-display text-[21px] font-bold text-slate-900 leading-none tracking-[-0.01em] tabular-nums">
+                    {d.getDate()}
+                  </p>
+                  <p data-notranslate className="mt-1 text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500">
+                    {SHORT_MONTHS[d.getMonth()] + ' ' + d.getFullYear()}
+                  </p>
+                  <p className="text-[11px] font-semibold text-slate-400">{SHORT_DAYS[d.getDay()]}</p>
+                </div>
+              )
+            })()}
           </div>
         </div>
       </div>
