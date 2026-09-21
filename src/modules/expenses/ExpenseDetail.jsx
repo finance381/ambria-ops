@@ -766,10 +766,10 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
                 <div key={a.id} className="px-4 py-3">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0 flex-1 space-y-1">
-                      <p className="font-display text-[13.5px] font-bold text-slate-900 leading-snug">{deptLabel}</p>
+                      <p className="font-display text-[15px] font-bold text-slate-900 leading-snug">{deptLabel}</p>
                       {(typeLabel || subTypeLabel) && (
-                        <p className="flex items-center gap-1.5 text-[11.5px] font-semibold text-indigo-600">
-                          <Icon name="tag" size={11} className="shrink-0 text-indigo-400" />
+                        <p className="flex items-center gap-1.5 text-[12.5px] font-semibold text-indigo-600">
+                          <Icon name="tag" size={12} className="shrink-0 text-indigo-400" />
                           <span className="min-w-0 truncate">
                             {typeLabel || '—'}
                             {subTypeLabel && <><span className="mx-1 text-indigo-300">›</span>{subTypeLabel}</>}
@@ -777,20 +777,20 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
                         </p>
                       )}
                       {venueLabel && (
-                        <p className="flex items-center gap-1.5 text-[11.5px] font-medium text-slate-500">
-                          <Icon name="mapPin" size={11} className="shrink-0 text-slate-400" />
+                        <p className="flex items-center gap-1.5 text-[12.5px] font-medium text-slate-500">
+                          <Icon name="mapPin" size={12} className="shrink-0 text-slate-400" />
                           <span className="min-w-0 truncate">{venueLabel}{subVenueLabel ? ' › ' + subVenueLabel : ''}</span>
                         </p>
                       )}
                     </div>
                     {a.amount_paise > 0 && (
-                      <span className="shrink-0 text-[14px] font-bold text-slate-900 tabular-nums leading-snug" data-notranslate>
+                      <span className="shrink-0 text-[15px] font-bold text-slate-900 tabular-nums leading-snug" data-notranslate>
                         {formatPoints(a.amount_paise)}
                       </span>
                     )}
                   </div>
                   {a.remarks && (
-                    <p className="mt-2 border-l-2 border-slate-200 pl-2.5 text-[11.5px] leading-snug text-slate-600">{a.remarks}</p>
+                    <p className="mt-2 border-l-2 border-slate-200 pl-2.5 text-[12.5px] leading-snug text-slate-600">{a.remarks}</p>
                   )}
                 </div>
               )
