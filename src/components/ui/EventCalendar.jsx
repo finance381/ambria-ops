@@ -1,5 +1,3 @@
-import { useState, useEffect } from 'react'
-import { supabase } from '../../lib/supabase'
 import Icon from './Icon'
 import { venueColor, VENUE_LEGEND } from '../../lib/venueColors'
 
@@ -9,8 +7,12 @@ import { venueColor, VENUE_LEGEND } from '../../lib/venueColors'
 // and gets out of the way. The Event ledger opens on the calendar: it is the
 // first of three steps, and the question it answers is "which days had
 // anything on them?" — which only a grid you can read at a glance answers. So
-// the cells are square and scale with the column, and every day carries a dot
-// per venue that has an event on it.
+// the cells are square and every day carries a dot per venue with an event.
+//
+// The month's rows are the parent's, not this component's. The ledger needs
+// the same rows to list the month beside the grid and to answer a date without
+// another round trip, and two components fetching the same month twice would
+// be one read too many and two chances to disagree.
 var DAY_NAMES = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
 var MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July',
   'August', 'September', 'October', 'November', 'December']
@@ -19,74 +21,26 @@ function iso(d) {
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0')
 }
 
-function EventCalendar({ value, onChange }) {
+function EventCalendar({ value, onChange, year, month, onMonthChange, byDate, loading, total }) {
   var today = new Date()
   var todayStr = iso(today)
-  var init = value ? new Date(value + 'T00:00:00') : today
-  var [viewYear, setViewYear] = useState(init.getFullYear())
-  var [viewMonth, setViewMonth] = useState(init.getMonth())
-  var [byDate, setByDate] = useState({})
-  var [loading, setLoading] = useState(true)
-
-  // One read per month, and the late one loses: flicking through months faster
-  // than the network answers would otherwise paint an older month's dots over
-  // the one you are looking at.
-  useEffect(function () {
-    var alive = true
-    setLoading(true)
-    var start = iso(new Date(viewYear, viewMonth, 1))
-    var end = iso(new Date(viewYear, viewMonth + 1, 0))
-    supabase.from('events_safe')
-      .select('function_date, venue_name')
-      .not('function_date', 'is', null)
-      .is('merged_into_id', null)
-      .gte('function_date', start)
-      .lte('function_date', end)
-      .then(function (res) {
-        if (!alive) return
-        var map = {}
-        var rows = res.data || []
-        rows.forEach(function (r) {
-          var d = (r.function_date || '').slice(0, 10)
-          if (!d) return
-          if (!map[d]) map[d] = { count: 0, venues: [] }
-          map[d].count += 1
-          var v = r.venue_name || 'Other'
-          if (map[d].venues.indexOf(v) === -1) map[d].venues.push(v)
-        })
-        setByDate(map)
-        setLoading(false)
-      })
-    return function () { alive = false }
-  }, [viewYear, viewMonth])
-
-  // A date chosen elsewhere — a deep link, or the ledger restoring its state —
-  // should bring its own month along with it.
-  useEffect(function () {
-    if (!value) return
-    var d = new Date(value + 'T00:00:00')
-    if (isNaN(d)) return
-    setViewYear(d.getFullYear())
-    setViewMonth(d.getMonth())
-  }, [value])
+  var map = byDate || {}
 
   function step(delta) {
-    var m = viewMonth + delta
-    if (m < 0) { setViewMonth(11); setViewYear(viewYear - 1) }
-    else if (m > 11) { setViewMonth(0); setViewYear(viewYear + 1) }
-    else { setViewMonth(m) }
+    var m = month + delta
+    if (m < 0) onMonthChange(year - 1, 11)
+    else if (m > 11) onMonthChange(year + 1, 0)
+    else onMonthChange(year, m)
   }
 
-  var firstDay = new Date(viewYear, viewMonth, 1).getDay()
-  var daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate()
-  var prevDays = new Date(viewYear, viewMonth, 0).getDate()
+  var firstDay = new Date(year, month, 1).getDay()
+  var daysInMonth = new Date(year, month + 1, 0).getDate()
+  var prevDays = new Date(year, month, 0).getDate()
   var cells = []
   for (var i = firstDay - 1; i >= 0; i--) cells.push({ day: prevDays - i, current: false })
-  for (var d = 1; d <= daysInMonth; d++) cells.push({ day: d, current: true, dateStr: iso(new Date(viewYear, viewMonth, d)) })
+  for (var d = 1; d <= daysInMonth; d++) cells.push({ day: d, current: true, dateStr: iso(new Date(year, month, d)) })
   var tail = cells.length % 7
   if (tail) for (var j = 1; j <= 7 - tail; j++) cells.push({ day: j, current: false })
-
-  var monthTotal = Object.keys(byDate).reduce(function (s, k) { return s + byDate[k].count }, 0)
 
   return (
     <div className="bg-white border border-slate-200 rounded-2xl shadow-[0_1px_2px_rgba(15,23,42,0.05)] overflow-hidden">
@@ -97,7 +51,7 @@ function EventCalendar({ value, onChange }) {
         </p>
         <button type="button"
           onClick={function () {
-            setViewYear(today.getFullYear()); setViewMonth(today.getMonth())
+            onMonthChange(today.getFullYear(), today.getMonth())
             if (onChange) onChange(todayStr)
           }}
           className="shrink-0 h-7 px-2.5 rounded-lg text-[12px] font-bold text-indigo-600 hover:bg-indigo-50 transition-colors">
@@ -110,7 +64,7 @@ function EventCalendar({ value, onChange }) {
           className="w-8 h-8 inline-flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors">
           <Icon name="chevronRight" size={16} className="rotate-180" />
         </button>
-        <p className="font-display text-[15px] font-bold text-slate-900" data-notranslate>{MONTHS[viewMonth] + ' ' + viewYear}</p>
+        <p className="font-display text-[15px] font-bold text-slate-900" data-notranslate>{MONTHS[month] + ' ' + year}</p>
         <button type="button" onClick={function () { step(1) }} aria-label="Next month"
           className="w-8 h-8 inline-flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors">
           <Icon name="chevronRight" size={16} />
@@ -133,7 +87,7 @@ function EventCalendar({ value, onChange }) {
                 </div>
               )
             }
-            var info = byDate[cell.dateStr]
+            var info = map[cell.dateStr]
             var hasEvent = !!info
             var isSelected = value === cell.dateStr
             var isToday = cell.dateStr === todayStr
@@ -182,7 +136,7 @@ function EventCalendar({ value, onChange }) {
           })}
         </div>
         <span className="shrink-0 text-[11px] font-semibold text-slate-400 tabular-nums" data-notranslate>
-          {loading ? 'Loading…' : monthTotal + (monthTotal === 1 ? ' event' : ' events')}
+          {loading ? 'Loading…' : (total || 0) + ((total || 0) === 1 ? ' event' : ' events')}
         </span>
       </div>
     </div>

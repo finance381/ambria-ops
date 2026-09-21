@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { formatPoints, formatDate, formatDateTime, titleCase } from '../../lib/format'
 import EventCalendar from '../../components/ui/EventCalendar'
+import { venueColor } from '../../lib/venueColors'
 import ImageLightbox from '../../components/ui/ImageLightbox'
 import Icon from '../../components/ui/Icon'
 import { hasPerm } from '../../lib/permissions'
@@ -48,6 +49,13 @@ var EVT_COLS = 'id, event_name, function_date, contract_date, venue_name, locati
 
 var MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July',
   'August', 'September', 'October', 'November', 'December']
+
+function isoDate(d) {
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0')
+}
+
+var SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+var SHORT_DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
 function longDate(s) {
   if (!s) return ''
@@ -138,7 +146,6 @@ function EventLedger(props) {
   var propEventId = props && props.eventId ? String(props.eventId) : null
   var [date, setDate] = useState('')
   var [functions, setFunctions] = useState([])
-  var [functionsLoading, setFunctionsLoading] = useState(false)
   var [eventId, setEventId] = useState(propEventId || '')
   var [eventDetail, setEventDetail] = useState(null)
   var [balance, setBalance] = useState(null)
@@ -162,8 +169,41 @@ function EventLedger(props) {
   var [showTxnFilter, setShowTxnFilter] = useState(false)
   var [txnPage, setTxnPage] = useState(1)
   var [lightbox, setLightbox] = useState(null)
+  var _now = new Date()
+  var [monthYear, setMonthYear] = useState(_now.getFullYear())
+  var [monthMonth, setMonthMonth] = useState(_now.getMonth())
+  var [monthRows, setMonthRows] = useState([])
+  var [monthLoading, setMonthLoading] = useState(true)
 
-  async function loadFunctions(dateStr) {
+  // One read per month, not one per month plus one per date. A month of
+  // events is a few dozen rows, and holding them means the calendar's dots,
+  // the list beside it and the answer to "what is on the 21st" all come from
+  // the same set — no second round trip when a day is pressed, and no way
+  // for the dots and the list to disagree.
+  //
+  // The late response loses: flicking through months faster than the network
+  // answers would otherwise paint an older month over the one on screen.
+  useEffect(function () {
+    if (propEventId) return
+    var alive = true
+    setMonthLoading(true)
+    var start = isoDate(new Date(monthYear, monthMonth, 1))
+    var end = isoDate(new Date(monthYear, monthMonth + 1, 0))
+    supabase.from('events')
+      .select(EVT_COLS)
+      .gte('function_date', start)
+      .lte('function_date', end)
+      .is('merged_into_id', null)
+      .order('event_name')
+      .then(function (res) {
+        if (!alive) return
+        setMonthRows(res.data || [])
+        setMonthLoading(false)
+      })
+    return function () { alive = false }
+  }, [monthYear, monthMonth, propEventId])
+
+  function pickDate(dateStr) {
     setDate(dateStr)
     setEventId('')
     setEventDetail(null)
@@ -171,17 +211,6 @@ function EventLedger(props) {
     setBalancesByContract({})
     setEntries([])
     setPlateEvents([])
-    if (!dateStr) { setFunctions([]); return }
-    setFunctionsLoading(true)
-    var { data } = await supabase.from('events')
-      .select(EVT_COLS)
-      .eq('function_date', dateStr)
-      .order('event_name')
-    var rows = data || []
-    setFunctions(rows)
-    setFunctionsLoading(false)
-    var groups = _buildGroups(rows)
-    if (groups.length === 1) selectGroup(groups[0])
   }
 
   function selectGroup(g) {
@@ -376,7 +405,12 @@ function EventLedger(props) {
   var colBankP = balance ? Number(balance.collected_bank_paise || 0) : 0
   var spentP = balance ? Number(balance.spent_paise || 0) : 0
 
-  var _groups = _buildGroups(functions)
+  // Outside the embedded mode the day's rows are a slice of the month that
+  // is already in hand.
+  var dateRows = propEventId
+    ? functions
+    : (date ? monthRows.filter(function (r) { return String(r.function_date || '').slice(0, 10) === date }) : [])
+  var _groups = _buildGroups(dateRows)
   var selectedGroup = eventId
     ? _groups.find(function (g) { return g.event_ids.map(String).indexOf(String(eventId)) !== -1 })
     : null
@@ -403,6 +437,24 @@ function EventLedger(props) {
       label: 'Collection receipt',
       sub: formatPoints(e._wt.amount_paise) + ' · ' + formatDate(e.created_at),
     })
+  })
+
+  // Dots for the grid, days for the list. Both are the same rows read the
+  // same way, so a day cannot carry a dot the list has no entry for.
+  var monthByDate = {}
+  monthRows.forEach(function (r) {
+    var d = String(r.function_date || '').slice(0, 10)
+    if (!d) return
+    if (!monthByDate[d]) monthByDate[d] = { count: 0, venues: [], rows: [] }
+    monthByDate[d].count += 1
+    monthByDate[d].rows.push(r)
+    var v = r.venue_name || 'Other'
+    if (monthByDate[d].venues.indexOf(v) === -1) monthByDate[d].venues.push(v)
+  })
+  var monthDays = Object.keys(monthByDate).sort()
+  var monthVenues = []
+  monthRows.forEach(function (r) {
+    if (r.venue_name && monthVenues.indexOf(r.venue_name) === -1) monthVenues.push(r.venue_name)
   })
 
   var tabCounts = { transactions: entries.length, plates: plateEvents.length, documents: documents.length }
@@ -713,7 +765,7 @@ function EventLedger(props) {
             <Icon name="arrowLeft" size={15} />
             Back to Events
           </button>
-          <button type="button" onClick={function () { loadFunctions('') }}
+          <button type="button" onClick={function () { pickDate('') }}
             className="inline-flex items-center gap-1.5 h-9 px-3 rounded-xl text-[13px] font-bold text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors">
             <Icon name="calendar" size={14} />
             Change date
@@ -1106,27 +1158,146 @@ function EventLedger(props) {
   return (
     <div className="@container">
       {!propEventId && !eventId && (
-        <div className={'grid gap-4 ' + (date ? '@3xl:grid-cols-12 items-start' : '')}>
-          <div className={date ? '@3xl:col-span-5' : 'w-full max-w-[460px] mx-auto'}>
-            <EventCalendar value={date} onChange={loadFunctions} />
+        // The calendar is a fixed 400 wide and the panel beside it takes what
+        // is left. On its own, centred, the calendar left most of a 1600px
+        // page empty and said nothing about the month it was showing — you
+        // had to press a day to learn whether it was worth pressing.
+        <div className="flex flex-col @3xl:flex-row gap-4 items-start">
+          <div className="w-full @3xl:w-[400px] @3xl:shrink-0">
+            <EventCalendar value={date} onChange={pickDate}
+              year={monthYear} month={monthMonth}
+              onMonthChange={function (y, m) {
+                setMonthYear(y); setMonthMonth(m)
+                // Paging away from the month a selected date lives in would
+                // leave "Events on 21 September" beside October's grid, and
+                // then empty it as the new month arrived. Browsing months is
+                // a step back, so it takes you back to the month list.
+                if (date) {
+                  var d = new Date(date + 'T00:00:00')
+                  if (d.getFullYear() !== y || d.getMonth() !== m) pickDate('')
+                }
+              }}
+              byDate={monthByDate} loading={monthLoading} total={monthRows.length} />
           </div>
 
-          {date && (
-            <div className="@3xl:col-span-7">
+          <div className="w-full min-w-0 @3xl:flex-1">
+            {!date && (
+              <div className={CARD + ' overflow-hidden'}>
+                <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-b border-slate-100">
+                  <div className="min-w-0">
+                    <p className="text-[10.5px] font-bold uppercase tracking-[0.1em] text-slate-400">This month</p>
+                    <p className="font-display text-[15px] font-bold text-slate-900" data-notranslate>
+                      {MONTHS[monthMonth] + ' ' + monthYear}
+                    </p>
+                  </div>
+                  {!monthLoading && monthRows.length > 0 && (
+                    <div className="flex items-center gap-1.5">
+                      {[{ n: monthRows.length, l: 'events' }, { n: monthDays.length, l: 'days' }, { n: monthVenues.length, l: 'venues' }].map(function (st) {
+                        return (
+                          <span key={st.l} className="inline-flex items-baseline gap-1 h-7 px-2.5 rounded-lg bg-slate-100 text-slate-600 text-[12px] font-bold">
+                            <span data-notranslate className="tabular-nums text-slate-900">{st.n}</span>
+                            <span className="font-semibold text-slate-500">{st.l}</span>
+                          </span>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {monthLoading && (
+                  <div className="p-4 space-y-2.5">
+                    {[0, 1, 2, 3].map(function (i) {
+                      return <div key={i} className="ambria-skeleton h-[72px] rounded-xl" />
+                    })}
+                  </div>
+                )}
+
+                {!monthLoading && monthDays.length === 0 && (
+                  <div className="px-4 py-16 text-center">
+                    <Icon name="calendar" size={26} className="mx-auto text-slate-300" />
+                    <p className="mt-2 text-[13px] font-semibold text-slate-500">Nothing booked this month</p>
+                    <p className="mt-0.5 text-[12px] text-slate-400">Use the arrows above the grid to look at another one.</p>
+                  </div>
+                )}
+
+                {!monthLoading && monthDays.length > 0 && (
+                  <div className="divide-y divide-slate-100 max-h-[min(72vh,660px)] overflow-y-auto ambria-thin-scroll overscroll-contain">
+                    {monthDays.map(function (d) {
+                      var info = monthByDate[d]
+                      var when = new Date(d + 'T00:00:00')
+                      var isToday = d === isoDate(new Date())
+                      var groups = _buildGroups(info.rows)
+                      return (
+                        <button key={d} type="button" onClick={function () { pickDate(d) }}
+                          className="group w-full text-left px-4 py-3 flex items-start gap-3.5 hover:bg-indigo-50/40 transition-colors">
+                          {/* The date reads as one block — a number under its
+                              weekday — so the eye finds the day it wants down
+                              a column rather than inside a sentence. */}
+                          <span className={'shrink-0 w-12 text-center rounded-xl py-1.5 ' +
+                            (isToday ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600')}>
+                            <span data-notranslate className="block font-display text-[17px] font-bold leading-none">{when.getDate()}</span>
+                            <span className={'block mt-0.5 text-[10px] font-bold uppercase tracking-[0.06em] ' + (isToday ? 'text-white/75' : 'text-slate-400')}>
+                              {SHORT_DAYS[when.getDay()]}
+                            </span>
+                          </span>
+
+                          <span className="min-w-0 flex-1 space-y-1">
+                            {groups.slice(0, 3).map(function (g) {
+                              return (
+                                <span key={g.key} className="flex items-center gap-2 min-w-0">
+                                  <span className="min-w-0 truncate text-[13px] font-semibold text-slate-800">
+                                    {g.event_name || 'Event'}{g.client_name ? ' — ' + g.client_name : ''}
+                                  </span>
+                                  {g.venue_name && (
+                                    <span className="shrink-0 inline-flex items-center gap-1 text-[11.5px] text-slate-500">
+                                      <span className="w-1.5 h-1.5 rounded-full" style={{ background: venueColor(g.venue_name) }} />
+                                      {g.venue_name}
+                                    </span>
+                                  )}
+                                </span>
+                              )
+                            })}
+                            {groups.length > 3 && (
+                              <span className="block text-[11.5px] font-semibold text-indigo-600" data-notranslate>
+                                +{groups.length - 3} more
+                              </span>
+                            )}
+                          </span>
+
+                          <span data-notranslate className="shrink-0 h-6 px-2 inline-flex items-center rounded-lg bg-slate-100 text-slate-600 text-[11px] font-bold tabular-nums group-hover:bg-indigo-100 group-hover:text-indigo-700 transition-colors">
+                            {info.count}
+                          </span>
+                          <Icon name="chevronRight" size={16}
+                            className="shrink-0 mt-1 text-slate-300 group-hover:text-indigo-500 transition-colors" />
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {date && (
               <div className={CARD + ' overflow-hidden'}>
                 <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-slate-100">
                   <div className="min-w-0">
                     <p className="text-[10.5px] font-bold uppercase tracking-[0.1em] text-slate-400">Events on</p>
                     <p className="font-display text-[15px] font-bold text-slate-900 truncate" data-notranslate>{longDate(date)}</p>
                   </div>
-                  {!functionsLoading && (
-                    <span data-notranslate className="shrink-0 h-7 px-2.5 inline-flex items-center rounded-lg bg-indigo-50 text-indigo-700 text-[12px] font-bold tabular-nums">
-                      {_groups.length} {_groups.length === 1 ? 'Event' : 'Events'}
-                    </span>
-                  )}
+                  <div className="flex items-center gap-2 shrink-0">
+                    {!monthLoading && (
+                      <span data-notranslate className="h-7 px-2.5 inline-flex items-center rounded-lg bg-indigo-50 text-indigo-700 text-[12px] font-bold tabular-nums">
+                        {_groups.length} {_groups.length === 1 ? 'Event' : 'Events'}
+                      </span>
+                    )}
+                    <button type="button" onClick={function () { pickDate('') }}
+                      className="h-7 px-2.5 rounded-lg text-[12px] font-bold text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors">
+                      Whole month
+                    </button>
+                  </div>
                 </div>
 
-                {functionsLoading && (
+                {monthLoading && (
                   <div className="p-4 space-y-2.5">
                     {[0, 1, 2].map(function (i) {
                       return <div key={i} className="ambria-skeleton h-[74px] rounded-xl" />
@@ -1134,7 +1305,7 @@ function EventLedger(props) {
                   </div>
                 )}
 
-                {!functionsLoading && _groups.length === 0 && (
+                {!monthLoading && _groups.length === 0 && (
                   <div className="px-4 py-14 text-center">
                     <Icon name="calendar" size={26} className="mx-auto text-slate-300" />
                     <p className="mt-2 text-[13px] font-semibold text-slate-500">No functions on this date</p>
@@ -1142,8 +1313,8 @@ function EventLedger(props) {
                   </div>
                 )}
 
-                {!functionsLoading && _groups.length > 0 && (
-                  <div className="divide-y divide-slate-100 max-h-[min(70vh,620px)] overflow-y-auto ambria-thin-scroll overscroll-contain">
+                {!monthLoading && _groups.length > 0 && (
+                  <div className="divide-y divide-slate-100 max-h-[min(72vh,660px)] overflow-y-auto ambria-thin-scroll overscroll-contain">
                     {_groups.map(function (g) {
                       var creators = []
                       g.contracts.forEach(function (c) {
@@ -1184,8 +1355,8 @@ function EventLedger(props) {
                   </div>
                 )}
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       )}
 
