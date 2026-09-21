@@ -146,19 +146,27 @@ function Tile({ icon, tone, label, value, valueClass, wide, active, onClick, chi
 // no activity — says so with a word and a glyph. Overdue is not a state, it is
 // a deadline that has passed, and it is the only one worth finding by colour
 // while scanning a page of them.
-function StateChip({ icon, label, alarm }) {
+// Three tones, in the order they want your attention. Rose is a deadline that
+// has passed; amber is a record that is missing something, which wants fixing
+// but not today; white is neither, and keeps a hairline because without a tint
+// there is nothing at all between the chip and the card.
+//
+// A tint already gives a chip its edge, so the tinted two are not also
+// outlined — a border inside a fill is a second edge a pixel in from the
+// first, which is what made the rose one look furred.
+var CHIP_TONES = {
+  alarm: { box: 'bg-rose-100 text-rose-700', glyph: 'text-rose-600' },
+  warn: { box: 'bg-amber-100 text-amber-800', glyph: 'text-amber-600' },
+  plain: { box: 'bg-white border border-slate-200 text-slate-600', glyph: 'text-slate-500' },
+}
+
+function StateChip({ icon, label, tone }) {
+  var t = CHIP_TONES[tone] || CHIP_TONES.plain
   return (
     // A fixed height rather than padding, so two chips side by side are the
     // same height whatever is in them, and neither is taller than the line.
-    //
-    // Only the white one is outlined. A tint already gives a chip its edge, so
-    // a border round the rose one was a second edge a pixel inside the first —
-    // two rose lines with a paler rose between them, which is what made it look
-    // furred. The white one keeps its hairline, because without it there is
-    // nothing at all between the chip and the card.
-    <span className={"shrink-0 h-6 inline-flex items-center gap-1.5 px-2.5 rounded-md text-[10.5px] font-bold uppercase tracking-[0.04em] whitespace-nowrap " +
-      (alarm ? "bg-rose-100 text-rose-700" : "bg-white border border-slate-200 text-slate-600")}>
-      <Icon name={icon} size={11} className={alarm ? "text-rose-600" : "text-slate-500"} />
+    <span className={"shrink-0 h-6 inline-flex items-center gap-1.5 px-2.5 rounded-md text-[10.5px] font-bold uppercase tracking-[0.04em] whitespace-nowrap " + t.box}>
+      <Icon name={icon} size={11} className={t.glyph} />
       {label}
     </span>
   )
@@ -204,10 +212,10 @@ function renderFacts(v) {
 
 function renderChips(v) {
   var chips = []
-  if ((v.overdue_count || 0) > 0) chips.push({ icon: 'alert', label: 'Overdue', alarm: true })
-  if (v.vendor_status === 'incomplete') chips.push({ icon: 'fileText', label: 'Incomplete' })
+  if ((v.overdue_count || 0) > 0) chips.push({ icon: 'alert', label: 'Overdue', tone: 'alarm' })
+  if (v.vendor_status === 'incomplete') chips.push({ icon: 'fileText', label: 'Incomplete', tone: 'warn' })
   if (chips.length === 0 && (v.entry_count || 0) === 0) chips.push({ icon: 'clock', label: 'No activity' })
-  return chips.map(function (c, ci) { return <StateChip key={ci} icon={c.icon} label={c.label} alarm={c.alarm} /> })
+  return chips.map(function (c, ci) { return <StateChip key={ci} icon={c.icon} label={c.label} tone={c.tone} /> })
 }
 
 function renderMoneyNotes(v) {
