@@ -337,31 +337,6 @@ function PaymentsLedger({ profile }) {
 
   var quickActive = modeFilter === 'all' && dirFilter === 'all' && !typeFilter
 
-  function exportCsv() {
-    function esc(v) {
-      var t = String(v == null ? '' : v)
-      if (t.indexOf(',') !== -1 || t.indexOf('"') !== -1 || t.indexOf('\n') !== -1) return '"' + t.replace(/"/g, '""') + '"'
-      return t
-    }
-    var head = ['Date', 'Logged', 'Type', 'Party', 'Party kind', 'Mode', 'Direction', 'Points', 'Recorded by', 'Description']
-    // Points as a number: a spreadsheet cannot add up "80,000 pts".
-    var body = visible.map(function (r) {
-      return [
-        formatDate(r.date), formatDateTime(r.logged_at), r.type_label, r.party_name,
-        (SOURCE_META[r.source] || {}).label || r.source, r.mode, r.direction === 'in' ? 'In' : 'Out',
-        (r.direction === 'in' ? 1 : -1) * ((r.amount_paise || 0) / 100),
-        r.recorded_by || r.collector_name || '', r.description || '',
-      ].map(esc).join(',')
-    })
-    var csv = head.join(',') + '\n' + body.join('\n') + '\n'
-    var blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
-    var url = URL.createObjectURL(blob)
-    var a = document.createElement('a')
-    a.href = url
-    a.download = 'cash-bank-' + dateFrom + '-to-' + dateTo + '.csv'
-    a.click()
-    URL.revokeObjectURL(url)
-  }
 
   var totals = useMemo(function () {
     var totalIn = 0, totalOut = 0
@@ -405,9 +380,12 @@ function PaymentsLedger({ profile }) {
   return (
     <div className="@container space-y-3">
       <div className={CARD + ' px-4 py-3 overflow-hidden'}>
-        <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
-          <div className="flex items-center gap-2">
-            <span className="text-[12px] font-bold text-slate-500">Date Range</span>
+        {/* One row on anything wide enough to hold it. It still wraps on a
+            phone, where three controls side by side would each be too narrow
+            to use. */}
+        <div className="flex flex-wrap @3xl:flex-nowrap items-center gap-x-4 gap-y-3">
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="text-[12px] font-bold text-slate-500 whitespace-nowrap">Date Range</span>
             {/* The app's own picker. <input type="date"> renders mm/dd/yyyy in
                 US order whatever the locale, which next to "08 Dec 2025"
                 everywhere else on the screen is the one that looks wrong. */}
@@ -422,9 +400,9 @@ function PaymentsLedger({ profile }) {
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <span className="text-[12px] font-bold text-slate-500">Quick Filters</span>
-            <div className="flex flex-wrap items-center gap-2.5">
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="text-[12px] font-bold text-slate-500 whitespace-nowrap">Quick Filters</span>
+            <div className="flex flex-wrap @3xl:flex-nowrap items-center gap-2.5">
               {QUICK_GROUPS.map(function (group, gi) {
                 return (
                   <div key={gi} className="flex items-center gap-2.5">
@@ -446,11 +424,11 @@ function PaymentsLedger({ profile }) {
             </div>
           </div>
 
-          <div className="flex items-center gap-2 ml-auto">
+          <div className="flex items-center gap-2 ml-auto shrink-0">
             {/* Search is the control people reach for most on this screen, so
                 it does not live one press deep behind More Filters. */}
             <SearchField value={search} onChange={function (v) { setSearch(v) }}
-              placeholder="Search transactions..." className="w-[220px] @3xl:w-[260px]" />
+              placeholder="Search transactions..." className="w-[200px] @3xl:w-[240px]" />
             <button type="button" onClick={function () { setShowMore(!showMore) }} aria-pressed={showMore}
               className={'h-9 px-3 inline-flex items-center gap-1.5 rounded-xl border text-[12.5px] font-bold transition-colors ' +
                 (showMore || typeFilter
@@ -459,12 +437,6 @@ function PaymentsLedger({ profile }) {
               <Icon name="filter" size={14} />
               More Filters
               <Icon name={showMore ? 'chevronUp' : 'chevronDown'} size={13} />
-            </button>
-            <button type="button" onClick={exportCsv} disabled={visible.length === 0}
-              title="Export everything shown, in the order it is shown"
-              className="h-9 px-3.5 inline-flex items-center gap-1.5 rounded-xl text-[12.5px] font-bold text-white bg-indigo-600 hover:bg-indigo-700 active:scale-[0.98] disabled:opacity-40 disabled:hover:bg-indigo-600 transition-all">
-              <Icon name="download" size={14} />
-              Export
             </button>
           </div>
         </div>
