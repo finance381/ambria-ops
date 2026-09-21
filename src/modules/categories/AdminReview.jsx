@@ -17,7 +17,16 @@ function AdminReview({ profile }) {
   var [enlargedImg, setEnlargedImg] = useState(null)
   var [editingItem, setEditingItem] = useState(null)
   var [search, setSearch] = useState('')
-  useRealtime(['inventory_items', 'catering_store_items', 'categories', 'sub_categories'], function () { if (!saving) loadPending() })
+  // loadPending() never existed. This fired only when one of the four tables
+  // changed while the screen was open, so it went unnoticed — and when it did
+  // fire it threw, out of a subscription handler, taking the screen with it.
+  // The pair below is what every other "something changed, reload" site in
+  // this file calls.
+  useRealtime(['inventory_items', 'catering_store_items', 'categories', 'sub_categories'], function () {
+    if (saving) return
+    loadMeta()
+    loadItems(false)
+  })
   var [searchDebounced, setSearchDebounced] = useState('')
   var [venueFilter, setVenueFilter] = useState('')
   var [catFilter, setCatFilter] = useState('')

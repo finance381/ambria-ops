@@ -445,7 +445,10 @@ function Users({ profile }) {
           (editUser.name || editUser.email) + ' → ' +
           (editEmployeeId ? 'linked to ' + editEmployeeId : 'unlinked'))
       } catch (_) {}
-      loadEmployees()
+      // loadEmployees() never existed here. The employee list this screen
+      // reads is refData.employees — the shared cache — so refreshing that is
+      // what makes a link or unlink show up without a reload.
+      refData.refreshRefData()
     }
 
     var err
