@@ -184,19 +184,23 @@ var REF_TYPE_LABELS = {
   salary_adjustment: 'Salary Adjustment',
 }
 
+// Outline and word, no fill — the same way the chips on the Cash & Bank
+// ledger and the quick filters above them say what they are. The leading
+// square below keeps its tint: that is the thing you scan a long ledger with,
+// and this is the thing you read once you have stopped.
 var REF_TYPE_STYLES = {
-  expense: 'bg-red-50 text-red-700 border-red-200',
-  expense_refund: 'bg-green-50 text-green-700 border-green-200',
-  transfer: 'bg-blue-50 text-blue-700 border-blue-200',
-  issued: 'bg-purple-50 text-purple-700 border-purple-200',
-  deducted: 'bg-orange-50 text-orange-700 border-orange-200',
-  collection: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-  collection_cancel: 'bg-rose-50 text-rose-700 border-rose-200',
-  opening: 'bg-gray-100 text-gray-700 border-gray-300',
-  vendor_payment: 'bg-red-50 text-red-700 border-red-200',
-  vendor_deduction: 'bg-amber-50 text-amber-700 border-amber-200',
-  salary_payment: 'bg-red-50 text-red-700 border-red-200',
-  salary_adjustment: 'bg-amber-50 text-amber-700 border-amber-200',
+  expense: 'bg-white text-rose-700 border-rose-300',
+  expense_refund: 'bg-white text-emerald-700 border-emerald-300',
+  transfer: 'bg-white text-blue-700 border-blue-300',
+  issued: 'bg-white text-purple-700 border-purple-300',
+  deducted: 'bg-white text-orange-700 border-orange-300',
+  collection: 'bg-white text-emerald-700 border-emerald-300',
+  collection_cancel: 'bg-white text-rose-700 border-rose-300',
+  opening: 'bg-white text-slate-700 border-slate-300',
+  vendor_payment: 'bg-white text-rose-700 border-rose-300',
+  vendor_deduction: 'bg-white text-amber-700 border-amber-300',
+  salary_payment: 'bg-white text-rose-700 border-rose-300',
+  salary_adjustment: 'bg-white text-amber-700 border-amber-300',
 }
 
 // The glyph and tint for a row's leading square. Same families as the chip
@@ -2755,7 +2759,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5">
                         {t.reference_type && (
-                          <span className={"text-[10px] font-bold uppercase px-1.5 py-0.5 rounded border flex-shrink-0 " + (REF_TYPE_STYLES[t.reference_type] || 'bg-gray-100 text-gray-700 border-gray-300')}>
+                          <span className={"text-[10px] font-bold uppercase px-1.5 py-0.5 rounded border flex-shrink-0 " + (REF_TYPE_STYLES[t.reference_type] || 'bg-white text-slate-700 border-slate-300')}>
                             {REF_TYPE_LABELS[t.reference_type] || t.reference_type}
                           </span>
                         )}
@@ -3322,7 +3326,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               {t.reference_type && (
-                <span className={"text-[10px] font-bold uppercase px-1.5 py-0.5 rounded border " + (REF_TYPE_STYLES[t.reference_type] || 'bg-gray-100 text-gray-700 border-gray-300')}>
+                <span className={"text-[10px] font-bold uppercase px-1.5 py-0.5 rounded border " + (REF_TYPE_STYLES[t.reference_type] || 'bg-white text-slate-700 border-slate-300')}>
                   {REF_TYPE_LABELS[t.reference_type] || t.reference_type}
                 </span>
               )}
