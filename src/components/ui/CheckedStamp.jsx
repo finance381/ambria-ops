@@ -1,6 +1,29 @@
 import Icon from './Icon'
 import { formatDateTime } from '../../lib/format'
 
+// The worn ink. An SVG turbulence tile, screened over the stamp: white where
+// the noise is bright, which on a green mark reads as ink that did not take
+// and on the white card around it reads as nothing at all. That is why it can
+// sit over the whole circle without being clipped to the strokes.
+//
+// Inline rather than a Tailwind arbitrary value, because a url() with a data
+// URI in a class name is a quoting fight nobody wins — and inline styles skip
+// the scanner entirely, so it cannot be purged by accident.
+var STAMP_WEAR = "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='90' height='90'><filter id='w'><feTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' seed='7'/></filter><rect width='90' height='90' filter='url(%23w)'/></svg>\")"
+
+function StampStars() {
+  // Three, the middle one larger — the arrangement every rubber stamp of this
+  // kind uses, and the thing that stops a ring with a word in it reading as a
+  // badge.
+  return (
+    <span aria-hidden="true" className="flex items-center justify-center gap-1 text-emerald-600">
+      <Icon name="star" size={9} className="fill-current stroke-none" />
+      <Icon name="star" size={12} className="fill-current stroke-none" />
+      <Icon name="star" size={9} className="fill-current stroke-none" />
+    </span>
+  )
+}
+
 // A finance-controller "reviewed this entry" stamp for a wallet_transactions
 // row — separate from the expense ack/resubmit/deduct review, which is about
 // the bill itself. This is about whether the allocation/entry was already
@@ -32,26 +55,36 @@ function CheckedStamp({ checked, checkerName, checkedAt, canToggle, canUncheck, 
     (canToggle && !canUncheck ? ' (only they can un-check)' : '')
 
   if (isStamp) {
-    // Drawn rather than an image: two rings, a rule above and below the word,
-    // and a tilt. An SVG or a PNG of a stamp would be one fixed green at one
-    // fixed size, and would not dim or take a hover — this is type and
+    // Drawn rather than an image: two rings, three stars above and below, a
+    // rule either side of the word, and a tilt. A PNG would be one fixed green
+    // at one fixed size and could not dim or take a hover — this is type and
     // borders, so it scales, inherits and animates like anything else.
     //
-    // The tilt lives on the inner circle, not on the button, so the button's
-    // own box stays square to the layout and nothing around it is nudged by a
-    // rotated bounding box.
+    // The tilt is on the circle, not the button, so the button's own box stays
+    // square to the layout and nothing around it is nudged by a rotated
+    // bounding box.
     return (
       <button type="button" disabled={busy || !interactive} onClick={interactive ? onToggle : undefined} title={title}
         aria-label={title}
-        className={"shrink-0 w-[104px] h-[104px] inline-flex items-center justify-center rounded-full transition-opacity " +
-          (interactive ? "cursor-pointer opacity-80 hover:opacity-100" : "cursor-default opacity-70")}>
-        <span aria-hidden="true"
-          className="w-full h-full rounded-full border-[3px] border-emerald-600 p-1.5 rotate-[-12deg] flex items-center justify-center">
-          <span className="w-full h-full rounded-full border-2 border-emerald-600 flex flex-col items-center justify-center gap-1">
-            <span className="w-3/5 h-[2px] bg-emerald-600" />
-            <span className="text-[15px] font-extrabold uppercase tracking-[0.08em] text-emerald-600 leading-none">Checked</span>
-            <span className="w-3/5 h-[2px] bg-emerald-600" />
+        className={"shrink-0 w-[118px] h-[118px] inline-flex items-center justify-center transition-opacity " +
+          (interactive ? "cursor-pointer opacity-90 hover:opacity-100" : "cursor-default opacity-80")}>
+        <span aria-hidden="true" className="relative w-[112px] h-[112px] rotate-[-9deg]">
+          <span className="absolute inset-0 rounded-full border-[3.5px] border-emerald-600" />
+          <span className="absolute inset-[7px] rounded-full border-2 border-emerald-600" />
+          <span className="absolute inset-[7px] flex flex-col items-center justify-center gap-[3px] px-2">
+            <StampStars />
+            <span className="w-full h-[2.5px] bg-emerald-600" />
+            <span className="font-display text-[17px] font-extrabold uppercase tracking-[0.06em] text-emerald-600 leading-none">
+              Checked
+            </span>
+            <span className="w-full h-[2.5px] bg-emerald-600" />
+            <StampStars />
           </span>
+          {/* The wear goes last, over everything, so the rings, the rules, the
+              stars and the word are all worn by the same tile rather than each
+              carrying its own. */}
+          <span className="absolute inset-0 rounded-full pointer-events-none"
+            style={{ backgroundImage: STAMP_WEAR, backgroundSize: '90px 90px', mixBlendMode: 'screen', opacity: 0.55 }} />
         </span>
       </button>
     )
