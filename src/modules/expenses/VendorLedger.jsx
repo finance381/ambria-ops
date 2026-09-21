@@ -400,36 +400,40 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
 
   async function loadVendors() {
     setLoading(true)
-    var { data, error } = await supabase.from('v_vendor_ledger')
-      .select('*')
-      .order('balance_paise', { ascending: false })
-    if (error) { setLoading(false); return }
-    var rows = data || []
 
-    // Merge phones + gating tags from vendors master (v_vendor_ledger doesn't expose these fields)
-    var vendorIds = rows.map(function (r) { return r.vendor_id }).filter(Boolean)
-    if (vendorIds.length > 0) {
-      var CHUNK = 500
-      var vMasterMap = {}
-      for (var i = 0; i < vendorIds.length; i += CHUNK) {
-        var chunk = vendorIds.slice(i, i + CHUNK)
-        var pRes = await supabase.from('vendors')
-          .select('id, phone, phone2, contact, expense_sub_type_ids, opening_balance_paise')
-          .in('id', chunk)
-        ;(pRes.data || []).forEach(function (p) { vMasterMap[p.id] = p })
-      }
-      rows = rows.map(function (r) {
-        var p = vMasterMap[r.vendor_id]
-        if (!p) return r
-        return Object.assign({}, r, {
-          _phone: p.phone || null,
-          _phone2: p.phone2 || null,
-          _contact: p.contact || null,
-          expense_sub_type_ids: p.expense_sub_type_ids || [],
-          _opening_paise: p.opening_balance_paise || 0
-        })
+    // Both reads at once. The second one was filtered by .in('id', …) on the
+    // ids the first returned, which is what made it wait for them — but the
+    // two tables hold a row each for the same vendors, so asking for all of
+    // the master is the same amount of data and needs nothing from the ledger
+    // view to ask for it. The join then happens here, where it always did.
+    //
+    // The chunking loop went with the filter. It ran 500 ids at a time, one
+    // request after another, which on a long list turned a single wait into
+    // several.
+    var both = await Promise.all([
+      supabase.from('v_vendor_ledger')
+        .select('*')
+        .order('balance_paise', { ascending: false }),
+      supabase.from('vendors')
+        .select('id, phone, phone2, contact, expense_sub_type_ids, opening_balance_paise'),
+    ])
+    var ledgerRes = both[0]
+    if (ledgerRes.error) { setLoading(false); return }
+    var rows = ledgerRes.data || []
+
+    var vMasterMap = {}
+    ;(both[1].data || []).forEach(function (p) { vMasterMap[p.id] = p })
+    rows = rows.map(function (r) {
+      var p = vMasterMap[r.vendor_id]
+      if (!p) return r
+      return Object.assign({}, r, {
+        _phone: p.phone || null,
+        _phone2: p.phone2 || null,
+        _contact: p.contact || null,
+        expense_sub_type_ids: p.expense_sub_type_ids || [],
+        _opening_paise: p.opening_balance_paise || 0
       })
-    }
+    })
 
     // Apply user-tag gating (admin/auditor bypass)
     rows = filterVisibleVendors(rows, profile)
@@ -732,9 +736,12 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
             that number — the filter that shows every vendor and the count of
             every vendor are the same figure, and it was on the screen twice,
             side by side. */}
+        {/* Nothing says zero before it has been counted. Six tiles reading 0
+            while the list underneath says "Loading vendors…" is a page telling
+            you two different things, and the one in the larger type is wrong. */}
         <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
           <Tile wide icon="wallet" tone="bg-amber-50 text-amber-600" label="Total Outstanding"
-            value={formatPoints(totalOutstanding)} valueClass={outstandingClass}>
+            value={loading ? '—' : formatPoints(totalOutstanding)} valueClass={loading ? 'text-slate-300' : outstandingClass}>
             {(totalCash !== 0 || totalBank !== 0) && (
               <div className="mt-2.5 pt-2.5 border-t border-slate-100 flex flex-wrap items-center gap-y-1 text-[11px] text-slate-500">
                 <Fact first icon="banknote" label="Cash" value={formatPoints(totalCash)} />
@@ -743,16 +750,16 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
             )}
           </Tile>
           <Tile icon="list" tone="bg-indigo-50 text-indigo-600" label="All vendors"
-            value={activeVendors.length} valueClass="text-indigo-700"
+            value={loading ? '—' : activeVendors.length} valueClass={loading ? 'text-slate-300' : ('text-indigo-700')}
             active={statusFilter === 'all'} onClick={function () { setStatusFilter('all') }} />
           <Tile icon="clock" tone="bg-rose-50 text-rose-600" label="Overdue Vendors"
-            value={overdueVendors.length} valueClass={overdueVendors.length > 0 ? 'text-rose-700' : 'text-slate-400'}
+            value={loading ? '—' : overdueVendors.length} valueClass={loading ? 'text-slate-300' : (overdueVendors.length > 0 ? 'text-rose-700' : 'text-slate-400')}
             active={statusFilter === 'overdue'} onClick={function () { setStatusFilter('overdue') }} />
           <Tile icon="checkCircle" tone="bg-emerald-50 text-emerald-600" label="With Balance"
-            value={vendorsWithBalance} valueClass={vendorsWithBalance > 0 ? 'text-emerald-700' : 'text-slate-400'}
+            value={loading ? '—' : vendorsWithBalance} valueClass={loading ? 'text-slate-300' : (vendorsWithBalance > 0 ? 'text-emerald-700' : 'text-slate-400')}
             active={statusFilter === 'with_balance'} onClick={function () { setStatusFilter('with_balance') }} />
           <Tile icon="fileText" tone="bg-amber-50 text-amber-600" label="Incomplete"
-            value={incompleteCount} valueClass={incompleteCount > 0 ? 'text-amber-700' : 'text-slate-400'}
+            value={loading ? '—' : incompleteCount} valueClass={loading ? 'text-slate-300' : (incompleteCount > 0 ? 'text-amber-700' : 'text-slate-400')}
             active={statusFilter === 'incomplete'} onClick={function () { setStatusFilter('incomplete') }} />
         </div>
 
