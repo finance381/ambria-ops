@@ -593,6 +593,26 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
         </div>
       )}
 
+      {/* The stamp takes the room under the receipt. This column is the shorter
+          of the two, so on a wide screen it ended in a long blank while the
+          decision buttons filled the other side — and the one thing that says
+          this bill has already been through finance was a 22px chip at the far
+          end of the column you were not looking at. */}
+      {exp.checked_by && (
+        <div className="hidden @3xl:flex justify-center pt-6">
+          <CheckedStamp
+            variant="stamp"
+            checked
+            checkerName={checkedByName}
+            checkedAt={exp.checked_at}
+            canToggle={canMarkChecked}
+            canUncheck={exp.checked_by === profile?.id || isAdmin || isAuditor}
+            busy={checkBusy}
+            onToggle={toggleChecked}
+          />
+        </div>
+      )}
+
       {imgFullscreen && createPortal((
         <div
           onClick={function () { setImgFullscreen(''); setFullscreenIdx(-1) }}
@@ -862,8 +882,11 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
       {/* Lets an auditor see, before they act, whether the finance controller
           already verified the allocation — separate from acknowledge/send
           back/deduct, which is about the bill itself. */}
+      {/* Narrow, there is no blank column to put a stamp in, so the chip stays.
+          Wide, the stamp is already drawn above and this row is just the
+          prompt for a bill nobody has checked yet. */}
       {(exp.checked_by || canMarkChecked) && (
-        <div className="flex items-center justify-between py-1">
+        <div className={"items-center justify-between py-1 " + (exp.checked_by ? "flex @3xl:hidden" : "flex")}>
           <span className="text-[12px] font-medium text-slate-500">Finance check</span>
           <CheckedStamp
             checked={!!exp.checked_by}
