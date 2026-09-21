@@ -1,8 +1,9 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { supabase } from '../../lib/supabase'
 import { formatPoints, formatDate, formatDateTime } from '../../lib/format'
 import { useRealtime } from '../../lib/useRealtime'
+import { scrollToTopOf } from '../../lib/scrollToTop'
 import { hasPerm } from '../../lib/permissions'
 import SearchField from '../../components/ui/SearchField'
 import Icon from '../../components/ui/Icon'
@@ -77,6 +78,7 @@ function PaymentsLedger({ profile }) {
   var [typeFilter, setTypeFilter] = useState('')
   var [showMore, setShowMore] = useState(false)
   var [page, setPage] = useState(1)
+  var listRef = useRef(null)
   var [detailTarget, setDetailTarget] = useState(null) // { row, event, collectorName, loading } — vendor/salary/collection rows
   var [enlargedImg, setEnlargedImg] = useState(null)
   var { openExpenseDetail, expenseDetailModal } = useExpenseDetailModal(profile, isAdmin, function () { load() })
@@ -311,6 +313,14 @@ function PaymentsLedger({ profile }) {
   // Any narrowing makes the page you were on meaningless.
   useEffect(function () { setPage(1) }, [modeFilter, dirFilter, typeFilter, search, dateFrom, dateTo])
 
+  // Paging takes you to the top of the new page. Pressing Next at the foot of
+  // twenty-five rows otherwise leaves you at the foot of the next twenty-five,
+  // reading upwards from the end of something you never saw the start of.
+  function goPage(n) {
+    setPage(n)
+    scrollToTopOf(listRef.current)
+  }
+
   var PAGE_SIZE = 25
   var pageCount = Math.max(1, Math.ceil(visible.length / PAGE_SIZE))
   var pageNow = Math.min(page, pageCount)
@@ -497,7 +507,7 @@ function PaymentsLedger({ profile }) {
         )}
       </div>
 
-      <div className={CARD + ' overflow-hidden'}>
+      <div ref={listRef} className={CARD + ' overflow-hidden scroll-mt-4'}>
         <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-b border-slate-100">
           <div className="min-w-0">
             <p className="font-display text-[15px] font-bold text-slate-900">
@@ -666,7 +676,7 @@ function PaymentsLedger({ profile }) {
             </p>
             {pageCount > 1 && (
               <div className="flex items-center gap-1">
-                <button type="button" disabled={pageNow === 1} onClick={function () { setPage(pageNow - 1) }}
+                <button type="button" disabled={pageNow === 1} onClick={function () { goPage(pageNow - 1) }}
                   aria-label="Previous page"
                   className="w-8 h-8 inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-500 hover:bg-slate-100 disabled:opacity-30 transition-colors">
                   <Icon name="chevronRight" size={14} className="rotate-180" />
@@ -674,13 +684,13 @@ function PaymentsLedger({ profile }) {
                 {pageButtons.map(function (b, i) {
                   if (b === '…') return <span key={'g' + i} className="px-1 text-[12px] font-bold text-slate-300">…</span>
                   return (
-                    <button key={b} type="button" onClick={function () { setPage(b) }}
+                    <button key={b} type="button" onClick={function () { goPage(b) }}
                       className={'min-w-8 h-8 px-2 rounded-lg text-[12px] font-bold tabular-nums transition-colors ' +
                         (b === pageNow ? 'bg-indigo-600 text-white' : 'border border-slate-300 bg-white text-slate-600 hover:bg-slate-100')}
                       data-notranslate>{b}</button>
                   )
                 })}
-                <button type="button" disabled={pageNow === pageCount} onClick={function () { setPage(pageNow + 1) }}
+                <button type="button" disabled={pageNow === pageCount} onClick={function () { goPage(pageNow + 1) }}
                   aria-label="Next page"
                   className="w-8 h-8 inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-500 hover:bg-slate-100 disabled:opacity-30 transition-colors">
                   <Icon name="chevronRight" size={14} />

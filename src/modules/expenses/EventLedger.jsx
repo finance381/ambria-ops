@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import { formatPoints, formatDate, formatDateTime, titleCase } from '../../lib/format'
 import EventCalendar from '../../components/ui/EventCalendar'
@@ -6,6 +6,7 @@ import { venueColor } from '../../lib/venueColors'
 import ImageLightbox from '../../components/ui/ImageLightbox'
 import Icon from '../../components/ui/Icon'
 import { hasPerm } from '../../lib/permissions'
+import { scrollToTopOf } from '../../lib/scrollToTop'
 import { useExpenseDetailModal } from '../../hooks/useExpenseDetailModal.jsx'
 import { deptOrder, deptCls, CARD, FIELD_SEARCH } from '../../lib/ui'
 import { avatarTint } from '../../lib/avatarTint'
@@ -168,6 +169,7 @@ function EventLedger(props) {
   var [txnCheck, setTxnCheck] = useState('')
   var [showTxnFilter, setShowTxnFilter] = useState(false)
   var [txnPage, setTxnPage] = useState(1)
+  var txnListRef = useRef(null)
   var [lightbox, setLightbox] = useState(null)
   var _now = new Date()
   var [monthYear, setMonthYear] = useState(_now.getFullYear())
@@ -522,6 +524,13 @@ function EventLedger(props) {
       return txnSort === 'asc' ? d : -d
     })
     return out
+  }
+
+  // Paging takes you to the top of the new page. Pressing Next at the foot of
+  // twenty-five rows otherwise leaves you at the foot of the next twenty-five.
+  function goTxnPage(n) {
+    setTxnPage(n)
+    scrollToTopOf(txnListRef.current)
   }
 
   var TXN_PAGE_SIZE = 25
@@ -1164,7 +1173,7 @@ function EventLedger(props) {
             </div>
           )}
 
-          <div className={CARD + ' overflow-hidden'}>
+          <div ref={txnListRef} className={CARD + ' overflow-hidden scroll-mt-4'}>
             {renderEntriesTable(pageRows)}
             {vis.length > 0 && (
               <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 border-t border-slate-200 bg-slate-50/60">
@@ -1173,20 +1182,20 @@ function EventLedger(props) {
                 </p>
                 {pages > 1 && (
                   <div className="flex items-center gap-1">
-                    <button type="button" disabled={page === 1} onClick={function () { setTxnPage(page - 1) }}
+                    <button type="button" disabled={page === 1} onClick={function () { goTxnPage(page - 1) }}
                       aria-label="Previous page"
                       className="w-8 h-8 inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-500 hover:bg-slate-100 disabled:opacity-30 transition-colors">
                       <Icon name="chevronRight" size={14} className="rotate-180" />
                     </button>
                     {Array.from({ length: pages }, function (_u, i) { return i + 1 }).map(function (n) {
                       return (
-                        <button key={n} type="button" onClick={function () { setTxnPage(n) }}
+                        <button key={n} type="button" onClick={function () { goTxnPage(n) }}
                           className={'min-w-8 h-8 px-2 rounded-lg text-[12px] font-bold tabular-nums transition-colors ' +
                             (n === page ? 'bg-indigo-600 text-white' : 'border border-slate-300 bg-white text-slate-600 hover:bg-slate-100')}
                           data-notranslate>{n}</button>
                       )
                     })}
-                    <button type="button" disabled={page === pages} onClick={function () { setTxnPage(page + 1) }}
+                    <button type="button" disabled={page === pages} onClick={function () { goTxnPage(page + 1) }}
                       aria-label="Next page"
                       className="w-8 h-8 inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-500 hover:bg-slate-100 disabled:opacity-30 transition-colors">
                       <Icon name="chevronRight" size={14} />
