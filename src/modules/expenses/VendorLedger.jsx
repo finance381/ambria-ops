@@ -384,10 +384,34 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
   // Which entries have their amount-breakdown/allocation panel expanded —
   // collapsed by default so a vendor with many purchases fits more rows.
   var [expandedEntryIds, setExpandedEntryIds] = useState({})
+  // Which panel has just been opened, so the effect below can bring it into
+  // view once React has actually put it on the page. A ref would not do: the
+  // scroll has to happen after the commit that renders the panel, and only an
+  // effect runs there.
+  var [justExpandedId, setJustExpandedId] = useState(null)
+
   function toggleEntryExpanded(id, ev) {
     if (ev) ev.stopPropagation()
+    var willExpand = !expandedEntryIds[id]
     setExpandedEntryIds(function (prev) { var next = Object.assign({}, prev); next[id] = !next[id]; return next })
+    setJustExpandedId(willExpand ? id : null)
   }
+
+  // Opening the breakdown adds two cards below the fold, so the control you
+  // just pressed stayed where it was and the thing it revealed did not appear
+  // — you had to go and find it.
+  //
+  // `nearest` scrolls the least it can to get the panel in, so a panel already
+  // visible does not move the page at all, and one hanging off the bottom
+  // comes up only as far as it needs to.
+  useEffect(function () {
+    if (justExpandedId == null) return
+    setJustExpandedId(null)
+    var panel = document.querySelector('[data-entry-panel="' + justExpandedId + '"]')
+    if (!panel) return
+    var still = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    panel.scrollIntoView({ block: 'nearest', behavior: still ? 'auto' : 'smooth' })
+  }, [justExpandedId])
   var { openExpenseDetail, expenseDetailModal } = useExpenseDetailModal(profile, isAdmin, function () {
     if (selectedVendor) loadEntries(selectedVendor, showDeleted)
   }, onNavigateToExpenses)
@@ -1505,7 +1529,7 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
                     // it. Each gets a heading with its own glyph, the way the
                     // rest of this screen labels a box.
                     return (
-                      <div className="mt-3.5 grid grid-cols-1 lg:grid-cols-3 gap-3 items-start">
+                      <div data-entry-panel={e.id} className="mt-3.5 grid grid-cols-1 lg:grid-cols-3 gap-3 items-start">
                         <div className="bg-slate-50 border border-slate-200/70 rounded-xl p-4">
                           <p className="flex items-center gap-2 mb-3 text-[11.5px] font-bold uppercase tracking-[0.06em] text-slate-500">
                             <Icon name="calculator" size={14} className="text-slate-400" />
