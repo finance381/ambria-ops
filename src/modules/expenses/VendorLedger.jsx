@@ -34,6 +34,9 @@ function byName(a, b) { return (a.name || '').localeCompare(b.name || '') }
 // An entry points at an expense when its ref is an expense with a numeric id.
 // Asked in two places now — by the row, and by the list working out whether it
 // needs a column for the stamp — so it is written once.
+// One label for the merge dialog's two fields.
+var MERGE_LABEL = 'block text-[12px] font-semibold text-slate-600 mb-1.5'
+
 function isExpenseEntry(e) {
   return e.ref_type === 'expense' && e.ref_id && /^[0-9]+$/.test(String(e.ref_id)) && !e.deleted_at
 }
@@ -874,32 +877,61 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
       .reduce(function (s, v) { return s + (v.entry_count || 0) }, 0)
     var readyToMerge = mergeSourceIds.length > 0 && mergeTargetId
 
+    // A count of one is not "1 entries". The list prints this next to every
+    // vendor in it, so it is worth the line.
+    function entryCount(v) {
+      var c = v.entry_count || 0
+      return c + (c === 1 ? ' entry' : ' entries')
+    }
+
     return createPortal((
-      <div className="fixed inset-0 z-[9998] bg-black/60 flex items-end sm:items-center justify-center p-0 sm:p-4"
+      <div className="fixed inset-0 z-[9998] bg-slate-900/50 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4"
         onClick={function () { if (!mergeSaving) setShowMergeModal(false) }}>
-        <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-lg p-5 space-y-4 max-h-[90vh] overflow-y-auto"
+        <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-lg p-5 space-y-4 max-h-[90vh] overflow-y-auto ambria-thin-scroll"
           onClick={function (ev) { ev.stopPropagation() }}>
-          <div className="flex items-start justify-between gap-2">
-            <div>
-              <h3 className="text-base font-bold text-gray-900">🔀 Merge Vendors</h3>
-              <p className="text-xs text-gray-500 mt-0.5">Fold duplicates into one. Every ledger entry and expense reference moves to the target you pick below.</p>
+          {/* The emoji went the way of the others: a font-chosen picture that
+              came out as a blue tile beside a heading it was meant to sit on
+              the baseline of. */}
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h3 className="flex items-center gap-2 font-display text-[17px] font-bold text-slate-900">
+                <Icon name="split" size={17} className="shrink-0 text-indigo-500" />
+                Merge Vendors
+              </h3>
+              <p className="mt-1 text-[12.5px] text-slate-500 leading-snug">
+                Fold duplicates into one. Every ledger entry and expense reference moves to the target you pick below.
+              </p>
             </div>
-            <button type="button" onClick={function () { setShowMergeModal(false) }}
-              className="w-7 h-7 rounded-full bg-gray-100 text-gray-500 flex items-center justify-center flex-shrink-0">✕</button>
+            <button type="button" onClick={function () { setShowMergeModal(false) }} disabled={mergeSaving} aria-label="Close"
+              className="shrink-0 w-8 h-8 inline-flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 disabled:opacity-40 transition-colors">
+              <Icon name="close" size={16} />
+            </button>
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-gray-600 mb-1">Vendors to merge (sources)</label>
+            <label className={MERGE_LABEL}>
+              Vendors to merge
+              {mergeSourceIds.length > 0 && (
+                <span className="ml-1.5 font-bold text-indigo-600" data-notranslate>{mergeSourceIds.length} selected</span>
+              )}
+            </label>
             <SearchField value={mergeSearch} onChange={function (v) { setMergeSearch(v) }} placeholder="Search vendors..." />
-            <div className="mt-2 border border-gray-200 rounded-lg max-h-52 overflow-y-auto divide-y divide-gray-100">
-              {searched.length === 0 && <p className="text-xs text-gray-400 text-center py-4">No vendors match</p>}
+            <div className="mt-2 border border-slate-200 rounded-xl max-h-60 overflow-y-auto ambria-thin-scroll divide-y divide-slate-100">
+              {searched.length === 0 && <p className="text-[12.5px] text-slate-400 text-center py-6">No vendors match</p>}
               {searched.map(function (v) {
                 var checked = mergeSourceIds.indexOf(v.vendor_id) !== -1
                 return (
-                  <label key={v.vendor_id} className={"flex items-center gap-2 px-3 py-2 text-sm cursor-pointer " + (checked ? "bg-indigo-50" : "hover:bg-gray-50")}>
-                    <input type="checkbox" checked={checked} onChange={function () { toggleMergeSource(v.vendor_id) }} />
-                    <span className="flex-1 min-w-0 truncate">{v.vendor_name}</span>
-                    <span className="text-[11px] text-gray-400 flex-shrink-0">{v.entry_count || 0} entries · {formatPoints(v.balance_paise || 0)}</span>
+                  <label key={v.vendor_id}
+                    className={"flex items-center gap-3 px-3 py-2.5 cursor-pointer transition-colors " +
+                      (checked ? "bg-indigo-50" : "hover:bg-slate-50")}>
+                    <input type="checkbox" checked={checked} onChange={function () { toggleMergeSource(v.vendor_id) }}
+                      className="shrink-0 w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500/30" />
+                    <span className={"flex-1 min-w-0 truncate text-[13px] font-semibold " + (checked ? "text-indigo-800" : "text-slate-800")}>
+                      {v.vendor_name}
+                    </span>
+                    <span className="shrink-0 text-[11.5px] text-slate-500 tabular-nums" data-notranslate>
+                      {entryCount(v)} · {formatPoints(v.balance_paise || 0)}
+                    </span>
                   </label>
                 )
               })}
@@ -908,24 +940,34 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
 
           {mergeSourceIds.length > 0 && (
             <div>
-              <label className="block text-xs font-bold text-gray-600 mb-1">Merge into (target)</label>
+              <label className={MERGE_LABEL}>Merge into</label>
               <SearchDropdown
-                items={targetOptions.map(function (v) { return { label: v.vendor_name + ' (' + (v.entry_count || 0) + ' entries)', value: String(v.vendor_id) } })}
+                items={targetOptions.map(function (v) { return { label: v.vendor_name + ' (' + entryCount(v) + ')', value: String(v.vendor_id) } })}
                 value={mergeTargetId ? String(mergeTargetId) : ''}
                 onChange={function (val) { setMergeTargetId(val) }}
-                placeholder="Search target vendor..." />
-              <p className="text-[11px] text-gray-500 mt-1">{sourceTotalEntries} entries from the selected vendor(s) will move here.</p>
+                placeholder="Search target vendor..." noVoice />
+              {/* What the press will actually do, in the numbers it will do it
+                  to. A merge cannot be undone from this screen, so the sentence
+                  before it should be the specific one. */}
+              <p className="mt-2 flex items-start gap-2 px-3 py-2.5 rounded-xl bg-amber-50 border border-amber-200 text-[12px] font-semibold text-amber-800">
+                <span className="shrink-0 mt-px"><Icon name="alert" size={14} /></span>
+                <span>
+                  <span data-notranslate>{sourceTotalEntries}</span> {sourceTotalEntries === 1 ? 'entry' : 'entries'} from{' '}
+                  <span data-notranslate>{mergeSourceIds.length}</span> {mergeSourceIds.length === 1 ? 'vendor' : 'vendors'} will move here. This cannot be undone.
+                </span>
+              </p>
             </div>
           )}
 
-          <div className="flex gap-2 pt-2 border-t border-gray-100">
+          <div className="flex gap-2 pt-3 border-t border-slate-100">
             <button type="button" onClick={function () { setShowMergeModal(false) }} disabled={mergeSaving}
-              className="flex-1 py-2.5 text-sm text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors font-medium disabled:opacity-50">
+              className="flex-1 h-11 text-[13px] font-bold text-slate-700 bg-white border border-slate-300 rounded-xl hover:bg-slate-50 disabled:opacity-40 transition-colors">
               Cancel
             </button>
             <button type="button" onClick={doMergeVendors} disabled={!readyToMerge || mergeSaving}
-              className="flex-1 py-2.5 text-sm text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors font-medium">
-              {mergeSaving ? 'Merging...' : 'Merge Vendors'}
+              className="flex-1 h-11 inline-flex items-center justify-center gap-2 text-[13px] font-bold text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 active:scale-[0.98] disabled:opacity-40 disabled:hover:bg-indigo-600 transition-all">
+              <Icon name={mergeSaving ? 'refresh' : 'split'} size={15} />
+              {mergeSaving ? 'Merging…' : 'Merge Vendors'}
             </button>
           </div>
         </div>
@@ -934,7 +976,7 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
   }
 
   if (!canView) {
-    return <p className="text-gray-400 text-sm text-center py-12">You don't have access to Vendor Ledger.</p>
+    return <p className="text-slate-400 text-[13px] font-medium text-center py-12">You don't have access to Vendor Ledger.</p>
   }
 
   // ── LIST VIEW ──
@@ -1473,8 +1515,8 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
             var active = paymentTypeFilter === f.k
             return (
               <button key={f.k} type="button" onClick={function () { setPaymentTypeFilter(f.k) }}
-                className={"px-3 py-1.5 rounded-full text-xs font-semibold transition-colors " +
-                  (active ? "bg-indigo-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200")}>
+                className={"h-8 px-3.5 rounded-lg text-[12px] font-bold transition-colors " +
+                  (active ? "bg-indigo-600 text-white" : "bg-white border border-slate-200 text-slate-600 hover:border-indigo-300 hover:text-indigo-700")}>
                 {f.l}
               </button>
             )
