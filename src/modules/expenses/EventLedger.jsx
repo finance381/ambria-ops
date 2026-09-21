@@ -151,16 +151,15 @@ function EventLedger(props) {
   var [balancesByContract, setBalancesByContract] = useState({})
   var [tab, setTab] = useState('overview')
   // The transactions tab keeps its own view state: what is typed in it, how
-  // it is narrowed, which way the dates run, what is ticked and where the
-  // row menu is open. All of it is per-event, so selecting another event
-  // resets it rather than carrying one event's search onto the next.
+  // it is narrowed, which way the dates run and which page it is on. All of
+  // it is per-event, so selecting another event resets it rather than
+  // carrying one event's search onto the next.
   var [txnSearch, setTxnSearch] = useState('')
   var [txnSort, setTxnSort] = useState('desc')
   var [txnDir, setTxnDir] = useState('')
   var [txnMode, setTxnMode] = useState('')
   var [txnCheck, setTxnCheck] = useState('')
   var [showTxnFilter, setShowTxnFilter] = useState(false)
-  var [selectedRows, setSelectedRows] = useState({})
   var [txnPage, setTxnPage] = useState(1)
   var [lightbox, setLightbox] = useState(null)
 
@@ -411,7 +410,7 @@ function EventLedger(props) {
   function resetTxnView() {
     setTxnSearch(''); setTxnDir(''); setTxnMode(''); setTxnCheck('')
     setTxnSort('desc'); setShowTxnFilter(false)
-    setSelectedRows({}); setTxnPage(1)
+    setTxnPage(1)
   }
 
   // Who put the row there. A collection was taken by whoever holds the wallet,
@@ -465,11 +464,6 @@ function EventLedger(props) {
 
   var TXN_PAGE_SIZE = 25
 
-  // A tick that survives a re-filter would be a lie: you would press Export
-  // believing you had four rows and get one you can no longer see. Selection
-  // is cleared whenever the set it was made against changes.
-  function clearSelection() { setSelectedRows({}) }
-  var selectedIds = Object.keys(selectedRows).filter(function (k) { return selectedRows[k] })
 
   function exportCsv(rows) {
     function esc(v) {
@@ -521,7 +515,6 @@ function EventLedger(props) {
         </div>
       )
     }
-    var allTicked = rows.length > 0 && rows.every(function (e) { return selectedRows[e.id] })
     return (
       <div className="overflow-x-auto ambria-thin-scroll">
         {/* Left to itself the browser splits the table by content, and the
@@ -530,9 +523,8 @@ function EventLedger(props) {
             between "cash" and the figure it belongs to while the description,
             the one column that wants room, was squeezed against the right
             edge. Everything but the description is pinned to what it needs. */}
-        <table className="w-full min-w-[1000px]">
+        <table className="w-full min-w-[960px]">
           <colgroup>
-            <col style={{ width: '44px' }} />
             <col style={{ width: '150px' }} />
             <col style={{ width: '176px' }} />
             <col style={{ width: '90px' }} />
@@ -543,17 +535,6 @@ function EventLedger(props) {
           </colgroup>
           <thead className="sticky top-0 z-10 bg-slate-50 border-b border-slate-200">
             <tr>
-              <th className="px-3 py-2.5">
-                <input type="checkbox" checked={allTicked} aria-label="Select all on this page"
-                  onChange={function () {
-                    setSelectedRows(function (prev) {
-                      var next = Object.assign({}, prev)
-                      rows.forEach(function (e) { if (allTicked) delete next[e.id]; else next[e.id] = true })
-                      return next
-                    })
-                  }}
-                  className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500/30 align-middle" />
-              </th>
               <th className="px-3 py-2.5 text-left">
                 <button type="button" onClick={function () { setTxnSort(txnSort === 'desc' ? 'asc' : 'desc') }}
                   title={txnSort === 'desc' ? 'Newest first — press for oldest' : 'Oldest first — press for newest'}
@@ -577,25 +558,12 @@ function EventLedger(props) {
               var isExpRow = e.entry_type === 'expense' && !!e.reference_id
               var isCollRow = e.entry_type === 'collection' && !!e._wt
               var isClickable = isExpRow || isCollRow
-              var ticked = !!selectedRows[e.id]
               var person = rowPerson(e)
               return (
                 <tr key={e.id}
                   onClick={function () { openRow(e) }}
                   className={'border-b border-slate-100 last:border-b-0 transition-colors ' +
-                    (ticked ? 'bg-indigo-50/50 ' : '') +
                     (isClickable ? 'cursor-pointer hover:bg-indigo-50/40' : '')}>
-                  <td className="px-3 py-2.5 align-top" onClick={function (ev) { ev.stopPropagation() }}>
-                    <input type="checkbox" checked={ticked} aria-label="Select row"
-                      onChange={function () {
-                        setSelectedRows(function (prev) {
-                          var next = Object.assign({}, prev)
-                          if (next[e.id]) delete next[e.id]; else next[e.id] = true
-                          return next
-                        })
-                      }}
-                      className="w-4 h-4 mt-0.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500/30" />
-                  </td>
                   <td className="px-3 py-2.5 align-top whitespace-nowrap" data-notranslate>
                     <div className="text-[12.5px] font-semibold text-slate-700">{formatDate(rowDate(e))}</div>
                     <div className="text-[10.5px] text-slate-400">Logged {formatDateTime(e.created_at)}</div>
@@ -944,9 +912,6 @@ function EventLedger(props) {
         var from = vis.length === 0 ? 0 : (page - 1) * TXN_PAGE_SIZE + 1
         var to = Math.min(page * TXN_PAGE_SIZE, vis.length)
         var pageRows = vis.slice((page - 1) * TXN_PAGE_SIZE, page * TXN_PAGE_SIZE)
-        var exportRows = selectedIds.length > 0
-          ? entries.filter(function (e) { return selectedRows[e.id] })
-          : vis
         return (
         <div className="space-y-3">
           <div className="flex flex-wrap items-center gap-2">
@@ -960,7 +925,7 @@ function EventLedger(props) {
                 var empty = n === 0 && t.key !== 'all'
                 return (
                   <button key={t.key} type="button" aria-pressed={active} disabled={empty}
-                    onClick={function () { setFilter(t.key); setTxnPage(1); clearSelection() }}
+                    onClick={function () { setFilter(t.key); setTxnPage(1) }}
                     className={'inline-flex items-center gap-1.5 h-9 px-3 rounded-xl text-[12.5px] font-bold transition-colors ' +
                       (active
                         ? 'bg-indigo-600 text-white'
@@ -980,7 +945,7 @@ function EventLedger(props) {
                   <Icon name="search" size={15} />
                 </span>
                 <input type="search" value={txnSearch} placeholder="Search transactions..."
-                  onChange={function (ev) { setTxnSearch(ev.target.value); setTxnPage(1); clearSelection() }}
+                  onChange={function (ev) { setTxnSearch(ev.target.value); setTxnPage(1) }}
                   className={FIELD_SEARCH} />
               </div>
               <button type="button" onClick={function () { setShowTxnFilter(!showTxnFilter) }} aria-pressed={showTxnFilter}
@@ -994,8 +959,8 @@ function EventLedger(props) {
                   <span data-notranslate className="px-1.5 rounded-md bg-indigo-600 text-white text-[10.5px] tabular-nums">{txnFilterCount}</span>
                 )}
               </button>
-              <button type="button" onClick={function () { exportCsv(exportRows) }} disabled={exportRows.length === 0}
-                title={selectedIds.length > 0 ? 'Export the ' + selectedIds.length + ' selected' : 'Export everything shown'}
+              <button type="button" onClick={function () { exportCsv(vis) }} disabled={vis.length === 0}
+                title="Export everything shown, in the order it is shown"
                 className="inline-flex items-center gap-1.5 h-10 px-3.5 rounded-xl text-[12.5px] font-bold text-white bg-indigo-600 hover:bg-indigo-700 active:scale-[0.98] disabled:opacity-40 disabled:hover:bg-indigo-600 transition-all">
                 <Icon name="download" size={14} />
                 Export
@@ -1011,7 +976,7 @@ function EventLedger(props) {
                   {[{ k: '', l: 'Any' }, { k: 'in', l: 'Money in' }, { k: 'out', l: 'Money out' }].map(function (o) {
                     return (
                       <button key={o.k || 'any'} type="button"
-                        onClick={function () { setTxnDir(o.k); setTxnPage(1); clearSelection() }}
+                        onClick={function () { setTxnDir(o.k); setTxnPage(1) }}
                         className={'h-8 px-2.5 rounded-lg text-[12px] font-bold border transition-colors ' +
                           (txnDir === o.k ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50')}>
                         {o.l}
@@ -1023,12 +988,12 @@ function EventLedger(props) {
               <div>
                 <p className="text-[11px] font-bold uppercase tracking-[0.06em] text-slate-500 mb-1.5">Mode</p>
                 <div className="flex flex-wrap gap-1.5">
-                  <button type="button" onClick={function () { setTxnMode(''); setTxnPage(1); clearSelection() }}
+                  <button type="button" onClick={function () { setTxnMode(''); setTxnPage(1) }}
                     className={'h-8 px-2.5 rounded-lg text-[12px] font-bold border transition-colors ' +
                       (txnMode === '' ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50')}>Any</button>
                   {txnModes.map(function (m) {
                     return (
-                      <button key={m} type="button" onClick={function () { setTxnMode(m); setTxnPage(1); clearSelection() }}
+                      <button key={m} type="button" onClick={function () { setTxnMode(m); setTxnPage(1) }}
                         className={'h-8 px-2.5 rounded-lg text-[12px] font-bold border transition-colors ' +
                           (txnMode === m ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50')}>{m}</button>
                     )
@@ -1041,7 +1006,7 @@ function EventLedger(props) {
                   {[{ k: '', l: 'Any' }, { k: 'checked', l: 'Checked' }, { k: 'unchecked', l: 'Unchecked' }].map(function (o) {
                     return (
                       <button key={o.k || 'any'} type="button"
-                        onClick={function () { setTxnCheck(o.k); setTxnPage(1); clearSelection() }}
+                        onClick={function () { setTxnCheck(o.k); setTxnPage(1) }}
                         className={'h-8 px-2.5 rounded-lg text-[12px] font-bold border transition-colors ' +
                           (txnCheck === o.k ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50')}>
                         {o.l}
@@ -1049,7 +1014,7 @@ function EventLedger(props) {
                     )
                   })}
                   {txnFilterCount > 0 && (
-                    <button type="button" onClick={function () { setTxnDir(''); setTxnMode(''); setTxnCheck(''); setTxnPage(1); clearSelection() }}
+                    <button type="button" onClick={function () { setTxnDir(''); setTxnMode(''); setTxnCheck(''); setTxnPage(1) }}
                       className="ml-auto h-8 px-2.5 rounded-lg text-[12px] font-bold text-rose-600 hover:bg-rose-50 transition-colors">
                       Clear
                     </button>
@@ -1063,33 +1028,25 @@ function EventLedger(props) {
             {renderEntriesTable(pageRows)}
             {vis.length > 0 && (
               <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 border-t border-slate-200 bg-slate-50/60">
-                {selectedIds.length > 0 ? (
-                  <p className="text-[12px] font-semibold text-indigo-700">
-                    <span data-notranslate>{selectedIds.length}</span> selected
-                    <button type="button" onClick={clearSelection}
-                      className="ml-2 font-bold text-slate-500 hover:text-slate-800 transition-colors">Clear</button>
-                  </p>
-                ) : (
-                  <p className="text-[12px] text-slate-500" data-notranslate>
-                    Showing {from}–{to} of {vis.length} transaction{vis.length === 1 ? '' : 's'}
-                  </p>
-                )}
+                <p className="text-[12px] text-slate-500" data-notranslate>
+                  Showing {from}–{to} of {vis.length} transaction{vis.length === 1 ? '' : 's'}
+                </p>
                 {pages > 1 && (
                   <div className="flex items-center gap-1">
-                    <button type="button" disabled={page === 1} onClick={function () { setTxnPage(page - 1); clearSelection() }}
+                    <button type="button" disabled={page === 1} onClick={function () { setTxnPage(page - 1) }}
                       aria-label="Previous page"
                       className="w-8 h-8 inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-500 hover:bg-slate-100 disabled:opacity-30 transition-colors">
                       <Icon name="chevronRight" size={14} className="rotate-180" />
                     </button>
                     {Array.from({ length: pages }, function (_u, i) { return i + 1 }).map(function (n) {
                       return (
-                        <button key={n} type="button" onClick={function () { setTxnPage(n); clearSelection() }}
+                        <button key={n} type="button" onClick={function () { setTxnPage(n) }}
                           className={'min-w-8 h-8 px-2 rounded-lg text-[12px] font-bold tabular-nums transition-colors ' +
                             (n === page ? 'bg-indigo-600 text-white' : 'border border-slate-300 bg-white text-slate-600 hover:bg-slate-100')}
                           data-notranslate>{n}</button>
                       )
                     })}
-                    <button type="button" disabled={page === pages} onClick={function () { setTxnPage(page + 1); clearSelection() }}
+                    <button type="button" disabled={page === pages} onClick={function () { setTxnPage(page + 1) }}
                       aria-label="Next page"
                       className="w-8 h-8 inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-500 hover:bg-slate-100 disabled:opacity-30 transition-colors">
                       <Icon name="chevronRight" size={14} />
