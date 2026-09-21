@@ -100,7 +100,7 @@ function Tile({ icon, tone, label, value, valueClass, wide, active, onClick, chi
   // it. That tile is picked out by its glyph badge and by having twice the
   // width, which is enough. Only `active`, a state you toggled, changes
   // anything, and it changes the face rather than the edge.
-  var box = 'text-left h-full flex flex-col justify-center gap-2.5 border rounded-2xl px-4 py-4 transition-colors duration-150 ' +
+  var box = 'h-full flex flex-col items-center justify-center text-center gap-2.5 border rounded-2xl px-4 py-4 transition-colors duration-150 ' +
     (wide ? 'lg:col-span-2 ' : '') +
     'border-slate-200 ' +
     (active ? 'bg-indigo-50 ' : 'bg-white ') +
@@ -122,7 +122,11 @@ function Tile({ icon, tone, label, value, valueClass, wide, active, onClick, chi
           No negative tracking on it either: formatPoints returns one string,
           so tightening the letters tightened the space before "pts" too and
           pulled the unit onto the last digit. */}
-      <div className="flex items-center gap-2.5">
+      {/* The whole tile is centred, so the figure sits under the words that
+          name it rather than starting at the card's left padding while the
+          label started after a 36px badge — the number looked hung out to one
+          side of a thing it belongs to. */}
+      <div className="flex max-w-full items-center gap-2.5">
         <span aria-hidden="true" className={'shrink-0 w-9 h-9 rounded-full inline-flex items-center justify-center ' + tone}>
           <Icon name={icon} size={17} />
         </span>
@@ -1143,7 +1147,7 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
               the column's width — which is how this chip once ended up drawn as
               a full-width bar. */}
           {(vs.overdue_count || 0) > 0 && (
-            <p className="self-start inline-flex items-center gap-1.5 h-7 px-2.5 rounded-lg bg-rose-100 text-[12px] font-bold text-rose-700 whitespace-nowrap">
+            <p className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-lg bg-rose-100 text-[12px] font-bold text-rose-700 whitespace-nowrap">
               <Icon name="alert" size={13} className="shrink-0" />
               <span>
                 <span data-notranslate>{vs.overdue_count}</span> overdue · earliest {formatDate(vs.earliest_due_date)}
