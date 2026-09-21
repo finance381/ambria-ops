@@ -13,6 +13,7 @@ import { pushBack, goBack as navBack } from '../../lib/backNav'
 import { hasPerm } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
 import Icon from '../../components/ui/Icon'
+import CheckedStamp from '../../components/ui/CheckedStamp'
 import { T, CARD, FIELD_SEARCH, ON, OFF, BTN, STATUS_RAIL } from '../../lib/ui'
 import EventDatePicker from '../../components/ui/EventDatePicker'
 import { deptInk } from '../../lib/ui'
@@ -88,7 +89,12 @@ function Expenses({ profile, masterMode, inAdmin, deepLinkExpense, onDeepLinkHan
   // picking a department looked like the page had reloaded.
   var [refreshing, setRefreshing] = useState(false)
   var [loadingMore, setLoadingMore] = useState(false)
-  useRealtime(['expenses', 'expense_allocations'], function () { loadMyExpenses(false); loadApprovalExpenses(false) })
+  // silent: a background revalidation (someone else's change, or our own
+  // checked-toggle) should patch the data in without the full-page "Loading…"
+  // swap loadMyExpenses(false) normally does — that swap was unmounting the
+  // whole list (whichever tab was open) and remounting it a moment later,
+  // which is what looked like "the list re-renders and drops me to the top".
+  useRealtime(['expenses', 'expense_allocations'], function () { loadMyExpenses(false, true); loadApprovalExpenses(false) })
   var [detailExp, setDetailExp] = useState(null)
   var [statusFilter, setStatusFilter] = useState('')
   var [dateFrom, setDateFrom] = useState('')
@@ -123,6 +129,8 @@ function Expenses({ profile, masterMode, inAdmin, deepLinkExpense, onDeepLinkHan
   var isDeptApprover = hasPerm(profile?.permsNew, 'review.dept.approve')
   var hasExpenseApprove = hasPerm(profile?.permsNew, 'finance.expenses.approve')
   var showApproveTab = isAdmin || isAuditor || hasExpenseApprove
+  var canMarkChecked = hasPerm(profile?.permsNew, 'finance.wallet.mark_checked')
+  var [checkingExpId, setCheckingExpId] = useState(null)
 
   useEffect(function () {
     var timer = setTimeout(function () { setExpSearchDebounced(expSearch) }, 400)
@@ -193,10 +201,10 @@ function Expenses({ profile, masterMode, inAdmin, deepLinkExpense, onDeepLinkHan
     return function () { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deepLinkExpense])
-  async function loadMyExpenses(append) {
+  async function loadMyExpenses(append, silent) {
     var offset = append ? myExpenses.length : 0
-    if (!append) setRefreshing(true)
-    else setLoadingMore(true)
+    if (append) setLoadingMore(true)
+    else if (!silent) setRefreshing(true)
 
     var hasAllocFilter = !!(deptFilter || subDeptFilter || venueFilter)
     var allocEmbed = hasAllocFilter
@@ -207,7 +215,13 @@ function Expenses({ profile, masterMode, inAdmin, deepLinkExpense, onDeepLinkHan
       .select('id, user_id, batch_id, expense_type_id, expense_sub_type_id, amount_paise, tax_paise, description, status, expense_date, receipt_path, receipt_paths, created_at, rejection_reason, flag_reason, penalty_paise, penalized_at, penalized_by, reviewed_at, reviewed_by, acknowledged_at, acknowledged_by, deduction_type, vendor_name, travel_from, travel_to, travel_mode, metadata, event_id, deleted_at, checked_by, checked_at, payment_cash_paise, payment_credit_paise, payment_credit_cash_paise, payment_credit_bank_paise, cash_due_date, bank_due_date, expense_types(name), expense_sub_types(name, extra_fields), events(event_name, venue_name, function_date, pax), ' + allocEmbed)
       .eq('user_id', profile.id)
       .is('deleted_at', null)
+      // id as a tiebreaker: batch-submitted expenses share one created_at (same
+      // transaction), and without a deterministic tiebreaker an UPDATE (e.g.
+      // toggling checked_by) can shuffle ties on refetch — the realtime
+      // subscription below reloads on every expenses change, so a row would
+      // visibly jump to the top of the list the moment it got checked.
       .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
       .range(offset, offset + PAGE_SIZE)
 
     if (statusFilter) query = query.eq('status', statusFilter)
@@ -220,7 +234,7 @@ function Expenses({ profile, masterMode, inAdmin, deepLinkExpense, onDeepLinkHan
     if (amountMax) query = query.lte('amount_paise', Math.round(Number(amountMax) * 100))
 
     var { data, error } = await query
-    if (error) { alert('Failed to load: ' + error.message); setLoading(false); setRefreshing(false); setLoadingMore(false); return }
+    if (error) { if (!silent) alert('Failed to load: ' + error.message); setLoading(false); setRefreshing(false); setLoadingMore(false); return }
 
     var rows = data || []
     var hasMore = rows.length > PAGE_SIZE
@@ -255,7 +269,13 @@ function Expenses({ profile, masterMode, inAdmin, deepLinkExpense, onDeepLinkHan
       .neq('user_id', profile.id)
       .in('status', statuses)
       .is('deleted_at', null)
+      // id as a tiebreaker: batch-submitted expenses share one created_at (same
+      // transaction), and without a deterministic tiebreaker an UPDATE (e.g.
+      // toggling checked_by) can shuffle ties on refetch — the realtime
+      // subscription below reloads on every expenses change, so a row would
+      // visibly jump to the top of the list the moment it got checked.
       .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
       .range(offset, offset + PAGE_SIZE)
 
     if (dateFrom) query = query.gte('expense_date', dateFrom)
@@ -290,6 +310,24 @@ function Expenses({ profile, masterMode, inAdmin, deepLinkExpense, onDeepLinkHan
     }
     setApprovalHasMore(hasMore)
     setLoadingMore(false)
+  }
+
+  async function toggleExpenseCheck(exp) {
+    if (checkingExpId) return
+    setCheckingExpId(exp.id)
+    var { data, error } = await supabase.rpc('fn_toggle_expense_check', { p_expense_id: exp.id })
+    setCheckingExpId(null)
+    if (error) { alert('Could not update: ' + error.message); return }
+    var nowChecked = !!data
+    var patch = function (list) { return list.map(function (x) {
+      if (x.id !== exp.id) return x
+      return Object.assign({}, x, {
+        checked_by: nowChecked ? profile.id : null,
+        checked_at: nowChecked ? new Date().toISOString() : null,
+      })
+    }) }
+    setMyExpenses(patch)
+    setApprovalExpenses(patch)
   }
 
   function openDetail(exp) {
@@ -953,6 +991,18 @@ function Expenses({ profile, masterMode, inAdmin, deepLinkExpense, onDeepLinkHan
                     <span className={"shrink-0 text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded " + (APPROVAL_STATUS_COLORS[exp.status] || 'bg-slate-100 text-slate-600')}>
                       {APPROVAL_STATUS_LABELS[exp.status] || exp.status}
                     </span>
+                    {(exp.checked_by || canMarkChecked) && (
+                      <span className="shrink-0" onClick={function (ev) { ev.stopPropagation() }}>
+                        <CheckedStamp
+                          checked={!!exp.checked_by}
+                          checkedAt={exp.checked_at}
+                          canToggle={canMarkChecked}
+                          canUncheck={exp.checked_by === profile?.id || isAdmin}
+                          busy={checkingExpId === exp.id}
+                          onToggle={function () { toggleExpenseCheck(exp) }}
+                        />
+                      </span>
+                    )}
                     <span className="text-[11px] text-slate-500 truncate">
                       {view === 'approve' && !isSingleton && grp.submitter ? grp.submitter + ' · ' : ''}
                       {(function () {
@@ -1005,6 +1055,13 @@ function Expenses({ profile, masterMode, inAdmin, deepLinkExpense, onDeepLinkHan
                   <p className="text-[11px] text-green-700 font-medium">✓ Acknowledged</p>
                   <p className="text-[10px] text-green-600 mt-0.5">By {profileMap[exp.acknowledged_by] || '—'}{exp.acknowledged_at ? ' · ' + formatDate(exp.acknowledged_at) : ''}</p>
                 </div>
+              )}
+              {(exp.payment_credit_paise || 0) > 0 && (
+                <p className="mt-1 flex items-center gap-1.5 text-[11px]">
+                  <span className="text-emerald-600 font-medium">Paid now {formatPoints(exp.payment_cash_paise || 0)}</span>
+                  <span className="text-slate-300">·</span>
+                  <span className="text-amber-600 font-medium">On credit {formatPoints(exp.payment_credit_paise)}</span>
+                </p>
               )}
               {(function () {
                 var paths = (exp.receipt_paths && exp.receipt_paths.length > 0) ? exp.receipt_paths : (exp.receipt_path ? [exp.receipt_path] : [])

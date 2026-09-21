@@ -18,6 +18,7 @@ var PICK = 'h-11 inline-flex items-center justify-center gap-2 rounded-xl border
 
 function PayVendorModal({ vendor, profile, onClose, onSuccess }) {
   var [payMode, setPayMode] = useState('')
+  var [payType, setPayType] = useState('')
   var [payAmount, setPayAmount] = useState('')
   var [payDate, setPayDate] = useState(new Date().toISOString().split('T')[0])
   var [payDescription, setPayDescription] = useState('Payment to ' + (vendor.vendor_name || ''))
@@ -119,6 +120,7 @@ function PayVendorModal({ vendor, profile, onClose, onSuccess }) {
   async function submitPayment() {
     if (paySaving) return
     if (!payMode) { setPayError('Select cash or bank'); return }
+    if (!payType) { setPayError('Select payment type'); return }
     var amtR = Number(payAmount || 0)
     if (!isFinite(amtR) || amtR <= 0) { setPayError('Enter a valid amount'); return }
     var dedR = 0
@@ -178,7 +180,8 @@ function PayVendorModal({ vendor, profile, onClose, onSuccess }) {
       p_description: (payDescription || '').trim() || null,
       p_entry_date: payDate,
       p_mode: payMode,
-      p_image_paths: uploadedPaths.filter(function (p) { return p !== dedUploadedPath })
+      p_image_paths: uploadedPaths.filter(function (p) { return p !== dedUploadedPath }),
+      p_payment_type: payType
     }
     if (useDeduction && dedR > 0) {
       rpcArgs.p_deduction_paise = Math.round(dedR * 100)
@@ -246,6 +249,22 @@ function PayVendorModal({ vendor, profile, onClose, onSuccess }) {
                 </button>
               )
             })}
+          </div>
+        </div>
+
+        <div>
+          <label className={LABEL}>Payment type <span className="text-rose-500">*</span></label>
+          <div className="relative">
+            <select value={payType} onChange={function (ev) { setPayType(ev.target.value) }}
+              className={FIELD + ' appearance-none pr-10'}
+              style={{ fontSize: '16px' }}>
+              <option value="">Select…</option>
+              <option value="fnf">FNF (Full &amp; Final)</option>
+              <option value="advance">Advance</option>
+            </select>
+            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
+              <Icon name="chevronDown" size={15} />
+            </span>
           </div>
         </div>
 

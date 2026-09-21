@@ -158,10 +158,16 @@ import { DeptChip } from '../../components/ui/Badge'
 import SearchField from '../../components/ui/SearchField'
 import { pushBack, goBack } from '../../lib/backNav'
 import PaymentProofThumbs from '../../components/ledger/PaymentProofThumbs'
+import LedgerSourceMedia from '../../components/ledger/LedgerSourceMedia'
 import CheckedStamp from '../../components/ui/CheckedStamp'
 import { hasPerm } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
 import { avatarTint } from '../../lib/avatarTint'
+
+// Local (not UTC) y-m-d, same as the expense date picker — a straight
+// toISOString() would roll a late-night transfer back to the wrong day
+// for anyone west of Greenwich.
+function toYMD(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') }
 
 var REF_TYPE_LABELS = {
   expense: 'Expense',
@@ -261,6 +267,19 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   var canMarkChecked = hasPerm(permsNew, 'finance.wallet.mark_checked')
   var [checkingTxnId, setCheckingTxnId] = useState(null)
   var [checkingExpId, setCheckingExpId] = useState(null)
+  // Which transaction rows have their allocation breakdown expanded —
+  // collapsed by default so the History list fits more rows on screen.
+  var [expandedTxnIds, setExpandedTxnIds] = useState({})
+  function toggleTxnExpanded(id, ev) {
+    if (ev) ev.stopPropagation()
+    setExpandedTxnIds(function (prev) { var next = Object.assign({}, prev); next[id] = !next[id]; return next })
+  }
+  // Master override: when on, every row's allocation breakdown shows
+  // regardless of its own entry in expandedTxnIds.
+  var [expandAllTxns, setExpandAllTxns] = useState(false)
+  // A transaction row for a deleted expense stays in the ledger for audit
+  // (the debit already happened), but clutters the everyday view.
+  var [showDeletedTxns, setShowDeletedTxns] = useState(false)
   var activeVenues = useReferenceData().venues.filter(function (v) { return v.active }).slice().sort(function (a, b) { return (a.code || '').localeCompare(b.code || '') })
   var [walletView, setWalletView] = useState(null)
   var [allWallets, setAllWallets] = useState([])
@@ -322,6 +341,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   var [transferTo, setTransferTo] = useState('')
   var [transferToBalance, setTransferToBalance] = useState(null)
   var [transferAmount, setTransferAmount] = useState('')
+  var [transferDate, setTransferDate] = useState('')
   var [transferDesc, setTransferDesc] = useState('')
   var [transferImage, setTransferImage] = useState(null)
   var transferRec = useAudioRecorder()
@@ -512,7 +532,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     if (expRefIds.length > 0) {
       var expIdsNum = expRefIds.map(function (x) { return Number(x) }).filter(function (n) { return !isNaN(n) })
       var { data: eData } = await supabase.from('expenses')
-        .select('id, description, amount_paise, expense_date, event_id, vendor_name, metadata, checked_by, checked_at, expense_types(name, icon), expense_sub_types(name, extra_fields), expense_allocations(department, amount_paise, expense_types(name), expense_sub_types(name))')
+        .select('id, description, amount_paise, expense_date, event_id, vendor_name, metadata, checked_by, checked_at, deleted_at, expense_types(name, icon), expense_sub_types(name, extra_fields), expense_allocations(department, amount_paise, expense_types(name), expense_sub_types(name))')
         .in('id', expIdsNum)
       var eMap = {}
       var evIds = {}
@@ -639,7 +659,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     if (expRefIds.length > 0) {
       var expIdsNum = expRefIds.map(function (x) { return Number(x) }).filter(function (n) { return !isNaN(n) })
       var { data: eData } = await supabase.from('expenses')
-        .select('id, description, amount_paise, expense_date, event_id, vendor_name, metadata, status, checked_by, checked_at, expense_types(name, icon), expense_sub_types(name, extra_fields), expense_allocations(department, amount_paise, expense_types(name), expense_sub_types(name))')
+        .select('id, description, amount_paise, expense_date, event_id, vendor_name, metadata, status, checked_by, checked_at, deleted_at, receipt_path, receipt_paths, expense_types(name, icon), expense_sub_types(name, extra_fields), expense_allocations(department, amount_paise, expense_types(name), expense_sub_types(name))')
         .in('id', expIdsNum)
       var eMap = {}
       var evIds = {}
@@ -670,9 +690,10 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
       return PAYMENT_REF_TYPES.indexOf(tt.reference_type) !== -1 && tt.reference_id
     }).map(function (tt) { return tt.reference_id })
     if (payRefIds.length > 0) {
-      var { data: leData } = await supabase.from('ledger_entries').select('id, metadata').in('id', payRefIds)
+      // Matched on ref_id, not id — see openPaymentDetail for why.
+      var { data: leData } = await supabase.from('ledger_entries').select('id, ref_id, metadata').in('ref_id', payRefIds)
       var leMap = {}
-      ;(leData || []).forEach(function (le) { leMap[le.id] = le })
+      ;(leData || []).forEach(function (le) { leMap[le.ref_id] = le })
       setPaymentRefs(leMap)
     } else {
       setPaymentRefs({})
@@ -835,6 +856,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     setTransferTo('')
     setTransferToBalance(null)
     setTransferAmount('')
+    setTransferDate(toYMD(new Date()))
     setTransferDesc('')
     setTransferImage(null)
     transferRec.cancel()
@@ -855,7 +877,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   }, [transferTo])
 
   async function initiateTransfer() {
-    if (transferSaving || !transferTo || !transferAmount || Number(transferAmount) <= 0) return
+    if (transferSaving || !transferTo || !transferAmount || Number(transferAmount) <= 0 || !transferDate) return
     setTransferSaving(true)
     var amountRupees = Math.round(Number(transferAmount) * 100)
     var imagePath = null
@@ -878,6 +900,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
       p_amount_paise: amountRupees,
       p_description: (transferDesc.trim() || 'Cash transfer') + ' → ' + toName,
       p_sender_image: imagePath,
+      p_transfer_date: transferDate || null,
     })
     if (error) { alert('Transfer failed: ' + error.message); setTransferSaving(false); return }
     try { await logActivity('WALLET_TRANSFER', toName + ' | ' + formatPoints(amountRupees)) } catch (_) {}
@@ -1430,9 +1453,12 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   async function openPaymentDetail(t) {
     setPayDetailTarget({ txn: t, entry: null, partyName: '', loading: true })
     if (!t.reference_id) { setPayDetailTarget({ txn: t, entry: null, partyName: '', loading: false }); return }
+    // wallet_transactions.reference_id for a payment row is the shared UUID
+    // (v_ref_id in pay_vendor / the salary-payment equivalent) — that value
+    // lives on ledger_entries.ref_id, not its own bigint id column.
     var { data: entry } = await supabase.from('ledger_entries')
       .select('id, ledger_type, party_id, entry_date, created_at, description, debit_paise, ref_type, metadata')
-      .eq('id', t.reference_id).maybeSingle()
+      .eq('ref_id', t.reference_id).maybeSingle()
     if (!entry) { setPayDetailTarget({ txn: t, entry: null, partyName: '', loading: false }); return }
     var partyName = ''
     if (entry.ledger_type === 'vendor') {
@@ -2332,6 +2358,32 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             )}
           </div>
 
+          {/* Bounded to today − 3 days, same as expense date: a transfer is
+              cash that already changed hands, and this records when. */}
+          {(function () {
+            var today = toYMD(new Date())
+            var minDate = toYMD(new Date(Date.now() - 3 * 86400000))
+            return (
+              <div>
+                <label htmlFor="transfer-date" className="flex items-center gap-2 text-[13px] font-bold text-slate-800 mb-1.5">
+                  <Icon name="calendar" size={15} className="shrink-0 text-slate-400" />
+                  Transfer Date
+                  <span className="text-red-500">*</span>
+                </label>
+                <input id="transfer-date" type="date" value={transferDate} min={minDate} max={today}
+                  onChange={function (e) {
+                    var v = e.target.value
+                    if (v && v < minDate) { setTransferDate(minDate); return }
+                    if (v && v > today) { setTransferDate(today); return }
+                    setTransferDate(v)
+                  }}
+                  className="w-full px-3.5 py-3 bg-white border border-slate-200 rounded-xl text-[14px] text-slate-900 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-shadow"
+                  style={{ fontSize: '16px' }} />
+                <p className="text-[10px] text-slate-500 mt-1">Today or up to 3 days back.</p>
+              </div>
+            )
+          })()}
+
           <div>
             <label htmlFor="transfer-amount" className="flex items-center gap-2 text-[13px] font-bold text-slate-800 mb-1.5">
               <Icon name="rupee" size={15} className="shrink-0 text-slate-400" />
@@ -2416,7 +2468,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
               Cancel
             </button>
             {(function () {
-              var ready = !transferSaving && transferTo && transferAmount && Number(transferAmount) > 0
+              var ready = !transferSaving && transferTo && transferAmount && Number(transferAmount) > 0 && transferDate
               return (
                 <button type="button" onClick={initiateTransfer} disabled={!ready}
                   className={"flex-1 h-12 inline-flex items-center justify-center gap-1.5 rounded-xl text-[14px] font-bold text-white transition-all " +
@@ -2710,12 +2762,41 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                         <p className={"text-sm font-bold text-gray-800 truncate " + (isCancelled ? "line-through" : "")}>{t.description || (isCredit ? 'Credit' : 'Debit')}</p>
                         {t.status === 'pending' && <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded flex-shrink-0">Pending</span>}
                         {isCancelled && <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 bg-rose-100 text-rose-700 rounded flex-shrink-0">Cancelled</span>}
-                      </div>
+                        {!isCancelled && isExpRow && xp && (
+                          <span className="shrink-0" onClick={function (ev) { ev.stopPropagation() }}>
+                            <CheckedStamp
+                              checked={!!xp.checked_by}
+                              checkerName={xp.checked_by && walletProfiles[xp.checked_by] ? walletProfiles[xp.checked_by].name : null}
+                              checkedAt={xp.checked_at}
+                              canToggle={canMarkChecked}
+                              canUncheck={xp.checked_by === profile.id || isAdmin || isAuditor}
+                              busy={checkingExpId === t.reference_id}
+                              onToggle={function () { toggleExpenseCheck(t.reference_id) }}
+                            />
+                          </span>
+                        )}
+                        {!isCancelled && !isExpRow && (
+                          <span className="shrink-0" onClick={function (ev) { ev.stopPropagation() }}>
+                            <CheckedStamp
+                              checked={!!t.checked_by}
+                              checkerName={t.checked_by && walletProfiles[t.checked_by] ? walletProfiles[t.checked_by].name : null}
+                              checkedAt={t.checked_at}
+                              canToggle={canMarkChecked}
+                              canUncheck={t.checked_by === profile.id || isAdmin || isAuditor}
+                              busy={checkingTxnId === t.id}
+                              onToggle={function () { toggleWalletCheck(t) }}
+                            />
+                          </span>
+                        )}                      </div>
                       {enrichLine}
                       {isCancelled && t.cancelled_reason && (
                         <p className="text-[10px] text-rose-600 italic truncate">Reason: {t.cancelled_reason}</p>
                       )}
-                      <p className="text-[11px] text-slate-500">{formatDate(t.created_at)}</p>
+                      <p className="text-[11px] text-slate-500">
+                        {tr && tr.transfer_date && tr.transfer_date !== String(t.created_at).slice(0, 10)
+                          ? formatDate(tr.transfer_date)
+                          : formatDate(t.created_at)}
+                      </p>
                       <div className="flex gap-1 flex-wrap mt-1" onClick={function (ev) { ev.stopPropagation() }}>
                         {t.reference_type === 'collection' && t.receipt_no && (
                           <button onClick={function (ev) { ev.stopPropagation(); printReceipt(t) }}
@@ -3332,6 +3413,9 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
               // it here when that's the case so the vendor name isn't repeated.
               if (e.vendor_name && extraFieldValues.indexOf(e.vendor_name) === -1) pairs.unshift({ label: 'Vendor', value: e.vendor_name })
               if (t.reference_type === 'expense_refund' && e.amount_paise) parts.push('orig ' + formatPoints(e.amount_paise) + ' on ' + formatDate(e.expense_date))
+              var sourceReceipts = Array.isArray(e.receipt_paths) && e.receipt_paths.length > 0
+                ? e.receipt_paths
+                : (e.receipt_path ? [e.receipt_path] : [])
               return (
                 <>
                   {/* One rhythm down the row. Five lines at four pixels apart,
@@ -3375,6 +3459,18 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                     </div>
                   )}
                   {parts.length > 0 && <p className="mt-2 text-[11px] text-slate-500 leading-relaxed">{parts.join(' · ')}</p>}
+                  {sourceReceipts.length > 0 && (
+                    <div onClick={function (ev) { ev.stopPropagation() }}>
+                      <LedgerSourceMedia paths={sourceReceipts} />
+                    </div>
+                  )}
+                  {allocs.length > 0 && !expandAllTxns && (
+                    <button type="button" onClick={function (ev) { toggleTxnExpanded(t.id, ev) }}
+                      className="mt-2 inline-flex items-center gap-1 text-[10.5px] font-semibold text-indigo-600 hover:text-indigo-800">
+                      <Icon name={expandedTxnIds[t.id] ? 'chevronDown' : 'chevronRight'} size={11} />
+                      {expandedTxnIds[t.id] ? 'Hide allocation details' : 'Allocation details'}
+                    </button>
+                  )}
                   {/* Under a rule, and indented off it. The breakdown and the
                       footer below it were two grey lines of much the same size,
                       each led by a small grey glyph, so neither said what kind
@@ -3382,7 +3478,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                       other is when it happened and who did it. The rule makes
                       the breakdown read as belonging to the expense above it
                       rather than as one more line in a grey stack. */}
-                  {allocs.length > 0 && (
+                  {allocs.length > 0 && (expandAllTxns || !!expandedTxnIds[t.id]) && (
                     <div className="mt-2 pl-3 border-l-2 border-indigo-100 space-y-1">
                       {allocs.map(function (a, ai) {
                         var allocType = a.expense_types?.name || ''
@@ -3444,8 +3540,12 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
               // Date and time are one fact, so they are one item rather than two
               // separated as though they were unrelated.
               var when = formatDate(t.created_at) + (time ? ', ' + time : '')
+              // A backdated transfer carries its own date, distinct from when it
+              // was logged — same split as an expense's expense_date vs created_at.
+              var backdated = transferRow && transferRow.transfer_date && transferRow.transfer_date !== String(t.created_at).slice(0, 10)
               var facts = [
-                { icon: 'calendar', text: when },
+                backdated ? { icon: 'calendar', text: 'For ' + formatDate(transferRow.transfer_date) } : null,
+                { icon: backdated ? 'clock' : 'calendar', text: (backdated ? 'Logged ' : '') + when },
                 ref ? { icon: 'receipt', text: ref } : null,
                 who ? { icon: 'user', text: who, lead: 'by ' } : null,
               ].filter(Boolean)
@@ -3555,8 +3655,16 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     })()
 
     var sortedTxns = (function () {
-      if (txnSort === 'latest') return walletTxns
-      var rows = walletTxns.slice()
+      // The debit already happened, so a deleted expense's transaction stays
+      // in the ledger for audit rather than being removed — just hidden from
+      // the everyday view unless asked for.
+      var visible = showDeletedTxns ? walletTxns : walletTxns.filter(function (t) {
+        var isExpRow = (t.reference_type === 'expense' || t.reference_type === 'expense_refund') && t.reference_id
+        var xp = isExpRow ? expenseRefs[t.reference_id] : null
+        return !(xp && xp.deleted_at)
+      })
+      if (txnSort === 'latest') return visible
+      var rows = visible.slice()
       if (txnSort === 'oldest') {
         return rows.sort(function (a, b) { return new Date(a.created_at) - new Date(b.created_at) })
       }
@@ -3701,7 +3809,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-slate-200">
               <div className="min-w-0">
                 <h3 className="font-display text-[15px] font-bold text-slate-900">
-                  Transactions <span data-notranslate>({walletTxns.length})</span>
+                  Transactions <span data-notranslate>({sortedTxns.length})</span>
                 </h3>
                 <p className="mt-0.5 text-[12px] text-slate-500">Showing all wallet transactions for the selected period</p>
               </div>
@@ -3724,8 +3832,26 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                 </span>
               )}
             </div>
-            {walletTxns.length === 0 ? (
-              <p className="px-5 py-14 text-center text-[13px] font-medium text-slate-400">No transactions yet</p>
+            {walletTxns.length > 0 && (
+              <div className="flex flex-wrap items-center gap-4 px-5 py-2.5 border-b border-slate-100">
+                <label className="flex items-center gap-2 text-[12.5px] text-slate-600 cursor-pointer">
+                  <input type="checkbox" checked={showDeletedTxns}
+                    onChange={function (e) { setShowDeletedTxns(e.target.checked) }}
+                    className="w-4 h-4 accent-indigo-600" />
+                  Show deleted expenses
+                </label>
+                <label className="flex items-center gap-2 text-[12.5px] text-slate-600 cursor-pointer">
+                  <input type="checkbox" checked={expandAllTxns}
+                    onChange={function (e) { setExpandAllTxns(e.target.checked) }}
+                    className="w-4 h-4 accent-indigo-600" />
+                  Expand all allocation details
+                </label>
+              </div>
+            )}
+            {sortedTxns.length === 0 ? (
+              <p className="px-5 py-14 text-center text-[13px] font-medium text-slate-400">
+                {walletTxns.length === 0 ? 'No transactions yet' : 'No transactions match — try "Show deleted expenses"'}
+              </p>
             ) : (
               <div className="p-3 space-y-2">{sortedTxns.map(renderTxnRow)}</div>
             )}
@@ -3951,9 +4077,29 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             <p className="text-gray-400 text-sm">No transactions yet</p>
           </div>
         )}
-        <div className="space-y-2">
-          {sortedTxns.map(renderTxnRow)}
-        </div>
+        {walletTxns.length > 0 && (
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-1">
+            <label className="flex items-center gap-2 text-[12.5px] text-slate-600 cursor-pointer">
+              <input type="checkbox" checked={showDeletedTxns}
+                onChange={function (e) { setShowDeletedTxns(e.target.checked) }}
+                className="w-4 h-4 accent-indigo-600" />
+              Show deleted expenses
+            </label>
+            <label className="flex items-center gap-2 text-[12.5px] text-slate-600 cursor-pointer">
+              <input type="checkbox" checked={expandAllTxns}
+                onChange={function (e) { setExpandAllTxns(e.target.checked) }}
+                className="w-4 h-4 accent-indigo-600" />
+              Expand all allocation details
+            </label>
+          </div>
+        )}
+        {sortedTxns.length === 0 && walletTxns.length > 0 ? (
+          <p className="text-center text-[13px] font-medium text-slate-400 py-8">No transactions match — try "Show deleted expenses"</p>
+        ) : (
+          <div className="space-y-2">
+            {sortedTxns.map(renderTxnRow)}
+          </div>
+        )}
         {renderIssueModal()}
         {renderReceiveModal()}
         {renderCollectModal()}

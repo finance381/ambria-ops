@@ -171,7 +171,7 @@ function subTabAllowed(cfg, permsNew) {
   return true
 }
 
-function TabbedSection({ config, profile, onNavigate, activeSubTab, deepLinkExpense, onDeepLinkHandled }) {
+function TabbedSection({ config, profile, onNavigate, activeSubTab, deepLinkExpense, onDeepLinkHandled, onSubTabMeta }) {
   var permsNew = profile.permsNew || []
   var visibleConfig = config.filter(function (c) { return subTabAllowed(c, permsNew) })
 
@@ -179,6 +179,18 @@ function TabbedSection({ config, profile, onNavigate, activeSubTab, deepLinkExpe
     ? activeSubTab
     : (visibleConfig.length > 0 ? visibleConfig[0].key : null)
   var [sub, setSub] = useState(_initial)
+
+  // The breadcrumb lives in the shell, one component up, which has no way to
+  // know which pill within this row is lit — so this pushes it up on every
+  // change (click or deep link) and clears it again on unmount, which covers
+  // navigating away to a section that has no sub-tabs at all.
+  useEffect(function () {
+    if (!onSubTabMeta) return
+    var current = visibleConfig.find(function (c) { return c.key === sub })
+    onSubTabMeta(current ? { key: current.key, label: current.label } : null)
+    return function () { onSubTabMeta(null) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sub])
 
   // deepLinkExpense is in the dependency list (not just activeSubTab) because a
   // deep-linked navigation always targets the same sub-tab key ('expenses') —
@@ -316,7 +328,7 @@ function tabAllowed(tab, permsNew) {
 function makeTabbedModule(configKey) {
   return function (props) {
     return <TabbedSection config={SUB_TAB_CONFIG[configKey]} profile={props.profile} onNavigate={props.onNavigate} activeSubTab={props.activeSubTab}
-      deepLinkExpense={props.deepLinkExpense} onDeepLinkHandled={props.onDeepLinkHandled} />
+      deepLinkExpense={props.deepLinkExpense} onDeepLinkHandled={props.onDeepLinkHandled} onSubTabMeta={props.onSubTabMeta} />
   }
 }
 
@@ -338,9 +350,21 @@ function AdminShell({ profile, onSignOut }) {
   var permsNew = profile.permsNew || []
   var visibleTabs = ADMIN_TABS.filter(function (t) { return tabAllowed(t, permsNew) })
 
+  // TabbedSection only re-syncs its own `sub` state from activeSubTab when
+  // that prop is truthy (see its useEffect) — passing null there is a no-op,
+  // it will not snap back to the first pill. So jumping to a section's
+  // landing sub-tab from the breadcrumb needs the actual key, not null.
+  function defaultSubTabKey(tabKey) {
+    var cfg = SUB_TAB_CONFIG[tabKey]
+    if (!cfg) return null
+    var visible = cfg.filter(function (c) { return subTabAllowed(c, permsNew) })
+    return visible.length > 0 ? visible[0].key : null
+  }
+
   var _defaultTab = visibleTabs.length > 0 ? visibleTabs[0].key : null
   var [active, setActive] = useState(_defaultTab)
   var [subTab, setSubTab] = useState(null)
+  var [subTabMeta, setSubTabMeta] = useState(null)
   var [navOpen, setNavOpen] = useState(false)
   // Set by onNavigate's 3rd arg when a ledger screen sends the user to a
   // specific expense's edit/Raise JV view instead of just the Expenses tab.
@@ -378,7 +402,7 @@ function AdminShell({ profile, onSignOut }) {
       return (
         <button
           key={tab.key}
-          onClick={function () { setActive(tab.key); setSubTab(null); if (closeOnClick) setNavOpen(false) }}
+          onClick={function () { setActive(tab.key); setSubTab(null); setSubTabMeta(null); if (closeOnClick) setNavOpen(false) }}
           aria-current={isActive ? 'page' : undefined}
           className={"group relative overflow-hidden w-full flex items-center gap-3 px-3 h-[38px] rounded-xl text-[13px] text-left transition-all duration-150 " +
             (isActive
@@ -457,7 +481,7 @@ function AdminShell({ profile, onSignOut }) {
           className="inline-flex items-center justify-center w-9 h-9 rounded-lg text-white hover:bg-white/10 transition-colors">
           <Icon name="menu" size={19} />
         </button>
-        <span className="text-white text-sm font-bold truncate">{activeLabel || 'Ambria Ops'}</span>
+        <span className="text-white text-sm font-bold truncate">{subTabMeta ? subTabMeta.label : (activeLabel || 'Ambria Ops')}</span>
         <span className="w-9" />
       </div>
 
@@ -522,13 +546,36 @@ function AdminShell({ profile, onSignOut }) {
           ? 'bg-white/55 backdrop-blur-2xl backdrop-saturate-150 shadow-[0_1px_12px_rgba(15,23,42,0.06)] '
           : '') +
           "hidden md:flex sticky top-0 z-30 shrink-0 h-14 items-center justify-between gap-4 px-8 transition-colors duration-200"}>
-          {/* Two levels is all this shell has — the section, and the sub-tab
-              inside it, which the tab row already shows. So the trail stops
-              at the section rather than inventing depth. */}
+          {/* The sub-tab segment only appears once a tabbed section reports
+              which pill within it is lit (see TabbedSection's onSubTabMeta) —
+              sections with no sub-tabs (Overview, Analytics, Projects, ...)
+              never set it, so the trail stops at the section for those. */}
           <nav aria-label="Breadcrumb" className="flex items-center gap-2 min-w-0 text-[13px]">
-            <span className="text-slate-400" aria-hidden="true"><Icon name="home" size={15} /></span>
+            <button
+              onClick={function () {
+                var home = visibleTabs.find(function (t) { return t.key === 'overview' }) || visibleTabs[0]
+                if (!home) return
+                setActive(home.key); setSubTab(null); setSubTabMeta(null)
+              }}
+              aria-label="Home" className="text-slate-400 hover:text-indigo-600 transition-colors">
+              <Icon name="home" size={15} />
+            </button>
             <span className="text-slate-300" aria-hidden="true">/</span>
-            <span className="font-semibold text-slate-900 truncate">{activeLabel}</span>
+            {subTabMeta ? (
+              <button
+                onClick={function () { setSubTab(defaultSubTabKey(active)); setSubTabMeta(null) }}
+                className="text-slate-500 hover:text-indigo-600 font-medium truncate transition-colors">
+                {activeLabel}
+              </button>
+            ) : (
+              <span className="font-semibold text-slate-900 truncate">{activeLabel}</span>
+            )}
+            {subTabMeta && (
+              <>
+                <span className="text-slate-300" aria-hidden="true">/</span>
+                <span className="font-semibold text-slate-900 truncate">{subTabMeta.label}</span>
+              </>
+            )}
           </nav>
         </div>
 
@@ -560,7 +607,8 @@ function AdminShell({ profile, onSignOut }) {
               onNavigate={function (tab, sub, deepLink) { setActive(tab); setSubTab(sub || null); setDeepLinkExpense(deepLink || null) }}
               activeSubTab={subTab} inAdmin
               deepLinkExpense={deepLinkExpense}
-              onDeepLinkHandled={function () { setDeepLinkExpense(null) }} />
+              onDeepLinkHandled={function () { setDeepLinkExpense(null) }}
+              onSubTabMeta={setSubTabMeta} />
           </Suspense>
         )}
         {!ActiveModule && (

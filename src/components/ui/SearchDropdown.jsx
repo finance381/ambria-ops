@@ -54,8 +54,11 @@ function SearchDropdown({ items, value, onChange, onAdd, onInputChange, placehol
     return function () { document.removeEventListener('click', handleClick) }
   }, [])
 
+  // Whitespace-insensitive: "S K Genset" is typed as "sk" as often as "s k",
+  // and a plain substring match only ever caught the second one.
+  var norm = function (s) { return String(s || '').toLowerCase().replace(/\s+/g, '') }
   var filtered = query
-    ? items.filter(function (i) { return i.label.toLowerCase().includes(query.toLowerCase()) })
+    ? items.filter(function (i) { return norm(i.label).includes(norm(query)) })
     : items
 
   var showAddOption = allowAdd && query.trim() &&

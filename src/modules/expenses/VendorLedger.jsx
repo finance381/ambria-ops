@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useDeferredValue, memo } from 'react'
+import { createPortal } from 'react-dom'
 import { supabase } from '../../lib/supabase'
 import { logActivity } from '../../lib/logger'
 import { formatPoints, formatDate, formatDateTime } from '../../lib/format'
@@ -333,6 +334,15 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
   var canView = isAdmin || hasPerm(permsNew, 'finance.ledgers.vendor')
   var canMarkChecked = hasPerm(permsNew, 'finance.wallet.mark_checked')
   var [checkingEntryId, setCheckingEntryId] = useState(null)
+  // Same permission that gates the whole Vendors module — merging is a
+  // vendor-master-data operation, so it rides the same access rather than
+  // introducing a separate key.
+  var canManageVendors = isAdmin || hasPerm(permsNew, 'procurement.vendors')
+  var [showMergeModal, setShowMergeModal] = useState(false)
+  var [mergeSourceIds, setMergeSourceIds] = useState([])
+  var [mergeTargetId, setMergeTargetId] = useState('')
+  var [mergeSearch, setMergeSearch] = useState('')
+  var [mergeSaving, setMergeSaving] = useState(false)
 
   var [view, setView] = useState('list')  // 'list' | 'detail'
   var [vendors, setVendors] = useState([])
@@ -370,6 +380,14 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
   var [entries, setEntries] = useState([])
   var [entriesLoading, setEntriesLoading] = useState(false)
   var [showDeleted, setShowDeleted] = useState(false)
+  var [paymentTypeFilter, setPaymentTypeFilter] = useState('all')  // 'all' | 'fnf' | 'advance'
+  // Which entries have their amount-breakdown/allocation panel expanded —
+  // collapsed by default so a vendor with many purchases fits more rows.
+  var [expandedEntryIds, setExpandedEntryIds] = useState({})
+  function toggleEntryExpanded(id, ev) {
+    if (ev) ev.stopPropagation()
+    setExpandedEntryIds(function (prev) { var next = Object.assign({}, prev); next[id] = !next[id]; return next })
+  }
   var { openExpenseDetail, expenseDetailModal } = useExpenseDetailModal(profile, isAdmin, function () {
     if (selectedVendor) loadEntries(selectedVendor, showDeleted)
   }, onNavigateToExpenses)
@@ -585,6 +603,7 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
     setSelectedVendor(v)
     setView('detail')
     setShowDeleted(false)
+    setPaymentTypeFilter('all')
 
     // Both reads start now. The vendor master carries the phone, the contact
     // and the opening balance — none of which the ledger read has anything to
@@ -595,6 +614,7 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
       .select('phone, phone2, contact, opening_balance_paise')
       .eq('id', v.vendor_id).maybeSingle()
     var entriesP = loadEntries(v, false)
+
 
     try {
       var contactRes = await contactP
@@ -681,6 +701,114 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
     setCheckingEntryId(null)
     if (error) { alert('Could not update: ' + error.message); return }
     if (selectedVendor) await loadEntries(selectedVendor, showDeleted)
+  }
+
+  function toggleMergeSource(vendorId) {
+    setMergeSourceIds(function (prev) {
+      if (prev.indexOf(vendorId) !== -1) return prev.filter(function (id) { return id !== vendorId })
+      return prev.concat([vendorId])
+    })
+    setMergeTargetId(function (prev) { return String(prev) === String(vendorId) ? '' : prev })
+  }
+
+  async function doMergeVendors() {
+    if (mergeSaving || mergeSourceIds.length === 0 || !mergeTargetId) return
+    var pool = vendors.filter(function (v) { return v.vendor_active })
+    var targetVendor = pool.find(function (v) { return String(v.vendor_id) === String(mergeTargetId) })
+    var sourceVendors = pool.filter(function (v) { return mergeSourceIds.indexOf(v.vendor_id) !== -1 })
+    var sourceNames = sourceVendors.map(function (v) { return v.vendor_name }).join(', ')
+    var totalEntries = sourceVendors.reduce(function (s, v) { return s + (v.entry_count || 0) }, 0)
+    var ok = window.confirm(
+      'Merge ' + sourceNames + ' into "' + (targetVendor ? targetVendor.vendor_name : '—') + '"?\n\n' +
+      totalEntries + ' ledger entries and every expense reference will move to the target. ' +
+      'The merged vendor(s) will be deactivated. This cannot be undone from here.'
+    )
+    if (!ok) return
+    setMergeSaving(true)
+    var { data, error } = await supabase.rpc('fn_merge_vendors', {
+      p_source_ids: mergeSourceIds,
+      p_target_id: Number(mergeTargetId),
+    })
+    setMergeSaving(false)
+    if (error) { alert('Merge failed: ' + error.message); return }
+    try { await logActivity('VENDOR_MERGE', sourceNames + ' -> ' + (targetVendor ? targetVendor.vendor_name : mergeTargetId)) } catch (_) {}
+    setShowMergeModal(false)
+    setMergeSourceIds([])
+    setMergeTargetId('')
+    setMergeSearch('')
+    await loadVendors()
+    var summary = (data && (data.ledger_entries_moved || 0)) + ' ledger entries and ' + (data && (data.expenses_updated || 0)) + ' expense reference(s) moved.'
+    alert('Merged. ' + summary)
+  }
+
+  function renderMergeModal() {
+    if (!showMergeModal) return null
+    var q = mergeSearch.trim().toLowerCase()
+    var pool = vendors.filter(function (v) { return v.vendor_active })
+    var searched = q ? pool.filter(function (v) { return (v.vendor_name || '').toLowerCase().indexOf(q) !== -1 }) : pool
+    var targetOptions = pool.filter(function (v) { return mergeSourceIds.indexOf(v.vendor_id) === -1 })
+    var sourceTotalEntries = pool
+      .filter(function (v) { return mergeSourceIds.indexOf(v.vendor_id) !== -1 })
+      .reduce(function (s, v) { return s + (v.entry_count || 0) }, 0)
+    var readyToMerge = mergeSourceIds.length > 0 && mergeTargetId
+
+    return createPortal((
+      <div className="fixed inset-0 z-[9998] bg-black/60 flex items-end sm:items-center justify-center p-0 sm:p-4"
+        onClick={function () { if (!mergeSaving) setShowMergeModal(false) }}>
+        <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-lg p-5 space-y-4 max-h-[90vh] overflow-y-auto"
+          onClick={function (ev) { ev.stopPropagation() }}>
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <h3 className="text-base font-bold text-gray-900">🔀 Merge Vendors</h3>
+              <p className="text-xs text-gray-500 mt-0.5">Fold duplicates into one. Every ledger entry and expense reference moves to the target you pick below.</p>
+            </div>
+            <button type="button" onClick={function () { setShowMergeModal(false) }}
+              className="w-7 h-7 rounded-full bg-gray-100 text-gray-500 flex items-center justify-center flex-shrink-0">✕</button>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-gray-600 mb-1">Vendors to merge (sources)</label>
+            <SearchField value={mergeSearch} onChange={function (v) { setMergeSearch(v) }} placeholder="Search vendors..." />
+            <div className="mt-2 border border-gray-200 rounded-lg max-h-52 overflow-y-auto divide-y divide-gray-100">
+              {searched.length === 0 && <p className="text-xs text-gray-400 text-center py-4">No vendors match</p>}
+              {searched.map(function (v) {
+                var checked = mergeSourceIds.indexOf(v.vendor_id) !== -1
+                return (
+                  <label key={v.vendor_id} className={"flex items-center gap-2 px-3 py-2 text-sm cursor-pointer " + (checked ? "bg-indigo-50" : "hover:bg-gray-50")}>
+                    <input type="checkbox" checked={checked} onChange={function () { toggleMergeSource(v.vendor_id) }} />
+                    <span className="flex-1 min-w-0 truncate">{v.vendor_name}</span>
+                    <span className="text-[11px] text-gray-400 flex-shrink-0">{v.entry_count || 0} entries · {formatPoints(v.balance_paise || 0)}</span>
+                  </label>
+                )
+              })}
+            </div>
+          </div>
+
+          {mergeSourceIds.length > 0 && (
+            <div>
+              <label className="block text-xs font-bold text-gray-600 mb-1">Merge into (target)</label>
+              <SearchDropdown
+                items={targetOptions.map(function (v) { return { label: v.vendor_name + ' (' + (v.entry_count || 0) + ' entries)', value: String(v.vendor_id) } })}
+                value={mergeTargetId ? String(mergeTargetId) : ''}
+                onChange={function (val) { setMergeTargetId(val) }}
+                placeholder="Search target vendor..." />
+              <p className="text-[11px] text-gray-500 mt-1">{sourceTotalEntries} entries from the selected vendor(s) will move here.</p>
+            </div>
+          )}
+
+          <div className="flex gap-2 pt-2 border-t border-gray-100">
+            <button type="button" onClick={function () { setShowMergeModal(false) }} disabled={mergeSaving}
+              className="flex-1 py-2.5 text-sm text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors font-medium disabled:opacity-50">
+              Cancel
+            </button>
+            <button type="button" onClick={doMergeVendors} disabled={!readyToMerge || mergeSaving}
+              className="flex-1 py-2.5 text-sm text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors font-medium">
+              {mergeSaving ? 'Merging...' : 'Merge Vendors'}
+            </button>
+          </div>
+        </div>
+      </div>
+    ), document.body)
   }
 
   if (!canView) {
@@ -786,6 +914,15 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
             <div className="flex-1 min-w-0">
               <SearchField value={search} onChange={function (v) { setSearch(v) }} placeholder="Search vendors..." />
             </div>
+            {/* Merging vendors is a housekeeping job, not a filter, so it
+                ends the bar rather than sitting in the middle of it. */}
+            {canManageVendors && (
+              <button type="button" onClick={function () { setShowMergeModal(true) }}
+                className="shrink-0 h-10 px-3.5 inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white text-[12.5px] font-bold text-slate-700 hover:bg-slate-50 hover:text-slate-900 transition-colors">
+                <Icon name="split" size={15} className="text-slate-400" />
+                Merge
+              </button>
+            )}
             <button type="button" onClick={function () { setFiltersOpen(!filtersOpen) }}
               aria-label="Filters" aria-expanded={filtersOpen}
               className={"shrink-0 h-10 px-3 inline-flex items-center gap-1.5 rounded-xl border text-[12.5px] font-semibold transition-colors " +
@@ -852,6 +989,7 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
             })}
           </div>
         )}
+        {renderMergeModal()}
       </div>
     )
   }
@@ -1061,6 +1199,11 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
     return Object.assign({}, e, { runningBalance: e.deleted_at ? null : running })
   })
   var displayEntries = withRunning.slice().reverse()
+  var fnfCount = displayEntries.filter(function (e) { return e.metadata && e.metadata.payment_type === 'fnf' }).length
+  var advanceCount = displayEntries.filter(function (e) { return e.metadata && e.metadata.payment_type === 'advance' }).length
+  var visibleEntries = paymentTypeFilter === 'all' ? displayEntries : displayEntries.filter(function (e) {
+    return e.metadata && e.metadata.payment_type === paymentTypeFilter
+  })
 
   var currentBalance = running
 
@@ -1184,6 +1327,26 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
           valueClass={vs.earliest_due_date ? 'text-slate-900' : 'text-slate-400'} />
       </div>
 
+      {/* Quick filter: which payments were FNF vs an advance (set on Pay Vendor) */}
+      {(fnfCount > 0 || advanceCount > 0) && (
+        <div className="flex gap-1.5">
+          {[
+            { k: 'all', l: 'All' },
+            { k: 'fnf', l: 'FNF (' + fnfCount + ')' },
+            { k: 'advance', l: 'Advance (' + advanceCount + ')' },
+          ].map(function (f) {
+            var active = paymentTypeFilter === f.k
+            return (
+              <button key={f.k} type="button" onClick={function () { setPaymentTypeFilter(f.k) }}
+                className={"px-3 py-1.5 rounded-full text-xs font-semibold transition-colors " +
+                  (active ? "bg-indigo-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200")}>
+                {f.l}
+              </button>
+            )
+          })}
+        </div>
+      )}
+
       {/* Admin toggle: show deleted */}
       {isAdmin && (
         <label className="inline-flex items-center gap-2 text-[12px] font-medium text-slate-600 cursor-pointer">
@@ -1213,9 +1376,11 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
         <p className="text-slate-400 text-[13px] font-medium text-center py-10">Loading entries…</p>
       ) : displayEntries.length === 0 ? (
         <p className="text-slate-400 text-[13px] font-medium text-center py-10">No entries for this vendor.</p>
+      ) : visibleEntries.length === 0 ? (
+        <p className="text-slate-400 text-[13px] font-medium text-center py-10">No entries match this filter.</p>
       ) : (
         <div className="space-y-3">
-          {displayEntries.map(function (e) {
+          {visibleEntries.map(function (e) {
             var isCredit = (e.credit_paise || 0) > 0
             var isDeleted = !!e.deleted_at
             var amt = isCredit ? (e.credit_paise || 0) : (e.debit_paise || 0)
@@ -1274,8 +1439,9 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
                     var meta = e.metadata || {}
                     var m = meta.mode
                     var due = meta.due_date
+                    var pt = meta.payment_type
                     var isOverdueRow = kind === 'purchase' && due && due < new Date().toISOString().split('T')[0]
-                    if (!m && !due) return null
+                    if (!m && !due && !pt) return null
                     return (
                       <div className="flex gap-1.5 mt-2.5 flex-wrap">
                         {/* Glyphs from the set the rest of the app draws from,
@@ -1287,6 +1453,12 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
                           <span className="h-6 inline-flex items-center gap-1.5 px-2.5 rounded-md bg-indigo-50 text-[10.5px] font-bold text-indigo-700">
                             <Icon name={m === 'cash' ? 'banknote' : 'bank'} size={12} />
                             {m === 'cash' ? 'Cash' : 'Bank'}
+                          </span>
+                        )}
+                        {pt && (
+                          <span className={"h-6 inline-flex items-center gap-1.5 px-2.5 rounded-md text-[10.5px] font-bold " + (pt === 'advance' ? "bg-violet-100 text-violet-700" : "bg-teal-100 text-teal-700")}>
+                            <Icon name={pt === 'advance' ? 'clock' : 'checkCircle'} size={12} />
+                            {pt === 'advance' ? 'Advance' : 'FNF'}
                           </span>
                         )}
                         {due && (
@@ -1306,7 +1478,14 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
                       <LedgerSourceMedia paths={e._sourceReceipts} />
                     </div>
                   )}
-                  {e._breakdown && (function () {
+                  {e._breakdown && (
+                    <button type="button" onClick={function (ev) { toggleEntryExpanded(e.id, ev) }}
+                      className="mt-1.5 inline-flex items-center gap-1 text-[10.5px] font-semibold text-indigo-600 hover:text-indigo-800">
+                      <Icon name={expandedEntryIds[e.id] ? 'chevronDown' : 'chevronRight'} size={11} />
+                      {expandedEntryIds[e.id] ? 'Hide details' : 'Amount & allocation details'}
+                    </button>
+                  )}
+                  {e._breakdown && !!expandedEntryIds[e.id] && (function () {
                     var b = e._breakdown
                     var totalPaise = b.amount_paise
                     var taxPaise = b.tax_paise || 0

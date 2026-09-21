@@ -64,6 +64,13 @@ var _savedFilters = {
 function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds, glass, profile, isAdmin }) {
   var canMarkChecked = hasPerm(profile?.permsNew, 'finance.wallet.mark_checked')
   var [checkingExpId, setCheckingExpId] = useState(null)
+  // Which cards have their allocation/payment breakdown expanded — collapsed
+  // by default so a long list of purchases doesn't take a screen each.
+  var [expandedIds, setExpandedIds] = useState({})
+  function toggleExpanded(id, ev) {
+    if (ev) ev.stopPropagation()
+    setExpandedIds(function (prev) { var next = Object.assign({}, prev); next[id] = !next[id]; return next })
+  }
   var [allExps, setAllExps] = useState([])
   var [allExpHasMore, setAllExpHasMore] = useState(false)
   var [allExpStatus, setAllExpStatus] = useState(function () { return _savedFilters.status })
@@ -153,7 +160,11 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds, glass, prof
 
     var query = supabase.from('expenses')
       .select('id, user_id, batch_id, expense_type_id, expense_sub_type_id, amount_paise, tax_paise, description, status, expense_date, receipt_path, receipt_paths, created_at, rejection_reason, flag_reason, penalty_paise, penalized_at, penalized_by, reviewed_at, reviewed_by, acknowledged_at, acknowledged_by, deduction_type, vendor_name, travel_from, travel_to, travel_mode, metadata, event_id, deleted_at, delete_reason, deleted_by, checked_by, checked_at, payment_cash_paise, payment_credit_paise, payment_credit_cash_paise, payment_credit_bank_paise, cash_due_date, bank_due_date, expense_types(name, extra_fields), expense_sub_types(name, extra_fields), events(event_name, venue_name, function_date, pax), ' + allocEmbed)
+      // id tiebreaker: batch-submitted expenses share one created_at, and
+      // without it a later UPDATE (e.g. toggling checked_by) can shuffle ties
+      // on the next fetch/page.
       .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
       .range(offset, offset + PAGE_SIZE)
 
     if (allExpStatus === 'deleted') {
@@ -808,6 +819,19 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds, glass, prof
                       )
                     })()}
                     {(function () {
+                      var hasAllocs = (exp.expense_allocations || []).length > 0
+                      var hasSplit = (exp.payment_credit_paise || 0) > 0
+                      if (!hasAllocs && !hasSplit) return null
+                      var isExpanded = !!expandedIds[exp.id]
+                      return (
+                        <button type="button" onClick={function (ev) { toggleExpanded(exp.id, ev) }}
+                          className="mt-1.5 inline-flex items-center gap-1 text-[10.5px] font-semibold text-indigo-600 hover:text-indigo-800">
+                          <Icon name={isExpanded ? 'chevronDown' : 'chevronRight'} size={11} />
+                          {isExpanded ? 'Hide details' : 'Allocation & payment details'}
+                        </button>
+                      )
+                    })()}
+                    {!!expandedIds[exp.id] && (function () {
                       var allocs = exp.expense_allocations || []
                       if (allocs.length === 0) return null
                       var subtotal = allocs.reduce(function (s, a) { return s + (a.amount_paise || 0) }, 0)
@@ -864,6 +888,23 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds, glass, prof
                         </div>
                       )
                     })()}
+                    {/* Split-payment purchases put part of the bill on vendor
+                        credit rather than debiting the wallet in full — worth
+                        showing here, not just in the vendor ledger, since the
+                        card's headline amount alone doesn't say how much of
+                        it actually left the wallet just now. */}
+                    {!!expandedIds[exp.id] && (exp.payment_credit_paise || 0) > 0 && (
+                      <div className="mt-1 pt-1 border-t border-slate-100 space-y-0.5">
+                        <div className="flex items-center justify-between gap-2 text-[11px]">
+                          <span className="text-emerald-600">Paid now (cash)</span>
+                          <span className="text-emerald-700 font-semibold tabular-nums">{formatPoints(exp.payment_cash_paise || 0)}</span>
+                        </div>
+                        <div className="flex items-center justify-between gap-2 text-[11px]">
+                          <span className="text-amber-600">On vendor credit</span>
+                          <span className="text-amber-700 font-semibold tabular-nums">{formatPoints(exp.payment_credit_paise)}</span>
+                        </div>
+                      </div>
+                    )}
                     <p className="mt-2.5 flex items-center gap-2 min-w-0">
                       <span className={"shrink-0 text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded " + (exp.deleted_at ? "bg-slate-200 text-slate-600" : (APPROVAL_STATUS_COLORS[exp.status] || 'bg-slate-100 text-slate-600'))}>
                         {exp.deleted_at ? 'Deleted' : (APPROVAL_STATUS_LABELS[exp.status] || exp.status)}
