@@ -31,6 +31,18 @@ function byName(a, b) { return (a.name || '').localeCompare(b.name || '') }
 // Both sides lose everything that is not a letter or a digit, so the query
 // and the name are compared on what was actually meant. That also covers
 // "M/S", "S.K." and the trailing spaces a paste leaves behind.
+// An entry points at an expense when its ref is an expense with a numeric id.
+// Asked in two places now — by the row, and by the list working out whether it
+// needs a column for the stamp — so it is written once.
+function isExpenseEntry(e) {
+  return e.ref_type === 'expense' && e.ref_id && /^[0-9]+$/.test(String(e.ref_id)) && !e.deleted_at
+}
+
+function entryIsChecked(e) {
+  if (e.deleted_at) return false
+  return isExpenseEntry(e) && e._expChecked ? !!e._expChecked.checked_by : !!e.checked_by
+}
+
 function searchKey(s) {
   return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '')
 }
@@ -1228,6 +1240,11 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
   var visibleEntries = paymentTypeFilter === 'all' ? displayEntries : displayEntries.filter(function (e) {
     return e.metadata && e.metadata.payment_type === paymentTypeFilter
   })
+  // Whether this list needs a column for the stamp at all. Rendered only where
+  // there is one, the stamp widened that row's right-hand cluster and pushed
+  // its rule left, so down a list the rules and the figures beside them came
+  // out ragged. The column is reserved on every row once any row has one.
+  var anyEntryChecked = visibleEntries.some(entryIsChecked)
 
   var currentBalance = running
 
@@ -1418,7 +1435,7 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
             // dot was amber where the figure is red, so one row was marked in
             // two colours for one fact.
             var dotColor = isDeleted ? 'bg-slate-300' : isCredit ? 'bg-rose-500' : 'bg-emerald-500'
-            var isExpRow = e.ref_type === 'expense' && e.ref_id && /^[0-9]+$/.test(String(e.ref_id)) && !isDeleted
+            var isExpRow = isExpenseEntry(e)
             function handleRowClick() {
               if (!isExpRow) return
               openExpenseDetail(Number(e.ref_id))
@@ -1663,9 +1680,10 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
                     The rule itself is what stops two columns of unrelated text
                     reading as one ragged block. */}
                 <span aria-hidden="true" className="self-stretch shrink-0 w-px bg-slate-200" />
-                {!isDeleted && checkedProps.checked && (
-                  <span className="shrink-0 self-center" onClick={function (ev) { ev.stopPropagation() }}>
-                    {renderChecked('stamp')}
+                {anyEntryChecked && (
+                  <span className="shrink-0 w-[96px] self-center flex items-center justify-center"
+                    onClick={function (ev) { ev.stopPropagation() }}>
+                    {!isDeleted && checkedProps.checked && renderChecked('stamp')}
                   </span>
                 )}
                 <div className="shrink-0 flex flex-col items-end gap-2.5">

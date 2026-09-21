@@ -845,6 +845,8 @@ function Ledgers({ profile, onNavigateToExpenses }) {
   // sub-type has one, and they are three different fields.
   // ─── DRILL VIEW ───
   if (drillGroup) {
+    // Whether this list needs a column for the stamp at all.
+    var anyDrillChecked = drillRows.some(function (r) { return !!r._checkedBy })
     return (
       <div className="space-y-4">
         <div>
@@ -926,6 +928,14 @@ function Ledgers({ profile, onNavigateToExpenses }) {
           <p className="text-center text-sm text-gray-400 py-8">No allocations in range</p>
         ) : (
           <div className="space-y-2">
+            {/* The stamp gets a column, not a place in the queue. Rendered only
+                on the rows that have one, it widened those rows' right-hand
+                cluster and pushed their rule left, so down a list the rules and
+                the amounts beside them came out ragged.
+
+                The column exists when any row in the list is checked, and is
+                empty on the rows that are not — so every rule lands on the same
+                x. When nothing is checked there is no column to reserve. */}
             {drillRows.map(function (r) {
               // The row hands over what it is already showing, so the overlay
               // opens on it rather than on a spinner. amount_paise is this
@@ -1024,17 +1034,20 @@ function Ledgers({ profile, onNavigateToExpenses }) {
                       {/* Right of the rule is what this row came to, and
                           whether it has been checked is a verdict on that
                           rather than another label beside the description. */}
-                      {r._checkedBy && (
-                        <span className="shrink-0 self-center" onClick={function (ev) { ev.stopPropagation() }}>
-                          <CheckedStamp
-                            variant="stamp"
-                            checked
-                            checkedAt={r._checkedAt}
-                            canToggle={canMarkChecked}
-                            canUncheck={r._checkedBy === profile?.id || isSysAdmin}
-                            busy={checkingExpId === r.expense_id}
-                            onToggle={function () { toggleExpenseCheck(r.expense_id) }}
-                          />
+                      {anyDrillChecked && (
+                        <span className="shrink-0 w-[96px] self-center flex items-center justify-center"
+                          onClick={function (ev) { ev.stopPropagation() }}>
+                          {r._checkedBy && (
+                            <CheckedStamp
+                              variant="stamp"
+                              checked
+                              checkedAt={r._checkedAt}
+                              canToggle={canMarkChecked}
+                              canUncheck={r._checkedBy === profile?.id || isSysAdmin}
+                              busy={checkingExpId === r.expense_id}
+                              onToggle={function () { toggleExpenseCheck(r.expense_id) }}
+                            />
+                          )}
                         </span>
                       )}
                       <div className="px-4 py-2.5 text-right">
