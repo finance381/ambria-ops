@@ -417,6 +417,36 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
   var deferredStatus = useDeferredValue(statusFilter)
   var listStale = deferredSearch !== search || deferredStatus !== statusFilter
 
+  // Two hundred and sixty cards is about four thousand elements, and none of
+  // them can be skipped on a first paint — memo only helps a card that already
+  // exists. The queries behind this screen come back in under a tenth of a
+  // second; the wait people were seeing was React building the whole grid
+  // before the browser was allowed to draw any of it.
+  //
+  // So it draws a screenful, and fills in the rest while the browser is idle.
+  // Nothing is hidden and there is nothing to press — by the time you have
+  // read the first row the last one is there.
+  var FIRST_PAINT = 24
+  var [renderLimit, setRenderLimit] = useState(FIRST_PAINT)
+
+  // Back to a screenful whenever the list becomes a different list.
+  useEffect(function () {
+    setRenderLimit(FIRST_PAINT)
+  }, [deferredSearch, deferredStatus, fExpType, fExpSubType, fCategory, fSubCategory, vendors])
+
+  useEffect(function () {
+    if (renderLimit >= vendors.length) return
+    function grow() { setRenderLimit(function (n) { return n + 80 }) }
+    // requestIdleCallback where it exists, so topping up never competes with a
+    // scroll or a keystroke; a frame's delay where it does not.
+    var idle = typeof window !== 'undefined' && window.requestIdleCallback
+    var id = idle ? window.requestIdleCallback(grow, { timeout: 250 }) : setTimeout(grow, 16)
+    return function () {
+      if (idle) window.cancelIdleCallback(id)
+      else clearTimeout(id)
+    }
+  }, [renderLimit, vendors.length])
+
   // Filter dropdowns (all optional, cascade where hierarchical)
   var [fExpType, setFExpType] = useState('')
   var [fExpSubType, setFExpSubType] = useState('')
@@ -1084,7 +1114,7 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
         ) : (
           <div aria-busy={listStale}
             className={"grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 transition-opacity duration-150 " + (listStale ? "opacity-60" : "")}>
-            {sorted.map(function (v) {
+            {sorted.slice(0, renderLimit).map(function (v) {
               return <VendorCard key={v.vendor_id} v={v} onOpen={openVendor} />
             })}
           </div>
