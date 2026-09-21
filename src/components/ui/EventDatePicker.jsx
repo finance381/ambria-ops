@@ -2,26 +2,10 @@ import { useState, useEffect, useLayoutEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { supabase } from '../../lib/supabase'
 import Icon from './Icon'
+import { venueColor, VENUE_LEGEND } from '../../lib/venueColors'
 
 var DAY_NAMES = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
 
-var VENUE_COLORS = {
-  'Ambria Pushpanjali': '#6B21A8',
-  'Ambria Manaktala':   '#16A34A',
-  'Ambria Exotica':     '#EA580C',
-  'Ambria Restro':      '#DC2626',
-  'Villa':              '#374151',
-  'Ambria Design & Decor': '#CA8A04',
-  'Ambria Cuisine':     '#0D9488',
-  'Ambria Events':      '#DB2777',
-  'Tender':             '#115E59',
-  'Wedding Services':   '#3B82F6',
-  'Outdoor Decor':      '#CA8A04',
-  'Outdoor Catering':   '#0D9488',
-  'Outdoor Venue':      '#374151',
-  'Outdoor Entertainment': '#DB2777',
-}
-var DEFAULT_DOT_COLOR = '#6366F1'
 
 function EventDatePicker({ value, onChange, label, collapsible, includePast, triggerStyle, plain, neutral, placeholder }) {
   var today = new Date()
@@ -243,7 +227,7 @@ function EventDatePicker({ value, onChange, label, collapsible, includePast, tri
                   {hasEvent && !plain && (
                     <span className="absolute bottom-0 flex gap-px justify-center">
                       {venues.slice(0, 3).map(function (v, vi) {
-                        return <span key={vi} className="w-1.5 h-1.5 rounded-full" style={{ background: isSelected ? '#fff' : (VENUE_COLORS[v] || DEFAULT_DOT_COLOR) }} />
+                        return <span key={vi} className="w-1.5 h-1.5 rounded-full" style={{ background: isSelected ? '#fff' : venueColor(v) }} />
                       })}
                     </span>
                   )}
@@ -258,10 +242,15 @@ function EventDatePicker({ value, onChange, label, collapsible, includePast, tri
         {(!plain || value) && (
         <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-100">
           <div className="flex items-center gap-2 flex-wrap">
-            {!plain && <><span className="w-1.5 h-1.5 rounded-full" style={{ background: '#6B21A8' }} /><span className="text-[10px] text-gray-400">AP</span>
-            <span className="w-1.5 h-1.5 rounded-full" style={{ background: '#16A34A' }} /><span className="text-[10px] text-gray-400">AM</span>
-            <span className="w-1.5 h-1.5 rounded-full" style={{ background: '#EA580C' }} /><span className="text-[10px] text-gray-400">AE</span>
-            <span className="w-1.5 h-1.5 rounded-full" style={{ background: '#DC2626' }} /><span className="text-[10px] text-gray-400">AR</span>
+            {!plain && <>
+            {VENUE_LEGEND.map(function (l) {
+              return (
+                <span key={l.code} title={l.name} className="inline-flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full" style={{ background: venueColor(l.name) }} />
+                  <span className="text-[10px] text-gray-400">{l.code}</span>
+                </span>
+              )
+            })}
             {loading && <span className="text-[10px] text-gray-300 ml-1">...</span>}</>}
           </div>
           {value && (

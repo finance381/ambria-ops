@@ -253,6 +253,14 @@
   .ambria-thin-scroll::-webkit-scrollbar-button { display: none; }
   .ambria-thin-scroll::-webkit-scrollbar-corner { background: transparent; }
 
+  /* A strip that scrolls sideways and shows no bar at all. Tab rails and
+     chip rows overflow on a phone and are swiped, not dragged by a
+     scrollbar — and on Windows that bar is 17px of grey under a row of
+     tabs, which is taller than the gap it sits in. Used by LedgersHub and
+     the event detail tabs. */
+  .no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+
   /* ── A pinned column that scrolls inside itself ───────────────────────
      The rail only overflows sometimes: Payment Method appears once a vendor
      is picked, and grows again when the credit is split. Every time it

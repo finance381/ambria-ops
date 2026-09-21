@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { formatPoints, formatDate, formatDateTime } from '../../lib/format'
-import EventDatePicker from '../../components/ui/EventDatePicker'
+import EventCalendar from '../../components/ui/EventCalendar'
+import ImageLightbox from '../../components/ui/ImageLightbox'
+import Icon from '../../components/ui/Icon'
 import { hasPerm } from '../../lib/permissions'
 import { useExpenseDetailModal } from '../../hooks/useExpenseDetailModal.jsx'
-import { deptOrder } from '../../lib/ui'
+import { deptOrder, CARD } from '../../lib/ui'
 import { DeptChip } from '../../components/ui/Badge'
 import CheckedStamp from '../../components/ui/CheckedStamp'
 
@@ -13,10 +15,70 @@ var ENTRY_TYPES = [
   { key: 'collection', label: 'Collections' },
   { key: 'lms_advance', label: 'LMS Advances' },
   { key: 'expense', label: 'Expenses' },
-  { key: 'plates', label: 'Plates' },
 ]
 
-var EVT_COLS = 'id, event_name, function_date, venue_name, client_name, session, department, created_user_name, contract_no, agreed_cash_paise, agreed_bank_paise'
+// The five faces of one event. Plates and documents used to be a fifth and a
+// sixth filter pill on the transactions table, which is where you would look
+// for them last: neither is a transaction, and both answer a question — how
+// many extra plates went out, where is the contract PDF — that has nothing to
+// do with money moving.
+var TABS = [
+  { key: 'overview',     label: 'Overview',     icon: 'info' },
+  { key: 'financials',   label: 'Financials',   icon: 'wallet' },
+  { key: 'transactions', label: 'Transactions', icon: 'receipt' },
+  { key: 'plates',       label: 'Plates',       icon: 'utensils' },
+  { key: 'documents',    label: 'Documents',    icon: 'paperclip' },
+]
+
+var EVT_COLS = 'id, event_name, function_date, contract_date, venue_name, location, client_name, contact_person, session, catering, department, created_user_name, contract_no, is_tentative, pax, total_plates, complementary_plates, synced_at, pdf_link, ppt_link, agreed_cash_paise, agreed_bank_paise'
+
+var MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July',
+  'August', 'September', 'October', 'November', 'December']
+
+function longDate(s) {
+  if (!s) return ''
+  var d = new Date(String(s).slice(0, 10) + 'T00:00:00')
+  if (isNaN(d)) return String(s)
+  return d.getDate() + ' ' + MONTHS[d.getMonth()] + ' ' + d.getFullYear()
+}
+
+// Label left, answer right, hairline between — the same fact row the expense
+// detail uses, so a reader who has learnt one screen has learnt this one.
+function InfoRow({ label, value }) {
+  if (value === null || value === undefined || value === '') return null
+  return (
+    <div className="flex items-baseline justify-between gap-4 py-2.5">
+      <span className="shrink-0 text-[12px] font-medium text-slate-500">{label}</span>
+      <span className="min-w-0 text-right text-[13px] font-semibold text-slate-900">{value}</span>
+    </div>
+  )
+}
+
+function SectionCard({ title, icon, right, children, className }) {
+  return (
+    <div className={CARD + ' overflow-hidden ' + (className || '')}>
+      <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-slate-100 bg-slate-50/60">
+        <p className="inline-flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.1em] text-slate-500">
+          {icon && <Icon name={icon} size={13} className="text-slate-400" />}
+          {title}
+        </p>
+        {right}
+      </div>
+      {children}
+    </div>
+  )
+}
+
+function MoneyTile({ label, value, sub, tone }) {
+  return (
+    <div className="bg-white border border-slate-200 rounded-2xl px-4 py-3.5 shadow-[0_1px_2px_rgba(15,23,42,0.05)]">
+      <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500">{label}</p>
+      <p className={'mt-1.5 font-display text-[21px] font-bold tabular-nums leading-none tracking-[-0.02em] ' + (tone || 'text-slate-900')}
+        data-notranslate>{value}</p>
+      {sub}
+    </div>
+  )
+}
 
 // Running order comes from lib/ui so this screen cannot drift from the events
 // list or the expense picker; the colour rides along inside <DeptChip>.
@@ -73,6 +135,8 @@ function EventLedger(props) {
   var [platesLoading, setPlatesLoading] = useState(false)
   var [filter, setFilter] = useState('all')
   var [balancesByContract, setBalancesByContract] = useState({})
+  var [tab, setTab] = useState('overview')
+  var [lightbox, setLightbox] = useState(null)
 
   async function loadFunctions(dateStr) {
     setDate(dateStr)
@@ -100,6 +164,8 @@ function EventLedger(props) {
       setEventId(''); setEventDetail(null); setBalance(null); setBalancesByContract({}); setEntries([]); setPlateEvents([]); setCurrentEventIds([])
       return
     }
+    setTab('overview')
+    setFilter('all')
     setEventId(String(g.event_ids[0]))  // legacy anchor: any contract in this group
     setEventDetail(g.contracts[0])
     setCurrentEventIds(g.event_ids)
@@ -276,9 +342,9 @@ function EventLedger(props) {
   }
 
   function badgeClass(entryType, direction) {
-    if (direction === 'in') return 'bg-green-100 text-green-800'
-    if (direction === 'out') return 'bg-red-100 text-red-800'
-    return 'bg-gray-100 text-gray-700'
+    if (direction === 'in') return 'bg-emerald-100 text-emerald-800'
+    if (direction === 'out') return 'bg-rose-100 text-rose-800'
+    return 'bg-slate-100 text-slate-700'
   }
 
   var pendCashP = balance ? Number(balance.pending_cash_paise || 0) : 0
@@ -295,304 +361,536 @@ function EventLedger(props) {
     : null
   var contractByEventId = {}
   if (selectedGroup) selectedGroup.contracts.forEach(function (c) { contractByEventId[c.id] = c })
-  var multiContract = !!(selectedGroup && selectedGroup.contracts.length > 1)
+  var contracts = selectedGroup ? selectedGroup.contracts : (eventDetail ? [eventDetail] : [])
+  var multiContract = contracts.length > 1
+
+  // Everything this event has to show that is not a number: the LMS contract
+  // PDF each department files, and the receipt photographed at the moment a
+  // collection was taken. They live in two different systems, which is exactly
+  // why one tab that knows about both is worth having.
+  var documents = []
+  contracts.forEach(function (c) {
+    if (c.pdf_link) documents.push({ id: 'pdf-' + c.id, kind: 'pdf', label: 'Contract PDF', sub: (c.department || 'Contract') + (c.contract_no ? ' · #' + c.contract_no : ''), href: c.pdf_link })
+    if (c.ppt_link) documents.push({ id: 'ppt-' + c.id, kind: 'ppt', label: 'Presentation', sub: c.department || '', href: c.ppt_link })
+  })
+  entries.forEach(function (e) {
+    if (!e._wt || !e._wt.received_image_path) return
+    var url = supabase.storage.from('receipts').getPublicUrl(e._wt.received_image_path).data?.publicUrl
+    if (!url) return
+    documents.push({
+      id: 'img-' + e.id, kind: 'image', url: url,
+      label: 'Collection receipt',
+      sub: formatPoints(e._wt.amount_paise) + ' · ' + formatDate(e.created_at),
+    })
+  })
+
+  var tabCounts = { transactions: entries.length, plates: plateEvents.length, documents: documents.length }
+
+  function renderEntriesTable() {
+    if (entriesLoading) return <p className="text-[12.5px] text-slate-400 p-5 text-center">Loading entries…</p>
+    if (filteredEntries().length === 0) return <p className="text-[12.5px] text-slate-400 p-8 text-center">No entries</p>
+    return (
+      <div className="overflow-x-auto ambria-thin-scroll">
+        <table className="w-full">
+          <thead className="bg-slate-50 border-b border-slate-200">
+            <tr>
+              <th className="px-3 py-2.5 text-left text-[10.5px] font-bold uppercase tracking-[0.06em] text-slate-500">Date</th>
+              <th className="px-3 py-2.5 text-left text-[10.5px] font-bold uppercase tracking-[0.06em] text-slate-500">Type</th>
+              <th className="px-3 py-2.5 text-left text-[10.5px] font-bold uppercase tracking-[0.06em] text-slate-500">Mode</th>
+              <th className="px-3 py-2.5 text-right text-[10.5px] font-bold uppercase tracking-[0.06em] text-slate-500">In</th>
+              <th className="px-3 py-2.5 text-right text-[10.5px] font-bold uppercase tracking-[0.06em] text-slate-500">Out</th>
+              <th className="px-3 py-2.5 text-left text-[10.5px] font-bold uppercase tracking-[0.06em] text-slate-500">Description</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredEntries().map(function (e) {
+              var isExpRow = e.entry_type === 'expense' && !!e.reference_id
+              var isCollRow = e.entry_type === 'collection' && !!e._wt
+              var isClickable = isExpRow || isCollRow
+              return (
+                <tr key={e.id}
+                  onClick={function () {
+                    if (isExpRow) openExpenseDetail(Number(e.reference_id))
+                    else if (isCollRow) setCollDetail({ row: e })
+                  }}
+                  className={'border-b border-slate-100 last:border-b-0' + (isClickable ? ' cursor-pointer hover:bg-indigo-50/40 transition-colors' : '')}>
+                  <td className="px-3 py-2.5 text-[12px] text-slate-600 whitespace-nowrap" data-notranslate>
+                    {e._entryDate ? formatDate(e._entryDate) : formatDate(e.created_at)}
+                    <div className="text-[10.5px] text-slate-400">Logged {formatDateTime(e.created_at)}</div>
+                  </td>
+                  <td className="px-3 py-2.5">
+                    <span className={'inline-block px-2 py-0.5 rounded-md text-[11px] font-semibold ' + badgeClass(e.entry_type, e.direction)}>
+                      {e.entry_type}
+                    </span>
+                    {isExpRow && (e._checkedBy || canMarkChecked) && (
+                      <span className="ml-1.5 inline-block" onClick={function (ev) { ev.stopPropagation() }}>
+                        <CheckedStamp
+                          checked={!!e._checkedBy}
+                          checkedAt={e._checkedAt}
+                          canToggle={canMarkChecked}
+                          canUncheck={e._checkedBy === profile?.id || isSysAdmin}
+                          busy={checkingExpId === Number(e.reference_id)}
+                          onToggle={function () { toggleExpenseCheck(Number(e.reference_id)) }}
+                        />
+                      </span>
+                    )}
+                    {isCollRow && (e._wt.checked_by || canMarkChecked) && (
+                      <span className="ml-1.5 inline-block" onClick={function (ev) { ev.stopPropagation() }}>
+                        <CheckedStamp
+                          checked={!!e._wt.checked_by}
+                          checkedAt={e._wt.checked_at}
+                          canToggle={canMarkChecked}
+                          canUncheck={e._wt.checked_by === profile?.id || isSysAdmin}
+                          busy={checkingTxnId === e.reference_id}
+                          onToggle={function () { toggleCollectionCheck(e.reference_id) }}
+                        />
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-3 py-2.5 text-[12px] text-slate-700">{e.payment_mode || '—'}</td>
+                  <td className="px-3 py-2.5 text-right text-[12.5px] font-semibold tabular-nums text-emerald-700" data-notranslate>
+                    {e.direction === 'in' ? formatPoints(e.amount_paise) : ''}
+                  </td>
+                  <td className="px-3 py-2.5 text-right text-[12.5px] font-semibold tabular-nums text-rose-700" data-notranslate>
+                    {e.direction === 'out' ? formatPoints(e.amount_paise) : ''}
+                  </td>
+                  <td className="px-3 py-2.5 text-[12px] text-slate-700">
+                    {multiContract && contractByEventId[e.event_id] && contractByEventId[e.event_id].department && (
+                      <DeptChip name={contractByEventId[e.event_id].department} className="mr-2" />
+                    )}
+                    {e.description || '—'}
+                    {e._creatorName && <div className="text-[10.5px] text-slate-400 mt-0.5">by {e._creatorName}</div>}
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    )
+  }
+
+  function renderPlatesTable() {
+    if (platesLoading) return <p className="text-[12.5px] text-slate-400 p-5 text-center">Loading plate history…</p>
+    if (plateEvents.length === 0) return <p className="text-[12.5px] text-slate-400 p-8 text-center">No plate activity for this event</p>
+    return (
+      <div className="overflow-x-auto ambria-thin-scroll">
+        <table className="w-full">
+          <thead className="bg-slate-50 border-b border-slate-200">
+            <tr>
+              {['Date', 'Type'].map(function (h) {
+                return <th key={h} className="px-3 py-2.5 text-left text-[10.5px] font-bold uppercase tracking-[0.06em] text-slate-500">{h}</th>
+              })}
+              {['Plates', 'Returned', 'Charged', 'Amount'].map(function (h) {
+                return <th key={h} className="px-3 py-2.5 text-right text-[10.5px] font-bold uppercase tracking-[0.06em] text-slate-500">{h}</th>
+              })}
+              {['Mode', 'Notes'].map(function (h) {
+                return <th key={h} className="px-3 py-2.5 text-left text-[10.5px] font-bold uppercase tracking-[0.06em] text-slate-500">{h}</th>
+              })}
+            </tr>
+          </thead>
+          <tbody>
+            {plateEvents.map(function (p) {
+              var isIssue = p._kind === 'issue'
+              var isCancelled = p.status === 'cancelled'
+              var isWaste = !isIssue && (p.extras_charged === 0 || p.total_paise === 0) && (p.plates_returned || 0) > 0
+              var typeLabel = isIssue ? 'Issue' : (isWaste ? 'Waste' : 'Collection')
+              var typeClass = isIssue
+                ? 'bg-blue-100 text-blue-700'
+                : isWaste ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'
+              var modeLabel = !isIssue && p.payment_mode
+                ? p.payment_mode + (p.payment_sub_mode ? ' · ' + p.payment_sub_mode : '')
+                : '—'
+              return (
+                <tr key={p._kind + '-' + p.id} className={'border-b border-slate-100 last:border-b-0 ' + (isCancelled ? 'opacity-40 line-through' : '')}>
+                  <td className="px-3 py-2.5 text-[12px] text-slate-600 whitespace-nowrap" data-notranslate>{formatDate(p.created_at)}</td>
+                  <td className="px-3 py-2.5">
+                    <span className={'inline-block px-2 py-0.5 rounded-md text-[11px] font-semibold ' + typeClass}>
+                      {typeLabel}{isCancelled ? ' · Cancelled' : ''}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2.5 text-right text-[12.5px] tabular-nums text-slate-800" data-notranslate>{isIssue ? p.plates_count : '—'}</td>
+                  <td className="px-3 py-2.5 text-right text-[12.5px] tabular-nums text-amber-700" data-notranslate>{!isIssue && (p.plates_returned || 0) > 0 ? p.plates_returned : '—'}</td>
+                  <td className="px-3 py-2.5 text-right text-[12.5px] tabular-nums text-slate-800" data-notranslate>{!isIssue && (p.extras_charged || 0) > 0 ? p.extras_charged : '—'}</td>
+                  <td className="px-3 py-2.5 text-right text-[12.5px] font-semibold tabular-nums text-emerald-700" data-notranslate>{!isIssue && (p.total_paise || 0) > 0 ? formatPoints(p.total_paise) : '—'}</td>
+                  <td className="px-3 py-2.5 text-[12px] text-slate-700">{modeLabel}</td>
+                  <td className="px-3 py-2.5 text-[12px] text-slate-600">{p.notes || (isCancelled && p.cancelled_reason ? '(' + p.cancelled_reason + ')' : '—')}</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    )
+  }
+
+  var detailView = eventDetail && (
+    <div className="space-y-4">
+      {!propEventId && (
+        <div className="flex items-center justify-between gap-3">
+          <button type="button" onClick={function () { selectGroup(null) }}
+            className="inline-flex items-center gap-1.5 h-9 px-3 -ml-1 rounded-xl text-[13px] font-bold text-slate-600 hover:text-indigo-700 hover:bg-indigo-50 transition-colors">
+            <Icon name="arrowLeft" size={15} />
+            Back to Events
+          </button>
+          <button type="button" onClick={function () { loadFunctions('') }}
+            className="inline-flex items-center gap-1.5 h-9 px-3 rounded-xl text-[13px] font-bold text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors">
+            <Icon name="calendar" size={14} />
+            Change date
+          </button>
+        </div>
+      )}
+
+      <div className={CARD + ' p-4 @3xl:p-5'}>
+        <div className="flex items-start gap-3.5">
+          <span className="shrink-0 w-11 h-11 rounded-2xl bg-indigo-50 text-indigo-600 inline-flex items-center justify-center">
+            <Icon name="users" size={20} />
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-start justify-between gap-3">
+              <h2 className="min-w-0 font-display text-[19px] font-bold text-slate-900 leading-tight">
+                {eventDetail.event_name || 'Event'}
+                {eventDetail.client_name ? ' — ' + eventDetail.client_name : ''}
+              </h2>
+              {/* events.status is 'active' on every row in the table, so it
+                  cannot tell anyone anything. is_tentative can: it is the
+                  difference between a booking LMS has a contract for and one
+                  somebody entered by hand ahead of the paperwork. */}
+              <span className={'shrink-0 h-6 px-2.5 inline-flex items-center rounded-lg text-[10.5px] font-bold uppercase tracking-[0.06em] ' +
+                (eventDetail.is_tentative ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700')}>
+                {eventDetail.is_tentative ? 'Tentative' : 'Confirmed'}
+              </span>
+            </div>
+            {(eventDetail.venue_name || eventDetail.session) && (
+              <p className="mt-1 flex items-center gap-1.5 text-[12.5px] font-medium text-slate-500">
+                <Icon name="mapPin" size={12} className="shrink-0 text-slate-400" />
+                <span className="min-w-0 truncate">
+                  {eventDetail.venue_name || ''}
+                  {eventDetail.venue_name && eventDetail.session ? ' · ' : ''}
+                  {eventDetail.session || ''}
+                </span>
+              </p>
+            )}
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              {contracts.map(function (c) { return <DeptChip key={c.id} name={c.department} /> })}
+            </div>
+            <div className="mt-2 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[12px] text-slate-500">
+              {contracts.filter(function (c) { return c.contract_no }).map(function (c) {
+                return <span key={c.id} className="font-semibold text-slate-600" data-notranslate>#{c.contract_no}</span>
+              })}
+              {eventDetail.created_user_name && <span>by {eventDetail.created_user_name}</span>}
+              {(eventDetail.function_date || eventDetail.contract_date) && (
+                <span data-notranslate>{longDate(eventDetail.function_date || eventDetail.contract_date)}</span>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex gap-1 overflow-x-auto no-scrollbar border-b border-slate-200">
+        {TABS.map(function (t) {
+          var active = tab === t.key
+          var count = tabCounts[t.key]
+          return (
+            <button key={t.key} type="button" onClick={function () { setTab(t.key) }} aria-pressed={active}
+              className={'relative shrink-0 inline-flex items-center gap-2 px-3.5 h-10 text-[13px] font-bold transition-colors ' +
+                (active ? 'text-indigo-700' : 'text-slate-500 hover:text-slate-900')}>
+              <Icon name={t.icon} size={14} />
+              {t.label}
+              {count !== undefined && count > 0 && (
+                <span data-notranslate className={'px-1.5 py-0.5 rounded-md text-[10.5px] font-bold tabular-nums leading-none ' +
+                  (active ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-500')}>{count}</span>
+              )}
+              {active && <span aria-hidden="true" className="absolute left-2 right-2 -bottom-px h-0.5 rounded-full bg-indigo-600" />}
+            </button>
+          )
+        })}
+      </div>
+
+      {tab === 'overview' && (
+        <div className="grid gap-4 @3xl:grid-cols-12">
+          <SectionCard title="Event Information" icon="info" className="@3xl:col-span-7">
+            <div className="px-4 divide-y divide-slate-100">
+              <InfoRow label="Function" value={eventDetail.event_name} />
+              <InfoRow label="Client" value={eventDetail.client_name} />
+              <InfoRow label="Venue" value={eventDetail.venue_name} />
+              <InfoRow label="Location" value={eventDetail.location} />
+              <InfoRow label="Session" value={eventDetail.session} />
+              <InfoRow label="Event Date" value={eventDetail.function_date ? longDate(eventDetail.function_date) : null} />
+              <InfoRow label="Contract Date" value={eventDetail.contract_date ? longDate(eventDetail.contract_date) : null} />
+              <InfoRow label="Contact" value={eventDetail.contact_person} />
+              <InfoRow label="Catering" value={eventDetail.catering} />
+              <InfoRow label="Pax" value={eventDetail.pax > 0 ? eventDetail.pax : null} />
+              <InfoRow label="Plates" value={eventDetail.total_plates > 0 ? eventDetail.total_plates : null} />
+              <InfoRow label="Complimentary" value={eventDetail.complementary_plates > 0 ? eventDetail.complementary_plates : null} />
+              <InfoRow label="Created By" value={eventDetail.created_user_name} />
+              <InfoRow label="Last Synced" value={eventDetail.synced_at ? formatDateTime(eventDetail.synced_at) : null} />
+            </div>
+          </SectionCard>
+
+          <SectionCard title={'Contracts (' + contracts.length + ')'} icon="fileText" className="@3xl:col-span-5">
+            <div className="divide-y divide-slate-100">
+              {contracts.map(function (c) {
+                var b = balancesByContract[c.id] || {}
+                var pend = Number(b.pending_cash_paise || 0) + Number(b.pending_bank_paise || 0)
+                return (
+                  <div key={c.id} className="px-4 py-3 space-y-1.5">
+                    <div className="flex items-center justify-between gap-3">
+                      <DeptChip name={c.department} />
+                      {balance && (
+                        <span className={'text-[12px] font-bold tabular-nums ' + (pend > 0 ? 'text-rose-600' : 'text-emerald-600')} data-notranslate>
+                          {pend > 0 ? formatPoints(pend) + ' due' : 'Settled'}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[12px] text-slate-500">
+                      {c.contract_no ? <span className="font-semibold text-slate-600" data-notranslate>#{c.contract_no}</span> : <span>No contract number</span>}
+                      {c.created_user_name ? <span> · by {c.created_user_name}</span> : null}
+                    </p>
+                  </div>
+                )
+              })}
+            </div>
+          </SectionCard>
+        </div>
+      )}
+
+      {tab === 'financials' && (
+        <div className="space-y-4">
+          <div className="grid gap-3 grid-cols-2 @3xl:grid-cols-4">
+            <MoneyTile label="Agreed Cash" value={balanceLoading ? '—' : formatPoints(agrCashP)}
+              sub={
+                <div className="mt-2 space-y-0.5">
+                  <p className="text-[11.5px] text-slate-500 tabular-nums" data-notranslate>Collected {formatPoints(colCashP)}</p>
+                  <p className={'text-[11.5px] font-bold tabular-nums ' + (pendCashP > 0 ? 'text-rose-600' : 'text-emerald-600')} data-notranslate>
+                    Pending {formatPoints(pendCashP)}
+                  </p>
+                </div>
+              } />
+            <MoneyTile label="Agreed Bank" value={balanceLoading ? '—' : formatPoints(agrBankP)}
+              sub={
+                <div className="mt-2 space-y-0.5">
+                  <p className="text-[11.5px] text-slate-500 tabular-nums" data-notranslate>Collected {formatPoints(colBankP)}</p>
+                  <p className={'text-[11.5px] font-bold tabular-nums ' + (pendBankP > 0 ? 'text-rose-600' : 'text-emerald-600')} data-notranslate>
+                    Pending {formatPoints(pendBankP)}
+                  </p>
+                </div>
+              } />
+            <MoneyTile label="Total Collected" tone="text-emerald-700" value={balanceLoading ? '—' : formatPoints(colCashP + colBankP)}
+              sub={<p className="mt-2 text-[11.5px] text-slate-500">Cash and bank together</p>} />
+            <MoneyTile label="Total Spent" tone="text-rose-700" value={balanceLoading ? '—' : formatPoints(spentP)}
+              sub={<p className="mt-2 text-[11.5px] text-slate-500">Expenses booked to this event</p>} />
+          </div>
+
+          {multiContract && (
+            <SectionCard title="Per-Contract Breakdown" icon="chart">
+              <div className="overflow-x-auto ambria-thin-scroll">
+                <table className="w-full">
+                  <thead className="bg-slate-50 border-b border-slate-200">
+                    <tr>
+                      <th className="px-3 py-2.5 text-left text-[10.5px] font-bold uppercase tracking-[0.06em] text-slate-500">Contract</th>
+                      {['Agreed Cash', 'Coll. Cash', 'Pend. Cash', 'Agreed Bank', 'Coll. Bank', 'Pend. Bank'].map(function (h) {
+                        return <th key={h} className="px-3 py-2.5 text-right text-[10.5px] font-bold uppercase tracking-[0.06em] text-slate-500 whitespace-nowrap">{h}</th>
+                      })}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {contracts.map(function (c) {
+                      var b = balancesByContract[c.id] || {}
+                      var pcash = Number(b.pending_cash_paise || 0)
+                      var pbank = Number(b.pending_bank_paise || 0)
+                      return (
+                        <tr key={c.id} className="border-b border-slate-100 last:border-b-0">
+                          <td className="px-3 py-2.5">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <DeptChip name={c.department} />
+                              {c.contract_no && <span className="text-[12px] font-semibold text-slate-600" data-notranslate>#{c.contract_no}</span>}
+                              {c.created_user_name && <span className="text-[11px] text-slate-400">· by {c.created_user_name}</span>}
+                            </div>
+                          </td>
+                          <td className="px-3 py-2.5 text-right text-[12.5px] tabular-nums text-slate-800" data-notranslate>{formatPoints(Number(b.agreed_cash_paise || 0))}</td>
+                          <td className="px-3 py-2.5 text-right text-[12.5px] tabular-nums text-slate-600" data-notranslate>{formatPoints(Number(b.collected_cash_paise || 0))}</td>
+                          <td className={'px-3 py-2.5 text-right text-[12.5px] font-bold tabular-nums ' + (pcash > 0 ? 'text-rose-600' : 'text-emerald-600')} data-notranslate>{formatPoints(pcash)}</td>
+                          <td className="px-3 py-2.5 text-right text-[12.5px] tabular-nums text-slate-800" data-notranslate>{formatPoints(Number(b.agreed_bank_paise || 0))}</td>
+                          <td className="px-3 py-2.5 text-right text-[12.5px] tabular-nums text-slate-600" data-notranslate>{formatPoints(Number(b.collected_bank_paise || 0))}</td>
+                          <td className={'px-3 py-2.5 text-right text-[12.5px] font-bold tabular-nums ' + (pbank > 0 ? 'text-rose-600' : 'text-emerald-600')} data-notranslate>{formatPoints(pbank)}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </SectionCard>
+          )}
+        </div>
+      )}
+
+      {tab === 'transactions' && (
+        <div className="space-y-3">
+          <div className="flex flex-wrap gap-1.5">
+            {ENTRY_TYPES.map(function (t) {
+              var active = filter === t.key
+              var n = t.key === 'all' ? entries.length : entries.filter(function (e) { return e.entry_type === t.key }).length
+              return (
+                <button key={t.key} type="button" onClick={function () { setFilter(t.key) }} aria-pressed={active}
+                  className={'inline-flex items-center gap-1.5 h-8 px-3 rounded-xl text-[12.5px] font-bold transition-colors ' +
+                    (active ? 'bg-indigo-600 text-white' : 'bg-white border border-slate-300 text-slate-600 hover:bg-slate-50 hover:text-slate-900')}>
+                  {t.label}
+                  <span data-notranslate className={'tabular-nums ' + (active ? 'text-white/70' : 'text-slate-400')}>{n}</span>
+                </button>
+              )
+            })}
+          </div>
+          <div className={CARD + ' overflow-hidden'}>{renderEntriesTable()}</div>
+        </div>
+      )}
+
+      {tab === 'plates' && <div className={CARD + ' overflow-hidden'}>{renderPlatesTable()}</div>}
+
+      {tab === 'documents' && (
+        <div className={CARD + ' p-4'}>
+          {documents.length === 0 ? (
+            <p className="text-[12.5px] text-slate-400 p-8 text-center">No contract files or receipts on this event</p>
+          ) : (
+            <div className="grid gap-3 grid-cols-2 @3xl:grid-cols-4">
+              {documents.map(function (d) {
+                if (d.kind === 'image') {
+                  return (
+                    <button key={d.id} type="button" onClick={function () { setLightbox(d) }}
+                      className="group text-left rounded-xl border border-slate-200 overflow-hidden hover:border-indigo-300 hover:shadow-[0_2px_10px_rgba(79,70,229,0.08)] transition-all">
+                      <span className="block aspect-[4/3] bg-slate-100 overflow-hidden">
+                        <img src={d.url} alt="" loading="lazy"
+                          className="w-full h-full object-cover group-hover:scale-[1.03] transition-transform duration-200" />
+                      </span>
+                      <span className="block px-2.5 py-2">
+                        <span className="block text-[12px] font-bold text-slate-800 truncate">{d.label}</span>
+                        <span className="block text-[11px] text-slate-500 truncate" data-notranslate>{d.sub}</span>
+                      </span>
+                    </button>
+                  )
+                }
+                return (
+                  <a key={d.id} href={d.href} target="_blank" rel="noopener noreferrer"
+                    className="flex flex-col justify-between gap-3 rounded-xl border border-slate-200 p-3 hover:border-indigo-300 hover:bg-indigo-50/40 transition-colors">
+                    <span className="w-9 h-9 rounded-xl bg-rose-50 text-rose-600 inline-flex items-center justify-center">
+                      <Icon name="fileText" size={17} />
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block text-[12px] font-bold text-slate-800 truncate">{d.label}</span>
+                      <span className="block text-[11px] text-slate-500 truncate">{d.sub}</span>
+                    </span>
+                  </a>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
 
   return (
-    <div>
-      {!propEventId && (
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
-        <EventDatePicker label="Event Date" value={date} onChange={loadFunctions} includePast />
-        {date && (
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Function</label>
-            {functionsLoading && <p className="text-xs text-gray-400">Loading...</p>}
-            {!functionsLoading && functions.length === 0 && <p className="text-xs text-gray-400">No functions on this date</p>}
-            {functions.length > 0 && (function () {
-              var groups = _buildGroups(functions)
-              return (
-                <div className="space-y-2">
-                  {groups.map(function (g) {
-                    var selected = g.event_ids.map(String).indexOf(String(eventId)) !== -1
-                    return (
-                      <button key={g.key} type="button" onClick={function () { selectGroup(g) }}
-                        className={"w-full text-left rounded-lg border p-3 transition-colors " +
-                          (selected ? "border-indigo-500 bg-indigo-50/40 ring-1 ring-indigo-200"
-                                    : "border-gray-200 bg-white hover:border-indigo-300 hover:bg-indigo-50/20")}>
-                        <div className="text-sm font-semibold text-gray-900">
-                          {g.event_name}{g.client_name && <span> — {g.client_name}</span>}
-                        </div>
-                        {(g.venue_name || g.session) && (
-                          <div className="text-xs text-gray-500 mt-0.5">
-                            {g.venue_name || ''}{g.venue_name && g.session ? ' · ' : ''}{g.session || ''}
-                          </div>
-                        )}
-                        <div className="mt-2 space-y-1">
-                          {g.contracts.map(function (c) {
-                            return (
-                              <div key={c.id} className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px]">
-                                <DeptChip name={c.department} />
-                                {c.contract_no && <span className="text-gray-500 font-mono">#{c.contract_no}</span>}
-                                {c.created_user_name && <span className="text-gray-400">· by {c.created_user_name}</span>}
-                              </div>
-                            )
-                          })}
-                        </div>
-                      </button>
-                    )
-                  })}
+    <div className="@container">
+      {!propEventId && !eventId && (
+        <div className={'grid gap-4 ' + (date ? '@3xl:grid-cols-12 items-start' : '')}>
+          <div className={date ? '@3xl:col-span-5' : 'w-full max-w-[460px] mx-auto'}>
+            <EventCalendar value={date} onChange={loadFunctions} />
+          </div>
+
+          {date && (
+            <div className="@3xl:col-span-7">
+              <div className={CARD + ' overflow-hidden'}>
+                <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-slate-100">
+                  <div className="min-w-0">
+                    <p className="text-[10.5px] font-bold uppercase tracking-[0.1em] text-slate-400">Events on</p>
+                    <p className="font-display text-[15px] font-bold text-slate-900 truncate" data-notranslate>{longDate(date)}</p>
+                  </div>
+                  {!functionsLoading && (
+                    <span data-notranslate className="shrink-0 h-7 px-2.5 inline-flex items-center rounded-lg bg-indigo-50 text-indigo-700 text-[12px] font-bold tabular-nums">
+                      {_groups.length} {_groups.length === 1 ? 'Event' : 'Events'}
+                    </span>
+                  )}
                 </div>
-              )
-            })()}
-          </div>
-        )}
-      </div>
-      )}
 
-      {eventDetail && (
-        <div className="bg-white border border-gray-200 rounded-lg p-4 mb-4">
-          <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
-            <div><span className="text-gray-500">Event:</span> <span className="font-semibold">{eventDetail.event_name}</span></div>
-            {eventDetail.client_name && <div><span className="text-gray-500">Client:</span> {eventDetail.client_name}</div>}
-            {eventDetail.venue_name && <div><span className="text-gray-500">Venue:</span> {eventDetail.venue_name}</div>}
-            {eventDetail.session && <div><span className="text-gray-500">Session:</span> {eventDetail.session}</div>}
-          </div>
-        </div>
-      )}
+                {functionsLoading && (
+                  <div className="p-4 space-y-2.5">
+                    {[0, 1, 2].map(function (i) {
+                      return <div key={i} className="ambria-skeleton h-[74px] rounded-xl" />
+                    })}
+                  </div>
+                )}
 
-      {eventId && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-          <div className="bg-white border border-gray-200 rounded-lg p-3">
-            <div className="text-xs text-gray-500 uppercase tracking-wide">Agreed Cash</div>
-            <div className="text-lg font-semibold">{balanceLoading ? '—' : formatPoints(agrCashP)}</div>
-            <div className="text-xs text-gray-500 mt-1">Collected {formatPoints(colCashP)}</div>
-            <div className={"text-xs font-semibold " + (pendCashP > 0 ? "text-red-600" : "text-green-600")}>
-              Pending {formatPoints(pendCashP)}
-            </div>
-          </div>
-          <div className="bg-white border border-gray-200 rounded-lg p-3">
-            <div className="text-xs text-gray-500 uppercase tracking-wide">Agreed Bank</div>
-            <div className="text-lg font-semibold">{balanceLoading ? '—' : formatPoints(agrBankP)}</div>
-            <div className="text-xs text-gray-500 mt-1">Collected {formatPoints(colBankP)}</div>
-            <div className={"text-xs font-semibold " + (pendBankP > 0 ? "text-red-600" : "text-green-600")}>
-              Pending {formatPoints(pendBankP)}
-            </div>
-          </div>
-          <div className="bg-white border border-gray-200 rounded-lg p-3">
-            <div className="text-xs text-gray-500 uppercase tracking-wide">Total Collected</div>
-            <div className="text-lg font-semibold text-green-700">{balanceLoading ? '—' : formatPoints(colCashP + colBankP)}</div>
-          </div>
-          <div className="bg-white border border-gray-200 rounded-lg p-3">
-            <div className="text-xs text-gray-500 uppercase tracking-wide">Total Spent</div>
-            <div className="text-lg font-semibold text-red-700">{balanceLoading ? '—' : formatPoints(spentP)}</div>
-          </div>
-        </div>
-      )}
+                {!functionsLoading && _groups.length === 0 && (
+                  <div className="px-4 py-14 text-center">
+                    <Icon name="calendar" size={26} className="mx-auto text-slate-300" />
+                    <p className="mt-2 text-[13px] font-semibold text-slate-500">No functions on this date</p>
+                    <p className="mt-0.5 text-[12px] text-slate-400">Pick another day on the calendar.</p>
+                  </div>
+                )}
 
-      {eventId && multiContract && (
-        <div className="mb-4 bg-white border border-gray-200 rounded-lg overflow-hidden">
-          <div className="px-3 py-2 border-b border-gray-100 text-[11px] font-semibold text-gray-500 uppercase tracking-wide bg-gray-50">Per-Contract Breakdown</div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead className="bg-gray-50 border-b border-gray-200">
-                <tr>
-                  <th className="px-3 py-2 text-left font-semibold text-gray-600 uppercase">Contract</th>
-                  <th className="px-3 py-2 text-right font-semibold text-gray-600 uppercase">Agreed Cash</th>
-                  <th className="px-3 py-2 text-right font-semibold text-gray-600 uppercase">Coll. Cash</th>
-                  <th className="px-3 py-2 text-right font-semibold text-gray-600 uppercase">Pend. Cash</th>
-                  <th className="px-3 py-2 text-right font-semibold text-gray-600 uppercase">Agreed Bank</th>
-                  <th className="px-3 py-2 text-right font-semibold text-gray-600 uppercase">Coll. Bank</th>
-                  <th className="px-3 py-2 text-right font-semibold text-gray-600 uppercase">Pend. Bank</th>
-                </tr>
-              </thead>
-              <tbody>
-                {selectedGroup.contracts.map(function (c) {
-                  var b = balancesByContract[c.id] || {}
-                  var pcash = Number(b.pending_cash_paise || 0)
-                  var pbank = Number(b.pending_bank_paise || 0)
-                  return (
-                    <tr key={c.id} className="border-b border-gray-100 last:border-b-0">
-                      <td className="px-3 py-2">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <DeptChip name={c.department} />
-                          {c.contract_no && <span className="text-gray-500 font-mono">#{c.contract_no}</span>}
-                          {c.created_user_name && <span className="text-[11px] text-gray-400">· by {c.created_user_name}</span>}
-                        </div>
-                      </td>
-                      <td className="px-3 py-2 text-right font-mono">{formatPoints(Number(b.agreed_cash_paise || 0))}</td>
-                      <td className="px-3 py-2 text-right font-mono text-gray-600">{formatPoints(Number(b.collected_cash_paise || 0))}</td>
-                      <td className={"px-3 py-2 text-right font-mono font-semibold " + (pcash > 0 ? "text-red-600" : "text-green-600")}>{formatPoints(pcash)}</td>
-                      <td className="px-3 py-2 text-right font-mono">{formatPoints(Number(b.agreed_bank_paise || 0))}</td>
-                      <td className="px-3 py-2 text-right font-mono text-gray-600">{formatPoints(Number(b.collected_bank_paise || 0))}</td>
-                      <td className={"px-3 py-2 text-right font-mono font-semibold " + (pbank > 0 ? "text-red-600" : "text-green-600")}>{formatPoints(pbank)}</td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {eventId && (
-        <div className="mb-3 flex flex-wrap gap-1.5">
-          {ENTRY_TYPES.map(function (t) {
-            var active = filter === t.key
-            return (
-              <button key={t.key} onClick={function () { setFilter(t.key) }}
-                className={"px-3 py-1.5 rounded-full text-xs font-semibold transition-colors " +
-                  (active ? "bg-indigo-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200")}>
-                {t.label}
-              </button>
-            )
-          })}
-        </div>
-      )}
-
-      {eventId && filter === 'plates' && (
-        <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-          {platesLoading ? (
-            <p className="text-xs text-gray-400 p-4">Loading plate history...</p>
-          ) : plateEvents.length === 0 ? (
-            <p className="text-sm text-gray-400 p-4 text-center">No plate activity for this event</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-gray-50 border-b border-gray-200">
-                  <tr>
-                    <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600 uppercase">Date</th>
-                    <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600 uppercase">Type</th>
-                    <th className="px-3 py-2 text-right text-xs font-semibold text-gray-600 uppercase">Plates</th>
-                    <th className="px-3 py-2 text-right text-xs font-semibold text-gray-600 uppercase">Returned</th>
-                    <th className="px-3 py-2 text-right text-xs font-semibold text-gray-600 uppercase">Charged</th>
-                    <th className="px-3 py-2 text-right text-xs font-semibold text-gray-600 uppercase">Amount</th>
-                    <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600 uppercase">Mode</th>
-                    <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600 uppercase">Notes</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {plateEvents.map(function (p) {
-                    var isIssue = p._kind === 'issue'
-                    var isCancelled = p.status === 'cancelled'
-                    var isWaste = !isIssue && (p.extras_charged === 0 || p.total_paise === 0) && (p.plates_returned || 0) > 0
-                    var typeLabel = isIssue ? 'Issue' : (isWaste ? 'Waste' : 'Collection')
-                    var typeClass = isIssue
-                      ? 'bg-blue-100 text-blue-700'
-                      : isWaste ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'
-                    var modeLabel = !isIssue && p.payment_mode
-                      ? p.payment_mode + (p.payment_sub_mode ? ' · ' + p.payment_sub_mode : '')
-                      : '—'
-                    return (
-                      <tr key={p._kind + '-' + p.id} className={"border-b border-gray-100 last:border-b-0 " + (isCancelled ? "opacity-40 line-through" : "")}>
-                        <td className="px-3 py-2 text-xs text-gray-600 whitespace-nowrap">{formatDate(p.created_at)}</td>
-                        <td className="px-3 py-2">
-                          <span className={"inline-block px-2 py-0.5 rounded text-xs font-medium " + typeClass}>
-                            {typeLabel}{isCancelled ? ' · Cancelled' : ''}
+                {!functionsLoading && _groups.length > 0 && (
+                  <div className="divide-y divide-slate-100 max-h-[min(70vh,620px)] overflow-y-auto ambria-thin-scroll overscroll-contain">
+                    {_groups.map(function (g) {
+                      var creators = []
+                      g.contracts.forEach(function (c) {
+                        if (c.created_user_name && creators.indexOf(c.created_user_name) === -1) creators.push(c.created_user_name)
+                      })
+                      var numbers = g.contracts.filter(function (c) { return c.contract_no })
+                      return (
+                        <button key={g.key} type="button" onClick={function () { selectGroup(g) }}
+                          className="group w-full text-left px-4 py-3 flex items-start gap-3 hover:bg-indigo-50/40 transition-colors">
+                          <span className="min-w-0 flex-1 space-y-1.5">
+                            <span className="block font-display text-[14px] font-bold text-slate-900 leading-snug truncate">
+                              {g.event_name || 'Event'}{g.client_name ? ' — ' + g.client_name : ''}
+                            </span>
+                            {(g.venue_name || g.session) && (
+                              <span className="flex items-center gap-1.5 text-[12px] font-medium text-slate-500">
+                                <Icon name="mapPin" size={12} className="shrink-0 text-slate-400" />
+                                <span className="min-w-0 truncate">
+                                  {g.venue_name || ''}{g.venue_name && g.session ? ' · ' : ''}{g.session || ''}
+                                </span>
+                              </span>
+                            )}
+                            <span className="flex flex-wrap items-center gap-1.5">
+                              {g.contracts.map(function (c) { return <DeptChip key={c.id} name={c.department} /> })}
+                            </span>
+                            {(numbers.length > 0 || creators.length > 0) && (
+                              <span className="block text-[11.5px] text-slate-400 truncate" data-notranslate>
+                                {numbers.map(function (c) { return '#' + c.contract_no }).join(' ')}
+                                {numbers.length > 0 && creators.length > 0 ? ' · ' : ''}
+                                {creators.length > 0 ? 'by ' + creators.join(', ') : ''}
+                              </span>
+                            )}
                           </span>
-                        </td>
-                        <td className="px-3 py-2 text-right text-xs font-mono text-gray-800">{isIssue ? p.plates_count : '—'}</td>
-                        <td className="px-3 py-2 text-right text-xs font-mono text-amber-700">{!isIssue && (p.plates_returned || 0) > 0 ? p.plates_returned : '—'}</td>
-                        <td className="px-3 py-2 text-right text-xs font-mono text-gray-800">{!isIssue && (p.extras_charged || 0) > 0 ? p.extras_charged : '—'}</td>
-                        <td className="px-3 py-2 text-right text-xs font-mono text-green-700">{!isIssue && (p.total_paise || 0) > 0 ? formatPoints(p.total_paise) : '—'}</td>
-                        <td className="px-3 py-2 text-xs text-gray-700">{modeLabel}</td>
-                        <td className="px-3 py-2 text-xs text-gray-600">{p.notes || (isCancelled && p.cancelled_reason ? '(' + p.cancelled_reason + ')' : '—')}</td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
+                          <Icon name="chevronRight" size={16}
+                            className="shrink-0 mt-1 text-slate-300 group-hover:text-indigo-500 transition-colors" />
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>
       )}
 
-      {eventId && filter !== 'plates' && (
-        <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-          {entriesLoading ? (
-            <p className="text-xs text-gray-400 p-4">Loading entries...</p>
-          ) : filteredEntries().length === 0 ? (
-            <p className="text-sm text-gray-400 p-4 text-center">No entries</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-gray-50 border-b border-gray-200">
-                  <tr>
-                    <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600 uppercase">Date</th>
-                    <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600 uppercase">Type</th>
-                    <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600 uppercase">Mode</th>
-                    <th className="px-3 py-2 text-right text-xs font-semibold text-gray-600 uppercase">In</th>
-                    <th className="px-3 py-2 text-right text-xs font-semibold text-gray-600 uppercase">Out</th>
-                    <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600 uppercase">Description</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredEntries().map(function (e) {
-                    var isExpRow = e.entry_type === 'expense' && !!e.reference_id
-                    var isCollRow = e.entry_type === 'collection' && !!e._wt
-                    var isClickable = isExpRow || isCollRow
-                    return (
-                      <tr key={e.id}
-                        onClick={function () {
-                          if (isExpRow) openExpenseDetail(Number(e.reference_id))
-                          else if (isCollRow) setCollDetail({ row: e })
-                        }}
-                        className={"border-b border-gray-100 last:border-b-0" + (isClickable ? " cursor-pointer hover:bg-indigo-50/40 transition-colors" : "")}>
-                        <td className="px-3 py-2 text-xs text-gray-600 whitespace-nowrap">
-                          {e._entryDate ? formatDate(e._entryDate) : formatDate(e.created_at)}
-                          <div className="text-[10px] text-gray-400">Logged {formatDateTime(e.created_at)}</div>
-                        </td>
-                        <td className="px-3 py-2">
-                          <span className={"inline-block px-2 py-0.5 rounded text-xs font-medium " + badgeClass(e.entry_type, e.direction)}>
-                            {e.entry_type}
-                          </span>
-                          {isExpRow && (e._checkedBy || canMarkChecked) && (
-                            <span className="ml-1.5 inline-block" onClick={function (ev) { ev.stopPropagation() }}>
-                              <CheckedStamp
-                                checked={!!e._checkedBy}
-                                checkedAt={e._checkedAt}
-                                canToggle={canMarkChecked}
-                                canUncheck={e._checkedBy === profile?.id || isSysAdmin}
-                                busy={checkingExpId === Number(e.reference_id)}
-                                onToggle={function () { toggleExpenseCheck(Number(e.reference_id)) }}
-                              />
-                            </span>
-                          )}
-                          {isCollRow && (e._wt.checked_by || canMarkChecked) && (
-                            <span className="ml-1.5 inline-block" onClick={function (ev) { ev.stopPropagation() }}>
-                              <CheckedStamp
-                                checked={!!e._wt.checked_by}
-                                checkedAt={e._wt.checked_at}
-                                canToggle={canMarkChecked}
-                                canUncheck={e._wt.checked_by === profile?.id || isSysAdmin}
-                                busy={checkingTxnId === e.reference_id}
-                                onToggle={function () { toggleCollectionCheck(e.reference_id) }}
-                              />
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-3 py-2 text-xs text-gray-700">{e.payment_mode || '—'}</td>
-                        <td className="px-3 py-2 text-right text-xs font-mono text-green-700">
-                          {e.direction === 'in' ? formatPoints(e.amount_paise) : ''}
-                        </td>
-                        <td className="px-3 py-2 text-right text-xs font-mono text-red-700">
-                          {e.direction === 'out' ? formatPoints(e.amount_paise) : ''}
-                        </td>
-                        <td className="px-3 py-2 text-xs text-gray-700">
-                          {multiContract && contractByEventId[e.event_id] && contractByEventId[e.event_id].department && (
-                            <DeptChip name={contractByEventId[e.event_id].department} className="mr-2" />
-                          )}
-                          {e.description || '—'}
-                          {e._creatorName && <div className="text-[10px] text-gray-400 mt-0.5">by {e._creatorName}</div>}
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
+      {/* Opened from the Events screen, this mounts with an id and nothing
+          else — the event itself is still a round trip away. Without this the
+          panel is blank for that beat, which reads as "nothing here". */}
+      {eventId && !eventDetail && (
+        <div className="space-y-4">
+          <div className="ambria-skeleton h-[104px] rounded-2xl" />
+          <div className="ambria-skeleton h-10 rounded-xl" />
+          <div className="ambria-skeleton h-[220px] rounded-2xl" />
         </div>
       )}
+      {eventId && detailView}
+
       {expenseDetailModal}
+      {lightbox && (
+        <ImageLightbox url={lightbox.url} alt={lightbox.label} onClose={function () { setLightbox(null) }} />
+      )}
       {collDetail && (function () {
         var r = collDetail.row
         var wt = r._wt
@@ -602,54 +900,58 @@ function EventLedger(props) {
           : null
         var contract = contractByEventId[r.event_id]
         return (
-          <div className="fixed inset-0 z-[9998] bg-black/60 flex items-end sm:items-center justify-center p-0 sm:p-4"
+          <div className="fixed inset-0 z-[9998] bg-slate-900/50 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4"
             onClick={function () { setCollDetail(null) }}>
-            <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md p-5 space-y-3 max-h-[90vh] overflow-y-auto"
+            <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md p-5 space-y-4 max-h-[90vh] overflow-y-auto ambria-thin-scroll overscroll-contain"
               onClick={function (ev) { ev.stopPropagation() }}>
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <h3 className="text-base font-bold text-gray-900">🎯 Event Collection</h3>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <h3 className="inline-flex items-center gap-2 font-display text-[17px] font-bold text-slate-900">
+                    <Icon name="wallet" size={16} className="shrink-0 text-indigo-500" />
+                    Event Collection
+                  </h3>
                   {eventDetail && (
-                    <p className="text-xs text-gray-500 mt-0.5">
+                    <p className="mt-1 text-[12.5px] text-slate-500 leading-snug">
                       {eventDetail.event_name}{eventDetail.client_name ? ' · ' + eventDetail.client_name : ''}
                       {contract && contract.department ? ' · ' + contract.department : ''}
                     </p>
                   )}
                 </div>
-                {isCancelled && <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-rose-100 text-rose-700">Cancelled</span>}
+                {isCancelled && <span className="shrink-0 px-2 py-0.5 rounded-lg text-[11px] font-bold bg-rose-100 text-rose-700">Cancelled</span>}
               </div>
-              <div className="grid grid-cols-2 gap-3 text-sm">
+              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <div className="text-[11px] text-gray-400 uppercase tracking-wide">Amount</div>
-                  <div className="font-semibold text-gray-900">{formatPoints(wt.amount_paise)}</div>
+                  <div className="text-[11px] font-bold uppercase tracking-[0.06em] text-slate-400">Amount</div>
+                  <div className="text-[14px] font-bold text-slate-900 tabular-nums" data-notranslate>{formatPoints(wt.amount_paise)}</div>
                 </div>
                 <div>
-                  <div className="text-[11px] text-gray-400 uppercase tracking-wide">Mode</div>
-                  <div className="font-semibold text-gray-900">{wt.payment_mode || '—'}</div>
+                  <div className="text-[11px] font-bold uppercase tracking-[0.06em] text-slate-400">Mode</div>
+                  <div className="text-[14px] font-bold text-slate-900">{wt.payment_mode || '—'}</div>
                 </div>
                 <div>
-                  <div className="text-[11px] text-gray-400 uppercase tracking-wide">Collected by</div>
-                  <div className="font-semibold text-gray-900">{r._collectorName || '—'}</div>
+                  <div className="text-[11px] font-bold uppercase tracking-[0.06em] text-slate-400">Collected by</div>
+                  <div className="text-[14px] font-bold text-slate-900">{r._collectorName || '—'}</div>
                 </div>
                 <div>
-                  <div className="text-[11px] text-gray-400 uppercase tracking-wide">Date</div>
-                  <div className="font-semibold text-gray-900">{formatDateTime(r.created_at)}</div>
+                  <div className="text-[11px] font-bold uppercase tracking-[0.06em] text-slate-400">Date</div>
+                  <div className="text-[14px] font-bold text-slate-900" data-notranslate>{formatDateTime(r.created_at)}</div>
                 </div>
                 {wt.receipt_no && (
                   <div className="col-span-2">
-                    <div className="text-[11px] text-gray-400 uppercase tracking-wide">Receipt No.</div>
-                    <div className="font-semibold text-gray-900">{wt.receipt_no}</div>
+                    <div className="text-[11px] font-bold uppercase tracking-[0.06em] text-slate-400">Receipt No.</div>
+                    <div className="text-[14px] font-bold text-slate-900" data-notranslate>{wt.receipt_no}</div>
                   </div>
                 )}
               </div>
               {imgUrl && (
-                <a href={imgUrl} target="_blank" rel="noopener noreferrer" className="block">
-                  <img src={imgUrl} alt="Receipt" className="w-full rounded-lg border border-gray-200" />
-                </a>
+                <button type="button" onClick={function () { setLightbox({ url: imgUrl, label: 'Collection receipt' }) }}
+                  className="block w-full rounded-xl border border-slate-200 overflow-hidden hover:border-indigo-300 transition-colors">
+                  <img src={imgUrl} alt="Receipt" className="w-full" />
+                </button>
               )}
               {(wt.checked_by || canMarkChecked) && (
-                <div className="flex items-center justify-between pt-2 border-t border-gray-100">
-                  <span className="text-[12px] font-medium text-slate-500">Finance check</span>
+                <div className="flex items-center justify-between pt-3 border-t border-slate-100">
+                  <span className="text-[12px] font-semibold text-slate-500">Finance check</span>
                   <CheckedStamp
                     checked={!!wt.checked_by}
                     checkedAt={wt.checked_at}
@@ -660,8 +962,8 @@ function EventLedger(props) {
                   />
                 </div>
               )}
-              <button onClick={function () { setCollDetail(null) }}
-                className="w-full py-2.5 rounded-lg text-sm font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 transition-colors">
+              <button type="button" onClick={function () { setCollDetail(null) }}
+                className="w-full h-11 rounded-xl text-[13px] font-bold text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 transition-colors">
                 Close
               </button>
             </div>
