@@ -48,8 +48,11 @@ function timeOf(ts) {
   return d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true })
 }
 
+// Names here carry their department in brackets — "Rajkumar (ADD)" — and
+// taking the first character of each word turned that into "R(". Only
+// letters count towards an initial.
 function initials(name) {
-  var parts = String(name || '').trim().split(/\s+/).filter(Boolean)
+  var parts = String(name || '').replace(/[^\p{L}\s]/gu, ' ').trim().split(/\s+/).filter(Boolean)
   if (parts.length === 0) return '—'
   return (parts[0][0] + (parts[1] ? parts[1][0] : '')).toUpperCase()
 }
@@ -525,22 +528,37 @@ function PaymentsLedger({ profile }) {
                 <tr>
                   <th className="px-3 py-2.5 text-left text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500 whitespace-nowrap">Date</th>
                   <th className="px-3 py-2.5"><span className="sr-only">Direction</span></th>
-                  {['Particulars', 'Type', 'Mode', 'Added by'].map(function (h) {
-                    return <th key={h} className="px-3 py-2.5 text-left text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500 whitespace-nowrap">{h}</th>
+                  <th className="px-3 py-2.5 text-left text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500 whitespace-nowrap">Particulars</th>
+                  {['Type', 'Mode', 'Added by'].map(function (h, hi) {
+                    return (
+                      <th key={h}
+                        className={'px-3 py-2.5 text-left text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500 whitespace-nowrap ' +
+                          (hi === 0 ? 'border-l border-slate-200' : '')}>{h}</th>
+                    )
                   })}
                   <th className="px-3 py-2.5 text-right text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500 whitespace-nowrap">Amount (pts)</th>
                 </tr>
               </thead>
               <tbody>
-                {pageRows.map(function (r) {
+                {pageRows.map(function (r, ri) {
+                  // A ledger sorted by date prints the same date down seven
+                  // rows, and the eye reads seven dates before noticing they
+                  // are one. Repeats are dropped and the day gets a heavier
+                  // rule above it — but only while the sort is by date, since
+                  // under an amount sort the dates are not grouped and
+                  // hiding one would hide a real difference.
+                  var byDate = sortKey === 'date_desc' || sortKey === 'date_asc'
+                  var sameDay = byDate && ri > 0 && pageRows[ri - 1].date === r.date
                   var isIn = r.direction === 'in'
                   var src = SOURCE_META[r.source] || { label: r.source, dot: 'bg-slate-400', cls: 'bg-slate-50 text-slate-700 border-slate-200' }
                   var who = r.recorded_by || r.collector_name || ''
                   return (
                     <tr key={r.key} onClick={function () { openRow(r) }}
-                      className="border-b border-slate-100 last:border-b-0 cursor-pointer hover:bg-indigo-50/40 transition-colors">
+                      className={'last:border-b-0 cursor-pointer hover:bg-indigo-50/40 transition-colors ' +
+                        (byDate && !sameDay && ri > 0 ? 'border-t border-slate-200 ' : '') +
+                        'border-b border-slate-100'}>
                       <td className="px-3 py-2.5 align-top whitespace-nowrap" data-notranslate>
-                        <div className="text-[13px] font-bold text-slate-700">{formatDate(r.date)}</div>
+                        {!sameDay && <div className="text-[13px] font-bold text-slate-700">{formatDate(r.date)}</div>}
                         <div className="text-[11px] text-slate-400">{timeOf(r.logged_at)}</div>
                       </td>
 
@@ -557,13 +575,20 @@ function PaymentsLedger({ profile }) {
                       </td>
 
                       <td className="px-3 py-2.5 align-top">
-                        <p className="font-display text-[13px] font-bold text-slate-900 leading-snug">{r.party_name}</p>
-                        {r.description && (
-                          <p className="mt-0.5 text-[12px] text-slate-500 leading-snug">{r.description}</p>
-                        )}
+                        {/* Particulars takes every pixel the fixed columns
+                            leave, which on a wide panel is a line that runs
+                            out of words long before it runs out of column.
+                            Capped, the slack becomes the gutter before the
+                            chips rather than a hole inside the sentence. */}
+                        <div className="max-w-[560px]">
+                          <p className="font-display text-[13px] font-bold text-slate-900 leading-snug">{r.party_name}</p>
+                          {r.description && (
+                            <p className="mt-0.5 text-[12px] text-slate-500 leading-snug">{r.description}</p>
+                          )}
+                        </div>
                       </td>
 
-                      <td className="px-3 py-2.5 align-top">
+                      <td className="px-3 py-2.5 align-top border-l border-slate-100">
                         <div className="flex flex-wrap items-center gap-1.5">
                           {/* The type chip says what happened; this one says
                               what the name in the row before it refers to.
@@ -591,10 +616,10 @@ function PaymentsLedger({ profile }) {
                           <div className="flex items-center gap-2">
                             <span className={'shrink-0 w-7 h-7 rounded-full inline-flex items-center justify-center text-[11px] font-bold ' + avatarTint(who)}
                               data-notranslate>{initials(who)}</span>
-                            <span className="min-w-0">
-                              <span className="block text-[12px] font-bold text-slate-700 truncate">{who}</span>
-                              <span className="block text-[11px] text-slate-400" data-notranslate>{timeOf(r.logged_at)}</span>
-                            </span>
+                            {/* The time was printed here and again in the
+                                date column two seconds to the left. It only
+                                needs saying once. */}
+                            <span className="min-w-0 text-[12px] font-bold text-slate-700 truncate">{who}</span>
                           </div>
                         ) : <span className="text-[12px] text-slate-300">—</span>}
                       </td>
