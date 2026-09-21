@@ -457,8 +457,36 @@
     will-change: transform;
   }
 
+  /* A loading placeholder: the shape of the thing that is coming, rather than
+     the word "Loading". A sheen travels across it, which is what says the page
+     is working — a static grey block is indistinguishable from a page that has
+     given up.
+
+     Two stops of white over the grey rather than a gradient across the whole
+     width, so the band reads as a highlight passing over a surface instead of
+     the surface itself changing colour. */
+  @keyframes ambria-skeleton-sheen {
+    from { background-position: 200% 0; }
+    to   { background-position: -200% 0; }
+  }
+  .ambria-skeleton {
+    border-radius: 0.375rem;
+    background-color: var(--color-slate-200);
+    background-image: linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0) 20%,
+      rgba(255, 255, 255, 0.65) 50%,
+      rgba(255, 255, 255, 0) 80%
+    );
+    background-size: 200% 100%;
+    background-repeat: no-repeat;
+    animation: ambria-skeleton-sheen 1.4s ease-in-out infinite;
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .ambria-slide-left, .ambria-slide-right, .ambria-rise { animation: none; }
+    /* A skeleton still shows the shape; only the sheen stops. */
+    .ambria-skeleton { animation: none; }
     /* Decoration is the first thing to stop when someone asks for less
        motion — nothing is communicated by it. */
     .ambria-wave-slow, .ambria-wave-fast, .ambria-wave-drift, .ambria-glow-drift,

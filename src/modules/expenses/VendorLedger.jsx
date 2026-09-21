@@ -86,6 +86,44 @@ function BalancePill({ paise, large }) {
   )
 }
 
+// The card that is coming, before it is here: the same grid, the same box, and
+// a bar where each line of it will be. A sentence saying "Loading" tells you
+// only that something is happening; this also says what, and how much of it, so
+// the page does not jump when the answer lands.
+//
+// The bars are not all one width. A column of identical grey lines reads as a
+// pattern rather than as a list of names — the point of a skeleton is that it
+// looks like content it has not got yet.
+var SKELETON_ROWS = [
+  { name: 'w-[42%]', pill: 'w-[74px]', chips: ['w-[68px]'], notes: 'w-[38%]', facts: 'w-[62%]' },
+  { name: 'w-[58%]', pill: 'w-[92px]', chips: ['w-[68px]', 'w-[84px]'], notes: 'w-[46%]', facts: 'w-[70%]' },
+  { name: 'w-[35%]', pill: 'w-[62px]', chips: [], notes: '', facts: 'w-[40%]' },
+  { name: 'w-[64%]', pill: 'w-[86px]', chips: ['w-[84px]'], notes: 'w-[52%]', facts: 'w-[58%]' },
+  { name: 'w-[48%]', pill: 'w-[70px]', chips: ['w-[68px]'], notes: '', facts: 'w-[66%]' },
+  { name: 'w-[54%]', pill: 'w-[96px]', chips: ['w-[68px]', 'w-[84px]'], notes: 'w-[40%]', facts: 'w-[74%]' },
+]
+
+function VendorCardSkeleton({ shape }) {
+  return (
+    <div aria-hidden="true" className="bg-white border border-slate-200 rounded-2xl p-4">
+      <div className="flex items-center gap-3">
+        <span className={'ambria-skeleton h-[17px] ' + shape.name} />
+        <span className="flex-1" />
+        <span className={'ambria-skeleton h-8 rounded-full ' + shape.pill} />
+      </div>
+      {shape.chips.length > 0 && (
+        <div className="mt-2 flex gap-1.5">
+          {shape.chips.map(function (c, i) { return <span key={i} className={'ambria-skeleton h-6 ' + c} /> })}
+        </div>
+      )}
+      {shape.notes && <span className={'ambria-skeleton mt-2.5 block h-[13px] ' + shape.notes} />}
+      <div className="mt-3.5 pt-3 border-t border-slate-100">
+        <span className={'ambria-skeleton block h-[13px] ' + shape.facts} />
+      </div>
+    </div>
+  )
+}
+
 // A figure, what it is, and the glyph that says which. The number carries the
 // colour; the tile around it does not.
 //
@@ -155,7 +193,12 @@ function Tile({ icon, tone, label, value, valueClass, wide, badge, active, onCli
           has the tile to itself it does not need to, and five small numbers
           next to one large one read as five lesser facts rather than as the
           same fact six times. */}
-      <p className={'font-display font-extrabold tabular-nums leading-none whitespace-nowrap ' + (wide ? 'text-[25px] ' : 'text-[23px] ') + valueClass} data-notranslate>{value}</p>
+      {/* A bar rather than an em dash while the figure is unknown: the dash
+          is a character, so it reads as a value that happens to be blank,
+          and it does not say the page is still working. */}
+      {value === null
+        ? <span aria-hidden="true" className={'ambria-skeleton block ' + (wide ? 'h-[25px] w-[58%]' : 'h-[23px] w-[70%]')} />
+        : <p className={'font-display font-extrabold tabular-nums leading-none whitespace-nowrap ' + (wide ? 'text-[25px] ' : 'text-[23px] ') + valueClass} data-notranslate>{value}</p>}
       {children}
     </>
   )
@@ -927,8 +970,12 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
             you two different things, and the one in the larger type is wrong. */}
         <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
           <Tile wide icon="wallet" tone="bg-amber-50 text-amber-600" label="Total Outstanding"
-            value={loading ? '—' : formatPoints(totalOutstanding)} valueClass={loading ? 'text-slate-300' : outstandingClass}>
-            {(totalCash !== 0 || totalBank !== 0) && (
+            value={loading ? null : formatPoints(totalOutstanding)} valueClass={outstandingClass}>
+            {/* Held back with the figure above it. Gated only on the
+                numbers, this line appeared the moment the rows landed
+                while the tile over it was still a bar — half the tile
+                placeholder and half of it real. */}
+            {!loading && (totalCash !== 0 || totalBank !== 0) && (
               <div className="mt-3 pt-3 border-t border-slate-100 flex flex-wrap items-center gap-y-1 text-[12.5px] text-slate-500">
                 <Fact first icon="banknote" label="Cash" value={formatPoints(totalCash)} />
                 <Fact icon="bank" label="Bank" value={formatPoints(totalBank)} />
@@ -936,16 +983,16 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
             )}
           </Tile>
           <Tile icon="list" tone="bg-indigo-50 text-indigo-600" label="All vendors"
-            value={loading ? '—' : activeVendors.length} valueClass={loading ? 'text-slate-300' : ('text-indigo-700')}
+            value={loading ? null : activeVendors.length} valueClass={'text-indigo-700'}
             active={statusFilter === 'all'} onClick={function () { setStatusFilter('all') }} />
           <Tile icon="clock" tone="bg-rose-50 text-rose-600" label="Overdue Vendors"
-            value={loading ? '—' : overdueVendors.length} valueClass={loading ? 'text-slate-300' : (overdueVendors.length > 0 ? 'text-rose-700' : 'text-slate-400')}
+            value={loading ? null : overdueVendors.length} valueClass={overdueVendors.length > 0 ? 'text-rose-700' : 'text-slate-400'}
             active={statusFilter === 'overdue'} onClick={function () { setStatusFilter('overdue') }} />
           <Tile icon="checkCircle" tone="bg-emerald-50 text-emerald-600" label="With Balance"
-            value={loading ? '—' : vendorsWithBalance} valueClass={loading ? 'text-slate-300' : (vendorsWithBalance > 0 ? 'text-emerald-700' : 'text-slate-400')}
+            value={loading ? null : vendorsWithBalance} valueClass={vendorsWithBalance > 0 ? 'text-emerald-700' : 'text-slate-400'}
             active={statusFilter === 'with_balance'} onClick={function () { setStatusFilter('with_balance') }} />
           <Tile icon="fileText" tone="bg-amber-50 text-amber-600" label="Incomplete"
-            value={loading ? '—' : incompleteCount} valueClass={loading ? 'text-slate-300' : (incompleteCount > 0 ? 'text-amber-700' : 'text-slate-400')}
+            value={loading ? null : incompleteCount} valueClass={incompleteCount > 0 ? 'text-amber-700' : 'text-slate-400'}
             active={statusFilter === 'incomplete'} onClick={function () { setStatusFilter('incomplete') }} />
         </div>
 
@@ -1025,7 +1072,11 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
         </div>
 
         {loading ? (
-          <p className="text-slate-400 text-sm text-center py-12">Loading vendors...</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+            {SKELETON_ROWS.map(function (shape, i) {
+              return <VendorCardSkeleton key={i} shape={shape} />
+            })}
+          </div>
         ) : sorted.length === 0 ? (
           <p className="text-slate-400 text-sm text-center py-12">
             {vendors.length === 0 ? 'No vendors yet' : 'No vendors match your filter'}
