@@ -189,18 +189,19 @@ var REF_TYPE_LABELS = {
 var CHIP = 'text-[10px] font-bold uppercase px-1.5 py-0.5 rounded border bg-white '
 var CHIP_NEUTRAL = 'text-slate-700 border-slate-300'
 
+// The hues these chips have always had — only the fill is gone.
 var REF_TYPE_TONES = {
-  expense: 'text-rose-700 border-rose-300',
-  expense_refund: 'text-emerald-700 border-emerald-300',
+  expense: 'text-red-700 border-red-300',
+  expense_refund: 'text-green-700 border-green-300',
   transfer: 'text-blue-700 border-blue-300',
   issued: 'text-purple-700 border-purple-300',
   deducted: 'text-orange-700 border-orange-300',
   collection: 'text-emerald-700 border-emerald-300',
   collection_cancel: 'text-rose-700 border-rose-300',
-  opening: 'text-slate-700 border-slate-300',
-  vendor_payment: 'text-rose-700 border-rose-300',
+  opening: 'text-gray-700 border-gray-300',
+  vendor_payment: 'text-red-700 border-red-300',
   vendor_deduction: 'text-amber-700 border-amber-300',
-  salary_payment: 'text-rose-700 border-rose-300',
+  salary_payment: 'text-red-700 border-red-300',
   salary_adjustment: 'text-amber-700 border-amber-300',
 }
 

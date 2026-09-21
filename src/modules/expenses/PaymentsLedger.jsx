@@ -22,13 +22,16 @@ import { getReceiptUrl, isVoiceNotePath } from '../../lib/uploadHelper'
 var CHIP = 'inline-flex items-center h-[22px] px-2 rounded-md border bg-white text-[11px] font-bold '
 var CHIP_NEUTRAL = 'text-slate-700 border-slate-300'
 
+// The hues are the ones these chips have always had — only the fill is gone,
+// so the colour that used to wash the whole shape now runs the word and the
+// line around it.
 var TYPE_META = {
-  vendor_payment:     { label: 'Vendor Payment',           direction: 'out', tone: 'text-rose-700 border-rose-300' },
+  vendor_payment:     { label: 'Vendor Payment',           direction: 'out', tone: 'text-red-700 border-red-300' },
   vendor_deduction:   { label: 'Vendor Deduction',         direction: 'out', tone: 'text-amber-700 border-amber-300' },
-  salary_payment:     { label: 'Salary Payment',           direction: 'out', tone: 'text-rose-700 border-rose-300' },
+  salary_payment:     { label: 'Salary Payment',           direction: 'out', tone: 'text-red-700 border-red-300' },
   salary_adjustment:  { label: 'Salary Adjustment',        direction: 'out', tone: 'text-amber-700 border-amber-300' },
-  collection:         { label: 'Event Collection',         direction: 'in',  tone: 'text-emerald-700 border-emerald-300' },
-  epc:                { label: 'Extra Plate Collection',   direction: 'in',  tone: 'text-emerald-700 border-emerald-300' },
+  collection:         { label: 'Event Collection',         direction: 'in',  tone: 'text-green-700 border-green-300' },
+  epc:                { label: 'Extra Plate Collection',   direction: 'in',  tone: 'text-green-700 border-green-300' },
   expense:            { label: 'Expense (Cash)',           direction: 'out', tone: 'text-orange-700 border-orange-300' },
   expense_refund:     { label: 'Expense Refund',           direction: 'in',  tone: 'text-emerald-700 border-emerald-300' },
 }
