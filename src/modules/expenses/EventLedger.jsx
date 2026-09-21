@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
-import { formatPoints, formatDate, formatDateTime } from '../../lib/format'
+import { formatPoints, formatDate, formatDateTime, titleCase } from '../../lib/format'
 import EventCalendar from '../../components/ui/EventCalendar'
 import ImageLightbox from '../../components/ui/ImageLightbox'
 import Icon from '../../components/ui/Icon'
@@ -539,9 +539,9 @@ function EventLedger(props) {
             <col style={{ width: '112px' }} />
             <col style={{ width: '112px' }} />
             <col />
-            <col style={{ width: '160px' }} />
+            <col style={{ width: '204px' }} />
           </colgroup>
-          <thead className="bg-slate-50 border-b border-slate-200">
+          <thead className="sticky top-0 z-10 bg-slate-50 border-b border-slate-200">
             <tr>
               <th className="px-3 py-2.5">
                 <input type="checkbox" checked={allTicked} aria-label="Select all on this page"
@@ -568,9 +568,8 @@ function EventLedger(props) {
               {['In', 'Out'].map(function (h) {
                 return <th key={h} className="px-3 py-2.5 text-right text-[10.5px] font-bold uppercase tracking-[0.06em] text-slate-500 whitespace-nowrap">{h}</th>
               })}
-              {['Description', 'Added By'].map(function (h) {
-                return <th key={h} className="px-3 py-2.5 text-left text-[10.5px] font-bold uppercase tracking-[0.06em] text-slate-500 whitespace-nowrap">{h}</th>
-              })}
+              <th className="px-3 py-2.5 text-left text-[10.5px] font-bold uppercase tracking-[0.06em] text-slate-500 whitespace-nowrap">Description</th>
+              <th className="px-3 py-2.5 text-right text-[10.5px] font-bold uppercase tracking-[0.06em] text-slate-500 whitespace-nowrap border-l border-slate-200">Added By</th>
             </tr>
           </thead>
           <tbody>
@@ -632,36 +631,36 @@ function EventLedger(props) {
                       )}
                     </div>
                   </td>
-                  <td className="px-3 py-2.5 align-top text-[12.5px] text-slate-600 whitespace-nowrap">{e.payment_mode || '—'}</td>
+                  <td className="px-3 py-2.5 align-top text-[12.5px] text-slate-600 whitespace-nowrap">{e.payment_mode ? titleCase(e.payment_mode) : '—'}</td>
                   <td className="px-3 py-2.5 align-top text-right text-[13px] font-bold tabular-nums whitespace-nowrap" data-notranslate>
                     {e.direction === 'in'
                       ? <span className="text-emerald-700">{formatPoints(e.amount_paise)}</span>
-                      : <span className="text-slate-300">—</span>}
+                      : <span className="text-slate-200">—</span>}
                   </td>
                   <td className="px-3 py-2.5 align-top text-right text-[13px] font-bold tabular-nums whitespace-nowrap" data-notranslate>
                     {e.direction === 'out'
                       ? <span className="text-rose-700">{formatPoints(e.amount_paise)}</span>
-                      : <span className="text-slate-300">—</span>}
+                      : <span className="text-slate-200">—</span>}
                   </td>
                   <td className="px-3 py-2.5 align-top">
                     <div className="flex items-start gap-2">
                       {multiContract && contractByEventId[e.event_id] && contractByEventId[e.event_id].department && (
                         <span className="shrink-0 mt-px"><DeptChip name={contractByEventId[e.event_id].department} /></span>
                       )}
-                      <p className="min-w-0 text-[12.5px] text-slate-700 leading-snug">{e.description || '—'}</p>
+                      <p className="min-w-0 max-w-[620px] text-[12.5px] text-slate-700 leading-snug">{e.description || '—'}</p>
                     </div>
                   </td>
-                  <td className="px-3 py-2.5 align-top">
+                  <td className="px-3 py-2.5 align-top border-l border-slate-100">
                     {person ? (
-                      <div className="flex items-center gap-2">
-                        <span className={'shrink-0 w-7 h-7 rounded-full inline-flex items-center justify-center text-[10.5px] font-bold ' + avatarTint(person)}
-                          data-notranslate>{initials(person)}</span>
-                        <span className="min-w-0">
+                      <div className="flex items-center justify-end gap-2">
+                        <span className="min-w-0 text-right">
                           <span className="block text-[12px] font-semibold text-slate-700 truncate">{person}</span>
                           <span className="block text-[10.5px] text-slate-400" data-notranslate>{formatDate(e.created_at)}</span>
                         </span>
+                        <span className={'shrink-0 w-7 h-7 rounded-full inline-flex items-center justify-center text-[10.5px] font-bold ' + avatarTint(person)}
+                          data-notranslate>{initials(person)}</span>
                       </div>
-                    ) : <span className="text-[12px] text-slate-400">—</span>}
+                    ) : <span className="block text-right text-[12px] text-slate-400">—</span>}
                   </td>
                 </tr>
               )
