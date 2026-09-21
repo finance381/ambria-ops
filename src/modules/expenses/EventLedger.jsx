@@ -17,6 +17,19 @@ var ENTRY_TYPES = [
   { key: 'expense', label: 'Expenses' },
 ]
 
+// The column reads the database's own word for the row — 'lms_advance' — which
+// is a column name, not a label. The filter above it already says "LMS
+// Advances"; this is the singular of the same thing.
+var ENTRY_LABELS = {
+  collection: 'Collection',
+  lms_advance: 'LMS Advance',
+  expense: 'Expense',
+  refund: 'Refund',
+}
+function entryLabel(t) {
+  return ENTRY_LABELS[t] || String(t || '').replace(/_/g, ' ')
+}
+
 // The five faces of one event. Plates and documents used to be a fifth and a
 // sixth filter pill on the transactions table, which is where you would look
 // for them last: neither is a transaction, and both answer a question — how
@@ -391,15 +404,30 @@ function EventLedger(props) {
     if (filteredEntries().length === 0) return <p className="text-[12.5px] text-slate-400 p-8 text-center">No entries</p>
     return (
       <div className="overflow-x-auto ambria-thin-scroll">
-        <table className="w-full">
+        {/* Left to itself the browser splits a six-column table by content, and
+            four short columns of dates, chips and amounts each took a sixth of
+            a very wide panel — a hand's width of nothing between "cash" and the
+            figure it belongs to, while the description, the one column that
+            wants room, was squeezed against the right edge. Everything but the
+            description is pinned to what it actually needs and the description
+            takes the rest. */}
+        <table className="w-full min-w-[840px]">
+          <colgroup>
+            <col style={{ width: '160px' }} />
+            <col style={{ width: '186px' }} />
+            <col style={{ width: '96px' }} />
+            <col style={{ width: '116px' }} />
+            <col style={{ width: '116px' }} />
+            <col />
+          </colgroup>
           <thead className="bg-slate-50 border-b border-slate-200">
             <tr>
-              <th className="px-3 py-2.5 text-left text-[10.5px] font-bold uppercase tracking-[0.06em] text-slate-500">Date</th>
-              <th className="px-3 py-2.5 text-left text-[10.5px] font-bold uppercase tracking-[0.06em] text-slate-500">Type</th>
-              <th className="px-3 py-2.5 text-left text-[10.5px] font-bold uppercase tracking-[0.06em] text-slate-500">Mode</th>
-              <th className="px-3 py-2.5 text-right text-[10.5px] font-bold uppercase tracking-[0.06em] text-slate-500">In</th>
-              <th className="px-3 py-2.5 text-right text-[10.5px] font-bold uppercase tracking-[0.06em] text-slate-500">Out</th>
-              <th className="px-3 py-2.5 text-left text-[10.5px] font-bold uppercase tracking-[0.06em] text-slate-500">Description</th>
+              <th className="px-3 py-2.5 text-left text-[10.5px] font-bold uppercase tracking-[0.06em] text-slate-500 whitespace-nowrap">Date</th>
+              <th className="px-3 py-2.5 text-left text-[10.5px] font-bold uppercase tracking-[0.06em] text-slate-500 whitespace-nowrap">Type</th>
+              <th className="px-3 py-2.5 text-left text-[10.5px] font-bold uppercase tracking-[0.06em] text-slate-500 whitespace-nowrap">Mode</th>
+              <th className="px-3 py-2.5 text-right text-[10.5px] font-bold uppercase tracking-[0.06em] text-slate-500 whitespace-nowrap">In</th>
+              <th className="px-3 py-2.5 text-right text-[10.5px] font-bold uppercase tracking-[0.06em] text-slate-500 whitespace-nowrap">Out</th>
+              <th className="px-3 py-2.5 text-left text-[10.5px] font-bold uppercase tracking-[0.06em] text-slate-500 whitespace-nowrap">Description</th>
             </tr>
           </thead>
           <tbody>
@@ -414,52 +442,64 @@ function EventLedger(props) {
                     else if (isCollRow) setCollDetail({ row: e })
                   }}
                   className={'border-b border-slate-100 last:border-b-0' + (isClickable ? ' cursor-pointer hover:bg-indigo-50/40 transition-colors' : '')}>
-                  <td className="px-3 py-2.5 text-[12px] text-slate-600 whitespace-nowrap" data-notranslate>
-                    {e._entryDate ? formatDate(e._entryDate) : formatDate(e.created_at)}
+                  <td className="px-3 py-2.5 align-top whitespace-nowrap" data-notranslate>
+                    <div className="text-[12.5px] font-semibold text-slate-700">
+                      {e._entryDate ? formatDate(e._entryDate) : formatDate(e.created_at)}
+                    </div>
                     <div className="text-[10.5px] text-slate-400">Logged {formatDateTime(e.created_at)}</div>
                   </td>
-                  <td className="px-3 py-2.5">
-                    <span className={'inline-block px-2 py-0.5 rounded-md text-[11px] font-semibold ' + badgeClass(e.entry_type, e.direction)}>
-                      {e.entry_type}
-                    </span>
-                    {isExpRow && (e._checkedBy || canMarkChecked) && (
-                      <span className="ml-1.5 inline-block" onClick={function (ev) { ev.stopPropagation() }}>
-                        <CheckedStamp
-                          checked={!!e._checkedBy}
-                          checkedAt={e._checkedAt}
-                          canToggle={canMarkChecked}
-                          canUncheck={e._checkedBy === profile?.id || isSysAdmin}
-                          busy={checkingExpId === Number(e.reference_id)}
-                          onToggle={function () { toggleExpenseCheck(Number(e.reference_id)) }}
-                        />
+                  <td className="px-3 py-2.5 align-top">
+                    <div className="flex items-center gap-1.5">
+                      <span className={'shrink-0 inline-flex items-center h-[22px] px-2 rounded-md text-[11px] font-bold ' + badgeClass(e.entry_type, e.direction)}>
+                        {entryLabel(e.entry_type)}
                       </span>
-                    )}
-                    {isCollRow && (e._wt.checked_by || canMarkChecked) && (
-                      <span className="ml-1.5 inline-block" onClick={function (ev) { ev.stopPropagation() }}>
-                        <CheckedStamp
-                          checked={!!e._wt.checked_by}
-                          checkedAt={e._wt.checked_at}
-                          canToggle={canMarkChecked}
-                          canUncheck={e._wt.checked_by === profile?.id || isSysAdmin}
-                          busy={checkingTxnId === e.reference_id}
-                          onToggle={function () { toggleCollectionCheck(e.reference_id) }}
-                        />
-                      </span>
-                    )}
+                      {isExpRow && (e._checkedBy || canMarkChecked) && (
+                        <span className="shrink-0 inline-flex" onClick={function (ev) { ev.stopPropagation() }}>
+                          <CheckedStamp
+                            checked={!!e._checkedBy}
+                            checkedAt={e._checkedAt}
+                            canToggle={canMarkChecked}
+                            canUncheck={e._checkedBy === profile?.id || isSysAdmin}
+                            busy={checkingExpId === Number(e.reference_id)}
+                            onToggle={function () { toggleExpenseCheck(Number(e.reference_id)) }}
+                          />
+                        </span>
+                      )}
+                      {isCollRow && (e._wt.checked_by || canMarkChecked) && (
+                        <span className="shrink-0 inline-flex" onClick={function (ev) { ev.stopPropagation() }}>
+                          <CheckedStamp
+                            checked={!!e._wt.checked_by}
+                            checkedAt={e._wt.checked_at}
+                            canToggle={canMarkChecked}
+                            canUncheck={e._wt.checked_by === profile?.id || isSysAdmin}
+                            busy={checkingTxnId === e.reference_id}
+                            onToggle={function () { toggleCollectionCheck(e.reference_id) }}
+                          />
+                        </span>
+                      )}
+                    </div>
                   </td>
-                  <td className="px-3 py-2.5 text-[12px] text-slate-700">{e.payment_mode || '—'}</td>
-                  <td className="px-3 py-2.5 text-right text-[12.5px] font-semibold tabular-nums text-emerald-700" data-notranslate>
-                    {e.direction === 'in' ? formatPoints(e.amount_paise) : ''}
+                  <td className="px-3 py-2.5 align-top text-[12.5px] text-slate-600 whitespace-nowrap">{e.payment_mode || '—'}</td>
+                  <td className="px-3 py-2.5 align-top text-right text-[13px] font-bold tabular-nums whitespace-nowrap" data-notranslate>
+                    {e.direction === 'in'
+                      ? <span className="text-emerald-700">{formatPoints(e.amount_paise)}</span>
+                      : <span className="text-slate-300">—</span>}
                   </td>
-                  <td className="px-3 py-2.5 text-right text-[12.5px] font-semibold tabular-nums text-rose-700" data-notranslate>
-                    {e.direction === 'out' ? formatPoints(e.amount_paise) : ''}
+                  <td className="px-3 py-2.5 align-top text-right text-[13px] font-bold tabular-nums whitespace-nowrap" data-notranslate>
+                    {e.direction === 'out'
+                      ? <span className="text-rose-700">{formatPoints(e.amount_paise)}</span>
+                      : <span className="text-slate-300">—</span>}
                   </td>
-                  <td className="px-3 py-2.5 text-[12px] text-slate-700">
-                    {multiContract && contractByEventId[e.event_id] && contractByEventId[e.event_id].department && (
-                      <DeptChip name={contractByEventId[e.event_id].department} className="mr-2" />
-                    )}
-                    {e.description || '—'}
-                    {e._creatorName && <div className="text-[10.5px] text-slate-400 mt-0.5">by {e._creatorName}</div>}
+                  <td className="px-3 py-2.5 align-top">
+                    <div className="flex items-start gap-2">
+                      {multiContract && contractByEventId[e.event_id] && contractByEventId[e.event_id].department && (
+                        <span className="shrink-0 mt-px"><DeptChip name={contractByEventId[e.event_id].department} /></span>
+                      )}
+                      <div className="min-w-0">
+                        <p className="text-[12.5px] text-slate-700 leading-snug">{e.description || '—'}</p>
+                        {e._creatorName && <p className="text-[11px] text-slate-400 mt-0.5">by {e._creatorName}</p>}
+                      </div>
+                    </div>
                   </td>
                 </tr>
               )
@@ -475,7 +515,19 @@ function EventLedger(props) {
     if (plateEvents.length === 0) return <p className="text-[12.5px] text-slate-400 p-8 text-center">No plate activity for this event</p>
     return (
       <div className="overflow-x-auto ambria-thin-scroll">
-        <table className="w-full">
+        {/* Same reasoning as the entries table: six short columns and one that
+            wants the room, so only Notes is left to take what is left. */}
+        <table className="w-full min-w-[880px]">
+          <colgroup>
+            <col style={{ width: '120px' }} />
+            <col style={{ width: '150px' }} />
+            <col style={{ width: '86px' }} />
+            <col style={{ width: '96px' }} />
+            <col style={{ width: '92px' }} />
+            <col style={{ width: '112px' }} />
+            <col style={{ width: '132px' }} />
+            <col />
+          </colgroup>
           <thead className="bg-slate-50 border-b border-slate-200">
             <tr>
               {['Date', 'Type'].map(function (h) {
@@ -731,10 +783,19 @@ function EventLedger(props) {
             {ENTRY_TYPES.map(function (t) {
               var active = filter === t.key
               var n = t.key === 'all' ? entries.length : entries.filter(function (e) { return e.entry_type === t.key }).length
+              // A pill that filters to nothing is a dead end — it can only ever
+              // produce "No entries". It still shows, because a zero is an
+              // answer, but it stops inviting the press.
+              var empty = n === 0 && t.key !== 'all'
               return (
                 <button key={t.key} type="button" onClick={function () { setFilter(t.key) }} aria-pressed={active}
+                  disabled={empty}
                   className={'inline-flex items-center gap-1.5 h-8 px-3 rounded-xl text-[12.5px] font-bold transition-colors ' +
-                    (active ? 'bg-indigo-600 text-white' : 'bg-white border border-slate-300 text-slate-600 hover:bg-slate-50 hover:text-slate-900')}>
+                    (active
+                      ? 'bg-indigo-600 text-white'
+                      : empty
+                        ? 'bg-white border border-slate-200 text-slate-400 cursor-default'
+                        : 'bg-white border border-slate-300 text-slate-600 hover:bg-slate-50 hover:text-slate-900')}>
                   {t.label}
                   <span data-notranslate className={'tabular-nums ' + (active ? 'text-white/70' : 'text-slate-400')}>{n}</span>
                 </button>
