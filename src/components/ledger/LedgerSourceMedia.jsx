@@ -1,4 +1,6 @@
+import { useState } from 'react'
 import { supabase } from '../../lib/supabase'
+import ImageLightbox from '../ui/ImageLightbox'
 
 var AUDIO_EXT = ['webm', 'mp3', 'm4a', 'ogg', 'wav', 'aac']
 
@@ -11,6 +13,7 @@ function extOf(path) {
 }
 
 function LedgerSourceMedia({ paths }) {
+  var [preview, setPreview] = useState(null)
   if (!paths || paths.length === 0) return null
 
   var items = paths.map(function (p) {
@@ -31,15 +34,16 @@ function LedgerSourceMedia({ paths }) {
           )
         }
         return (
-          <a key={it.path + '_' + i} href={it.url} target="_blank" rel="noopener noreferrer"
+          <button key={it.path + '_' + i} type="button" onClick={function () { setPreview(it.url) }}
             className="block w-10 h-10 rounded border border-gray-200 overflow-hidden hover:border-indigo-400 hover:shadow-sm transition-all"
             title="Source expense receipt — click to view">
             <img src={it.url} alt={'receipt ' + (i + 1)}
               className="w-full h-full object-cover"
               loading="lazy" />
-          </a>
+          </button>
         )
       })}
+      {preview && <ImageLightbox url={preview} onClose={function () { setPreview(null) }} />}
     </div>
   )
 }
