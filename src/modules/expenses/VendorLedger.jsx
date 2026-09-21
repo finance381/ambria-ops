@@ -1423,6 +1423,41 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
               if (!isExpRow) return
               openExpenseDetail(Number(e.ref_id))
             }
+
+            // An expense-linked row carries the expense's own check; anything
+            // else carries the ledger row's. Worked out once so the stamp and
+            // the un-checked prompt cannot drift apart.
+            var checkedProps = isExpRow && e._expChecked
+              ? {
+                checked: !!e._expChecked.checked_by,
+                checkerName: e._expCheckedByName,
+                checkedAt: e._expChecked.checked_at,
+                canUncheck: e._expChecked.checked_by === profile.id || isAdmin,
+                busy: checkingEntryId === Number(e.ref_id),
+                onToggle: function (ev) { ev.stopPropagation(); toggleExpenseCheck(Number(e.ref_id)) },
+              }
+              : {
+                checked: !!e.checked_by,
+                checkerName: e._checkedByName,
+                checkedAt: e.checked_at,
+                canUncheck: e.checked_by === profile.id || isAdmin,
+                busy: checkingEntryId === e.id,
+                onToggle: function (ev) { ev.stopPropagation(); toggleLedgerCheck(e.id) },
+              }
+            function renderChecked(variant) {
+              return (
+                <CheckedStamp
+                  variant={variant}
+                  checked={checkedProps.checked}
+                  checkerName={checkedProps.checkerName}
+                  checkedAt={checkedProps.checkedAt}
+                  canToggle={canMarkChecked}
+                  canUncheck={checkedProps.canUncheck}
+                  busy={checkedProps.busy}
+                  onToggle={checkedProps.onToggle}
+                />
+              )
+            }
             return (
               <div key={e.id}
                 onClick={handleRowClick}
@@ -1511,17 +1546,32 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
                       <LedgerSourceMedia paths={e._sourceReceipts} />
                     </div>
                   )}
-                  {e._breakdown && (
-                    <button type="button" onClick={function (ev) { toggleEntryExpanded(e.id, ev) }}
-                      aria-expanded={!!expandedEntryIds[e.id]}
-                      className="mt-3 inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-slate-200 bg-white text-[12px] font-bold text-slate-600 hover:border-indigo-300 hover:text-indigo-700 hover:bg-indigo-50 transition-colors">
-                      {/* One chevron that turns, rather than swapping a
-                          right-pointing glyph for a down-pointing one: the turn
-                          is what says it is the same control in two states. */}
-                      <Icon name="chevronRight" size={13}
-                        className={"transition-transform duration-150 " + (expandedEntryIds[e.id] ? "rotate-90" : "")} />
-                      {expandedEntryIds[e.id] ? 'Hide details' : 'Amount & allocation details'}
-                    </button>
+                  {/* The disclosure and the stamp share the line, which is
+                      where the row's empty space was: a short button on the
+                      left and, on a checked entry, a lot of nothing to its
+                      right. The stamp is big because it is the one thing on
+                      the row you are meant to see from across a desk. */}
+                  {(e._breakdown || (!isDeleted && checkedProps.checked)) && (
+                    <div className="mt-3 flex items-center justify-between gap-4">
+                      {e._breakdown ? (
+                        <button type="button" onClick={function (ev) { toggleEntryExpanded(e.id, ev) }}
+                          aria-expanded={!!expandedEntryIds[e.id]}
+                          className="shrink-0 inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-slate-200 bg-white text-[12px] font-bold text-slate-600 hover:border-indigo-300 hover:text-indigo-700 hover:bg-indigo-50 transition-colors">
+                          {/* One chevron that turns, rather than swapping a
+                              right-pointing glyph for a down-pointing one: the
+                              turn is what says it is the same control in two
+                              states. */}
+                          <Icon name="chevronRight" size={13}
+                            className={"transition-transform duration-150 " + (expandedEntryIds[e.id] ? "rotate-90" : "")} />
+                          {expandedEntryIds[e.id] ? 'Hide details' : 'Amount & allocation details'}
+                        </button>
+                      ) : <span />}
+                      {!isDeleted && checkedProps.checked && (
+                        <span onClick={function (ev) { ev.stopPropagation() }}>
+                          {renderChecked('stamp')}
+                        </span>
+                      )}
+                    </div>
                   )}
                   {e._breakdown && !!expandedEntryIds[e.id] && (function () {
                     var b = e._breakdown
@@ -1628,32 +1678,10 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
                       </p>
                     )}
                   </div>
-                  {!isDeleted && isExpRow && e._expChecked && (
-                    <div className="flex justify-end">
-                      <CheckedStamp
-                        checked={!!e._expChecked.checked_by}
-                        checkerName={e._expCheckedByName}
-                        checkedAt={e._expChecked.checked_at}
-                        canToggle={canMarkChecked}
-                        canUncheck={e._expChecked.checked_by === profile.id || isAdmin}
-                        busy={checkingEntryId === Number(e.ref_id)}
-                        onToggle={function (ev) { ev.stopPropagation(); toggleExpenseCheck(Number(e.ref_id)) }}
-                      />
-                    </div>
-                  )}
-                  {!isDeleted && !isExpRow && (
-                    <div className="flex justify-end">
-                      <CheckedStamp
-                        checked={!!e.checked_by}
-                        checkerName={e._checkedByName}
-                        checkedAt={e.checked_at}
-                        canToggle={canMarkChecked}
-                        canUncheck={e.checked_by === profile.id || isAdmin}
-                        busy={checkingEntryId === e.id}
-                        onToggle={function (ev) { ev.stopPropagation(); toggleLedgerCheck(e.id) }}
-                      />
-                    </div>
-                  )}
+                  {/* The stamp left this column for the empty middle of the
+                      row. What stays here is the un-checked prompt, which is a
+                      chip and belongs with the other controls. */}
+                  {!isDeleted && !checkedProps.checked && renderChecked()}
                   {isAdmin && !isDeleted && (
                     <button onClick={function (ev) { ev.stopPropagation(); setReverseTarget(e.id) }}
                       // The same box as the Checked stamp beside it: they sit
