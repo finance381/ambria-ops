@@ -53,7 +53,11 @@ var TYPE_META = {
 var SOURCE_META = {
   vendor:     { label: 'Vendor',   dot: 'bg-violet-500',  cls: 'bg-white text-violet-700 border-violet-300' },
   salary:     { label: 'Employee', dot: 'bg-sky-500',     cls: 'bg-white text-sky-700 border-sky-300' },
-  collection: { label: 'Event',    dot: 'bg-emerald-500', cls: 'bg-white text-emerald-700 border-emerald-300' },
+  // Emerald is a green, and green is the mode chip two columns along on the
+  // same row. Amber is not a green, is not worn by anything an Event row
+  // carries — a collection's type chip is purple — and is not any of the
+  // other three parties.
+  collection: { label: 'Event',    dot: 'bg-amber-500',   cls: 'bg-white text-amber-700 border-amber-300' },
   // Staff rows always carry an orange "Expense (Cash)" chip beside this one,
   // and amber next to orange is two shades of the same idea sitting on the
   // same row. Fuchsia is nowhere near either, nor near the violet and sky
