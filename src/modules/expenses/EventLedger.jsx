@@ -7,7 +7,7 @@ import ImageLightbox from '../../components/ui/ImageLightbox'
 import Icon from '../../components/ui/Icon'
 import { hasPerm } from '../../lib/permissions'
 import { useExpenseDetailModal } from '../../hooks/useExpenseDetailModal.jsx'
-import { deptOrder, CARD, FIELD_SEARCH } from '../../lib/ui'
+import { deptOrder, deptCls, CARD, FIELD_SEARCH } from '../../lib/ui'
 import { avatarTint } from '../../lib/avatarTint'
 import { DeptChip } from '../../components/ui/Badge'
 import CheckedStamp from '../../components/ui/CheckedStamp'
@@ -783,87 +783,126 @@ function EventLedger(props) {
         </div>
       )}
 
-      <div className={CARD + ' p-4 @3xl:p-5'}>
-        <div className="flex items-start gap-4">
-          <span className="shrink-0 w-11 h-11 rounded-2xl bg-indigo-50 text-indigo-600 inline-flex items-center justify-center">
-            <Icon name="users" size={20} />
-          </span>
+      {/* A rail, a heading and a row of facts — not four lines down one side.
+          The date is what an event is filed under, so it leaves the text
+          entirely and becomes the block you read first; the facts that used to
+          be stacked sit on one line divided by rules, which is what a rule is
+          for. */}
+      <div className={CARD + ' overflow-hidden'}>
+        <div className="flex items-stretch">
+          {(function () {
+            var raw = eventDetail.function_date || eventDetail.contract_date
+            var d = raw ? new Date(String(raw).slice(0, 10) + 'T00:00:00') : null
+            if (!d || isNaN(d)) return null
+            return (
+              <div className="shrink-0 w-[92px] flex flex-col items-center justify-center gap-0.5 bg-slate-50 border-r border-slate-200 px-3 py-4">
+                <p data-notranslate className="font-display text-[30px] font-bold text-slate-900 leading-none tracking-[-0.02em] tabular-nums">
+                  {d.getDate()}
+                </p>
+                <p data-notranslate className="text-[12px] font-bold uppercase tracking-[0.08em] text-indigo-600">
+                  {SHORT_MONTHS[d.getMonth()]}
+                </p>
+                <p data-notranslate className="text-[11px] font-semibold text-slate-400 tabular-nums">
+                  {d.getFullYear()} · {SHORT_DAYS[d.getDay()]}
+                </p>
+              </div>
+            )
+          })()}
 
-          <div className="min-w-0 flex-1 space-y-1.5">
-            {/* The departments belong beside the name, not on a line of their
-                own: one small chip was taking a whole row of a very wide card,
-                and what kind of event it is reads as part of which event it
-                is. */}
-            <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
-              <h2 className="min-w-0 font-display text-[21px] font-bold text-slate-900 leading-tight tracking-[-0.015em]">
-                {eventDetail.event_name || 'Event'}
-                {eventDetail.client_name ? ' — ' + eventDetail.client_name : ''}
-              </h2>
-              {contracts.map(function (c) { return <DeptChip key={c.id} name={c.department} /> })}
+          <div className="min-w-0 flex-1 flex flex-wrap items-start justify-between gap-x-4 gap-y-3 px-4 py-4 @3xl:px-5">
+            <div className="min-w-0 flex-1 space-y-2">
+              <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
+                <h2 className="min-w-0 font-display text-[21px] font-bold text-slate-900 leading-tight tracking-[-0.015em]">
+                  {eventDetail.event_name || 'Event'}
+                  {eventDetail.client_name ? ' — ' + eventDetail.client_name : ''}
+                </h2>
+                {contracts.filter(function (c) { return c.contract_no }).map(function (c) {
+                  return (
+                    <span key={c.id} data-notranslate
+                      className="shrink-0 h-6 px-2 inline-flex items-center rounded-lg bg-slate-100 text-slate-600 text-[12px] font-bold">
+                      #{c.contract_no}
+                    </span>
+                  )
+                })}
+              </div>
+
+              {/* One line of facts, divided by rules. Stacked, each of these
+                  took a row of a very wide card to say two words. */}
+              {(function () {
+                var facts = []
+                if (eventDetail.venue_name) facts.push({ k: 'venue', icon: 'mapPin', text: eventDetail.venue_name })
+                if (eventDetail.session) facts.push({ k: 'session', icon: 'clock', text: eventDetail.session })
+                var heads = eventDetail.pax > 0 ? eventDetail.pax : (eventDetail.total_plates > 0 ? eventDetail.total_plates : 0)
+                if (heads > 0) {
+                  facts.push({
+                    k: 'heads', icon: 'users',
+                    text: heads + (eventDetail.pax > 0 ? ' Guests' : ' Plates'),
+                  })
+                }
+                if (eventDetail.created_user_name) facts.push({ k: 'by', icon: 'user', text: eventDetail.created_user_name })
+                if (facts.length === 0) return null
+                return (
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                    {facts.map(function (f, i) {
+                      return (
+                        <span key={f.k} className="flex items-center gap-3">
+                          {i > 0 && <span aria-hidden="true" className="w-px h-4 bg-slate-200" />}
+                          <span className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-slate-600">
+                            <Icon name={f.icon} size={14} className="shrink-0 text-slate-400" />
+                            <span>{f.text}</span>
+                          </span>
+                        </span>
+                      )
+                    })}
+                  </div>
+                )
+              })()}
+
+              {/* The departments are the one thing on this card a reader scans
+                  for rather than reads, so they get the size a target wants
+                  and their own line under the sentence they qualify. */}
+              <div className="flex flex-wrap items-center gap-1.5">
+                {contracts.map(function (c) {
+                  if (!c.department) return null
+                  return (
+                    <span key={c.id}
+                      className={'h-7 px-3 inline-flex items-center rounded-full border text-[12px] font-bold ' + deptCls(c.department)}>
+                      {c.department}
+                    </span>
+                  )
+                })}
+              </div>
             </div>
 
-            {(eventDetail.venue_name || eventDetail.session) && (
-              <p className="flex items-center gap-1.5 text-[13px] font-semibold text-slate-500">
-                <Icon name="mapPin" size={13} className="shrink-0 text-slate-400" />
-                <span className="min-w-0 truncate">
-                  {eventDetail.venue_name || ''}
-                  {eventDetail.venue_name && eventDetail.session ? ' · ' : ''}
-                  {eventDetail.session || ''}
-                </span>
-              </p>
-            )}
+            <div className="shrink-0 flex items-center gap-3">
+              {/* events.status is 'active' on every row in the table, so it
+                  cannot tell anyone anything. is_tentative can: it is the
+                  difference between a booking LMS has a contract for and one
+                  somebody entered by hand ahead of the paperwork. */}
+              <span className={'h-7 px-3 inline-flex items-center gap-1.5 rounded-full text-[11px] font-bold uppercase tracking-[0.08em] ' +
+                (eventDetail.is_tentative ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800')}>
+                <span aria-hidden="true" className={'w-1.5 h-1.5 rounded-full ' + (eventDetail.is_tentative ? 'bg-amber-500' : 'bg-emerald-500')} />
+                {eventDetail.is_tentative ? 'Tentative' : 'Confirmed'}
+              </span>
 
-            {/* Three facts separated by nothing but a gap read as three
-                columns of a table that is not there. A middle dot says they
-                are one line. */}
-            {(function () {
-              var facts = []
-              contracts.forEach(function (c) {
-                if (c.contract_no) facts.push(<span key={'n' + c.id} className="font-bold text-slate-600" data-notranslate>#{c.contract_no}</span>)
-              })
-              if (eventDetail.created_user_name) facts.push(<span key="by">by {eventDetail.created_user_name}</span>)
-              if (eventDetail.contract_date) facts.push(<span key="booked" data-notranslate>booked {longDate(eventDetail.contract_date)}</span>)
-              if (facts.length === 0) return null
-              return (
-                <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-slate-500">
-                  {facts.map(function (f, i) {
-                    return i === 0 ? f : [<span key={'s' + i} aria-hidden="true" className="text-slate-300">·</span>, f]
-                  })}
-                </p>
-              )
-            })()}
-          </div>
-
-          {/* The date is what an event is filed under and what everyone asks
-              for first, and it was the last grey item on the last grey line.
-              It takes the right edge, which the card had spare, with the one
-              thing the ledger cannot tell you from the numbers above it. */}
-          <div className="shrink-0 flex flex-col items-end gap-2">
-            {/* events.status is 'active' on every row in the table, so it
-                cannot tell anyone anything. is_tentative can: it is the
-                difference between a booking LMS has a contract for and one
-                somebody entered by hand ahead of the paperwork. */}
-            <span className={'h-6 px-2.5 inline-flex items-center rounded-lg text-[11px] font-bold uppercase tracking-[0.08em] ' +
-              (eventDetail.is_tentative ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700')}>
-              {eventDetail.is_tentative ? 'Tentative' : 'Confirmed'}
-            </span>
-            {(function () {
-              var raw = eventDetail.function_date || eventDetail.contract_date
-              if (!raw) return null
-              var d = new Date(String(raw).slice(0, 10) + 'T00:00:00')
-              if (isNaN(d)) return null
-              return (
-                <div className="w-[74px] rounded-xl bg-slate-100 px-2 py-2 text-center">
-                  <p data-notranslate className="font-display text-[21px] font-bold text-slate-900 leading-none tracking-[-0.01em] tabular-nums">
-                    {d.getDate()}
-                  </p>
-                  <p data-notranslate className="mt-1 text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500">
-                    {SHORT_MONTHS[d.getMonth()] + ' ' + d.getFullYear()}
-                  </p>
-                  <p className="text-[11px] font-semibold text-slate-400">{SHORT_DAYS[d.getDay()]}</p>
-                </div>
-              )
-            })()}
+              {/* The mockup puts an edit and an overflow menu here. Nothing on
+                  this screen edits an event — they arrive from LMS — so the
+                  slot carries the one thing it can actually open. */}
+              {(function () {
+                var withPdf = contracts.filter(function (c) { return c.pdf_link })[0]
+                if (!withPdf) return null
+                return (
+                  <>
+                    <span aria-hidden="true" className="w-px h-6 bg-slate-200" />
+                    <a href={withPdf.pdf_link} target="_blank" rel="noopener noreferrer"
+                      title="Open the LMS contract PDF" aria-label="Open the LMS contract PDF"
+                      className="w-9 h-9 inline-flex items-center justify-center rounded-xl border border-slate-200 text-slate-500 hover:text-indigo-700 hover:border-indigo-300 hover:bg-indigo-50 transition-colors">
+                      <Icon name="fileText" size={16} />
+                    </a>
+                  </>
+                )
+              })()}
+            </div>
           </div>
         </div>
       </div>
