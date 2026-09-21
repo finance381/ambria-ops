@@ -1187,7 +1187,7 @@ function EventLedger(props) {
                 <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-b border-slate-100">
                   <div className="min-w-0">
                     <p className="text-[10.5px] font-bold uppercase tracking-[0.1em] text-slate-400">This month</p>
-                    <p className="font-display text-[15px] font-bold text-slate-900" data-notranslate>
+                    <p className="font-display text-[17px] font-bold text-slate-900 tracking-[-0.01em]" data-notranslate>
                       {MONTHS[monthMonth] + ' ' + monthYear}
                     </p>
                   </div>
@@ -1216,8 +1216,8 @@ function EventLedger(props) {
                 {!monthLoading && monthDays.length === 0 && (
                   <div className="px-4 py-16 text-center">
                     <Icon name="calendar" size={26} className="mx-auto text-slate-300" />
-                    <p className="mt-2 text-[13px] font-semibold text-slate-500">Nothing booked this month</p>
-                    <p className="mt-0.5 text-[12px] text-slate-400">Use the arrows above the grid to look at another one.</p>
+                    <p className="mt-2 text-[13.5px] font-bold text-slate-600">Nothing booked this month</p>
+                    <p className="mt-0.5 text-[12.5px] font-medium text-slate-400">Use the arrows above the grid to look at another one.</p>
                   </div>
                 )}
 
@@ -1236,8 +1236,8 @@ function EventLedger(props) {
                               a column rather than inside a sentence. */}
                           <span className={'shrink-0 w-12 text-center rounded-xl py-1.5 ' +
                             (isToday ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600')}>
-                            <span data-notranslate className="block font-display text-[17px] font-bold leading-none">{when.getDate()}</span>
-                            <span className={'block mt-0.5 text-[10px] font-bold uppercase tracking-[0.06em] ' + (isToday ? 'text-white/75' : 'text-slate-400')}>
+                            <span data-notranslate className="block font-display text-[19px] font-bold leading-none">{when.getDate()}</span>
+                            <span className={'block mt-0.5 text-[10.5px] font-bold uppercase tracking-[0.06em] ' + (isToday ? 'text-white/80' : 'text-slate-500')}>
                               {SHORT_DAYS[when.getDay()]}
                             </span>
                           </span>
@@ -1246,11 +1246,11 @@ function EventLedger(props) {
                             {groups.slice(0, 3).map(function (g) {
                               return (
                                 <span key={g.key} className="flex items-center gap-2 min-w-0">
-                                  <span className="min-w-0 truncate text-[13px] font-semibold text-slate-800">
+                                  <span className="min-w-0 truncate text-[13.5px] font-bold text-slate-900">
                                     {g.event_name || 'Event'}{g.client_name ? ' — ' + g.client_name : ''}
                                   </span>
                                   {g.venue_name && (
-                                    <span className="shrink-0 inline-flex items-center gap-1 text-[11.5px] text-slate-500">
+                                    <span className="shrink-0 inline-flex items-center gap-1 text-[12px] font-semibold text-slate-500">
                                       <span className="w-1.5 h-1.5 rounded-full" style={{ background: venueColor(g.venue_name) }} />
                                       {g.venue_name}
                                     </span>
@@ -1283,7 +1283,7 @@ function EventLedger(props) {
                 <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-slate-100">
                   <div className="min-w-0">
                     <p className="text-[10.5px] font-bold uppercase tracking-[0.1em] text-slate-400">Events on</p>
-                    <p className="font-display text-[15px] font-bold text-slate-900 truncate" data-notranslate>{longDate(date)}</p>
+                    <p className="font-display text-[17px] font-bold text-slate-900 tracking-[-0.01em] truncate" data-notranslate>{longDate(date)}</p>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     {!monthLoading && (
@@ -1309,8 +1309,8 @@ function EventLedger(props) {
                 {!monthLoading && _groups.length === 0 && (
                   <div className="px-4 py-14 text-center">
                     <Icon name="calendar" size={26} className="mx-auto text-slate-300" />
-                    <p className="mt-2 text-[13px] font-semibold text-slate-500">No functions on this date</p>
-                    <p className="mt-0.5 text-[12px] text-slate-400">Pick another day on the calendar.</p>
+                    <p className="mt-2 text-[13.5px] font-bold text-slate-600">No functions on this date</p>
+                    <p className="mt-0.5 text-[12.5px] font-medium text-slate-400">Pick another day on the calendar.</p>
                   </div>
                 )}
 
@@ -1326,11 +1326,11 @@ function EventLedger(props) {
                         <button key={g.key} type="button" onClick={function () { selectGroup(g) }}
                           className="group w-full text-left px-4 py-3 flex items-start gap-3 hover:bg-indigo-50/40 transition-colors">
                           <span className="min-w-0 flex-1 space-y-1.5">
-                            <span className="block font-display text-[14px] font-bold text-slate-900 leading-snug truncate">
+                            <span className="block font-display text-[14.5px] font-bold text-slate-900 leading-snug truncate">
                               {g.event_name || 'Event'}{g.client_name ? ' — ' + g.client_name : ''}
                             </span>
                             {(g.venue_name || g.session) && (
-                              <span className="flex items-center gap-1.5 text-[12px] font-medium text-slate-500">
+                              <span className="flex items-center gap-1.5 text-[12.5px] font-semibold text-slate-500">
                                 <Icon name="mapPin" size={12} className="shrink-0 text-slate-400" />
                                 <span className="min-w-0 truncate">
                                   {g.venue_name || ''}{g.venue_name && g.session ? ' · ' : ''}{g.session || ''}
@@ -1341,7 +1341,7 @@ function EventLedger(props) {
                               {g.contracts.map(function (c) { return <DeptChip key={c.id} name={c.department} /> })}
                             </span>
                             {(numbers.length > 0 || creators.length > 0) && (
-                              <span className="block text-[11.5px] text-slate-400 truncate" data-notranslate>
+                              <span className="block text-[11.5px] font-semibold text-slate-400 truncate" data-notranslate>
                                 {numbers.map(function (c) { return '#' + c.contract_no }).join(' ')}
                                 {numbers.length > 0 && creators.length > 0 ? ' · ' : ''}
                                 {creators.length > 0 ? 'by ' + creators.join(', ') : ''}

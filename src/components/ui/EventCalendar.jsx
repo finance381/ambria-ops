@@ -13,7 +13,7 @@ import { venueColor } from '../../lib/venueColors'
 // the same rows to list the month beside the grid and to answer a date without
 // another round trip, and two components fetching the same month twice would
 // be one read too many and two chances to disagree.
-var DAY_NAMES = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
+var DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 var MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July',
   'August', 'September', 'October', 'November', 'December']
 var SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
@@ -65,8 +65,8 @@ function EventCalendar({ value, onChange, year, month, onMonthChange, byDate, lo
   return (
     <div className="bg-white border border-slate-200 rounded-2xl shadow-[0_1px_2px_rgba(15,23,42,0.05)] overflow-hidden">
       <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-slate-100">
-        <p className="inline-flex items-center gap-2 font-display text-[14px] font-bold text-slate-900">
-          <Icon name="calendar" size={15} className="text-indigo-500" />
+        <p className="inline-flex items-center gap-2 font-display text-[15px] font-bold text-slate-900">
+          <Icon name="calendar" size={16} className="text-indigo-500" />
           Event Date
         </p>
         {/* The card says what it is currently answering, so it still makes
@@ -82,7 +82,7 @@ function EventCalendar({ value, onChange, year, month, onMonthChange, byDate, lo
             onMonthChange(today.getFullYear(), today.getMonth())
             if (onChange) onChange(todayStr)
           }}
-          className="shrink-0 h-7 px-2.5 rounded-lg text-[12px] font-bold text-indigo-600 hover:bg-indigo-50 transition-colors">
+          className="shrink-0 h-7 px-2.5 rounded-lg text-[12.5px] font-bold text-indigo-600 hover:bg-indigo-50 transition-colors">
           Today
         </button>
       </div>
@@ -91,7 +91,7 @@ function EventCalendar({ value, onChange, year, month, onMonthChange, byDate, lo
           edges the two arrows sat a card's width apart from each other and
           from the name of the thing they move. */}
       <div className="flex items-center justify-between gap-2 px-4 pt-3.5">
-        <p className="font-display text-[15px] font-bold text-slate-900" data-notranslate>{MONTHS[month] + ' ' + year}</p>
+        <p className="font-display text-[17px] font-bold text-slate-900 tracking-[-0.01em]" data-notranslate>{MONTHS[month] + ' ' + year}</p>
         <div className="flex items-center gap-1">
           <button type="button" onClick={function () { step(-1) }} aria-label="Previous month"
             className="w-8 h-8 inline-flex items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors">
@@ -107,7 +107,7 @@ function EventCalendar({ value, onChange, year, month, onMonthChange, byDate, lo
       <div className="px-3 pb-3">
         <div className="grid grid-cols-7 mt-3 mb-1">
           {DAY_NAMES.map(function (dn) {
-            return <div key={dn} className="text-center text-[10px] font-bold uppercase tracking-[0.06em] text-slate-400 py-1">{dn}</div>
+            return <div key={dn} className="text-center text-[11px] font-bold uppercase tracking-[0.06em] text-slate-500 py-1.5">{dn}</div>
           })}
         </div>
 
@@ -116,7 +116,7 @@ function EventCalendar({ value, onChange, year, month, onMonthChange, byDate, lo
             if (!cell.current) {
               return (
                 <div key={'e' + idx} className="aspect-square flex items-center justify-center">
-                  <span className="text-[13px] text-slate-200" data-notranslate>{cell.day}</span>
+                  <span className="text-[14px] font-bold text-slate-200" data-notranslate>{cell.day}</span>
                 </div>
               )
             }
@@ -127,7 +127,7 @@ function EventCalendar({ value, onChange, year, month, onMonthChange, byDate, lo
 
             var tone
             if (isSelected) tone = 'bg-indigo-600 text-white shadow-[0_2px_10px_rgba(79,70,229,0.4)]'
-            else if (hasEvent) tone = 'bg-indigo-50 text-indigo-700 font-bold hover:bg-indigo-100 hover:shadow-[0_1px_6px_rgba(79,70,229,0.15)]'
+            else if (hasEvent) tone = 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100 hover:shadow-[0_1px_6px_rgba(79,70,229,0.15)]'
             else tone = 'text-slate-600 hover:bg-slate-100'
             // Today is a ring rather than a fill, so it can sit under a
             // selection or under an event tint without either one losing.
@@ -141,7 +141,7 @@ function EventCalendar({ value, onChange, year, month, onMonthChange, byDate, lo
               <button key={cell.dateStr} type="button"
                 onClick={function () { if (onChange) onChange(cell.dateStr) }}
                 aria-pressed={isSelected} aria-label={label} title={label}
-                className={'aspect-square w-full rounded-full flex flex-col items-center justify-center gap-[3px] text-[13.5px] font-semibold transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 ' + tone}>
+                className={'aspect-square w-full rounded-full flex flex-col items-center justify-center gap-[3px] text-[14px] font-bold transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 ' + tone}>
                 <span data-notranslate className="leading-none">{cell.day}</span>
                 {/* The dot row keeps its height whether or not there are dots,
                     so a day with events is not a pixel taller than the one
@@ -164,7 +164,7 @@ function EventCalendar({ value, onChange, year, month, onMonthChange, byDate, lo
         <div className="flex items-center gap-2.5 flex-wrap">
           {legendShown.map(function (v) {
             return (
-              <span key={v} title={v} className="inline-flex items-center gap-1.5 text-[11px] font-bold text-slate-500">
+              <span key={v} title={v} className="inline-flex items-center gap-1.5 text-[11.5px] font-bold text-slate-600">
                 <span className="w-2 h-2 rounded-full" style={{ background: venueColor(v) }} />
                 {venueCode(v)}
               </span>
@@ -179,7 +179,7 @@ function EventCalendar({ value, onChange, year, month, onMonthChange, byDate, lo
             <span className="text-[11px] font-semibold text-slate-400">No venues booked</span>
           )}
         </div>
-        <span className="shrink-0 text-[11px] font-semibold text-slate-400 tabular-nums" data-notranslate>
+        <span className="shrink-0 text-[11.5px] font-bold text-slate-500 tabular-nums" data-notranslate>
           {loading ? 'Loading…' : (total || 0) + ((total || 0) === 1 ? ' event' : ' events')}
         </span>
       </div>
