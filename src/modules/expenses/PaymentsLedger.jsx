@@ -44,7 +44,11 @@ var SOURCE_META = {
   vendor:     { label: 'Vendor',   dot: 'bg-violet-500',  cls: 'bg-white text-violet-700 border-violet-300' },
   salary:     { label: 'Employee', dot: 'bg-sky-500',     cls: 'bg-white text-sky-700 border-sky-300' },
   collection: { label: 'Event',    dot: 'bg-emerald-500', cls: 'bg-white text-emerald-700 border-emerald-300' },
-  expense:    { label: 'Staff',    dot: 'bg-amber-500',   cls: 'bg-white text-amber-700 border-amber-300' },
+  // Staff rows always carry an orange "Expense (Cash)" chip beside this one,
+  // and amber next to orange is two shades of the same idea sitting on the
+  // same row. Fuchsia is nowhere near either, nor near the violet and sky
+  // the other two parties use.
+  expense:    { label: 'Staff',    dot: 'bg-fuchsia-500', cls: 'bg-white text-fuchsia-700 border-fuchsia-300' },
 }
 
 // The clock time a row was logged at, for the quiet date line under the
