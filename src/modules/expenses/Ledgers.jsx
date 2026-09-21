@@ -963,13 +963,14 @@ function Ledgers({ profile, onNavigateToExpenses }) {
                             </span>
                           )
                         })()}
-                        {(r._checkedBy || canMarkChecked) && (
+                        {/* Only the prompt stays up here, with the status and
+                            the source — it is one more label among labels. The
+                            verdict moved to the figure's side of the row. */}
+                        {canMarkChecked && !r._checkedBy && (
                           <span onClick={function (ev) { ev.stopPropagation() }}>
                             <CheckedStamp
-                              checked={!!r._checkedBy}
-                              checkedAt={r._checkedAt}
+                              checked={false}
                               canToggle={canMarkChecked}
-                              canUncheck={r._checkedBy === profile?.id || isSysAdmin}
                               busy={checkingExpId === r.expense_id}
                               onToggle={function () { toggleExpenseCheck(r.expense_id) }}
                             />
@@ -1020,6 +1021,22 @@ function Ledgers({ profile, onNavigateToExpenses }) {
                         the one thing on this row you scan a column of. */}
                     <div className="shrink-0 self-center flex items-stretch gap-4">
                       <span aria-hidden="true" className="w-px self-stretch bg-slate-200" />
+                      {/* Right of the rule is what this row came to, and
+                          whether it has been checked is a verdict on that
+                          rather than another label beside the description. */}
+                      {r._checkedBy && (
+                        <span className="shrink-0 self-center" onClick={function (ev) { ev.stopPropagation() }}>
+                          <CheckedStamp
+                            variant="stamp"
+                            checked
+                            checkedAt={r._checkedAt}
+                            canToggle={canMarkChecked}
+                            canUncheck={r._checkedBy === profile?.id || isSysAdmin}
+                            busy={checkingExpId === r.expense_id}
+                            onToggle={function () { toggleExpenseCheck(r.expense_id) }}
+                          />
+                        </span>
+                      )}
                       <div className="px-4 py-2.5 text-right">
                         <p className="text-[11.5px] font-medium text-slate-500 leading-none">Amount</p>
                         <p className="mt-2 text-[17px] font-extrabold text-slate-900 tabular-nums leading-none" data-notranslate>{formatPoints(r.amount_paise)}</p>
