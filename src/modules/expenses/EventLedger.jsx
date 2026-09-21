@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { supabase } from '../../lib/supabase'
 import { formatPoints, formatDate, formatDateTime } from '../../lib/format'
 import EventCalendar from '../../components/ui/EventCalendar'
@@ -6,7 +7,8 @@ import ImageLightbox from '../../components/ui/ImageLightbox'
 import Icon from '../../components/ui/Icon'
 import { hasPerm } from '../../lib/permissions'
 import { useExpenseDetailModal } from '../../hooks/useExpenseDetailModal.jsx'
-import { deptOrder, CARD } from '../../lib/ui'
+import { deptOrder, CARD, FIELD_SEARCH } from '../../lib/ui'
+import { avatarTint } from '../../lib/avatarTint'
 import { DeptChip } from '../../components/ui/Badge'
 import CheckedStamp from '../../components/ui/CheckedStamp'
 
@@ -149,7 +151,44 @@ function EventLedger(props) {
   var [filter, setFilter] = useState('all')
   var [balancesByContract, setBalancesByContract] = useState({})
   var [tab, setTab] = useState('overview')
+  // The transactions tab keeps its own view state: what is typed in it, how
+  // it is narrowed, which way the dates run, what is ticked and where the
+  // row menu is open. All of it is per-event, so selecting another event
+  // resets it rather than carrying one event's search onto the next.
+  var [txnSearch, setTxnSearch] = useState('')
+  var [txnSort, setTxnSort] = useState('desc')
+  var [txnDir, setTxnDir] = useState('')
+  var [txnMode, setTxnMode] = useState('')
+  var [txnCheck, setTxnCheck] = useState('')
+  var [showTxnFilter, setShowTxnFilter] = useState(false)
+  var [selectedRows, setSelectedRows] = useState({})
+  var [txnPage, setTxnPage] = useState(1)
+  var [rowMenu, setRowMenu] = useState(null)
+  var menuRef = useRef(null)
   var [lightbox, setLightbox] = useState(null)
+
+  // The menu is anchored to a rect taken when it opened, so anything that
+  // moves that rect — a scroll, a resize — has to close it rather than leave
+  // it floating over the wrong row.
+  useEffect(function () {
+    if (!rowMenu) return
+    function onDown(ev) {
+      if (menuRef.current && menuRef.current.contains(ev.target)) return
+      setRowMenu(null)
+    }
+    function onKey(ev) { if (ev.key === 'Escape') setRowMenu(null) }
+    function onMove() { setRowMenu(null) }
+    document.addEventListener('pointerdown', onDown)
+    document.addEventListener('keydown', onKey)
+    window.addEventListener('resize', onMove)
+    window.addEventListener('scroll', onMove, true)
+    return function () {
+      document.removeEventListener('pointerdown', onDown)
+      document.removeEventListener('keydown', onKey)
+      window.removeEventListener('resize', onMove)
+      window.removeEventListener('scroll', onMove, true)
+    }
+  }, [rowMenu])
 
   async function loadFunctions(dateStr) {
     setDate(dateStr)
@@ -179,6 +218,7 @@ function EventLedger(props) {
     }
     setTab('overview')
     setFilter('all')
+    resetTxnView()
     setEventId(String(g.event_ids[0]))  // legacy anchor: any contract in this group
     setEventDetail(g.contracts[0])
     setCurrentEventIds(g.event_ids)
@@ -349,11 +389,6 @@ function EventLedger(props) {
     setPlatesLoading(false)
   }
 
-  function filteredEntries() {
-    if (filter === 'all') return entries
-    return entries.filter(function (e) { return e.entry_type === filter })
-  }
-
   function badgeClass(entryType, direction) {
     if (direction === 'in') return 'bg-emerald-100 text-emerald-800'
     if (direction === 'out') return 'bg-rose-100 text-rose-800'
@@ -399,53 +434,199 @@ function EventLedger(props) {
 
   var tabCounts = { transactions: entries.length, plates: plateEvents.length, documents: documents.length }
 
-  function renderEntriesTable() {
+  function resetTxnView() {
+    setTxnSearch(''); setTxnDir(''); setTxnMode(''); setTxnCheck('')
+    setTxnSort('desc'); setShowTxnFilter(false)
+    setSelectedRows({}); setTxnPage(1); setRowMenu(null)
+  }
+
+  // Who put the row there. A collection was taken by whoever holds the wallet,
+  // which is not always whoever logged the ledger line, so the collector wins
+  // when there is one.
+  function rowPerson(e) { return e._collectorName || e._creatorName || '' }
+  function rowDate(e) { return e._entryDate || e.created_at }
+  // null, not false, for the rows finance never checks — an LMS advance has no
+  // check to be missing, so it should not answer an "unchecked" filter.
+  function rowChecked(e) {
+    if (e.entry_type === 'expense') return !!e._checkedBy
+    if (e.entry_type === 'collection' && e._wt) return !!e._wt.checked_by
+    return null
+  }
+  function initials(name) {
+    var parts = String(name || '').trim().split(/\s+/).filter(Boolean)
+    if (parts.length === 0) return '—'
+    return (parts[0][0] + (parts[1] ? parts[1][0] : '')).toUpperCase()
+  }
+
+  var txnModes = []
+  entries.forEach(function (e) {
+    if (e.payment_mode && txnModes.indexOf(e.payment_mode) === -1) txnModes.push(e.payment_mode)
+  })
+  var txnFilterCount = (txnDir ? 1 : 0) + (txnMode ? 1 : 0) + (txnCheck ? 1 : 0)
+
+  function visibleEntries() {
+    var q = txnSearch.trim().toLowerCase()
+    var out = entries.filter(function (e) {
+      if (filter !== 'all' && e.entry_type !== filter) return false
+      if (txnDir && e.direction !== txnDir) return false
+      if (txnMode && (e.payment_mode || '') !== txnMode) return false
+      if (txnCheck) {
+        var c = rowChecked(e)
+        if (txnCheck === 'checked' && c !== true) return false
+        if (txnCheck === 'unchecked' && c !== false) return false
+      }
+      if (q) {
+        var hay = [e.description, e.payment_mode, entryLabel(e.entry_type), rowPerson(e),
+          formatPoints(e.amount_paise), formatDate(rowDate(e))].join(' ').toLowerCase()
+        if (hay.indexOf(q) === -1) return false
+      }
+      return true
+    })
+    out.sort(function (a, b) {
+      var d = new Date(rowDate(a)) - new Date(rowDate(b))
+      return txnSort === 'asc' ? d : -d
+    })
+    return out
+  }
+
+  var TXN_PAGE_SIZE = 25
+
+  // A tick that survives a re-filter would be a lie: you would press Export
+  // believing you had four rows and get one you can no longer see. Selection
+  // is cleared whenever the set it was made against changes.
+  function clearSelection() { setSelectedRows({}) }
+  var selectedIds = Object.keys(selectedRows).filter(function (k) { return selectedRows[k] })
+
+  function exportCsv(rows) {
+    function esc(v) {
+      var t = String(v == null ? '' : v)
+      if (t.indexOf(',') !== -1 || t.indexOf('"') !== -1 || t.indexOf('\n') !== -1) return '"' + t.replace(/"/g, '""') + '"'
+      return t
+    }
+    var head = ['Date', 'Logged', 'Type', 'Mode', 'In', 'Out', 'Description', 'Added By', 'Checked']
+    // Points, not a formatted string: a spreadsheet cannot add up "90,000 pts".
+    var body = rows.map(function (e) {
+      var c = rowChecked(e)
+      return [
+        formatDate(rowDate(e)),
+        formatDateTime(e.created_at),
+        entryLabel(e.entry_type),
+        e.payment_mode || '',
+        e.direction === 'in' ? (e.amount_paise || 0) / 100 : '',
+        e.direction === 'out' ? (e.amount_paise || 0) / 100 : '',
+        e.description || '',
+        rowPerson(e),
+        c === null ? '' : (c ? 'Yes' : 'No'),
+      ].map(esc).join(',')
+    })
+    var csv = head.join(',') + '\n' + body.join('\n') + '\n'
+    var blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    var url = URL.createObjectURL(blob)
+    var a = document.createElement('a')
+    var stem = (eventDetail && eventDetail.event_name ? eventDetail.event_name : 'event').replace(/[^a-zA-Z0-9]+/g, '-').toLowerCase()
+    a.href = url
+    a.download = stem + '-transactions-' + (eventDetail && eventDetail.function_date ? String(eventDetail.function_date).slice(0, 10) : 'all') + '.csv'
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  function openRow(e) {
+    if (e.entry_type === 'expense' && e.reference_id) openExpenseDetail(Number(e.reference_id))
+    else if (e.entry_type === 'collection' && e._wt) setCollDetail({ row: e })
+  }
+
+  function renderEntriesTable(rows) {
     if (entriesLoading) return <p className="text-[12.5px] text-slate-400 p-5 text-center">Loading entries…</p>
-    if (filteredEntries().length === 0) return <p className="text-[12.5px] text-slate-400 p-8 text-center">No entries</p>
+    if (entries.length === 0) return <p className="text-[12.5px] text-slate-400 p-8 text-center">No entries</p>
+    if (rows.length === 0) {
+      return (
+        <div className="px-4 py-12 text-center">
+          <Icon name="search" size={24} className="mx-auto text-slate-300" />
+          <p className="mt-2 text-[13px] font-semibold text-slate-500">Nothing matches</p>
+          <p className="mt-0.5 text-[12px] text-slate-400">Clear the search or the filters to see the rest.</p>
+        </div>
+      )
+    }
+    var allTicked = rows.length > 0 && rows.every(function (e) { return selectedRows[e.id] })
     return (
       <div className="overflow-x-auto ambria-thin-scroll">
-        {/* Left to itself the browser splits a six-column table by content, and
-            four short columns of dates, chips and amounts each took a sixth of
-            a very wide panel — a hand's width of nothing between "cash" and the
-            figure it belongs to, while the description, the one column that
-            wants room, was squeezed against the right edge. Everything but the
-            description is pinned to what it actually needs and the description
-            takes the rest. */}
-        <table className="w-full min-w-[840px]">
+        {/* Left to itself the browser splits the table by content, and the
+            short columns — a date, a chip, a word, two figures — each took a
+            share of a very wide panel, putting a hand's width of nothing
+            between "cash" and the figure it belongs to while the description,
+            the one column that wants room, was squeezed against the right
+            edge. Everything but the description is pinned to what it needs. */}
+        <table className="w-full min-w-[1080px]">
           <colgroup>
-            <col style={{ width: '160px' }} />
-            <col style={{ width: '186px' }} />
-            <col style={{ width: '96px' }} />
-            <col style={{ width: '116px' }} />
-            <col style={{ width: '116px' }} />
+            <col style={{ width: '44px' }} />
+            <col style={{ width: '150px' }} />
+            <col style={{ width: '176px' }} />
+            <col style={{ width: '90px' }} />
+            <col style={{ width: '112px' }} />
+            <col style={{ width: '112px' }} />
             <col />
+            <col style={{ width: '160px' }} />
+            <col style={{ width: '76px' }} />
           </colgroup>
           <thead className="bg-slate-50 border-b border-slate-200">
             <tr>
-              <th className="px-3 py-2.5 text-left text-[10.5px] font-bold uppercase tracking-[0.06em] text-slate-500 whitespace-nowrap">Date</th>
-              <th className="px-3 py-2.5 text-left text-[10.5px] font-bold uppercase tracking-[0.06em] text-slate-500 whitespace-nowrap">Type</th>
-              <th className="px-3 py-2.5 text-left text-[10.5px] font-bold uppercase tracking-[0.06em] text-slate-500 whitespace-nowrap">Mode</th>
-              <th className="px-3 py-2.5 text-right text-[10.5px] font-bold uppercase tracking-[0.06em] text-slate-500 whitespace-nowrap">In</th>
-              <th className="px-3 py-2.5 text-right text-[10.5px] font-bold uppercase tracking-[0.06em] text-slate-500 whitespace-nowrap">Out</th>
-              <th className="px-3 py-2.5 text-left text-[10.5px] font-bold uppercase tracking-[0.06em] text-slate-500 whitespace-nowrap">Description</th>
+              <th className="px-3 py-2.5">
+                <input type="checkbox" checked={allTicked} aria-label="Select all on this page"
+                  onChange={function () {
+                    setSelectedRows(function (prev) {
+                      var next = Object.assign({}, prev)
+                      rows.forEach(function (e) { if (allTicked) delete next[e.id]; else next[e.id] = true })
+                      return next
+                    })
+                  }}
+                  className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500/30 align-middle" />
+              </th>
+              <th className="px-3 py-2.5 text-left">
+                <button type="button" onClick={function () { setTxnSort(txnSort === 'desc' ? 'asc' : 'desc') }}
+                  title={txnSort === 'desc' ? 'Newest first — press for oldest' : 'Oldest first — press for newest'}
+                  className="inline-flex items-center gap-1 text-[10.5px] font-bold uppercase tracking-[0.06em] text-slate-500 hover:text-slate-900 transition-colors">
+                  Date
+                  <Icon name={txnSort === 'desc' ? 'chevronDown' : 'chevronUp'} size={12} className="text-slate-400" />
+                </button>
+              </th>
+              {['Type', 'Mode'].map(function (h) {
+                return <th key={h} className="px-3 py-2.5 text-left text-[10.5px] font-bold uppercase tracking-[0.06em] text-slate-500 whitespace-nowrap">{h}</th>
+              })}
+              {['In', 'Out'].map(function (h) {
+                return <th key={h} className="px-3 py-2.5 text-right text-[10.5px] font-bold uppercase tracking-[0.06em] text-slate-500 whitespace-nowrap">{h}</th>
+              })}
+              {['Description', 'Added By'].map(function (h) {
+                return <th key={h} className="px-3 py-2.5 text-left text-[10.5px] font-bold uppercase tracking-[0.06em] text-slate-500 whitespace-nowrap">{h}</th>
+              })}
+              <th className="px-3 py-2.5 text-right text-[10.5px] font-bold uppercase tracking-[0.06em] text-slate-500 whitespace-nowrap">Actions</th>
             </tr>
           </thead>
           <tbody>
-            {filteredEntries().map(function (e) {
+            {rows.map(function (e) {
               var isExpRow = e.entry_type === 'expense' && !!e.reference_id
               var isCollRow = e.entry_type === 'collection' && !!e._wt
               var isClickable = isExpRow || isCollRow
+              var ticked = !!selectedRows[e.id]
+              var person = rowPerson(e)
               return (
                 <tr key={e.id}
-                  onClick={function () {
-                    if (isExpRow) openExpenseDetail(Number(e.reference_id))
-                    else if (isCollRow) setCollDetail({ row: e })
-                  }}
-                  className={'border-b border-slate-100 last:border-b-0' + (isClickable ? ' cursor-pointer hover:bg-indigo-50/40 transition-colors' : '')}>
+                  onClick={function () { openRow(e) }}
+                  className={'border-b border-slate-100 last:border-b-0 transition-colors ' +
+                    (ticked ? 'bg-indigo-50/50 ' : '') +
+                    (isClickable ? 'cursor-pointer hover:bg-indigo-50/40' : '')}>
+                  <td className="px-3 py-2.5 align-top" onClick={function (ev) { ev.stopPropagation() }}>
+                    <input type="checkbox" checked={ticked} aria-label="Select row"
+                      onChange={function () {
+                        setSelectedRows(function (prev) {
+                          var next = Object.assign({}, prev)
+                          if (next[e.id]) delete next[e.id]; else next[e.id] = true
+                          return next
+                        })
+                      }}
+                      className="w-4 h-4 mt-0.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500/30" />
+                  </td>
                   <td className="px-3 py-2.5 align-top whitespace-nowrap" data-notranslate>
-                    <div className="text-[12.5px] font-semibold text-slate-700">
-                      {e._entryDate ? formatDate(e._entryDate) : formatDate(e.created_at)}
-                    </div>
+                    <div className="text-[12.5px] font-semibold text-slate-700">{formatDate(rowDate(e))}</div>
                     <div className="text-[10.5px] text-slate-400">Logged {formatDateTime(e.created_at)}</div>
                   </td>
                   <td className="px-3 py-2.5 align-top">
@@ -495,11 +676,33 @@ function EventLedger(props) {
                       {multiContract && contractByEventId[e.event_id] && contractByEventId[e.event_id].department && (
                         <span className="shrink-0 mt-px"><DeptChip name={contractByEventId[e.event_id].department} /></span>
                       )}
-                      <div className="min-w-0">
-                        <p className="text-[12.5px] text-slate-700 leading-snug">{e.description || '—'}</p>
-                        {e._creatorName && <p className="text-[11px] text-slate-400 mt-0.5">by {e._creatorName}</p>}
-                      </div>
+                      <p className="min-w-0 text-[12.5px] text-slate-700 leading-snug">{e.description || '—'}</p>
                     </div>
+                  </td>
+                  <td className="px-3 py-2.5 align-top">
+                    {person ? (
+                      <div className="flex items-center gap-2">
+                        <span className={'shrink-0 w-7 h-7 rounded-full inline-flex items-center justify-center text-[10.5px] font-bold ' + avatarTint(person)}
+                          data-notranslate>{initials(person)}</span>
+                        <span className="min-w-0">
+                          <span className="block text-[12px] font-semibold text-slate-700 truncate">{person}</span>
+                          <span className="block text-[10.5px] text-slate-400" data-notranslate>{formatDate(e.created_at)}</span>
+                        </span>
+                      </div>
+                    ) : <span className="text-[12px] text-slate-400">—</span>}
+                  </td>
+                  <td className="px-3 py-2.5 align-top text-right" onClick={function (ev) { ev.stopPropagation() }}>
+                    <button type="button" aria-label="Row actions"
+                      onClick={function (ev) {
+                        var r = ev.currentTarget.getBoundingClientRect()
+                        setRowMenu(rowMenu && rowMenu.id === e.id ? null : { id: e.id, row: e, top: r.bottom + 6, right: window.innerWidth - r.right })
+                      }}
+                      className={'w-8 h-8 inline-flex items-center justify-center rounded-lg border transition-colors ' +
+                        (rowMenu && rowMenu.id === e.id
+                          ? 'border-indigo-300 bg-indigo-50 text-indigo-600'
+                          : 'border-slate-200 text-slate-400 hover:text-slate-700 hover:bg-slate-100')}>
+                      <Icon name="more" size={16} />
+                    </button>
                   </td>
                 </tr>
               )
@@ -509,7 +712,6 @@ function EventLedger(props) {
       </div>
     )
   }
-
   function renderPlatesTable() {
     if (platesLoading) return <p className="text-[12.5px] text-slate-400 p-5 text-center">Loading plate history…</p>
     if (plateEvents.length === 0) return <p className="text-[12.5px] text-slate-400 p-8 text-center">No plate activity for this event</p>
@@ -777,35 +979,171 @@ function EventLedger(props) {
         </div>
       )}
 
-      {tab === 'transactions' && (
+      {tab === 'transactions' && (function () {
+        var vis = visibleEntries()
+        var pages = Math.max(1, Math.ceil(vis.length / TXN_PAGE_SIZE))
+        var page = Math.min(txnPage, pages)
+        var from = vis.length === 0 ? 0 : (page - 1) * TXN_PAGE_SIZE + 1
+        var to = Math.min(page * TXN_PAGE_SIZE, vis.length)
+        var pageRows = vis.slice((page - 1) * TXN_PAGE_SIZE, page * TXN_PAGE_SIZE)
+        var exportRows = selectedIds.length > 0
+          ? entries.filter(function (e) { return selectedRows[e.id] })
+          : vis
+        return (
         <div className="space-y-3">
-          <div className="flex flex-wrap gap-1.5">
-            {ENTRY_TYPES.map(function (t) {
-              var active = filter === t.key
-              var n = t.key === 'all' ? entries.length : entries.filter(function (e) { return e.entry_type === t.key }).length
-              // A pill that filters to nothing is a dead end — it can only ever
-              // produce "No entries". It still shows, because a zero is an
-              // answer, but it stops inviting the press.
-              var empty = n === 0 && t.key !== 'all'
-              return (
-                <button key={t.key} type="button" onClick={function () { setFilter(t.key) }} aria-pressed={active}
-                  disabled={empty}
-                  className={'inline-flex items-center gap-1.5 h-8 px-3 rounded-xl text-[12.5px] font-bold transition-colors ' +
-                    (active
-                      ? 'bg-indigo-600 text-white'
-                      : empty
-                        ? 'bg-white border border-slate-200 text-slate-400 cursor-default'
-                        : 'bg-white border border-slate-300 text-slate-600 hover:bg-slate-50 hover:text-slate-900')}>
-                  {t.label}
-                  <span data-notranslate className={'tabular-nums ' + (active ? 'text-white/70' : 'text-slate-400')}>{n}</span>
-                </button>
-              )
-            })}
-          </div>
-          <div className={CARD + ' overflow-hidden'}>{renderEntriesTable()}</div>
-        </div>
-      )}
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap gap-1.5">
+              {ENTRY_TYPES.map(function (t) {
+                var active = filter === t.key
+                var n = t.key === 'all' ? entries.length : entries.filter(function (e) { return e.entry_type === t.key }).length
+                // A pill that filters to nothing is a dead end — it can only
+                // ever produce "nothing matches". It still shows, because a
+                // zero is an answer, but it stops inviting the press.
+                var empty = n === 0 && t.key !== 'all'
+                return (
+                  <button key={t.key} type="button" aria-pressed={active} disabled={empty}
+                    onClick={function () { setFilter(t.key); setTxnPage(1); clearSelection() }}
+                    className={'inline-flex items-center gap-1.5 h-9 px-3 rounded-xl text-[12.5px] font-bold transition-colors ' +
+                      (active
+                        ? 'bg-indigo-600 text-white'
+                        : empty
+                          ? 'bg-white border border-slate-200 text-slate-400 cursor-default'
+                          : 'bg-white border border-slate-300 text-slate-600 hover:bg-slate-50 hover:text-slate-900')}>
+                    {t.label}
+                    <span data-notranslate className={'tabular-nums ' + (active ? 'text-white/70' : 'text-slate-400')}>{n}</span>
+                  </button>
+                )
+              })}
+            </div>
 
+            <div className="flex items-center gap-2 ml-auto">
+              <div className="relative w-[220px] @3xl:w-[260px]">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
+                  <Icon name="search" size={15} />
+                </span>
+                <input type="search" value={txnSearch} placeholder="Search transactions..."
+                  onChange={function (ev) { setTxnSearch(ev.target.value); setTxnPage(1); clearSelection() }}
+                  className={FIELD_SEARCH} />
+              </div>
+              <button type="button" onClick={function () { setShowTxnFilter(!showTxnFilter) }} aria-pressed={showTxnFilter}
+                className={'inline-flex items-center gap-1.5 h-10 px-3 rounded-xl text-[12.5px] font-bold border transition-colors ' +
+                  (txnFilterCount > 0 || showTxnFilter
+                    ? 'border-indigo-300 bg-indigo-50 text-indigo-700'
+                    : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900')}>
+                <Icon name="filter" size={14} />
+                Filter
+                {txnFilterCount > 0 && (
+                  <span data-notranslate className="px-1.5 rounded-md bg-indigo-600 text-white text-[10.5px] tabular-nums">{txnFilterCount}</span>
+                )}
+              </button>
+              <button type="button" onClick={function () { exportCsv(exportRows) }} disabled={exportRows.length === 0}
+                title={selectedIds.length > 0 ? 'Export the ' + selectedIds.length + ' selected' : 'Export everything shown'}
+                className="inline-flex items-center gap-1.5 h-10 px-3.5 rounded-xl text-[12.5px] font-bold text-white bg-indigo-600 hover:bg-indigo-700 active:scale-[0.98] disabled:opacity-40 disabled:hover:bg-indigo-600 transition-all">
+                <Icon name="download" size={14} />
+                Export
+              </button>
+            </div>
+          </div>
+
+          {showTxnFilter && (
+            <div className={CARD + ' p-3 grid gap-3 @3xl:grid-cols-3'}>
+              <div>
+                <p className="text-[11px] font-bold uppercase tracking-[0.06em] text-slate-500 mb-1.5">Direction</p>
+                <div className="flex gap-1.5">
+                  {[{ k: '', l: 'Any' }, { k: 'in', l: 'Money in' }, { k: 'out', l: 'Money out' }].map(function (o) {
+                    return (
+                      <button key={o.k || 'any'} type="button"
+                        onClick={function () { setTxnDir(o.k); setTxnPage(1); clearSelection() }}
+                        className={'h-8 px-2.5 rounded-lg text-[12px] font-bold border transition-colors ' +
+                          (txnDir === o.k ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50')}>
+                        {o.l}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+              <div>
+                <p className="text-[11px] font-bold uppercase tracking-[0.06em] text-slate-500 mb-1.5">Mode</p>
+                <div className="flex flex-wrap gap-1.5">
+                  <button type="button" onClick={function () { setTxnMode(''); setTxnPage(1); clearSelection() }}
+                    className={'h-8 px-2.5 rounded-lg text-[12px] font-bold border transition-colors ' +
+                      (txnMode === '' ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50')}>Any</button>
+                  {txnModes.map(function (m) {
+                    return (
+                      <button key={m} type="button" onClick={function () { setTxnMode(m); setTxnPage(1); clearSelection() }}
+                        className={'h-8 px-2.5 rounded-lg text-[12px] font-bold border transition-colors ' +
+                          (txnMode === m ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50')}>{m}</button>
+                    )
+                  })}
+                </div>
+              </div>
+              <div>
+                <p className="text-[11px] font-bold uppercase tracking-[0.06em] text-slate-500 mb-1.5">Finance check</p>
+                <div className="flex items-center gap-1.5">
+                  {[{ k: '', l: 'Any' }, { k: 'checked', l: 'Checked' }, { k: 'unchecked', l: 'Unchecked' }].map(function (o) {
+                    return (
+                      <button key={o.k || 'any'} type="button"
+                        onClick={function () { setTxnCheck(o.k); setTxnPage(1); clearSelection() }}
+                        className={'h-8 px-2.5 rounded-lg text-[12px] font-bold border transition-colors ' +
+                          (txnCheck === o.k ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50')}>
+                        {o.l}
+                      </button>
+                    )
+                  })}
+                  {txnFilterCount > 0 && (
+                    <button type="button" onClick={function () { setTxnDir(''); setTxnMode(''); setTxnCheck(''); setTxnPage(1); clearSelection() }}
+                      className="ml-auto h-8 px-2.5 rounded-lg text-[12px] font-bold text-rose-600 hover:bg-rose-50 transition-colors">
+                      Clear
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className={CARD + ' overflow-hidden'}>
+            {renderEntriesTable(pageRows)}
+            {vis.length > 0 && (
+              <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 border-t border-slate-200 bg-slate-50/60">
+                {selectedIds.length > 0 ? (
+                  <p className="text-[12px] font-semibold text-indigo-700">
+                    <span data-notranslate>{selectedIds.length}</span> selected
+                    <button type="button" onClick={clearSelection}
+                      className="ml-2 font-bold text-slate-500 hover:text-slate-800 transition-colors">Clear</button>
+                  </p>
+                ) : (
+                  <p className="text-[12px] text-slate-500" data-notranslate>
+                    Showing {from}–{to} of {vis.length} transaction{vis.length === 1 ? '' : 's'}
+                  </p>
+                )}
+                {pages > 1 && (
+                  <div className="flex items-center gap-1">
+                    <button type="button" disabled={page === 1} onClick={function () { setTxnPage(page - 1); clearSelection() }}
+                      aria-label="Previous page"
+                      className="w-8 h-8 inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-500 hover:bg-slate-100 disabled:opacity-30 transition-colors">
+                      <Icon name="chevronRight" size={14} className="rotate-180" />
+                    </button>
+                    {Array.from({ length: pages }, function (_u, i) { return i + 1 }).map(function (n) {
+                      return (
+                        <button key={n} type="button" onClick={function () { setTxnPage(n); clearSelection() }}
+                          className={'min-w-8 h-8 px-2 rounded-lg text-[12px] font-bold tabular-nums transition-colors ' +
+                            (n === page ? 'bg-indigo-600 text-white' : 'border border-slate-300 bg-white text-slate-600 hover:bg-slate-100')}
+                          data-notranslate>{n}</button>
+                      )
+                    })}
+                    <button type="button" disabled={page === pages} onClick={function () { setTxnPage(page + 1); clearSelection() }}
+                      aria-label="Next page"
+                      className="w-8 h-8 inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-500 hover:bg-slate-100 disabled:opacity-30 transition-colors">
+                      <Icon name="chevronRight" size={14} />
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+        )
+      })()}
       {tab === 'plates' && <div className={CARD + ' overflow-hidden'}>{renderPlatesTable()}</div>}
 
       {tab === 'documents' && (
@@ -948,6 +1286,52 @@ function EventLedger(props) {
       )}
       {eventId && detailView}
 
+      {/* The row menu is portalled rather than absolutely positioned inside its
+          cell: the table scrolls sideways inside a rounded card with
+          overflow hidden, which would clip a menu hanging below the last row
+          to a sliver. Positioned from the button's own rect, in viewport
+          coordinates, it cannot be clipped by anything. */}
+      {rowMenu && createPortal(
+        <div ref={menuRef} style={{ position: 'fixed', top: rowMenu.top, right: rowMenu.right, zIndex: 9997 }}
+          className="w-[210px] bg-white border border-slate-200 rounded-xl shadow-[0_8px_28px_rgba(15,23,42,0.14)] p-1">
+          {(function () {
+            var e = rowMenu.row
+            var isExpRow = e.entry_type === 'expense' && !!e.reference_id
+            var isCollRow = e.entry_type === 'collection' && !!e._wt
+            var checked = rowChecked(e)
+            var mine = isExpRow ? e._checkedBy === profile?.id : (isCollRow && e._wt.checked_by === profile?.id)
+            var canFlip = canMarkChecked && checked !== null && (!checked || mine || isSysAdmin)
+            var items = []
+            if (isExpRow) items.push({ key: 'open', icon: 'receipt', label: 'Open expense', run: function () { openExpenseDetail(Number(e.reference_id)) } })
+            if (isCollRow) items.push({ key: 'open', icon: 'wallet', label: 'View collection', run: function () { setCollDetail({ row: e }) } })
+            if (canFlip) {
+              items.push({
+                key: 'check', icon: 'checkCircle', label: checked ? 'Un-check' : 'Mark checked',
+                run: function () {
+                  if (isExpRow) toggleExpenseCheck(Number(e.reference_id))
+                  else if (isCollRow) toggleCollectionCheck(e.reference_id)
+                },
+              })
+            }
+            items.push({
+              key: 'copy', icon: 'copy', label: 'Copy description',
+              run: function () { navigator.clipboard?.writeText(e.description || '') },
+            })
+            items.push({ key: 'csv', icon: 'download', label: 'Export this row', run: function () { exportCsv([e]) } })
+            return items.map(function (it) {
+              return (
+                <button key={it.key} type="button"
+                  onClick={function () { setRowMenu(null); it.run() }}
+                  className="w-full flex items-center gap-2.5 px-2.5 h-9 rounded-lg text-[12.5px] font-semibold text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 transition-colors">
+                  <Icon name={it.icon} size={14} className="shrink-0 text-slate-400" />
+                  {it.label}
+                </button>
+              )
+            })
+          })()}
+        </div>,
+        document.body
+      )}
       {expenseDetailModal}
       {lightbox && (
         <ImageLightbox url={lightbox.url} alt={lightbox.label} onClose={function () { setLightbox(null) }} />
