@@ -8,6 +8,7 @@ import SearchField from '../../components/ui/SearchField'
 import Icon from '../../components/ui/Icon'
 import EventDatePicker from '../../components/ui/EventDatePicker'
 import { CARD } from '../../lib/ui'
+import { avatarTint } from '../../lib/avatarTint'
 import { useExpenseDetailModal } from '../../hooks/useExpenseDetailModal.jsx'
 import PaymentProofThumbs from '../../components/ledger/PaymentProofThumbs'
 import { getReceiptUrl, isVoiceNotePath } from '../../lib/uploadHelper'
@@ -38,6 +39,21 @@ var SOURCE_META = {
   expense:    { label: 'Staff',    dot: 'bg-amber-500',   cls: 'bg-amber-50 text-amber-700 border-amber-200' },
 }
 
+// The date column carries the day; the time belongs under it and beside the
+// person, not inside a second "Logged ..." sentence on every row.
+function timeOf(ts) {
+  if (!ts) return ''
+  var d = new Date(ts)
+  if (isNaN(d)) return ''
+  return d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true })
+}
+
+function initials(name) {
+  var parts = String(name || '').trim().split(/\s+/).filter(Boolean)
+  if (parts.length === 0) return '—'
+  return (parts[0][0] + (parts[1] ? parts[1][0] : '')).toUpperCase()
+}
+
 var SORTS = [
   { k: 'date_desc', label: 'Date (Newest)' },
   { k: 'date_asc',  label: 'Date (Oldest)' },
@@ -60,6 +76,7 @@ function PaymentsLedger({ profile }) {
   var [typeFilter, setTypeFilter] = useState('')
   var [sortKey, setSortKey] = useState('date_desc')
   var [showMore, setShowMore] = useState(false)
+  var [page, setPage] = useState(1)
   var [detailTarget, setDetailTarget] = useState(null) // { row, event, collectorName, loading } — vendor/salary/collection rows
   var [enlargedImg, setEnlargedImg] = useState(null)
   var { openExpenseDetail, expenseDetailModal } = useExpenseDetailModal(profile, isAdmin, function () { load() })
@@ -71,7 +88,7 @@ function PaymentsLedger({ profile }) {
     var [ledgerRes, collectRes, expWalletRes] = await Promise.all([
       supabase
         .from('ledger_entries')
-        .select('id, ledger_type, party_id, entry_date, created_at, description, debit_paise, ref_id, ref_type, metadata')
+        .select('id, ledger_type, party_id, entry_date, created_at, description, debit_paise, ref_id, ref_type, metadata, created_by')
         .in('ledger_type', ['vendor', 'user_salary'])
         .in('ref_type', ['vendor_payment', 'vendor_deduction', 'salary_payment', 'salary_adjustment'])
         .is('deleted_at', null)
@@ -113,6 +130,10 @@ function PaymentsLedger({ profile }) {
     ledgerRows.forEach(function (r) {
       var list = r.ledger_type === 'vendor' ? vendorIds : profileIds
       if (list.indexOf(r.party_id) === -1) list.push(r.party_id)
+      // Who keyed the row in, which is a different person from whoever it
+      // was paid to — the column that used to be blank for every vendor and
+      // salary line.
+      if (r.created_by && profileIds.indexOf(r.created_by) === -1) profileIds.push(r.created_by)
     })
 
     // Expense wallet rows only carry a wallet_id — resolve to the owning user first
@@ -167,6 +188,7 @@ function PaymentsLedger({ profile }) {
         description: r.description || '',
         type_label: meta.label,
         type_cls: meta.cls,
+        recorded_by: (r.created_by && profileNames[r.created_by]) || '',
         _metadata: r.metadata,
       })
     })
@@ -186,6 +208,7 @@ function PaymentsLedger({ profile }) {
         amount_paise: w.amount_paise || 0,
         party_name: partyName,
         collector_name: (w.performed_by && profileNames[w.performed_by]) || '',
+        recorded_by: (w.performed_by && profileNames[w.performed_by]) || '',
         description: w.description || (w.receipt_no ? '#' + w.receipt_no : ''),
         type_label: meta.label,
         type_cls: meta.cls,
@@ -205,6 +228,9 @@ function PaymentsLedger({ profile }) {
       combined.push({
         key: 'we:' + r.id,
         source: 'expense',
+        // The wallet this came out of belongs to whoever spent it, so the
+        // party and the recorder are the same person here.
+        recorded_by: partyName === '—' ? '' : partyName,
         date: r.created_at ? r.created_at.split('T')[0] : '',
         logged_at: r.created_at,
         direction: meta.direction,
@@ -255,7 +281,7 @@ function PaymentsLedger({ profile }) {
         // The collector and the type are on the row, so they are worth
         // searching: "who took this" is a question people actually ask of
         // this screen, and it used to match nothing.
-        var hay = [r.party_name, r.description, r.collector_name, r.type_label].join(' ').toLowerCase()
+        var hay = [r.party_name, r.description, r.collector_name, r.recorded_by, r.type_label].join(' ').toLowerCase()
         if (hay.indexOf(q) === -1) return false
       }
       return true
@@ -277,6 +303,23 @@ function PaymentsLedger({ profile }) {
     return seen.sort()
   }, [rows])
 
+  // Any narrowing makes the page you were on meaningless.
+  useEffect(function () { setPage(1) }, [modeFilter, dirFilter, typeFilter, search, sortKey, dateFrom, dateTo])
+
+  var PAGE_SIZE = 25
+  var pageCount = Math.max(1, Math.ceil(visible.length / PAGE_SIZE))
+  var pageNow = Math.min(page, pageCount)
+  var pageRows = visible.slice((pageNow - 1) * PAGE_SIZE, pageNow * PAGE_SIZE)
+  var firstShown = visible.length === 0 ? 0 : (pageNow - 1) * PAGE_SIZE + 1
+  var lastShown = Math.min(pageNow * PAGE_SIZE, visible.length)
+
+  // 1 … 4 5 6 … 65, never sixty-five buttons.
+  var pageButtons = []
+  for (var pi = 1; pi <= pageCount; pi++) {
+    if (pi === 1 || pi === pageCount || (pi >= pageNow - 1 && pi <= pageNow + 1)) pageButtons.push(pi)
+    else if (pageButtons[pageButtons.length - 1] !== '…') pageButtons.push('…')
+  }
+
   var quickActive = modeFilter === 'all' && dirFilter === 'all' && !typeFilter
 
   function exportCsv() {
@@ -292,7 +335,7 @@ function PaymentsLedger({ profile }) {
         formatDate(r.date), formatDateTime(r.logged_at), r.type_label, r.party_name,
         (SOURCE_META[r.source] || {}).label || r.source, r.mode, r.direction === 'in' ? 'In' : 'Out',
         (r.direction === 'in' ? 1 : -1) * ((r.amount_paise || 0) / 100),
-        r.collector_name || '', r.description || '',
+        r.recorded_by || r.collector_name || '', r.description || '',
       ].map(esc).join(',')
     })
     var csv = head.join(',') + '\n' + body.join('\n') + '\n'
@@ -453,7 +496,7 @@ function PaymentsLedger({ profile }) {
 
         {loading ? (
           <div className="p-4 space-y-2.5">
-            {[0, 1, 2, 3, 4].map(function (i) { return <div key={i} className="ambria-skeleton h-[68px] rounded-xl" /> })}
+            {[0, 1, 2, 3, 4].map(function (i) { return <div key={i} className="ambria-skeleton h-[56px] rounded-xl" /> })}
           </div>
         ) : visible.length === 0 ? (
           <div className="px-4 py-16 text-center">
@@ -462,71 +505,141 @@ function PaymentsLedger({ profile }) {
             <p className="mt-0.5 text-[12px] font-medium text-slate-400">Widen the dates, or clear the quick filters.</p>
           </div>
         ) : (
-          <div className="divide-y divide-slate-100">
-            {visible.map(function (r) {
-              var isIn = r.direction === 'in'
-              var src = SOURCE_META[r.source] || { label: r.source, dot: 'bg-slate-400', cls: 'bg-slate-50 text-slate-700 border-slate-200' }
-              return (
-                <div key={r.key} role="button" tabIndex={0} onClick={function () { openRow(r) }}
-                  onKeyDown={function (ev) { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); openRow(r) } }}
-                  className="px-4 py-3 flex items-start gap-3.5 cursor-pointer hover:bg-indigo-50/40 transition-colors">
-                  {/* Which way the money went, before you have read a word of
-                      the row. The sign on the amount says the same thing at the
-                      far end of a very wide line, which is a long way to carry
-                      one character. */}
-                  <span className={'shrink-0 w-9 h-9 rounded-full inline-flex items-center justify-center ' +
-                    (isIn ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600')}>
-                    <Icon name="arrowRight" size={16} className={isIn ? 'rotate-90' : '-rotate-90'} />
-                  </span>
+          <div className="overflow-x-auto ambria-thin-scroll">
+            {/* Left to itself the browser splits a table by content, and the
+                short columns — a date, two chips, a word — each take a share of
+                a very wide panel, leaving the particulars, the one column that
+                wants room, squeezed against its neighbour. Everything but the
+                particulars is pinned to what it needs. */}
+            <table className="w-full min-w-[1040px]">
+              <colgroup>
+                <col style={{ width: '118px' }} />
+                <col style={{ width: '48px' }} />
+                <col />
+                <col style={{ width: '214px' }} />
+                <col style={{ width: '104px' }} />
+                <col style={{ width: '176px' }} />
+                <col style={{ width: '146px' }} />
+              </colgroup>
+              <thead className="sticky top-0 z-10 bg-slate-50 border-y border-slate-200">
+                <tr>
+                  <th className="px-3 py-2.5 text-left text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500 whitespace-nowrap">Date</th>
+                  <th className="px-3 py-2.5"><span className="sr-only">Direction</span></th>
+                  {['Particulars', 'Type', 'Mode', 'Added by'].map(function (h) {
+                    return <th key={h} className="px-3 py-2.5 text-left text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500 whitespace-nowrap">{h}</th>
+                  })}
+                  <th className="px-3 py-2.5 text-right text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500 whitespace-nowrap">Amount (pts)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pageRows.map(function (r) {
+                  var isIn = r.direction === 'in'
+                  var src = SOURCE_META[r.source] || { label: r.source, dot: 'bg-slate-400', cls: 'bg-slate-50 text-slate-700 border-slate-200' }
+                  var who = r.recorded_by || r.collector_name || ''
+                  return (
+                    <tr key={r.key} onClick={function () { openRow(r) }}
+                      className="border-b border-slate-100 last:border-b-0 cursor-pointer hover:bg-indigo-50/40 transition-colors">
+                      <td className="px-3 py-2.5 align-top whitespace-nowrap" data-notranslate>
+                        <div className="text-[13px] font-bold text-slate-700">{formatDate(r.date)}</div>
+                        <div className="text-[11px] text-slate-400">{timeOf(r.logged_at)}</div>
+                      </td>
 
-                  <div className="min-w-0 flex-1 space-y-1">
-                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
-                      <span className="min-w-0 truncate font-display text-[14px] font-bold text-slate-900">{r.party_name}</span>
-                      <span className="shrink-0 inline-flex items-center gap-1 h-[22px] px-2 rounded-md border border-slate-200 bg-slate-50 text-[11px] font-bold text-slate-600">
-                        <Icon name={r.mode === 'cash' ? 'banknote' : 'bank'} size={11} className="text-slate-400" />
-                        {r.mode === 'cash' ? 'Cash' : 'Bank'}
-                      </span>
-                      <span className={'shrink-0 inline-flex items-center gap-1.5 h-[22px] px-2 rounded-md border text-[11px] font-bold ' + src.cls}>
-                        <span aria-hidden="true" className={'w-1.5 h-1.5 rounded-full ' + src.dot} />
-                        {src.label}
-                      </span>
-                      <span className={'shrink-0 inline-flex items-center h-[22px] px-2 rounded-md border text-[11px] font-bold ' + r.type_cls}>
-                        {r.type_label}
-                      </span>
-                    </div>
+                      {/* Which way the money went, before you have read a word
+                          of the row. The sign on the amount says the same thing
+                          at the far end of a wide line, which is a long way to
+                          carry one character. */}
+                      <td className="px-3 py-2.5 align-top">
+                        <span className={'w-7 h-7 rounded-full inline-flex items-center justify-center ' +
+                          (isIn ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600')}
+                          title={isIn ? 'Money in' : 'Money out'}>
+                          <Icon name="arrowRight" size={14} className={isIn ? 'rotate-90' : '-rotate-90'} />
+                        </span>
+                      </td>
 
-                    {/* One line of facts divided by rules. Four greys separated
-                        by nothing but a gap read as four columns of a table
-                        that is not there. */}
-                    {(function () {
-                      var facts = []
-                      if (r.collector_name) facts.push('By ' + r.collector_name)
-                      if (r.description) facts.push(r.description)
-                      facts.push(formatDate(r.date))
-                      return (
-                        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
-                          {facts.map(function (f, i) {
-                            return (
-                              <span key={i} className="flex items-center gap-2.5 min-w-0">
-                                {i > 0 && <span aria-hidden="true" className="w-px h-3.5 bg-slate-200" />}
-                                <span className="min-w-0 truncate text-[12px] font-semibold text-slate-500">{f}</span>
-                              </span>
-                            )
-                          })}
+                      <td className="px-3 py-2.5 align-top">
+                        <p className="font-display text-[13px] font-bold text-slate-900 leading-snug">{r.party_name}</p>
+                        {r.description && (
+                          <p className="mt-0.5 text-[12px] text-slate-500 leading-snug">{r.description}</p>
+                        )}
+                      </td>
+
+                      <td className="px-3 py-2.5 align-top">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          {/* The type chip says what happened; this one says
+                              what the name in the row before it refers to.
+                              "Carpet Sharma" and "WEDDING" were reading as the
+                              same kind of thing. */}
+                          <span className={'inline-flex items-center gap-1.5 h-[22px] px-2 rounded-md border text-[11px] font-bold ' + src.cls}>
+                            <span aria-hidden="true" className={'w-1.5 h-1.5 rounded-full ' + src.dot} />
+                            {src.label}
+                          </span>
+                          <span className={'inline-flex items-center h-[22px] px-2 rounded-md border text-[11px] font-bold ' + r.type_cls}>
+                            {r.type_label}
+                          </span>
                         </div>
-                      )
-                    })()}
+                      </td>
 
-                    <p className="text-[11px] text-slate-400" data-notranslate>Logged {formatDateTime(r.logged_at)}</p>
-                  </div>
+                      <td className="px-3 py-2.5 align-top">
+                        <span className="inline-flex items-center gap-1.5 h-[22px] px-2 rounded-md border border-slate-200 bg-slate-50 text-[11px] font-bold text-slate-600">
+                          <Icon name={r.mode === 'cash' ? 'banknote' : 'bank'} size={11} className="text-slate-400" />
+                          {r.mode === 'cash' ? 'Cash' : 'Bank'}
+                        </span>
+                      </td>
 
-                  <p data-notranslate className={'shrink-0 text-[15px] font-bold tabular-nums whitespace-nowrap ' +
-                    (isIn ? 'text-emerald-700' : 'text-rose-700')}>
-                    {isIn ? '+ ' : '− '}{formatPoints(r.amount_paise || 0)}
-                  </p>
-                </div>
-              )
-            })}
+                      <td className="px-3 py-2.5 align-top">
+                        {who ? (
+                          <div className="flex items-center gap-2">
+                            <span className={'shrink-0 w-7 h-7 rounded-full inline-flex items-center justify-center text-[11px] font-bold ' + avatarTint(who)}
+                              data-notranslate>{initials(who)}</span>
+                            <span className="min-w-0">
+                              <span className="block text-[12px] font-bold text-slate-700 truncate">{who}</span>
+                              <span className="block text-[11px] text-slate-400" data-notranslate>{timeOf(r.logged_at)}</span>
+                            </span>
+                          </div>
+                        ) : <span className="text-[12px] text-slate-300">—</span>}
+                      </td>
+
+                      <td className="px-3 py-2.5 align-top text-right whitespace-nowrap">
+                        <span data-notranslate className={'text-[14px] font-bold tabular-nums ' + (isIn ? 'text-emerald-700' : 'text-rose-700')}>
+                          {isIn ? '+ ' : '− '}{formatPoints(r.amount_paise || 0)}
+                        </span>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {!loading && visible.length > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 border-t border-slate-200 bg-slate-50/60">
+            <p className="text-[12px] font-semibold text-slate-500" data-notranslate>
+              Showing {firstShown}–{lastShown} of {visible.length} transaction{visible.length === 1 ? '' : 's'}
+            </p>
+            {pageCount > 1 && (
+              <div className="flex items-center gap-1">
+                <button type="button" disabled={pageNow === 1} onClick={function () { setPage(pageNow - 1) }}
+                  aria-label="Previous page"
+                  className="w-8 h-8 inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-500 hover:bg-slate-100 disabled:opacity-30 transition-colors">
+                  <Icon name="chevronRight" size={14} className="rotate-180" />
+                </button>
+                {pageButtons.map(function (b, i) {
+                  if (b === '…') return <span key={'g' + i} className="px-1 text-[12px] font-bold text-slate-300">…</span>
+                  return (
+                    <button key={b} type="button" onClick={function () { setPage(b) }}
+                      className={'min-w-8 h-8 px-2 rounded-lg text-[12px] font-bold tabular-nums transition-colors ' +
+                        (b === pageNow ? 'bg-indigo-600 text-white' : 'border border-slate-300 bg-white text-slate-600 hover:bg-slate-100')}
+                      data-notranslate>{b}</button>
+                  )
+                })}
+                <button type="button" disabled={pageNow === pageCount} onClick={function () { setPage(pageNow + 1) }}
+                  aria-label="Next page"
+                  className="w-8 h-8 inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-500 hover:bg-slate-100 disabled:opacity-30 transition-colors">
+                  <Icon name="chevronRight" size={14} />
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>
