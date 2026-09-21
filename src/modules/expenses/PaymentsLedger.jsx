@@ -289,11 +289,18 @@ function PaymentsLedger({ profile }) {
   }, [rows, modeFilter, dirFilter, typeFilter, search, sortKey])
 
   // Every type present in the range, so the filter cannot offer one that
-  // returns nothing.
+  // returns nothing — and how many rows are behind each, so pressing one is a
+  // decision rather than a guess. Commonest first: the long tail of types this
+  // business barely uses should not sit above the two it lives on.
   var typesPresent = useMemo(function () {
-    var seen = []
-    rows.forEach(function (r) { if (r.type_label && seen.indexOf(r.type_label) === -1) seen.push(r.type_label) })
-    return seen.sort()
+    var byLabel = {}
+    rows.forEach(function (r) {
+      if (!r.type_label) return
+      byLabel[r.type_label] = (byLabel[r.type_label] || 0) + 1
+    })
+    return Object.keys(byLabel)
+      .map(function (k) { return { label: k, count: byLabel[k] } })
+      .sort(function (a, b) { return b.count - a.count || a.label.localeCompare(b.label) })
   }, [rows])
 
   // Any narrowing makes the page you were on meaningless.
@@ -376,7 +383,7 @@ function PaymentsLedger({ profile }) {
 
   return (
     <div className="@container space-y-3">
-      <div className={CARD + ' px-4 py-3'}>
+      <div className={CARD + ' px-4 py-3 overflow-hidden'}>
         <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
           <div className="flex items-center gap-2">
             <span className="text-[12px] font-bold text-slate-500">Date Range</span>
@@ -429,29 +436,51 @@ function PaymentsLedger({ profile }) {
         </div>
 
         {showMore && (
-          <div className="mt-3 pt-3 border-t border-slate-100 grid gap-3 @3xl:grid-cols-2">
-            <div>
-              <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500 mb-1.5">Search</p>
-              <SearchField value={search} onChange={function (v) { setSearch(v) }}
-                placeholder="Vendor, employee, event, who recorded it, description..." className="w-full" />
-            </div>
-            <div>
-              <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500 mb-1.5">Transaction type</p>
-              <div className="flex flex-wrap gap-1.5">
-                <button type="button" onClick={function () { setTypeFilter('') }}
-                  className={'h-8 px-2.5 rounded-lg border text-[12px] font-bold transition-colors ' +
-                    (typeFilter === '' ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50')}>
-                  Any
-                </button>
-                {typesPresent.map(function (t) {
-                  return (
-                    <button key={t} type="button" onClick={function () { setTypeFilter(typeFilter === t ? '' : t) }}
-                      className={'h-8 px-2.5 rounded-lg border text-[12px] font-bold transition-colors ' +
-                        (typeFilter === t ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50')}>
-                      {t}
+          /* A drawer, on its own ground, rather than two fields loose under a
+             hairline. The split was even, which gave a single search box half
+             a very wide panel and left six type pills to wrap and strand one
+             of themselves on a second line. */
+          <div className="mt-3 -mx-4 -mb-3 px-4 py-3.5 border-t border-slate-200 bg-slate-50/70">
+            <div className="grid gap-4 @3xl:grid-cols-12">
+              <div className="@3xl:col-span-4">
+                <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500 mb-1.5">Search</p>
+                <SearchField value={search} onChange={function (v) { setSearch(v) }}
+                  placeholder="Name, event, description..." className="w-full" />
+                <p className="mt-1.5 text-[11px] font-medium text-slate-400">
+                  Also matches the type and whoever recorded the row.
+                </p>
+              </div>
+
+              <div className="@3xl:col-span-8">
+                <div className="flex items-center justify-between gap-3 mb-1.5">
+                  <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500">Transaction type</p>
+                  {(typeFilter || search) && (
+                    <button type="button" onClick={function () { setTypeFilter(''); setSearch('') }}
+                      className="text-[11.5px] font-bold text-rose-600 hover:text-rose-700 transition-colors">
+                      Clear these
                     </button>
-                  )
-                })}
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  <button type="button" onClick={function () { setTypeFilter('') }} aria-pressed={typeFilter === ''}
+                    className={'h-8 px-3 rounded-lg border text-[12px] font-bold transition-colors ' +
+                      (typeFilter === '' ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50')}>
+                    Any
+                  </button>
+                  {typesPresent.map(function (t) {
+                    var on = typeFilter === t.label
+                    return (
+                      <button key={t.label} type="button" aria-pressed={on}
+                        onClick={function () { setTypeFilter(on ? '' : t.label) }}
+                        className={'h-8 pl-3 pr-2 inline-flex items-center gap-2 rounded-lg border text-[12px] font-bold transition-colors ' +
+                          (on ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50')}>
+                        {t.label}
+                        <span data-notranslate className={'px-1.5 rounded-md text-[11px] tabular-nums ' +
+                          (on ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500')}>{t.count}</span>
+                      </button>
+                    )
+                  })}
+                </div>
               </div>
             </div>
           </div>
