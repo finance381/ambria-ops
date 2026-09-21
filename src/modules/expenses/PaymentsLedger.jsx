@@ -370,17 +370,18 @@ function PaymentsLedger({ profile }) {
     [{ k: 'in',   label: 'Income',  on: dirFilter === 'in',    run: function () { setDirFilter(dirFilter === 'in' ? 'all' : 'in') }, tone: 'emerald' },
      { k: 'out',  label: 'Expense', on: dirFilter === 'out',   run: function () { setDirFilter(dirFilter === 'out' ? 'all' : 'out') }, tone: 'rose' }],
   ]
-  // Resting, every pill is the same grey: the strip is a row of options, and
+  // Pressed changes the writing, not the pill. Filling the whole shape put a
+  // block of colour in a toolbar of white controls, loud out of proportion to
+  // a filter being on; the word itself carrying its colour says the same thing
+  // at the size the thing deserves. Resting, every pill is the same grey —
   // five colours sitting there unpressed would each be claiming something is
-  // already in force. The colour is the answer to pressing one. Cash and Bank
-  // used to fill grey even pressed — the two that say what kind of money this
-  // is were the only two that could not say it in colour.
+  // already in force.
   var QUICK_TONE = {
-    indigo:  'border-indigo-300 bg-indigo-50 text-indigo-700',
-    amber:   'border-amber-300 bg-amber-50 text-amber-800',
-    sky:     'border-sky-300 bg-sky-50 text-sky-800',
-    emerald: 'border-emerald-300 bg-emerald-50 text-emerald-700',
-    rose:    'border-rose-300 bg-rose-50 text-rose-700',
+    indigo:  'text-indigo-600',
+    amber:   'text-amber-600',
+    sky:     'text-sky-600',
+    emerald: 'text-emerald-600',
+    rose:    'text-rose-600',
   }
 
   return (
@@ -414,8 +415,8 @@ function PaymentsLedger({ profile }) {
                       {group.map(function (q) {
                         return (
                           <button key={q.k} type="button" onClick={q.run} aria-pressed={q.on}
-                            className={'h-8 px-3 rounded-full border text-[12px] font-bold transition-colors ' +
-                              (q.on ? QUICK_TONE[q.tone] : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900')}>
+                            className={'h-8 px-3 rounded-full border border-slate-300 bg-white text-[12px] font-bold transition-colors hover:bg-slate-50 ' +
+                              (q.on ? QUICK_TONE[q.tone] : 'text-slate-600 hover:text-slate-900')}>
                             {q.label}
                           </button>
                         )
