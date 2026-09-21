@@ -1470,9 +1470,21 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
                 // in 150ms linear is a line that snaps on — indigo-200 over
                 // 250ms, with the face warming at the same time, arrives
                 // instead of appearing.
-                className={"flex items-start gap-3.5 bg-white border border-slate-200 rounded-2xl px-4 py-4 transition-[border-color,box-shadow,background-color] duration-250 ease-out " +
+                // Two hovers, because there are two kinds of row. An
+                // expense-linked entry opens; a payment does not — its ref_id
+                // is the payment's uuid, and there is nothing in this screen
+                // to open it in.
+                //
+                // The one that opens gets the indigo and the pointer. The one
+                // that does not still answers, but only with its border going
+                // a shade darker: enough that a card under the pointer is not
+                // the one card on the page that looks dead, and not so much
+                // that it promises something it will not do.
+                className={"flex items-start gap-3.5 bg-white border rounded-2xl px-4 py-4 transition-[border-color,box-shadow,background-color] duration-250 ease-out " +
                   (isDeleted ? "opacity-50 " : "") +
-                  (isExpRow ? "cursor-pointer hover:border-indigo-200 hover:bg-indigo-50/40 hover:shadow-[0_2px_10px_rgba(79,70,229,0.06)]" : "")}>
+                  (isExpRow
+                    ? "border-slate-200 cursor-pointer hover:border-indigo-200 hover:bg-indigo-50/40 hover:shadow-[0_2px_10px_rgba(79,70,229,0.06)]"
+                    : "border-slate-200 hover:border-slate-300")}>
                 <span aria-hidden="true" className={"shrink-0 w-2.5 h-2.5 rounded-full mt-2 " + dotColor} />
                 <div className="flex-1 min-w-0">
                   <p className={"text-[15px] font-bold text-slate-900 leading-snug " + (isDeleted ? "line-through" : "")}>
