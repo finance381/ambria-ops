@@ -80,7 +80,7 @@ function BalancePill({ paise, large }) {
 // vendors are overdue is a better button for "show me those" than a segment in
 // a bar underneath saying the same word without the count — so the tiles that
 // count a state can be pressed, and the two that are pure readings cannot.
-function Tile({ icon, tone, label, value, valueClass, wide, active, onClick, children }) {
+function Tile({ icon, tone, label, value, valueClass, wide, badge, active, onClick, children }) {
   // Three things this box has been taught, in the order it learned them.
   //
   // h-full, because a <button> centres its own contents and a <div> does not,
@@ -100,13 +100,12 @@ function Tile({ icon, tone, label, value, valueClass, wide, active, onClick, chi
   // it. That tile is picked out by its glyph badge and by having twice the
   // width, which is enough. Only `active`, a state you toggled, changes
   // anything, and it changes the face rather than the edge.
-  // The narrow tiles centre, so a short figure sits under the words that
-  // name it rather than starting at the padding while the label starts
-  // after a badge. The wide one does not: it is twice as long, and it
-  // carries a rule with two more facts under it — centre that and nothing
-  // in the tile shares an edge with anything else in it.
-  var box = 'h-full flex flex-col justify-center gap-2.5 border rounded-2xl px-4 py-4 transition-colors duration-150 ' +
-    (wide ? 'lg:col-span-2 items-start text-left ' : 'items-center text-center ') +
+  // Everything ranges left, wide or narrow. Six tiles in a row are read
+  // across, and a left edge they all share is what makes that a row rather
+  // than six separate things — centring gave each figure its own margin,
+  // different on every tile because every number is a different length.
+  var box = 'h-full flex flex-col justify-center gap-2.5 border rounded-2xl px-4 py-4 text-left transition-colors duration-150 ' +
+    (wide ? 'lg:col-span-2 ' : '') +
     'border-slate-200 ' +
     (active ? 'bg-indigo-50 ' : 'bg-white ') +
     (onClick && !active ? 'hover:bg-slate-50 ' : '') +
@@ -127,15 +126,16 @@ function Tile({ icon, tone, label, value, valueClass, wide, active, onClick, chi
           No negative tracking on it either: formatPoints returns one string,
           so tightening the letters tightened the space before "pts" too and
           pulled the unit onto the last digit. */}
-      {/* The whole tile is centred, so the figure sits under the words that
-          name it rather than starting at the card's left padding while the
-          label started after a 36px badge — the number looked hung out to one
-          side of a thing it belongs to. */}
-      <div className="flex max-w-full items-center gap-2.5">
+      {/* The label row runs the width of the tile, so a badge passed in ends
+          at the far edge rather than trailing the words. That is where a
+          state belongs on a tile whose figure is the point: beside the name of
+          the thing, not underneath the number. */}
+      <div className="flex w-full items-center gap-2.5">
         <span aria-hidden="true" className={'shrink-0 w-9 h-9 rounded-full inline-flex items-center justify-center ' + tone}>
           <Icon name={icon} size={17} />
         </span>
-        <p className={'min-w-0 truncate text-[13px] font-semibold ' + (active ? 'text-indigo-700' : 'text-slate-600')}>{label}</p>
+        <p className={'min-w-0 flex-1 truncate text-[13px] font-semibold ' + (active ? 'text-indigo-700' : 'text-slate-600')}>{label}</p>
+        {badge}
       </div>
       {/* One size for every tile in a row, whichever is wide. The five narrow
           ones had come down to fit beside the glyph badge; now that the figure
@@ -1133,8 +1133,24 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
             the ordinary state of a vendor ledger — the thing that is
             actually wrong is the overdue note under it, which is the one
             red on the page. */}
+        {/* The overdue note rides the label row rather than sitting under the
+            figure. Under it, it pushed this tile two rows taller than the five
+            beside it and put a red block directly below the number it has
+            nothing to do with; beside the label it is a state attached to the
+            name of the thing, which is what it is.
+
+            Outlined rather than filled, because up there it sits against the
+            tile's own white rather than under a figure, and a fill at that
+            size reads as a button. */}
         <Tile wide icon="wallet" tone="bg-indigo-50 text-indigo-600" label="Outstanding Balance"
-          value={formatPoints(currentBalance)} valueClass={balanceColour(currentBalance)}>
+          value={formatPoints(currentBalance)} valueClass={balanceColour(currentBalance)}
+          badge={(vs.overdue_count || 0) > 0 ? (
+            <span className="shrink-0 inline-flex items-center gap-1.5 h-6 px-2.5 rounded-lg border border-rose-200 bg-white text-[11.5px] font-bold text-rose-600 whitespace-nowrap"
+              title={'Earliest due ' + formatDate(vs.earliest_due_date)}>
+              <Icon name="alert" size={12} className="shrink-0" />
+              <span data-notranslate>{vs.overdue_count}</span> overdue
+            </span>
+          ) : null}>
           {/* Both notes on one wrapping line rather than one under the other.
               Stacked, they made this tile two rows taller than the five beside
               it, and every one of those five stretched to match — which is
@@ -1148,15 +1164,9 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
               Includes opening: <span className="text-slate-700" data-notranslate>{formatPoints(Math.abs(openingPaise))} {openingPaise > 0 ? 'Cr' : 'Dr'}</span>
             </p>
           )}
-          {/* self-start, because inside a flex column a flex item stretches to
-              the column's width — which is how this chip once ended up drawn as
-              a full-width bar. */}
           {(vs.overdue_count || 0) > 0 && (
-            <p className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-lg bg-rose-100 text-[12px] font-bold text-rose-700 whitespace-nowrap">
-              <Icon name="alert" size={13} className="shrink-0" />
-              <span>
-                <span data-notranslate>{vs.overdue_count}</span> overdue · earliest {formatDate(vs.earliest_due_date)}
-              </span>
+            <p className="text-[12.5px] font-semibold text-slate-500">
+              Earliest due: <span className="font-bold text-rose-600" data-notranslate>{formatDate(vs.earliest_due_date)}</span>
             </p>
           )}
         </Tile>
