@@ -1426,9 +1426,18 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
             return (
               <div key={e.id}
                 onClick={handleRowClick}
-                className={"flex items-start gap-3.5 bg-white border border-slate-200 rounded-2xl px-4 py-4 transition-all duration-150 " +
+                // A named transition rather than transition-all: `all` animates
+                // every property that happens to change, which on a card that
+                // can also expand means the border easing is fighting a height
+                // that should not be easing at all.
+                //
+                // Slower, eased out, and a step paler. slate-200 to indigo-300
+                // in 150ms linear is a line that snaps on — indigo-200 over
+                // 250ms, with the face warming at the same time, arrives
+                // instead of appearing.
+                className={"flex items-start gap-3.5 bg-white border border-slate-200 rounded-2xl px-4 py-4 transition-[border-color,box-shadow,background-color] duration-250 ease-out " +
                   (isDeleted ? "opacity-50 " : "") +
-                  (isExpRow ? "cursor-pointer hover:border-indigo-300 hover:shadow-[0_4px_14px_rgba(79,70,229,0.08)]" : "")}>
+                  (isExpRow ? "cursor-pointer hover:border-indigo-200 hover:bg-indigo-50/40 hover:shadow-[0_2px_10px_rgba(79,70,229,0.06)]" : "")}>
                 <span aria-hidden="true" className={"shrink-0 w-2.5 h-2.5 rounded-full mt-2 " + dotColor} />
                 <div className="flex-1 min-w-0">
                   <p className={"text-[15px] font-bold text-slate-900 leading-snug " + (isDeleted ? "line-through" : "")}>
