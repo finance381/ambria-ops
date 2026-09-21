@@ -73,7 +73,7 @@ function EventCalendar({ value, onChange, year, month, onMonthChange, byDate, lo
             sense stacked on a phone where the panel that repeats it has been
             pushed below the fold. */}
         {picked && !isNaN(picked) && (
-          <span data-notranslate className="ml-auto h-6 px-2 inline-flex items-center rounded-lg bg-indigo-50 text-indigo-700 text-[11.5px] font-bold">
+          <span data-notranslate className="ml-auto h-6 px-2 inline-flex items-center rounded-lg bg-indigo-50 text-indigo-700 text-[12px] font-bold">
             {picked.getDate() + ' ' + SHORT_MONTHS[picked.getMonth()]}
           </span>
         )}
@@ -82,7 +82,7 @@ function EventCalendar({ value, onChange, year, month, onMonthChange, byDate, lo
             onMonthChange(today.getFullYear(), today.getMonth())
             if (onChange) onChange(todayStr)
           }}
-          className="shrink-0 h-7 px-2.5 rounded-lg text-[12.5px] font-bold text-indigo-600 hover:bg-indigo-50 transition-colors">
+          className="shrink-0 h-7 px-2.5 rounded-lg text-[13px] font-bold text-indigo-600 hover:bg-indigo-50 transition-colors">
           Today
         </button>
       </div>
@@ -107,7 +107,7 @@ function EventCalendar({ value, onChange, year, month, onMonthChange, byDate, lo
       <div className="px-3 pb-3">
         <div className="grid grid-cols-7 mt-3 mb-1">
           {DAY_NAMES.map(function (dn) {
-            return <div key={dn} className="text-center text-[11px] font-bold uppercase tracking-[0.06em] text-slate-500 py-1.5">{dn}</div>
+            return <div key={dn} className="text-center text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500 py-1.5">{dn}</div>
           })}
         </div>
 
@@ -116,7 +116,7 @@ function EventCalendar({ value, onChange, year, month, onMonthChange, byDate, lo
             if (!cell.current) {
               return (
                 <div key={'e' + idx} className="aspect-square flex items-center justify-center">
-                  <span className="text-[14px] font-bold text-slate-200" data-notranslate>{cell.day}</span>
+                  <span className="text-[15px] font-bold text-slate-200" data-notranslate>{cell.day}</span>
                 </div>
               )
             }
@@ -141,7 +141,7 @@ function EventCalendar({ value, onChange, year, month, onMonthChange, byDate, lo
               <button key={cell.dateStr} type="button"
                 onClick={function () { if (onChange) onChange(cell.dateStr) }}
                 aria-pressed={isSelected} aria-label={label} title={label}
-                className={'aspect-square w-full rounded-full flex flex-col items-center justify-center gap-[3px] text-[14px] font-bold transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 ' + tone}>
+                className={'aspect-square w-full rounded-full flex flex-col items-center justify-center gap-[3px] text-[15px] font-bold transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 ' + tone}>
                 <span data-notranslate className="leading-none">{cell.day}</span>
                 {/* The dot row keeps its height whether or not there are dots,
                     so a day with events is not a pixel taller than the one
@@ -164,7 +164,7 @@ function EventCalendar({ value, onChange, year, month, onMonthChange, byDate, lo
         <div className="flex items-center gap-x-2.5 gap-y-1 flex-wrap">
           {legend.map(function (v) {
             return (
-              <span key={v} title={v} className="inline-flex items-center gap-1.5 text-[11.5px] font-bold text-slate-600">
+              <span key={v} title={v} className="inline-flex items-center gap-1.5 text-[12px] font-bold text-slate-600">
                 <span className="w-2 h-2 rounded-full" style={{ background: venueColor(v) }} />
                 {venueCode(v)}
               </span>
@@ -174,7 +174,7 @@ function EventCalendar({ value, onChange, year, month, onMonthChange, byDate, lo
             <span className="text-[11px] font-semibold text-slate-400">No venues booked</span>
           )}
         </div>
-        <span className="shrink-0 text-[11.5px] font-bold text-slate-500 tabular-nums" data-notranslate>
+        <span className="shrink-0 text-[12px] font-bold text-slate-500 tabular-nums" data-notranslate>
           {loading ? 'Loading…' : (total || 0) + ((total || 0) === 1 ? ' event' : ' events')}
         </span>
       </div>

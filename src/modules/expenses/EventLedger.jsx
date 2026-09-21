@@ -80,7 +80,7 @@ function SectionCard({ title, icon, right, children, className }) {
   return (
     <div className={CARD + ' overflow-hidden ' + (className || '')}>
       <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-slate-100 bg-slate-50/60">
-        <p className="inline-flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.1em] text-slate-500">
+        <p className="inline-flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500">
           {icon && <Icon name={icon} size={13} className="text-slate-400" />}
           {title}
         </p>
@@ -566,8 +566,8 @@ function EventLedger(props) {
   }
 
   function renderEntriesTable(rows) {
-    if (entriesLoading) return <p className="text-[12.5px] text-slate-400 p-5 text-center">Loading entries…</p>
-    if (entries.length === 0) return <p className="text-[12.5px] text-slate-400 p-8 text-center">No entries</p>
+    if (entriesLoading) return <p className="text-[13px] text-slate-400 p-5 text-center">Loading entries…</p>
+    if (entries.length === 0) return <p className="text-[13px] text-slate-400 p-8 text-center">No entries</p>
     if (rows.length === 0) {
       return (
         <div className="px-4 py-12 text-center">
@@ -600,19 +600,19 @@ function EventLedger(props) {
               <th className="px-3 py-2.5 text-left">
                 <button type="button" onClick={function () { setTxnSort(txnSort === 'desc' ? 'asc' : 'desc') }}
                   title={txnSort === 'desc' ? 'Newest first — press for oldest' : 'Oldest first — press for newest'}
-                  className="inline-flex items-center gap-1 text-[10.5px] font-bold uppercase tracking-[0.06em] text-slate-500 hover:text-slate-900 transition-colors">
+                  className="inline-flex items-center gap-1 text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500 hover:text-slate-900 transition-colors">
                   Date
                   <Icon name={txnSort === 'desc' ? 'chevronDown' : 'chevronUp'} size={12} className="text-slate-400" />
                 </button>
               </th>
               {['Type', 'Mode'].map(function (h) {
-                return <th key={h} className="px-3 py-2.5 text-left text-[10.5px] font-bold uppercase tracking-[0.06em] text-slate-500 whitespace-nowrap">{h}</th>
+                return <th key={h} className="px-3 py-2.5 text-left text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500 whitespace-nowrap">{h}</th>
               })}
               {['In', 'Out'].map(function (h) {
-                return <th key={h} className="px-3 py-2.5 text-right text-[10.5px] font-bold uppercase tracking-[0.06em] text-slate-500 whitespace-nowrap">{h}</th>
+                return <th key={h} className="px-3 py-2.5 text-right text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500 whitespace-nowrap">{h}</th>
               })}
-              <th className="px-3 py-2.5 text-left text-[10.5px] font-bold uppercase tracking-[0.06em] text-slate-500 whitespace-nowrap">Description</th>
-              <th className="px-3 py-2.5 text-right text-[10.5px] font-bold uppercase tracking-[0.06em] text-slate-500 whitespace-nowrap border-l border-slate-200">Added By</th>
+              <th className="px-3 py-2.5 text-left text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500 whitespace-nowrap">Description</th>
+              <th className="px-3 py-2.5 text-right text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500 whitespace-nowrap border-l border-slate-200">Added By</th>
             </tr>
           </thead>
           <tbody>
@@ -627,8 +627,8 @@ function EventLedger(props) {
                   className={'border-b border-slate-100 last:border-b-0 transition-colors ' +
                     (isClickable ? 'cursor-pointer hover:bg-indigo-50/40' : '')}>
                   <td className="px-3 py-2.5 align-top whitespace-nowrap" data-notranslate>
-                    <div className="text-[12.5px] font-semibold text-slate-700">{formatDate(rowDate(e))}</div>
-                    <div className="text-[10.5px] text-slate-400">Logged {formatDateTime(e.created_at)}</div>
+                    <div className="text-[13px] font-semibold text-slate-700">{formatDate(rowDate(e))}</div>
+                    <div className="text-[11px] text-slate-400">Logged {formatDateTime(e.created_at)}</div>
                   </td>
                   <td className="px-3 py-2.5 align-top">
                     <div className="flex items-center gap-1.5">
@@ -661,7 +661,7 @@ function EventLedger(props) {
                       )}
                     </div>
                   </td>
-                  <td className="px-3 py-2.5 align-top text-[12.5px] text-slate-600 whitespace-nowrap">{e.payment_mode ? titleCase(e.payment_mode) : '—'}</td>
+                  <td className="px-3 py-2.5 align-top text-[13px] text-slate-600 whitespace-nowrap">{e.payment_mode ? titleCase(e.payment_mode) : '—'}</td>
                   <td className="px-3 py-2.5 align-top text-right text-[13px] font-bold tabular-nums whitespace-nowrap" data-notranslate>
                     {e.direction === 'in'
                       ? <span className="text-emerald-700">{formatPoints(e.amount_paise)}</span>
@@ -677,7 +677,7 @@ function EventLedger(props) {
                       {multiContract && contractByEventId[e.event_id] && contractByEventId[e.event_id].department && (
                         <span className="shrink-0 mt-px"><DeptChip name={contractByEventId[e.event_id].department} /></span>
                       )}
-                      <p className="min-w-0 max-w-[620px] text-[12.5px] text-slate-700 leading-snug">{e.description || '—'}</p>
+                      <p className="min-w-0 max-w-[620px] text-[13px] text-slate-700 leading-snug">{e.description || '—'}</p>
                     </div>
                   </td>
                   <td className="px-3 py-2.5 align-top border-l border-slate-100">
@@ -685,9 +685,9 @@ function EventLedger(props) {
                       <div className="flex items-center justify-end gap-2">
                         <span className="min-w-0 text-right">
                           <span className="block text-[12px] font-semibold text-slate-700 truncate">{person}</span>
-                          <span className="block text-[10.5px] text-slate-400" data-notranslate>{formatDate(e.created_at)}</span>
+                          <span className="block text-[11px] text-slate-400" data-notranslate>{formatDate(e.created_at)}</span>
                         </span>
-                        <span className={'shrink-0 w-7 h-7 rounded-full inline-flex items-center justify-center text-[10.5px] font-bold ' + avatarTint(person)}
+                        <span className={'shrink-0 w-7 h-7 rounded-full inline-flex items-center justify-center text-[11px] font-bold ' + avatarTint(person)}
                           data-notranslate>{initials(person)}</span>
                       </div>
                     ) : <span className="block text-right text-[12px] text-slate-400">—</span>}
@@ -701,8 +701,8 @@ function EventLedger(props) {
     )
   }
   function renderPlatesTable() {
-    if (platesLoading) return <p className="text-[12.5px] text-slate-400 p-5 text-center">Loading plate history…</p>
-    if (plateEvents.length === 0) return <p className="text-[12.5px] text-slate-400 p-8 text-center">No plate activity for this event</p>
+    if (platesLoading) return <p className="text-[13px] text-slate-400 p-5 text-center">Loading plate history…</p>
+    if (plateEvents.length === 0) return <p className="text-[13px] text-slate-400 p-8 text-center">No plate activity for this event</p>
     return (
       <div className="overflow-x-auto ambria-thin-scroll">
         {/* Same reasoning as the entries table: six short columns and one that
@@ -721,13 +721,13 @@ function EventLedger(props) {
           <thead className="bg-slate-50 border-b border-slate-200">
             <tr>
               {['Date', 'Type'].map(function (h) {
-                return <th key={h} className="px-3 py-2.5 text-left text-[10.5px] font-bold uppercase tracking-[0.06em] text-slate-500">{h}</th>
+                return <th key={h} className="px-3 py-2.5 text-left text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500">{h}</th>
               })}
               {['Plates', 'Returned', 'Charged', 'Amount'].map(function (h) {
-                return <th key={h} className="px-3 py-2.5 text-right text-[10.5px] font-bold uppercase tracking-[0.06em] text-slate-500">{h}</th>
+                return <th key={h} className="px-3 py-2.5 text-right text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500">{h}</th>
               })}
               {['Mode', 'Notes'].map(function (h) {
-                return <th key={h} className="px-3 py-2.5 text-left text-[10.5px] font-bold uppercase tracking-[0.06em] text-slate-500">{h}</th>
+                return <th key={h} className="px-3 py-2.5 text-left text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500">{h}</th>
               })}
             </tr>
           </thead>
@@ -751,10 +751,10 @@ function EventLedger(props) {
                       {typeLabel}{isCancelled ? ' · Cancelled' : ''}
                     </span>
                   </td>
-                  <td className="px-3 py-2.5 text-right text-[12.5px] tabular-nums text-slate-800" data-notranslate>{isIssue ? p.plates_count : '—'}</td>
-                  <td className="px-3 py-2.5 text-right text-[12.5px] tabular-nums text-amber-700" data-notranslate>{!isIssue && (p.plates_returned || 0) > 0 ? p.plates_returned : '—'}</td>
-                  <td className="px-3 py-2.5 text-right text-[12.5px] tabular-nums text-slate-800" data-notranslate>{!isIssue && (p.extras_charged || 0) > 0 ? p.extras_charged : '—'}</td>
-                  <td className="px-3 py-2.5 text-right text-[12.5px] font-semibold tabular-nums text-emerald-700" data-notranslate>{!isIssue && (p.total_paise || 0) > 0 ? formatPoints(p.total_paise) : '—'}</td>
+                  <td className="px-3 py-2.5 text-right text-[13px] tabular-nums text-slate-800" data-notranslate>{isIssue ? p.plates_count : '—'}</td>
+                  <td className="px-3 py-2.5 text-right text-[13px] tabular-nums text-amber-700" data-notranslate>{!isIssue && (p.plates_returned || 0) > 0 ? p.plates_returned : '—'}</td>
+                  <td className="px-3 py-2.5 text-right text-[13px] tabular-nums text-slate-800" data-notranslate>{!isIssue && (p.extras_charged || 0) > 0 ? p.extras_charged : '—'}</td>
+                  <td className="px-3 py-2.5 text-right text-[13px] font-semibold tabular-nums text-emerald-700" data-notranslate>{!isIssue && (p.total_paise || 0) > 0 ? formatPoints(p.total_paise) : '—'}</td>
                   <td className="px-3 py-2.5 text-[12px] text-slate-700">{modeLabel}</td>
                   <td className="px-3 py-2.5 text-[12px] text-slate-600">{p.notes || (isCancelled && p.cancelled_reason ? '(' + p.cancelled_reason + ')' : '—')}</td>
                 </tr>
@@ -790,7 +790,7 @@ function EventLedger(props) {
           </span>
           <div className="min-w-0 flex-1">
             <div className="flex items-start justify-between gap-3">
-              <h2 className="min-w-0 font-display text-[19px] font-bold text-slate-900 leading-tight">
+              <h2 className="min-w-0 font-display text-[21px] font-bold text-slate-900 leading-tight tracking-[-0.015em]">
                 {eventDetail.event_name || 'Event'}
                 {eventDetail.client_name ? ' — ' + eventDetail.client_name : ''}
               </h2>
@@ -798,13 +798,13 @@ function EventLedger(props) {
                   cannot tell anyone anything. is_tentative can: it is the
                   difference between a booking LMS has a contract for and one
                   somebody entered by hand ahead of the paperwork. */}
-              <span className={'shrink-0 h-6 px-2.5 inline-flex items-center rounded-lg text-[10.5px] font-bold uppercase tracking-[0.06em] ' +
+              <span className={'shrink-0 h-6 px-2.5 inline-flex items-center rounded-lg text-[11px] font-bold uppercase tracking-[0.08em] ' +
                 (eventDetail.is_tentative ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700')}>
                 {eventDetail.is_tentative ? 'Tentative' : 'Confirmed'}
               </span>
             </div>
             {(eventDetail.venue_name || eventDetail.session) && (
-              <p className="mt-1 flex items-center gap-1.5 text-[12.5px] font-medium text-slate-500">
+              <p className="mt-1 flex items-center gap-1.5 text-[13px] font-medium text-slate-500">
                 <Icon name="mapPin" size={12} className="shrink-0 text-slate-400" />
                 <span className="min-w-0 truncate">
                   {eventDetail.venue_name || ''}
@@ -840,7 +840,7 @@ function EventLedger(props) {
               <Icon name={t.icon} size={14} />
               {t.label}
               {count !== undefined && count > 0 && (
-                <span data-notranslate className={'px-1.5 py-0.5 rounded-md text-[10.5px] font-bold tabular-nums leading-none ' +
+                <span data-notranslate className={'px-1.5 py-0.5 rounded-md text-[11px] font-bold tabular-nums leading-none ' +
                   (active ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-500')}>{count}</span>
               )}
               {active && <span aria-hidden="true" className="absolute left-2 right-2 -bottom-px h-0.5 rounded-full bg-indigo-600" />}
@@ -903,8 +903,8 @@ function EventLedger(props) {
             <MoneyTile label="Agreed Cash" value={balanceLoading ? '—' : formatPoints(agrCashP)}
               sub={
                 <div className="mt-2 space-y-0.5">
-                  <p className="text-[11.5px] text-slate-500 tabular-nums" data-notranslate>Collected {formatPoints(colCashP)}</p>
-                  <p className={'text-[11.5px] font-bold tabular-nums ' + (pendCashP > 0 ? 'text-rose-600' : 'text-emerald-600')} data-notranslate>
+                  <p className="text-[12px] text-slate-500 tabular-nums" data-notranslate>Collected {formatPoints(colCashP)}</p>
+                  <p className={'text-[12px] font-bold tabular-nums ' + (pendCashP > 0 ? 'text-rose-600' : 'text-emerald-600')} data-notranslate>
                     Pending {formatPoints(pendCashP)}
                   </p>
                 </div>
@@ -912,16 +912,16 @@ function EventLedger(props) {
             <MoneyTile label="Agreed Bank" value={balanceLoading ? '—' : formatPoints(agrBankP)}
               sub={
                 <div className="mt-2 space-y-0.5">
-                  <p className="text-[11.5px] text-slate-500 tabular-nums" data-notranslate>Collected {formatPoints(colBankP)}</p>
-                  <p className={'text-[11.5px] font-bold tabular-nums ' + (pendBankP > 0 ? 'text-rose-600' : 'text-emerald-600')} data-notranslate>
+                  <p className="text-[12px] text-slate-500 tabular-nums" data-notranslate>Collected {formatPoints(colBankP)}</p>
+                  <p className={'text-[12px] font-bold tabular-nums ' + (pendBankP > 0 ? 'text-rose-600' : 'text-emerald-600')} data-notranslate>
                     Pending {formatPoints(pendBankP)}
                   </p>
                 </div>
               } />
             <MoneyTile label="Total Collected" tone="text-emerald-700" value={balanceLoading ? '—' : formatPoints(colCashP + colBankP)}
-              sub={<p className="mt-2 text-[11.5px] text-slate-500">Cash and bank together</p>} />
+              sub={<p className="mt-2 text-[12px] text-slate-500">Cash and bank together</p>} />
             <MoneyTile label="Total Spent" tone="text-rose-700" value={balanceLoading ? '—' : formatPoints(spentP)}
-              sub={<p className="mt-2 text-[11.5px] text-slate-500">Expenses booked to this event</p>} />
+              sub={<p className="mt-2 text-[12px] text-slate-500">Expenses booked to this event</p>} />
           </div>
 
           {multiContract && (
@@ -930,9 +930,9 @@ function EventLedger(props) {
                 <table className="w-full">
                   <thead className="bg-slate-50 border-b border-slate-200">
                     <tr>
-                      <th className="px-3 py-2.5 text-left text-[10.5px] font-bold uppercase tracking-[0.06em] text-slate-500">Contract</th>
+                      <th className="px-3 py-2.5 text-left text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500">Contract</th>
                       {['Agreed Cash', 'Coll. Cash', 'Pend. Cash', 'Agreed Bank', 'Coll. Bank', 'Pend. Bank'].map(function (h) {
-                        return <th key={h} className="px-3 py-2.5 text-right text-[10.5px] font-bold uppercase tracking-[0.06em] text-slate-500 whitespace-nowrap">{h}</th>
+                        return <th key={h} className="px-3 py-2.5 text-right text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500 whitespace-nowrap">{h}</th>
                       })}
                     </tr>
                   </thead>
@@ -950,12 +950,12 @@ function EventLedger(props) {
                               {c.created_user_name && <span className="text-[11px] text-slate-400">· by {c.created_user_name}</span>}
                             </div>
                           </td>
-                          <td className="px-3 py-2.5 text-right text-[12.5px] tabular-nums text-slate-800" data-notranslate>{formatPoints(Number(b.agreed_cash_paise || 0))}</td>
-                          <td className="px-3 py-2.5 text-right text-[12.5px] tabular-nums text-slate-600" data-notranslate>{formatPoints(Number(b.collected_cash_paise || 0))}</td>
-                          <td className={'px-3 py-2.5 text-right text-[12.5px] font-bold tabular-nums ' + (pcash > 0 ? 'text-rose-600' : 'text-emerald-600')} data-notranslate>{formatPoints(pcash)}</td>
-                          <td className="px-3 py-2.5 text-right text-[12.5px] tabular-nums text-slate-800" data-notranslate>{formatPoints(Number(b.agreed_bank_paise || 0))}</td>
-                          <td className="px-3 py-2.5 text-right text-[12.5px] tabular-nums text-slate-600" data-notranslate>{formatPoints(Number(b.collected_bank_paise || 0))}</td>
-                          <td className={'px-3 py-2.5 text-right text-[12.5px] font-bold tabular-nums ' + (pbank > 0 ? 'text-rose-600' : 'text-emerald-600')} data-notranslate>{formatPoints(pbank)}</td>
+                          <td className="px-3 py-2.5 text-right text-[13px] tabular-nums text-slate-800" data-notranslate>{formatPoints(Number(b.agreed_cash_paise || 0))}</td>
+                          <td className="px-3 py-2.5 text-right text-[13px] tabular-nums text-slate-600" data-notranslate>{formatPoints(Number(b.collected_cash_paise || 0))}</td>
+                          <td className={'px-3 py-2.5 text-right text-[13px] font-bold tabular-nums ' + (pcash > 0 ? 'text-rose-600' : 'text-emerald-600')} data-notranslate>{formatPoints(pcash)}</td>
+                          <td className="px-3 py-2.5 text-right text-[13px] tabular-nums text-slate-800" data-notranslate>{formatPoints(Number(b.agreed_bank_paise || 0))}</td>
+                          <td className="px-3 py-2.5 text-right text-[13px] tabular-nums text-slate-600" data-notranslate>{formatPoints(Number(b.collected_bank_paise || 0))}</td>
+                          <td className={'px-3 py-2.5 text-right text-[13px] font-bold tabular-nums ' + (pbank > 0 ? 'text-rose-600' : 'text-emerald-600')} data-notranslate>{formatPoints(pbank)}</td>
                         </tr>
                       )
                     })}
@@ -988,7 +988,7 @@ function EventLedger(props) {
                 return (
                   <button key={t.key} type="button" aria-pressed={active} disabled={empty}
                     onClick={function () { setFilter(t.key); setTxnPage(1) }}
-                    className={'inline-flex items-center gap-1.5 h-9 px-3 rounded-xl text-[12.5px] font-bold transition-colors ' +
+                    className={'inline-flex items-center gap-1.5 h-9 px-3 rounded-xl text-[13px] font-bold transition-colors ' +
                       (active
                         ? 'bg-indigo-600 text-white'
                         : empty
@@ -1011,19 +1011,19 @@ function EventLedger(props) {
                   className={FIELD_SEARCH} />
               </div>
               <button type="button" onClick={function () { setShowTxnFilter(!showTxnFilter) }} aria-pressed={showTxnFilter}
-                className={'inline-flex items-center gap-1.5 h-10 px-3 rounded-xl text-[12.5px] font-bold border transition-colors ' +
+                className={'inline-flex items-center gap-1.5 h-10 px-3 rounded-xl text-[13px] font-bold border transition-colors ' +
                   (txnFilterCount > 0 || showTxnFilter
                     ? 'border-indigo-300 bg-indigo-50 text-indigo-700'
                     : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900')}>
                 <Icon name="filter" size={14} />
                 Filter
                 {txnFilterCount > 0 && (
-                  <span data-notranslate className="px-1.5 rounded-md bg-indigo-600 text-white text-[10.5px] tabular-nums">{txnFilterCount}</span>
+                  <span data-notranslate className="px-1.5 rounded-md bg-indigo-600 text-white text-[11px] tabular-nums">{txnFilterCount}</span>
                 )}
               </button>
               <button type="button" onClick={function () { exportCsv(vis) }} disabled={vis.length === 0}
                 title="Export everything shown, in the order it is shown"
-                className="inline-flex items-center gap-1.5 h-10 px-3.5 rounded-xl text-[12.5px] font-bold text-white bg-indigo-600 hover:bg-indigo-700 active:scale-[0.98] disabled:opacity-40 disabled:hover:bg-indigo-600 transition-all">
+                className="inline-flex items-center gap-1.5 h-10 px-3.5 rounded-xl text-[13px] font-bold text-white bg-indigo-600 hover:bg-indigo-700 active:scale-[0.98] disabled:opacity-40 disabled:hover:bg-indigo-600 transition-all">
                 <Icon name="download" size={14} />
                 Export
               </button>
@@ -1033,7 +1033,7 @@ function EventLedger(props) {
           {showTxnFilter && (
             <div className={CARD + ' p-3 grid gap-3 @3xl:grid-cols-3'}>
               <div>
-                <p className="text-[11px] font-bold uppercase tracking-[0.06em] text-slate-500 mb-1.5">Direction</p>
+                <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500 mb-1.5">Direction</p>
                 <div className="flex gap-1.5">
                   {[{ k: '', l: 'Any' }, { k: 'in', l: 'Money in' }, { k: 'out', l: 'Money out' }].map(function (o) {
                     return (
@@ -1048,7 +1048,7 @@ function EventLedger(props) {
                 </div>
               </div>
               <div>
-                <p className="text-[11px] font-bold uppercase tracking-[0.06em] text-slate-500 mb-1.5">Mode</p>
+                <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500 mb-1.5">Mode</p>
                 <div className="flex flex-wrap gap-1.5">
                   <button type="button" onClick={function () { setTxnMode(''); setTxnPage(1) }}
                     className={'h-8 px-2.5 rounded-lg text-[12px] font-bold border transition-colors ' +
@@ -1063,7 +1063,7 @@ function EventLedger(props) {
                 </div>
               </div>
               <div>
-                <p className="text-[11px] font-bold uppercase tracking-[0.06em] text-slate-500 mb-1.5">Finance check</p>
+                <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500 mb-1.5">Finance check</p>
                 <div className="flex items-center gap-1.5">
                   {[{ k: '', l: 'Any' }, { k: 'checked', l: 'Checked' }, { k: 'unchecked', l: 'Unchecked' }].map(function (o) {
                     return (
@@ -1126,7 +1126,7 @@ function EventLedger(props) {
       {tab === 'documents' && (
         <div className={CARD + ' p-4'}>
           {documents.length === 0 ? (
-            <p className="text-[12.5px] text-slate-400 p-8 text-center">No contract files or receipts on this event</p>
+            <p className="text-[13px] text-slate-400 p-8 text-center">No contract files or receipts on this event</p>
           ) : (
             <div className="grid gap-3 grid-cols-2 @3xl:grid-cols-4">
               {documents.map(function (d) {
@@ -1197,7 +1197,7 @@ function EventLedger(props) {
               <div className={CARD + ' overflow-hidden'}>
                 <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-b border-slate-100">
                   <div className="min-w-0">
-                    <p className="text-[10.5px] font-bold uppercase tracking-[0.1em] text-slate-400">This month</p>
+                    <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">This month</p>
                     <p className="font-display text-[17px] font-bold text-slate-900 tracking-[-0.01em]" data-notranslate>
                       {MONTHS[monthMonth] + ' ' + monthYear}
                     </p>
@@ -1227,8 +1227,8 @@ function EventLedger(props) {
                 {!monthLoading && monthDays.length === 0 && (
                   <div className="px-4 py-16 text-center">
                     <Icon name="calendar" size={26} className="mx-auto text-slate-300" />
-                    <p className="mt-2 text-[13.5px] font-bold text-slate-600">Nothing booked this month</p>
-                    <p className="mt-0.5 text-[12.5px] font-medium text-slate-400">Use the arrows above the grid to look at another one.</p>
+                    <p className="mt-2 text-[13px] font-bold text-slate-600">Nothing booked this month</p>
+                    <p className="mt-0.5 text-[13px] font-medium text-slate-400">Use the arrows above the grid to look at another one.</p>
                   </div>
                 )}
 
@@ -1256,8 +1256,8 @@ function EventLedger(props) {
                               a column rather than inside a sentence. */}
                           <span className={'shrink-0 w-12 text-center rounded-xl py-1.5 ' +
                             (isToday ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600')}>
-                            <span data-notranslate className="block font-display text-[19px] font-bold leading-none">{when.getDate()}</span>
-                            <span className={'block mt-0.5 text-[10.5px] font-bold uppercase tracking-[0.06em] ' + (isToday ? 'text-white/80' : 'text-slate-500')}>
+                            <span data-notranslate className="block font-display text-[19px] font-bold leading-none tracking-[-0.01em] tabular-nums">{when.getDate()}</span>
+                            <span className={'block mt-0.5 text-[11px] font-bold uppercase tracking-[0.08em] ' + (isToday ? 'text-white/80' : 'text-slate-500')}>
                               {SHORT_DAYS[when.getDay()]}
                             </span>
                           </span>
@@ -1266,7 +1266,7 @@ function EventLedger(props) {
                             {groups.slice(0, 3).map(function (g) {
                               return (
                                 <span key={g.key} className="flex items-center gap-2 min-w-0">
-                                  <span className="min-w-0 truncate text-[13.5px] font-bold text-slate-900">
+                                  <span className="min-w-0 truncate text-[13px] font-bold text-slate-900">
                                     {g.event_name || 'Event'}{g.client_name ? ' — ' + g.client_name : ''}
                                   </span>
                                   {g.venue_name && (
@@ -1279,7 +1279,7 @@ function EventLedger(props) {
                               )
                             })}
                             {groups.length > 3 && (
-                              <span className="block text-[11.5px] font-semibold text-indigo-600" data-notranslate>
+                              <span className="block text-[12px] font-semibold text-indigo-600" data-notranslate>
                                 +{groups.length - 3} more
                               </span>
                             )}
@@ -1302,7 +1302,7 @@ function EventLedger(props) {
               <div className={CARD + ' overflow-hidden'}>
                 <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-slate-100">
                   <div className="min-w-0">
-                    <p className="text-[10.5px] font-bold uppercase tracking-[0.1em] text-slate-400">Events on</p>
+                    <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">Events on</p>
                     <p className="font-display text-[17px] font-bold text-slate-900 tracking-[-0.01em] truncate" data-notranslate>{longDate(date)}</p>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
@@ -1329,8 +1329,8 @@ function EventLedger(props) {
                 {!monthLoading && _groups.length === 0 && (
                   <div className="px-4 py-14 text-center">
                     <Icon name="calendar" size={26} className="mx-auto text-slate-300" />
-                    <p className="mt-2 text-[13.5px] font-bold text-slate-600">No functions on this date</p>
-                    <p className="mt-0.5 text-[12.5px] font-medium text-slate-400">Pick another day on the calendar.</p>
+                    <p className="mt-2 text-[13px] font-bold text-slate-600">No functions on this date</p>
+                    <p className="mt-0.5 text-[13px] font-medium text-slate-400">Pick another day on the calendar.</p>
                   </div>
                 )}
 
@@ -1346,11 +1346,11 @@ function EventLedger(props) {
                         <button key={g.key} type="button" onClick={function () { selectGroup(g) }}
                           className="group w-full text-left px-4 py-3 flex items-start gap-3 hover:bg-indigo-50/40 transition-colors">
                           <span className="min-w-0 flex-1 space-y-1.5">
-                            <span className="block font-display text-[14.5px] font-bold text-slate-900 leading-snug truncate">
+                            <span className="block font-display text-[15px] font-bold text-slate-900 leading-snug truncate">
                               {g.event_name || 'Event'}{g.client_name ? ' — ' + g.client_name : ''}
                             </span>
                             {(g.venue_name || g.session) && (
-                              <span className="flex items-center gap-1.5 text-[12.5px] font-semibold text-slate-500">
+                              <span className="flex items-center gap-1.5 text-[13px] font-semibold text-slate-500">
                                 <Icon name="mapPin" size={12} className="shrink-0 text-slate-400" />
                                 <span className="min-w-0 truncate">
                                   {g.venue_name || ''}{g.venue_name && g.session ? ' · ' : ''}{g.session || ''}
@@ -1361,7 +1361,7 @@ function EventLedger(props) {
                               {g.contracts.map(function (c) { return <DeptChip key={c.id} name={c.department} /> })}
                             </span>
                             {(numbers.length > 0 || creators.length > 0) && (
-                              <span className="block text-[11.5px] font-semibold text-slate-400 truncate" data-notranslate>
+                              <span className="block text-[12px] font-semibold text-slate-400 truncate" data-notranslate>
                                 {numbers.map(function (c) { return '#' + c.contract_no }).join(' ')}
                                 {numbers.length > 0 && creators.length > 0 ? ' · ' : ''}
                                 {creators.length > 0 ? 'by ' + creators.join(', ') : ''}
@@ -1412,12 +1412,12 @@ function EventLedger(props) {
               onClick={function (ev) { ev.stopPropagation() }}>
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <h3 className="inline-flex items-center gap-2 font-display text-[17px] font-bold text-slate-900">
+                  <h3 className="inline-flex items-center gap-2 font-display text-[17px] font-bold text-slate-900 tracking-[-0.01em]">
                     <Icon name="wallet" size={16} className="shrink-0 text-indigo-500" />
                     Event Collection
                   </h3>
                   {eventDetail && (
-                    <p className="mt-1 text-[12.5px] text-slate-500 leading-snug">
+                    <p className="mt-1 text-[13px] text-slate-500 leading-snug">
                       {eventDetail.event_name}{eventDetail.client_name ? ' · ' + eventDetail.client_name : ''}
                       {contract && contract.department ? ' · ' + contract.department : ''}
                     </p>
@@ -1427,25 +1427,25 @@ function EventLedger(props) {
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <div className="text-[11px] font-bold uppercase tracking-[0.06em] text-slate-400">Amount</div>
-                  <div className="text-[14px] font-bold text-slate-900 tabular-nums" data-notranslate>{formatPoints(wt.amount_paise)}</div>
+                  <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">Amount</div>
+                  <div className="text-[15px] font-bold text-slate-900 tabular-nums" data-notranslate>{formatPoints(wt.amount_paise)}</div>
                 </div>
                 <div>
-                  <div className="text-[11px] font-bold uppercase tracking-[0.06em] text-slate-400">Mode</div>
-                  <div className="text-[14px] font-bold text-slate-900">{wt.payment_mode || '—'}</div>
+                  <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">Mode</div>
+                  <div className="text-[15px] font-bold text-slate-900">{wt.payment_mode || '—'}</div>
                 </div>
                 <div>
-                  <div className="text-[11px] font-bold uppercase tracking-[0.06em] text-slate-400">Collected by</div>
-                  <div className="text-[14px] font-bold text-slate-900">{r._collectorName || '—'}</div>
+                  <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">Collected by</div>
+                  <div className="text-[15px] font-bold text-slate-900">{r._collectorName || '—'}</div>
                 </div>
                 <div>
-                  <div className="text-[11px] font-bold uppercase tracking-[0.06em] text-slate-400">Date</div>
-                  <div className="text-[14px] font-bold text-slate-900" data-notranslate>{formatDateTime(r.created_at)}</div>
+                  <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">Date</div>
+                  <div className="text-[15px] font-bold text-slate-900" data-notranslate>{formatDateTime(r.created_at)}</div>
                 </div>
                 {wt.receipt_no && (
                   <div className="col-span-2">
-                    <div className="text-[11px] font-bold uppercase tracking-[0.06em] text-slate-400">Receipt No.</div>
-                    <div className="text-[14px] font-bold text-slate-900" data-notranslate>{wt.receipt_no}</div>
+                    <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">Receipt No.</div>
+                    <div className="text-[15px] font-bold text-slate-900" data-notranslate>{wt.receipt_no}</div>
                   </div>
                 )}
               </div>
