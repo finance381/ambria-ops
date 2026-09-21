@@ -28,20 +28,21 @@ var CHIP_NEUTRAL = 'text-slate-700 border-slate-300'
 // colour of the Employee party chip and the two would meet on every salary
 // row.
 var MODE_TONE = {
-  cash: 'text-amber-700 border-amber-300',
+  cash: 'text-green-700 border-green-300',
   bank: 'text-blue-700 border-blue-300',
 }
 
-// The hues are the ones these chips have always had — only the fill is gone,
-// so the colour that used to wash the whole shape now runs the word and the
-// line around it.
+// The hues these chips have always had, with one exception: the two collection
+// types were green, and green now means cash — which says where the money sat
+// on every single row, a stronger claim on a colour than one kind of receipt
+// has. They take purple, which nothing they appear beside is wearing.
 var TYPE_META = {
   vendor_payment:     { label: 'Vendor Payment',           direction: 'out', tone: 'text-red-700 border-red-300' },
   vendor_deduction:   { label: 'Vendor Deduction',         direction: 'out', tone: 'text-amber-700 border-amber-300' },
   salary_payment:     { label: 'Salary Payment',           direction: 'out', tone: 'text-red-700 border-red-300' },
   salary_adjustment:  { label: 'Salary Adjustment',        direction: 'out', tone: 'text-amber-700 border-amber-300' },
-  collection:         { label: 'Event Collection',         direction: 'in',  tone: 'text-green-700 border-green-300' },
-  epc:                { label: 'Extra Plate Collection',   direction: 'in',  tone: 'text-green-700 border-green-300' },
+  collection:         { label: 'Event Collection',         direction: 'in',  tone: 'text-purple-700 border-purple-300' },
+  epc:                { label: 'Extra Plate Collection',   direction: 'in',  tone: 'text-purple-700 border-purple-300' },
   expense:            { label: 'Expense (Cash)',           direction: 'out', tone: 'text-orange-700 border-orange-300' },
   expense_refund:     { label: 'Expense Refund',           direction: 'in',  tone: 'text-emerald-700 border-emerald-300' },
 }
@@ -371,7 +372,7 @@ function PaymentsLedger({ profile }) {
   // that without a sentence explaining it.
   var QUICK_GROUPS = [
     [{ k: 'all',  label: 'All',     on: quickActive,           run: function () { setModeFilter('all'); setDirFilter('all'); setTypeFilter('') }, tone: 'indigo' }],
-    [{ k: 'cash', label: 'Cash',    on: modeFilter === 'cash', run: function () { setModeFilter(modeFilter === 'cash' ? 'all' : 'cash') }, tone: 'amber' },
+    [{ k: 'cash', label: 'Cash',    on: modeFilter === 'cash', run: function () { setModeFilter(modeFilter === 'cash' ? 'all' : 'cash') }, tone: 'green' },
      { k: 'bank', label: 'Bank',    on: modeFilter === 'bank', run: function () { setModeFilter(modeFilter === 'bank' ? 'all' : 'bank') }, tone: 'blue' }],
     [{ k: 'in',   label: 'Income',  on: dirFilter === 'in',    run: function () { setDirFilter(dirFilter === 'in' ? 'all' : 'in') }, tone: 'emerald' },
      { k: 'out',  label: 'Expense', on: dirFilter === 'out',   run: function () { setDirFilter(dirFilter === 'out' ? 'all' : 'out') }, tone: 'rose' }],
@@ -384,7 +385,7 @@ function PaymentsLedger({ profile }) {
   // something is already in force.
   var QUICK_TONE = {
     indigo:  'border-indigo-400 text-indigo-600',
-    amber:   'border-amber-400 text-amber-600',
+    green:   'border-green-400 text-green-600',
     blue:    'border-blue-400 text-blue-600',
     emerald: 'border-emerald-400 text-emerald-600',
     rose:    'border-rose-400 text-rose-600',
