@@ -74,9 +74,18 @@ function PayVendorModal({ vendor, profile, onClose, onSuccess }) {
     return function () { cancelled = true }
   }, [vendor.vendor_id])
 
+  // Picking a method fills the amount with what that method is owed. Guarding
+  // that on `bal > 0` left the previous method's figure standing whenever the
+  // new one is owed nothing: you pressed Bank and got 4,51,413, pressed Cash —
+  // owed 0 — and the form still offered to pay 4,51,413 in cash. Nothing
+  // downstream would have stopped it; submitPayment only checks the amount is
+  // a positive number.
+  //
+  // Pressing the method that is already selected leaves the field alone, so a
+  // typed amount is not thrown away by a second press on the same button.
   function chooseMode(mode, bal) {
+    if (mode !== payMode) setPayAmount(bal > 0 ? String(bal / 100) : '')
     setPayMode(mode)
-    if (bal > 0) setPayAmount(String(bal / 100))
   }
 
   async function handlePayImgAdd(ev) {
@@ -277,6 +286,24 @@ function PayVendorModal({ vendor, profile, onClose, onSuccess }) {
             placeholder="0" min="0" step="any"
             className={FIELD + ' tabular-nums'}
             style={{ fontSize: '16px' }} />
+          {/* Paying more than a method is owed is allowed — an advance is a
+              real thing — but it should be something you meant rather than
+              something you did not notice. This says so without blocking. */}
+          {(function () {
+            if (!payMode) return null
+            var owed = payMode === 'cash' ? (vendor.cash_balance_paise || 0) : (vendor.bank_balance_paise || 0)
+            var amt = Number(payAmount || 0) * 100
+            if (!isFinite(amt) || amt <= owed) return null
+            return (
+              <p className="mt-1.5 flex items-start gap-1.5 text-[12px] font-semibold text-amber-700">
+                <span className="shrink-0 mt-px"><Icon name="alert" size={13} /></span>
+                <span>
+                  More than the <span data-notranslate>{formatPoints(owed)}</span> owed on {payMode}
+                  {owed === 0 ? ' — this vendor is owed nothing on this method.' : '.'}
+                </span>
+              </p>
+            )
+          })()}
         </div>
 
         <div>
