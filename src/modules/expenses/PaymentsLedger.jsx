@@ -17,25 +17,29 @@ import { getReceiptUrl, isVoiceNotePath } from '../../lib/uploadHelper'
 // expense spend) and money collected in (event collections, extra-plate collections,
 // expense refunds). Each source tags its rows with a payment mode (cash/bank) — entries
 // with no mode aren't real money movement (e.g. plain point issuances) and are excluded here.
+// Outline and word, no fill — the same way the quick filters say they are on.
+// Two tinted blocks per row, twenty-five rows deep, made the type column the
+// loudest thing on a screen whose subject is the amounts at the other end of
+// it; a hairline says which kind it is without competing for the eye.
 var TYPE_META = {
-  vendor_payment:     { label: 'Vendor Payment',           direction: 'out', cls: 'bg-red-50 text-red-700 border-red-200' },
-  vendor_deduction:   { label: 'Vendor Deduction',         direction: 'out', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
-  salary_payment:     { label: 'Salary Payment',           direction: 'out', cls: 'bg-red-50 text-red-700 border-red-200' },
-  salary_adjustment:  { label: 'Salary Adjustment',        direction: 'out', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
-  collection:         { label: 'Event Collection',         direction: 'in',  cls: 'bg-green-50 text-green-700 border-green-200' },
-  epc:                { label: 'Extra Plate Collection',   direction: 'in',  cls: 'bg-green-50 text-green-700 border-green-200' },
-  expense:            { label: 'Expense (Cash)',           direction: 'out', cls: 'bg-orange-50 text-orange-700 border-orange-200' },
-  expense_refund:     { label: 'Expense Refund',           direction: 'in',  cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+  vendor_payment:     { label: 'Vendor Payment',           direction: 'out', cls: 'bg-white text-rose-700 border-rose-300' },
+  vendor_deduction:   { label: 'Vendor Deduction',         direction: 'out', cls: 'bg-white text-amber-700 border-amber-300' },
+  salary_payment:     { label: 'Salary Payment',           direction: 'out', cls: 'bg-white text-rose-700 border-rose-300' },
+  salary_adjustment:  { label: 'Salary Adjustment',        direction: 'out', cls: 'bg-white text-amber-700 border-amber-300' },
+  collection:         { label: 'Event Collection',         direction: 'in',  cls: 'bg-white text-emerald-700 border-emerald-300' },
+  epc:                { label: 'Extra Plate Collection',   direction: 'in',  cls: 'bg-white text-emerald-700 border-emerald-300' },
+  expense:            { label: 'Expense (Cash)',           direction: 'out', cls: 'bg-white text-orange-700 border-orange-300' },
+  expense_refund:     { label: 'Expense Refund',           direction: 'in',  cls: 'bg-white text-emerald-700 border-emerald-300' },
 }
 
 // What the name on a row refers to. The chips said the transaction type but
 // never what the name beside them was, so "Carpet Sharma" and "WEDDING" —
 // a vendor and an event — read as the same kind of thing.
 var SOURCE_META = {
-  vendor:     { label: 'Vendor',   dot: 'bg-violet-500',  cls: 'bg-violet-50 text-violet-700 border-violet-200' },
-  salary:     { label: 'Employee', dot: 'bg-sky-500',     cls: 'bg-sky-50 text-sky-700 border-sky-200' },
-  collection: { label: 'Event',    dot: 'bg-emerald-500', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
-  expense:    { label: 'Staff',    dot: 'bg-amber-500',   cls: 'bg-amber-50 text-amber-700 border-amber-200' },
+  vendor:     { label: 'Vendor',   dot: 'bg-violet-500',  cls: 'bg-white text-violet-700 border-violet-300' },
+  salary:     { label: 'Employee', dot: 'bg-sky-500',     cls: 'bg-white text-sky-700 border-sky-300' },
+  collection: { label: 'Event',    dot: 'bg-emerald-500', cls: 'bg-white text-emerald-700 border-emerald-300' },
+  expense:    { label: 'Staff',    dot: 'bg-amber-500',   cls: 'bg-white text-amber-700 border-amber-300' },
 }
 
 // The clock time a row was logged at, for the quiet date line under the
@@ -568,7 +572,7 @@ function PaymentsLedger({ profile }) {
               <tbody>
                 {pageRows.map(function (r) {
                   var isIn = r.direction === 'in'
-                  var src = SOURCE_META[r.source] || { label: r.source, dot: 'bg-slate-400', cls: 'bg-slate-50 text-slate-700 border-slate-200' }
+                  var src = SOURCE_META[r.source] || { label: r.source, dot: 'bg-slate-400', cls: 'bg-white text-slate-700 border-slate-300' }
                   var who = r.recorded_by || r.collector_name || ''
                   return (
                     <tr key={r.key} onClick={function () { openRow(r) }}
@@ -623,7 +627,7 @@ function PaymentsLedger({ profile }) {
                       </td>
 
                       <td className="px-3 py-2.5 align-top">
-                        <span className="inline-flex items-center gap-1.5 h-[22px] px-2 rounded-md border border-slate-200 bg-slate-50 text-[11px] font-bold text-slate-600">
+                        <span className="inline-flex items-center gap-1.5 h-[22px] px-2 rounded-md border border-slate-300 bg-white text-[11px] font-bold text-slate-600">
                           <Icon name={r.mode === 'cash' ? 'banknote' : 'bank'} size={11} className="text-slate-400" />
                           {r.mode === 'cash' ? 'Cash' : 'Bank'}
                         </span>
