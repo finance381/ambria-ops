@@ -23,6 +23,15 @@ import { getReceiptUrl, isVoiceNotePath } from '../../lib/uploadHelper'
 var CHIP = 'inline-flex items-center h-[22px] px-2 rounded-md border bg-white text-[11px] font-bold '
 var CHIP_NEUTRAL = 'text-slate-700 border-slate-300'
 
+// Where the money sat, said the same way in the filter that asks for it and
+// the chip that answers. Blue rather than sky for bank, because sky is the
+// colour of the Employee party chip and the two would meet on every salary
+// row.
+var MODE_TONE = {
+  cash: 'text-amber-700 border-amber-300',
+  bank: 'text-blue-700 border-blue-300',
+}
+
 // The hues are the ones these chips have always had — only the fill is gone,
 // so the colour that used to wash the whole shape now runs the word and the
 // line around it.
@@ -363,7 +372,7 @@ function PaymentsLedger({ profile }) {
   var QUICK_GROUPS = [
     [{ k: 'all',  label: 'All',     on: quickActive,           run: function () { setModeFilter('all'); setDirFilter('all'); setTypeFilter('') }, tone: 'indigo' }],
     [{ k: 'cash', label: 'Cash',    on: modeFilter === 'cash', run: function () { setModeFilter(modeFilter === 'cash' ? 'all' : 'cash') }, tone: 'amber' },
-     { k: 'bank', label: 'Bank',    on: modeFilter === 'bank', run: function () { setModeFilter(modeFilter === 'bank' ? 'all' : 'bank') }, tone: 'sky' }],
+     { k: 'bank', label: 'Bank',    on: modeFilter === 'bank', run: function () { setModeFilter(modeFilter === 'bank' ? 'all' : 'bank') }, tone: 'blue' }],
     [{ k: 'in',   label: 'Income',  on: dirFilter === 'in',    run: function () { setDirFilter(dirFilter === 'in' ? 'all' : 'in') }, tone: 'emerald' },
      { k: 'out',  label: 'Expense', on: dirFilter === 'out',   run: function () { setDirFilter(dirFilter === 'out' ? 'all' : 'out') }, tone: 'rose' }],
   ]
@@ -376,7 +385,7 @@ function PaymentsLedger({ profile }) {
   var QUICK_TONE = {
     indigo:  'border-indigo-400 text-indigo-600',
     amber:   'border-amber-400 text-amber-600',
-    sky:     'border-sky-400 text-sky-600',
+    blue:    'border-blue-400 text-blue-600',
     emerald: 'border-emerald-400 text-emerald-600',
     rose:    'border-rose-400 text-rose-600',
   }
@@ -620,8 +629,9 @@ function PaymentsLedger({ profile }) {
                       </td>
 
                       <td className="px-3 py-2.5 align-top">
-                        <span className="inline-flex items-center gap-1.5 h-[22px] px-2 rounded-md border border-slate-300 bg-white text-[11px] font-bold text-slate-600">
-                          <Icon name={r.mode === 'cash' ? 'banknote' : 'bank'} size={11} className="text-slate-400" />
+                        <span className={'inline-flex items-center gap-1.5 h-[22px] px-2 rounded-md border bg-white text-[11px] font-bold ' +
+                          (MODE_TONE[r.mode] || CHIP_NEUTRAL)}>
+                          <Icon name={r.mode === 'cash' ? 'banknote' : 'bank'} size={11} className="shrink-0 opacity-70" />
                           {r.mode === 'cash' ? 'Cash' : 'Bank'}
                         </span>
                       </td>
