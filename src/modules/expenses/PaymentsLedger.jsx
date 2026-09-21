@@ -336,6 +336,32 @@ function PaymentsLedger({ profile }) {
   // Any narrowing makes the page you were on meaningless.
   useEffect(function () { setPage(1) }, [modeFilter, dirFilter, typeFilter, search, dateFrom, dateTo])
 
+  function exportCsv() {
+    function esc(v) {
+      var t = String(v == null ? '' : v)
+      if (t.indexOf(',') !== -1 || t.indexOf('"') !== -1 || t.indexOf('\n') !== -1) return '"' + t.replace(/"/g, '""') + '"'
+      return t
+    }
+    var head = ['Date', 'Logged', 'Type', 'Party', 'Party kind', 'Mode', 'Direction', 'Points', 'Recorded by', 'Description']
+    // Points as a number: a spreadsheet cannot add up "80,000 pts".
+    var body = visible.map(function (r) {
+      return [
+        formatDate(r.date), formatDateTime(r.logged_at), r.type_label, r.party_name,
+        (SOURCE_META[r.source] || {}).label || r.source, r.mode, r.direction === 'in' ? 'In' : 'Out',
+        (r.direction === 'in' ? 1 : -1) * ((r.amount_paise || 0) / 100),
+        r.recorded_by || r.collector_name || '', r.description || '',
+      ].map(esc).join(',')
+    })
+    var csv = head.join(',') + '\n' + body.join('\n') + '\n'
+    var blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    var url = URL.createObjectURL(blob)
+    var a = document.createElement('a')
+    a.href = url
+    a.download = 'cash-bank-' + dateFrom + '-to-' + dateTo + '.csv'
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   // Paging takes you to the top of the new page. Pressing Next at the foot of
   // twenty-five rows otherwise leaves you at the foot of the next twenty-five,
   // reading upwards from the end of something you never saw the start of.
@@ -451,7 +477,7 @@ function PaymentsLedger({ profile }) {
             {/* Search is the control people reach for most on this screen, so
                 it does not live one press deep behind More Filters. */}
             <SearchField value={search} onChange={function (v) { setSearch(v) }}
-              placeholder="Search transactions..." className="w-[200px] @3xl:w-[240px]" />
+              placeholder="Search transactions..." className="w-[180px] @3xl:w-[220px]" />
             <button type="button" onClick={function () { setShowMore(!showMore) }} aria-pressed={showMore}
               className={'h-9 px-3 inline-flex items-center gap-1.5 rounded-xl border text-[12.5px] font-bold transition-colors ' +
                 (showMore || typeFilter
@@ -460,6 +486,12 @@ function PaymentsLedger({ profile }) {
               <Icon name="filter" size={14} />
               More Filters
               <Icon name={showMore ? 'chevronUp' : 'chevronDown'} size={13} />
+            </button>
+            <button type="button" onClick={exportCsv} disabled={visible.length === 0}
+              title="Export everything the filters have left, in the order it is shown"
+              className="h-9 px-3.5 inline-flex items-center gap-1.5 rounded-xl text-[12.5px] font-bold text-white bg-indigo-600 hover:bg-indigo-700 active:scale-[0.98] disabled:opacity-40 disabled:hover:bg-indigo-600 transition-all">
+              <Icon name="download" size={14} />
+              Export
             </button>
           </div>
         </div>
