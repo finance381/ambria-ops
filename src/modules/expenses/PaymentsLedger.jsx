@@ -8,7 +8,6 @@ import SearchField from '../../components/ui/SearchField'
 import Icon from '../../components/ui/Icon'
 import EventDatePicker from '../../components/ui/EventDatePicker'
 import { CARD } from '../../lib/ui'
-import { avatarTint } from '../../lib/avatarTint'
 import { useExpenseDetailModal } from '../../hooks/useExpenseDetailModal.jsx'
 import PaymentProofThumbs from '../../components/ledger/PaymentProofThumbs'
 import { getReceiptUrl, isVoiceNotePath } from '../../lib/uploadHelper'
@@ -39,22 +38,13 @@ var SOURCE_META = {
   expense:    { label: 'Staff',    dot: 'bg-amber-500',   cls: 'bg-amber-50 text-amber-700 border-amber-200' },
 }
 
-// The date column carries the day; the time belongs under it and beside the
-// person, not inside a second "Logged ..." sentence on every row.
+// The clock time a row was logged at, for the quiet date line under the
+// particulars — not a second "Logged ..." sentence of its own.
 function timeOf(ts) {
   if (!ts) return ''
   var d = new Date(ts)
   if (isNaN(d)) return ''
   return d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true })
-}
-
-// Names here carry their department in brackets — "Rajkumar (ADD)" — and
-// taking the first character of each word turned that into "R(". Only
-// letters count towards an initial.
-function initials(name) {
-  var parts = String(name || '').replace(/[^\p{L}\s]/gu, ' ').trim().split(/\s+/).filter(Boolean)
-  if (parts.length === 0) return '—'
-  return (parts[0][0] + (parts[1] ? parts[1][0] : '')).toUpperCase()
 }
 
 var SORTS = [
@@ -602,16 +592,9 @@ function PaymentsLedger({ profile }) {
                       </td>
 
                       <td className="px-3 py-2.5 align-top">
-                        {who ? (
-                          <div className="flex items-center gap-2">
-                            <span className={'shrink-0 w-7 h-7 rounded-full inline-flex items-center justify-center text-[11px] font-bold ' + avatarTint(who)}
-                              data-notranslate>{initials(who)}</span>
-                            {/* The time was printed here and again in the
-                                date column two seconds to the left. It only
-                                needs saying once. */}
-                            <span className="min-w-0 text-[12px] font-bold text-slate-700 truncate">{who}</span>
-                          </div>
-                        ) : <span className="text-[12px] text-slate-300">—</span>}
+                        {who
+                          ? <span className="block min-w-0 text-[12px] font-bold text-slate-700 truncate">{who}</span>
+                          : <span className="text-[12px] text-slate-300">—</span>}
                       </td>
 
                       <td className="px-3 py-2.5 align-top text-right whitespace-nowrap">
