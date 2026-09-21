@@ -602,8 +602,13 @@ function PaymentsLedger({ profile }) {
                               what the name in the row before it refers to.
                               "Carpet Sharma" and "WEDDING" were reading as the
                               same kind of thing. */}
-                          <span className={'inline-flex items-center gap-1.5 h-[22px] px-2 rounded-md border text-[11px] font-bold ' + src.cls}>
-                            <span aria-hidden="true" className={'w-1.5 h-1.5 rounded-full ' + src.dot} />
+                          {/* Staff, Vendor, Event and Employee are four
+                              different widths, so the chip after them started
+                              at a different place on every row and the column
+                              read as a ragged edge. The first chip is floored
+                              at the width of the longest of the four. */}
+                          <span className={'inline-flex items-center gap-1.5 h-[22px] min-w-[86px] px-2 rounded-md border text-[11px] font-bold ' + src.cls}>
+                            <span aria-hidden="true" className={'shrink-0 w-1.5 h-1.5 rounded-full ' + src.dot} />
                             {src.label}
                           </span>
                           <span className={CHIP + r.type_tone}>{r.type_label}</span>
