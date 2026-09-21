@@ -18,51 +18,53 @@ import { getReceiptUrl, isVoiceNotePath } from '../../lib/uploadHelper'
 // expense spend) and money collected in (event collections, extra-plate collections,
 // expense refunds). Each source tags its rows with a payment mode (cash/bank) — entries
 // with no mode aren't real money movement (e.g. plain point issuances) and are excluded here.
-// The shape is shared and the tone is the type's own — written once each,
-// rather than a full class string per entry repeating the same six words.
-var CHIP = 'inline-flex items-center h-[22px] px-2 rounded-md border bg-white text-[11px] font-bold '
-var CHIP_NEUTRAL = 'text-slate-700 border-slate-300'
-
-// Where the money sat, said the same way in the filter that asks for it and
-// the chip that answers. Blue rather than sky for bank, because sky is the
-// colour of the Employee party chip and the two would meet on every salary
-// row.
-var MODE_TONE = {
-  cash: 'text-green-700 border-green-300',
-  bank: 'text-blue-700 border-blue-300',
+// The ledger chip palette, given as exact values rather than picked off a
+// scale: a very light ground, a mid-tone hairline, and a dark word the icon
+// takes its colour from. Six were specified; Vendor, Employee and the
+// unknown-kind fallback needed one each, built the same way.
+var TONE = {
+  amber:  'bg-[#FFF7E6] border-[#FFD166] text-[#D97706]',
+  violet: 'bg-[#F3EEFF] border-[#B9A3FF] text-[#6D3DF5]',
+  green:  'bg-[#E6F7F1] border-[#34D399] text-[#065F46]',
+  mint:   'bg-[#F0FDF4] border-[#86EFAC] text-[#16A34A]',
+  red:    'bg-[#FDEEEE] border-[#FCA5A5] text-[#DC2626]',
+  blue:   'bg-[#EEF4FF] border-[#93C5FD] text-[#2563EB]',
+  teal:   'bg-[#EAF8FA] border-[#7DD3DC] text-[#0E7490]',
+  plum:   'bg-[#FDF0FA] border-[#EFA8E0] text-[#A21CAF]',
+  slate:  'bg-[#F5F7FA] border-[#CBD5E1] text-[#475569]',
 }
 
-// The hues these chips have always had, with one exception: the two collection
-// types were green, and green now means cash — which says where the money sat
-// on every single row, a stronger claim on a colour than one kind of receipt
-// has. They take purple, which nothing they appear beside is wearing.
+// One shape for every chip: a pill, its own ground, and an icon that belongs
+// to the word rather than sitting grey beside it.
+var CHIP = 'inline-flex items-center gap-1.5 h-[24px] px-2.5 rounded-full border text-[11px] font-bold '
+var CHIP_NEUTRAL = TONE.slate
+
+// Where the money sat, said the same way in the filter that asks for it and
+// the chip that answers.
+var MODE_META = {
+  cash: { label: 'Cash', icon: 'banknote', tone: TONE.mint },
+  bank: { label: 'Bank', icon: 'bank', tone: TONE.blue },
+}
+
 var TYPE_META = {
-  vendor_payment:     { label: 'Vendor Payment',           direction: 'out', tone: 'text-red-700 border-red-300' },
-  vendor_deduction:   { label: 'Vendor Deduction',         direction: 'out', tone: 'text-amber-700 border-amber-300' },
-  salary_payment:     { label: 'Salary Payment',           direction: 'out', tone: 'text-red-700 border-red-300' },
-  salary_adjustment:  { label: 'Salary Adjustment',        direction: 'out', tone: 'text-amber-700 border-amber-300' },
-  collection:         { label: 'Event Collection',         direction: 'in',  tone: 'text-purple-700 border-purple-300' },
-  epc:                { label: 'Extra Plate Collection',   direction: 'in',  tone: 'text-purple-700 border-purple-300' },
-  expense:            { label: 'Expense (Cash)',           direction: 'out', tone: 'text-orange-700 border-orange-300' },
-  expense_refund:     { label: 'Expense Refund',           direction: 'in',  tone: 'text-emerald-700 border-emerald-300' },
+  vendor_payment:     { label: 'Vendor Payment',         direction: 'out', icon: 'creditCard', tone: TONE.red },
+  vendor_deduction:   { label: 'Vendor Deduction',       direction: 'out', icon: 'minus',      tone: TONE.amber },
+  salary_payment:     { label: 'Salary Payment',         direction: 'out', icon: 'wallet',     tone: TONE.red },
+  salary_adjustment:  { label: 'Salary Adjustment',      direction: 'out', icon: 'minus',      tone: TONE.amber },
+  collection:         { label: 'Event Collection',       direction: 'in',  icon: 'rupee',      tone: TONE.green },
+  epc:                { label: 'Extra Plate Collection', direction: 'in',  icon: 'utensils',   tone: TONE.green },
+  expense:            { label: 'Expense (Cash)',         direction: 'out', icon: 'receipt',    tone: TONE.red },
+  expense_refund:     { label: 'Expense Refund',         direction: 'in',  icon: 'undo',       tone: TONE.green },
 }
 
 // What the name on a row refers to. The chips said the transaction type but
 // never what the name beside them was, so "Carpet Sharma" and "WEDDING" —
 // a vendor and an event — read as the same kind of thing.
 var SOURCE_META = {
-  vendor:     { label: 'Vendor',   dot: 'bg-violet-500',  cls: 'bg-white text-violet-700 border-violet-300' },
-  salary:     { label: 'Employee', dot: 'bg-sky-500',     cls: 'bg-white text-sky-700 border-sky-300' },
-  // Emerald is a green, and green is the mode chip two columns along on the
-  // same row. Amber is not a green, is not worn by anything an Event row
-  // carries — a collection's type chip is purple — and is not any of the
-  // other three parties.
-  collection: { label: 'Event',    dot: 'bg-amber-500',   cls: 'bg-white text-amber-700 border-amber-300' },
-  // Staff rows always carry an orange "Expense (Cash)" chip beside this one,
-  // and amber next to orange is two shades of the same idea sitting on the
-  // same row. Fuchsia is nowhere near either, nor near the violet and sky
-  // the other two parties use.
-  expense:    { label: 'Staff',    dot: 'bg-fuchsia-500', cls: 'bg-white text-fuchsia-700 border-fuchsia-300' },
+  vendor:     { label: 'Vendor',   icon: 'building', tone: TONE.teal },
+  salary:     { label: 'Employee', icon: 'idCard',   tone: TONE.plum },
+  collection: { label: 'Event',    icon: 'calendar', tone: TONE.violet },
+  expense:    { label: 'Staff',    icon: 'user',     tone: TONE.amber },
 }
 
 // The clock time a row was logged at, for the quiet date line under the
@@ -194,7 +196,7 @@ function PaymentsLedger({ profile }) {
 
     var combined = []
     ledgerRows.forEach(function (r) {
-      var meta = TYPE_META[r.ref_type] || { label: r.ref_type, direction: 'out', tone: CHIP_NEUTRAL }
+      var meta = TYPE_META[r.ref_type] || { label: r.ref_type, direction: 'out', tone: CHIP_NEUTRAL, icon: null }
       var partyName = r.ledger_type === 'vendor' ? (vendorNames[r.party_id] || '—') : (profileNames[r.party_id] || '—')
       combined.push({
         key: 'le:' + r.id,
@@ -208,6 +210,7 @@ function PaymentsLedger({ profile }) {
         description: r.description || '',
         type_label: meta.label,
         type_tone: meta.tone || CHIP_NEUTRAL,
+        type_icon: meta.icon || null,
         recorded_by: (r.created_by && profileNames[r.created_by]) || '',
         _metadata: r.metadata,
       })
@@ -232,6 +235,7 @@ function PaymentsLedger({ profile }) {
         description: w.description || (w.receipt_no ? '#' + w.receipt_no : ''),
         type_label: meta.label,
         type_tone: meta.tone || CHIP_NEUTRAL,
+        type_icon: meta.icon || null,
         _eventId: evId,
         _isEpc: isEpc,
         _epc: epc || null,
@@ -260,6 +264,7 @@ function PaymentsLedger({ profile }) {
         description: r.description || '',
         type_label: meta.label,
         type_tone: meta.tone || CHIP_NEUTRAL,
+        type_icon: meta.icon || null,
         _expenseId: r.reference_id,
       })
     })
@@ -389,8 +394,8 @@ function PaymentsLedger({ profile }) {
   // something is already in force.
   var QUICK_TONE = {
     indigo:  'border-indigo-400 text-indigo-600',
-    green:   'border-green-400 text-green-600',
-    blue:    'border-blue-400 text-blue-600',
+    green:   'border-[#86EFAC] text-[#16A34A]',
+    blue:    'border-[#93C5FD] text-[#2563EB]',
     emerald: 'border-emerald-400 text-emerald-600',
     rose:    'border-rose-400 text-rose-600',
   }
@@ -576,7 +581,7 @@ function PaymentsLedger({ profile }) {
               <tbody>
                 {pageRows.map(function (r) {
                   var isIn = r.direction === 'in'
-                  var src = SOURCE_META[r.source] || { label: r.source, dot: 'bg-slate-400', cls: 'bg-white text-slate-700 border-slate-300' }
+                  var src = SOURCE_META[r.source] || { label: r.source, icon: 'wallet', tone: CHIP_NEUTRAL }
                   var who = r.recorded_by || r.collector_name || ''
                   return (
                     <tr key={r.key} onClick={function () { openRow(r) }}
@@ -625,20 +630,27 @@ function PaymentsLedger({ profile }) {
                               at a different place on every row and the column
                               read as a ragged edge. The first chip is floored
                               at the width of the longest of the four. */}
-                          <span className={'inline-flex items-center gap-1.5 h-[22px] min-w-[86px] px-2 rounded-md border text-[11px] font-bold ' + src.cls}>
-                            <span aria-hidden="true" className={'shrink-0 w-1.5 h-1.5 rounded-full ' + src.dot} />
+                          <span className={CHIP + 'min-w-[104px] ' + src.tone}>
+                            <Icon name={src.icon} size={12} className="shrink-0" />
                             {src.label}
                           </span>
-                          <span className={CHIP + r.type_tone}>{r.type_label}</span>
+                          <span className={CHIP + r.type_tone}>
+                            {r.type_icon && <Icon name={r.type_icon} size={12} className="shrink-0" />}
+                            {r.type_label}
+                          </span>
                         </div>
                       </td>
 
                       <td className="px-3 py-2.5 align-top">
-                        <span className={'inline-flex items-center gap-1.5 h-[22px] px-2 rounded-md border bg-white text-[11px] font-bold ' +
-                          (MODE_TONE[r.mode] || CHIP_NEUTRAL)}>
-                          <Icon name={r.mode === 'cash' ? 'banknote' : 'bank'} size={11} className="shrink-0 opacity-70" />
-                          {r.mode === 'cash' ? 'Cash' : 'Bank'}
-                        </span>
+                        {(function () {
+                          var m = MODE_META[r.mode] || { label: r.mode || '\u2014', icon: 'wallet', tone: CHIP_NEUTRAL }
+                          return (
+                            <span className={CHIP + m.tone}>
+                              <Icon name={m.icon} size={12} className="shrink-0" />
+                              {m.label}
+                            </span>
+                          )
+                        })()}
                       </td>
 
                       <td className="px-3 py-2.5 align-top">
