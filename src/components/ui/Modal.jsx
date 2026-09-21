@@ -1,5 +1,6 @@
 import { createPortal } from 'react-dom'
 import Icon from './Icon'
+import { useBodyScrollLock } from '../../lib/useBodyScrollLock'
 
 // Portalled to <body>, not rendered in place. The admin shell wraps each page
 // in `relative isolate`, which makes a stacking context: everything inside it
@@ -8,13 +9,16 @@ import Icon from './Icon'
 // page had the sidebar showing through its left 248px. EventDatePicker's panel
 // portals for the same reason.
 function Modal({ open, onClose, title, wide, children }) {
+  // Before the early return: a hook cannot be called conditionally, and this
+  // one already does nothing when it is not locked.
+  useBodyScrollLock(open)
   if (!open) return null
 
   return createPortal((
     <div className="fixed inset-0 z-[9998] flex items-end sm:items-center sm:justify-center">
       <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={onClose} />
       <div className={
-        "relative bg-white w-full max-h-[100dvh] sm:max-h-[90vh] overflow-y-auto ambria-thin-scroll " +
+        "relative bg-white w-full max-h-[100dvh] sm:max-h-[90vh] overflow-y-auto overscroll-contain ambria-thin-scroll " +
         "rounded-t-2xl sm:rounded-2xl shadow-2xl " +
         (wide ? "sm:max-w-4xl" : "sm:max-w-lg") +
         " sm:m-4"

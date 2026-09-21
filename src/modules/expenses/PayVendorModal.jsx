@@ -7,6 +7,7 @@ import { formatDate, formatPoints } from '../../lib/format'
 import VoiceInput from '../../components/ui/VoiceInput'
 import Icon from '../../components/ui/Icon'
 import EventDatePicker from '../../components/ui/EventDatePicker'
+import { useBodyScrollLock } from '../../lib/useBodyScrollLock'
 
 // One label and one field for the whole form, so a row cannot drift out of
 // line with the row above it — every field was writing its own px-3 py-2 and
@@ -17,6 +18,7 @@ var FIELD = 'w-full h-11 px-3 bg-white border border-slate-300 rounded-xl text-[
 var PICK = 'h-11 inline-flex items-center justify-center gap-2 rounded-xl border border-dashed text-[12.5px] font-bold cursor-pointer transition-colors'
 
 function PayVendorModal({ vendor, profile, onClose, onSuccess }) {
+  useBodyScrollLock(true)
   var [payMode, setPayMode] = useState('')
   var [payType, setPayType] = useState('')
   var [payAmount, setPayAmount] = useState('')
@@ -206,7 +208,7 @@ function PayVendorModal({ vendor, profile, onClose, onSuccess }) {
   return createPortal((
     <div className="fixed inset-0 z-[9998] bg-black/60 flex items-end sm:items-center justify-center p-0 sm:p-4"
       onClick={function () { if (!paySaving) onClose() }}>
-      <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md p-5 space-y-4 max-h-[90vh] overflow-y-auto ambria-thin-scroll"
+      <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md p-5 space-y-4 max-h-[90vh] overflow-y-auto overscroll-contain ambria-thin-scroll"
         onClick={function (ev) { ev.stopPropagation() }}>
         {/* Title and who it is about in one block, so the vendor's name is
             under the heading rather than pulled back up into it with -mt-2. */}

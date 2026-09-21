@@ -19,6 +19,7 @@ import CheckedStamp from '../../components/ui/CheckedStamp'
 import Icon from '../../components/ui/Icon'
 import { avatarTint } from '../../lib/avatarTint'
 import { ON, OFF } from '../../lib/ui'
+import { useBodyScrollLock } from '../../lib/useBodyScrollLock'
 import ReverseDialog from '../../components/ui/ReverseDialog'
 
 function byName(a, b) { return (a.name || '').localeCompare(b.name || '') }
@@ -36,6 +37,11 @@ function byName(a, b) { return (a.name || '').localeCompare(b.name || '') }
 // needs a column for the stamp — so it is written once.
 // One label for the merge dialog's two fields.
 var MERGE_LABEL = 'block text-[12px] font-semibold text-slate-600 mb-1.5'
+
+// How many vendor cards are drawn before the browser is let go to paint.
+// A constant, so the effect that tops up from it is not re-created every
+// render to chase a value that never changes.
+var FIRST_PAINT = 24
 
 function isExpenseEntry(e) {
   return e.ref_type === 'expense' && e.ref_id && /^[0-9]+$/.test(String(e.ref_id)) && !e.deleted_at
@@ -397,6 +403,7 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
   // introducing a separate key.
   var canManageVendors = isAdmin || hasPerm(permsNew, 'procurement.vendors')
   var [showMergeModal, setShowMergeModal] = useState(false)
+  useBodyScrollLock(showMergeModal)
   var [mergeSourceIds, setMergeSourceIds] = useState([])
   var [mergeTargetId, setMergeTargetId] = useState('')
   var [mergeSearch, setMergeSearch] = useState('')
@@ -429,7 +436,6 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
   // So it draws a screenful, and fills in the rest while the browser is idle.
   // Nothing is hidden and there is nothing to press — by the time you have
   // read the first row the last one is there.
-  var FIRST_PAINT = 24
   var [renderLimit, setRenderLimit] = useState(FIRST_PAINT)
 
   // Back to a screenful whenever the list becomes a different list.
@@ -887,7 +893,7 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
     return createPortal((
       <div className="fixed inset-0 z-[9998] bg-slate-900/50 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4"
         onClick={function () { if (!mergeSaving) setShowMergeModal(false) }}>
-        <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-lg p-5 space-y-4 max-h-[90vh] overflow-y-auto ambria-thin-scroll"
+        <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-lg p-5 space-y-4 max-h-[90vh] overflow-y-auto overscroll-contain ambria-thin-scroll"
           onClick={function (ev) { ev.stopPropagation() }}>
           {/* The emoji went the way of the others: a font-chosen picture that
               came out as a blue tile beside a heading it was meant to sit on
@@ -916,7 +922,7 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
               )}
             </label>
             <SearchField value={mergeSearch} onChange={function (v) { setMergeSearch(v) }} placeholder="Search vendors..." />
-            <div className="mt-2 border border-slate-200 rounded-xl max-h-60 overflow-y-auto ambria-thin-scroll divide-y divide-slate-100">
+            <div className="mt-2 border border-slate-200 rounded-xl max-h-60 overflow-y-auto overscroll-contain ambria-thin-scroll divide-y divide-slate-100">
               {searched.length === 0 && <p className="text-[12.5px] text-slate-400 text-center py-6">No vendors match</p>}
               {searched.map(function (v) {
                 var checked = mergeSourceIds.indexOf(v.vendor_id) !== -1

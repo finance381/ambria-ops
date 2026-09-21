@@ -1,5 +1,5 @@
-import { useEffect } from 'react'
 import { createPortal } from 'react-dom'
+import { useBodyScrollLock } from '../../lib/useBodyScrollLock'
 
 // Portalled to <body>, not rendered in place. The admin shell wraps each page
 // in `relative isolate`, which makes a stacking context: everything inside it
@@ -8,10 +8,10 @@ import { createPortal } from 'react-dom'
 // page had the sidebar showing through its left ~250px. Matches Modal.jsx's
 // fix for the identical bug.
 function BottomSheet({ open, onClose, title, children }) {
-  useEffect(function () {
-    if (open) document.body.style.overflow = 'hidden'
-    return function () { document.body.style.overflow = '' }
-  }, [open])
+  // Was clearing the lock on close rather than restoring what it found, so a
+  // sheet opened over another overlay unlocked the page when only the sheet
+  // closed.
+  useBodyScrollLock(open)
 
   if (!open) return null
 
