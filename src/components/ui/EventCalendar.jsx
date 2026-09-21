@@ -106,15 +106,8 @@ function EventCalendar({ value, onChange, year, month, onMonthChange, byDate, lo
 
       <div className="px-3 pb-3">
         <div className="grid grid-cols-7 mt-3 mb-1">
-          {DAY_NAMES.map(function (dn, di) {
-            var weekend = di === 0 || di === 6
-            return (
-              <div key={dn}
-                className={'text-center text-[10px] font-bold uppercase tracking-[0.06em] py-1 ' +
-                  (weekend ? 'text-rose-400' : 'text-slate-400')}>
-                {dn}
-              </div>
-            )
+          {DAY_NAMES.map(function (dn) {
+            return <div key={dn} className="text-center text-[10px] font-bold uppercase tracking-[0.06em] text-slate-400 py-1">{dn}</div>
           })}
         </div>
 
@@ -131,12 +124,11 @@ function EventCalendar({ value, onChange, year, month, onMonthChange, byDate, lo
             var hasEvent = !!info
             var isSelected = value === cell.dateStr
             var isToday = cell.dateStr === todayStr
-            var weekend = idx % 7 === 0 || idx % 7 === 6
 
             var tone
             if (isSelected) tone = 'bg-indigo-600 text-white shadow-[0_2px_10px_rgba(79,70,229,0.4)]'
             else if (hasEvent) tone = 'bg-indigo-50 text-indigo-700 font-bold hover:bg-indigo-100 hover:shadow-[0_1px_6px_rgba(79,70,229,0.15)]'
-            else tone = (weekend ? 'text-rose-400/80 ' : 'text-slate-600 ') + 'hover:bg-slate-100'
+            else tone = 'text-slate-600 hover:bg-slate-100'
             // Today is a ring rather than a fill, so it can sit under a
             // selection or under an event tint without either one losing.
             if (isToday && !isSelected) tone += ' ring-2 ring-indigo-400'
