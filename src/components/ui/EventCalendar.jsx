@@ -1,5 +1,5 @@
 import Icon from './Icon'
-import { venueColor, VENUE_LEGEND } from '../../lib/venueColors'
+import { venueColor } from '../../lib/venueColors'
 
 // A month that is the screen, not a dropdown.
 //
@@ -16,12 +16,23 @@ import { venueColor, VENUE_LEGEND } from '../../lib/venueColors'
 var DAY_NAMES = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
 var MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July',
   'August', 'September', 'October', 'November', 'December']
+var SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
 function iso(d) {
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0')
 }
 
-function EventCalendar({ value, onChange, year, month, onMonthChange, byDate, loading, total }) {
+// "Ambria Manaktala" is AM on every board in the building, and the initials of
+// the words give that for free — including for the venues nobody wrote a code
+// down for, which a hand-kept map would have left out.
+function venueCode(name) {
+  var words = String(name || '').trim().split(/\s+/).filter(Boolean)
+  if (words.length === 0) return '?'
+  if (words.length === 1) return words[0].slice(0, 2).toUpperCase()
+  return (words[0][0] + words[1][0]).toUpperCase()
+}
+
+function EventCalendar({ value, onChange, year, month, onMonthChange, byDate, loading, total, venues }) {
   var today = new Date()
   var todayStr = iso(today)
   var map = byDate || {}
@@ -42,6 +53,15 @@ function EventCalendar({ value, onChange, year, month, onMonthChange, byDate, lo
   var tail = cells.length % 7
   if (tail) for (var j = 1; j <= 7 - tail; j++) cells.push({ day: j, current: false })
 
+  // The legend names the venues this month actually has a dot for. A fixed
+  // list of four explained colours that were not on the grid and stayed silent
+  // about the ones that were.
+  var legend = (venues || []).slice().sort()
+  var legendShown = legend.slice(0, 5)
+  var legendRest = legend.length - legendShown.length
+
+  var picked = value ? new Date(value + 'T00:00:00') : null
+
   return (
     <div className="bg-white border border-slate-200 rounded-2xl shadow-[0_1px_2px_rgba(15,23,42,0.05)] overflow-hidden">
       <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-slate-100">
@@ -49,6 +69,14 @@ function EventCalendar({ value, onChange, year, month, onMonthChange, byDate, lo
           <Icon name="calendar" size={15} className="text-indigo-500" />
           Event Date
         </p>
+        {/* The card says what it is currently answering, so it still makes
+            sense stacked on a phone where the panel that repeats it has been
+            pushed below the fold. */}
+        {picked && !isNaN(picked) && (
+          <span data-notranslate className="ml-auto h-6 px-2 inline-flex items-center rounded-lg bg-indigo-50 text-indigo-700 text-[11.5px] font-bold">
+            {picked.getDate() + ' ' + SHORT_MONTHS[picked.getMonth()]}
+          </span>
+        )}
         <button type="button"
           onClick={function () {
             onMonthChange(today.getFullYear(), today.getMonth())
@@ -59,22 +87,34 @@ function EventCalendar({ value, onChange, year, month, onMonthChange, byDate, lo
         </button>
       </div>
 
-      <div className="flex items-center justify-between gap-2 px-3 pt-3">
-        <button type="button" onClick={function () { step(-1) }} aria-label="Previous month"
-          className="w-8 h-8 inline-flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors">
-          <Icon name="chevronRight" size={16} className="rotate-180" />
-        </button>
+      {/* Month left, its controls together on the right. Pinned to opposite
+          edges the two arrows sat a card's width apart from each other and
+          from the name of the thing they move. */}
+      <div className="flex items-center justify-between gap-2 px-4 pt-3.5">
         <p className="font-display text-[15px] font-bold text-slate-900" data-notranslate>{MONTHS[month] + ' ' + year}</p>
-        <button type="button" onClick={function () { step(1) }} aria-label="Next month"
-          className="w-8 h-8 inline-flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors">
-          <Icon name="chevronRight" size={16} />
-        </button>
+        <div className="flex items-center gap-1">
+          <button type="button" onClick={function () { step(-1) }} aria-label="Previous month"
+            className="w-8 h-8 inline-flex items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors">
+            <Icon name="chevronRight" size={15} className="rotate-180" />
+          </button>
+          <button type="button" onClick={function () { step(1) }} aria-label="Next month"
+            className="w-8 h-8 inline-flex items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors">
+            <Icon name="chevronRight" size={15} />
+          </button>
+        </div>
       </div>
 
       <div className="px-3 pb-3">
-        <div className="grid grid-cols-7 mt-2 mb-1">
-          {DAY_NAMES.map(function (dn) {
-            return <div key={dn} className="text-center text-[10px] font-bold uppercase tracking-[0.06em] text-slate-400 py-1">{dn}</div>
+        <div className="grid grid-cols-7 mt-3 mb-1">
+          {DAY_NAMES.map(function (dn, di) {
+            var weekend = di === 0 || di === 6
+            return (
+              <div key={dn}
+                className={'text-center text-[10px] font-bold uppercase tracking-[0.06em] py-1 ' +
+                  (weekend ? 'text-rose-400' : 'text-slate-400')}>
+                {dn}
+              </div>
+            )
           })}
         </div>
 
@@ -83,7 +123,7 @@ function EventCalendar({ value, onChange, year, month, onMonthChange, byDate, lo
             if (!cell.current) {
               return (
                 <div key={'e' + idx} className="aspect-square flex items-center justify-center">
-                  <span className="text-[13px] text-slate-300" data-notranslate>{cell.day}</span>
+                  <span className="text-[13px] text-slate-200" data-notranslate>{cell.day}</span>
                 </div>
               )
             }
@@ -91,30 +131,34 @@ function EventCalendar({ value, onChange, year, month, onMonthChange, byDate, lo
             var hasEvent = !!info
             var isSelected = value === cell.dateStr
             var isToday = cell.dateStr === todayStr
+            var weekend = idx % 7 === 0 || idx % 7 === 6
 
             var tone
-            if (isSelected) tone = 'bg-indigo-600 text-white shadow-[0_2px_8px_rgba(79,70,229,0.35)]'
-            else if (hasEvent) tone = 'bg-indigo-50 text-indigo-700 font-bold hover:bg-indigo-100'
-            else tone = 'text-slate-600 hover:bg-slate-100'
+            if (isSelected) tone = 'bg-indigo-600 text-white shadow-[0_2px_10px_rgba(79,70,229,0.4)]'
+            else if (hasEvent) tone = 'bg-indigo-50 text-indigo-700 font-bold hover:bg-indigo-100 hover:shadow-[0_1px_6px_rgba(79,70,229,0.15)]'
+            else tone = (weekend ? 'text-rose-400/80 ' : 'text-slate-600 ') + 'hover:bg-slate-100'
             // Today is a ring rather than a fill, so it can sit under a
             // selection or under an event tint without either one losing.
-            if (isToday && !isSelected) tone += ' ring-2 ring-indigo-400 ring-offset-1 ring-offset-white'
+            if (isToday && !isSelected) tone += ' ring-2 ring-indigo-400'
+
+            var when = new Date(cell.dateStr + 'T00:00:00')
+            var label = when.getDate() + ' ' + SHORT_MONTHS[when.getMonth()] + ' ' + when.getFullYear() +
+              (hasEvent ? ' — ' + info.count + (info.count === 1 ? ' event' : ' events') : ' — nothing booked')
 
             return (
               <button key={cell.dateStr} type="button"
                 onClick={function () { if (onChange) onChange(cell.dateStr) }}
-                aria-pressed={isSelected}
-                title={hasEvent ? info.count + (info.count === 1 ? ' event' : ' events') : undefined}
-                className={'aspect-square w-full rounded-full flex flex-col items-center justify-center gap-[3px] text-[13px] font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 ' + tone}>
+                aria-pressed={isSelected} aria-label={label} title={label}
+                className={'aspect-square w-full rounded-full flex flex-col items-center justify-center gap-[3px] text-[13.5px] font-semibold transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 ' + tone}>
                 <span data-notranslate className="leading-none">{cell.day}</span>
                 {/* The dot row keeps its height whether or not there are dots,
                     so a day with events is not a pixel taller than the one
                     beside it. */}
-                <span className="h-1.5 flex items-center gap-[2px]">
+                <span className="h-1.5 flex items-center gap-[3px]">
                   {hasEvent && info.venues.slice(0, 3).map(function (v, vi) {
                     return (
                       <span key={vi} className="w-1.5 h-1.5 rounded-full"
-                        style={{ background: isSelected ? 'rgba(255,255,255,0.9)' : venueColor(v) }} />
+                        style={{ background: isSelected ? 'rgba(255,255,255,0.92)' : venueColor(v) }} />
                     )
                   })}
                 </span>
@@ -126,14 +170,22 @@ function EventCalendar({ value, onChange, year, month, onMonthChange, byDate, lo
 
       <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-t border-slate-100 bg-slate-50/60">
         <div className="flex items-center gap-2.5 flex-wrap">
-          {VENUE_LEGEND.map(function (l) {
+          {legendShown.map(function (v) {
             return (
-              <span key={l.code} title={l.name} className="inline-flex items-center gap-1.5 text-[11px] font-bold text-slate-500">
-                <span className="w-2 h-2 rounded-full" style={{ background: venueColor(l.name) }} />
-                {l.code}
+              <span key={v} title={v} className="inline-flex items-center gap-1.5 text-[11px] font-bold text-slate-500">
+                <span className="w-2 h-2 rounded-full" style={{ background: venueColor(v) }} />
+                {venueCode(v)}
               </span>
             )
           })}
+          {legendRest > 0 && (
+            <span data-notranslate title={legend.slice(5).join(', ')} className="text-[11px] font-bold text-slate-400">
+              +{legendRest}
+            </span>
+          )}
+          {legend.length === 0 && !loading && (
+            <span className="text-[11px] font-semibold text-slate-400">No venues booked</span>
+          )}
         </div>
         <span className="shrink-0 text-[11px] font-semibold text-slate-400 tabular-nums" data-notranslate>
           {loading ? 'Loading…' : (total || 0) + ((total || 0) === 1 ? ' event' : ' events')}

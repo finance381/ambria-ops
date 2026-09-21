@@ -1177,7 +1177,8 @@ function EventLedger(props) {
                   if (d.getFullYear() !== y || d.getMonth() !== m) pickDate('')
                 }
               }}
-              byDate={monthByDate} loading={monthLoading} total={monthRows.length} />
+              byDate={monthByDate} loading={monthLoading} total={monthRows.length}
+              venues={monthVenues} />
           </div>
 
           <div className="w-full min-w-0 @3xl:flex-1">
