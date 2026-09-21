@@ -22,6 +22,18 @@ import ReverseDialog from '../../components/ui/ReverseDialog'
 
 function byName(a, b) { return (a.name || '').localeCompare(b.name || '') }
 
+// Search on the letters, not on the spacing. "S K Genset", "s k genset" and
+// "SK Genset" are one vendor entered three ways — by three people, over three
+// years — and typing "sk" found none of them, because a substring match sees
+// the space between the S and the K as a character you failed to type.
+//
+// Both sides lose everything that is not a letter or a digit, so the query
+// and the name are compared on what was actually meant. That also covers
+// "M/S", "S.K." and the trailing spaces a paste leaves behind.
+function searchKey(s) {
+  return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '')
+}
+
 // Outstanding is the ordinary state of a vendor ledger — nearly every row has
 // some — so colouring it said nothing and turned the whole grid amber. A
 // colour that is on everything is not a signal, it is a background.
@@ -624,11 +636,11 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
 
   // ── LIST VIEW ──
   if (view === 'list') {
-    var q = deferredSearch.trim().toLowerCase()
+    var q = searchKey(deferredSearch)
     var hasAnyDropdownFilter = !!(fExpType || fExpSubType || fCategory || fSubCategory)
     var filtered = vendors.filter(function (v) {
       if (!v.vendor_active) return false
-      if (q && (v.vendor_name || '').toLowerCase().indexOf(q) === -1) return false
+      if (q && searchKey(v.vendor_name).indexOf(q) === -1) return false
       if (deferredStatus === 'with_balance' && (v.balance_paise || 0) === 0) return false
       if (deferredStatus === 'incomplete' && v.vendor_status !== 'incomplete') return false
       if (deferredStatus === 'overdue' && (v.overdue_count || 0) === 0) return false
