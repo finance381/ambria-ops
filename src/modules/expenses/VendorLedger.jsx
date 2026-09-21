@@ -429,13 +429,26 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
   }, onNavigateToExpenses)
 
   useEffect(function () {
-    if (canView) { loadVendors(); loadFilterData() }
+    if (canView) loadVendors()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Cascade: clearing parent clears its child; changing parent clears child too
   useEffect(function () { setFExpSubType('') }, [fExpType])
   useEffect(function () { setFSubCategory('') }, [fCategory])
+
+  // The four dropdowns' options and the vendor→type tags behind them: three
+  // requests that used to go out on mount, alongside the one the page actually
+  // waits for. Nothing they fetch can be used until the funnel is opened, and
+  // until then they were competing with the vendor list for the same
+  // connection.
+  var [filterDataLoaded, setFilterDataLoaded] = useState(false)
+  useEffect(function () {
+    if (!filtersOpen || filterDataLoaded) return
+    setFilterDataLoaded(true)
+    loadFilterData()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filtersOpen])
 
   async function loadFilterData() {
     // Reference tables for the 4 dropdowns
