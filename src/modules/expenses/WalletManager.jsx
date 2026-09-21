@@ -184,24 +184,11 @@ var REF_TYPE_LABELS = {
   salary_adjustment: 'Salary Adjustment',
 }
 
-// Outline and word, no fill — the same way the chips on the Cash & Bank
-// ledger and the quick filters above them say what they are. The leading
-// square below keeps its tint: that is the thing you scan a long ledger with,
-// and this is the thing you read once you have stopped.
-var REF_TYPE_STYLES = {
-  expense: 'bg-white text-rose-700 border-rose-300',
-  expense_refund: 'bg-white text-emerald-700 border-emerald-300',
-  transfer: 'bg-white text-blue-700 border-blue-300',
-  issued: 'bg-white text-purple-700 border-purple-300',
-  deducted: 'bg-white text-orange-700 border-orange-300',
-  collection: 'bg-white text-emerald-700 border-emerald-300',
-  collection_cancel: 'bg-white text-rose-700 border-rose-300',
-  opening: 'bg-white text-slate-700 border-slate-300',
-  vendor_payment: 'bg-white text-rose-700 border-rose-300',
-  vendor_deduction: 'bg-white text-amber-700 border-amber-300',
-  salary_payment: 'bg-white text-rose-700 border-rose-300',
-  salary_adjustment: 'bg-white text-amber-700 border-amber-300',
-}
+// The chip says which of a dozen kinds a row is, and the word is the whole
+// message: a dozen colours to say it put a second colour system beside the
+// leading square that already codes the same thing. One outline for all of
+// them, and the square below keeps its tint — that is what you scan with.
+var CHIP = 'text-[10px] font-bold uppercase px-1.5 py-0.5 rounded border border-slate-300 bg-white text-slate-700'
 
 // The glyph and tint for a row's leading square. Same families as the chip
 // above, so a row says the same thing twice in two ways — which is the point on
@@ -2759,7 +2746,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5">
                         {t.reference_type && (
-                          <span className={"text-[10px] font-bold uppercase px-1.5 py-0.5 rounded border flex-shrink-0 " + (REF_TYPE_STYLES[t.reference_type] || 'bg-white text-slate-700 border-slate-300')}>
+                          <span className={CHIP + " flex-shrink-0"}>
                             {REF_TYPE_LABELS[t.reference_type] || t.reference_type}
                           </span>
                         )}
@@ -3326,7 +3313,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               {t.reference_type && (
-                <span className={"text-[10px] font-bold uppercase px-1.5 py-0.5 rounded border " + (REF_TYPE_STYLES[t.reference_type] || 'bg-white text-slate-700 border-slate-300')}>
+                <span className={CHIP}>
                   {REF_TYPE_LABELS[t.reference_type] || t.reference_type}
                 </span>
               )}
