@@ -424,6 +424,10 @@ function PaymentsLedger({ profile }) {
           </div>
 
           <div className="flex items-center gap-2 ml-auto">
+            {/* Search is the control people reach for most on this screen, so
+                it does not live one press deep behind More Filters. */}
+            <SearchField value={search} onChange={function (v) { setSearch(v) }}
+              placeholder="Search transactions..." className="w-[220px] @3xl:w-[260px]" />
             <button type="button" onClick={function () { setShowMore(!showMore) }} aria-pressed={showMore}
               className={'h-9 px-3 inline-flex items-center gap-1.5 rounded-xl border text-[12.5px] font-bold transition-colors ' +
                 (showMore || typeFilter
@@ -443,52 +447,38 @@ function PaymentsLedger({ profile }) {
         </div>
 
         {showMore && (
-          /* A drawer, on its own ground, rather than two fields loose under a
-             hairline. The split was even, which gave a single search box half
-             a very wide panel and left six type pills to wrap and strand one
-             of themselves on a second line. */
+          /* A drawer on its own ground under the toolbar. Search left it for
+             the row above, so what is behind the button is the one thing that
+             needs the room: every type in the range, with its count. */
           <div className="mt-3 -mx-4 -mb-3 px-4 py-3.5 border-t border-slate-200 bg-slate-50/70">
-            <div className="grid gap-4 @3xl:grid-cols-12">
-              <div className="@3xl:col-span-4">
-                <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500 mb-1.5">Search</p>
-                <SearchField value={search} onChange={function (v) { setSearch(v) }}
-                  placeholder="Name, event, description..." className="w-full" />
-                <p className="mt-1.5 text-[11px] font-medium text-slate-400">
-                  Also matches the type and whoever recorded the row.
-                </p>
-              </div>
-
-              <div className="@3xl:col-span-8">
-                <div className="flex items-center justify-between gap-3 mb-1.5">
-                  <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500">Transaction type</p>
-                  {(typeFilter || search) && (
-                    <button type="button" onClick={function () { setTypeFilter(''); setSearch('') }}
-                      className="text-[11.5px] font-bold text-rose-600 hover:text-rose-700 transition-colors">
-                      Clear these
-                    </button>
-                  )}
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  <button type="button" onClick={function () { setTypeFilter('') }} aria-pressed={typeFilter === ''}
-                    className={'h-8 px-3 rounded-lg border text-[12px] font-bold transition-colors ' +
-                      (typeFilter === '' ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50')}>
-                    Any
+            <div className="flex items-center justify-between gap-3 mb-1.5">
+              <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500">Transaction type</p>
+              {typeFilter && (
+                <button type="button" onClick={function () { setTypeFilter('') }}
+                  className="text-[11.5px] font-bold text-rose-600 hover:text-rose-700 transition-colors">
+                  Clear
+                </button>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              <button type="button" onClick={function () { setTypeFilter('') }} aria-pressed={typeFilter === ''}
+                className={'h-8 px-3 rounded-lg border text-[12px] font-bold transition-colors ' +
+                  (typeFilter === '' ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50')}>
+                Any
+              </button>
+              {typesPresent.map(function (t) {
+                var on = typeFilter === t.label
+                return (
+                  <button key={t.label} type="button" aria-pressed={on}
+                    onClick={function () { setTypeFilter(on ? '' : t.label) }}
+                    className={'h-8 pl-3 pr-2 inline-flex items-center gap-2 rounded-lg border text-[12px] font-bold transition-colors ' +
+                      (on ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50')}>
+                    {t.label}
+                    <span data-notranslate className={'px-1.5 rounded-md text-[11px] tabular-nums ' +
+                      (on ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500')}>{t.count}</span>
                   </button>
-                  {typesPresent.map(function (t) {
-                    var on = typeFilter === t.label
-                    return (
-                      <button key={t.label} type="button" aria-pressed={on}
-                        onClick={function () { setTypeFilter(on ? '' : t.label) }}
-                        className={'h-8 pl-3 pr-2 inline-flex items-center gap-2 rounded-lg border text-[12px] font-bold transition-colors ' +
-                          (on ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50')}>
-                        {t.label}
-                        <span data-notranslate className={'px-1.5 rounded-md text-[11px] tabular-nums ' +
-                          (on ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500')}>{t.count}</span>
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
+                )
+              })}
             </div>
           </div>
         )}
