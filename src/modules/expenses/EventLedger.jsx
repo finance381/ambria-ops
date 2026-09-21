@@ -1,5 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
-import { createPortal } from 'react-dom'
+import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { formatPoints, formatDate, formatDateTime } from '../../lib/format'
 import EventCalendar from '../../components/ui/EventCalendar'
@@ -163,32 +162,7 @@ function EventLedger(props) {
   var [showTxnFilter, setShowTxnFilter] = useState(false)
   var [selectedRows, setSelectedRows] = useState({})
   var [txnPage, setTxnPage] = useState(1)
-  var [rowMenu, setRowMenu] = useState(null)
-  var menuRef = useRef(null)
   var [lightbox, setLightbox] = useState(null)
-
-  // The menu is anchored to a rect taken when it opened, so anything that
-  // moves that rect — a scroll, a resize — has to close it rather than leave
-  // it floating over the wrong row.
-  useEffect(function () {
-    if (!rowMenu) return
-    function onDown(ev) {
-      if (menuRef.current && menuRef.current.contains(ev.target)) return
-      setRowMenu(null)
-    }
-    function onKey(ev) { if (ev.key === 'Escape') setRowMenu(null) }
-    function onMove() { setRowMenu(null) }
-    document.addEventListener('pointerdown', onDown)
-    document.addEventListener('keydown', onKey)
-    window.addEventListener('resize', onMove)
-    window.addEventListener('scroll', onMove, true)
-    return function () {
-      document.removeEventListener('pointerdown', onDown)
-      document.removeEventListener('keydown', onKey)
-      window.removeEventListener('resize', onMove)
-      window.removeEventListener('scroll', onMove, true)
-    }
-  }, [rowMenu])
 
   async function loadFunctions(dateStr) {
     setDate(dateStr)
@@ -437,7 +411,7 @@ function EventLedger(props) {
   function resetTxnView() {
     setTxnSearch(''); setTxnDir(''); setTxnMode(''); setTxnCheck('')
     setTxnSort('desc'); setShowTxnFilter(false)
-    setSelectedRows({}); setTxnPage(1); setRowMenu(null)
+    setSelectedRows({}); setTxnPage(1)
   }
 
   // Who put the row there. A collection was taken by whoever holds the wallet,
@@ -556,7 +530,7 @@ function EventLedger(props) {
             between "cash" and the figure it belongs to while the description,
             the one column that wants room, was squeezed against the right
             edge. Everything but the description is pinned to what it needs. */}
-        <table className="w-full min-w-[1080px]">
+        <table className="w-full min-w-[1000px]">
           <colgroup>
             <col style={{ width: '44px' }} />
             <col style={{ width: '150px' }} />
@@ -566,7 +540,6 @@ function EventLedger(props) {
             <col style={{ width: '112px' }} />
             <col />
             <col style={{ width: '160px' }} />
-            <col style={{ width: '76px' }} />
           </colgroup>
           <thead className="bg-slate-50 border-b border-slate-200">
             <tr>
@@ -598,7 +571,6 @@ function EventLedger(props) {
               {['Description', 'Added By'].map(function (h) {
                 return <th key={h} className="px-3 py-2.5 text-left text-[10.5px] font-bold uppercase tracking-[0.06em] text-slate-500 whitespace-nowrap">{h}</th>
               })}
-              <th className="px-3 py-2.5 text-right text-[10.5px] font-bold uppercase tracking-[0.06em] text-slate-500 whitespace-nowrap">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -690,19 +662,6 @@ function EventLedger(props) {
                         </span>
                       </div>
                     ) : <span className="text-[12px] text-slate-400">—</span>}
-                  </td>
-                  <td className="px-3 py-2.5 align-top text-right" onClick={function (ev) { ev.stopPropagation() }}>
-                    <button type="button" aria-label="Row actions"
-                      onClick={function (ev) {
-                        var r = ev.currentTarget.getBoundingClientRect()
-                        setRowMenu(rowMenu && rowMenu.id === e.id ? null : { id: e.id, row: e, top: r.bottom + 6, right: window.innerWidth - r.right })
-                      }}
-                      className={'w-8 h-8 inline-flex items-center justify-center rounded-lg border transition-colors ' +
-                        (rowMenu && rowMenu.id === e.id
-                          ? 'border-indigo-300 bg-indigo-50 text-indigo-600'
-                          : 'border-slate-200 text-slate-400 hover:text-slate-700 hover:bg-slate-100')}>
-                      <Icon name="more" size={16} />
-                    </button>
                   </td>
                 </tr>
               )
@@ -1286,52 +1245,6 @@ function EventLedger(props) {
       )}
       {eventId && detailView}
 
-      {/* The row menu is portalled rather than absolutely positioned inside its
-          cell: the table scrolls sideways inside a rounded card with
-          overflow hidden, which would clip a menu hanging below the last row
-          to a sliver. Positioned from the button's own rect, in viewport
-          coordinates, it cannot be clipped by anything. */}
-      {rowMenu && createPortal(
-        <div ref={menuRef} style={{ position: 'fixed', top: rowMenu.top, right: rowMenu.right, zIndex: 9997 }}
-          className="w-[210px] bg-white border border-slate-200 rounded-xl shadow-[0_8px_28px_rgba(15,23,42,0.14)] p-1">
-          {(function () {
-            var e = rowMenu.row
-            var isExpRow = e.entry_type === 'expense' && !!e.reference_id
-            var isCollRow = e.entry_type === 'collection' && !!e._wt
-            var checked = rowChecked(e)
-            var mine = isExpRow ? e._checkedBy === profile?.id : (isCollRow && e._wt.checked_by === profile?.id)
-            var canFlip = canMarkChecked && checked !== null && (!checked || mine || isSysAdmin)
-            var items = []
-            if (isExpRow) items.push({ key: 'open', icon: 'receipt', label: 'Open expense', run: function () { openExpenseDetail(Number(e.reference_id)) } })
-            if (isCollRow) items.push({ key: 'open', icon: 'wallet', label: 'View collection', run: function () { setCollDetail({ row: e }) } })
-            if (canFlip) {
-              items.push({
-                key: 'check', icon: 'checkCircle', label: checked ? 'Un-check' : 'Mark checked',
-                run: function () {
-                  if (isExpRow) toggleExpenseCheck(Number(e.reference_id))
-                  else if (isCollRow) toggleCollectionCheck(e.reference_id)
-                },
-              })
-            }
-            items.push({
-              key: 'copy', icon: 'copy', label: 'Copy description',
-              run: function () { navigator.clipboard?.writeText(e.description || '') },
-            })
-            items.push({ key: 'csv', icon: 'download', label: 'Export this row', run: function () { exportCsv([e]) } })
-            return items.map(function (it) {
-              return (
-                <button key={it.key} type="button"
-                  onClick={function () { setRowMenu(null); it.run() }}
-                  className="w-full flex items-center gap-2.5 px-2.5 h-9 rounded-lg text-[12.5px] font-semibold text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 transition-colors">
-                  <Icon name={it.icon} size={14} className="shrink-0 text-slate-400" />
-                  {it.label}
-                </button>
-              )
-            })
-          })()}
-        </div>,
-        document.body
-      )}
       {expenseDetailModal}
       {lightbox && (
         <ImageLightbox url={lightbox.url} alt={lightbox.label} onClose={function () { setLightbox(null) }} />
