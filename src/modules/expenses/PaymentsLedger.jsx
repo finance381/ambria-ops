@@ -17,22 +17,21 @@ import { getReceiptUrl, isVoiceNotePath } from '../../lib/uploadHelper'
 // expense spend) and money collected in (event collections, extra-plate collections,
 // expense refunds). Each source tags its rows with a payment mode (cash/bank) — entries
 // with no mode aren't real money movement (e.g. plain point issuances) and are excluded here.
-var TYPE_META = {
-  vendor_payment:     { label: 'Vendor Payment',           direction: 'out' },
-  vendor_deduction:   { label: 'Vendor Deduction',         direction: 'out' },
-  salary_payment:     { label: 'Salary Payment',           direction: 'out' },
-  salary_adjustment:  { label: 'Salary Adjustment',        direction: 'out' },
-  collection:         { label: 'Event Collection',         direction: 'in'  },
-  epc:                { label: 'Extra Plate Collection',   direction: 'in'  },
-  expense:            { label: 'Expense (Cash)',           direction: 'out' },
-  expense_refund:     { label: 'Expense Refund',           direction: 'in'  },
-}
+// The shape is shared and the tone is the type's own — written once each,
+// rather than a full class string per entry repeating the same six words.
+var CHIP = 'inline-flex items-center h-[22px] px-2 rounded-md border bg-white text-[11px] font-bold '
+var CHIP_NEUTRAL = 'text-slate-700 border-slate-300'
 
-// The type chip says which of eight kinds a row is. Eight colours to say that
-// put a second colour system on a screen that already colours the direction,
-// the party kind and the amount — and none of them agreed with each other. The
-// word is the whole message; one outline carries it.
-var CHIP = 'inline-flex items-center h-[22px] px-2 rounded-md border border-slate-300 bg-white text-[11px] font-bold text-slate-700'
+var TYPE_META = {
+  vendor_payment:     { label: 'Vendor Payment',           direction: 'out', tone: 'text-rose-700 border-rose-300' },
+  vendor_deduction:   { label: 'Vendor Deduction',         direction: 'out', tone: 'text-amber-700 border-amber-300' },
+  salary_payment:     { label: 'Salary Payment',           direction: 'out', tone: 'text-rose-700 border-rose-300' },
+  salary_adjustment:  { label: 'Salary Adjustment',        direction: 'out', tone: 'text-amber-700 border-amber-300' },
+  collection:         { label: 'Event Collection',         direction: 'in',  tone: 'text-emerald-700 border-emerald-300' },
+  epc:                { label: 'Extra Plate Collection',   direction: 'in',  tone: 'text-emerald-700 border-emerald-300' },
+  expense:            { label: 'Expense (Cash)',           direction: 'out', tone: 'text-orange-700 border-orange-300' },
+  expense_refund:     { label: 'Expense Refund',           direction: 'in',  tone: 'text-emerald-700 border-emerald-300' },
+}
 
 // What the name on a row refers to. The chips said the transaction type but
 // never what the name beside them was, so "Carpet Sharma" and "WEDDING" —
@@ -172,7 +171,7 @@ function PaymentsLedger({ profile }) {
 
     var combined = []
     ledgerRows.forEach(function (r) {
-      var meta = TYPE_META[r.ref_type] || { label: r.ref_type, direction: 'out' }
+      var meta = TYPE_META[r.ref_type] || { label: r.ref_type, direction: 'out', tone: CHIP_NEUTRAL }
       var partyName = r.ledger_type === 'vendor' ? (vendorNames[r.party_id] || '—') : (profileNames[r.party_id] || '—')
       combined.push({
         key: 'le:' + r.id,
@@ -185,6 +184,7 @@ function PaymentsLedger({ profile }) {
         party_name: partyName,
         description: r.description || '',
         type_label: meta.label,
+        type_tone: meta.tone || CHIP_NEUTRAL,
         recorded_by: (r.created_by && profileNames[r.created_by]) || '',
         _metadata: r.metadata,
       })
@@ -208,6 +208,7 @@ function PaymentsLedger({ profile }) {
         recorded_by: (w.performed_by && profileNames[w.performed_by]) || '',
         description: w.description || (w.receipt_no ? '#' + w.receipt_no : ''),
         type_label: meta.label,
+        type_tone: meta.tone || CHIP_NEUTRAL,
         _eventId: evId,
         _isEpc: isEpc,
         _epc: epc || null,
@@ -235,6 +236,7 @@ function PaymentsLedger({ profile }) {
         party_name: partyName,
         description: r.description || '',
         type_label: meta.label,
+        type_tone: meta.tone || CHIP_NEUTRAL,
         _expenseId: r.reference_id,
       })
     })
@@ -619,7 +621,7 @@ function PaymentsLedger({ profile }) {
                             <span aria-hidden="true" className={'w-1.5 h-1.5 rounded-full ' + src.dot} />
                             {src.label}
                           </span>
-                          <span className={CHIP}>{r.type_label}</span>
+                          <span className={CHIP + r.type_tone}>{r.type_label}</span>
                         </div>
                       </td>
 
