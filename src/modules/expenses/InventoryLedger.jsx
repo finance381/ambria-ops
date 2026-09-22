@@ -1,7 +1,8 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { supabase, fetchAll } from '../../lib/supabase'
 import { formatDate, formatDateTime, formatPaise } from '../../lib/format'
 import { useRealtime } from '../../lib/useRealtime'
+import { scrollToTopOf } from '../../lib/scrollToTop'
 import { registerPdfFont } from '../../lib/pdfFont'
 import { openOrSharePdf } from '../../lib/pdfOutput'
 import { useExpenseDetailModal } from '../../hooks/useExpenseDetailModal.jsx'
@@ -50,6 +51,16 @@ function InventoryLedger({ profile }) {
   var [showNoHistory, setShowNoHistory] = useState(false)
   var [page, setPage] = useState(0)
   var [pageSize, setPageSize] = useState(25)
+  var listRef = useRef(null)
+
+  // Paging, and changing how many a page holds, both land you at the top of
+  // the new page. Pressing Next at the foot of twenty-five rows otherwise
+  // leaves you at the foot of the next twenty-five, reading upwards from the
+  // end of something you never saw the start of.
+  function goPage(n) {
+    setPage(n)
+    scrollToTopOf(listRef.current)
+  }
   var [exporting, setExporting] = useState(false)
   var [showFilters, setShowFilters] = useState(false)
 
@@ -80,10 +91,10 @@ function InventoryLedger({ profile }) {
     try {
       var results = await Promise.all([
         fetchAll(supabase.from('inventory_items')
-          .select('id, name, inventory_id, qty, unit, rate_paise, image_path, categories(id, name), sub_categories(id, name)')
+          .select('id, name, inventory_id, qty, rate_paise, image_path, categories(id, name), sub_categories(id, name)')
           .order('name', { ascending: true })),
         fetchAll(supabase.from('catering_store_items')
-          .select('id, name, inventory_id, qty, unit, rate_paise, image_path, categories(id, name), sub_categories(id, name)')
+          .select('id, name, inventory_id, qty, rate_paise, image_path, categories(id, name), sub_categories(id, name)')
           .order('name', { ascending: true })),
         fetchAll(supabase.from('v_item_purchase_history')
           .select('item_id, item_source, vendor_name, qty, unit, rate_paise, amount_paise, txn_date, source_type, source_id, source_ref'))
@@ -166,7 +177,7 @@ function InventoryLedger({ profile }) {
           _key: 'inventory:' + r.id, _source: 'inventory', id: r.id,
           name: r.name || '', code: r.inventory_id || '',
           cat: r.categories && r.categories.name || '', subcat: r.sub_categories && r.sub_categories.name || '',
-          rate_paise: r.rate_paise || 0, live_qty: Number(r.qty || 0), unit: r.unit || '',
+          rate_paise: r.rate_paise || 0, live_qty: Number(r.qty || 0),
           img: r.image_path ? (supabase.storage.from('images').getPublicUrl(r.image_path).data?.publicUrl || '') : ''
         })
       })
@@ -175,7 +186,7 @@ function InventoryLedger({ profile }) {
           _key: 'catering_store:' + r.id, _source: 'catering_store', id: r.id,
           name: r.name || '', code: r.inventory_id || '',
           cat: r.categories && r.categories.name || '', subcat: r.sub_categories && r.sub_categories.name || '',
-          rate_paise: r.rate_paise || 0, live_qty: Number(r.qty || 0), unit: r.unit || '',
+          rate_paise: r.rate_paise || 0, live_qty: Number(r.qty || 0),
           img: r.image_path ? (supabase.storage.from('images').getPublicUrl(r.image_path).data?.publicUrl || '') : ''
         })
       })
@@ -720,7 +731,7 @@ function InventoryLedger({ profile }) {
           sentence on each row to find it. Below the table's own width the
           panel scrolls sideways — squeezing nine columns into a phone would
           make all nine unreadable. */}
-      <div className={CARD + ' overflow-hidden'}>
+      <div ref={listRef} className={CARD + ' overflow-hidden scroll-mt-4'}>
         <div className="overflow-x-auto ambria-thin-scroll">
           <div className="min-w-[1180px]">
             <div className={GRID + ' px-4 py-2.5 bg-slate-50 border-b border-slate-200 ' + COL_HEAD}>
@@ -797,10 +808,8 @@ function InventoryLedger({ profile }) {
                         )}
                     </span>
 
-                    <span className="text-center">
-                      <span data-notranslate className="block text-[13px] font-bold text-slate-900 tabular-nums">{fmtQty(item.live_qty)}</span>
-                      {/* A bare 144 does not say 144 of what. */}
-                      {item.unit && <span className="block mt-0.5 text-[10px] font-semibold text-slate-400">{item.unit}</span>}
+                    <span data-notranslate className="text-center text-[13px] font-bold text-slate-900 tabular-nums">
+                      {fmtQty(item.live_qty)}
                     </span>
                     <span data-notranslate className="text-center text-[13px] font-bold text-slate-900 tabular-nums">
                       {item.rate_paise > 0 ? formatPaise(item.rate_paise) : '—'}
@@ -859,7 +868,7 @@ function InventoryLedger({ profile }) {
           <div className="flex flex-wrap items-center gap-2">
             {totalPages > 1 && (
               <div className="flex items-center gap-1">
-                <button type="button" disabled={pageNow === 0} onClick={function () { setPage(pageNow - 1) }}
+                <button type="button" disabled={pageNow === 0} onClick={function () { goPage(pageNow - 1) }}
                   aria-label="Previous page"
                   className="w-8 h-8 inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-500 hover:bg-slate-100 disabled:opacity-30 transition-colors">
                   <Icon name="chevronRight" size={14} className="rotate-180" />
@@ -867,20 +876,24 @@ function InventoryLedger({ profile }) {
                 {pageButtons.map(function (b, i) {
                   if (b === '…') return <span key={'g' + i} className="px-1 text-[12px] font-bold text-slate-300">…</span>
                   return (
-                    <button key={b} type="button" onClick={function () { setPage(b) }}
+                    <button key={b} type="button" onClick={function () { goPage(b) }}
                       className={'min-w-8 h-8 px-2 rounded-lg text-[12px] font-bold tabular-nums transition-colors ' +
                         (b === pageNow ? 'bg-indigo-600 text-white' : 'border border-slate-300 bg-white text-slate-600 hover:bg-slate-100')}
                       data-notranslate>{b + 1}</button>
                   )
                 })}
-                <button type="button" disabled={pageNow >= totalPages - 1} onClick={function () { setPage(pageNow + 1) }}
+                <button type="button" disabled={pageNow >= totalPages - 1} onClick={function () { goPage(pageNow + 1) }}
                   aria-label="Next page"
                   className="w-8 h-8 inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-500 hover:bg-slate-100 disabled:opacity-30 transition-colors">
                   <Icon name="chevronRight" size={14} />
                 </button>
               </div>
             )}
-            <select value={pageSize} onChange={function (e) { setPageSize(Number(e.target.value)) }}
+            {/* Changing the page size already resets to page one; without
+                the scroll you were left at the foot of a list that had just
+                grown or shrunk under you. */}
+            <select value={pageSize}
+              onChange={function (e) { setPageSize(Number(e.target.value)); scrollToTopOf(listRef.current) }}
               aria-label="Rows per page"
               style={{ fontSize: '13px' }}
               className="h-8 px-2 rounded-lg border border-slate-300 bg-white text-[12px] font-bold text-slate-700 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20">
