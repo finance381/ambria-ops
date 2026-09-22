@@ -7,6 +7,7 @@ import { prepUpload, isVoiceNotePath, getReceiptUrl } from '../../lib/uploadHelp
 import SearchDropdown from '../../components/ui/SearchDropdown'
 import BottomSheet from '../../components/ui/BottomSheet'
 import EventDatePicker from '../../components/ui/EventDatePicker'
+import { scrollToTopOf } from '../../lib/scrollToTop'
 import { useVoice } from '../../hooks/useVoice'
 import { useAudioRecorder } from '../../hooks/useAudioRecorder'
 import { generateCollectionReceiptPdf } from '../../lib/pdfReceipt'
@@ -182,6 +183,8 @@ function toYMD(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padS
 // by construction (every one of those RPCs exists specifically to keep the
 // wallet in sync with the expense), and the balance snapshot comes from
 // whichever row in the group happened most recently.
+var TXN_PAGE_SIZES = [25, 50, 100]
+
 function mergeExpenseWalletRows(txns) {
   var groups = {}
   var out = []
@@ -336,6 +339,16 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   // rows and they are all in hand, so reordering them is free and does not cost
   // a round trip every time somebody changes their mind.
   var [txnSort, setTxnSort] = useState('latest')
+
+  // A busy wallet runs to five hundred rows, and each one of these carries
+  // chips, thumbnails and an allocation block — so the browser was building
+  // five hundred of them to show you the top twenty-five. Paging is done here
+  // rather than in the query because the sort by amount, the deleted-expense
+  // filter and the merge of an expense's several rows into one all need the
+  // whole set in hand; a page fetched from the server would cut across them.
+  var [txnPage, setTxnPage] = useState(0)
+  var [txnPageSize, setTxnPageSize] = useState(25)
+  var txnListRef = useRef(null)
 
   // Hold the page still while an overlay is open.
   //
@@ -687,6 +700,9 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
 
     var ticket = ++txnReqRef.current
     function current() { return txnReqRef.current === ticket }
+    // A new person, or a new filter, is a new list — page five of the last
+    // one means nothing here.
+    setTxnPage(0)
 
     if (wallet) {
       // Clear first: the transactions view is already mounted for the previous
@@ -3812,6 +3828,72 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
       return rows.sort(function (a, b) { return new Date(b._sortAt || b.created_at) - new Date(a._sortAt || a.created_at) })
     })()
 
+    var txnTotalPages = Math.max(1, Math.ceil(sortedTxns.length / txnPageSize))
+    // Clamp rather than reset: a filter that shortens the list should leave
+    // you near where you were, not at the top of page one.
+    var txnPageNow = Math.min(txnPage, txnTotalPages - 1)
+    var pagedTxns = sortedTxns.slice(txnPageNow * txnPageSize, (txnPageNow + 1) * txnPageSize)
+    var txnFirstShown = sortedTxns.length === 0 ? 0 : txnPageNow * txnPageSize + 1
+    var txnLastShown = Math.min((txnPageNow + 1) * txnPageSize, sortedTxns.length)
+
+    // 1 … 4 5 6 … 20, never twenty buttons.
+    var txnPageButtons = []
+    for (var tpb = 0; tpb < txnTotalPages; tpb++) {
+      if (tpb === 0 || tpb === txnTotalPages - 1 || (tpb >= txnPageNow - 1 && tpb <= txnPageNow + 1)) txnPageButtons.push(tpb)
+      else if (txnPageButtons[txnPageButtons.length - 1] !== '…') txnPageButtons.push('…')
+    }
+
+    // Pressing Next at the foot of twenty-five rows otherwise leaves you at
+    // the foot of the next twenty-five, reading upwards from the end of
+    // something you never saw the start of.
+    function goTxnPage(n) {
+      setTxnPage(n)
+      scrollToTopOf(txnListRef.current)
+    }
+
+    function renderTxnPager() {
+      if (sortedTxns.length === 0) return null
+      return (
+        <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 border-t border-slate-200">
+          <p className="text-[12px] font-semibold text-slate-500" data-notranslate>
+            Showing {txnFirstShown}–{txnLastShown} of {sortedTxns.length}
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            {txnTotalPages > 1 && (
+              <div className="flex items-center gap-1">
+                <button type="button" disabled={txnPageNow === 0} onClick={function () { goTxnPage(txnPageNow - 1) }}
+                  aria-label="Previous page"
+                  className="w-8 h-8 inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-500 hover:bg-slate-100 disabled:opacity-30 transition-colors">
+                  <Icon name="chevronRight" size={14} className="rotate-180" />
+                </button>
+                {txnPageButtons.map(function (b, i) {
+                  if (b === '…') return <span key={'g' + i} className="px-1 text-[12px] font-bold text-slate-300">…</span>
+                  return (
+                    <button key={b} type="button" onClick={function () { goTxnPage(b) }}
+                      className={'min-w-8 h-8 px-2 rounded-lg text-[12px] font-bold tabular-nums transition-colors ' +
+                        (b === txnPageNow ? 'bg-indigo-600 text-white' : 'border border-slate-300 bg-white text-slate-600 hover:bg-slate-100')}
+                      data-notranslate>{b + 1}</button>
+                  )
+                })}
+                <button type="button" disabled={txnPageNow >= txnTotalPages - 1} onClick={function () { goTxnPage(txnPageNow + 1) }}
+                  aria-label="Next page"
+                  className="w-8 h-8 inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-500 hover:bg-slate-100 disabled:opacity-30 transition-colors">
+                  <Icon name="chevronRight" size={14} />
+                </button>
+              </div>
+            )}
+            <select value={txnPageSize}
+              onChange={function (e) { setTxnPageSize(Number(e.target.value)); setTxnPage(0); scrollToTopOf(txnListRef.current) }}
+              aria-label="Rows per page"
+              style={{ fontSize: '13px' }}
+              className="h-8 px-2 rounded-lg border border-slate-300 bg-white text-[12px] font-bold text-slate-700 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20">
+              {TXN_PAGE_SIZES.map(function (n) { return <option key={n} value={n}>{n} / page</option> })}
+            </select>
+          </div>
+        </div>
+      )
+    }
+
     function resetTxnFilters() {
       setTxnFrom(''); setTxnTo(''); setTxnRefType('')
       openWalletTxns(null, '', '', '')
@@ -3963,7 +4045,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                   Sort by:
                   <span className="font-bold text-slate-900" data-notranslate>{TXN_SORTS[txnSort]}</span>
                   <Icon name="chevronDown" size={14} className="text-slate-400" />
-                  <select value={txnSort} onChange={function (e) { setTxnSort(e.target.value) }}
+                  <select value={txnSort} onChange={function (e) { setTxnSort(e.target.value); setTxnPage(0) }}
                     aria-label="Sort transactions"
                     className="absolute inset-0 w-full h-full opacity-0 cursor-pointer">
                     <option value="latest">Latest</option>
@@ -3977,7 +4059,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
               <div className="flex flex-wrap items-center gap-4 px-5 py-2.5 border-b border-slate-100">
                 <label className="flex items-center gap-2 text-[12.5px] text-slate-600 cursor-pointer">
                   <input type="checkbox" checked={showDeletedTxns}
-                    onChange={function (e) { setShowDeletedTxns(e.target.checked) }}
+                    onChange={function (e) { setShowDeletedTxns(e.target.checked); setTxnPage(0) }}
                     className="w-4 h-4 accent-indigo-600" />
                   Show deleted expenses
                 </label>
@@ -3998,7 +4080,12 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                   : 'No transactions match — try "Show deleted expenses"'}
               </p>
             ) : (
-              <div className="p-3 space-y-2">{sortedTxns.map(renderTxnRow)}</div>
+              <>
+                {/* scroll-mt clears the sticky header the rows slide under, so
+                    Next lands on the first row rather than just above it. */}
+                <div ref={txnListRef} className="p-3 space-y-2 scroll-mt-24">{pagedTxns.map(renderTxnRow)}</div>
+                {renderTxnPager()}
+              </>
             )}
           </div>
 
@@ -4226,7 +4313,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-1">
             <label className="flex items-center gap-2 text-[12.5px] text-slate-600 cursor-pointer">
               <input type="checkbox" checked={showDeletedTxns}
-                onChange={function (e) { setShowDeletedTxns(e.target.checked) }}
+                onChange={function (e) { setShowDeletedTxns(e.target.checked); setTxnPage(0) }}
                 className="w-4 h-4 accent-indigo-600" />
               Show deleted expenses
             </label>
@@ -4243,9 +4330,12 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
         ) : sortedTxns.length === 0 && walletTxns.length > 0 ? (
           <p className="text-center text-[13px] font-medium text-slate-400 py-8">No transactions match — try "Show deleted expenses"</p>
         ) : (
-          <div className="space-y-2">
-            {sortedTxns.map(renderTxnRow)}
-          </div>
+          <>
+            <div ref={txnListRef} className="space-y-2 scroll-mt-20">
+              {pagedTxns.map(renderTxnRow)}
+            </div>
+            {renderTxnPager()}
+          </>
         )}
         {renderIssueModal()}
         {renderReceiveModal()}
