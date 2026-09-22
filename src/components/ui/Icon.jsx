@@ -15,13 +15,18 @@ var PATHS = {
   checkDouble: <><path d="m2 12.5 4 4 8-9" /><path d="m10.5 16.8 1.5 1.7L22 8.5" /></>,
   copy: <><rect x="9" y="9" width="12" height="12" rx="2" /><path d="M5 15V5a2 2 0 0 1 2-2h10" /></>,
   trash: <><path d="M3 6h18" /><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" /></>,
-  undo: <><path d="M3 7v6h6" /><path d="M3 13a9 9 0 1 0 3-7.7L3 8" /></>,
+  // The arrowhead has to sit on the END of the tail. It used to be drawn at
+  // (3,13) — where the arc begins — with 6-unit legs, so at 15px the whole
+  // thing collapsed into a circle with a stray dash beside it.
+  undo: <><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" /></>,
   reverse: <><path d="m9 14-5-5 5-5" /><path d="M4 9h11a5 5 0 0 1 0 10h-4" /></>,
   download: <><path d="M12 3v12" /><path d="m7 12 5 5 5-5" /><path d="M5 21h14" /></>,
   search: <><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></>,
   filter: <path d="M3 5h18l-7 8v6l-4 2v-8L3 5Z" />,
   settings: <><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 9 19.4a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 4.6 9a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1Z" /></>,
-  refresh: <><path d="M21 12a9 9 0 1 1-2.6-6.4" /><path d="M21 3v6h-6" /></>,
+  // Same defect as undo, mirrored: the corner floated ~4 units off the end
+  // of the arc, so it read as a circle with a tick loose beside it.
+  refresh: <><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1.06 6.74 2.74L21 8" /><path d="M21 3v5h-5" /></>,
 
   // ── chevrons / arrows ────────────────────────────────────
   chevronDown: <path d="m6 9 6 6 6-6" />,
