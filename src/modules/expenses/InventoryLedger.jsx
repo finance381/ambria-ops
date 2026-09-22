@@ -24,12 +24,16 @@ var PAGE_SIZES = [10, 25, 50, 100]
 //
 // Cells hidden at a breakpoint leave the flow entirely, so the template has as
 // many columns as there are visible cells at that width.
-var GRID = 'grid items-center gap-x-3.5 grid-cols-[2.5rem_minmax(0,1fr)_2.25rem]' +
-  ' @2xl:grid-cols-[2.5rem_minmax(0,1fr)_5.5rem_5.5rem_5.5rem_2.25rem]' +
-  ' @4xl:grid-cols-[2.5rem_minmax(0,1fr)_5.5rem_5.5rem_5.5rem_13rem_2.25rem]'
-var CELL_FIG = 'hidden @2xl:flex items-center justify-center text-center'
-var CELL_PANEL = 'hidden @4xl:block'
-var CELL_ACTIONS = 'flex justify-end'
+var GRID = 'grid items-center gap-x-3.5 grid-cols-[2.5rem_minmax(0,1fr)]' +
+  ' @2xl:grid-cols-[2.5rem_minmax(0,1fr)_5rem_5rem_5rem]' +
+  ' @4xl:grid-cols-[2.5rem_minmax(0,1fr)_5rem_5rem_5rem_12.5rem]'
+var CELL_FIG = 'hidden @2xl:flex flex-col items-center justify-center self-stretch text-center'
+var CELL_PANEL = 'hidden @4xl:block self-stretch'
+// Each column names itself inside the row rather than once in a band above the
+// list. The rows are separate cards with gaps between them, so a few rows down
+// the band is no longer attached to the figures it names, which is the one
+// case a header band exists to answer.
+var CELL_HEAD = 'block text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400'
 var COL_HEAD = 'text-[11px] font-bold uppercase tracking-[0.08em] text-slate-600'
 
 function InventoryLedger({ profile }) {
@@ -52,7 +56,6 @@ function InventoryLedger({ profile }) {
   var [pageSize, setPageSize] = useState(25)
   var [exporting, setExporting] = useState(false)
   var [showFilters, setShowFilters] = useState(false)
-  var [menuFor, setMenuFor] = useState(null)
 
   function fmtQty(n) {
     var num = Number(n || 0)
@@ -63,25 +66,6 @@ function InventoryLedger({ profile }) {
   }
 
   var { openExpenseDetail, expenseDetailModal } = useExpenseDetailModal(profile, isAdmin, function () { loadAll() })
-
-  // Any click outside the open menu, or Escape, closes it — the usual contract
-  // for a popover that isn't the only thing on the screen.
-  useEffect(function () {
-    if (!menuFor) return
-    function onDown(ev) { if (!ev.target.closest('[data-item-menu]')) setMenuFor(null) }
-    function onKey(ev) { if (ev.key === 'Escape') setMenuFor(null) }
-    document.addEventListener('pointerdown', onDown)
-    document.addEventListener('keydown', onKey)
-    return function () {
-      document.removeEventListener('pointerdown', onDown)
-      document.removeEventListener('keydown', onKey)
-    }
-  }, [menuFor])
-
-  function copyText(text) {
-    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text)
-    setMenuFor(null)
-  }
 
   useEffect(function () {
     if (canView) loadAll()
@@ -480,7 +464,12 @@ function InventoryLedger({ profile }) {
     if (props.trend === 'up') return <span className="text-red-600 font-bold" title={'Previously ' + formatPaise(props.prev)}>↑</span>
     if (props.trend === 'down') return <span className="text-green-600 font-bold" title={'Previously ' + formatPaise(props.prev)}>↓</span>
     if (props.trend === 'same') return <span className="text-gray-400" title="Same as previous">→</span>
-    if (props.trend === 'new') return <span className="text-[10px] text-indigo-600 font-bold" title="First purchase from this vendor">NEW</span>
+    if (props.trend === 'new') return (
+      <span title="First purchase from this vendor"
+        className="shrink-0 inline-flex items-center h-[17px] px-1.5 rounded-md bg-indigo-50 text-[9.5px] font-bold uppercase tracking-[0.06em] text-indigo-600">
+        New
+      </span>
+    )
     return null
   }
 
@@ -730,18 +719,6 @@ function InventoryLedger({ profile }) {
       </div>
 
       <div className="space-y-2">
-      {pagedItems.length > 0 && (
-        <div className={'hidden @2xl:grid ' + GRID + ' px-3.5 py-2 rounded-xl border border-slate-200 bg-slate-100/70 ' + COL_HEAD}>
-          <span />
-          <span className="min-w-0">Item details</span>
-          <span className={CELL_FIG}>Qty</span>
-          <span className={CELL_FIG}>Rate</span>
-          <span className={CELL_FIG}>Value</span>
-          <span className={CELL_PANEL}>Last purchase</span>
-          <span className="text-right">Actions</span>
-        </div>
-      )}
-
       <div className="space-y-2">
         {pagedItems.map(function (item) {
           var a = aggregateItem(item)
@@ -803,79 +780,48 @@ function InventoryLedger({ profile }) {
                 </span>
               </span>
 
-              {/* A rule down the left of each figure, so the gap between the
-                  name and the numbers is a boundary rather than an accident. */}
-              {[{ v: fmtQty(item.live_qty), sub: item.unit || null },
-                { v: item.rate_paise > 0 ? formatPaise(item.rate_paise) : '—' },
-                { v: value > 0 ? formatPaise(value) : '—' }].map(function (f, fi) {
+              {/* A rule down the left of the first figure, so the gap between
+                  the name and the numbers is a boundary rather than an
+                  accident. */}
+              {[{ h: 'Qty', v: fmtQty(item.live_qty), sub: item.unit || null },
+                { h: 'Rate', v: item.rate_paise > 0 ? formatPaise(item.rate_paise) : '—' },
+                { h: 'Value', v: value > 0 ? formatPaise(value) : '—' }].map(function (f, fi) {
                 return (
-                  <span key={fi}
-                    className={CELL_FIG + ' flex-col self-stretch border-l border-slate-100'}>
-                    <span data-notranslate className="text-[13px] font-bold text-slate-900 tabular-nums">{f.v}</span>
+                  <span key={fi} className={CELL_FIG + (fi === 0 ? ' border-l border-slate-100' : '')}>
+                    <span className={CELL_HEAD}>{f.h}</span>
+                    <span data-notranslate className="block mt-1 text-[13.5px] font-bold text-slate-900 tabular-nums">{f.v}</span>
                     {/* A bare 144 does not say 144 of what. */}
-                    {f.sub && <span className="mt-0.5 text-[10.5px] font-semibold text-slate-400">{f.sub}</span>}
+                    {f.sub && <span className="block mt-0.5 text-[10.5px] font-semibold text-slate-400">{f.sub}</span>}
                   </span>
                 )
               })}
 
               {/* What it cost the last time somebody bought it, which is the
-                  question this ledger exists to answer. */}
-              <span className={CELL_PANEL + ' rounded-lg border border-indigo-100 bg-indigo-50/60 px-2.5 py-2'}>
+                  question this ledger exists to answer. No tinted box: the rule
+                  and the heading already mark the column off, and a coloured
+                  panel on every row shouted over the figures beside it. */}
+              <span className={CELL_PANEL + ' border-l border-slate-100 pl-3.5'}>
+                <span className={CELL_HEAD}>Last purchase</span>
                 {last ? (
                   <>
-                    {/* When, then what it cost and from whom. The column is
-                        already headed "Last purchase", so the panel does not
-                        need to say it a second time. */}
-                    <span className="flex items-center justify-between gap-2">
-                      <span className="inline-flex items-center gap-1.5 min-w-0">
-                        <Icon name="calendar" size={11} className="shrink-0 text-indigo-400" />
-                        <span data-notranslate className="text-[11.5px] font-bold text-slate-700 truncate">
-                          {last.txn_date ? formatDate(last.txn_date) : '—'}
-                        </span>
+                    <span className="flex items-center gap-1.5 mt-1 min-w-0">
+                      <Icon name="calendar" size={12} className="shrink-0 text-slate-400" />
+                      <span data-notranslate className="text-[12px] font-bold text-slate-700 truncate">
+                        {last.txn_date ? formatDate(last.txn_date) : '—'}
                       </span>
-                      <TrendIcon trend={last._trend} prev={last._prev_rate} />
                     </span>
-                    <span className="flex items-baseline gap-2 mt-1 min-w-0">
+                    <span className="flex items-center gap-2 mt-0.5 min-w-0">
                       <span data-notranslate className="shrink-0 text-[13px] font-bold text-slate-900 tabular-nums">
                         {formatPaise(last.rate_paise || 0)}
                       </span>
-                      <span className="min-w-0 truncate text-[11.5px] font-semibold text-slate-500">{last.vendor_name || '—'}</span>
+                      <TrendIcon trend={last._trend} prev={last._prev_rate} />
                     </span>
                   </>
                 ) : (
-                  <span className="block py-2 text-center text-[11.5px] font-semibold text-slate-400">No purchase history</span>
+                  <span className="block mt-1.5 text-[11.5px] font-semibold text-slate-400">No purchase history</span>
                 )}
               </span>
 
-              {/* Nothing here that pressing the row does not already do, except
-                  the two things that only make sense as a quick copy — so the
-                  menu is short by design, not by neglect. */}
-              <span data-item-menu className={CELL_ACTIONS}>
-                <button type="button" aria-label="Item actions" aria-haspopup="menu" aria-expanded={menuFor === item._key}
-                  onClick={function (ev) { ev.stopPropagation(); setMenuFor(menuFor === item._key ? null : item._key) }}
-                  className={'w-8 h-8 inline-flex items-center justify-center rounded-lg border transition-colors ' +
-                    (menuFor === item._key
-                      ? 'border-indigo-300 bg-indigo-50 text-indigo-600'
-                      : 'border-slate-200 text-slate-400 hover:text-slate-700 hover:bg-slate-100')}>
-                  <Icon name="more" size={16} />
-                </button>
-
-                {menuFor === item._key && (
-                  <div role="menu" onClick={function (ev) { ev.stopPropagation() }}
-                    className="absolute right-0 top-full mt-1 z-20 w-44 bg-white border border-slate-200 rounded-xl shadow-[0_8px_28px_rgba(15,23,42,0.14)] p-1">
-                    <button type="button" role="menuitem" onClick={function () { copyText(item.code) }}
-                      className="w-full flex items-center gap-2.5 px-2.5 h-9 rounded-lg text-[12.5px] font-semibold text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 transition-colors">
-                      <Icon name="copy" size={14} className="shrink-0 text-slate-400" />
-                      Copy code
-                    </button>
-                    <button type="button" role="menuitem" onClick={function () { copyText(item.name) }}
-                      className="w-full flex items-center gap-2.5 px-2.5 h-9 rounded-lg text-[12.5px] font-semibold text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 transition-colors">
-                      <Icon name="copy" size={14} className="shrink-0 text-slate-400" />
-                      Copy name
-                    </button>
-                  </div>
-                )}
-              </span>
             </div>
           )
         })}
