@@ -702,34 +702,37 @@ function InventoryLedger({ profile }) {
                   how the system does. Both, in that order — and where there is
                   no photograph, a tile drawn from what the item says it is
                   rather than the same grey box on every row. */}
-              <span className={'shrink-0 self-start w-12 h-12 rounded-xl border overflow-hidden inline-flex items-center justify-center ' +
+              <span className={'shrink-0 self-center w-12 h-12 rounded-xl border overflow-hidden inline-flex items-center justify-center ' +
                 (item.img ? 'border-slate-200 bg-slate-50' : itemTint(item.name))}>
                 {item.img
                   ? <img src={item.img} alt="" loading="lazy" className="w-full h-full object-cover" />
                   : <Icon name={itemIcon(item.name, item.cat, item.subcat)} size={20} />}
               </span>
 
-              <span className="min-w-0 flex-1 self-center space-y-1">
-                <span className="block font-display text-[14px] font-bold text-slate-900 leading-snug truncate">{item.name}</span>
-                <span className="block text-[12px] text-slate-500 truncate">
+              <span className="min-w-0 flex-1 self-center space-y-1.5">
+                <span className="block font-display text-[14px] font-bold text-slate-900 leading-tight truncate">{item.name}</span>
+                <span className="block text-[12px] leading-tight text-slate-500 truncate">
                   <span data-notranslate className="font-semibold text-slate-600">{item.code}</span>
                   {item.cat && <span> · {item.cat}{item.subcat ? ' › ' + item.subcat : ''}</span>}
                   {item._source === 'catering_store' && <span className="font-bold text-purple-600"> · Catering</span>}
                 </span>
                 {a.vendors.length > 0 && (
-                  <span className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                    <span className="text-[10.5px] font-bold uppercase tracking-[0.08em] text-slate-400">
+                  <span className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
+                    {/* The label sits on the chip's centre line rather than on
+                        its own baseline: at 10.5px beside a 20px pill, a
+                        baseline puts it visibly above the word next to it. */}
+                    <span className="inline-flex items-center h-[20px] text-[10.5px] font-bold uppercase tracking-[0.08em] leading-none text-slate-400">
                       Vendors (<span data-notranslate>{a.vendors.length}</span>)
                     </span>
                     {a.vendors.slice(0, 3).map(function (v) {
                       return (
-                        <span key={v} className="inline-flex items-center h-[20px] px-2 rounded-md border border-indigo-200 bg-indigo-50 text-[10.5px] font-bold text-indigo-700">
+                        <span key={v} className="inline-flex items-center h-[20px] px-2 rounded-md border border-indigo-200 bg-indigo-50 text-[10.5px] font-bold leading-none text-indigo-700">
                           {v}
                         </span>
                       )
                     })}
                     {a.vendors.length > 3 && (
-                      <span data-notranslate className="text-[10.5px] font-bold text-slate-400">+{a.vendors.length - 3}</span>
+                      <span data-notranslate className="inline-flex items-center h-[20px] text-[10.5px] font-bold leading-none text-slate-400">+{a.vendors.length - 3}</span>
                     )}
                   </span>
                 )}
