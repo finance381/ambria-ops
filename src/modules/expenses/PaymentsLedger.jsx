@@ -113,6 +113,10 @@ function PaymentsLedger({ profile }) {
         .select('id, ledger_type, party_id, entry_date, created_at, description, debit_paise, ref_id, ref_type, metadata, created_by')
         .in('ledger_type', ['vendor', 'user_salary'])
         .in('ref_type', ['vendor_payment', 'vendor_deduction', 'salary_payment', 'salary_adjustment'])
+        // Was a .filter() on the result: every row came over the wire and the
+        // ones without a cash or bank mode were dropped here. `->>` on a null
+        // metadata is null, and `in` excludes nulls, so the set is unchanged.
+        .in('metadata->>mode', ['cash', 'bank'])
         .is('deleted_at', null)
         .gte('entry_date', dateFrom)
         .lte('entry_date', dateTo)
@@ -140,9 +144,7 @@ function PaymentsLedger({ profile }) {
         .limit(1000),
     ])
 
-    var ledgerRows = (ledgerRes.data || []).filter(function (r) {
-      return r.metadata && (r.metadata.mode === 'cash' || r.metadata.mode === 'bank')
-    })
+    var ledgerRows = ledgerRes.data || []
     var collectRows = collectRes.data || []
     var expWalletRows = expWalletRes.data || []
 
@@ -158,41 +160,53 @@ function PaymentsLedger({ profile }) {
       if (r.created_by && profileIds.indexOf(r.created_by) === -1) profileIds.push(r.created_by)
     })
 
-    // Expense wallet rows only carry a wallet_id — resolve to the owning user first
+    // Expense wallet rows only carry a wallet_id — the owning user, and that
+    // user's name, come back with the wallet rather than in a wave of their own.
     var walletIdsForOwners = []
     expWalletRows.forEach(function (r) { if (walletIdsForOwners.indexOf(r.wallet_id) === -1) walletIdsForOwners.push(r.wallet_id) })
     var collectIds = collectRows.map(function (w) { return w.id })
 
-    var [vRes, walletOwnersRes, epcRes] = await Promise.all([
-      vendorIds.length > 0 ? supabase.from('vendors').select('id, name').in('id', vendorIds) : Promise.resolve({ data: [] }),
-      walletIdsForOwners.length > 0 ? supabase.from('wallets').select('id, user_id').in('id', walletIdsForOwners) : Promise.resolve({ data: [] }),
-      // EPC back-links so collections can be split from plain event collections
-      collectIds.length > 0 ? supabase.from('extra_plate_collections').select('id, event_id, wallet_tx_id, extras_charged, plates_returned, discount_paise').in('wallet_tx_id', collectIds) : Promise.resolve({ data: [] }),
-    ])
-    var vendorNames = {}; (vRes.data || []).forEach(function (v) { vendorNames[v.id] = v.name })
-    var walletOwnerMap = {}; (walletOwnersRes.data || []).forEach(function (w) { walletOwnerMap[w.id] = w.user_id })
-    var epcByWalletTx = {}; (epcRes.data || []).forEach(function (e) { if (e.wallet_tx_id) epcByWalletTx[e.wallet_tx_id] = e })
-
-    expWalletRows.forEach(function (r) {
-      var uid = walletOwnerMap[r.wallet_id]
-      if (uid && profileIds.indexOf(uid) === -1) profileIds.push(uid)
-    })
-
-    // Resolve event names for collections (plain: reference_id is the event id; EPC: via extra_plate_collections.event_id)
-    var eventIds = []
+    // Every collection's own reference_id, before we know which of them are
+    // plate collections. For a plate collection it is the collection's id and
+    // not an event's, so a few of these fetch an event nobody reads — the
+    // lookup below still takes the event from the plate collection. That is
+    // the price of not waiting a whole round trip to find out which is which.
     collectRows.forEach(function (w) {
-      var epc = epcByWalletTx[w.id]
-      var evId = epc ? epc.event_id : (w.reference_id ? Number(w.reference_id) : null)
-      if (evId && eventIds.indexOf(evId) === -1) eventIds.push(evId)
       if (w.performed_by && profileIds.indexOf(w.performed_by) === -1) profileIds.push(w.performed_by)
     })
+    var candidateEventIds = []
+    collectRows.forEach(function (w) {
+      var n = w.reference_id ? Number(w.reference_id) : null
+      if (n && !isNaN(n) && candidateEventIds.indexOf(n) === -1) candidateEventIds.push(n)
+    })
 
-    var [pRes, evRes] = await Promise.all([
+    // One wave, not two. The wallet carries its owner's name and the plate
+    // collection carries its event's, so neither needs a follow-up query.
+    var [vRes, walletOwnersRes, epcRes, pRes, evRes] = await Promise.all([
+      vendorIds.length > 0 ? supabase.from('vendors').select('id, name').in('id', vendorIds) : Promise.resolve({ data: [] }),
+      walletIdsForOwners.length > 0 ? supabase.from('wallets').select('id, user_id, profiles(id, name)').in('id', walletIdsForOwners) : Promise.resolve({ data: [] }),
+      // EPC back-links so collections can be split from plain event collections
+      collectIds.length > 0 ? supabase.from('extra_plate_collections').select('id, event_id, wallet_tx_id, extras_charged, plates_returned, discount_paise, events(id, event_name)').in('wallet_tx_id', collectIds) : Promise.resolve({ data: [] }),
       profileIds.length > 0 ? supabase.from('profiles').select('id, name').in('id', profileIds) : Promise.resolve({ data: [] }),
-      eventIds.length > 0 ? supabase.from('events').select('id, event_name').in('id', eventIds) : Promise.resolve({ data: [] }),
+      candidateEventIds.length > 0 ? supabase.from('events').select('id, event_name').in('id', candidateEventIds) : Promise.resolve({ data: [] }),
     ])
+
+    var vendorNames = {}; (vRes.data || []).forEach(function (v) { vendorNames[v.id] = v.name })
     var profileNames = {}; (pRes.data || []).forEach(function (p) { profileNames[p.id] = p.name })
     var eventNames = {}; (evRes.data || []).forEach(function (e) { eventNames[e.id] = e.event_name })
+
+    var walletOwnerMap = {}
+    ;(walletOwnersRes.data || []).forEach(function (w) {
+      walletOwnerMap[w.id] = w.user_id
+      // The embedded profile is the same row the old follow-up query fetched.
+      if (w.profiles && w.profiles.id && profileNames[w.profiles.id] == null) profileNames[w.profiles.id] = w.profiles.name
+    })
+
+    var epcByWalletTx = {}
+    ;(epcRes.data || []).forEach(function (e) {
+      if (e.wallet_tx_id) epcByWalletTx[e.wallet_tx_id] = e
+      if (e.events && e.events.id && eventNames[e.events.id] == null) eventNames[e.events.id] = e.events.event_name
+    })
 
     var combined = []
     ledgerRows.forEach(function (r) {
