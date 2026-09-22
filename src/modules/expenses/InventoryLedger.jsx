@@ -27,10 +27,10 @@ var PAGE_SIZES = [10, 25, 50, 100]
 var GRID = 'grid items-center gap-x-4 grid-cols-[3rem_minmax(0,1fr)]' +
   ' @2xl:grid-cols-[3rem_minmax(0,1fr)_6rem_6rem_6rem_1rem]' +
   ' @4xl:grid-cols-[3rem_minmax(0,1fr)_6rem_6rem_6rem_13.5rem_1rem]'
-var CELL_FIG = 'hidden @2xl:block text-center'
+var CELL_FIG = 'hidden @2xl:flex items-center justify-center text-center'
 var CELL_PANEL = 'hidden @4xl:block'
 var CELL_CHEV = 'hidden @2xl:block'
-var COL_HEAD = 'text-[10.5px] font-bold uppercase tracking-[0.08em] text-slate-500'
+var COL_HEAD = 'text-[11px] font-bold uppercase tracking-[0.08em] text-slate-600'
 
 function InventoryLedger({ profile }) {
   var permsNew = (profile && profile.permsNew) || []
@@ -675,8 +675,9 @@ function InventoryLedger({ profile }) {
       {/* The headings leave every row and become one band. Printed on all
           twenty-five of them, "QTY RATE VALUE" was said twenty-five times to
           answer a question asked once. */}
+      <div className="space-y-2">
       {pagedItems.length > 0 && (
-        <div className={'hidden @2xl:grid ' + GRID + ' px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50/70 ' + COL_HEAD}>
+        <div className={'hidden @2xl:grid ' + GRID + ' px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-100/70 ' + COL_HEAD}>
           <span />
           <span className="min-w-0">Item details</span>
           <span className={CELL_FIG}>Qty</span>
@@ -743,7 +744,7 @@ function InventoryLedger({ profile }) {
                 value > 0 ? formatPaise(value) : '—'].map(function (v, fi) {
                 return (
                   <span key={fi} data-notranslate
-                    className={CELL_FIG + ' self-stretch flex items-center justify-center border-l border-slate-100 text-[13px] font-bold text-slate-900 tabular-nums'}>
+                    className={CELL_FIG + ' self-stretch border-l border-slate-100 text-[13px] font-bold text-slate-900 tabular-nums'}>
                     {v}
                   </span>
                 )
@@ -786,6 +787,7 @@ function InventoryLedger({ profile }) {
             <p className="mt-0.5 text-[12px] font-medium text-slate-400">Clear a filter, or search for something else.</p>
           </div>
         )}
+      </div>
       </div>
 
       {sortedItems.length > 0 && (
