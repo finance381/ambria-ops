@@ -639,13 +639,23 @@ function InventoryLedger({ profile }) {
           what is counted, on one line. */}
       <div className={CARD + ' px-4 py-3'}>
         <div className="flex flex-wrap items-center gap-5">
-          {[{ icon: 'box', tint: 'bg-indigo-50 text-indigo-600', label: 'Total Items', value: String(filteredItems.length) },
-            { icon: 'wallet', tint: 'bg-emerald-50 text-emerald-600', label: 'Total Value', value: formatPaise(totalValue) },
-            { icon: 'cart', tint: 'bg-rose-50 text-rose-600', label: 'Total Spend', value: formatPaise(totalSpendFiltered) }].map(function (st, si) {
+          {/* All three describe the items on screen, not the whole master, so
+              none of them can be called "total": with the no-history toggle off
+              that word sat over 17 while the store holds 2,785. Each says what
+              it counts and carries the basis on hover. */}
+          {[{ icon: 'box', tint: 'bg-indigo-50 text-indigo-600', label: 'Items shown',
+              value: filteredItems.length.toLocaleString('en-IN'),
+              hint: 'Items left by the search, the filters and the no-history toggle' },
+            { icon: 'wallet', tint: 'bg-emerald-50 text-emerald-600', label: 'Stock value',
+              value: formatPaise(totalValue),
+              hint: 'Quantity on hand multiplied by each item’s master rate' },
+            { icon: 'cart', tint: 'bg-rose-50 text-rose-600', label: 'Spend, all time',
+              value: formatPaise(totalSpendFiltered),
+              hint: 'Every purchase ever recorded against these items' }].map(function (st, si) {
             return (
               <div key={st.label} className="flex items-center gap-5">
                 {si > 0 && <span aria-hidden="true" className="w-px h-9 bg-slate-200" />}
-                <div className="flex items-center gap-2.5">
+                <div className="flex items-center gap-2.5" title={st.hint}>
                 <span className={'shrink-0 w-9 h-9 rounded-xl inline-flex items-center justify-center ' + st.tint}>
                   <Icon name={st.icon} size={17} />
                 </span>
