@@ -80,10 +80,10 @@ function InventoryLedger({ profile }) {
     try {
       var results = await Promise.all([
         fetchAll(supabase.from('inventory_items')
-          .select('id, name, inventory_id, qty, rate_paise, image_path, categories(id, name), sub_categories(id, name)')
+          .select('id, name, inventory_id, qty, unit, rate_paise, image_path, categories(id, name), sub_categories(id, name)')
           .order('name', { ascending: true })),
         fetchAll(supabase.from('catering_store_items')
-          .select('id, name, inventory_id, qty, rate_paise, image_path, categories(id, name), sub_categories(id, name)')
+          .select('id, name, inventory_id, qty, unit, rate_paise, image_path, categories(id, name), sub_categories(id, name)')
           .order('name', { ascending: true })),
         fetchAll(supabase.from('v_item_purchase_history')
           .select('item_id, item_source, vendor_name, qty, unit, rate_paise, amount_paise, txn_date, source_type, source_id, source_ref'))
@@ -166,7 +166,7 @@ function InventoryLedger({ profile }) {
           _key: 'inventory:' + r.id, _source: 'inventory', id: r.id,
           name: r.name || '', code: r.inventory_id || '',
           cat: r.categories && r.categories.name || '', subcat: r.sub_categories && r.sub_categories.name || '',
-          rate_paise: r.rate_paise || 0, live_qty: Number(r.qty || 0),
+          rate_paise: r.rate_paise || 0, live_qty: Number(r.qty || 0), unit: r.unit || '',
           img: r.image_path ? (supabase.storage.from('images').getPublicUrl(r.image_path).data?.publicUrl || '') : ''
         })
       })
@@ -175,7 +175,7 @@ function InventoryLedger({ profile }) {
           _key: 'catering_store:' + r.id, _source: 'catering_store', id: r.id,
           name: r.name || '', code: r.inventory_id || '',
           cat: r.categories && r.categories.name || '', subcat: r.sub_categories && r.sub_categories.name || '',
-          rate_paise: r.rate_paise || 0, live_qty: Number(r.qty || 0),
+          rate_paise: r.rate_paise || 0, live_qty: Number(r.qty || 0), unit: r.unit || '',
           img: r.image_path ? (supabase.storage.from('images').getPublicUrl(r.image_path).data?.publicUrl || '') : ''
         })
       })
@@ -626,7 +626,7 @@ function InventoryLedger({ profile }) {
 
       {/* Three figures the filters answer, and the two controls that change
           what is counted, on one line. */}
-      <div className={CARD + ' px-4 py-3 flex flex-wrap items-center justify-between gap-4'}>
+      <div className={CARD + ' px-4 py-3'}>
         <div className="flex flex-wrap items-center gap-5">
           {[{ icon: 'box', tint: 'bg-indigo-50 text-indigo-600', label: 'Total Items', value: String(filteredItems.length) },
             { icon: 'wallet', tint: 'bg-emerald-50 text-emerald-600', label: 'Total Value', value: formatPaise(totalValue) },
@@ -650,13 +650,16 @@ function InventoryLedger({ profile }) {
           })}
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
-          <label className="inline-flex items-center gap-2 text-[12px] font-semibold text-slate-600 cursor-pointer">
-            <input type="checkbox" checked={showNoHistory}
-              onChange={function () { setShowNoHistory(function (v) { return !v }) }}
-              className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500/30" />
-            Show items with no history
-          </label>
+      </div>
+
+      {/* What you are looking at and how it is ordered, on their own line
+          rather than crowded in beside the totals. No card: these are controls
+          for the list below, not a panel of their own. */}
+      <div className="flex flex-wrap items-center justify-between gap-3 px-1">
+        <div className="flex flex-wrap items-center gap-4">
+          <p className="text-[12.5px] font-semibold text-slate-500" data-notranslate>
+            Showing <span className="font-bold text-slate-800">{filteredItems.length}</span> of {items.length} items
+          </p>
           <div className="flex items-center gap-2">
             <span className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500">Sort by</span>
             <select value={sortBy} onChange={function (e) { setSortBy(e.target.value) }}
@@ -670,6 +673,12 @@ function InventoryLedger({ profile }) {
             </select>
           </div>
         </div>
+        <label className="inline-flex items-center gap-2 text-[12.5px] font-semibold text-slate-600 cursor-pointer">
+          <input type="checkbox" checked={showNoHistory}
+            onChange={function () { setShowNoHistory(function (v) { return !v }) }}
+            className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500/30" />
+          Show items with no history
+        </label>
       </div>
 
       {/* The headings leave every row and become one band. Printed on all
@@ -712,26 +721,31 @@ function InventoryLedger({ profile }) {
                 <span className="block font-display text-[14px] font-bold text-slate-900 leading-tight truncate">{item.name}</span>
                 <span className="block text-[12px] leading-tight text-slate-600 truncate">
                   <span data-notranslate className="font-bold text-slate-700">{item.code}</span>
-                  {item.cat && <span> · {item.cat}{item.subcat ? ' › ' + item.subcat : ''}</span>}
+                  {item.cat && <span> · {item.cat}</span>}
                   {item._source === 'catering_store' && <span className="font-bold text-purple-600"> · Catering</span>}
                 </span>
-                {a.vendors.length > 0 && (
+                {/* The sub-category and the vendors were a grey chevron chain
+                    and a VENDORS label with a count nobody needed — the chips
+                    are the count. Two kinds of fact, so two kinds of chip:
+                    where the item is filed, and who it has been bought from. */}
+                {(item.subcat || a.vendors.length > 0) && (
                   <span className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
-                    {/* The label sits on the chip's centre line rather than on
-                        its own baseline: at 10.5px beside a 20px pill, a
-                        baseline puts it visibly above the word next to it. */}
-                    <span className="inline-flex items-center h-[20px] text-[10.5px] font-bold uppercase tracking-[0.08em] leading-none text-slate-500">
-                      Vendors (<span data-notranslate>{a.vendors.length}</span>)
-                    </span>
-                    {a.vendors.slice(0, 3).map(function (v) {
+                    {item.subcat && (
+                      <span className="inline-flex items-center h-[20px] px-2 rounded-md border border-slate-200 bg-slate-50 text-[10.5px] font-bold leading-none text-slate-600">
+                        {item.subcat}
+                      </span>
+                    )}
+                    {a.vendors.slice(0, 2).map(function (v) {
                       return (
-                        <span key={v} className="inline-flex items-center h-[20px] px-2 rounded-md border border-indigo-200 bg-indigo-50 text-[10.5px] font-bold leading-none text-indigo-700">
+                        <span key={v} className="inline-flex items-center h-[20px] px-2 rounded-md border border-amber-200 bg-amber-50 text-[10.5px] font-bold leading-none text-amber-700">
                           {v}
                         </span>
                       )
                     })}
-                    {a.vendors.length > 3 && (
-                      <span data-notranslate className="inline-flex items-center h-[20px] text-[10.5px] font-bold leading-none text-slate-500">+{a.vendors.length - 3}</span>
+                    {a.vendors.length > 2 && (
+                      <span data-notranslate className="inline-flex items-center h-[20px] text-[10.5px] font-bold leading-none text-slate-500">
+                        +{a.vendors.length - 2} more
+                      </span>
                     )}
                   </span>
                 )}
@@ -739,13 +753,15 @@ function InventoryLedger({ profile }) {
 
               {/* A rule down the left of each figure, so the gap between the
                   name and the numbers is a boundary rather than an accident. */}
-              {[fmtQty(item.live_qty),
-                item.rate_paise > 0 ? formatPaise(item.rate_paise) : '—',
-                value > 0 ? formatPaise(value) : '—'].map(function (v, fi) {
+              {[{ v: fmtQty(item.live_qty), sub: item.unit || null },
+                { v: item.rate_paise > 0 ? formatPaise(item.rate_paise) : '—' },
+                { v: value > 0 ? formatPaise(value) : '—' }].map(function (f, fi) {
                 return (
-                  <span key={fi} data-notranslate
-                    className={CELL_FIG + ' self-stretch border-l border-slate-100 text-[13px] font-bold text-slate-900 tabular-nums'}>
-                    {v}
+                  <span key={fi}
+                    className={CELL_FIG + ' flex-col self-stretch border-l border-slate-100'}>
+                    <span data-notranslate className="text-[13px] font-bold text-slate-900 tabular-nums">{f.v}</span>
+                    {/* A bare 144 does not say 144 of what. */}
+                    {f.sub && <span className="mt-0.5 text-[10.5px] font-semibold text-slate-400">{f.sub}</span>}
                   </span>
                 )
               })}
@@ -755,19 +771,23 @@ function InventoryLedger({ profile }) {
               <span className={CELL_PANEL + ' rounded-xl border border-indigo-100 bg-indigo-50/60 px-3 py-2.5'}>
                 {last ? (
                   <>
-                    <span className="flex items-center gap-1.5 text-[10.5px] font-bold uppercase tracking-[0.08em] text-indigo-400">
-                      <Icon name="cart" size={11} />
-                      Last Purchase
+                    {/* When, then what it cost and from whom. The column is
+                        already headed "Last purchase", so the panel does not
+                        need to say it a second time. */}
+                    <span className="flex items-center justify-between gap-2">
+                      <span className="inline-flex items-center gap-1.5 min-w-0">
+                        <Icon name="calendar" size={11} className="shrink-0 text-indigo-400" />
+                        <span data-notranslate className="text-[11.5px] font-bold text-slate-700 truncate">
+                          {last.txn_date ? formatDate(last.txn_date) : '—'}
+                        </span>
+                      </span>
+                      <TrendIcon trend={last._trend} prev={last._prev_rate} />
                     </span>
-                    <span className="block mt-1.5 text-[12px] font-semibold text-slate-700 truncate">{last.vendor_name || '—'}</span>
-                    <span className="flex items-center justify-between gap-2 mt-1">
-                      <span className="inline-flex items-center gap-1.5">
-                        <span data-notranslate className="text-[13px] font-bold text-slate-900 tabular-nums">{formatPaise(last.rate_paise || 0)}</span>
-                        <TrendIcon trend={last._trend} prev={last._prev_rate} />
+                    <span className="flex items-baseline gap-2 mt-1.5 min-w-0">
+                      <span data-notranslate className="shrink-0 text-[13px] font-bold text-slate-900 tabular-nums">
+                        {formatPaise(last.rate_paise || 0)}
                       </span>
-                      <span data-notranslate className="text-[11px] font-semibold text-slate-500 whitespace-nowrap">
-                        {last.txn_date ? formatDate(last.txn_date) : ''}
-                      </span>
+                      <span className="min-w-0 truncate text-[11.5px] font-semibold text-slate-500">{last.vendor_name || '—'}</span>
                     </span>
                   </>
                 ) : (
