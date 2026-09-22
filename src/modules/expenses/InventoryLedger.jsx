@@ -12,7 +12,9 @@ import Icon from '../../components/ui/Icon'
 import { CARD } from '../../lib/ui'
 import { itemIcon, itemTint } from '../../lib/itemThumb'
 
-var PAGE_SIZE = 50
+// How many rows a page holds, and the sizes offered. The rows carry a
+// photograph now, so fifty of them is a very long page.
+var PAGE_SIZES = [10, 25, 50, 100]
 
 function InventoryLedger({ profile }) {
   var permsNew = (profile && profile.permsNew) || []
@@ -31,6 +33,7 @@ function InventoryLedger({ profile }) {
   var [sortBy, setSortBy] = useState('name')  // name | value_desc | value_asc | rate_desc | rate_asc
   var [showNoHistory, setShowNoHistory] = useState(false)
   var [page, setPage] = useState(0)
+  var [pageSize, setPageSize] = useState(25)
   var [exporting, setExporting] = useState(false)
   var [showFilters, setShowFilters] = useState(false)
 
@@ -54,7 +57,7 @@ function InventoryLedger({ profile }) {
     if (canView) loadAll()
   })
 
-  useEffect(function () { setPage(0) }, [search, catFilters, subCatFilters, sourceFilters, vendorFilters, sortBy, showNoHistory])
+  useEffect(function () { setPage(0) }, [search, catFilters, subCatFilters, sourceFilters, vendorFilters, sortBy, showNoHistory, pageSize])
 
   async function loadAll() {
     setLoading(true)
@@ -313,14 +316,25 @@ function InventoryLedger({ profile }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filteredItems, sortBy, historyByItem, vendorFilters])
 
+  var totalPages = Math.max(1, Math.ceil(sortedItems.length / pageSize))
+  // Shrinking the page size can leave `page` past the end; clamp rather than
+  // reset, so changing it keeps you near where you were.
+  var pageNow = Math.min(page, totalPages - 1)
   var pagedItems = useMemo(function () {
-    return sortedItems.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
-  }, [sortedItems, page])
+    return sortedItems.slice(pageNow * pageSize, (pageNow + 1) * pageSize)
+  }, [sortedItems, pageNow, pageSize])
+  var firstShown = sortedItems.length === 0 ? 0 : pageNow * pageSize + 1
+  var lastShown = Math.min((pageNow + 1) * pageSize, sortedItems.length)
+
+  // 1 … 4 5 6 … 65, never sixty-five buttons.
+  var pageButtons = []
+  for (var pb = 0; pb < totalPages; pb++) {
+    if (pb === 0 || pb === totalPages - 1 || (pb >= pageNow - 1 && pb <= pageNow + 1)) pageButtons.push(pb)
+    else if (pageButtons[pageButtons.length - 1] !== '…') pageButtons.push('…')
+  }
 
   var activeFilterCount = (sourceFilters.length > 0 ? 1 : 0) + (catFilters.length > 0 ? 1 : 0) +
     (subCatFilters.length > 0 ? 1 : 0) + (vendorFilters.length > 0 ? 1 : 0)
-
-  var totalPages = Math.max(1, Math.ceil(sortedItems.length / PAGE_SIZE))
 
   var totalValue = useMemo(function () {
     var sum = 0
@@ -639,14 +653,15 @@ function InventoryLedger({ profile }) {
         </div>
       </div>
 
-      <div className={CARD + ' overflow-hidden divide-y divide-slate-100'}>
+      <div className="space-y-2">
         {pagedItems.map(function (item) {
           var a = aggregateItem(item)
           var value = (item.live_qty || 0) * (item.rate_paise || 0)
           var last = a.last3 && a.last3[0]
           return (
             <button key={item._key} type="button" onClick={function () { setSelectedItem(item) }}
-              className="group w-full text-left px-4 py-3 flex items-start gap-3.5 hover:bg-indigo-50/40 transition-colors">
+              className={'group w-full text-left px-4 py-3 flex items-start gap-3.5 ' + CARD +
+                ' hover:border-indigo-300 hover:shadow-[0_2px_10px_rgba(79,70,229,0.07)] transition-all'}>
               {/* The picture is how a storeman recognises a thing; the code is
                   how the system does. Both, in that order — and where there is
                   no photograph, a tile drawn from what the item says it is
@@ -701,10 +716,10 @@ function InventoryLedger({ profile }) {
 
               {/* What it cost the last time somebody bought it, which is the
                   question this ledger exists to answer. */}
-              <span className="shrink-0 hidden @4xl:block w-[212px] rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2">
+              <span className="shrink-0 hidden @4xl:block w-[212px] rounded-xl border border-indigo-100 bg-indigo-50/60 px-3 py-2">
                 {last ? (
                   <>
-                    <span className="flex items-center gap-1.5 text-[10.5px] font-bold uppercase tracking-[0.08em] text-slate-400">
+                    <span className="flex items-center gap-1.5 text-[10.5px] font-bold uppercase tracking-[0.08em] text-indigo-400">
                       <Icon name="cart" size={11} />
                       Last Purchase
                     </span>
@@ -730,7 +745,7 @@ function InventoryLedger({ profile }) {
           )
         })}
         {pagedItems.length === 0 && (
-          <div className="px-4 py-16 text-center">
+          <div className={CARD + ' px-4 py-16 text-center'}>
             <Icon name="box" size={26} className="mx-auto text-slate-300" />
             <p className="mt-2 text-[13px] font-bold text-slate-600">No items match your filters</p>
             <p className="mt-0.5 text-[12px] font-medium text-slate-400">Clear a filter, or search for something else.</p>
@@ -738,19 +753,45 @@ function InventoryLedger({ profile }) {
         )}
       </div>
 
-      {totalPages > 1 && (
-        <div className="mt-4 flex justify-center items-center gap-2 text-xs">
-          <button onClick={function () { setPage(0) }} disabled={page === 0}
-            className="px-2 py-1.5 rounded-lg bg-white border border-gray-200 text-gray-600 font-semibold hover:border-gray-300 disabled:opacity-40 disabled:cursor-not-allowed">« First</button>
-          <button onClick={function () { setPage(page - 1) }} disabled={page === 0}
-            className="px-3 py-1.5 rounded-lg bg-white border border-gray-200 text-gray-600 font-semibold hover:border-gray-300 disabled:opacity-40 disabled:cursor-not-allowed">‹ Prev</button>
-          <span className="px-3 py-1.5 font-semibold text-gray-600">Page {page + 1} of {totalPages}</span>
-          <button onClick={function () { setPage(page + 1) }} disabled={page >= totalPages - 1}
-            className="px-3 py-1.5 rounded-lg bg-white border border-gray-200 text-gray-600 font-semibold hover:border-gray-300 disabled:opacity-40 disabled:cursor-not-allowed">Next ›</button>
-          <button onClick={function () { setPage(totalPages - 1) }} disabled={page >= totalPages - 1}
-            className="px-2 py-1.5 rounded-lg bg-white border border-gray-200 text-gray-600 font-semibold hover:border-gray-300 disabled:opacity-40 disabled:cursor-not-allowed">Last »</button>
+      {sortedItems.length > 0 && (
+        <div className={CARD + ' flex flex-wrap items-center justify-between gap-3 px-4 py-2.5'}>
+          <p className="text-[12px] font-semibold text-slate-500" data-notranslate>
+            Showing {firstShown}–{lastShown} of {sortedItems.length} item{sortedItems.length === 1 ? '' : 's'}
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            {totalPages > 1 && (
+              <div className="flex items-center gap-1">
+                <button type="button" disabled={pageNow === 0} onClick={function () { setPage(pageNow - 1) }}
+                  aria-label="Previous page"
+                  className="w-8 h-8 inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-500 hover:bg-slate-100 disabled:opacity-30 transition-colors">
+                  <Icon name="chevronRight" size={14} className="rotate-180" />
+                </button>
+                {pageButtons.map(function (b, i) {
+                  if (b === '…') return <span key={'g' + i} className="px-1 text-[12px] font-bold text-slate-300">…</span>
+                  return (
+                    <button key={b} type="button" onClick={function () { setPage(b) }}
+                      className={'min-w-8 h-8 px-2 rounded-lg text-[12px] font-bold tabular-nums transition-colors ' +
+                        (b === pageNow ? 'bg-indigo-600 text-white' : 'border border-slate-300 bg-white text-slate-600 hover:bg-slate-100')}
+                      data-notranslate>{b + 1}</button>
+                  )
+                })}
+                <button type="button" disabled={pageNow >= totalPages - 1} onClick={function () { setPage(pageNow + 1) }}
+                  aria-label="Next page"
+                  className="w-8 h-8 inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-500 hover:bg-slate-100 disabled:opacity-30 transition-colors">
+                  <Icon name="chevronRight" size={14} />
+                </button>
+              </div>
+            )}
+            <select value={pageSize} onChange={function (e) { setPageSize(Number(e.target.value)) }}
+              aria-label="Rows per page"
+              style={{ fontSize: '13px' }}
+              className="h-8 px-2 rounded-lg border border-slate-300 bg-white text-[12px] font-bold text-slate-700 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20">
+              {PAGE_SIZES.map(function (n) { return <option key={n} value={n}>{n} / page</option> })}
+            </select>
+          </div>
         </div>
       )}
+
     </div>
   )
 }
