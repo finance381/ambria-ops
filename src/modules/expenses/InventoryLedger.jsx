@@ -797,25 +797,29 @@ function InventoryLedger({ profile }) {
                   question this ledger exists to answer. No tinted box: the rule
                   and the heading already mark the column off, and a coloured
                   panel on every row shouted over the figures beside it. */}
-              <span className={CELL_PANEL + ' border-l border-slate-100 pl-3.5'}>
+              <span className={CELL_PANEL + ' border-l border-slate-100 pl-3.5 space-y-1'}>
                 <span className={CELL_HEAD}>Last purchase</span>
                 {last ? (
                   <>
-                    <span className="flex items-center gap-1.5 mt-1 min-w-0">
+                    <span className="flex items-center gap-1.5 min-w-0 h-[18px]">
                       <Icon name="calendar" size={12} className="shrink-0 text-slate-400" />
-                      <span data-notranslate className="text-[12px] font-bold text-slate-700 truncate">
+                      <span data-notranslate className="text-[12px] font-semibold text-slate-600 tabular-nums truncate">
                         {last.txn_date ? formatDate(last.txn_date) : '—'}
                       </span>
                     </span>
-                    <span className="flex items-center gap-2 mt-0.5 min-w-0">
-                      <span data-notranslate className="shrink-0 text-[13px] font-bold text-slate-900 tabular-nums">
+                    {/* The price is floored at the width of a five-figure
+                        amount so the mark beside it starts at the same place on
+                        every row — left to itself it moved with the number and
+                        the column read as ragged. */}
+                    <span className="flex items-center gap-2 min-w-0 h-[18px]">
+                      <span data-notranslate className="shrink-0 min-w-[62px] text-[13.5px] font-bold text-slate-900 tabular-nums">
                         {formatPaise(last.rate_paise || 0)}
                       </span>
                       <TrendIcon trend={last._trend} prev={last._prev_rate} />
                     </span>
                   </>
                 ) : (
-                  <span className="block mt-1.5 text-[11.5px] font-semibold text-slate-400">No purchase history</span>
+                  <span className="flex items-center h-[18px] text-[11.5px] font-semibold text-slate-400">No purchase history</span>
                 )}
               </span>
 
