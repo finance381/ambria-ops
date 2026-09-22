@@ -184,6 +184,7 @@ function toYMD(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padS
 // wallet in sync with the expense), and the balance snapshot comes from
 // whichever row in the group happened most recently.
 var TXN_PAGE_SIZES = [25, 50, 100]
+var WALLET_PAGE_SIZES = [30, 60, 120]
 
 function mergeExpenseWalletRows(txns) {
   var groups = {}
@@ -374,6 +375,13 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   var [walletBalanceState, setWalletBalanceState] = useState('all')
   var [walletPendingOnly, setWalletPendingOnly] = useState(false)
   var [walletSort, setWalletSort] = useState('name')
+  var [walletPage, setWalletPage] = useState(0)
+  var [walletPageSize, setWalletPageSize] = useState(30)
+  var walletListRef = useRef(null)
+  // Any of these changes the list, so page four of the old one is not a place
+  // that exists any more.
+  useEffect(function () { setWalletPage(0) },
+    [walletSearch, walletRoleFilter, walletBalanceState, walletPendingOnly, walletSort])
   var [issueModal, setIssueModal] = useState(null)
   var [issueAmount, setIssueAmount] = useState('')
   var [issueDesc, setIssueDesc] = useState('')
@@ -3017,6 +3025,69 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
       })
     }
 
+    var wTotalPages = Math.max(1, Math.ceil(filteredWallets.length / walletPageSize))
+    var wPageNow = Math.min(walletPage, wTotalPages - 1)
+    var pagedWallets = filteredWallets.slice(wPageNow * walletPageSize, (wPageNow + 1) * walletPageSize)
+    var wFirstShown = filteredWallets.length === 0 ? 0 : wPageNow * walletPageSize + 1
+    var wLastShown = Math.min((wPageNow + 1) * walletPageSize, filteredWallets.length)
+
+    var wPageButtons = []
+    for (var wpb = 0; wpb < wTotalPages; wpb++) {
+      if (wpb === 0 || wpb === wTotalPages - 1 || (wpb >= wPageNow - 1 && wpb <= wPageNow + 1)) wPageButtons.push(wpb)
+      else if (wPageButtons[wPageButtons.length - 1] !== '…') wPageButtons.push('…')
+    }
+
+    function goWalletPage(n) {
+      setWalletPage(n)
+      scrollToTopOf(walletListRef.current)
+    }
+
+    // Names are scanned, not looked up by page number, so the search above is
+    // still the real way to find somebody. This is here so ninety cards are
+    // not all built at once, and so the foot of the list says where you are.
+    function renderWalletPager() {
+      if (filteredWallets.length === 0) return null
+      return (
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 bg-white border border-slate-200 rounded-2xl">
+          <p className="text-[12px] font-semibold text-slate-500" data-notranslate>
+            Showing {wFirstShown}–{wLastShown} of {filteredWallets.length}
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            {wTotalPages > 1 && (
+              <div className="flex items-center gap-1">
+                <button type="button" disabled={wPageNow === 0} onClick={function () { goWalletPage(wPageNow - 1) }}
+                  aria-label="Previous page"
+                  className="w-8 h-8 inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-500 hover:bg-slate-100 disabled:opacity-30 transition-colors">
+                  <Icon name="chevronRight" size={14} className="rotate-180" />
+                </button>
+                {wPageButtons.map(function (b, i) {
+                  if (b === '…') return <span key={'wg' + i} className="px-1 text-[12px] font-bold text-slate-300">…</span>
+                  return (
+                    <button key={b} type="button" onClick={function () { goWalletPage(b) }}
+                      className={'min-w-8 h-8 px-2 rounded-lg text-[12px] font-bold tabular-nums transition-colors ' +
+                        (b === wPageNow ? 'bg-indigo-600 text-white' : 'border border-slate-300 bg-white text-slate-600 hover:bg-slate-100')}
+                      data-notranslate>{b + 1}</button>
+                  )
+                })}
+                <button type="button" disabled={wPageNow >= wTotalPages - 1} onClick={function () { goWalletPage(wPageNow + 1) }}
+                  aria-label="Next page"
+                  className="w-8 h-8 inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-500 hover:bg-slate-100 disabled:opacity-30 transition-colors">
+                  <Icon name="chevronRight" size={14} />
+                </button>
+              </div>
+            )}
+            <select value={walletPageSize}
+              onChange={function (e) { setWalletPageSize(Number(e.target.value)); setWalletPage(0); scrollToTopOf(walletListRef.current) }}
+              aria-label="Wallets per page"
+              style={{ fontSize: '13px' }}
+              className="h-8 px-2 rounded-lg border border-slate-300 bg-white text-[12px] font-bold text-slate-700 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20">
+              {WALLET_PAGE_SIZES.map(function (n) { return <option key={n} value={n}>{n} / page</option> })}
+            </select>
+          </div>
+        </div>
+      )
+    }
+
     // The five controls over this list. They are the same controls in both
     // layouts — a phone stacks them down the page, a desktop lays them along
     // one toolbar — so they are written once and arranged twice.
@@ -3286,8 +3357,8 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
           wallets
         </p>
 
-        <div className={"space-y-2" + (inAdmin ? " md:space-y-0 md:grid md:grid-cols-2 xl:grid-cols-3 md:gap-2.5" : "")}>
-          {filteredWallets.map(function (w) {
+        <div ref={walletListRef} className={"scroll-mt-24 space-y-2" + (inAdmin ? " md:space-y-0 md:grid md:grid-cols-2 xl:grid-cols-3 md:gap-2.5" : "")}>
+          {pagedWallets.map(function (w) {
             var p = walletProfiles[w.user_id] || {}
             return (
               /* The whole row opens the wallet, so the whole row answers the
@@ -3337,6 +3408,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             )
           })}
         </div>
+        {renderWalletPager()}
         {bulkMode && (
           <div className="sticky bottom-0 bg-white border-t border-gray-200 rounded-xl p-4 shadow-lg space-y-3">
             <div className="flex items-center justify-between">
