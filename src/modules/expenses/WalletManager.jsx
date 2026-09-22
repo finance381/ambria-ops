@@ -431,6 +431,15 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   var [collectEvents, setCollectEvents] = useState([])
   var [collectFunctionsLoading, setCollectFunctionsLoading] = useState(false)
   var [collectEventId, setCollectEventId] = useState('')
+  // Picking the event opens the balance and the rest of the form below the
+  // fold of the sheet, so on a phone nothing appeared to happen. Run off the
+  // id rather than from the picker's handler, because the block being
+  // scrolled to does not exist until that state has committed — and it covers
+  // the case where a date has exactly one event and selects it for you.
+  var collectBalanceRef = useRef(null)
+  useEffect(function () {
+    if (collectEventId) scrollToTopOf(collectBalanceRef.current)
+  }, [collectEventId])
   var [collectMode, setCollectMode] = useState('')
   var [collectBalance, setCollectBalance] = useState(null)
   var [collectBalanceLoading, setCollectBalanceLoading] = useState(false)
@@ -2239,7 +2248,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
           )}
 
           {collectEventId && (
-            <div className="bg-gray-50 rounded-lg px-3 py-2.5">
+            <div ref={collectBalanceRef} className="bg-gray-50 rounded-lg px-3 py-2.5 scroll-mt-3">
               {collectBalanceLoading ? (
                 <p className="text-xs text-gray-400">Loading balance...</p>
               ) : (
