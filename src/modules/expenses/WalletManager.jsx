@@ -423,6 +423,9 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   var [paymentRefs, setPaymentRefs] = useState({})
   // EPC back-links: wallet_tx_id → { epc, isCancel }. Populated by loadRecentTxns / openWalletTxns.
   var [epcRefs, setEpcRefs] = useState({})
+  // events rows for 'collection' txns, keyed by t.reference_id (== events.id) —
+  // carries guest name / session / date for the compact row, not just the detail modal.
+  var [collectionEventRefs, setCollectionEventRefs] = useState({})
   var [cancelTarget, setCancelTarget] = useState(null)  // { txn, kind: 'collection' | 'epc' }
   var [cancelReason, setCancelReason] = useState('')
   var [cancelSaving, setCancelSaving] = useState(false)
@@ -730,6 +733,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
       setExpenseRefs({})
       setPaymentRefs({})
       setEpcRefs({})
+      setCollectionEventRefs({})
       // Register the mobile back-gesture's undo for this navigation — mirrors handleBack's
       // transactions→(dashboard|wallets) logic, but computed off the fresh `wallet` param
       // rather than component state (which hasn't committed the new view yet at this point).
@@ -779,6 +783,8 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
       var payRefIds = txns.filter(function (tt) {
         return PAYMENT_REF_TYPES.indexOf(tt.reference_type) !== -1 && tt.reference_id
       }).map(function (tt) { return tt.reference_id })
+      var collRefIds = txns.filter(function (tt) { return tt.reference_type === 'collection' && tt.reference_id })
+        .map(function (tt) { return Number(tt.reference_id) }).filter(function (n) { return !isNaN(n) })
       var txnIds = txns.map(function (tt) { return tt.id })
 
       var EPC_COLS = 'id, event_id, extras_charged, plates_returned, total_paise, discount_paise, payment_mode, status, collected_by, wallet_tx_id, cancel_wallet_tx_id, cancelled_reason'
@@ -805,6 +811,9 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
         txnIds.length > 0
           ? supabase.from('extra_plate_collections').select(EPC_COLS).in('cancel_wallet_tx_id', txnIds)
           : none,
+        collRefIds.length > 0
+          ? supabase.from('events').select('id, client_name, session, function_date, event_name').in('id', collRefIds)
+          : none,
       ])
       if (!current()) return
 
@@ -813,6 +822,11 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
       var leData = wave[2].data
       var epcFwd = wave[3].data
       var epcRev = wave[4].data
+      var collEvData = wave[5].data
+
+      var collEvMap = {}
+      ;(collEvData || []).forEach(function (ce) { collEvMap[String(ce.id)] = ce })
+      setCollectionEventRefs(collEvMap)
 
       var tMap = {}
       ;(tData || []).forEach(function (tr) {
@@ -3570,6 +3584,13 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             {isCancelled && t.cancelled_reason && (
               <p className="text-[10px] text-rose-600 italic mt-0.5">Reason: {t.cancelled_reason}</p>
             )}
+            {/* Enrichment: collection → guest · session · event date, same facts the detail modal shows on click */}
+            {t.reference_type === 'collection' && t.reference_id && collectionEventRefs[t.reference_id] && (function () {
+              var ce = collectionEventRefs[t.reference_id]
+              var bits = [ce.client_name, ce.session, ce.function_date ? formatDate(ce.function_date) : null].filter(Boolean)
+              if (bits.length === 0) return null
+              return <p className="text-[11.5px] text-slate-500 mt-0.5">{bits.join(' · ')}</p>
+            })()}
             {/* Enrichment: expense/refund → type › sub-type · event · vendor · extra fields · (refund amount + date) · per-allocation breakdown */}
             {(t.reference_type === 'expense' || t.reference_type === 'expense_refund') && t.reference_id && expenseRefs[t.reference_id] && (function () {
               var e = expenseRefs[t.reference_id]
