@@ -683,18 +683,27 @@ function InventoryLedger({ profile }) {
           </p>
 
           {(showNoHistory || hiddenNoHistory > 0) && (
+            /* Amber, the app's own colour for "there is more here than you can
+               see" — the same tone a stock warning or a missing field takes
+               elsewhere. A lock reads as permission; an inbox reads as things
+               set aside, which is what a never-purchased item actually is. */
             <button type="button" onClick={function () { setShowNoHistory(function (v) { return !v }) }}
               aria-pressed={showNoHistory}
-              className={'inline-flex items-center gap-2 h-8 pl-2.5 pr-2 rounded-full border text-[12px] font-semibold transition-colors ' +
+              className={'group inline-flex items-center gap-2 h-8 pl-1 pr-3 rounded-full border transition-colors ' +
                 (showNoHistory
-                  ? 'border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100'
-                  : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50')}>
-              <Icon name={showNoHistory ? 'eye' : 'lock'} size={13} className="shrink-0 opacity-70" />
-              {showNoHistory
-                ? 'Including items never purchased'
-                : (<span><span data-notranslate className="font-bold">{hiddenNoHistory.toLocaleString('en-IN')}</span> never purchased, hidden</span>)}
-              <span className={'ml-0.5 px-1.5 h-[20px] inline-flex items-center rounded-full text-[11px] font-bold ' +
-                (showNoHistory ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600')}>
+                  ? 'border-slate-300 bg-white hover:bg-slate-50'
+                  : 'border-amber-200 bg-amber-50 hover:bg-amber-100')}>
+              <span className={'shrink-0 w-6 h-6 rounded-full inline-flex items-center justify-center ' +
+                (showNoHistory ? 'bg-slate-100 text-slate-500' : 'bg-amber-100 text-amber-700')}>
+                <Icon name={showNoHistory ? 'eye' : 'inbox'} size={12} />
+              </span>
+              <span className={'text-[12px] font-semibold ' + (showNoHistory ? 'text-slate-600' : 'text-amber-800')}>
+                {showNoHistory
+                  ? 'Including items never purchased'
+                  : (<span><span data-notranslate className="font-bold">{hiddenNoHistory.toLocaleString('en-IN')}</span> never purchased, hidden</span>)}
+              </span>
+              <span className={'text-[11.5px] font-bold underline decoration-dotted underline-offset-2 ' +
+                (showNoHistory ? 'text-slate-500 group-hover:text-slate-700' : 'text-amber-700 group-hover:text-amber-900')}>
                 {showNoHistory ? 'Hide' : 'Show'}
               </span>
             </button>
