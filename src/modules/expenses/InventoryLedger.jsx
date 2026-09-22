@@ -660,20 +660,20 @@ function InventoryLedger({ profile }) {
           var last = a.last3 && a.last3[0]
           return (
             <button key={item._key} type="button" onClick={function () { setSelectedItem(item) }}
-              className={'group w-full text-left px-4 py-3 flex items-start gap-3.5 ' + CARD +
+              className={'group w-full text-left px-4 py-3.5 flex items-stretch gap-4 ' + CARD +
                 ' hover:border-indigo-300 hover:shadow-[0_2px_10px_rgba(79,70,229,0.07)] transition-all'}>
               {/* The picture is how a storeman recognises a thing; the code is
                   how the system does. Both, in that order — and where there is
                   no photograph, a tile drawn from what the item says it is
                   rather than the same grey box on every row. */}
-              <span className={'shrink-0 w-12 h-12 rounded-xl border overflow-hidden inline-flex items-center justify-center ' +
+              <span className={'shrink-0 self-start w-12 h-12 rounded-xl border overflow-hidden inline-flex items-center justify-center ' +
                 (item.img ? 'border-slate-200 bg-slate-50' : itemTint(item.name))}>
                 {item.img
                   ? <img src={item.img} alt="" loading="lazy" className="w-full h-full object-cover" />
                   : <Icon name={itemIcon(item.name, item.cat, item.subcat)} size={20} />}
               </span>
 
-              <span className="min-w-0 flex-1 space-y-1">
+              <span className="min-w-0 flex-1 self-center space-y-1">
                 <span className="block font-display text-[14px] font-bold text-slate-900 leading-snug truncate">{item.name}</span>
                 <span className="block text-[12px] text-slate-500 truncate">
                   <span data-notranslate className="font-semibold text-slate-600">{item.code}</span>
@@ -699,9 +699,13 @@ function InventoryLedger({ profile }) {
                 )}
               </span>
 
-              {/* Three figures under three headings, each pinned to its own
-                  width so they read down the list as columns. */}
-              <span className="shrink-0 hidden @2xl:flex items-start gap-5 pt-0.5">
+              {/* The three parts of a row were separated by nothing but a gap,
+                  so on a wide screen the figures and the panel ran together
+                  while the name sat alone in a field of white. A rule apiece
+                  makes each gap a boundary rather than an accident. */}
+              <span aria-hidden="true" className="hidden @2xl:block shrink-0 w-px bg-slate-100" />
+
+              <span className="shrink-0 self-center hidden @2xl:flex items-start gap-7">
                 {[{ l: 'Qty', v: fmtQty(item.live_qty) },
                   { l: 'Rate', v: item.rate_paise > 0 ? formatPaise(item.rate_paise) : '—' },
                   { l: 'Value', v: value > 0 ? formatPaise(value) : '—' }].map(function (f) {
@@ -714,17 +718,19 @@ function InventoryLedger({ profile }) {
                 })}
               </span>
 
+              <span aria-hidden="true" className="hidden @4xl:block shrink-0 w-px bg-slate-100" />
+
               {/* What it cost the last time somebody bought it, which is the
                   question this ledger exists to answer. */}
-              <span className="shrink-0 hidden @4xl:block w-[212px] rounded-xl border border-indigo-100 bg-indigo-50/60 px-3 py-2">
+              <span className="shrink-0 self-center hidden @4xl:block w-[216px] rounded-xl border border-indigo-100 bg-indigo-50/60 px-3 py-2.5">
                 {last ? (
                   <>
                     <span className="flex items-center gap-1.5 text-[10.5px] font-bold uppercase tracking-[0.08em] text-indigo-400">
                       <Icon name="cart" size={11} />
                       Last Purchase
                     </span>
-                    <span className="block mt-1 text-[12px] font-semibold text-slate-600 truncate">{last.vendor_name || '—'}</span>
-                    <span className="flex items-center justify-between gap-2 mt-0.5">
+                    <span className="block mt-1.5 text-[12px] font-semibold text-slate-600 truncate">{last.vendor_name || '—'}</span>
+                    <span className="flex items-center justify-between gap-2 mt-1">
                       <span className="inline-flex items-center gap-1.5">
                         <span data-notranslate className="text-[13px] font-bold text-slate-900 tabular-nums">{formatPaise(last.rate_paise || 0)}</span>
                         <TrendIcon trend={last._trend} prev={last._prev_rate} />
@@ -740,7 +746,7 @@ function InventoryLedger({ profile }) {
               </span>
 
               <Icon name="chevronRight" size={16}
-                className="shrink-0 mt-4 text-slate-300 group-hover:text-indigo-500 transition-colors" />
+                className="shrink-0 self-center text-slate-300 group-hover:text-indigo-500 transition-colors" />
             </button>
           )
         })}
