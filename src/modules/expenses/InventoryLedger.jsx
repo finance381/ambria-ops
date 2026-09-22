@@ -34,7 +34,6 @@ var CELL_PANEL = 'hidden @4xl:block self-stretch'
 // the band is no longer attached to the figures it names, which is the one
 // case a header band exists to answer.
 var CELL_HEAD = 'block text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400'
-var COL_HEAD = 'text-[11px] font-bold uppercase tracking-[0.08em] text-slate-600'
 
 function InventoryLedger({ profile }) {
   var permsNew = (profile && profile.permsNew) || []
