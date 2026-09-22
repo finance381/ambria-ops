@@ -2254,35 +2254,35 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                   {/* Nil is slate, owed is red, settled is emerald. Three states,
                       three answers — a dash in green used to mean both "nothing
                       to collect" and "nothing here at all". */}
-                  <div className="grid grid-cols-3 gap-3">
-                    <div className="min-w-0">
+                  <div className="flex flex-wrap gap-x-6 gap-y-3">
+                    <div>
                       <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
                         <Icon name="banknote" size={13} className="shrink-0 text-slate-400" />
                         Cash{showActualCash && agrCashP > 0 ? ' (actual)' : ''}
                       </div>
-                      <div className={"mt-0.5 text-[15px] font-bold tabular-nums truncate " +
+                      <div className={"mt-0.5 text-[15px] font-bold tabular-nums whitespace-nowrap " +
                         (pendCashP > 0 ? "text-red-600" : (agrCashP > 0 || colCashP > 0) ? "text-emerald-600" : "text-slate-400")}
                         data-notranslate>
                         {agrCashP > 0 ? formatPoints(pendCashP * (showActualCash ? 10 : 1)) : (colCashP > 0 ? formatPoints(colCashP * (showActualCash ? 10 : 1)) + ' collected' : '—')}
                       </div>
                     </div>
-                    <div className="min-w-0">
+                    <div>
                       <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
                         <Icon name="bank" size={13} className="shrink-0 text-slate-400" />
                         Bank
                       </div>
-                      <div className={"mt-0.5 text-[15px] font-bold tabular-nums truncate " +
+                      <div className={"mt-0.5 text-[15px] font-bold tabular-nums whitespace-nowrap " +
                         (pendBankP > 0 ? "text-red-600" : (agrBankP > 0 || colBankP > 0) ? "text-emerald-600" : "text-slate-400")}
                         data-notranslate>
                         {agrBankP > 0 ? formatPoints(pendBankP) : (colBankP > 0 ? formatPoints(colBankP) + ' collected' : '—')}
                       </div>
                     </div>
-                    <div className="min-w-0">
+                    <div>
                       <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
                         <Icon name="receipt" size={13} className="shrink-0 text-slate-400" />
                         Tax
                       </div>
-                      <div className={"mt-0.5 text-[15px] font-bold tabular-nums truncate " +
+                      <div className={"mt-0.5 text-[15px] font-bold tabular-nums whitespace-nowrap " +
                         (pendTaxP > 0 ? "text-red-600" : taxP > 0 ? "text-emerald-600" : "text-slate-400")}
                         data-notranslate>
                         {taxP > 0 ? formatPoints(pendTaxP) : '—'}
