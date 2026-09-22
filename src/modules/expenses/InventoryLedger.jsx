@@ -16,8 +16,22 @@ import { itemIcon, itemTint } from '../../lib/itemThumb'
 // photograph now, so fifty of them is a very long page.
 var PAGE_SIZES = [10, 25, 50, 100]
 
-function InventoryLedger({ profile }) {
+// The header band and the rows are separate elements that have to line up, so
+// the widths live here rather than being typed twice and drifting apart the
+// first time one of them is nudged.
+var COL_THUMB = 'shrink-0 w-12'
+var COL_FIG = 'w-[96px] text-center'
+var COL_PANEL = 'shrink-0 w-[216px]'
+var COL_CHEV = 'shrink-0 w-4'
+var COL_HEAD = 'text-[10.5px] font-bold uppercase tracking-[0.08em] text-slate-500'
+
+function InventoryLedger(props) {
+  var profile = props && props.profile
   var permsNew = (profile && profile.permsNew) || []
+  // An item is created and approved on the Inventory screen, not here. The
+  // button is a door to that screen, so it only appears where there is a shell
+  // able to open it and a person allowed to walk through.
+  var canAddItem = !!(props && props.onNavigate) && hasPerm(permsNew, 'inventory.add')
   var isAdmin = hasPerm(profile?.permsNew, 'finance.ledgers.inventory')
   var canView = isAdmin || hasPerm(permsNew, 'finance.ledgers.inventory')
 
@@ -543,6 +557,13 @@ function InventoryLedger({ profile }) {
             placeholder="Search items, code, category..."
             className="flex-1 min-w-[220px]"
           />
+          {canAddItem && (
+            <button type="button" onClick={function () { props.onNavigate('inventory', 'add') }}
+              className="h-10 px-3.5 inline-flex items-center gap-1.5 rounded-xl text-[12.5px] font-bold text-white bg-indigo-600 hover:bg-indigo-700 active:scale-[0.98] transition-all order-last">
+              <Icon name="plus" size={14} />
+              Add Item
+            </button>
+          )}
           <button type="button" onClick={function () { setShowFilters(!showFilters) }} aria-pressed={showFilters}
             className={'h-10 px-3 inline-flex items-center gap-1.5 rounded-xl border text-[12.5px] font-bold transition-colors ' +
               (showFilters || activeFilterCount > 0
@@ -614,9 +635,11 @@ function InventoryLedger({ profile }) {
         <div className="flex flex-wrap items-center gap-5">
           {[{ icon: 'box', tint: 'bg-indigo-50 text-indigo-600', label: 'Total Items', value: String(filteredItems.length) },
             { icon: 'wallet', tint: 'bg-emerald-50 text-emerald-600', label: 'Total Value', value: formatPaise(totalValue) },
-            { icon: 'cart', tint: 'bg-rose-50 text-rose-600', label: 'Total Spend', value: formatPaise(totalSpendFiltered) }].map(function (st) {
+            { icon: 'cart', tint: 'bg-rose-50 text-rose-600', label: 'Total Spend', value: formatPaise(totalSpendFiltered) }].map(function (st, si) {
             return (
-              <div key={st.label} className="flex items-center gap-2.5">
+              <div key={st.label} className="flex items-center gap-5">
+                {si > 0 && <span aria-hidden="true" className="w-px h-9 bg-slate-200" />}
+                <div className="flex items-center gap-2.5">
                 <span className={'shrink-0 w-9 h-9 rounded-xl inline-flex items-center justify-center ' + st.tint}>
                   <Icon name={st.icon} size={17} />
                 </span>
@@ -626,6 +649,7 @@ function InventoryLedger({ profile }) {
                   </span>
                   <span className="block mt-1 text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500">{st.label}</span>
                 </span>
+                </div>
               </div>
             )
           })}
@@ -652,6 +676,30 @@ function InventoryLedger({ profile }) {
           </div>
         </div>
       </div>
+
+      {/* The headings leave every row and become one band. Printed on all
+          twenty-five of them, "QTY RATE VALUE" was said twenty-five times to
+          answer a question asked once. */}
+      {pagedItems.length > 0 && (
+        <div className={'hidden @2xl:flex items-center gap-4 px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50/70 ' + COL_HEAD}>
+          <span className={COL_THUMB} />
+          <span className="min-w-0 flex-1">Item details</span>
+          <span aria-hidden="true" className="shrink-0 w-px" />
+          <span className="shrink-0 flex items-stretch">
+            {['Qty', 'Rate', 'Value'].map(function (h, hi) {
+              return (
+                <span key={h} className="flex items-stretch">
+                  {hi > 0 && <span aria-hidden="true" className="w-px" />}
+                  <span className={COL_FIG + ' px-3'}>{h}</span>
+                </span>
+              )
+            })}
+          </span>
+          <span aria-hidden="true" className="shrink-0 w-px" />
+          <span className={COL_PANEL + ' hidden @4xl:block'}>Last purchase</span>
+          <span className={COL_CHEV} />
+        </div>
+      )}
 
       <div className="space-y-2">
         {pagedItems.map(function (item) {
@@ -705,18 +753,17 @@ function InventoryLedger({ profile }) {
                   makes each gap a boundary rather than an accident. */}
               <span aria-hidden="true" className="hidden @2xl:block shrink-0 w-px bg-slate-100" />
 
-              <span className="shrink-0 self-center hidden @2xl:flex items-start gap-7">
+              <span className="shrink-0 self-stretch hidden @2xl:flex items-stretch">
                 {[{ l: 'Qty', v: fmtQty(item.live_qty) },
                   { l: 'Rate', v: item.rate_paise > 0 ? formatPaise(item.rate_paise) : '—' },
-                  { l: 'Value', v: value > 0 ? formatPaise(value) : '—' }].map(function (f) {
+                  { l: 'Value', v: value > 0 ? formatPaise(value) : '—' }].map(function (f, fi) {
                   return (
-                    /* The figure sits under the middle of its own heading. A
-                       dash right-aligned under a five-letter word reads as
-                       belonging to whatever is to the right of it, and most of
-                       these are a dash. */
-                    <span key={f.l} className="block w-[84px] text-center">
-                      <span className="block text-[10.5px] font-bold uppercase tracking-[0.08em] text-slate-400">{f.l}</span>
-                      <span data-notranslate className="block mt-0.5 text-[13px] font-bold text-slate-900 tabular-nums">{f.v}</span>
+                    <span key={f.l} className="flex items-stretch">
+                      {fi > 0 && <span aria-hidden="true" className="w-px bg-slate-100" />}
+                      <span data-notranslate
+                        className={COL_FIG + ' px-3 self-center text-[13px] font-bold text-slate-900 tabular-nums'}>
+                        {f.v}
+                      </span>
                     </span>
                   )
                 })}
@@ -726,7 +773,7 @@ function InventoryLedger({ profile }) {
 
               {/* What it cost the last time somebody bought it, which is the
                   question this ledger exists to answer. */}
-              <span className="shrink-0 self-center hidden @4xl:block w-[216px] rounded-xl border border-indigo-100 bg-indigo-50/60 px-3 py-2.5">
+              <span className={COL_PANEL + ' self-center hidden @4xl:block rounded-xl border border-indigo-100 bg-indigo-50/60 px-3 py-2.5'}>
                 {last ? (
                   <>
                     <span className="flex items-center gap-1.5 text-[10.5px] font-bold uppercase tracking-[0.08em] text-indigo-400">
