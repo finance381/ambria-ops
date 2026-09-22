@@ -637,40 +637,38 @@ function InventoryLedger({ profile }) {
 
       {/* Three figures the filters answer, and the two controls that change
           what is counted, on one line. */}
-      <div className={CARD + ' px-4 py-3'}>
-        <div className="flex flex-wrap items-center gap-5">
-          {/* All three describe the items on screen, not the whole master, so
-              none of them can be called "total": with the no-history toggle off
-              that word sat over 17 while the store holds 2,785. Each says what
-              it counts and carries the basis on hover. */}
-          {[{ icon: 'box', tint: 'bg-indigo-50 text-indigo-600', label: 'Items shown',
-              value: filteredItems.length.toLocaleString('en-IN'),
-              hint: 'Items left by the search, the filters and the no-history toggle' },
-            { icon: 'wallet', tint: 'bg-emerald-50 text-emerald-600', label: 'Stock value',
-              value: formatPaise(totalValue),
-              hint: 'Quantity on hand multiplied by each item’s master rate' },
-            { icon: 'cart', tint: 'bg-rose-50 text-rose-600', label: 'Spend, all time',
-              value: formatPaise(totalSpendFiltered),
-              hint: 'Every purchase ever recorded against these items' }].map(function (st, si) {
-            return (
-              <div key={st.label} className="flex items-center gap-5">
-                {si > 0 && <span aria-hidden="true" className="w-px h-9 bg-slate-200" />}
-                <div className="flex items-center gap-2.5" title={st.hint}>
-                <span className={'shrink-0 w-9 h-9 rounded-xl inline-flex items-center justify-center ' + st.tint}>
-                  <Icon name={st.icon} size={17} />
+      {/* Three figures across the card rather than huddled at its left end.
+          Dividers between them because they are three separate measurements of
+          the same set, not a sentence; and on a phone they stack, where three
+          abreast would each be too narrow to read. */}
+      <div className={CARD + ' overflow-hidden grid grid-cols-1 @2xl:grid-cols-3 divide-y @2xl:divide-y-0 @2xl:divide-x divide-slate-200'}>
+        {/* All three describe the items on screen, not the whole master, so
+            none of them can be called "total": with the no-history toggle off
+            that word sat over 17 while the store holds 2,785. Each says what
+            it counts and carries the basis on hover. */}
+        {[{ icon: 'box', tint: 'bg-indigo-50 text-indigo-600', label: 'Items shown',
+            value: filteredItems.length.toLocaleString('en-IN'),
+            hint: 'Items left by the search, the filters and the no-history toggle' },
+          { icon: 'wallet', tint: 'bg-emerald-50 text-emerald-600', label: 'Stock value',
+            value: formatPaise(totalValue),
+            hint: 'Quantity on hand multiplied by each item’s master rate' },
+          { icon: 'cart', tint: 'bg-rose-50 text-rose-600', label: 'Spend, all time',
+            value: formatPaise(totalSpendFiltered),
+            hint: 'Every purchase ever recorded against these items' }].map(function (st) {
+          return (
+            <div key={st.label} title={st.hint} className="flex items-center gap-3 px-4 py-3.5">
+              <span className={'shrink-0 w-10 h-10 rounded-xl inline-flex items-center justify-center ' + st.tint}>
+                <Icon name={st.icon} size={18} />
+              </span>
+              <span className="min-w-0">
+                <span className="block text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500">{st.label}</span>
+                <span data-notranslate className="block mt-1 font-display text-[19px] font-bold text-slate-900 tabular-nums leading-none tracking-[-0.015em] truncate">
+                  {st.value}
                 </span>
-                <span className="min-w-0">
-                  <span data-notranslate className="block font-display text-[17px] font-bold text-slate-900 tabular-nums leading-none tracking-[-0.01em]">
-                    {st.value}
-                  </span>
-                  <span className="block mt-1 text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500">{st.label}</span>
-                </span>
-                </div>
-              </div>
-            )
-          })}
-        </div>
-
+              </span>
+            </div>
+          )
+        })}
       </div>
 
       {/* What you are looking at and how it is ordered, on their own line
