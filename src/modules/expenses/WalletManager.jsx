@@ -3630,7 +3630,12 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             <p className={"text-[15px] font-bold tabular-nums " + (isCredit ? "text-emerald-600" : "text-red-600")} data-notranslate>
               {isCredit ? '+' : '−'}{formatPoints(Math.abs(t.amount_paise))}
             </p>
-            <p className="text-[11px] text-slate-400 tabular-nums" data-notranslate>Balance: {formatPoints(t.balance_after_paise)}</p>
+            {/* A running balance is a figure someone reads, not a caption.
+                At slate-400 it sat around 3:1 on the card and read as
+                disabled beside the bold amount above it. */}
+            <p className="text-[11.5px] text-slate-500 tabular-nums" data-notranslate>
+              Balance: <span className="font-semibold text-slate-700">{formatPoints(t.balance_after_paise)}</span>
+            </p>
             {/* The finance check belongs under the figure it is a check on.
                 Up in the title row it sat among the status chips, where
                 "Mark checked" read as one more label describing the row rather
