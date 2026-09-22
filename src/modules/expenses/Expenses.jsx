@@ -991,18 +991,6 @@ function Expenses({ profile, masterMode, inAdmin, deepLinkExpense, onDeepLinkHan
                     <span className={"shrink-0 text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded " + (APPROVAL_STATUS_COLORS[exp.status] || 'bg-slate-100 text-slate-600')}>
                       {APPROVAL_STATUS_LABELS[exp.status] || exp.status}
                     </span>
-                    {(exp.checked_by || canMarkChecked) && (
-                      <span className="shrink-0" onClick={function (ev) { ev.stopPropagation() }}>
-                        <CheckedStamp
-                          checked={!!exp.checked_by}
-                          checkedAt={exp.checked_at}
-                          canToggle={canMarkChecked}
-                          canUncheck={exp.checked_by === profile?.id || isAdmin}
-                          busy={checkingExpId === exp.id}
-                          onToggle={function () { toggleExpenseCheck(exp) }}
-                        />
-                      </span>
-                    )}
                     <span className="text-[11px] text-slate-500 truncate">
                       {view === 'approve' && !isSingleton && grp.submitter ? grp.submitter + ' · ' : ''}
                       {(function () {
@@ -1022,8 +1010,27 @@ function Expenses({ profile, masterMode, inAdmin, deepLinkExpense, onDeepLinkHan
                     </span>
                   </p>
                 </div>
-                <span className="shrink-0 text-[14px] font-bold text-slate-900 tabular-nums tracking-[-0.01em]">
-                  {formatPoints(exp.amount_paise)}
+                {/* The finance check sits under the figure it is a check on.
+                    On the meta line it read as one more label describing the
+                    row, next to the status chip, rather than the one control
+                    there that does something. Nothing is drawn for someone
+                    who cannot mark a row and is looking at an unmarked one. */}
+                <span className="shrink-0 text-right">
+                  <span className="block text-[14px] font-bold text-slate-900 tabular-nums tracking-[-0.01em]">
+                    {formatPoints(exp.amount_paise)}
+                  </span>
+                  {(exp.checked_by || canMarkChecked) && (
+                    <span className="mt-1.5 flex justify-end" onClick={function (ev) { ev.stopPropagation() }}>
+                      <CheckedStamp
+                        checked={!!exp.checked_by}
+                        checkedAt={exp.checked_at}
+                        canToggle={canMarkChecked}
+                        canUncheck={exp.checked_by === profile?.id || isAdmin}
+                        busy={checkingExpId === exp.id}
+                        onToggle={function () { toggleExpenseCheck(exp) }}
+                      />
+                    </span>
+                  )}
                 </span>
               </div>
               {exp.status === 'rejected' && exp.rejection_reason && (

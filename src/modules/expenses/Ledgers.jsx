@@ -973,19 +973,6 @@ function Ledgers({ profile, onNavigateToExpenses }) {
                             </span>
                           )
                         })()}
-                        {/* Only the prompt stays up here, with the status and
-                            the source — it is one more label among labels. The
-                            verdict moved to the figure's side of the row. */}
-                        {canMarkChecked && !r._checkedBy && (
-                          <span onClick={function (ev) { ev.stopPropagation() }}>
-                            <CheckedStamp
-                              checked={false}
-                              canToggle={canMarkChecked}
-                              busy={checkingExpId === r.expense_id}
-                              onToggle={function () { toggleExpenseCheck(r.expense_id) }}
-                            />
-                          </span>
-                        )}
                       </div>
                       {r.remarks && <p className="mt-1 text-[12px] italic text-slate-500">"{r.remarks}"</p>}
                       {r.venue_id && <p className="mt-1 text-[11.5px] text-slate-500">Venue: <span className="font-semibold text-slate-700">{venueMap[r.venue_id] || '—'}</span></p>}
@@ -1038,17 +1025,28 @@ function Ledgers({ profile, onNavigateToExpenses }) {
                       <span aria-hidden="true" className="w-px self-stretch bg-slate-200" />
                       {/* Right of the rule is what this row came to, and
                           whether it has been checked is a verdict on that
-                          rather than another label beside the description. */}
-                      {anyDrillChecked && (
+                          rather than another label beside the description — so
+                          the prompt to mark one sits here too, in the slot the
+                          stamp will occupy, rather than up among the status
+                          chips where it read as one more label. Nothing is
+                          drawn for someone who cannot mark a row. */}
+                      {(anyDrillChecked || canMarkChecked) && (
                         <span className="shrink-0 w-[160px] self-center flex items-center justify-center"
                           onClick={function (ev) { ev.stopPropagation() }}>
-                          {r._checkedBy && (
+                          {r._checkedBy ? (
                             <CheckedStamp
                               variant="stamp"
                               checked
                               checkedAt={r._checkedAt}
                               canToggle={canMarkChecked}
                               canUncheck={r._checkedBy === profile?.id || isSysAdmin}
+                              busy={checkingExpId === r.expense_id}
+                              onToggle={function () { toggleExpenseCheck(r.expense_id) }}
+                            />
+                          ) : (
+                            <CheckedStamp
+                              checked={false}
+                              canToggle={canMarkChecked}
                               busy={checkingExpId === r.expense_id}
                               onToggle={function () { toggleExpenseCheck(r.expense_id) }}
                             />
