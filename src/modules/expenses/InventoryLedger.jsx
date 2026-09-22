@@ -710,7 +710,11 @@ function InventoryLedger({ profile }) {
                   { l: 'Rate', v: item.rate_paise > 0 ? formatPaise(item.rate_paise) : '—' },
                   { l: 'Value', v: value > 0 ? formatPaise(value) : '—' }].map(function (f) {
                   return (
-                    <span key={f.l} className="block w-[84px] text-right">
+                    /* The figure sits under the middle of its own heading. A
+                       dash right-aligned under a five-letter word reads as
+                       belonging to whatever is to the right of it, and most of
+                       these are a dash. */
+                    <span key={f.l} className="block w-[84px] text-center">
                       <span className="block text-[10.5px] font-bold uppercase tracking-[0.08em] text-slate-400">{f.l}</span>
                       <span data-notranslate className="block mt-0.5 text-[13px] font-bold text-slate-900 tabular-nums">{f.v}</span>
                     </span>
