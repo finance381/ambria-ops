@@ -24,9 +24,9 @@ var PAGE_SIZES = [10, 25, 50, 100]
 //
 // Cells hidden at a breakpoint leave the flow entirely, so the template has as
 // many columns as there are visible cells at that width.
-var GRID = 'grid items-center gap-x-4 grid-cols-[3rem_minmax(0,1fr)]' +
-  ' @2xl:grid-cols-[3rem_minmax(0,1fr)_6rem_6rem_6rem_1rem]' +
-  ' @4xl:grid-cols-[3rem_minmax(0,1fr)_6rem_6rem_6rem_13.5rem_1rem]'
+var GRID = 'grid items-center gap-x-3.5 grid-cols-[2.5rem_minmax(0,1fr)]' +
+  ' @2xl:grid-cols-[2.5rem_minmax(0,1fr)_5.5rem_5.5rem_5.5rem_1rem]' +
+  ' @4xl:grid-cols-[2.5rem_minmax(0,1fr)_5.5rem_5.5rem_5.5rem_13rem_1rem]'
 var CELL_FIG = 'hidden @2xl:flex items-center justify-center text-center'
 var CELL_PANEL = 'hidden @4xl:block'
 var CELL_CHEV = 'hidden @2xl:block'
@@ -686,7 +686,7 @@ function InventoryLedger({ profile }) {
           answer a question asked once. */}
       <div className="space-y-2">
       {pagedItems.length > 0 && (
-        <div className={'hidden @2xl:grid ' + GRID + ' px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-100/70 ' + COL_HEAD}>
+        <div className={'hidden @2xl:grid ' + GRID + ' px-3.5 py-2 rounded-xl border border-slate-200 bg-slate-100/70 ' + COL_HEAD}>
           <span />
           <span className="min-w-0">Item details</span>
           <span className={CELL_FIG}>Qty</span>
@@ -704,22 +704,22 @@ function InventoryLedger({ profile }) {
           var last = a.last3 && a.last3[0]
           return (
             <button key={item._key} type="button" onClick={function () { setSelectedItem(item) }}
-              className={'group w-full text-left px-4 py-3.5 ' + GRID + ' ' + CARD +
+              className={'group w-full text-left px-3.5 py-2.5 ' + GRID + ' ' + CARD +
                 ' hover:border-indigo-300 hover:shadow-[0_2px_10px_rgba(79,70,229,0.07)] transition-all'}>
               {/* The picture is how a storeman recognises a thing; the code is
                   how the system does. Both, in that order — and where there is
                   no photograph, a tile drawn from what the item says it is
                   rather than the same grey box on every row. */}
-              <span className={'w-12 h-12 rounded-xl border overflow-hidden inline-flex items-center justify-center ' +
+              <span className={'w-10 h-10 rounded-lg border overflow-hidden inline-flex items-center justify-center ' +
                 (item.img ? 'border-slate-200 bg-slate-50' : itemTint(item.name))}>
                 {item.img
                   ? <img src={item.img} alt="" loading="lazy" className="w-full h-full object-cover" />
-                  : <Icon name={itemIcon(item.name, item.cat, item.subcat)} size={20} />}
+                  : <Icon name={itemIcon(item.name, item.cat, item.subcat)} size={17} />}
               </span>
 
-              <span className="min-w-0 space-y-1.5">
-                <span className="block font-display text-[14px] font-bold text-slate-900 leading-tight truncate">{item.name}</span>
-                <span className="block text-[12px] leading-tight text-slate-600 truncate">
+              <span className="min-w-0 space-y-1">
+                <span className="block font-display text-[13.5px] font-bold text-slate-900 leading-tight truncate">{item.name}</span>
+                <span className="block text-[11.5px] leading-tight text-slate-600 truncate">
                   <span data-notranslate className="font-bold text-slate-700">{item.code}</span>
                   {item.cat && <span> · {item.cat}</span>}
                   {item._source === 'catering_store' && <span className="font-bold text-purple-600"> · Catering</span>}
@@ -731,19 +731,19 @@ function InventoryLedger({ profile }) {
                 {(item.subcat || a.vendors.length > 0) && (
                   <span className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
                     {item.subcat && (
-                      <span className="inline-flex items-center h-[20px] px-2 rounded-md border border-slate-200 bg-slate-50 text-[10.5px] font-bold leading-none text-slate-600">
+                      <span className="inline-flex items-center h-[18px] px-1.5 rounded-md border border-slate-200 bg-slate-50 text-[10px] font-bold leading-none text-slate-600">
                         {item.subcat}
                       </span>
                     )}
                     {a.vendors.slice(0, 2).map(function (v) {
                       return (
-                        <span key={v} className="inline-flex items-center h-[20px] px-2 rounded-md border border-amber-200 bg-amber-50 text-[10.5px] font-bold leading-none text-amber-700">
+                        <span key={v} className="inline-flex items-center h-[18px] px-1.5 rounded-md border border-amber-200 bg-amber-50 text-[10px] font-bold leading-none text-amber-700">
                           {v}
                         </span>
                       )
                     })}
                     {a.vendors.length > 2 && (
-                      <span data-notranslate className="inline-flex items-center h-[20px] text-[10.5px] font-bold leading-none text-slate-500">
+                      <span data-notranslate className="inline-flex items-center h-[18px] text-[10px] font-bold leading-none text-slate-500">
                         +{a.vendors.length - 2} more
                       </span>
                     )}
@@ -768,7 +768,7 @@ function InventoryLedger({ profile }) {
 
               {/* What it cost the last time somebody bought it, which is the
                   question this ledger exists to answer. */}
-              <span className={CELL_PANEL + ' rounded-xl border border-indigo-100 bg-indigo-50/60 px-3 py-2.5'}>
+              <span className={CELL_PANEL + ' rounded-lg border border-indigo-100 bg-indigo-50/60 px-2.5 py-2'}>
                 {last ? (
                   <>
                     {/* When, then what it cost and from whom. The column is
@@ -783,7 +783,7 @@ function InventoryLedger({ profile }) {
                       </span>
                       <TrendIcon trend={last._trend} prev={last._prev_rate} />
                     </span>
-                    <span className="flex items-baseline gap-2 mt-1.5 min-w-0">
+                    <span className="flex items-baseline gap-2 mt-1 min-w-0">
                       <span data-notranslate className="shrink-0 text-[13px] font-bold text-slate-900 tabular-nums">
                         {formatPaise(last.rate_paise || 0)}
                       </span>
