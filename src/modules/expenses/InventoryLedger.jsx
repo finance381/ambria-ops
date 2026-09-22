@@ -230,8 +230,18 @@ function InventoryLedger({ profile }) {
       m[k].push(h)
     })
     Object.keys(m).forEach(function (k) {
+      // txn_date is a date with no time, and the view is fetched with no
+      // ORDER BY — so two purchases on the same day were left in whatever
+      // order the database happened to return, and "the latest vendor" could
+      // differ between two loads of the same page. Broken by when the entry
+      // was logged, then by its reference, so the answer is the same every
+      // time and is the one a reader would call latest.
       m[k].sort(function (a, b) {
-        return (b.txn_date || '0000-00-00').localeCompare(a.txn_date || '0000-00-00')
+        var d = (b.txn_date || '0000-00-00').localeCompare(a.txn_date || '0000-00-00')
+        if (d !== 0) return d
+        var l = String(b._loggedAt || '').localeCompare(String(a._loggedAt || ''))
+        if (l !== 0) return l
+        return String(b.source_ref || '').localeCompare(String(a.source_ref || ''))
       })
     })
     return m
