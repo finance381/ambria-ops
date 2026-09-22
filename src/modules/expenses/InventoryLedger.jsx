@@ -688,7 +688,7 @@ function InventoryLedger({ profile }) {
                 <input type="checkbox" checked={showNoHistory}
                   onChange={function () { setShowNoHistory(function (v) { return !v }) }}
                   className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500/30" />
-                Including items never purchased
+                Show items with no purchase history
               </label>
 
               <span className="relative inline-flex" title={hiddenNoHistory > 0
