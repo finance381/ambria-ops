@@ -757,28 +757,33 @@ function InventoryLedger({ profile }) {
                 {/* The sub-category and the vendors were a grey chevron chain
                     and a VENDORS label with a count nobody needed — the chips
                     are the count. Two kinds of fact, so two kinds of chip:
-                    where the item is filed, and who it has been bought from. */}
-                {(item.subcat || a.vendors.length > 0) && (
-                  <span className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
-                    {item.subcat && (
-                      <span className="inline-flex items-center h-[18px] px-1.5 rounded-md border border-slate-200 bg-slate-50 text-[10px] font-bold leading-none text-slate-600">
-                        {item.subcat}
+                    where the item is filed, and who it has been bought from.
+
+                    The line's height used to depend on whether it had
+                    anything to show, so a one-chip row and a two-chip row
+                    (or none at all) made cards three different heights and
+                    the whole list read as a zigzag rather than a column. The
+                    line now reserves its height — 18px, an empty chip's
+                    own height — whether or not it has a chip in it. */}
+                <span className="min-h-[18px] flex flex-wrap items-center gap-x-1.5 gap-y-1">
+                  {item.subcat && (
+                    <span className="inline-flex items-center h-[18px] px-1.5 rounded-md border border-slate-200 bg-slate-50 text-[10px] font-bold leading-none text-slate-600">
+                      {item.subcat}
+                    </span>
+                  )}
+                  {a.vendors.slice(0, 2).map(function (v) {
+                    return (
+                      <span key={v} className="inline-flex items-center h-[18px] px-1.5 rounded-md border border-amber-200 bg-amber-50 text-[10px] font-bold leading-none text-amber-700">
+                        {v}
                       </span>
-                    )}
-                    {a.vendors.slice(0, 2).map(function (v) {
-                      return (
-                        <span key={v} className="inline-flex items-center h-[18px] px-1.5 rounded-md border border-amber-200 bg-amber-50 text-[10px] font-bold leading-none text-amber-700">
-                          {v}
-                        </span>
-                      )
-                    })}
-                    {a.vendors.length > 2 && (
-                      <span data-notranslate className="inline-flex items-center h-[18px] text-[10px] font-bold leading-none text-slate-500">
-                        +{a.vendors.length - 2} more
-                      </span>
-                    )}
-                  </span>
-                )}
+                    )
+                  })}
+                  {a.vendors.length > 2 && (
+                    <span data-notranslate className="inline-flex items-center h-[18px] text-[10px] font-bold leading-none text-slate-500">
+                      +{a.vendors.length - 2} more
+                    </span>
+                  )}
+                </span>
               </span>
 
               {/* A rule down the left of each figure, so the gap between the
