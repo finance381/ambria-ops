@@ -24,12 +24,12 @@ var PAGE_SIZES = [10, 25, 50, 100]
 //
 // Cells hidden at a breakpoint leave the flow entirely, so the template has as
 // many columns as there are visible cells at that width.
-var GRID = 'grid items-center gap-x-3.5 grid-cols-[2.5rem_minmax(0,1fr)]' +
-  ' @2xl:grid-cols-[2.5rem_minmax(0,1fr)_5.5rem_5.5rem_5.5rem_1rem]' +
-  ' @4xl:grid-cols-[2.5rem_minmax(0,1fr)_5.5rem_5.5rem_5.5rem_13rem_1rem]'
+var GRID = 'grid items-center gap-x-3.5 grid-cols-[2.5rem_minmax(0,1fr)_2.25rem]' +
+  ' @2xl:grid-cols-[2.5rem_minmax(0,1fr)_5.5rem_5.5rem_5.5rem_2.25rem]' +
+  ' @4xl:grid-cols-[2.5rem_minmax(0,1fr)_5.5rem_5.5rem_5.5rem_13rem_2.25rem]'
 var CELL_FIG = 'hidden @2xl:flex items-center justify-center text-center'
 var CELL_PANEL = 'hidden @4xl:block'
-var CELL_CHEV = 'hidden @2xl:block'
+var CELL_ACTIONS = 'flex justify-end'
 var COL_HEAD = 'text-[11px] font-bold uppercase tracking-[0.08em] text-slate-600'
 
 function InventoryLedger({ profile }) {
@@ -52,6 +52,7 @@ function InventoryLedger({ profile }) {
   var [pageSize, setPageSize] = useState(25)
   var [exporting, setExporting] = useState(false)
   var [showFilters, setShowFilters] = useState(false)
+  var [menuFor, setMenuFor] = useState(null)
 
   function fmtQty(n) {
     var num = Number(n || 0)
@@ -62,6 +63,25 @@ function InventoryLedger({ profile }) {
   }
 
   var { openExpenseDetail, expenseDetailModal } = useExpenseDetailModal(profile, isAdmin, function () { loadAll() })
+
+  // Any click outside the open menu, or Escape, closes it — the usual contract
+  // for a popover that isn't the only thing on the screen.
+  useEffect(function () {
+    if (!menuFor) return
+    function onDown(ev) { if (!ev.target.closest('[data-item-menu]')) setMenuFor(null) }
+    function onKey(ev) { if (ev.key === 'Escape') setMenuFor(null) }
+    document.addEventListener('pointerdown', onDown)
+    document.addEventListener('keydown', onKey)
+    return function () {
+      document.removeEventListener('pointerdown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [menuFor])
+
+  function copyText(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text)
+    setMenuFor(null)
+  }
 
   useEffect(function () {
     if (canView) loadAll()
@@ -718,7 +738,7 @@ function InventoryLedger({ profile }) {
           <span className={CELL_FIG}>Rate</span>
           <span className={CELL_FIG}>Value</span>
           <span className={CELL_PANEL}>Last purchase</span>
-          <span className={CELL_CHEV} />
+          <span className="text-right">Actions</span>
         </div>
       )}
 
@@ -728,8 +748,10 @@ function InventoryLedger({ profile }) {
           var value = (item.live_qty || 0) * (item.rate_paise || 0)
           var last = a.last3 && a.last3[0]
           return (
-            <button key={item._key} type="button" onClick={function () { setSelectedItem(item) }}
-              className={'group w-full text-left px-3.5 py-2.5 ' + GRID + ' ' + CARD +
+            <div key={item._key} role="button" tabIndex={0}
+              onClick={function () { setSelectedItem(item) }}
+              onKeyDown={function (ev) { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); setSelectedItem(item) } }}
+              className={'group relative w-full text-left px-3.5 py-2.5 cursor-pointer ' + GRID + ' ' + CARD +
                 ' hover:border-indigo-300 hover:shadow-[0_2px_10px_rgba(79,70,229,0.07)] transition-all'}>
               {/* The picture is how a storeman recognises a thing; the code is
                   how the system does. Both, in that order — and where there is
@@ -825,9 +847,36 @@ function InventoryLedger({ profile }) {
                 )}
               </span>
 
-              <Icon name="chevronRight" size={16}
-                className={CELL_CHEV + ' text-slate-300 group-hover:text-indigo-500 transition-colors'} />
-            </button>
+              {/* Nothing here that pressing the row does not already do, except
+                  the two things that only make sense as a quick copy — so the
+                  menu is short by design, not by neglect. */}
+              <span data-item-menu className={CELL_ACTIONS}>
+                <button type="button" aria-label="Item actions" aria-haspopup="menu" aria-expanded={menuFor === item._key}
+                  onClick={function (ev) { ev.stopPropagation(); setMenuFor(menuFor === item._key ? null : item._key) }}
+                  className={'w-8 h-8 inline-flex items-center justify-center rounded-lg border transition-colors ' +
+                    (menuFor === item._key
+                      ? 'border-indigo-300 bg-indigo-50 text-indigo-600'
+                      : 'border-slate-200 text-slate-400 hover:text-slate-700 hover:bg-slate-100')}>
+                  <Icon name="more" size={16} />
+                </button>
+
+                {menuFor === item._key && (
+                  <div role="menu" onClick={function (ev) { ev.stopPropagation() }}
+                    className="absolute right-0 top-full mt-1 z-20 w-44 bg-white border border-slate-200 rounded-xl shadow-[0_8px_28px_rgba(15,23,42,0.14)] p-1">
+                    <button type="button" role="menuitem" onClick={function () { copyText(item.code) }}
+                      className="w-full flex items-center gap-2.5 px-2.5 h-9 rounded-lg text-[12.5px] font-semibold text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 transition-colors">
+                      <Icon name="copy" size={14} className="shrink-0 text-slate-400" />
+                      Copy code
+                    </button>
+                    <button type="button" role="menuitem" onClick={function () { copyText(item.name) }}
+                      className="w-full flex items-center gap-2.5 px-2.5 h-9 rounded-lg text-[12.5px] font-semibold text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 transition-colors">
+                      <Icon name="copy" size={14} className="shrink-0 text-slate-400" />
+                      Copy name
+                    </button>
+                  </div>
+                )}
+              </span>
+            </div>
           )
         })}
         {pagedItems.length === 0 && (
