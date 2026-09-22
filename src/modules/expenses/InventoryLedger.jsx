@@ -740,39 +740,41 @@ function InventoryLedger({ profile }) {
                   : <Icon name={itemIcon(item.name, item.cat, item.subcat)} size={17} />}
               </span>
 
-              <span className="min-w-0 space-y-1">
-                <span className="block font-display text-[13.5px] font-bold text-slate-900 leading-tight truncate">{item.name}</span>
-                <span className="block text-[11.5px] leading-tight text-slate-600 truncate">
-                  <span data-notranslate className="font-bold text-slate-700">{item.code}</span>
-                  {item.cat && <span> · {item.cat}</span>}
-                  {item._source === 'catering_store' && <span className="font-bold text-purple-600"> · Catering</span>}
-                </span>
-                {/* The sub-category and the vendors were a grey chevron chain
-                    and a VENDORS label with a count nobody needed — the chips
-                    are the count. Two kinds of fact, so two kinds of chip:
-                    where the item is filed, and who it has been bought from.
+              {/* Two columns inside the block, so the same kind of thing is in
+                  the same place on every row: the code over the sub-category
+                  chip, the category over the vendors. Free-flowing, the
+                  vendor chip began wherever the sub-category chip happened to
+                  end — present on some rows and absent on others — and the
+                  column read as ragged even though each row was tidy. */}
+              <span className="min-w-0 grid grid-cols-[7rem_minmax(0,1fr)] gap-x-3 gap-y-1 items-center">
+                <span className="col-span-2 block font-display text-[13.5px] font-bold text-slate-900 leading-tight truncate">{item.name}</span>
 
-                    The line's height used to depend on whether it had
-                    anything to show, so a one-chip row and a two-chip row
-                    (or none at all) made cards three different heights and
-                    the whole list read as a zigzag rather than a column. The
-                    line now reserves its height — 18px, an empty chip's
-                    own height — whether or not it has a chip in it. */}
-                <span className="min-h-[18px] flex flex-wrap items-center gap-x-1.5 gap-y-1">
+                <span data-notranslate className="block text-[11.5px] leading-tight font-bold text-slate-700 truncate">{item.code}</span>
+                <span className="block text-[11.5px] leading-tight text-slate-600 truncate">
+                  {item.cat}
+                  {item._source === 'catering_store' && <span className="font-bold text-purple-600">{item.cat ? ' · ' : ''}Catering</span>}
+                </span>
+                {/* Each cell keeps its 18px whether or not it has a chip, so a
+                    row with no sub-category and a row with two vendors are the
+                    same height and the cards stack as a column rather than a
+                    zigzag. */}
+                <span className="min-h-[18px] flex items-center">
                   {item.subcat && (
-                    <span className="inline-flex items-center h-[18px] px-1.5 rounded-md border border-slate-200 bg-slate-50 text-[10px] font-bold leading-none text-slate-600">
+                    <span className="inline-flex items-center max-w-full h-[18px] px-1.5 rounded-md border border-slate-200 bg-slate-50 text-[10px] font-bold leading-none text-slate-600 truncate">
                       {item.subcat}
                     </span>
                   )}
+                </span>
+                <span className="min-h-[18px] flex items-center gap-1.5 min-w-0">
                   {a.vendors.slice(0, 2).map(function (v) {
                     return (
-                      <span key={v} className="inline-flex items-center h-[18px] px-1.5 rounded-md border border-amber-200 bg-amber-50 text-[10px] font-bold leading-none text-amber-700">
+                      <span key={v} className="inline-flex items-center shrink-0 h-[18px] px-1.5 rounded-md border border-amber-200 bg-amber-50 text-[10px] font-bold leading-none text-amber-700">
                         {v}
                       </span>
                     )
                   })}
                   {a.vendors.length > 2 && (
-                    <span data-notranslate className="inline-flex items-center h-[18px] text-[10px] font-bold leading-none text-slate-500">
+                    <span data-notranslate className="inline-flex items-center shrink-0 h-[18px] text-[10px] font-bold leading-none text-slate-500">
                       +{a.vendors.length - 2} more
                     </span>
                   )}
