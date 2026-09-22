@@ -2807,32 +2807,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                         <p className={"text-sm font-bold text-gray-800 truncate " + (isCancelled ? "line-through" : "")}>{t.description || (isCredit ? 'Credit' : 'Debit')}</p>
                         {t.status === 'pending' && <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded flex-shrink-0">Pending</span>}
                         {isCancelled && <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 bg-rose-100 text-rose-700 rounded flex-shrink-0">Cancelled</span>}
-                        {!isCancelled && isExpRow && xp && (
-                          <span className="shrink-0" onClick={function (ev) { ev.stopPropagation() }}>
-                            <CheckedStamp
-                              checked={!!xp.checked_by}
-                              checkerName={xp.checked_by && walletProfiles[xp.checked_by] ? walletProfiles[xp.checked_by].name : null}
-                              checkedAt={xp.checked_at}
-                              canToggle={canMarkChecked}
-                              canUncheck={xp.checked_by === profile.id || isAdmin || isAuditor}
-                              busy={checkingExpId === t.reference_id}
-                              onToggle={function () { toggleExpenseCheck(t.reference_id) }}
-                            />
-                          </span>
-                        )}
-                        {!isCancelled && !isExpRow && (
-                          <span className="shrink-0" onClick={function (ev) { ev.stopPropagation() }}>
-                            <CheckedStamp
-                              checked={!!t.checked_by}
-                              checkerName={t.checked_by && walletProfiles[t.checked_by] ? walletProfiles[t.checked_by].name : null}
-                              checkedAt={t.checked_at}
-                              canToggle={canMarkChecked}
-                              canUncheck={t.checked_by === profile.id || isAdmin || isAuditor}
-                              busy={checkingTxnId === t.id}
-                              onToggle={function () { toggleWalletCheck(t) }}
-                            />
-                          </span>
-                        )}                      </div>
+                      </div>
                       {enrichLine}
                       {isCancelled && t.cancelled_reason && (
                         <p className="text-[10px] text-rose-600 italic truncate">Reason: {t.cancelled_reason}</p>
@@ -2863,8 +2838,32 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                         )}
                       </div>
                     </div>
-                    <span className={"text-sm font-bold flex-shrink-0 " + (isCredit ? "text-green-600" : "text-red-600")}>
-                      {isCredit ? '+' : '−'}{formatPoints(t.amount_paise)}
+                    <span className="flex-shrink-0 text-right">
+                      <span className={"block text-sm font-bold " + (isCredit ? "text-green-600" : "text-red-600")}>
+                        {isCredit ? '+' : '−'}{formatPoints(t.amount_paise)}
+                      </span>
+                      {/* The verdict goes with the figure rather than the
+                          description, here as everywhere else. */}
+                      {(function () {
+                        if (isCancelled) return null
+                        var chk = isExpRow ? xp : t
+                        if (!chk) return null
+                        if (!canMarkChecked && !chk.checked_by) return null
+                        return (
+                          <span className="mt-1 flex justify-end" onClick={function (ev) { ev.stopPropagation() }}>
+                            <CheckedStamp
+                              variant="stamp"
+                              checked={!!chk.checked_by}
+                              checkerName={chk.checked_by && walletProfiles[chk.checked_by] ? walletProfiles[chk.checked_by].name : null}
+                              checkedAt={chk.checked_at}
+                              canToggle={canMarkChecked}
+                              canUncheck={chk.checked_by === profile.id || isAdmin || isAuditor}
+                              busy={isExpRow ? checkingExpId === t.reference_id : checkingTxnId === t.id}
+                              onToggle={function () { if (isExpRow) toggleExpenseCheck(t.reference_id); else toggleWalletCheck(t) }}
+                            />
+                          </span>
+                        )
+                      })()}
                     </span>
                   </div>
                 )
@@ -3408,28 +3407,6 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                   {EXP_STATUS_LABELS[expenseRefs[t.reference_id].status] || expenseRefs[t.reference_id].status}
                 </span>
               )}
-              {!isCancelled && isExpRow && t.reference_id && expenseRefs[t.reference_id] && (
-                <CheckedStamp
-                  checked={!!expenseRefs[t.reference_id].checked_by}
-                  checkerName={expenseRefs[t.reference_id].checked_by && walletProfiles[expenseRefs[t.reference_id].checked_by] ? walletProfiles[expenseRefs[t.reference_id].checked_by].name : null}
-                  checkedAt={expenseRefs[t.reference_id].checked_at}
-                  canToggle={canMarkChecked}
-                  canUncheck={expenseRefs[t.reference_id].checked_by === profile.id || isAdmin || isAuditor}
-                  busy={checkingExpId === t.reference_id}
-                  onToggle={function (ev) { ev.stopPropagation(); toggleExpenseCheck(t.reference_id) }}
-                />
-              )}
-              {!isCancelled && !isExpRow && (
-                <CheckedStamp
-                  checked={!!t.checked_by}
-                  checkerName={t.checked_by && walletProfiles[t.checked_by] ? walletProfiles[t.checked_by].name : null}
-                  checkedAt={t.checked_at}
-                  canToggle={canMarkChecked}
-                  canUncheck={t.checked_by === profile.id || isAdmin || isAuditor}
-                  busy={checkingTxnId === t.id}
-                  onToggle={function (ev) { ev.stopPropagation(); toggleWalletCheck(t) }}
-                />
-              )}
             </div>
             {isCancelled && t.cancelled_reason && (
               <p className="text-[10px] text-rose-600 italic mt-0.5">Reason: {t.cancelled_reason}</p>
@@ -3653,12 +3630,57 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             <p className={"text-[15px] font-bold tabular-nums " + (isCredit ? "text-emerald-600" : "text-red-600")} data-notranslate>
               {isCredit ? '+' : '−'}{formatPoints(Math.abs(t.amount_paise))}
             </p>
-                    {/* A running balance is a figure someone reads, not a
-                        caption. At slate-400 it sat around 3:1 on the card and
-                        read as disabled beside the bold amount above it. */}
-                    <p className="text-[11.5px] text-slate-500 tabular-nums" data-notranslate>
-                      Balance: <span className="font-semibold text-slate-700">{formatPoints(t.balance_after_paise)}</span>
-                    </p>
+            {/* A running balance is a figure someone reads, not a caption.
+                At slate-400 it sat around 3:1 on the card and read as
+                disabled beside the bold amount above it. */}
+            <p className="text-[11.5px] text-slate-500 tabular-nums" data-notranslate>
+              Balance: <span className="font-semibold text-slate-700">{formatPoints(t.balance_after_paise)}</span>
+            </p>
+            {/* The finance check belongs under the figure it is a check on.
+                Up in the title row it sat among the status chips, where
+                "Mark checked" read as one more label describing the row rather
+                than the one control on it that does something. */}
+            {(function () {
+              if (isCancelled) return null
+              var chk = isExpRow ? (t.reference_id && expenseRefs[t.reference_id]) : t
+              if (!chk) return null
+              // Nothing is drawn for someone who cannot mark a row and is
+              // looking at one nobody has marked — CheckedStamp returns null
+              // there, and an empty wrapper would still spend its margin.
+              if (!canMarkChecked && !chk.checked_by) return null
+              return (
+              /* The artwork, not the chip: a chip beside an amount reads as
+                 one more label, and this is a verdict on the figure above it.
+                 Unchecked it stays the small dashed prompt either way — a
+                 160px empty circle asking to be pressed would be a lot of
+                 furniture for an action most rows never take. */
+              <div className="mt-2 flex justify-end" onClick={function (ev) { ev.stopPropagation() }}>
+                {isExpRow ? (
+                  <CheckedStamp
+                    variant="stamp"
+                    checked={!!expenseRefs[t.reference_id].checked_by}
+                    checkerName={expenseRefs[t.reference_id].checked_by && walletProfiles[expenseRefs[t.reference_id].checked_by] ? walletProfiles[expenseRefs[t.reference_id].checked_by].name : null}
+                    checkedAt={expenseRefs[t.reference_id].checked_at}
+                    canToggle={canMarkChecked}
+                    canUncheck={expenseRefs[t.reference_id].checked_by === profile.id || isAdmin || isAuditor}
+                    busy={checkingExpId === t.reference_id}
+                    onToggle={function (ev) { ev.stopPropagation(); toggleExpenseCheck(t.reference_id) }}
+                  />
+                ) : (
+                  <CheckedStamp
+                    variant="stamp"
+                    checked={!!t.checked_by}
+                    checkerName={t.checked_by && walletProfiles[t.checked_by] ? walletProfiles[t.checked_by].name : null}
+                    checkedAt={t.checked_at}
+                    canToggle={canMarkChecked}
+                    canUncheck={t.checked_by === profile.id || isAdmin || isAuditor}
+                    busy={checkingTxnId === t.id}
+                    onToggle={function (ev) { ev.stopPropagation(); toggleWalletCheck(t) }}
+                  />
+                )}
+              </div>
+              )
+            })()}
             {canConfirm && (
               <button onClick={function (ev) { ev.stopPropagation(); setReceiveModal(t); setReceiveImage(null) }}
                 className="mt-1.5 px-2 py-1 text-[10px] font-bold text-amber-700 bg-amber-100 border border-amber-300 rounded hover:bg-amber-200 transition-colors">

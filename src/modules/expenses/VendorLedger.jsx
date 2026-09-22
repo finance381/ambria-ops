@@ -1860,10 +1860,12 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
                     The rule itself is what stops two columns of unrelated text
                     reading as one ragged block. */}
                 <span aria-hidden="true" className="self-stretch shrink-0 w-px bg-slate-200" />
-                {anyEntryChecked && (
-                  <span className="shrink-0 w-[160px] self-center flex items-center justify-center"
+                {/* Prompt and verdict share one slot, so pressing the first
+                    puts the second exactly where you pressed. */}
+                {(anyEntryChecked || canMarkChecked) && !isDeleted && (
+                  <span className="shrink-0 w-[112px] self-center flex items-center justify-center"
                     onClick={function (ev) { ev.stopPropagation() }}>
-                    {!isDeleted && checkedProps.checked && renderChecked('stamp')}
+                    {checkedProps.checked ? renderChecked('stamp') : (canMarkChecked ? renderChecked() : null)}
                   </span>
                 )}
                 {/* A floor under the column's width. It is as wide as its
@@ -1903,10 +1905,6 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
                       </p>
                     )}
                   </div>
-                  {/* The stamp left this column for the empty middle of the
-                      row. What stays here is the un-checked prompt, which is a
-                      chip and belongs with the other controls. */}
-                  {!isDeleted && !checkedProps.checked && renderChecked()}
                   {isAdmin && !isDeleted && (
                     <button onClick={function (ev) { ev.stopPropagation(); setReverseTarget(e.id) }}
                       // The same box as the Checked stamp beside it: they sit

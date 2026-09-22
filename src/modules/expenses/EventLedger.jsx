@@ -644,30 +644,6 @@ function EventLedger(props) {
                       <span className={'shrink-0 inline-flex items-center h-[22px] px-2 rounded-md text-[11px] font-bold ' + badgeClass(e.entry_type, e.direction)}>
                         {entryLabel(e.entry_type)}
                       </span>
-                      {isExpRow && (e._checkedBy || canMarkChecked) && (
-                        <span className="shrink-0 inline-flex" onClick={function (ev) { ev.stopPropagation() }}>
-                          <CheckedStamp
-                            checked={!!e._checkedBy}
-                            checkedAt={e._checkedAt}
-                            canToggle={canMarkChecked}
-                            canUncheck={e._checkedBy === profile?.id || isSysAdmin}
-                            busy={checkingExpId === Number(e.reference_id)}
-                            onToggle={function () { toggleExpenseCheck(Number(e.reference_id)) }}
-                          />
-                        </span>
-                      )}
-                      {isCollRow && (e._wt.checked_by || canMarkChecked) && (
-                        <span className="shrink-0 inline-flex" onClick={function (ev) { ev.stopPropagation() }}>
-                          <CheckedStamp
-                            checked={!!e._wt.checked_by}
-                            checkedAt={e._wt.checked_at}
-                            canToggle={canMarkChecked}
-                            canUncheck={e._wt.checked_by === profile?.id || isSysAdmin}
-                            busy={checkingTxnId === e.reference_id}
-                            onToggle={function () { toggleCollectionCheck(e.reference_id) }}
-                          />
-                        </span>
-                      )}
                     </div>
                   </td>
                   <td className="px-3 py-2.5 align-top text-[13px] text-slate-600 whitespace-nowrap">{e.payment_mode ? titleCase(e.payment_mode) : '—'}</td>
@@ -676,10 +652,35 @@ function EventLedger(props) {
                       ? <span className="text-emerald-700">{formatPoints(e.amount_paise)}</span>
                       : <span className="text-slate-200">—</span>}
                   </td>
-                  <td className="px-3 py-2.5 align-top text-right text-[13px] font-bold tabular-nums whitespace-nowrap" data-notranslate>
-                    {e.direction === 'out'
-                      ? <span className="text-rose-700">{formatPoints(e.amount_paise)}</span>
-                      : <span className="text-slate-200">—</span>}
+                  <td className="px-3 py-2.5 align-top text-right whitespace-nowrap">
+                    <span data-notranslate className="block text-[13px] font-bold tabular-nums">
+                      {e.direction === 'out'
+                        ? <span className="text-rose-700">{formatPoints(e.amount_paise)}</span>
+                        : <span className="text-slate-200">—</span>}
+                    </span>
+                    {/* The verdict sits with the figure it is a verdict on. In
+                        the Type cell it was a chip among chips. */}
+                    {(function () {
+                      var on = isExpRow ? e._checkedBy : (isCollRow ? e._wt.checked_by : null)
+                      if (!isExpRow && !isCollRow) return null
+                      if (!canMarkChecked && !on) return null
+                      return (
+                        <span className="mt-1 flex justify-end" onClick={function (ev) { ev.stopPropagation() }}>
+                          <CheckedStamp
+                            variant="stamp"
+                            checked={!!on}
+                            checkedAt={isExpRow ? e._checkedAt : e._wt.checked_at}
+                            canToggle={canMarkChecked}
+                            canUncheck={on === profile?.id || isSysAdmin}
+                            busy={isExpRow ? checkingExpId === Number(e.reference_id) : checkingTxnId === e.reference_id}
+                            onToggle={function () {
+                              if (isExpRow) toggleExpenseCheck(Number(e.reference_id))
+                              else toggleCollectionCheck(e.reference_id)
+                            }}
+                          />
+                        </span>
+                      )
+                    })()}
                   </td>
                   <td className="px-3 py-2.5 align-top">
                     <div className="flex items-start gap-2">
@@ -1546,6 +1547,7 @@ function EventLedger(props) {
                 <div className="flex items-center justify-between pt-3 border-t border-slate-100">
                   <span className="text-[12px] font-semibold text-slate-500">Finance check</span>
                   <CheckedStamp
+                    variant="stamp"
                     checked={!!wt.checked_by}
                     checkedAt={wt.checked_at}
                     canToggle={canMarkChecked}

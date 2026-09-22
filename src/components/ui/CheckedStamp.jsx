@@ -11,8 +11,14 @@ import checkedStamp from '../../assets/checked-stamp.png'
 //
 // Two shapes, one contract. `chip` is the default and goes inline beside other
 // chips; `stamp` is the round one, for a row with the empty space to carry it.
-function CheckedStamp({ checked, checkerName, checkedAt, canToggle, canUncheck, busy, onToggle, variant }) {
+// One size wherever it appears. A mark that means the same thing on a detail
+// page and in a table row should be the same size in both, or a reader starts
+// reading the size as part of the message — a big stamp looking more checked
+// than a small one. `size` stays for a caller that genuinely needs another,
+// but nothing passes it today.
+function CheckedStamp({ checked, checkerName, checkedAt, canToggle, canUncheck, busy, onToggle, variant, size }) {
   var isStamp = variant === 'stamp'
+  var px = size || 96
 
   if (!checked) {
     if (!canToggle) return null
@@ -43,14 +49,15 @@ function CheckedStamp({ checked, checkerName, checkedAt, canToggle, canUncheck, 
     // production. The import also content-hashes it, so a new stamp is never
     // served from a stale cache.
     //
-    // The file is 360px wide for a 160px slot, so it still has more pixels
-    // than a retina screen asks for. It is cut from the 1290px original that
-    // came in at 925KB — most of a megabyte to draw something the size of a
-    // thumbnail.
+    // The file is 360px wide against a 96px slot, so it still has far more
+    // pixels than a retina screen asks for. It is cut from the 1290px original
+    // that came in at 925KB — most of a megabyte to draw something the size of
+    // a thumbnail.
     return (
       <button type="button" disabled={busy || !interactive} onClick={interactive ? onToggle : undefined} title={title}
         aria-label={title}
-        className={"shrink-0 w-[160px] h-[160px] inline-flex items-center justify-center transition-opacity " +
+        style={{ width: px, height: px }}
+        className={"shrink-0 inline-flex items-center justify-center transition-opacity " +
           (interactive ? "cursor-pointer opacity-90 hover:opacity-100" : "cursor-default opacity-80")}>
         <img src={checkedStamp} alt="" aria-hidden="true" draggable="false"
           className="w-full h-full object-contain select-none" />

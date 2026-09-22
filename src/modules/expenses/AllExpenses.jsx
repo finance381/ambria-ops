@@ -915,18 +915,6 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds, glass, prof
                       <span className={"shrink-0 text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded " + (exp.deleted_at ? "bg-slate-200 text-slate-600" : (APPROVAL_STATUS_COLORS[exp.status] || 'bg-slate-100 text-slate-600'))}>
                         {exp.deleted_at ? 'Deleted' : (APPROVAL_STATUS_LABELS[exp.status] || exp.status)}
                       </span>
-                      {!exp.deleted_at && (exp.checked_by || canMarkChecked) && (
-                        <span className="shrink-0" onClick={function (ev) { ev.stopPropagation() }}>
-                          <CheckedStamp
-                            checked={!!exp.checked_by}
-                            checkedAt={exp.checked_at}
-                            canToggle={canMarkChecked}
-                            canUncheck={exp.checked_by === profile?.id || isAdmin}
-                            busy={checkingExpId === exp.id}
-                            onToggle={function () { toggleExpenseCheck(exp) }}
-                          />
-                        </span>
-                      )}
                       <span className="text-[12px] text-slate-500 truncate">
                         {(exp.profiles?.name || '—') + ' · '}
                         {formatDate(exp.expense_date)}
@@ -948,8 +936,26 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds, glass, prof
                       return null
                     })()}
                   </div>
-                  <span className="shrink-0 text-[15.5px] font-bold text-slate-900 tabular-nums">
-                    {formatPoints(exp.amount_paise)}
+                  {/* The check belongs to the figure, not to the row's label
+                      line — among the status chips it read as one more thing
+                      describing the bill rather than the verdict on it. */}
+                  <span className="shrink-0 text-right">
+                    <span className="block text-[15.5px] font-bold text-slate-900 tabular-nums">
+                      {formatPoints(exp.amount_paise)}
+                    </span>
+                    {!exp.deleted_at && (exp.checked_by || canMarkChecked) && (
+                      <span className="mt-1 flex justify-end" onClick={function (ev) { ev.stopPropagation() }}>
+                        <CheckedStamp
+                          variant="stamp"
+                          checked={!!exp.checked_by}
+                          checkedAt={exp.checked_at}
+                          canToggle={canMarkChecked}
+                          canUncheck={exp.checked_by === profile?.id || isAdmin}
+                          busy={checkingExpId === exp.id}
+                          onToggle={function () { toggleExpenseCheck(exp) }}
+                        />
+                      </span>
+                    )}
                   </span>
                 </div>
               </div>
