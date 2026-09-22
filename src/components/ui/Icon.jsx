@@ -93,6 +93,11 @@ var PATHS = {
   truck: <><path d="M2.5 6.5a1 1 0 0 1 1-1H14a1 1 0 0 1 1 1V16H2.5V6.5Z" /><path d="M15 9.5h3.4a1 1 0 0 1 .8.4l2.1 2.8a1 1 0 0 1 .2.6V16h-6.5V9.5Z" /><circle cx="7" cy="18.5" r="1.6" /><circle cx="18" cy="18.5" r="1.6" /></>,
   wrench: <path d="M20.4 6.2a5.5 5.5 0 0 1-7.2 7.2L6 20.6a2.1 2.1 0 0 1-3-3l7.2-7.2a5.5 5.5 0 0 1 7.2-7.2l-3.3 3.3.9 3.3 3.3.9 2.1-4.5Z" />,
   calculator: <><rect x="4.5" y="2.5" width="15" height="19" rx="2" /><rect x="7.5" y="5.5" width="9" height="3.5" rx="0.8" /><path d="M8 13h.01M12 13h.01M16 13h.01M8 17h.01M12 17h.01M16 17h.01" /></>,
+  // Three shapes the inventory list needs to stand in for a photograph it does
+  // not have: produce, something poured, something drunk.
+  leaf: <><path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z" /><path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12" /></>,
+  droplet: <><path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5S5 13 5 15a7 7 0 0 0 7 7Z" /></>,
+  cup: <><path d="M6 3h11v8a5.5 5.5 0 0 1-11 0Z" /><path d="M17 5h2.5a2.5 2.5 0 0 1 0 5H17" /><path d="M4 21h15" /></>,
   utensils: <><path d="M6 2.5v7a2.5 2.5 0 0 0 5 0v-7" /><path d="M8.5 9.5V21.5" /><path d="M17.5 2.5c-1.7 1-2.5 3-2.5 5.5 0 1.8.7 3 2.5 3.5V21.5" /></>,
   creditCard: <><rect x="2.5" y="5" width="19" height="14" rx="2" /><path d="M2.5 9.5h19" /><path d="M6 14.5h3.5" /></>,
   transfer: <><path d="M4 8h15" /><path d="m15.5 4.5 3.5 3.5-3.5 3.5" /><path d="M20 16H5" /><path d="m8.5 12.5-3.5 3.5 3.5 3.5" /></>,

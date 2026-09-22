@@ -10,6 +10,7 @@ import { hasPerm } from '../../lib/permissions'
 import SearchField from '../../components/ui/SearchField'
 import Icon from '../../components/ui/Icon'
 import { CARD } from '../../lib/ui'
+import { itemIcon, itemTint } from '../../lib/itemThumb'
 
 var PAGE_SIZE = 50
 
@@ -614,11 +615,14 @@ function InventoryLedger({ profile }) {
             <button key={item._key} type="button" onClick={function () { setSelectedItem(item) }}
               className="group w-full text-left px-4 py-3 flex items-start gap-3.5 hover:bg-indigo-50/40 transition-colors">
               {/* The picture is how a storeman recognises a thing; the code is
-                  how the system does. Both, in that order. */}
-              <span className="shrink-0 w-12 h-12 rounded-xl border border-slate-200 bg-slate-50 overflow-hidden inline-flex items-center justify-center">
+                  how the system does. Both, in that order — and where there is
+                  no photograph, a tile drawn from what the item says it is
+                  rather than the same grey box on every row. */}
+              <span className={'shrink-0 w-12 h-12 rounded-xl border overflow-hidden inline-flex items-center justify-center ' +
+                (item.img ? 'border-slate-200 bg-slate-50' : itemTint(item.name))}>
                 {item.img
                   ? <img src={item.img} alt="" loading="lazy" className="w-full h-full object-cover" />
-                  : <Icon name="box" size={18} className="text-slate-300" />}
+                  : <Icon name={itemIcon(item.name, item.cat, item.subcat)} size={20} />}
               </span>
 
               <span className="min-w-0 flex-1 space-y-1">
