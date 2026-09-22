@@ -691,11 +691,6 @@ function InventoryLedger({ profile }) {
                 Show items with no purchase history
               </label>
 
-              <span className="relative inline-flex" title={hiddenNoHistory > 0
-                ? hiddenNoHistory.toLocaleString('en-IN') + ' items have never been purchased through this system, so there is no rate or vendor history for them. Hidden by default.'
-                : 'Every item shown here has at least one purchase on record.'}>
-                <Icon name="info" size={15} className="shrink-0 text-slate-300 hover:text-slate-500 transition-colors cursor-help" />
-              </span>
             </>
           )}
         </div>
