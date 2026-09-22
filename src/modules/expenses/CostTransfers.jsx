@@ -511,7 +511,7 @@ function CostTransfers({ profile }) {
           {(canMarkChecked || r.checked_by) && (
             <span className="mt-1 flex justify-end" onClick={function (ev) { ev.stopPropagation() }}>
               <CheckedStamp
-                variant="stamp" size={64}
+                variant="stamp"
                 checked={!!r.checked_by}
                 checkedAt={r.checked_at}
                 canToggle={canMarkChecked}
@@ -558,7 +558,7 @@ function CostTransfers({ profile }) {
             {(canMarkChecked || r.checked_by) && (
               <span className="mt-1 flex justify-end" onClick={function (ev) { ev.stopPropagation() }}>
                 <CheckedStamp
-                  variant="stamp" size={64}
+                  variant="stamp"
                   checked={!!r.checked_by}
                   checkedAt={r.checked_at}
                   canToggle={canMarkChecked}

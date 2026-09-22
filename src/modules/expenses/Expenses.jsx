@@ -1022,7 +1022,7 @@ function Expenses({ profile, masterMode, inAdmin, deepLinkExpense, onDeepLinkHan
                   {(exp.checked_by || canMarkChecked) && (
                     <span className="mt-1.5 flex justify-end" onClick={function (ev) { ev.stopPropagation() }}>
                       <CheckedStamp
-                        variant="stamp" size={84}
+                        variant="stamp"
                         checked={!!exp.checked_by}
                         checkedAt={exp.checked_at}
                         canToggle={canMarkChecked}

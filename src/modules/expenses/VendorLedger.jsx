@@ -1834,7 +1834,7 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
                 {/* Prompt and verdict share one slot, so pressing the first
                     puts the second exactly where you pressed. */}
                 {(anyEntryChecked || canMarkChecked) && !isDeleted && (
-                  <span className="shrink-0 w-[160px] self-center flex items-center justify-center"
+                  <span className="shrink-0 w-[112px] self-center flex items-center justify-center"
                     onClick={function (ev) { ev.stopPropagation() }}>
                     {checkedProps.checked ? renderChecked('stamp') : (canMarkChecked ? renderChecked() : null)}
                   </span>

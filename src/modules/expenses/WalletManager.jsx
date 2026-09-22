@@ -2852,7 +2852,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                         return (
                           <span className="mt-1 flex justify-end" onClick={function (ev) { ev.stopPropagation() }}>
                             <CheckedStamp
-                              variant="stamp" size={72}
+                              variant="stamp"
                               checked={!!chk.checked_by}
                               checkerName={chk.checked_by && walletProfiles[chk.checked_by] ? walletProfiles[chk.checked_by].name : null}
                               checkedAt={chk.checked_at}

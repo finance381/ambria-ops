@@ -667,7 +667,7 @@ function EventLedger(props) {
                       return (
                         <span className="mt-1 flex justify-end" onClick={function (ev) { ev.stopPropagation() }}>
                           <CheckedStamp
-                            variant="stamp" size={64}
+                            variant="stamp"
                             checked={!!on}
                             checkedAt={isExpRow ? e._checkedAt : e._wt.checked_at}
                             canToggle={canMarkChecked}
@@ -1547,7 +1547,7 @@ function EventLedger(props) {
                 <div className="flex items-center justify-between pt-3 border-t border-slate-100">
                   <span className="text-[12px] font-semibold text-slate-500">Finance check</span>
                   <CheckedStamp
-                    variant="stamp" size={84}
+                    variant="stamp"
                     checked={!!wt.checked_by}
                     checkedAt={wt.checked_at}
                     canToggle={canMarkChecked}
