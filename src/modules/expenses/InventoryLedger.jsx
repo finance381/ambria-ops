@@ -547,7 +547,7 @@ function InventoryLedger({ profile }) {
     // Date | Vendor | Qty | Rate | trend | Amount | Source. The date column
     // was 90px and carrying "Logged 22 Sept 2026, 3:29 pm" under it, which
     // wrapped every row it appeared on.
-    var HIST = 'grid gap-2 grid-cols-[7.5rem_minmax(8rem,1fr)_5.5rem_6rem_2.25rem_6.5rem_5.5rem]'
+    var HIST = 'grid gap-2 grid-cols-[7.5rem_minmax(8rem,1fr)_5.5rem_6rem_2.25rem_6.5rem_6.5rem]'
 
     return (
       <div className="@container space-y-3">
@@ -623,7 +623,7 @@ function InventoryLedger({ profile }) {
             </div>
           ) : (
             <div className="overflow-x-auto ambria-thin-scroll">
-              <div className="min-w-[46rem]">
+              <div className="min-w-[47.5rem]">
                 <div className={HIST + ' px-4 py-2.5 bg-slate-50/60 border-b border-slate-200 ' + COL_HEAD}>
                   <span>Date</span>
                   <span>Vendor</span>
@@ -637,13 +637,19 @@ function InventoryLedger({ profile }) {
                 <div className="divide-y divide-slate-100">
                   {agg.allRows.map(function (h, i) {
                     var isExp = h.source_type === 'expense'
+                    var opens = isExp && !!h.source_id
+                    // "Exp #400" is the view's own shorthand. Spelled out for
+                    // the tooltip and for a screen reader, which should not
+                    // have to know the abbreviation.
+                    var srcFull = ((isExp ? 'Expense' : 'Purchase order') + ' ' +
+                      (String(h.source_ref || '').split('#')[1] ? '#' + String(h.source_ref).split('#')[1] : String(h.source_ref || ''))).trim()
                     function handleRowClick() {
-                      if (isExp && h.source_id) openExpenseDetail(h.source_id)
+                      if (opens) openExpenseDetail(h.source_id)
                     }
                     return (
                       <div key={i} onClick={handleRowClick}
-                        className={HIST + ' items-center px-4 py-2.5 ' +
-                          (isExp ? 'cursor-pointer hover:bg-indigo-50/40 transition-colors' : '')}>
+                        className={HIST + ' group/row items-center px-4 py-2.5 ' +
+                          (opens ? 'cursor-pointer hover:bg-amber-50/40 transition-colors' : '')}>
 
                         {/* Two lines whether or not the second has anything in
                             it, so a row that knows when it was logged is not
@@ -677,11 +683,20 @@ function InventoryLedger({ profile }) {
                         </span>
 
                         {/* The one colour left on this screen that carries
-                            meaning: which ledger the row came out of. */}
-                        <span className="text-right">
-                          <span data-notranslate className={'inline-block px-1.5 py-0.5 rounded-md text-[10px] font-bold ' +
-                            (isExp ? 'bg-amber-50 text-amber-700' : 'bg-indigo-50 text-indigo-700')}>
+                            meaning: which ledger the row came out of. An
+                            expense row opens that expense, so its chip is
+                            drawn as something you can press — an outline and
+                            an arrow — rather than as a label that happens to
+                            be clickable. A purchase order opens nothing, so
+                            its chip stays flat and says so by staying flat. */}
+                        <span className="flex justify-end">
+                          <span data-notranslate title={opens ? 'Open ' + srcFull.toLowerCase() : srcFull}
+                            className={'inline-flex items-center gap-1 px-1.5 h-[19px] rounded-md text-[10px] font-bold whitespace-nowrap ' +
+                              (opens
+                                ? 'border border-amber-200 bg-amber-50 text-amber-700 group-hover/row:border-amber-300 group-hover/row:bg-amber-100 transition-colors'
+                                : isExp ? 'bg-amber-50 text-amber-700' : 'bg-indigo-50 text-indigo-700')}>
                             {h.source_ref}
+                            {opens && <Icon name="arrowRight" size={9} strokeWidth={3} className="shrink-0 opacity-50" />}
                           </span>
                         </span>
                       </div>
