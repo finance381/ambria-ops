@@ -49,7 +49,10 @@ function FilterField({ label, note, noteTone, children }) {
 // row, so a column and the figures under it cannot drift apart. The picture
 // and the name are two columns rather than one so the names start in the same
 // place whether or not a photograph loaded.
-var GRID = 'grid items-center gap-x-3 grid-cols-[2.5rem_minmax(11rem,1fr)_6.5rem_9rem_8.5rem_10rem_4.5rem_5.5rem_6.5rem_11rem]'
+// Nine columns now: the code went, and the 6.5rem it held is split between
+// the item's own name and the last purchase — which has a third thing to say
+// since the vendor joined it.
+var GRID = 'grid items-center gap-x-3 grid-cols-[2.5rem_minmax(11rem,1fr)_9rem_8.5rem_10rem_4.5rem_5.5rem_6.5rem_16rem]'
 
 var COL_HEAD = 'text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500'
 
@@ -767,10 +770,9 @@ function InventoryLedger({ profile }) {
           make all nine unreadable. */}
       <div ref={listRef} className={CARD + ' overflow-hidden scroll-mt-4'}>
         <div className="overflow-x-auto ambria-thin-scroll">
-          <div className="min-w-[1180px]">
+          <div className="min-w-[1304px]">
             <div className={GRID + ' px-4 py-2.5 bg-slate-50 border-b border-slate-200 ' + COL_HEAD}>
               <span className="col-span-2">Item</span>
-              <span>Code</span>
               <span>Category</span>
               <span>Sub-category</span>
               <span>Vendor</span>
@@ -809,10 +811,6 @@ function InventoryLedger({ profile }) {
                     </span>
                     <span className="min-w-0 font-display text-[13px] font-bold text-slate-900 leading-snug truncate">
                       {item.name}
-                    </span>
-
-                    <span data-notranslate className="min-w-0 text-[12px] font-bold text-slate-500 tabular-nums truncate">
-                      {item.code}
                     </span>
 
                     {/* Plain text, not chips. A chip per category, per
@@ -861,11 +859,26 @@ function InventoryLedger({ profile }) {
                     <span className="min-w-0 space-y-1 self-stretch border-l border-slate-100 pl-3.5 -my-2.5 py-2.5">
                       {last ? (
                         <>
+                          {/* Who sold it, beside when — both describe the one
+                              purchase. It rides on the date's line rather than
+                              taking a third: a third line is 20px on every row,
+                              and this table was tightened to a ledger's density
+                              on purpose. The name truncates and carries the
+                              whole of itself on hover. */}
                           <span className="flex items-center gap-1.5 h-[17px] min-w-0">
                             <Icon name="calendar" size={11} className="shrink-0 text-slate-400" />
-                            <span data-notranslate className="text-[11.5px] font-semibold text-slate-600 tabular-nums truncate">
+                            <span data-notranslate className="shrink-0 text-[11.5px] font-semibold text-slate-600 tabular-nums">
                               {last.txn_date ? formatDate(last.txn_date) : '—'}
                             </span>
+                            {last.vendor_name && (
+                              <>
+                                <span aria-hidden="true" className="shrink-0 text-slate-300">·</span>
+                                <span title={last.vendor_name}
+                                  className="min-w-0 text-[11.5px] font-semibold text-slate-500 truncate">
+                                  {last.vendor_name}
+                                </span>
+                              </>
+                            )}
                           </span>
                           <span className="flex items-center gap-2 h-[17px] min-w-0">
                             <span data-notranslate className="shrink-0 min-w-[68px] text-[13px] font-bold text-slate-900 tabular-nums">
