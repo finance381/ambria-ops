@@ -24,11 +24,34 @@ var PAGE_SIZES = [10, 25, 50, 100]
 //
 // Cells hidden at a breakpoint leave the flow entirely, so the template has as
 // many columns as there are visible cells at that width.
-var GRID = 'grid items-center gap-x-3.5 grid-cols-[2.5rem_minmax(0,1fr)]' +
-  ' @2xl:grid-cols-[2.5rem_minmax(0,1fr)_5rem_5rem_5rem]' +
-  ' @4xl:grid-cols-[2.5rem_minmax(0,1fr)_5rem_5rem_5rem_12.5rem]'
-var CELL_FIG = 'hidden @2xl:flex flex-col items-center justify-center self-stretch text-center'
-var CELL_PANEL = 'hidden @4xl:block self-stretch'
+// Nine columns, declared once and used by the heading row and by every item
+// row, so a column and the figures under it cannot drift apart. The picture
+// and the name are two columns rather than one so the names start in the same
+// place whether or not a photograph loaded.
+var GRID = 'grid items-center gap-x-3 grid-cols-[2.5rem_minmax(11rem,1fr)_6.5rem_9rem_8.5rem_10rem_4.5rem_5.5rem_6.5rem_11rem]'
+
+// A chip's shape, shared; its colour comes from what it says.
+var CHIP = 'inline-flex items-center max-w-full h-[19px] px-1.5 rounded-md border text-[10px] font-bold leading-none truncate '
+
+// Categories and sub-categories are rows in a table, so a fifth or a fiftieth
+// can appear without a deploy — the colour is hashed from the name rather than
+// assigned, which keeps it stable across filters, sorts and reloads where an
+// index would not.
+var CHIP_TONES = [
+  'border-blue-200 bg-blue-50 text-blue-700',
+  'border-rose-200 bg-rose-50 text-rose-700',
+  'border-emerald-200 bg-emerald-50 text-emerald-700',
+  'border-violet-200 bg-violet-50 text-violet-700',
+  'border-teal-200 bg-teal-50 text-teal-700',
+  'border-orange-200 bg-orange-50 text-orange-700',
+]
+function chipTone(name) {
+  var t = String(name || '')
+  var h = 0
+  for (var i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) >>> 0
+  return CHIP_TONES[h % CHIP_TONES.length]
+}
+
 var COL_HEAD = 'text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500'
 
 function InventoryLedger({ profile }) {
@@ -713,154 +736,130 @@ function InventoryLedger({ profile }) {
         </div>
       </div>
 
-      <div className="space-y-2">
-      {/* One band over the list rather than a heading inside all twenty-five
-          rows. It is drawn on the same grid as the rows, so a column and the
-          figures under it cannot drift apart. */}
-      {pagedItems.length > 0 && (
-        <div className={'hidden @2xl:grid ' + GRID + ' px-3.5 py-2 rounded-xl border border-slate-200 bg-slate-50 ' + COL_HEAD}>
-          <span />
-          <span className="min-w-0">Item details</span>
-          <span className="text-center">Qty</span>
-          <span className="text-center">Rate</span>
-          <span className="text-center">Value</span>
-          <span className="hidden @4xl:block pl-3.5">Last purchase</span>
-        </div>
-      )}
+      {/* One table rather than a stack of cards: every field the list is
+          searched and filtered by gets a column of its own, so a reader can
+          run an eye down "who did we buy this from" without reading a
+          sentence on each row to find it. Below the table's own width the
+          panel scrolls sideways — squeezing nine columns into a phone would
+          make all nine unreadable. */}
+      <div className={CARD + ' overflow-hidden'}>
+        <div className="overflow-x-auto ambria-thin-scroll">
+          <div className="min-w-[1180px]">
+            <div className={GRID + ' px-4 py-2.5 bg-slate-50 border-b border-slate-200 ' + COL_HEAD}>
+              <span className="col-span-2">Item</span>
+              <span>Code</span>
+              <span>Category</span>
+              <span>Sub-category</span>
+              <span>Vendor</span>
+              <span className="text-center">Qty</span>
+              <span className="text-center">Rate</span>
+              <span className="text-center">Value</span>
+              <span>Last purchase</span>
+            </div>
 
-      <div className="space-y-2">
-        {pagedItems.map(function (item) {
-          var a = aggregateItem(item)
-          var value = (item.live_qty || 0) * (item.rate_paise || 0)
-          var last = a.last3 && a.last3[0]
-          return (
-            <div key={item._key} role="button" tabIndex={0}
-              onClick={function () { setSelectedItem(item) }}
-              onKeyDown={function (ev) { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); setSelectedItem(item) } }}
-              className={'group relative w-full text-left px-3.5 py-2.5 cursor-pointer ' + GRID + ' ' + CARD +
-                ' hover:border-indigo-300 hover:shadow-[0_2px_10px_rgba(79,70,229,0.07)] transition-all'}>
-              {/* The picture is how a storeman recognises a thing; the code is
-                  how the system does. Both, in that order — and where there is
-                  no photograph, a tile drawn from what the item says it is
-                  rather than the same grey box on every row. */}
-              <span className={'w-10 h-10 rounded-lg border overflow-hidden inline-flex items-center justify-center ' +
-                (item.img ? 'border-slate-200 bg-slate-50' : itemTint(item.name))}>
-                {item.img
-                  ? <img src={item.img} alt="" loading="lazy" className="w-full h-full object-cover" />
-                  : <Icon name={itemIcon(item.name, item.cat, item.subcat)} size={17} />}
-              </span>
-
-              {/* Two columns inside the block, so the same kind of thing is in
-                  the same place on every row: the code over the sub-category
-                  chip, the category over the vendors. Free-flowing, the
-                  vendor chip began wherever the sub-category chip happened to
-                  end — present on some rows and absent on others — and the
-                  column read as ragged even though each row was tidy. */}
-              <span className="min-w-0 grid grid-cols-[7rem_minmax(0,1fr)] gap-x-3 gap-y-1 items-center">
-                <span className="col-span-2 block font-display text-[13.5px] font-bold text-slate-900 leading-tight truncate">{item.name}</span>
-
-                {/* A rule after the code rather than a middot: the code is an
-                    identifier and what follows it is a path, and one dot
-                    between them made the whole line look like one list. */}
-                <span data-notranslate className="flex items-center gap-2 text-[11.5px] leading-tight font-bold text-slate-700 min-w-0">
-                  <span className="truncate">{item.code}</span>
-                  <span aria-hidden="true" className="shrink-0 w-px h-3 bg-slate-200" />
-                </span>
-                <span className="block text-[11.5px] leading-tight text-slate-500 truncate">
-                  {item.cat}
-                  {item.subcat && <span><span className="text-slate-300"> › </span>{item.subcat}</span>}
-                  {item._source === 'catering_store' && (
-                    <span className="font-bold text-purple-600">
-                      <span className="font-normal text-slate-300"> › </span>Catering
-                    </span>
-                  )}
-                </span>
-                {/* Each cell keeps its 18px whether or not it has a chip, so a
-                    row with no sub-category and a row with two vendors are the
-                    same height and the cards stack as a column rather than a
-                    zigzag. */}
-                {/* The most specific filing the item has — its sub-category
-                    when it has one, its category otherwise — so the slot is
-                    never empty and the vendor chips beside it always begin in
-                    the same place. */}
-                <span className="min-h-[18px] flex items-center">
-                  {(item.subcat || item.cat) && (
-                    <span className="inline-flex items-center max-w-full h-[18px] px-1.5 rounded-md border border-sky-200 bg-sky-50 text-[10px] font-bold leading-none text-sky-700 truncate">
-                      {item.subcat || item.cat}
-                    </span>
-                  )}
-                </span>
-                <span className="min-h-[18px] flex items-center gap-1.5 min-w-0">
-                  {a.vendors.slice(0, 2).map(function (v) {
-                    return (
-                      <span key={v} className="inline-flex items-center shrink-0 h-[18px] px-1.5 rounded-md border border-amber-200 bg-amber-50 text-[10px] font-bold leading-none text-amber-700">
-                        {v}
-                      </span>
-                    )
-                  })}
-                  {a.vendors.length > 2 && (
-                    <span data-notranslate className="inline-flex items-center shrink-0 h-[18px] text-[10px] font-bold leading-none text-slate-500">
-                      +{a.vendors.length - 2} more
-                    </span>
-                  )}
-                </span>
-              </span>
-
-              {/* A rule down the left of the first figure, so the gap between
-                  the name and the numbers is a boundary rather than an
-                  accident. */}
-              {[{ v: fmtQty(item.live_qty), sub: item.unit || null },
-                { v: item.rate_paise > 0 ? formatPaise(item.rate_paise) : '—' },
-                { v: value > 0 ? formatPaise(value) : '—' }].map(function (f, fi) {
+            <div className="divide-y divide-slate-100">
+              {pagedItems.map(function (item) {
+                var a = aggregateItem(item)
+                var value = (item.live_qty || 0) * (item.rate_paise || 0)
+                var last = a.last3 && a.last3[0]
+                var filed = item.subcat || (item._source === 'catering_store' ? 'Catering' : 'Inventory')
                 return (
-                  <span key={fi} className={CELL_FIG + (fi === 0 ? ' border-l border-slate-100' : '')}>
-                    <span data-notranslate className="block text-[13.5px] font-bold text-slate-900 tabular-nums">{f.v}</span>
-                    {/* A bare 144 does not say 144 of what. */}
-                    {f.sub && <span className="block mt-0.5 text-[10.5px] font-semibold text-slate-400">{f.sub}</span>}
-                  </span>
+                  <div key={item._key} role="button" tabIndex={0}
+                    onClick={function () { setSelectedItem(item) }}
+                    onKeyDown={function (ev) { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); setSelectedItem(item) } }}
+                    className={GRID + ' px-4 py-2.5 cursor-pointer hover:bg-indigo-50/40 transition-colors'}>
+
+                    {/* The picture is how a storeman recognises a thing; the
+                        code in the next column is how the system does — and
+                        where there is no photograph, a tile drawn from what the
+                        item says it is rather than the same grey box on every
+                        row. */}
+                    <span className={'w-10 h-10 rounded-lg border overflow-hidden inline-flex items-center justify-center ' +
+                      (item.img ? 'border-slate-200 bg-slate-50' : itemTint(item.name))}>
+                      {item.img
+                        ? <img src={item.img} alt="" loading="lazy" className="w-full h-full object-cover" />
+                        : <Icon name={itemIcon(item.name, item.cat, item.subcat)} size={17} />}
+                    </span>
+                    <span className="min-w-0 font-display text-[13px] font-bold text-slate-900 leading-snug truncate">
+                      {item.name}
+                    </span>
+
+                    <span data-notranslate className="min-w-0 text-[12px] font-bold text-slate-500 tabular-nums truncate">
+                      {item.code}
+                    </span>
+
+                    <span className="min-w-0">
+                      {item.cat && <span className={CHIP + chipTone(item.cat)}>{item.cat}</span>}
+                    </span>
+                    {/* Sub-category when the item has one; where it has none,
+                        which is most of them, the store it belongs to — so the
+                        column is never a row of blanks. */}
+                    <span className="min-w-0">
+                      <span className={CHIP + chipTone(filed)}>{filed}</span>
+                    </span>
+
+                    <span className="min-w-0 flex items-center gap-1.5">
+                      {a.vendors.length === 0
+                        ? <span className="text-[11.5px] font-semibold text-slate-300">{'—'}</span>
+                        : (
+                          <>
+                            <span className={CHIP + 'border-amber-200 bg-amber-50 text-amber-700'}>{a.vendors[0]}</span>
+                            {a.vendors.length > 1 && (
+                              <span data-notranslate title={a.vendors.join(', ')}
+                                className="shrink-0 text-[10px] font-bold text-slate-400">+{a.vendors.length - 1}</span>
+                            )}
+                          </>
+                        )}
+                    </span>
+
+                    <span className="text-center">
+                      <span data-notranslate className="block text-[13px] font-bold text-slate-900 tabular-nums">{fmtQty(item.live_qty)}</span>
+                      {/* A bare 144 does not say 144 of what. */}
+                      {item.unit && <span className="block mt-0.5 text-[10px] font-semibold text-slate-400">{item.unit}</span>}
+                    </span>
+                    <span data-notranslate className="text-center text-[13px] font-bold text-slate-900 tabular-nums">
+                      {item.rate_paise > 0 ? formatPaise(item.rate_paise) : '—'}
+                    </span>
+                    <span data-notranslate className="text-center text-[13px] font-bold text-slate-900 tabular-nums">
+                      {value > 0 ? formatPaise(value) : '—'}
+                    </span>
+
+                    {/* What it cost the last time somebody bought it, which is
+                        the question this ledger exists to answer. */}
+                    <span className="min-w-0 space-y-1">
+                      {last ? (
+                        <>
+                          <span className="flex items-center gap-1.5 h-[17px] min-w-0">
+                            <Icon name="calendar" size={11} className="shrink-0 text-slate-400" />
+                            <span data-notranslate className="text-[11.5px] font-semibold text-slate-600 tabular-nums truncate">
+                              {last.txn_date ? formatDate(last.txn_date) : '—'}
+                            </span>
+                          </span>
+                          <span className="flex items-center gap-2 h-[17px] min-w-0">
+                            <span data-notranslate className="shrink-0 min-w-[58px] text-[13px] font-bold text-slate-900 tabular-nums">
+                              {formatPaise(last.rate_paise || 0)}
+                            </span>
+                            <TrendIcon trend={last._trend} prev={last._prev_rate} />
+                          </span>
+                        </>
+                      ) : (
+                        <span className="flex items-center h-[17px] text-[11.5px] font-semibold text-slate-400">No purchase history</span>
+                      )}
+                    </span>
+                  </div>
                 )
               })}
-
-              {/* What it cost the last time somebody bought it, which is the
-                  question this ledger exists to answer. No tinted box: the rule
-                  and the heading already mark the column off, and a coloured
-                  panel on every row shouted over the figures beside it. */}
-              <span className={CELL_PANEL + ' border-l border-slate-100 pl-3.5 space-y-1'}>
-                {last ? (
-                  <>
-                    <span className="flex items-center gap-1.5 min-w-0 h-[18px]">
-                      <Icon name="calendar" size={12} className="shrink-0 text-slate-400" />
-                      <span data-notranslate className="text-[12px] font-semibold text-slate-600 tabular-nums truncate">
-                        {last.txn_date ? formatDate(last.txn_date) : '—'}
-                      </span>
-                    </span>
-                    {/* The price is floored at the width of a five-figure
-                        amount so the mark beside it starts at the same place on
-                        every row — left to itself it moved with the number and
-                        the column read as ragged. */}
-                    <span className="flex items-center gap-2 min-w-0 h-[18px]">
-                      <span data-notranslate className="shrink-0 min-w-[62px] text-[13.5px] font-bold text-slate-900 tabular-nums">
-                        {formatPaise(last.rate_paise || 0)}
-                      </span>
-                      <TrendIcon trend={last._trend} prev={last._prev_rate} />
-                    </span>
-                  </>
-                ) : (
-                  <span className="flex items-center h-[18px] text-[11.5px] font-semibold text-slate-400">No purchase history</span>
-                )}
-              </span>
-
             </div>
-          )
-        })}
-        {pagedItems.length === 0 && (
-          <div className={CARD + ' px-4 py-16 text-center'}>
-            <Icon name="box" size={26} className="mx-auto text-slate-300" />
-            <p className="mt-2 text-[13px] font-bold text-slate-600">No items match your filters</p>
-            <p className="mt-0.5 text-[12px] font-medium text-slate-400">Clear a filter, or search for something else.</p>
+
+            {pagedItems.length === 0 && (
+              <div className="px-4 py-16 text-center">
+                <Icon name="box" size={26} className="mx-auto text-slate-300" />
+                <p className="mt-2 text-[13px] font-bold text-slate-600">No items match your filters</p>
+                <p className="mt-0.5 text-[12px] font-medium text-slate-400">Clear a filter, or search for something else.</p>
+              </div>
+            )}
           </div>
-        )}
-      </div>
+        </div>
       </div>
 
       {sortedItems.length > 0 && (
