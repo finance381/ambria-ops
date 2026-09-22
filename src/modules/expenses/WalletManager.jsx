@@ -3550,8 +3550,12 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                   )}
                   {allocs.length > 0 && !expandAllTxns && (
                     <button type="button" onClick={function (ev) { toggleTxnExpanded(t.id, ev) }}
-                      className="mt-2 inline-flex items-center gap-1 text-[10.5px] font-semibold text-indigo-600 hover:text-indigo-800">
-                      <Icon name={expandedTxnIds[t.id] ? 'chevronDown' : 'chevronRight'} size={11} />
+                      // 12.5px against the 12px allocation rows it opens: the
+                      // control that reveals a section should not be smaller
+                      // than the section. At 10.5 it was the smallest thing on
+                      // the card and read as a footnote.
+                      className="mt-2 inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-indigo-600 hover:text-indigo-800">
+                      <Icon name={expandedTxnIds[t.id] ? 'chevronDown' : 'chevronRight'} size={13} />
                       {expandedTxnIds[t.id] ? 'Hide allocation details' : 'Allocation details'}
                     </button>
                   )}
