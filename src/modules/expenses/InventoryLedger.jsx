@@ -10,7 +10,7 @@ import { hasPerm } from '../../lib/permissions'
 import SearchField from '../../components/ui/SearchField'
 import Icon from '../../components/ui/Icon'
 import { CARD } from '../../lib/ui'
-import { itemIcon, itemTint } from '../../lib/itemThumb'
+import { itemIcon } from '../../lib/itemThumb'
 
 // How many rows a page holds, and the sizes offered. The rows carry a
 // photograph now, so fifty of them is a very long page.
@@ -29,28 +29,6 @@ var PAGE_SIZES = [10, 25, 50, 100]
 // and the name are two columns rather than one so the names start in the same
 // place whether or not a photograph loaded.
 var GRID = 'grid items-center gap-x-3 grid-cols-[2.5rem_minmax(11rem,1fr)_6.5rem_9rem_8.5rem_10rem_4.5rem_5.5rem_6.5rem_11rem]'
-
-// A chip's shape, shared; its colour comes from what it says.
-var CHIP = 'inline-flex items-center max-w-full h-[19px] px-1.5 rounded-md border text-[10px] font-bold leading-none truncate '
-
-// Categories and sub-categories are rows in a table, so a fifth or a fiftieth
-// can appear without a deploy — the colour is hashed from the name rather than
-// assigned, which keeps it stable across filters, sorts and reloads where an
-// index would not.
-var CHIP_TONES = [
-  'border-blue-200 bg-blue-50 text-blue-700',
-  'border-rose-200 bg-rose-50 text-rose-700',
-  'border-emerald-200 bg-emerald-50 text-emerald-700',
-  'border-violet-200 bg-violet-50 text-violet-700',
-  'border-teal-200 bg-teal-50 text-teal-700',
-  'border-orange-200 bg-orange-50 text-orange-700',
-]
-function chipTone(name) {
-  var t = String(name || '')
-  var h = 0
-  for (var i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) >>> 0
-  return CHIP_TONES[h % CHIP_TONES.length]
-}
 
 var COL_HEAD = 'text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500'
 
@@ -754,7 +732,7 @@ function InventoryLedger({ profile }) {
               <span className="text-center">Qty</span>
               <span className="text-center">Rate</span>
               <span className="text-center">Value</span>
-              <span>Last purchase</span>
+              <span className="border-l border-slate-200 pl-3.5 -my-2.5 py-2.5">Last purchase</span>
             </div>
 
             <div className="divide-y divide-slate-100">
@@ -774,11 +752,15 @@ function InventoryLedger({ profile }) {
                         where there is no photograph, a tile drawn from what the
                         item says it is rather than the same grey box on every
                         row. */}
-                    <span className={'w-10 h-10 rounded-lg border overflow-hidden inline-flex items-center justify-center ' +
-                      (item.img ? 'border-slate-200 bg-slate-50' : itemTint(item.name))}>
+                    {/* One neutral tile for every item without a photograph.
+                        A colour hashed from the name made the first column a
+                        different pastel on every row, which is a lot of paint
+                        spent on "there is no picture". The glyph still says
+                        what kind of thing it is. */}
+                    <span className="w-10 h-10 rounded-lg border border-slate-200 bg-slate-50 overflow-hidden inline-flex items-center justify-center">
                       {item.img
                         ? <img src={item.img} alt="" loading="lazy" className="w-full h-full object-cover" />
-                        : <Icon name={itemIcon(item.name, item.cat, item.subcat)} size={17} />}
+                        : <Icon name={itemIcon(item.name, item.cat, item.subcat)} size={17} className="text-slate-400" />}
                     </span>
                     <span className="min-w-0 font-display text-[13px] font-bold text-slate-900 leading-snug truncate">
                       {item.name}
@@ -788,25 +770,28 @@ function InventoryLedger({ profile }) {
                       {item.code}
                     </span>
 
-                    <span className="min-w-0">
-                      {item.cat && <span className={CHIP + chipTone(item.cat)}>{item.cat}</span>}
-                    </span>
+                    {/* Plain text, not chips. A chip per category, per
+                        sub-category and per vendor put three coloured pills on
+                        every row, and a colour hashed from a name means the
+                        colours carry no meaning — three rows in, the table was
+                        a fruit salad. Weight and shade separate the three
+                        columns instead: the category leads, the filing steps
+                        back, the vendor is a name and reads as one. */}
+                    <span className="min-w-0 text-[12px] font-semibold text-slate-700 truncate">{item.cat || '—'}</span>
                     {/* Sub-category when the item has one; where it has none,
                         which is most of them, the store it belongs to — so the
                         column is never a row of blanks. */}
-                    <span className="min-w-0">
-                      <span className={CHIP + chipTone(filed)}>{filed}</span>
-                    </span>
+                    <span className="min-w-0 text-[12px] text-slate-500 truncate">{filed}</span>
 
-                    <span className="min-w-0 flex items-center gap-1.5">
+                    <span className="min-w-0 flex items-baseline gap-1.5">
                       {a.vendors.length === 0
-                        ? <span className="text-[11.5px] font-semibold text-slate-300">{'—'}</span>
+                        ? <span className="text-[12px] text-slate-300">{'—'}</span>
                         : (
                           <>
-                            <span className={CHIP + 'border-amber-200 bg-amber-50 text-amber-700'}>{a.vendors[0]}</span>
+                            <span className="min-w-0 text-[12px] font-semibold text-slate-700 truncate">{a.vendors[0]}</span>
                             {a.vendors.length > 1 && (
                               <span data-notranslate title={a.vendors.join(', ')}
-                                className="shrink-0 text-[10px] font-bold text-slate-400">+{a.vendors.length - 1}</span>
+                                className="shrink-0 text-[10.5px] font-bold text-slate-400">+{a.vendors.length - 1}</span>
                             )}
                           </>
                         )}
@@ -825,8 +810,12 @@ function InventoryLedger({ profile }) {
                     </span>
 
                     {/* What it cost the last time somebody bought it, which is
-                        the question this ledger exists to answer. */}
-                    <span className="min-w-0 space-y-1">
+                        the question this ledger exists to answer. A rule down
+                        its left, and the padding to go with it: the last three
+                        columns are all figures, and without it the price of a
+                        purchase sat against the value of the stock as though
+                        they were the same kind of number. */}
+                    <span className="min-w-0 space-y-1 self-stretch border-l border-slate-100 pl-3.5 -my-2.5 py-2.5">
                       {last ? (
                         <>
                           <span className="flex items-center gap-1.5 h-[17px] min-w-0">
@@ -836,7 +825,7 @@ function InventoryLedger({ profile }) {
                             </span>
                           </span>
                           <span className="flex items-center gap-2 h-[17px] min-w-0">
-                            <span data-notranslate className="shrink-0 min-w-[58px] text-[13px] font-bold text-slate-900 tabular-nums">
+                            <span data-notranslate className="shrink-0 min-w-[68px] text-[13px] font-bold text-slate-900 tabular-nums">
                               {formatPaise(last.rate_paise || 0)}
                             </span>
                             <TrendIcon trend={last._trend} prev={last._prev_rate} />

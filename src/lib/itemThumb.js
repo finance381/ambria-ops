@@ -23,17 +23,6 @@ var RULES = [
   { icon: 'box',      words: ['grocery', 'masala', 'spice', 'pasta', 'rice', 'flour', 'sugar', 'pulse', 'grain'] },
 ]
 
-// Soft grounds, dark glyphs: the tile sits beside a name and must not outshout
-// it the way a saturated square would.
-var TINTS = [
-  'bg-amber-50 text-amber-600 border-amber-100',
-  'bg-emerald-50 text-emerald-600 border-emerald-100',
-  'bg-sky-50 text-sky-600 border-sky-100',
-  'bg-violet-50 text-violet-600 border-violet-100',
-  'bg-rose-50 text-rose-600 border-rose-100',
-  'bg-teal-50 text-teal-600 border-teal-100',
-]
-
 export function itemIcon(name, cat, subcat) {
   // Category and sub-category are what someone filed the thing under, so they
   // decide before the name does — a name can say "Chocolate" about a cleaning
@@ -49,16 +38,6 @@ export function itemIcon(name, cat, subcat) {
     }
   }
   return 'box'
-}
-
-// Hashed rather than assigned: the list is filtered and re-sorted constantly,
-// and an index would hand the same item a different colour every time
-// something above it moved.
-export function itemTint(name) {
-  var s = String(name || '')
-  var h = 0
-  for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0
-  return TINTS[h % TINTS.length]
 }
 
 export default itemIcon
