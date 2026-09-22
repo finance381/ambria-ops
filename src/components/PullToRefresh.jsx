@@ -52,8 +52,31 @@ function PullToRefresh() {
   useEffect(function () {
     var t = trackRef.current
 
+    // A pull gesture should only ever mean "the whole page is at its top and
+    // the user wants to refresh it" — never "I dragged inside some panel
+    // that scrolls on its own". window.scrollY alone doesn't catch that: a
+    // screen with its own inner overflow:auto container (e.g. Quote Calc's
+    // desktop layout) keeps window.scrollY at 0 no matter how far you've
+    // scrolled inside that panel, so every such drag looked like "at the
+    // top" and fired a full reload regardless of actual scroll position.
+    // Bailing out whenever the touch starts inside a scrollable element (or
+    // a form control, where a drag is never meant as a page gesture) fixes
+    // both that and the more common case of a swipe misfiring over an input.
+    function startsInsideOwnScroller(target) {
+      var el = target
+      while (el && el !== document.body) {
+        if (el.matches && el.matches('input, select, textarea, button, [contenteditable="true"]')) return true
+        if (el.scrollHeight > el.clientHeight + 1) {
+          var oy = window.getComputedStyle(el).overflowY
+          if (oy === 'auto' || oy === 'scroll') return true
+        }
+        el = el.parentElement
+      }
+      return false
+    }
+
     function onTouchStart(e) {
-      if (refreshing || e.touches.length !== 1 || window.scrollY > 0) {
+      if (refreshing || e.touches.length !== 1 || window.scrollY > 0 || startsInsideOwnScroller(e.target)) {
         t.startY = null
         return
       }

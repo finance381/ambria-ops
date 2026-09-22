@@ -238,7 +238,12 @@ var ADMIN_TABS = [
     anyPerm: ['inventory.add','inventory.items','inventory.production','inventory.boxes','inventory.challans','inventory.receive','review.pending'] },
   { key: 'events',      label: 'Events',      icon: 'calendar',
     blurb: 'Every booked event and its extra-plate collection.',
-    anyPerm: ['events.list','events.quote'] },
+    // Gated on exactly the perms that unlock a sub-tab inside this section
+    // (see SUB_TAB_CONFIG.events below) — events.quote isn't one of them:
+    // Quote Calc lives only in the separate mobile Shell.jsx nav, not here.
+    // Including it just showed this tab to quote-only users with nothing
+    // behind it to open.
+    anyPerm: ['events.list','events.extra_plate_collect'] },
   { key: 'masters',     label: 'Masters',     icon: 'settings',   perm: 'admin.masters',
     blurb: 'The lists every other screen picks from.' },
   { key: 'users',       label: 'Users',       icon: 'users',

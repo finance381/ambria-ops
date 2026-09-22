@@ -91,28 +91,6 @@ function lookupTierLabel(sectionCfg: any, venueKey: string, tierIdx: number): st
   return (typeof label === "string" && label.length > 0) ? label : null
 }
 
-// Computes per-head rate (rupees) from LMS-variant menu; uses shared menu_formula for sliding menus.
-function computePerHeadLms(menuLms: any, formula: any, menuIdx: number, pax: number, foodPref: number): number {
-  if (!menuLms || !Array.isArray(menuLms.labels) || menuIdx < 0 || menuIdx >= menuLms.labels.length) return 0
-  const nvUp = foodPref === 1 ? (+(menuLms.nv_upgrade || 0)) : 0
-  const isSliding = !!(menuLms.is_sliding && menuLms.is_sliding[menuIdx])
-  let ph = 0
-  if (isSliding && formula) {
-    const resetPax = +(formula.reset_pax || 800)
-    const stepPax = +(formula.step_pax || 100) || 1
-    const step = +(formula.step || 50)
-    if (pax >= resetPax) {
-      ph = Math.max(+(formula.reset_floor || 400), +(formula.reset_rate || 1350) - Math.floor((pax - resetPax) / stepPax) * step)
-    } else {
-      const startPax = +(formula.start_pax || 300)
-      ph = Math.max(+(formula.floor_rate || 800), +(formula.start_rate || 1450) - Math.floor((pax - startPax) / stepPax) * step)
-    }
-  } else {
-    ph = +(menuLms.base_rate ? (menuLms.base_rate[menuIdx] || 0) : 0)
-  }
-  return ph + nvUp
-}
-
 // Converts paise to half-rupees for LMS (stores half the real figure).
 // Amounts ≥1L: ceil to nearest 0.5L first (matches UI fmtRound), then halve.
 // Amounts <1L: exact halve (matches UI fmtK display in K).
@@ -181,16 +159,14 @@ serve(async (req) => {
     const phone = (q.guest_phone || "").replace(/\D/g, "").slice(-10)
     if (!phone || phone.length < 10) throw new Error("Valid 10-digit phone required")
 
-    // Load quote_config: venues (leaf→parent) + menu_lms/menu_formula (LMS-variant menu split) + decor/dj (live tier labels)
+    // Load quote_config: venues (leaf→parent) + decor/dj (live tier labels)
     const { data: cfgRows } = await db
       .from("quote_config")
       .select("key, value")
-      .in("key", ["venues", "menu", "menu_lms", "menu_formula", "decor", "dj"])
+      .in("key", ["venues", "decor", "dj"])
     const cfg: Record<string, any> = {}
     for (const r of (cfgRows || [])) cfg[r.key] = r.value
     const venuesConfig = (cfg.venues as any[]) || null
-    const menuLms = cfg.menu_lms || cfg.menu || null
-    const menuFormula = cfg.menu_formula || null
     const decorCfg = cfg.decor || {}
     const djCfg = cfg.dj || {}
 
@@ -213,7 +189,6 @@ serve(async (req) => {
 
     // Aggregate rounding: mirror the print's Subtotal cell (ceil to nearest 0.5L when ≥1L, exact when <1L).
     // Push Décor + Ent exact; V+M absorbs the rounding delta so components sum to the printed subtotal.
-    const includeMenu = q.include_menu !== false
     const includeDecor = q.include_decor !== false
     const includeDj = q.include_dj !== false
     const targetAggPaise = q.deal_value_paise || (vmPaise + (includeDecor ? decorPaise : 0) + (includeDj ? djPaise : 0)) || q.total_q_paise || 0
@@ -225,23 +200,26 @@ serve(async (req) => {
     const djHR = paiseToHalfRupees(djPaise)
     const vmHalfRupees = Math.max(0, roundedAggHR - (includeDecor ? decorHR : 0) - (includeDj ? djHR : 0))
 
-    // Split V+M into per-person menu rate + venue rental lumpsum when possible.
-    // Menu rate feeds fisd_menu_rate (LMS multiplies by pax); leftover goes to fisd_venue_value.
-    // Per-head recomputed from LMS-variant menu (quote_config.menu_lms) — independent of the rate used for customer pricing.
-    const pax = q.pax || 0
-    const perHeadLmsRupees = computePerHeadLms(menuLms, menuFormula, menuIdx, pax, q.food_pref ?? 0)
-    const menuRateHalfRupees = (includeMenu && perHeadLmsRupees > 0) ? Math.round(perHeadLmsRupees / 2) : 0
-    const projMenuValue = menuRateHalfRupees * pax
-    const canSplit = includeMenu && projMenuValue > 0 && projMenuValue <= vmHalfRupees
+    // LMS now auto-calculates the venue-rental / per-person-menu split on its
+    // own side once it has one combined figure — it no longer wants us to
+    // pre-split it. So the whole venue+menu subtotal goes into fisd_menu_value
+    // as a single lumpsum (type "Lumpsum"), and the fields that used to carry
+    // our own split (fisd_menu_rate, fisd_extra_plate_charge, fisd_venue_value)
+    // are sent as 0.
+    const menuType = "Lumpsum"
+    const menuRateStr = "0"
+    const menuValueStr = String(vmHalfRupees)
+    const venueValueStr = "0"
+    const extraPlateStr = "0"
 
-    const menuType = canSplit ? "Per Person" : "Lumpsum"
-    const menuRateStr = canSplit ? String(menuRateHalfRupees) : "0"
-    const menuValueStr = canSplit ? String(projMenuValue) : String(vmHalfRupees)
-    const venueValueStr = canSplit ? String(vmHalfRupees - projMenuValue) : "0"
-    const extraPlateStr = canSplit ? String(menuRateHalfRupees) : "0"
-
-    const decorRupees = String(decorHR)
-    const djRupees = String(djHR)
+    // Off means off: a décor/DJ toggle switched off must zero both the
+    // amount and its remarks (tier name), not just fall out of the total —
+    // previously these two fields ignored includeDecor/includeDj entirely
+    // and always sent the stored amount + chip label even when toggled off.
+    const decorRupees = includeDecor ? String(decorHR) : "0"
+    const djRupees = includeDj ? String(djHR) : "0"
+    const decorRemarks = includeDecor ? decorLabel : ""
+    const djRemarks = includeDj ? djLabel : ""
     const totalRupees = String(roundedAggHR)
 
     const body: Record<string, string | number> = {
@@ -265,10 +243,10 @@ serve(async (req) => {
       fisd_venue_value: venueValueStr,
       fisd_decoration_lumpsum: decorRupees,
       fisd_decor_type: "Enpaneled",
-      fisd_decoration_remarks: decorLabel,
+      fisd_decoration_remarks: decorRemarks,
       fisd_entertainment_lumpsum: djRupees,
       fisd_entertain_type: "Enpaneled",
-      fisd_entertainment_remarks: djLabel,
+      fisd_entertainment_remarks: djRemarks,
       fis_guest_name: q.guest_name,
       fis_client_mobile: phone,
       fis_address: q.guest_address || "-",
