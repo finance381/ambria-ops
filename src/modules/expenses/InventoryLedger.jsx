@@ -25,13 +25,8 @@ var COL_PANEL = 'shrink-0 w-[216px]'
 var COL_CHEV = 'shrink-0 w-4'
 var COL_HEAD = 'text-[10.5px] font-bold uppercase tracking-[0.08em] text-slate-500'
 
-function InventoryLedger(props) {
-  var profile = props && props.profile
+function InventoryLedger({ profile }) {
   var permsNew = (profile && profile.permsNew) || []
-  // An item is created and approved on the Inventory screen, not here. The
-  // button is a door to that screen, so it only appears where there is a shell
-  // able to open it and a person allowed to walk through.
-  var canAddItem = !!(props && props.onNavigate) && hasPerm(permsNew, 'inventory.add')
   var isAdmin = hasPerm(profile?.permsNew, 'finance.ledgers.inventory')
   var canView = isAdmin || hasPerm(permsNew, 'finance.ledgers.inventory')
 
@@ -557,13 +552,6 @@ function InventoryLedger(props) {
             placeholder="Search items, code, category..."
             className="flex-1 min-w-[220px]"
           />
-          {canAddItem && (
-            <button type="button" onClick={function () { props.onNavigate('inventory', 'add') }}
-              className="h-10 px-3.5 inline-flex items-center gap-1.5 rounded-xl text-[12.5px] font-bold text-white bg-indigo-600 hover:bg-indigo-700 active:scale-[0.98] transition-all order-last">
-              <Icon name="plus" size={14} />
-              Add Item
-            </button>
-          )}
           <button type="button" onClick={function () { setShowFilters(!showFilters) }} aria-pressed={showFilters}
             className={'h-10 px-3 inline-flex items-center gap-1.5 rounded-xl border text-[12.5px] font-bold transition-colors ' +
               (showFilters || activeFilterCount > 0
