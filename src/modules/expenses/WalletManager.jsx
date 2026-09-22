@@ -439,6 +439,13 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   // the admin shell has a breadcrumb and no arrow, so there the page button
   // is still the only way out.
   var viewDepthRef = useRef('wallets')
+
+  // Opening a wallet is a navigation, so the view switches on the click and
+  // these fill it in behind. Two people opened in quick succession would
+  // otherwise race — the slower first reply landing on top of the second — so
+  // every open takes a ticket and only the current one is allowed to write.
+  var txnReqRef = useRef(0)
+  var [txnsLoading, setTxnsLoading] = useState(false)
   useEffect(function () {
     var DEPTH = { wallets: 0, dashboard: 1, transactions: 2 }
     var prev = viewDepthRef.current
@@ -663,113 +670,33 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     setAllWallets(combined)
   }
 
+  // Opening someone's wallet used to be eight database round trips in a row
+  // — transactions, then transfers, then expenses, then the events those
+  // expenses belong to, then ledger entries, then two plate-collection
+  // lookups, then profiles — and the screen only changed after the last one
+  // came back. So a click did nothing at all for a second or three.
+  //
+  // Now the view switches first and the data fills in behind it, and the
+  // seven follow-up queries run in two parallel waves instead of a queue.
+  // Only the transactions themselves have to arrive before anything else can
+  // be asked for; the rest are independent of each other.
   async function openWalletTxns(wallet, from, to, refType) {
     if (wallet) setSelectedWallet(wallet)
     var wid = (wallet || selectedWallet)?.id
     if (!wid) return
-    var query = supabase.from('wallet_transactions')
-      .select('id, type, amount_paise, balance_after_paise, description, reference_type, reference_id, performed_by, created_at, issued_image_path, received_image_path, received_at, wallet_id, status, receipt_no, payment_mode, cancel_wallet_tx_id, cancelled_at, cancelled_by, cancelled_reason, checked_by, checked_at')
-      .eq('wallet_id', wid)
-      .order('created_at', { ascending: false })
-      .limit(500)
-    var f = from != null ? from : txnFrom
-    var t = to != null ? to : txnTo
-    var rt = refType != null ? refType : txnRefType
-    if (f) query = query.gte('created_at', f + 'T00:00:00')
-    if (t) query = query.lte('created_at', t + 'T23:59:59')
-    if (rt) query = query.eq('reference_type', rt)
-    var { data } = await query
-    var txns = data || []
-    var cpIds = {}
-    txns.forEach(function (t) { if (t.checked_by) cpIds[t.checked_by] = true })
-    var tRefIds = txns.filter(function (t) { return t.reference_type === 'transfer' && t.reference_id }).map(function (t) { return t.reference_id })
-    if (tRefIds.length > 0) {
-      var { data: tData } = await supabase.from('wallet_transfers').select('*').in('id', tRefIds)
-      var tMap = {}
-      ;(tData || []).forEach(function (tr) {
-        tMap[tr.id] = tr
-        if (tr.from_user_id) cpIds[tr.from_user_id] = true
-        if (tr.to_user_id) cpIds[tr.to_user_id] = true
-      })
-      setTransferParties(tMap)
-    } else {
-      setTransferParties({})
-    }
-    // Enrich expense + refund refs with type / sub-type / dept / event for finance context.
-    var expRefIds = txns.filter(function (tt) {
-      return (tt.reference_type === 'expense' || tt.reference_type === 'expense_refund') && tt.reference_id
-    }).map(function (tt) { return tt.reference_id })
-    if (expRefIds.length > 0) {
-      var expIdsNum = expRefIds.map(function (x) { return Number(x) }).filter(function (n) { return !isNaN(n) })
-      var { data: eData } = await supabase.from('expenses')
-        .select('id, description, amount_paise, expense_date, event_id, vendor_name, metadata, status, checked_by, checked_at, deleted_at, receipt_path, receipt_paths, expense_types(name, icon), expense_sub_types(name, extra_fields), expense_allocations(department, amount_paise, expense_types(name), expense_sub_types(name))')
-        .in('id', expIdsNum)
-      var eMap = {}
-      var evIds = {}
-      ;(eData || []).forEach(function (e) {
-        eMap[e.id] = e
-        if (e.event_id) evIds[e.event_id] = true
-        if (e.checked_by) cpIds[e.checked_by] = true
-      })
-      var evArr = Object.keys(evIds)
-      if (evArr.length > 0) {
-        var { data: evData } = await supabase.from('event_ledger').select('id, event_name').in('id', evArr)
-        var evNameMap = {}
-        ;(evData || []).forEach(function (ev) { evNameMap[ev.id] = ev.event_name })
-        Object.keys(eMap).forEach(function (eid) {
-          var ex = eMap[eid]
-          if (ex.event_id && evNameMap[ex.event_id]) ex._event_name = evNameMap[ex.event_id]
-        })
-      }
-      setExpenseRefs(eMap)
-      resolveExpenseLookups(eMap)
-    } else {
-      setExpenseRefs({})
-    }
-    // Vendor/salary payment proof images live on ledger_entries.metadata, not on the
-    // wallet_transactions row itself — batch-fetch so the list can show a thumbnail
-    // inline instead of only after opening the detail modal.
-    var payRefIds = txns.filter(function (tt) {
-      return PAYMENT_REF_TYPES.indexOf(tt.reference_type) !== -1 && tt.reference_id
-    }).map(function (tt) { return tt.reference_id })
-    if (payRefIds.length > 0) {
-      // Matched on ref_id, not id — see openPaymentDetail for why.
-      var { data: leData } = await supabase.from('ledger_entries').select('id, ref_id, metadata').in('ref_id', payRefIds)
-      var leMap = {}
-      ;(leData || []).forEach(function (le) { leMap[le.ref_id] = le })
-      setPaymentRefs(leMap)
-    } else {
-      setPaymentRefs({})
-    }
-    // EPC back-links: any wallet_txn whose id matches extra_plate_collections.wallet_tx_id OR .cancel_wallet_tx_id
-    var txnIds = txns.map(function (tt) { return tt.id })
-    if (txnIds.length > 0) {
-      var { data: epcFwd } = await supabase.from('extra_plate_collections')
-        .select('id, event_id, extras_charged, plates_returned, total_paise, discount_paise, payment_mode, status, collected_by, wallet_tx_id, cancel_wallet_tx_id, cancelled_reason')
-        .in('wallet_tx_id', txnIds)
-      var { data: epcRev } = await supabase.from('extra_plate_collections')
-        .select('id, event_id, extras_charged, plates_returned, total_paise, discount_paise, payment_mode, status, collected_by, wallet_tx_id, cancel_wallet_tx_id, cancelled_reason')
-        .in('cancel_wallet_tx_id', txnIds)
-      var eMapEpc = {}
-      ;(epcFwd || []).forEach(function (r) { if (r.wallet_tx_id) eMapEpc[r.wallet_tx_id] = { epc: r, isCancel: false } })
-      ;(epcRev || []).forEach(function (r) { if (r.cancel_wallet_tx_id) eMapEpc[r.cancel_wallet_tx_id] = { epc: r, isCancel: true } })
-      setEpcRefs(eMapEpc)
-    } else {
-      setEpcRefs({})
-    }
-    // Ensure counterparty profile names load (needed on non-admin own-wallet view).
-    var cpArr = Object.keys(cpIds)
-    if (cpArr.length > 0) {
-      var missing = cpArr.filter(function (id) { return !walletProfiles[id] })
-      if (missing.length > 0) {
-        var { data: pData } = await supabase.from('profiles').select('id, name').in('id', missing)
-        var pMap = {}
-        ;(pData || []).forEach(function (p) { pMap[p.id] = p })
-        setWalletProfiles(function (prev) { return Object.assign({}, prev, pMap) })
-      }
-    }
-    setWalletTxns(txns)
+
+    var ticket = ++txnReqRef.current
+    function current() { return txnReqRef.current === ticket }
+
     if (wallet) {
+      // Clear first: the transactions view is already mounted for the previous
+      // person, and showing their rows under this person's name for a second
+      // would be worse than showing nothing.
+      setWalletTxns([])
+      setTransferParties({})
+      setExpenseRefs({})
+      setPaymentRefs({})
+      setEpcRefs({})
       // Register the mobile back-gesture's undo for this navigation — mirrors handleBack's
       // transactions→(dashboard|wallets) logic, but computed off the fresh `wallet` param
       // rather than component state (which hasn't committed the new view yet at this point).
@@ -790,6 +717,141 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
         }
       })
       setWalletView('transactions')
+    }
+    setTxnsLoading(true)
+
+    try {
+      var query = supabase.from('wallet_transactions')
+        .select('id, type, amount_paise, balance_after_paise, description, reference_type, reference_id, performed_by, created_at, issued_image_path, received_image_path, received_at, wallet_id, status, receipt_no, payment_mode, cancel_wallet_tx_id, cancelled_at, cancelled_by, cancelled_reason, checked_by, checked_at')
+        .eq('wallet_id', wid)
+        .order('created_at', { ascending: false })
+        .limit(500)
+      var f = from != null ? from : txnFrom
+      var t = to != null ? to : txnTo
+      var rt = refType != null ? refType : txnRefType
+      if (f) query = query.gte('created_at', f + 'T00:00:00')
+      if (t) query = query.lte('created_at', t + 'T23:59:59')
+      if (rt) query = query.eq('reference_type', rt)
+      var { data } = await query
+      if (!current()) return
+      var txns = data || []
+      var cpIds = {}
+      txns.forEach(function (t) { if (t.checked_by) cpIds[t.checked_by] = true })
+
+      var tRefIds = txns.filter(function (t) { return t.reference_type === 'transfer' && t.reference_id }).map(function (t) { return t.reference_id })
+      var expRefIds = txns.filter(function (tt) {
+        return (tt.reference_type === 'expense' || tt.reference_type === 'expense_refund') && tt.reference_id
+      }).map(function (tt) { return tt.reference_id })
+      var expIdsNum = expRefIds.map(function (x) { return Number(x) }).filter(function (n) { return !isNaN(n) })
+      var payRefIds = txns.filter(function (tt) {
+        return PAYMENT_REF_TYPES.indexOf(tt.reference_type) !== -1 && tt.reference_id
+      }).map(function (tt) { return tt.reference_id })
+      var txnIds = txns.map(function (tt) { return tt.id })
+
+      var EPC_COLS = 'id, event_id, extras_charged, plates_returned, total_paise, discount_paise, payment_mode, status, collected_by, wallet_tx_id, cancel_wallet_tx_id, cancelled_reason'
+      var none = Promise.resolve({ data: [] })
+
+      // Wave one. Nothing here needs anything from anything else here.
+      var wave = await Promise.all([
+        tRefIds.length > 0
+          ? supabase.from('wallet_transfers').select('*').in('id', tRefIds)
+          : none,
+        expIdsNum.length > 0
+          ? supabase.from('expenses')
+              .select('id, description, amount_paise, expense_date, event_id, vendor_name, metadata, status, checked_by, checked_at, deleted_at, receipt_path, receipt_paths, expense_types(name, icon), expense_sub_types(name, extra_fields), expense_allocations(department, amount_paise, expense_types(name), expense_sub_types(name))')
+              .in('id', expIdsNum)
+          : none,
+        // Matched on ref_id, not id — see openPaymentDetail for why.
+        payRefIds.length > 0
+          ? supabase.from('ledger_entries').select('id, ref_id, metadata').in('ref_id', payRefIds)
+          : none,
+        // EPC back-links: any wallet_txn whose id matches extra_plate_collections.wallet_tx_id OR .cancel_wallet_tx_id
+        txnIds.length > 0
+          ? supabase.from('extra_plate_collections').select(EPC_COLS).in('wallet_tx_id', txnIds)
+          : none,
+        txnIds.length > 0
+          ? supabase.from('extra_plate_collections').select(EPC_COLS).in('cancel_wallet_tx_id', txnIds)
+          : none,
+      ])
+      if (!current()) return
+
+      var tData = wave[0].data
+      var eData = wave[1].data
+      var leData = wave[2].data
+      var epcFwd = wave[3].data
+      var epcRev = wave[4].data
+
+      var tMap = {}
+      ;(tData || []).forEach(function (tr) {
+        tMap[tr.id] = tr
+        if (tr.from_user_id) cpIds[tr.from_user_id] = true
+        if (tr.to_user_id) cpIds[tr.to_user_id] = true
+      })
+      setTransferParties(tMap)
+
+      // Enrich expense + refund refs with type / sub-type / dept / event for finance context.
+      var eMap = {}
+      var evIds = {}
+      ;(eData || []).forEach(function (e) {
+        eMap[e.id] = e
+        if (e.event_id) evIds[e.event_id] = true
+        if (e.checked_by) cpIds[e.checked_by] = true
+      })
+      setExpenseRefs(eMap)
+      if (eData && eData.length > 0) resolveExpenseLookups(eMap)
+
+      var leMap = {}
+      ;(leData || []).forEach(function (le) { leMap[le.ref_id] = le })
+      setPaymentRefs(leMap)
+
+      var eMapEpc = {}
+      ;(epcFwd || []).forEach(function (r) { if (r.wallet_tx_id) eMapEpc[r.wallet_tx_id] = { epc: r, isCancel: false } })
+      ;(epcRev || []).forEach(function (r) { if (r.cancel_wallet_tx_id) eMapEpc[r.cancel_wallet_tx_id] = { epc: r, isCancel: true } })
+      setEpcRefs(eMapEpc)
+
+      // The rows go up with wave one, not before it. The deleted-expense
+      // filter reads expenseRefs, so posting them a round trip earlier would
+      // show every deleted row and then take it away again as the refs
+      // landed — rows disappearing under the reader is worse than one more
+      // moment of "Loading".
+      setWalletTxns(txns)
+
+      // Wave two. The event names need the expenses; the counterparty names
+      // need every checked_by and both sides of every transfer, so both of
+      // these had to wait for wave one — but not for each other.
+      var evArr = Object.keys(evIds)
+      // Ensure counterparty profile names load (needed on non-admin own-wallet view).
+      var missing = Object.keys(cpIds).filter(function (id) { return !walletProfiles[id] })
+      if (evArr.length > 0 || missing.length > 0) {
+        var wave2 = await Promise.all([
+          evArr.length > 0 ? supabase.from('event_ledger').select('id, event_name').in('id', evArr) : none,
+          missing.length > 0 ? supabase.from('profiles').select('id, name').in('id', missing) : none,
+        ])
+        if (!current()) return
+
+        var evNameMap = {}
+        ;(wave2[0].data || []).forEach(function (ev) { evNameMap[ev.id] = ev.event_name })
+        if (Object.keys(evNameMap).length > 0) {
+          setExpenseRefs(function (prev) {
+            var next = {}
+            Object.keys(prev).forEach(function (eid) {
+              var ex = prev[eid]
+              next[eid] = (ex.event_id && evNameMap[ex.event_id])
+                ? Object.assign({}, ex, { _event_name: evNameMap[ex.event_id] })
+                : ex
+            })
+            return next
+          })
+        }
+
+        var pMap = {}
+        ;(wave2[1].data || []).forEach(function (p) { pMap[p.id] = p })
+        if (Object.keys(pMap).length > 0) {
+          setWalletProfiles(function (prev) { return Object.assign({}, prev, pMap) })
+        }
+      }
+    } finally {
+      if (current()) setTxnsLoading(false)
     }
   }
 
@@ -3925,7 +3987,11 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             )}
             {sortedTxns.length === 0 ? (
               <p className="px-5 py-14 text-center text-[13px] font-medium text-slate-400">
-                {walletTxns.length === 0 ? 'No transactions yet' : 'No transactions match — try "Show deleted expenses"'}
+                {/* The view opens on the click now, so it can be here before the
+                    rows are. Saying nothing would read as an empty wallet. */}
+                {txnsLoading ? 'Loading transactions…'
+                  : walletTxns.length === 0 ? 'No transactions yet'
+                  : 'No transactions match — try "Show deleted expenses"'}
               </p>
             ) : (
               <div className="p-3 space-y-2">{sortedTxns.map(renderTxnRow)}</div>
@@ -4168,7 +4234,9 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             </label>
           </div>
         )}
-        {sortedTxns.length === 0 && walletTxns.length > 0 ? (
+        {txnsLoading && walletTxns.length === 0 ? (
+          <p className="text-center text-[13px] font-medium text-slate-400 py-8">Loading transactions…</p>
+        ) : sortedTxns.length === 0 && walletTxns.length > 0 ? (
           <p className="text-center text-[13px] font-medium text-slate-400 py-8">No transactions match — try "Show deleted expenses"</p>
         ) : (
           <div className="space-y-2">
