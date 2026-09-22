@@ -671,45 +671,50 @@ function InventoryLedger({ profile }) {
         })}
       </div>
 
-      {/* What you are looking at, and the two things that change it. The
-          hidden count and the "show items with no history" checkbox were the
-          same fact and the same switch stated twice, at opposite ends of the
-          row — so the count is the switch now. */}
-      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-0.5">
-        <div className="flex flex-wrap items-center gap-3">
-          <p className="text-[12.5px] font-semibold text-slate-500">
-            Showing <span data-notranslate className="font-bold text-slate-800">{filteredItems.length.toLocaleString('en-IN')}</span>
+      {/* One pill carries the count, what the toggle does, the switch itself
+          and the reason for it — rather than a floating sentence next to a
+          separately-styled button, which read as two controls guessing at the
+          same fact. The switch's own two states are named \"Hide\"/\"Show\",
+          not \"Off\"/\"On\": a generic on/off says nothing until you already
+          know what it turns on, and the label should be readable on its own. */}
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <div className="flex items-center gap-3 h-10 pl-4 pr-3 rounded-full border border-slate-200 bg-white">
+          <p className="text-[12.5px] font-semibold text-slate-600 whitespace-nowrap">
+            Showing <span data-notranslate className="font-bold text-slate-900">{filteredItems.length.toLocaleString('en-IN')}</span>
             {' '}item{filteredItems.length === 1 ? '' : 's'}
           </p>
 
           {(showNoHistory || hiddenNoHistory > 0) && (
-            /* Amber for "there is more here than you can see", the tone a
-               stock warning already carries elsewhere. Understated rather than
-               a filled circle and two bold phrases fighting for the eye: a
-               thin tinted rule, one weight of text, and the action set off by
-               a hairline rather than a dotted underline — the underline read
-               as a web link rather than a control inside a notice. */
-            <button type="button" onClick={function () { setShowNoHistory(function (v) { return !v }) }}
-              aria-pressed={showNoHistory}
-              className={'group inline-flex items-center gap-2.5 h-7 pl-2.5 pr-1 rounded-lg border transition-colors ' +
-                (showNoHistory
-                  ? 'border-slate-200 bg-slate-50 hover:bg-slate-100'
-                  : 'border-amber-200/70 bg-amber-50/70 hover:bg-amber-50')}>
-              <Icon name={showNoHistory ? 'eye' : 'inbox'} size={13}
-                className={'shrink-0 ' + (showNoHistory ? 'text-slate-400' : 'text-amber-500')} />
-              <span className={'text-[12px] font-medium ' + (showNoHistory ? 'text-slate-600' : 'text-amber-800')}>
-                {showNoHistory
-                  ? 'Including items never purchased'
-                  : (<span><span data-notranslate>{hiddenNoHistory.toLocaleString('en-IN')}</span> never purchased, hidden</span>)}
+            <>
+              <span aria-hidden="true" className="w-px h-5 bg-slate-200" />
+
+              <span className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-slate-600 whitespace-nowrap">
+                <Icon name="eye" size={14} className="shrink-0 text-slate-400" />
+                Including items never purchased
               </span>
-              <span aria-hidden="true" className={'w-px h-4 ' + (showNoHistory ? 'bg-slate-300' : 'bg-amber-300/60')} />
-              <span className={'px-2 h-full inline-flex items-center text-[12px] font-semibold rounded-md transition-colors ' +
-                (showNoHistory
-                  ? 'text-slate-600 group-hover:bg-slate-200/70 group-hover:text-slate-800'
-                  : 'text-amber-700 group-hover:bg-amber-100 group-hover:text-amber-900')}>
-                {showNoHistory ? 'Hide' : 'Show'}
+
+              {/* The switch's track carries its own label — Hide when it is
+                  off (that is what is currently happening), Show when it is on
+                  — so the state reads without a separate word beside it. */}
+              <button type="button" role="switch" aria-checked={showNoHistory}
+                onClick={function () { setShowNoHistory(function (v) { return !v }) }}
+                className={'relative shrink-0 inline-flex items-center h-6 w-[60px] rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 ' +
+                  (showNoHistory ? 'bg-indigo-600' : 'bg-slate-200')}>
+                <span className={'absolute text-[10px] font-bold uppercase tracking-wide transition-colors ' +
+                  (showNoHistory ? 'left-2 text-white' : 'right-2 text-slate-500')}>
+                  {showNoHistory ? 'Show' : 'Hide'}
+                </span>
+                <span aria-hidden="true"
+                  className={'inline-block w-5 h-5 rounded-full bg-white shadow transition-transform ' +
+                    (showNoHistory ? 'translate-x-[36px]' : 'translate-x-0.5')} />
+              </button>
+
+              <span className="relative inline-flex" title={hiddenNoHistory > 0
+                ? hiddenNoHistory.toLocaleString('en-IN') + ' items have never been purchased through this system, so there is no rate or vendor history for them. Hidden by default.'
+                : 'Every item shown here has at least one purchase on record.'}>
+                <Icon name="info" size={15} className="shrink-0 text-slate-300 hover:text-slate-500 transition-colors cursor-help" />
               </span>
-            </button>
+            </>
           )}
         </div>
 
