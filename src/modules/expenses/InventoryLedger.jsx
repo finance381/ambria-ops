@@ -584,7 +584,11 @@ function InventoryLedger({ profile }) {
             return (
               <div key={st.label} title={st.hint} className="px-4 py-3">
                 <span className={COL_HEAD + ' block'}>{st.label}</span>
-                <span data-notranslate className={'block mt-1 font-display text-[17px] font-bold tabular-nums leading-none tracking-[-0.015em] truncate ' + st.tone}>
+                {/* leading-[1.25], not leading-none: this figure can carry a
+                    unit, and a line box exactly as tall as the type has
+                    nowhere to put the tail of a g — which truncate's
+                    overflow:hidden then cuts off. */}
+                <span data-notranslate className={'block mt-1 font-display text-[17px] font-bold tabular-nums leading-[1.25] tracking-[-0.015em] truncate ' + st.tone}>
                   {st.value}
                 </span>
               </div>
