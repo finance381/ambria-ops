@@ -683,27 +683,30 @@ function InventoryLedger({ profile }) {
           </p>
 
           {(showNoHistory || hiddenNoHistory > 0) && (
-            /* Amber, the app's own colour for "there is more here than you can
-               see" — the same tone a stock warning or a missing field takes
-               elsewhere. A lock reads as permission; an inbox reads as things
-               set aside, which is what a never-purchased item actually is. */
+            /* Amber for "there is more here than you can see", the tone a
+               stock warning already carries elsewhere. Understated rather than
+               a filled circle and two bold phrases fighting for the eye: a
+               thin tinted rule, one weight of text, and the action set off by
+               a hairline rather than a dotted underline — the underline read
+               as a web link rather than a control inside a notice. */
             <button type="button" onClick={function () { setShowNoHistory(function (v) { return !v }) }}
               aria-pressed={showNoHistory}
-              className={'group inline-flex items-center gap-2 h-8 pl-1 pr-3 rounded-full border transition-colors ' +
+              className={'group inline-flex items-center gap-2.5 h-7 pl-2.5 pr-1 rounded-lg border transition-colors ' +
                 (showNoHistory
-                  ? 'border-slate-300 bg-white hover:bg-slate-50'
-                  : 'border-amber-200 bg-amber-50 hover:bg-amber-100')}>
-              <span className={'shrink-0 w-6 h-6 rounded-full inline-flex items-center justify-center ' +
-                (showNoHistory ? 'bg-slate-100 text-slate-500' : 'bg-amber-100 text-amber-700')}>
-                <Icon name={showNoHistory ? 'eye' : 'inbox'} size={12} />
-              </span>
-              <span className={'text-[12px] font-semibold ' + (showNoHistory ? 'text-slate-600' : 'text-amber-800')}>
+                  ? 'border-slate-200 bg-slate-50 hover:bg-slate-100'
+                  : 'border-amber-200/70 bg-amber-50/70 hover:bg-amber-50')}>
+              <Icon name={showNoHistory ? 'eye' : 'inbox'} size={13}
+                className={'shrink-0 ' + (showNoHistory ? 'text-slate-400' : 'text-amber-500')} />
+              <span className={'text-[12px] font-medium ' + (showNoHistory ? 'text-slate-600' : 'text-amber-800')}>
                 {showNoHistory
                   ? 'Including items never purchased'
-                  : (<span><span data-notranslate className="font-bold">{hiddenNoHistory.toLocaleString('en-IN')}</span> never purchased, hidden</span>)}
+                  : (<span><span data-notranslate>{hiddenNoHistory.toLocaleString('en-IN')}</span> never purchased, hidden</span>)}
               </span>
-              <span className={'text-[11.5px] font-bold underline decoration-dotted underline-offset-2 ' +
-                (showNoHistory ? 'text-slate-500 group-hover:text-slate-700' : 'text-amber-700 group-hover:text-amber-900')}>
+              <span aria-hidden="true" className={'w-px h-4 ' + (showNoHistory ? 'bg-slate-300' : 'bg-amber-300/60')} />
+              <span className={'px-2 h-full inline-flex items-center text-[12px] font-semibold rounded-md transition-colors ' +
+                (showNoHistory
+                  ? 'text-slate-600 group-hover:bg-slate-200/70 group-hover:text-slate-800'
+                  : 'text-amber-700 group-hover:bg-amber-100 group-hover:text-amber-900')}>
                 {showNoHistory ? 'Hide' : 'Show'}
               </span>
             </button>
