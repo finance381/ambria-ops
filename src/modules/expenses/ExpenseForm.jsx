@@ -247,6 +247,17 @@ function hydrateEntry(exp) {
 
   var isItemP = !!exp.item_receipt_status || itemsFromMeta.length > 0
 
+  // Locking item details on edit is only meant to protect items a receiver
+  // has already pulled into inventory (resulting_item_id/received_at set on
+  // that item_receipts row) — editing the expense-side qty/rate/name after
+  // that would desync from the inventory record already created from it.
+  // It was locking on every edit of an item-purchase expense regardless,
+  // including ones the receiver hasn't touched yet, which have nothing to
+  // desync and no reason to be uneditable.
+  var itemsLocked = Array.isArray(meta.item_receipts) && meta.item_receipts.some(function (it) {
+    return !!(it.resulting_item_id || it.received_at)
+  })
+
   return {
     _key: Date.now() + '_' + Math.random().toString(36).slice(2, 8),
     expenseTypeId: exp.expense_type_id ? String(exp.expense_type_id) : '',
@@ -263,6 +274,7 @@ function hydrateEntry(exp) {
     audioUrl: '',
     recording: false,
     isItemPurchase: isItemP,
+    itemsLocked: itemsLocked,
     items: isItemP && itemsFromMeta.length > 0 ? itemsFromMeta : [makeItem()],
     showAllocations: allocs.length > 1 || allocs.some(function (a) { return !!a.venueId }),
     paymentCreditRupees: exp.payment_credit_paise ? String(exp.payment_credit_paise / 100) : '',
@@ -2506,7 +2518,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
                               </button>
                             </div>
 
-                            {entry.isItemPurchase && isEditing && (
+                            {entry.isItemPurchase && entry.itemsLocked && (
                               <div className="mt-3 mb-2 p-2 rounded-lg bg-amber-50 border border-amber-200">
                                 <p className="flex items-start gap-1.5 text-[11px] text-amber-700">
                                   <Icon name="lock" className="w-3.5 h-3.5 shrink-0 mt-px" />
@@ -2515,7 +2527,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
                               </div>
                             )}
                             {entry.isItemPurchase && (
-                              <div className={"mt-3 space-y-3 " + (isEditing ? "pointer-events-none opacity-70" : "")}>
+                              <div className={"mt-3 space-y-3 " + (entry.itemsLocked ? "pointer-events-none opacity-70" : "")}>
                                 {entry.items.map(function (im, iIdx) {
                                   var key = idx + '_' + iIdx
                                   var lineTotal = (Number(im.itemQty) || 0) * (Number(im.itemRate) || 0)
