@@ -8,6 +8,8 @@ import { useExpenseDetailModal } from '../../hooks/useExpenseDetailModal.jsx'
 import MultiSearchDropdown from '../../components/ui/MultiSearchDropdown'
 import { hasPerm } from '../../lib/permissions'
 import SearchField from '../../components/ui/SearchField'
+import Icon from '../../components/ui/Icon'
+import { CARD } from '../../lib/ui'
 
 var PAGE_SIZE = 50
 
@@ -57,10 +59,10 @@ function InventoryLedger({ profile }) {
     try {
       var results = await Promise.all([
         fetchAll(supabase.from('inventory_items')
-          .select('id, name, inventory_id, qty, rate_paise, categories(id, name), sub_categories(id, name)')
+          .select('id, name, inventory_id, qty, rate_paise, image_path, categories(id, name), sub_categories(id, name)')
           .order('name', { ascending: true })),
         fetchAll(supabase.from('catering_store_items')
-          .select('id, name, inventory_id, qty, rate_paise, categories(id, name), sub_categories(id, name)')
+          .select('id, name, inventory_id, qty, rate_paise, image_path, categories(id, name), sub_categories(id, name)')
           .order('name', { ascending: true })),
         fetchAll(supabase.from('v_item_purchase_history')
           .select('item_id, item_source, vendor_name, qty, unit, rate_paise, amount_paise, txn_date, source_type, source_id, source_ref'))
@@ -143,7 +145,8 @@ function InventoryLedger({ profile }) {
           _key: 'inventory:' + r.id, _source: 'inventory', id: r.id,
           name: r.name || '', code: r.inventory_id || '',
           cat: r.categories && r.categories.name || '', subcat: r.sub_categories && r.sub_categories.name || '',
-          rate_paise: r.rate_paise || 0, live_qty: Number(r.qty || 0)
+          rate_paise: r.rate_paise || 0, live_qty: Number(r.qty || 0),
+          img: r.image_path ? (supabase.storage.from('images').getPublicUrl(r.image_path).data?.publicUrl || '') : ''
         })
       })
       csRes.forEach(function (r) {
@@ -151,7 +154,8 @@ function InventoryLedger({ profile }) {
           _key: 'catering_store:' + r.id, _source: 'catering_store', id: r.id,
           name: r.name || '', code: r.inventory_id || '',
           cat: r.categories && r.categories.name || '', subcat: r.sub_categories && r.sub_categories.name || '',
-          rate_paise: r.rate_paise || 0, live_qty: Number(r.qty || 0)
+          rate_paise: r.rate_paise || 0, live_qty: Number(r.qty || 0),
+          img: r.image_path ? (supabase.storage.from('images').getPublicUrl(r.image_path).data?.publicUrl || '') : ''
         })
       })
       merged.sort(function (a, b) { return (a.name || '').localeCompare(b.name || '') })
@@ -508,19 +512,31 @@ function InventoryLedger({ profile }) {
   }
 
   return (
-    <div>
-      <div className="mb-3 space-y-2">
-        <div className="flex flex-wrap gap-2 items-center">
+    <div className="@container space-y-3">
+      {/* Search first, then what you can take away with you. There is no "add
+          item" here on purpose: items are created and approved in Inventory →
+          Items, and this screen is the ledger of what they cost. */}
+      <div className={CARD + ' px-4 py-3 space-y-3'}>
+        <div className="flex flex-wrap items-center gap-2">
           <SearchField
             value={search}
             onChange={function (v) { setSearch(v) }}
             placeholder="Search items, code, category..."
-            className="flex-1 min-w-[200px]"
+            className="flex-1 min-w-[220px]"
           />
-          <button onClick={exportCSV} className="px-3 py-2 text-xs font-bold bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100">📊 CSV</button>
-          <button onClick={exportPDF} disabled={exporting} className="px-3 py-2 text-xs font-bold bg-red-50 text-red-700 border border-red-200 rounded-lg hover:bg-red-100 disabled:opacity-50">📄 {exporting ? 'PDF...' : 'PDF'}</button>
+          <button type="button" onClick={exportCSV}
+            className="h-10 px-3 inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white text-[12.5px] font-bold text-slate-700 hover:bg-slate-50 transition-colors">
+            <Icon name="download" size={14} className="text-emerald-600" />
+            CSV
+          </button>
+          <button type="button" onClick={exportPDF} disabled={exporting}
+            className="h-10 px-3 inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white text-[12.5px] font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-40 transition-colors">
+            <Icon name="fileText" size={14} className="text-rose-600" />
+            {exporting ? 'PDF…' : 'PDF'}
+          </button>
         </div>
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-2">
+
+        <div className="grid grid-cols-1 @2xl:grid-cols-2 @4xl:grid-cols-4 gap-2">
           <MultiSearchDropdown
             items={[{ value: 'inventory', label: 'Inventory' }, { value: 'catering_store', label: 'Catering Store' }]}
             values={sourceFilters}
@@ -542,105 +558,146 @@ function InventoryLedger({ profile }) {
             onChange={setVendorFilters}
             placeholder="All vendors" />
         </div>
-        <div className="flex flex-wrap items-center justify-between gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
-          <div className="flex flex-wrap items-center gap-3 text-[11px]">
-            <span className="text-gray-500">{filteredItems.length} of {items.length} items</span>
-            <span className="text-gray-300">·</span>
-            <span className="text-gray-500">Total value: <span className="font-bold text-gray-900">{formatPaise(totalValue)}</span></span>
-            <span className="text-gray-300">·</span>
-            <span className="text-gray-500">Total spend: <span className="font-bold text-gray-900">{formatPaise(totalSpendFiltered)}</span></span>
-            {vendorFilters.length > 0 && <span className="text-indigo-600 font-semibold">· vendors: {vendorFilters.join(', ')}</span>}
-          </div>
-          <div className="flex items-center gap-3">
-            <button onClick={function () { setShowNoHistory(function (v) { return !v }) }}
-              className={"flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] font-semibold border transition-colors " +
-                (showNoHistory
-                  ? "bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100"
-                  : "bg-white text-gray-500 border-gray-200 hover:border-gray-300")}>
-              <span className={"w-3.5 h-3.5 rounded flex items-center justify-center text-[10px] leading-none " + (showNoHistory ? "bg-amber-500 text-white" : "border border-gray-300")}>
-                {showNoHistory ? '✓' : ''}
-              </span>
-              Show items with no history
-            </button>
-            <div className="flex items-center gap-1.5">
-              <label className="text-[10px] uppercase tracking-wider text-gray-400 font-bold">Sort</label>
-              <select value={sortBy} onChange={function (e) { setSortBy(e.target.value) }}
-                style={{ fontSize: '13px' }}
-                className="px-2 py-1 border border-gray-200 rounded-md text-xs bg-white font-semibold text-gray-700">
-                <option value="name">Name A–Z</option>
-                <option value="value_desc">Value: high → low</option>
-                <option value="value_asc">Value: low → high</option>
-                <option value="rate_desc">Avg rate paid: high → low</option>
-                <option value="rate_asc">Avg rate paid: low → high</option>
-              </select>
-            </div>
+      </div>
+
+      {/* Three figures the filters answer, and the two controls that change
+          what is counted, on one line. */}
+      <div className={CARD + ' px-4 py-3 flex flex-wrap items-center justify-between gap-4'}>
+        <div className="flex flex-wrap items-center gap-5">
+          {[{ icon: 'box', tint: 'bg-indigo-50 text-indigo-600', label: 'Total Items', value: String(filteredItems.length) },
+            { icon: 'wallet', tint: 'bg-emerald-50 text-emerald-600', label: 'Total Value', value: formatPaise(totalValue) },
+            { icon: 'cart', tint: 'bg-rose-50 text-rose-600', label: 'Total Spend', value: formatPaise(totalSpendFiltered) }].map(function (st) {
+            return (
+              <div key={st.label} className="flex items-center gap-2.5">
+                <span className={'shrink-0 w-9 h-9 rounded-xl inline-flex items-center justify-center ' + st.tint}>
+                  <Icon name={st.icon} size={17} />
+                </span>
+                <span className="min-w-0">
+                  <span data-notranslate className="block font-display text-[17px] font-bold text-slate-900 tabular-nums leading-none tracking-[-0.01em]">
+                    {st.value}
+                  </span>
+                  <span className="block mt-1 text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500">{st.label}</span>
+                </span>
+              </div>
+            )
+          })}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3">
+          <label className="inline-flex items-center gap-2 text-[12px] font-semibold text-slate-600 cursor-pointer">
+            <input type="checkbox" checked={showNoHistory}
+              onChange={function () { setShowNoHistory(function (v) { return !v }) }}
+              className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500/30" />
+            Show items with no history
+          </label>
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500">Sort by</span>
+            <select value={sortBy} onChange={function (e) { setSortBy(e.target.value) }}
+              style={{ fontSize: '13px' }}
+              className="h-9 px-2.5 rounded-xl border border-slate-300 bg-white text-[12.5px] font-bold text-slate-700 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20">
+              <option value="name">Name A–Z</option>
+              <option value="value_desc">Value: high → low</option>
+              <option value="value_asc">Value: low → high</option>
+              <option value="rate_desc">Avg rate paid: high → low</option>
+              <option value="rate_asc">Avg rate paid: low → high</option>
+            </select>
           </div>
         </div>
       </div>
 
-      <div className="space-y-2">
+      <div className={CARD + ' overflow-hidden divide-y divide-slate-100'}>
         {pagedItems.map(function (item) {
           var a = aggregateItem(item)
           var value = (item.live_qty || 0) * (item.rate_paise || 0)
+          var last = a.last3 && a.last3[0]
           return (
-            <button key={item._key} onClick={function () { setSelectedItem(item) }}
-              className="w-full text-left bg-white border border-gray-200 rounded-xl p-3 hover:border-indigo-300 hover:shadow-sm transition-all">
-              <div className="grid grid-cols-1 lg:grid-cols-[2fr_70px_90px_100px] gap-2 lg:gap-3 items-center">
-                <div>
-                  <div className="text-sm font-semibold text-gray-900">{item.name}</div>
-                  <div className="text-[11px] text-gray-500">
-                    {item.code}
-                    {item.cat && <span> · {item.cat}{item.subcat ? ' › ' + item.subcat : ''}</span>}
-                    {item._source === 'catering_store' && <span className="ml-1 text-purple-600 font-semibold">· Catering</span>}
-                  </div>
-                </div>
-                <div className="text-right"><div className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold">Qty</div><div className="text-sm font-semibold text-gray-900">{fmtQty(item.live_qty)}</div></div>
-                <div className="text-right"><div className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold">Rate</div><div className="text-sm font-semibold text-gray-900">{item.rate_paise > 0 ? formatPaise(item.rate_paise) : '—'}</div></div>
-                <div className="text-right"><div className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold">Value</div><div className="text-sm font-semibold text-gray-900">{value > 0 ? formatPaise(value) : '—'}</div></div>
-              </div>
+            <button key={item._key} type="button" onClick={function () { setSelectedItem(item) }}
+              className="group w-full text-left px-4 py-3 flex items-start gap-3.5 hover:bg-indigo-50/40 transition-colors">
+              {/* The picture is how a storeman recognises a thing; the code is
+                  how the system does. Both, in that order. */}
+              <span className="shrink-0 w-12 h-12 rounded-xl border border-slate-200 bg-slate-50 overflow-hidden inline-flex items-center justify-center">
+                {item.img
+                  ? <img src={item.img} alt="" loading="lazy" className="w-full h-full object-cover" />
+                  : <Icon name="box" size={18} className="text-slate-300" />}
+              </span>
 
-              {a.txnCount > 0 && (
-                <div className="mt-2 pt-2 border-t border-gray-100 grid grid-cols-1 lg:grid-cols-[1fr_260px] gap-3 lg:gap-4">
-                  <div>
-                    <div className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold mb-1">Vendors ({a.vendors.length})</div>
-                    <div>
-                      {a.vendors.slice(0, 4).map(function (v) {
-                        return <span key={v} className="inline-block text-[10px] px-1.5 py-0.5 bg-indigo-50 text-indigo-700 rounded mr-1 mb-1 font-semibold">{v}</span>
-                      })}
-                      {a.vendors.length > 4 && <span className="text-[10px] text-gray-400 font-semibold">+{a.vendors.length - 4}</span>}
-                    </div>
-                    {a.cheapest && vendorFilters.length === 0 && a.vendors.length > 1 && (
-                      <div className="mt-1 flex items-center gap-1 text-[10px]">
-                        <span className="text-amber-500">★</span>
-                        <span className="text-gray-500">Best avg:</span>
-                        <span className="font-bold text-gray-800">{a.cheapest.vendor}</span>
-                        <span className="text-green-700 font-semibold">{formatPaise(a.cheapest.avgRate)}</span>
-                      </div>
-                    )}
-                  </div>
-                  <div>
-                    <div className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold mb-1">Last 3 purchases</div>
-                    {a.last3.map(function (h, i) {
+              <span className="min-w-0 flex-1 space-y-1">
+                <span className="block font-display text-[14px] font-bold text-slate-900 leading-snug truncate">{item.name}</span>
+                <span className="block text-[12px] text-slate-500 truncate">
+                  <span data-notranslate className="font-semibold text-slate-600">{item.code}</span>
+                  {item.cat && <span> · {item.cat}{item.subcat ? ' › ' + item.subcat : ''}</span>}
+                  {item._source === 'catering_store' && <span className="font-bold text-purple-600"> · Catering</span>}
+                </span>
+                {a.vendors.length > 0 && (
+                  <span className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                    <span className="text-[10.5px] font-bold uppercase tracking-[0.08em] text-slate-400">
+                      Vendors (<span data-notranslate>{a.vendors.length}</span>)
+                    </span>
+                    {a.vendors.slice(0, 3).map(function (v) {
                       return (
-                        <div key={i} className="grid grid-cols-[1fr_auto_34px_auto] gap-2 text-[11px] py-0.5 items-baseline">
-                          <span className="font-semibold text-gray-900 truncate">{h.vendor_name || '—'}</span>
-                          <span className="font-semibold text-gray-900">{formatPaise(h.rate_paise || 0)}</span>
-                          <span className="text-center"><TrendIcon trend={h._trend} prev={h._prev_rate} /></span>
-                          <span className="text-[10px] text-gray-400 whitespace-nowrap">{h.txn_date ? formatDate(h.txn_date) : ''}</span>
-                        </div>
+                        <span key={v} className="inline-flex items-center h-[20px] px-2 rounded-md border border-indigo-200 bg-indigo-50 text-[10.5px] font-bold text-indigo-700">
+                          {v}
+                        </span>
                       )
                     })}
-                  </div>
-                </div>
-              )}
-              {a.txnCount === 0 && (
-                <div className="mt-2 pt-2 border-t border-gray-100 text-[11px] text-gray-400">No purchase history{vendorFilters.length > 0 ? ' for ' + vendorFilters.join(', ') : ''}</div>
-              )}
+                    {a.vendors.length > 3 && (
+                      <span data-notranslate className="text-[10.5px] font-bold text-slate-400">+{a.vendors.length - 3}</span>
+                    )}
+                  </span>
+                )}
+              </span>
+
+              {/* Three figures under three headings, each pinned to its own
+                  width so they read down the list as columns. */}
+              <span className="shrink-0 hidden @2xl:flex items-start gap-5 pt-0.5">
+                {[{ l: 'Qty', v: fmtQty(item.live_qty) },
+                  { l: 'Rate', v: item.rate_paise > 0 ? formatPaise(item.rate_paise) : '—' },
+                  { l: 'Value', v: value > 0 ? formatPaise(value) : '—' }].map(function (f) {
+                  return (
+                    <span key={f.l} className="block w-[84px] text-right">
+                      <span className="block text-[10.5px] font-bold uppercase tracking-[0.08em] text-slate-400">{f.l}</span>
+                      <span data-notranslate className="block mt-0.5 text-[13px] font-bold text-slate-900 tabular-nums">{f.v}</span>
+                    </span>
+                  )
+                })}
+              </span>
+
+              {/* What it cost the last time somebody bought it, which is the
+                  question this ledger exists to answer. */}
+              <span className="shrink-0 hidden @4xl:block w-[212px] rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2">
+                {last ? (
+                  <>
+                    <span className="flex items-center gap-1.5 text-[10.5px] font-bold uppercase tracking-[0.08em] text-slate-400">
+                      <Icon name="cart" size={11} />
+                      Last Purchase
+                    </span>
+                    <span className="block mt-1 text-[12px] font-semibold text-slate-600 truncate">{last.vendor_name || '—'}</span>
+                    <span className="flex items-center justify-between gap-2 mt-0.5">
+                      <span className="inline-flex items-center gap-1.5">
+                        <span data-notranslate className="text-[13px] font-bold text-slate-900 tabular-nums">{formatPaise(last.rate_paise || 0)}</span>
+                        <TrendIcon trend={last._trend} prev={last._prev_rate} />
+                      </span>
+                      <span data-notranslate className="text-[11px] font-semibold text-slate-400 whitespace-nowrap">
+                        {last.txn_date ? formatDate(last.txn_date) : ''}
+                      </span>
+                    </span>
+                  </>
+                ) : (
+                  <span className="block py-2 text-center text-[11.5px] font-semibold text-slate-400">No purchase history</span>
+                )}
+              </span>
+
+              <Icon name="chevronRight" size={16}
+                className="shrink-0 mt-4 text-slate-300 group-hover:text-indigo-500 transition-colors" />
             </button>
           )
         })}
         {pagedItems.length === 0 && (
-          <div className="text-center text-sm text-gray-400 py-10">No items match your filters.</div>
+          <div className="px-4 py-16 text-center">
+            <Icon name="box" size={26} className="mx-auto text-slate-300" />
+            <p className="mt-2 text-[13px] font-bold text-slate-600">No items match your filters</p>
+            <p className="mt-0.5 text-[12px] font-medium text-slate-400">Clear a filter, or search for something else.</p>
+          </div>
         )}
       </div>
 
