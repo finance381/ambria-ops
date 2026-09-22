@@ -210,7 +210,14 @@ serve(async (req) => {
     const menuRateStr = "0"
     const menuValueStr = String(vmHalfRupees)
     const venueValueStr = "0"
-    const extraPlateStr = "0"
+    // LMS's own backend rejects this field as "required" when it's the
+    // literal string "0" — a classic PHP empty() quirk (empty("0") === true),
+    // so a real 0 reads to their validation as though nothing was sent at
+    // all. "1" (half-rupees, i.e. ₹2 actual) is a negligible placeholder
+    // that's unambiguously non-empty and numeric, so it passes their
+    // required-field check while still reading as "no real rate" to anyone
+    // who looks at the lead.
+    const extraPlateStr = "1"
 
     // Off means off: a décor/DJ toggle switched off must zero both the
     // amount and its remarks (tier name), not just fall out of the total —
