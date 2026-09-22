@@ -671,43 +671,50 @@ function InventoryLedger({ profile }) {
         })}
       </div>
 
-      {/* What you are looking at and how it is ordered, on their own line
-          rather than crowded in beside the totals. No card: these are controls
-          for the list below, not a panel of their own. */}
-      <div className="flex flex-wrap items-center justify-between gap-3 px-1">
-        <div className="flex flex-wrap items-center gap-4">
+      {/* What you are looking at, and the two things that change it. The
+          hidden count and the "show items with no history" checkbox were the
+          same fact and the same switch stated twice, at opposite ends of the
+          row — so the count is the switch now. */}
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-0.5">
+        <div className="flex flex-wrap items-center gap-3">
           <p className="text-[12.5px] font-semibold text-slate-500">
-            Showing <span data-notranslate className="font-bold text-slate-800">{filteredItems.length}</span> item{filteredItems.length === 1 ? '' : 's'}
-            {hiddenNoHistory > 0 && (
-              <span className="text-slate-400">
-                {' · '}<span data-notranslate>{hiddenNoHistory.toLocaleString('en-IN')}</span> never purchased, hidden
-              </span>
-            )}
+            Showing <span data-notranslate className="font-bold text-slate-800">{filteredItems.length.toLocaleString('en-IN')}</span>
+            {' '}item{filteredItems.length === 1 ? '' : 's'}
           </p>
-          <div className="flex items-center gap-2">
-            <span className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500">Sort by</span>
-            <select value={sortBy} onChange={function (e) { setSortBy(e.target.value) }}
-              style={{ fontSize: '13px' }}
-              className="h-9 px-2.5 rounded-xl border border-slate-300 bg-white text-[12.5px] font-bold text-slate-700 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20">
-              <option value="name">Name A–Z</option>
-              <option value="value_desc">Value: high → low</option>
-              <option value="value_asc">Value: low → high</option>
-              <option value="rate_desc">Avg rate paid: high → low</option>
-              <option value="rate_asc">Avg rate paid: low → high</option>
-            </select>
-          </div>
+
+          {(showNoHistory || hiddenNoHistory > 0) && (
+            <button type="button" onClick={function () { setShowNoHistory(function (v) { return !v }) }}
+              aria-pressed={showNoHistory}
+              className={'inline-flex items-center gap-2 h-8 pl-2.5 pr-2 rounded-full border text-[12px] font-semibold transition-colors ' +
+                (showNoHistory
+                  ? 'border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100'
+                  : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50')}>
+              <Icon name={showNoHistory ? 'eye' : 'lock'} size={13} className="shrink-0 opacity-70" />
+              {showNoHistory
+                ? 'Including items never purchased'
+                : (<span><span data-notranslate className="font-bold">{hiddenNoHistory.toLocaleString('en-IN')}</span> never purchased, hidden</span>)}
+              <span className={'ml-0.5 px-1.5 h-[20px] inline-flex items-center rounded-full text-[11px] font-bold ' +
+                (showNoHistory ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600')}>
+                {showNoHistory ? 'Hide' : 'Show'}
+              </span>
+            </button>
+          )}
         </div>
-        <label className="inline-flex items-center gap-2 text-[12.5px] font-semibold text-slate-600 cursor-pointer">
-          <input type="checkbox" checked={showNoHistory}
-            onChange={function () { setShowNoHistory(function (v) { return !v }) }}
-            className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500/30" />
-          Show items with no history
-        </label>
+
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500">Sort by</span>
+          <select value={sortBy} onChange={function (e) { setSortBy(e.target.value) }}
+            style={{ fontSize: '13px' }}
+            className="h-9 pl-2.5 pr-8 rounded-xl border border-slate-300 bg-white text-[12.5px] font-bold text-slate-700 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20">
+            <option value="name">Name A–Z</option>
+            <option value="value_desc">Value: high → low</option>
+            <option value="value_asc">Value: low → high</option>
+            <option value="rate_desc">Avg rate paid: high → low</option>
+            <option value="rate_asc">Avg rate paid: low → high</option>
+          </select>
+        </div>
       </div>
 
-      {/* The headings leave every row and become one band. Printed on all
-          twenty-five of them, "QTY RATE VALUE" was said twenty-five times to
-          answer a question asked once. */}
       <div className="space-y-2">
       {pagedItems.length > 0 && (
         <div className={'hidden @2xl:grid ' + GRID + ' px-3.5 py-2 rounded-xl border border-slate-200 bg-slate-100/70 ' + COL_HEAD}>
