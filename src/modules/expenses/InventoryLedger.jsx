@@ -17,6 +17,26 @@ import { itemIcon } from '../../lib/itemThumb'
 // photograph now, so fifty of them is a very long page.
 var PAGE_SIZES = [10, 25, 50, 100]
 
+// Each filter gets its name above it. The placeholder was doing that job —
+// "All categories" — but a placeholder is gone the moment you pick something,
+// so four fields holding chips said nothing about which was which. `note` is
+// the right-hand end of the same line: the number chosen, or, for
+// sub-categories, what the categories above have narrowed it to.
+function FilterField({ label, note, noteTone, children }) {
+  return (
+    <div className="min-w-0">
+      <div className="flex items-baseline justify-between gap-2 mb-1">
+        <span className="text-[10.5px] font-bold uppercase tracking-[0.07em] text-slate-500">{label}</span>
+        {note && (
+          <span data-notranslate className={'shrink-0 text-[10.5px] font-bold tabular-nums ' +
+            (noteTone === 'quiet' ? 'text-slate-400' : 'text-indigo-600')}>{note}</span>
+        )}
+      </div>
+      {children}
+    </div>
+  )
+}
+
 // The header band and the rows are separate elements that have to line up.
 // Matching two flex rows by hand does not hold — a spacer one of them has and
 // the other does not, or a border counted on one side only, and the headings
@@ -625,27 +645,41 @@ function InventoryLedger({ profile }) {
               </button>
             )}
           </div>
-          <div className="grid grid-cols-1 @2xl:grid-cols-2 @4xl:grid-cols-4 gap-2">
-          <MultiSearchDropdown
-            items={[{ value: 'inventory', label: 'Inventory' }, { value: 'catering_store', label: 'Catering Store' }]}
-            values={sourceFilters}
-            onChange={setSourceFilters}
-            placeholder="All sources" />
-          <MultiSearchDropdown
-            items={allCats.map(function (c) { return { value: c, label: c } })}
-            values={catFilters}
-            onChange={function (next) { setCatFilters(next); setSubCatFilters([]) }}
-            placeholder="All categories" />
-          <MultiSearchDropdown
-            items={allSubCats.map(function (s) { return { value: s, label: s } })}
-            values={subCatFilters}
-            onChange={setSubCatFilters}
-            placeholder="All sub-categories" />
-          <MultiSearchDropdown
-            items={allVendors.map(function (v) { return { value: v, label: v } })}
-            values={vendorFilters}
-            onChange={setVendorFilters}
-            placeholder="All vendors" />
+          <div className="grid grid-cols-1 @2xl:grid-cols-2 @4xl:grid-cols-4 gap-x-2 gap-y-3">
+          <FilterField label="Source" note={sourceFilters.length > 0 ? sourceFilters.length + ' chosen' : null}>
+            <MultiSearchDropdown
+              items={[{ value: 'inventory', label: 'Inventory' }, { value: 'catering_store', label: 'Catering Store' }]}
+              values={sourceFilters}
+              onChange={setSourceFilters}
+              placeholder="All sources" />
+          </FilterField>
+          {/* Choosing a category empties the sub-categories on purpose — the
+              ones that were chosen may not belong to it. Said here, because a
+              field clearing itself with no explanation reads as a fault. */}
+          <FilterField label="Category" note={catFilters.length > 0 ? catFilters.length + ' chosen' : null}>
+            <MultiSearchDropdown
+              items={allCats.map(function (c) { return { value: c, label: c } })}
+              values={catFilters}
+              onChange={function (next) { setCatFilters(next); setSubCatFilters([]) }}
+              placeholder="All categories" />
+          </FilterField>
+          <FilterField label="Sub-category"
+            note={subCatFilters.length > 0 ? subCatFilters.length + ' chosen'
+              : catFilters.length > 0 ? allSubCats.length + ' in those categories' : null}
+            noteTone={subCatFilters.length > 0 ? 'active' : 'quiet'}>
+            <MultiSearchDropdown
+              items={allSubCats.map(function (s) { return { value: s, label: s } })}
+              values={subCatFilters}
+              onChange={setSubCatFilters}
+              placeholder={catFilters.length > 0 && allSubCats.length === 0 ? 'None in those categories' : 'All sub-categories'} />
+          </FilterField>
+          <FilterField label="Vendor" note={vendorFilters.length > 0 ? vendorFilters.length + ' chosen' : null}>
+            <MultiSearchDropdown
+              items={allVendors.map(function (v) { return { value: v, label: v } })}
+              values={vendorFilters}
+              onChange={setVendorFilters}
+              placeholder="All vendors" />
+          </FilterField>
           </div>
         </div>
         )}
