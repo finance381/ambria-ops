@@ -83,10 +83,10 @@ function InventoryLedger({ profile }) {
     try {
       var results = await Promise.all([
         fetchAll(supabase.from('inventory_items')
-          .select('id, name, inventory_id, qty, unit, rate_paise, image_path, categories(id, name), sub_categories(id, name)')
+          .select('id, name, inventory_id, qty, rate_paise, image_path, categories(id, name), sub_categories(id, name)')
           .order('name', { ascending: true })),
         fetchAll(supabase.from('catering_store_items')
-          .select('id, name, inventory_id, qty, unit, rate_paise, image_path, categories(id, name), sub_categories(id, name)')
+          .select('id, name, inventory_id, qty, rate_paise, image_path, categories(id, name), sub_categories(id, name)')
           .order('name', { ascending: true })),
         fetchAll(supabase.from('v_item_purchase_history')
           .select('item_id, item_source, vendor_name, qty, unit, rate_paise, amount_paise, txn_date, source_type, source_id, source_ref'))
@@ -169,7 +169,7 @@ function InventoryLedger({ profile }) {
           _key: 'inventory:' + r.id, _source: 'inventory', id: r.id,
           name: r.name || '', code: r.inventory_id || '',
           cat: r.categories && r.categories.name || '', subcat: r.sub_categories && r.sub_categories.name || '',
-          rate_paise: r.rate_paise || 0, live_qty: Number(r.qty || 0), unit: r.unit || '',
+          rate_paise: r.rate_paise || 0, live_qty: Number(r.qty || 0),
           img: r.image_path ? (supabase.storage.from('images').getPublicUrl(r.image_path).data?.publicUrl || '') : ''
         })
       })
@@ -178,7 +178,7 @@ function InventoryLedger({ profile }) {
           _key: 'catering_store:' + r.id, _source: 'catering_store', id: r.id,
           name: r.name || '', code: r.inventory_id || '',
           cat: r.categories && r.categories.name || '', subcat: r.sub_categories && r.sub_categories.name || '',
-          rate_paise: r.rate_paise || 0, live_qty: Number(r.qty || 0), unit: r.unit || '',
+          rate_paise: r.rate_paise || 0, live_qty: Number(r.qty || 0),
           img: r.image_path ? (supabase.storage.from('images').getPublicUrl(r.image_path).data?.publicUrl || '') : ''
         })
       })
@@ -782,15 +782,13 @@ function InventoryLedger({ profile }) {
               {/* A rule down the left of the first figure, so the gap between
                   the name and the numbers is a boundary rather than an
                   accident. */}
-              {[{ h: 'Qty', v: fmtQty(item.live_qty), sub: item.unit || null },
+              {[{ h: 'Qty', v: fmtQty(item.live_qty) },
                 { h: 'Rate', v: item.rate_paise > 0 ? formatPaise(item.rate_paise) : '—' },
                 { h: 'Value', v: value > 0 ? formatPaise(value) : '—' }].map(function (f, fi) {
                 return (
                   <span key={fi} className={CELL_FIG + (fi === 0 ? ' border-l border-slate-100' : '')}>
                     <span className={CELL_HEAD}>{f.h}</span>
                     <span data-notranslate className="block mt-1 text-[13.5px] font-bold text-slate-900 tabular-nums">{f.v}</span>
-                    {/* A bare 144 does not say 144 of what. */}
-                    {f.sub && <span className="block mt-0.5 text-[10.5px] font-semibold text-slate-400">{f.sub}</span>}
                   </span>
                 )
               })}
