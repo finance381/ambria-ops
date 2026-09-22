@@ -287,11 +287,14 @@ function InventoryLedger({ profile }) {
     return Object.keys(s).sort()
   }, [items, catFilters])
 
-  var filteredItems = useMemo(function () {
+  // Everything the search and the four filters leave, with the no-history
+  // rule applied or not. Asked both ways because "17 of 2,785" reads as the
+  // filters having removed 2,768 when almost all of them are held back by a
+  // default toggle instead.
+  var matchesFilters = useMemo(function () {
     var q = search.trim().toLowerCase()
     return items.filter(function (i) {
       var rows = historyByItem[i._key] || []
-      if (!showNoHistory && rows.length === 0) return false
       if (sourceFilters.length > 0 && sourceFilters.indexOf(i._source) === -1) return false
       if (catFilters.length > 0 && catFilters.indexOf(i.cat) === -1) return false
       if (subCatFilters.length > 0 && subCatFilters.indexOf(i.subcat) === -1) return false
@@ -306,7 +309,15 @@ function InventoryLedger({ profile }) {
       }
       return true
     })
-  }, [items, search, catFilters, subCatFilters, sourceFilters, vendorFilters, historyByItem, showNoHistory])
+  }, [items, search, catFilters, subCatFilters, sourceFilters, vendorFilters, historyByItem])
+
+  var filteredItems = useMemo(function () {
+    if (showNoHistory) return matchesFilters
+    return matchesFilters.filter(function (i) { return (historyByItem[i._key] || []).length > 0 })
+  }, [matchesFilters, historyByItem, showNoHistory])
+
+  // Held back by the toggle, not by anything the reader chose.
+  var hiddenNoHistory = matchesFilters.length - filteredItems.length
 
   var sortedItems = useMemo(function () {
     if (sortBy === 'name') return filteredItems
@@ -657,8 +668,13 @@ function InventoryLedger({ profile }) {
           for the list below, not a panel of their own. */}
       <div className="flex flex-wrap items-center justify-between gap-3 px-1">
         <div className="flex flex-wrap items-center gap-4">
-          <p className="text-[12.5px] font-semibold text-slate-500" data-notranslate>
-            Showing <span className="font-bold text-slate-800">{filteredItems.length}</span> of {items.length} items
+          <p className="text-[12.5px] font-semibold text-slate-500">
+            Showing <span data-notranslate className="font-bold text-slate-800">{filteredItems.length}</span> item{filteredItems.length === 1 ? '' : 's'}
+            {hiddenNoHistory > 0 && (
+              <span className="text-slate-400">
+                {' · '}<span data-notranslate>{hiddenNoHistory.toLocaleString('en-IN')}</span> never purchased, hidden
+              </span>
+            )}
           </p>
           <div className="flex items-center gap-2">
             <span className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500">Sort by</span>
