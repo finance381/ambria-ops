@@ -503,17 +503,15 @@ function CostTransfers({ profile }) {
         </td>
         <td className="px-3 py-2 text-xs">{partyLabel(r, 'from')}{partyMeta(r, 'from')}</td>
         <td className="px-3 py-2 text-xs">{partyLabel(r, 'to')}{partyMeta(r, 'to')}</td>
-        <td className="px-3 py-2 text-right font-mono text-xs whitespace-nowrap">
+        {/* The check goes with the figure. In the description cell it was a
+            chip among Reversal, Reversed and Edited — three labels about the
+            row and one verdict on it, all dressed the same. */}
+        <td className="px-3 py-2 text-right font-mono text-xs whitespace-nowrap align-top">
           Rs {(r.amount_paise / 100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-        </td>
-        <td className="px-3 py-2 text-xs">
-          {r.description}
-          {isReversal && <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 uppercase">Reversal</span>}
-          {isReversed && <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded bg-gray-200 text-gray-600 uppercase">Reversed</span>}
-          {r.edited_at && <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 uppercase">Edited</span>}
-          {(r.checked_by || canMarkChecked) && (
-            <span className="ml-1 inline-block">
+          {(canMarkChecked || r.checked_by) && (
+            <span className="mt-1 flex justify-end" onClick={function (ev) { ev.stopPropagation() }}>
               <CheckedStamp
+                variant="stamp" size={64}
                 checked={!!r.checked_by}
                 checkedAt={r.checked_at}
                 canToggle={canMarkChecked}
@@ -523,6 +521,12 @@ function CostTransfers({ profile }) {
               />
             </span>
           )}
+        </td>
+        <td className="px-3 py-2 text-xs">
+          {r.description}
+          {isReversal && <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 uppercase">Reversal</span>}
+          {isReversed && <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded bg-gray-200 text-gray-600 uppercase">Reversed</span>}
+          {r.edited_at && <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 uppercase">Edited</span>}
         </td>
         <td className="px-3 py-2 text-right whitespace-nowrap">
           {canEdit && (
@@ -549,8 +553,21 @@ function CostTransfers({ profile }) {
       <div className={"bg-white border border-gray-200 rounded-lg p-3 space-y-1.5 " + (isReversed ? "opacity-60" : "")}>
         <div className="flex items-center justify-between">
           <span className="text-xs text-gray-500">{formatDate(r.effective_date)}</span>
-          <span className="font-mono text-sm font-semibold text-gray-800">
-            Rs {(r.amount_paise / 100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+          <span className="font-mono text-sm font-semibold text-gray-800 text-right">
+            <span className="block">Rs {(r.amount_paise / 100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+            {(canMarkChecked || r.checked_by) && (
+              <span className="mt-1 flex justify-end" onClick={function (ev) { ev.stopPropagation() }}>
+                <CheckedStamp
+                  variant="stamp" size={64}
+                  checked={!!r.checked_by}
+                  checkedAt={r.checked_at}
+                  canToggle={canMarkChecked}
+                  canUncheck={r.checked_by === profile?.id || isAdmin}
+                  busy={checkingTransferId === r.id}
+                  onToggle={function () { toggleTransferCheck(r) }}
+                />
+              </span>
+            )}
           </span>
         </div>
         <div className="text-[10px] text-gray-400">Logged {formatDateTime(r.created_at)}</div>
@@ -565,16 +582,6 @@ function CostTransfers({ profile }) {
             {isReversal && <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 uppercase">Reversal</span>}
             {isReversed && <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-200 text-gray-600 uppercase">Reversed</span>}
             {r.edited_at && <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 uppercase">Edited</span>}
-            {(r.checked_by || canMarkChecked) && (
-              <CheckedStamp
-                checked={!!r.checked_by}
-                checkedAt={r.checked_at}
-                canToggle={canMarkChecked}
-                canUncheck={r.checked_by === profile?.id || isAdmin}
-                busy={checkingTransferId === r.id}
-                onToggle={function () { toggleTransferCheck(r) }}
-              />
-            )}
           </div>
           <div className="flex gap-3">
             {canEdit && (
