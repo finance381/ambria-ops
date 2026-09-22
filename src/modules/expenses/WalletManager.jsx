@@ -3645,9 +3645,15 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
               // there, and an empty wrapper would still spend its margin.
               if (!canMarkChecked && !chk.checked_by) return null
               return (
-              <div className="mt-1.5 flex justify-end" onClick={function (ev) { ev.stopPropagation() }}>
+              /* The artwork, not the chip: a chip beside an amount reads as
+                 one more label, and this is a verdict on the figure above it.
+                 Unchecked it stays the small dashed prompt either way — a
+                 160px empty circle asking to be pressed would be a lot of
+                 furniture for an action most rows never take. */
+              <div className="mt-2 flex justify-end" onClick={function (ev) { ev.stopPropagation() }}>
                 {isExpRow ? (
                   <CheckedStamp
+                    variant="stamp"
                     checked={!!expenseRefs[t.reference_id].checked_by}
                     checkerName={expenseRefs[t.reference_id].checked_by && walletProfiles[expenseRefs[t.reference_id].checked_by] ? walletProfiles[expenseRefs[t.reference_id].checked_by].name : null}
                     checkedAt={expenseRefs[t.reference_id].checked_at}
@@ -3658,6 +3664,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                   />
                 ) : (
                   <CheckedStamp
+                    variant="stamp"
                     checked={!!t.checked_by}
                     checkerName={t.checked_by && walletProfiles[t.checked_by] ? walletProfiles[t.checked_by].name : null}
                     checkedAt={t.checked_at}
