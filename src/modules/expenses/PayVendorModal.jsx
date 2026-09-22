@@ -40,7 +40,15 @@ function PayVendorModal({ vendor, profile, onClose, onSuccess }) {
   // what's owed to the vendor.
   var [sourceBills, setSourceBills] = useState([])
   var [sourceBillsLoading, setSourceBillsLoading] = useState(true)
-  var [sourceExpenseId, setSourceExpenseId] = useState('')
+  var [sourceExpenseIds, setSourceExpenseIds] = useState([])
+  var [billFrom, setBillFrom] = useState('')
+  var [billTo, setBillTo] = useState('')
+
+  function toggleSourceBill(id) {
+    setSourceExpenseIds(function (prev) {
+      return prev.indexOf(id) === -1 ? prev.concat([id]) : prev.filter(function (x) { return x !== id })
+    })
+  }
 
   useEffect(function () {
     var cancelled = false
@@ -141,7 +149,7 @@ function PayVendorModal({ vendor, profile, onClose, onSuccess }) {
       if (!isFinite(dedR) || dedR < 0) { setPayError('Enter a valid deduction amount'); return }
       dedReason = (deductionReason || '').trim()
       if (dedR > 0 && !dedReason) { setPayError('Deduction reason required'); return }
-      if (dedR > 0 && sourceBills.length > 0 && !sourceExpenseId) { setPayError('Select which bill this deduction is against'); return }
+      if (dedR > 0 && sourceBills.length > 0 && sourceExpenseIds.length === 0) { setPayError('Select which bill(s) this deduction is against'); return }
     }
     if (!payImages || payImages.length === 0) { setPayError('At least one payment proof image is required'); return }
     if (!profile || !profile.id) { setPayError('Session error — please refresh'); return }
@@ -198,7 +206,7 @@ function PayVendorModal({ vendor, profile, onClose, onSuccess }) {
       rpcArgs.p_deduction_paise = Math.round(dedR * 100)
       rpcArgs.p_deduction_reason = dedReason
       if (dedUploadedPath) rpcArgs.p_deduction_image_path = dedUploadedPath
-      if (sourceExpenseId) rpcArgs.p_source_expense_id = Number(sourceExpenseId)
+      if (sourceExpenseIds.length > 0) rpcArgs.p_source_expense_ids = sourceExpenseIds.map(Number)
     }
 
     var { error } = await supabase.rpc('pay_vendor', rpcArgs)
@@ -327,7 +335,7 @@ function PayVendorModal({ vendor, profile, onClose, onSuccess }) {
           <label className="flex items-center gap-2.5 text-[12.5px] font-medium text-slate-700 cursor-pointer">
             <input type="checkbox" checked={useDeduction}
               className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500/30"
-              onChange={function (ev) { setUseDeduction(ev.target.checked); if (!ev.target.checked) { setDeductionAmount(''); setDeductionReason(''); setDedImage(null) } }} />
+              onChange={function (ev) { setUseDeduction(ev.target.checked); if (!ev.target.checked) { setDeductionAmount(''); setDeductionReason(''); setDedImage(null); setSourceExpenseIds([]) } }} />
             Deduct from bill (discount / quality issue)
           </label>
           {/* A card of its own rather than fields hanging off a rule. It is a
@@ -355,24 +363,54 @@ function PayVendorModal({ vendor, profile, onClose, onSuccess }) {
               </div>
               <div>
                 <label className={LABEL}>
-                  Which bill is this discount against?
+                  Which bill(s) is this discount against?
                   {sourceBills.length === 0 && !sourceBillsLoading && <span className="ml-1 font-normal text-slate-400">(no bills found — the deduction will not be credited to an expense type)</span>}
+                  {sourceExpenseIds.length > 0 && <span className="ml-1 font-normal text-indigo-600">({sourceExpenseIds.length} selected)</span>}
                 </label>
                 {sourceBillsLoading ? (
                   <p className="text-[12.5px] text-slate-500">Loading bills…</p>
                 ) : sourceBills.length > 0 ? (
-                  <div className="relative">
-                    <select value={sourceExpenseId} onChange={function (ev) { setSourceExpenseId(ev.target.value) }}
-                      className={FIELD + ' appearance-none pr-10'}
-                      style={{ fontSize: '16px' }}>
-                      <option value="">Select bill…</option>
-                      {sourceBills.map(function (b) {
-                        return <option key={b.id} value={b.id}>{formatDate(b.expense_date)} — {b.description || 'Expense #' + b.id} ({formatPoints(b.amount_paise)})</option>
-                      })}
-                    </select>
-                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
-                      <Icon name="chevronDown" size={15} />
-                    </span>
+                  <div>
+                    <div className="flex items-end gap-2 mb-1.5">
+                      <div>
+                        <label className="block text-[9.5px] font-bold text-slate-400 uppercase tracking-wide mb-0.5">From</label>
+                        <input type="date" value={billFrom} max={billTo || undefined}
+                          onChange={function (ev) { setBillFrom(ev.target.value) }}
+                          className="h-8 px-2 bg-white border border-slate-300 rounded-lg text-[12px] text-slate-900 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20" />
+                      </div>
+                      <div>
+                        <label className="block text-[9.5px] font-bold text-slate-400 uppercase tracking-wide mb-0.5">To</label>
+                        <input type="date" value={billTo} min={billFrom || undefined}
+                          onChange={function (ev) { setBillTo(ev.target.value) }}
+                          className="h-8 px-2 bg-white border border-slate-300 rounded-lg text-[12px] text-slate-900 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20" />
+                      </div>
+                      {(billFrom || billTo) && (
+                        <button type="button" onClick={function () { setBillFrom(''); setBillTo('') }}
+                          className="h-8 px-2 text-[11.5px] font-bold text-slate-500 hover:text-slate-800 transition-colors">
+                          Clear
+                        </button>
+                      )}
+                    </div>
+                    <div className="max-h-44 overflow-y-auto space-y-1.5 p-1.5 bg-white border border-slate-300 rounded-xl">
+                    {sourceBills.filter(function (b) {
+                      if (billFrom && (!b.expense_date || b.expense_date < billFrom)) return false
+                      if (billTo && (!b.expense_date || b.expense_date > billTo)) return false
+                      return true
+                    }).map(function (b) {
+                      var checked = sourceExpenseIds.indexOf(String(b.id)) !== -1
+                      return (
+                        <label key={b.id}
+                          className={"flex items-center gap-2.5 px-2 py-1.5 rounded-lg cursor-pointer transition-colors " + (checked ? "bg-indigo-50" : "hover:bg-slate-50")}>
+                          <input type="checkbox" checked={checked}
+                            onChange={function () { toggleSourceBill(String(b.id)) }}
+                            className="w-4 h-4 shrink-0 accent-indigo-600" />
+                          <span className="min-w-0 text-[12.5px] text-slate-700">
+                            {formatDate(b.expense_date)} — {b.description || 'Expense #' + b.id} ({formatPoints(b.amount_paise)})
+                          </span>
+                        </label>
+                      )
+                    })}
+                    </div>
                   </div>
                 ) : null}
               </div>
