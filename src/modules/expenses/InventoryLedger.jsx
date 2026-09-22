@@ -671,12 +671,8 @@ function InventoryLedger({ profile }) {
         })}
       </div>
 
-      {/* One pill carries the count, what the toggle does, the switch itself
-          and the reason for it — rather than a floating sentence next to a
-          separately-styled button, which read as two controls guessing at the
-          same fact. The switch's own two states are named \"Hide\"/\"Show\",
-          not \"Off\"/\"On\": a generic on/off says nothing until you already
-          know what it turns on, and the label should be readable on its own. */}
+      {/* One pill carries the count and the checkbox that changes it, rather
+          than a floating sentence next to a separately-styled control. */}
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
         <div className="flex items-center gap-3 h-10 pl-4 pr-3 rounded-full border border-slate-200 bg-white">
           <p className="text-[12.5px] font-semibold text-slate-600 whitespace-nowrap">
@@ -688,26 +684,12 @@ function InventoryLedger({ profile }) {
             <>
               <span aria-hidden="true" className="w-px h-5 bg-slate-200" />
 
-              <span className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-slate-600 whitespace-nowrap">
-                <Icon name="eye" size={14} className="shrink-0 text-slate-400" />
+              <label className="inline-flex items-center gap-2 text-[12.5px] font-semibold text-slate-600 whitespace-nowrap cursor-pointer">
+                <input type="checkbox" checked={showNoHistory}
+                  onChange={function () { setShowNoHistory(function (v) { return !v }) }}
+                  className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500/30" />
                 Including items never purchased
-              </span>
-
-              {/* The switch's track carries its own label — Hide when it is
-                  off (that is what is currently happening), Show when it is on
-                  — so the state reads without a separate word beside it. */}
-              <button type="button" role="switch" aria-checked={showNoHistory}
-                onClick={function () { setShowNoHistory(function (v) { return !v }) }}
-                className={'relative shrink-0 inline-flex items-center h-6 w-[60px] rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 ' +
-                  (showNoHistory ? 'bg-indigo-600' : 'bg-slate-200')}>
-                <span className={'absolute text-[10px] font-bold uppercase tracking-wide transition-colors ' +
-                  (showNoHistory ? 'left-2 text-white' : 'right-2 text-slate-500')}>
-                  {showNoHistory ? 'Show' : 'Hide'}
-                </span>
-                <span aria-hidden="true"
-                  className={'inline-block w-5 h-5 rounded-full bg-white shadow transition-transform ' +
-                    (showNoHistory ? 'translate-x-[36px]' : 'translate-x-0.5')} />
-              </button>
+              </label>
 
               <span className="relative inline-flex" title={hiddenNoHistory > 0
                 ? hiddenNoHistory.toLocaleString('en-IN') + ' items have never been purchased through this system, so there is no rate or vendor history for them. Hidden by default.'
