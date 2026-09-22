@@ -27,7 +27,10 @@ function CheckedStamp({ checked, checkerName, checkedAt, canToggle, canUncheck, 
     // It stays a chip either way.
     return (
       <button type="button" disabled={busy} onClick={onToggle}
-        className="h-[22px] inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-[0.04em] px-2 rounded-md border border-dashed border-slate-300 text-slate-400 hover:border-emerald-300 hover:text-emerald-600 hover:bg-emerald-50 transition-colors disabled:opacity-50">
+        // shrink-0 and nowrap because the two ledgers drop this into a
+        // fixed-width slot as a flex item, where it was being squeezed until
+        // "MARK CHECKED" broke across two lines inside a 22px-tall pill.
+        className="h-[22px] shrink-0 whitespace-nowrap inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-[0.04em] px-2 rounded-md border border-dashed border-slate-300 text-slate-500 hover:border-emerald-300 hover:text-emerald-600 hover:bg-emerald-50 transition-colors disabled:opacity-50">
         <Icon name="checkCircle" size={10} />
         Mark checked
       </button>

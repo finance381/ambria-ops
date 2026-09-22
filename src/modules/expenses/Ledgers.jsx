@@ -1031,7 +1031,7 @@ function Ledgers({ profile, onNavigateToExpenses }) {
                           chips where it read as one more label. Nothing is
                           drawn for someone who cannot mark a row. */}
                       {(anyDrillChecked || canMarkChecked) && (
-                        <span className="shrink-0 w-[112px] self-center flex items-center justify-center"
+                        <span className="shrink-0 w-[128px] self-center flex items-center justify-center"
                           onClick={function (ev) { ev.stopPropagation() }}>
                           {r._checkedBy ? (
                             <CheckedStamp
