@@ -29,11 +29,7 @@ var GRID = 'grid items-center gap-x-3.5 grid-cols-[2.5rem_minmax(0,1fr)]' +
   ' @4xl:grid-cols-[2.5rem_minmax(0,1fr)_5rem_5rem_5rem_12.5rem]'
 var CELL_FIG = 'hidden @2xl:flex flex-col items-center justify-center self-stretch text-center'
 var CELL_PANEL = 'hidden @4xl:block self-stretch'
-// Each column names itself inside the row rather than once in a band above the
-// list. The rows are separate cards with gaps between them, so a few rows down
-// the band is no longer attached to the figures it names, which is the one
-// case a header band exists to answer.
-var CELL_HEAD = 'block text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400'
+var COL_HEAD = 'text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500'
 
 function InventoryLedger({ profile }) {
   var permsNew = (profile && profile.permsNew) || []
@@ -83,10 +79,10 @@ function InventoryLedger({ profile }) {
     try {
       var results = await Promise.all([
         fetchAll(supabase.from('inventory_items')
-          .select('id, name, inventory_id, qty, rate_paise, image_path, categories(id, name), sub_categories(id, name)')
+          .select('id, name, inventory_id, qty, unit, rate_paise, image_path, categories(id, name), sub_categories(id, name)')
           .order('name', { ascending: true })),
         fetchAll(supabase.from('catering_store_items')
-          .select('id, name, inventory_id, qty, rate_paise, image_path, categories(id, name), sub_categories(id, name)')
+          .select('id, name, inventory_id, qty, unit, rate_paise, image_path, categories(id, name), sub_categories(id, name)')
           .order('name', { ascending: true })),
         fetchAll(supabase.from('v_item_purchase_history')
           .select('item_id, item_source, vendor_name, qty, unit, rate_paise, amount_paise, txn_date, source_type, source_id, source_ref'))
@@ -169,7 +165,7 @@ function InventoryLedger({ profile }) {
           _key: 'inventory:' + r.id, _source: 'inventory', id: r.id,
           name: r.name || '', code: r.inventory_id || '',
           cat: r.categories && r.categories.name || '', subcat: r.sub_categories && r.sub_categories.name || '',
-          rate_paise: r.rate_paise || 0, live_qty: Number(r.qty || 0),
+          rate_paise: r.rate_paise || 0, live_qty: Number(r.qty || 0), unit: r.unit || '',
           img: r.image_path ? (supabase.storage.from('images').getPublicUrl(r.image_path).data?.publicUrl || '') : ''
         })
       })
@@ -178,7 +174,7 @@ function InventoryLedger({ profile }) {
           _key: 'catering_store:' + r.id, _source: 'catering_store', id: r.id,
           name: r.name || '', code: r.inventory_id || '',
           cat: r.categories && r.categories.name || '', subcat: r.sub_categories && r.sub_categories.name || '',
-          rate_paise: r.rate_paise || 0, live_qty: Number(r.qty || 0),
+          rate_paise: r.rate_paise || 0, live_qty: Number(r.qty || 0), unit: r.unit || '',
           img: r.image_path ? (supabase.storage.from('images').getPublicUrl(r.image_path).data?.publicUrl || '') : ''
         })
       })
@@ -718,6 +714,20 @@ function InventoryLedger({ profile }) {
       </div>
 
       <div className="space-y-2">
+      {/* One band over the list rather than a heading inside all twenty-five
+          rows. It is drawn on the same grid as the rows, so a column and the
+          figures under it cannot drift apart. */}
+      {pagedItems.length > 0 && (
+        <div className={'hidden @2xl:grid ' + GRID + ' px-3.5 py-2 rounded-xl border border-slate-200 bg-slate-50 ' + COL_HEAD}>
+          <span />
+          <span className="min-w-0">Item details</span>
+          <span className="text-center">Qty</span>
+          <span className="text-center">Rate</span>
+          <span className="text-center">Value</span>
+          <span className="hidden @4xl:block pl-3.5">Last purchase</span>
+        </div>
+      )}
+
       <div className="space-y-2">
         {pagedItems.map(function (item) {
           var a = aggregateItem(item)
@@ -749,19 +759,34 @@ function InventoryLedger({ profile }) {
               <span className="min-w-0 grid grid-cols-[7rem_minmax(0,1fr)] gap-x-3 gap-y-1 items-center">
                 <span className="col-span-2 block font-display text-[13.5px] font-bold text-slate-900 leading-tight truncate">{item.name}</span>
 
-                <span data-notranslate className="block text-[11.5px] leading-tight font-bold text-slate-700 truncate">{item.code}</span>
-                <span className="block text-[11.5px] leading-tight text-slate-600 truncate">
+                {/* A rule after the code rather than a middot: the code is an
+                    identifier and what follows it is a path, and one dot
+                    between them made the whole line look like one list. */}
+                <span data-notranslate className="flex items-center gap-2 text-[11.5px] leading-tight font-bold text-slate-700 min-w-0">
+                  <span className="truncate">{item.code}</span>
+                  <span aria-hidden="true" className="shrink-0 w-px h-3 bg-slate-200" />
+                </span>
+                <span className="block text-[11.5px] leading-tight text-slate-500 truncate">
                   {item.cat}
-                  {item._source === 'catering_store' && <span className="font-bold text-purple-600">{item.cat ? ' · ' : ''}Catering</span>}
+                  {item.subcat && <span><span className="text-slate-300"> › </span>{item.subcat}</span>}
+                  {item._source === 'catering_store' && (
+                    <span className="font-bold text-purple-600">
+                      <span className="font-normal text-slate-300"> › </span>Catering
+                    </span>
+                  )}
                 </span>
                 {/* Each cell keeps its 18px whether or not it has a chip, so a
                     row with no sub-category and a row with two vendors are the
                     same height and the cards stack as a column rather than a
                     zigzag. */}
+                {/* The most specific filing the item has — its sub-category
+                    when it has one, its category otherwise — so the slot is
+                    never empty and the vendor chips beside it always begin in
+                    the same place. */}
                 <span className="min-h-[18px] flex items-center">
-                  {item.subcat && (
-                    <span className="inline-flex items-center max-w-full h-[18px] px-1.5 rounded-md border border-slate-200 bg-slate-50 text-[10px] font-bold leading-none text-slate-600 truncate">
-                      {item.subcat}
+                  {(item.subcat || item.cat) && (
+                    <span className="inline-flex items-center max-w-full h-[18px] px-1.5 rounded-md border border-sky-200 bg-sky-50 text-[10px] font-bold leading-none text-sky-700 truncate">
+                      {item.subcat || item.cat}
                     </span>
                   )}
                 </span>
@@ -784,13 +809,14 @@ function InventoryLedger({ profile }) {
               {/* A rule down the left of the first figure, so the gap between
                   the name and the numbers is a boundary rather than an
                   accident. */}
-              {[{ h: 'Qty', v: fmtQty(item.live_qty) },
-                { h: 'Rate', v: item.rate_paise > 0 ? formatPaise(item.rate_paise) : '—' },
-                { h: 'Value', v: value > 0 ? formatPaise(value) : '—' }].map(function (f, fi) {
+              {[{ v: fmtQty(item.live_qty), sub: item.unit || null },
+                { v: item.rate_paise > 0 ? formatPaise(item.rate_paise) : '—' },
+                { v: value > 0 ? formatPaise(value) : '—' }].map(function (f, fi) {
                 return (
                   <span key={fi} className={CELL_FIG + (fi === 0 ? ' border-l border-slate-100' : '')}>
-                    <span className={CELL_HEAD}>{f.h}</span>
-                    <span data-notranslate className="block mt-1 text-[13.5px] font-bold text-slate-900 tabular-nums">{f.v}</span>
+                    <span data-notranslate className="block text-[13.5px] font-bold text-slate-900 tabular-nums">{f.v}</span>
+                    {/* A bare 144 does not say 144 of what. */}
+                    {f.sub && <span className="block mt-0.5 text-[10.5px] font-semibold text-slate-400">{f.sub}</span>}
                   </span>
                 )
               })}
@@ -800,7 +826,6 @@ function InventoryLedger({ profile }) {
                   and the heading already mark the column off, and a coloured
                   panel on every row shouted over the figures beside it. */}
               <span className={CELL_PANEL + ' border-l border-slate-100 pl-3.5 space-y-1'}>
-                <span className={CELL_HEAD}>Last purchase</span>
                 {last ? (
                   <>
                     <span className="flex items-center gap-1.5 min-w-0 h-[18px]">
