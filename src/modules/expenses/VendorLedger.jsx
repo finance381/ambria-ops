@@ -475,6 +475,8 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
   var [entriesLoading, setEntriesLoading] = useState(false)
   var [showDeleted, setShowDeleted] = useState(false)
   var [paymentTypeFilter, setPaymentTypeFilter] = useState('all')  // 'all' | 'fnf' | 'advance'
+  var [entryFrom, setEntryFrom] = useState('')
+  var [entryTo, setEntryTo] = useState('')
   // Which entries have their amount-breakdown/allocation panel expanded —
   // collapsed by default so a vendor with many purchases fits more rows.
   var [expandedEntryIds, setExpandedEntryIds] = useState({})
@@ -740,6 +742,8 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
     setView('detail')
     setShowDeleted(false)
     setPaymentTypeFilter('all')
+    setEntryFrom('')
+    setEntryTo('')
 
     // Both reads start now. The vendor master carries the phone, the contact
     // and the opening balance — none of which the ledger read has anything to
@@ -1388,8 +1392,11 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
   var displayEntries = withRunning.slice().reverse()
   var fnfCount = displayEntries.filter(function (e) { return e.metadata && e.metadata.payment_type === 'fnf' }).length
   var advanceCount = displayEntries.filter(function (e) { return e.metadata && e.metadata.payment_type === 'advance' }).length
-  var visibleEntries = paymentTypeFilter === 'all' ? displayEntries : displayEntries.filter(function (e) {
-    return e.metadata && e.metadata.payment_type === paymentTypeFilter
+  var visibleEntries = displayEntries.filter(function (e) {
+    if (paymentTypeFilter !== 'all' && !(e.metadata && e.metadata.payment_type === paymentTypeFilter)) return false
+    if (entryFrom && (!e.entry_date || e.entry_date < entryFrom)) return false
+    if (entryTo && (!e.entry_date || e.entry_date > entryTo)) return false
+    return true
   })
   // Whether this list needs a column for the stamp at all. Rendered only where
   // there is one, the stamp widened that row's right-hand cluster and pushed
@@ -1538,6 +1545,28 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
           })}
         </div>
       )}
+
+      {/* From/To date filter on the entries list below */}
+      <div className="flex items-end gap-2 flex-wrap">
+        <div>
+          <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">From</label>
+          <input type="date" value={entryFrom} max={entryTo || undefined}
+            onChange={function (e) { setEntryFrom(e.target.value) }}
+            className="h-9 px-2.5 bg-white border border-slate-300 rounded-lg text-[12.5px] text-slate-900 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20" />
+        </div>
+        <div>
+          <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">To</label>
+          <input type="date" value={entryTo} min={entryFrom || undefined}
+            onChange={function (e) { setEntryTo(e.target.value) }}
+            className="h-9 px-2.5 bg-white border border-slate-300 rounded-lg text-[12.5px] text-slate-900 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20" />
+        </div>
+        {(entryFrom || entryTo) && (
+          <button type="button" onClick={function () { setEntryFrom(''); setEntryTo('') }}
+            className="h-9 px-3 text-[12px] font-bold text-slate-500 hover:text-slate-800 transition-colors">
+            Clear
+          </button>
+        )}
+      </div>
 
       {/* Admin toggle: show deleted */}
       {isAdmin && (
