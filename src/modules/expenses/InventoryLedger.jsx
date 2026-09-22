@@ -32,6 +32,7 @@ function InventoryLedger({ profile }) {
   var [showNoHistory, setShowNoHistory] = useState(false)
   var [page, setPage] = useState(0)
   var [exporting, setExporting] = useState(false)
+  var [showFilters, setShowFilters] = useState(false)
 
   function fmtQty(n) {
     var num = Number(n || 0)
@@ -316,6 +317,9 @@ function InventoryLedger({ profile }) {
     return sortedItems.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
   }, [sortedItems, page])
 
+  var activeFilterCount = (sourceFilters.length > 0 ? 1 : 0) + (catFilters.length > 0 ? 1 : 0) +
+    (subCatFilters.length > 0 ? 1 : 0) + (vendorFilters.length > 0 ? 1 : 0)
+
   var totalPages = Math.max(1, Math.ceil(sortedItems.length / PAGE_SIZE))
 
   var totalValue = useMemo(function () {
@@ -525,6 +529,17 @@ function InventoryLedger({ profile }) {
             placeholder="Search items, code, category..."
             className="flex-1 min-w-[220px]"
           />
+          <button type="button" onClick={function () { setShowFilters(!showFilters) }} aria-pressed={showFilters}
+            className={'h-10 px-3 inline-flex items-center gap-1.5 rounded-xl border text-[12.5px] font-bold transition-colors ' +
+              (showFilters || activeFilterCount > 0
+                ? 'border-indigo-300 bg-indigo-50 text-indigo-700'
+                : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50')}>
+            <Icon name="filter" size={14} />
+            Filters
+            {activeFilterCount > 0 && (
+              <span data-notranslate className="px-1.5 rounded-md bg-indigo-600 text-white text-[10.5px] tabular-nums">{activeFilterCount}</span>
+            )}
+          </button>
           <button type="button" onClick={exportCSV}
             className="h-10 px-3 inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white text-[12.5px] font-bold text-slate-700 hover:bg-slate-50 transition-colors">
             <Icon name="download" size={14} className="text-emerald-600" />
@@ -537,7 +552,23 @@ function InventoryLedger({ profile }) {
           </button>
         </div>
 
-        <div className="grid grid-cols-1 @2xl:grid-cols-2 @4xl:grid-cols-4 gap-2">
+        {showFilters && (
+        /* Four dropdowns that are empty most of the time were taking a row of
+           the page whether or not anyone was narrowing anything. They sit
+           behind the button now, on their own ground, and the button says how
+           many of them are in force. */
+        <div className="-mx-4 -mb-3 px-4 py-3.5 border-t border-slate-200 bg-slate-50/70">
+          <div className="flex items-center justify-between gap-3 mb-2">
+            <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500">Narrow the list</p>
+            {activeFilterCount > 0 && (
+              <button type="button"
+                onClick={function () { setSourceFilters([]); setCatFilters([]); setSubCatFilters([]); setVendorFilters([]) }}
+                className="text-[11.5px] font-bold text-rose-600 hover:text-rose-700 transition-colors">
+                Clear all
+              </button>
+            )}
+          </div>
+          <div className="grid grid-cols-1 @2xl:grid-cols-2 @4xl:grid-cols-4 gap-2">
           <MultiSearchDropdown
             items={[{ value: 'inventory', label: 'Inventory' }, { value: 'catering_store', label: 'Catering Store' }]}
             values={sourceFilters}
@@ -558,7 +589,9 @@ function InventoryLedger({ profile }) {
             values={vendorFilters}
             onChange={setVendorFilters}
             placeholder="All vendors" />
+          </div>
         </div>
+        )}
       </div>
 
       {/* Three figures the filters answer, and the two controls that change
