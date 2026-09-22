@@ -272,6 +272,7 @@ function InventoryLedger({ profile }) {
     var vendorStats = {}
     var totalSpend = 0
     var totalQty = 0
+    var qtyByUnit = {}
     var bestRate = null
     rows.forEach(function (r) {
       if (r.vendor_name) {
@@ -283,6 +284,12 @@ function InventoryLedger({ profile }) {
       }
       totalSpend += Number(r.amount_paise || 0)
       totalQty += Number(r.qty || 0)
+      // Kept apart as well as summed. One item can be bought in Kg from one
+      // vendor and in Liters from another, and adding those gives a number
+      // that is not a quantity of anything — the detail panel was printing
+      // 144 Kg + 4 Liters as "148".
+      var u = (r.unit || '').trim() || '—'
+      qtyByUnit[u] = (qtyByUnit[u] || 0) + Number(r.qty || 0)
       if (r.rate_paise != null && (bestRate == null || r.rate_paise < bestRate)) bestRate = r.rate_paise
     })
     var avgRate = totalQty > 0 ? Math.round(totalSpend / totalQty) : null
@@ -295,7 +302,7 @@ function InventoryLedger({ profile }) {
     })
     return {
       vendors: vendors, last3: computeTrend(rows.slice(0, 3)),
-      totalSpend: totalSpend, totalQty: totalQty, txnCount: rows.length,
+      totalSpend: totalSpend, totalQty: totalQty, qtyByUnit: qtyByUnit, txnCount: rows.length,
       avgRate: avgRate, bestRate: bestRate, cheapest: cheapest,
       allRows: computeTrend(rows)
     }
@@ -508,86 +515,171 @@ function InventoryLedger({ profile }) {
 
   if (selectedItem) {
     var agg = aggregateItem(selectedItem)
+
+    // The quantity, said honestly. One unit and it is a total; several and it
+    // is not a total at all, so each one is named rather than added into a
+    // figure that is the quantity of nothing.
+    var unitKeys = Object.keys(agg.qtyByUnit).filter(function (u) { return agg.qtyByUnit[u] > 0 })
+    var qtyLabel = unitKeys.length === 0 ? fmtQty(agg.totalQty)
+      : unitKeys.length === 1 ? fmtQty(agg.qtyByUnit[unitKeys[0]]) + (unitKeys[0] === '—' ? '' : ' ' + unitKeys[0])
+      : unitKeys.sort().map(function (u) { return fmtQty(agg.qtyByUnit[u]) + (u === '—' ? '' : ' ' + u) }).join(' · ')
+
+    var DETAIL_STATS = [
+      { label: 'Transactions', value: String(agg.txnCount), tone: 'text-slate-900',
+        hint: 'Purchases recorded against this item' },
+      { label: 'Quantity bought', value: qtyLabel, tone: 'text-slate-900',
+        hint: unitKeys.length > 1 ? 'Kept apart by unit — these cannot be added together' : 'Everything ever bought' },
+      { label: 'Avg rate', value: agg.avgRate != null ? formatPaise(agg.avgRate) : '—', tone: 'text-slate-900',
+        hint: 'Total spend divided by total quantity' },
+      { label: 'Best rate', value: agg.bestRate != null ? formatPaise(agg.bestRate) : '—', tone: 'text-emerald-700',
+        hint: 'The lowest rate ever paid, on any one purchase' },
+    ]
+
+    // Date | Vendor | Qty | Rate | trend | Amount | Source. The date column
+    // was 90px and carrying "Logged 22 Sept 2026, 3:29 pm" under it, which
+    // wrapped every row it appeared on.
+    var HIST = 'grid gap-2 grid-cols-[7.5rem_minmax(8rem,1fr)_5.5rem_6rem_2.25rem_6.5rem_5.5rem]'
+
     return (
-      <div>
+      <div className="@container space-y-3">
         <button onClick={function () { setSelectedItem(null) }}
-          className="text-sm text-indigo-600 hover:text-indigo-800 mb-3 font-semibold">← Back to items</button>
+          className="inline-flex items-center gap-1.5 h-9 px-3 -ml-1 rounded-xl text-[12.5px] font-bold text-slate-600 hover:text-indigo-700 hover:bg-indigo-50 transition-colors">
+          <Icon name="chevronRight" size={14} className="rotate-180" />
+          Back to items
+        </button>
 
-        <div className="bg-white border border-gray-200 rounded-xl p-4 mb-4">
-          <div className="flex items-start justify-between pb-3 border-b border-gray-100 flex-wrap gap-2">
-            <div>
-              <div className="text-lg font-bold text-gray-900">{selectedItem.name}</div>
-              <div className="text-xs text-gray-500 mt-0.5">
-                {selectedItem.code}
+        {/* What the thing is, and what it has cost in total. */}
+        <div className={CARD + ' px-4 py-3.5'}>
+          <div className="flex items-start justify-between gap-4 flex-wrap">
+            <div className="min-w-0">
+              <h2 className="font-display text-[17px] font-bold text-slate-900 leading-snug">{selectedItem.name}</h2>
+              <p className="mt-1 text-[12px] text-slate-500">
+                <span data-notranslate className="font-semibold text-slate-600">{selectedItem.code}</span>
                 {selectedItem.cat && <span> · {selectedItem.cat}{selectedItem.subcat ? ' › ' + selectedItem.subcat : ''}</span>}
-                {selectedItem.rate_paise > 0 && <span> · Master rate: {formatPaise(selectedItem.rate_paise)}</span>}
-                {selectedItem._source === 'catering_store' && <span className="ml-1 text-purple-600 font-semibold">· Catering</span>}
-              </div>
+                {selectedItem.rate_paise > 0 && <span> · Master rate <span data-notranslate className="font-semibold text-slate-600">{formatPaise(selectedItem.rate_paise)}</span></span>}
+                {selectedItem._source === 'catering_store' && <span className="ml-1 font-semibold text-indigo-600">· Catering</span>}
+              </p>
             </div>
-            <div className="text-right">
-              <div className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold">Total spend (all-time)</div>
-              <div className="text-xl font-bold text-gray-900 mt-0.5">{formatPaise(agg.totalSpend)}</div>
+            <div className="shrink-0 text-right">
+              <span className={COL_HEAD + ' block'}>Total spend, all time</span>
+              <span data-notranslate className="block mt-1 font-display text-[22px] font-bold text-slate-900 tabular-nums leading-none tracking-[-0.015em]">
+                {formatPaise(agg.totalSpend)}
+              </span>
             </div>
           </div>
-
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 mt-3">
-            <div><div className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold">Transactions</div><div className="text-sm font-semibold text-gray-900 mt-0.5">{agg.txnCount}</div></div>
-            <div><div className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold">Total qty</div><div className="text-sm font-semibold text-gray-900 mt-0.5">{fmtQty(agg.totalQty)}</div></div>
-            <div><div className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold">Avg rate</div><div className="text-sm font-semibold text-gray-900 mt-0.5">{agg.avgRate != null ? formatPaise(agg.avgRate) : '—'}</div></div>
-            <div><div className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold">Best rate</div><div className="text-sm font-semibold text-green-700 mt-0.5">{agg.bestRate != null ? formatPaise(agg.bestRate) : '—'}</div></div>
-          </div>
-
-          {agg.cheapest && vendorFilters.length === 0 && (
-            <div className="mt-3 pt-3 border-t border-gray-100 flex items-center gap-2 text-xs">
-              <span className="text-amber-500">★</span>
-              <span className="text-gray-600">Best avg rate:</span>
-              <span className="font-bold text-gray-900">{agg.cheapest.vendor}</span>
-              <span className="text-green-700 font-semibold">{formatPaise(agg.cheapest.avgRate)}</span>
-              <span className="text-gray-400">({agg.cheapest.count} purchases)</span>
-            </div>
-          )}
         </div>
 
-        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-          <div className="px-4 py-2 bg-gray-50 text-[10px] uppercase tracking-wider text-gray-500 font-semibold border-b border-gray-200 flex justify-between items-center">
-            <span>Purchase history</span>
-            {vendorFilters.length > 0 && <span className="text-[10px] text-indigo-600 normal-case tracking-normal">Filtered: {vendorFilters.join(', ')}</span>}
-          </div>
-          {agg.allRows.length === 0 && <div className="text-center text-sm text-gray-400 py-8">No purchase history{vendorFilters.length > 0 ? ' for ' + vendorFilters.join(', ') : ''}.</div>}
-          {agg.allRows.length > 0 && (
-            <div>
-              <div className="grid grid-cols-[90px_1fr_70px_100px_30px_100px_100px] gap-2 px-4 py-2 text-[10px] uppercase tracking-wider text-gray-500 font-semibold border-b border-gray-100">
-                <div>Date</div><div>Vendor</div><div className="text-right">Qty</div><div className="text-right">Rate</div><div></div><div className="text-right">Amount</div><div className="text-right">Source</div>
+        {/* The four measurements, on the divided card the list's three use. */}
+        <div className={CARD + ' overflow-hidden grid grid-cols-2 @2xl:grid-cols-4 divide-x divide-y @2xl:divide-y-0 divide-slate-200'}>
+          {DETAIL_STATS.map(function (st) {
+            return (
+              <div key={st.label} title={st.hint} className="px-4 py-3">
+                <span className={COL_HEAD + ' block'}>{st.label}</span>
+                <span data-notranslate className={'block mt-1 font-display text-[17px] font-bold tabular-nums leading-none tracking-[-0.015em] truncate ' + st.tone}>
+                  {st.value}
+                </span>
               </div>
-              {agg.allRows.map(function (h, i) {
-                var isExp = h.source_type === 'expense'
-                var srcColor = isExp ? 'bg-amber-50 text-amber-700' : 'bg-indigo-50 text-indigo-700'
-                var chip = (
-                  <span className={"inline-block text-[10px] px-1.5 py-0.5 rounded font-semibold " + srcColor}>{h.source_ref}</span>
-                )
-                function handleRowClick() {
-                  if (isExp && h.source_id) openExpenseDetail(h.source_id)
-                }
-                return (
-                  <div key={i} onClick={handleRowClick}
-                    className={"grid grid-cols-[90px_1fr_70px_100px_30px_100px_100px] gap-2 px-4 py-2 text-xs border-b border-gray-50 items-center " +
-                      (isExp ? "cursor-pointer hover:bg-indigo-50/40 transition-colors" : "")}>
-                    <div className="text-gray-600">
-                      {h.txn_date ? formatDate(h.txn_date) : '—'}
-                      {h._loggedAt && <div className="text-[10px] text-gray-400">Logged {formatDateTime(h._loggedAt)}</div>}
-                    </div>
-                    <div className="min-w-0">
-                      <p className="font-semibold text-gray-900 truncate">{h.vendor_name || '—'}</p>
-                      {h._creatorName && <p className="text-[10px] text-gray-400 truncate">by {h._creatorName}</p>}
-                    </div>
-                    <div className="text-right font-semibold text-gray-900">{fmtQty(h.qty)}{h.unit ? ' ' + h.unit : ''}</div>
-                    <div className="text-right font-semibold text-gray-900">{formatPaise(h.rate_paise || 0)}</div>
-                    <div className="text-center"><TrendIcon trend={h._trend} prev={h._prev_rate} /></div>
-                    <div className="text-right font-semibold text-gray-900">{formatPaise(h.amount_paise || 0)}</div>
-                    <div className="text-right">{chip}</div>
-                  </div>
-                )
-              })}
+            )
+          })}
+        </div>
+
+        {/* Only worth saying when there is a choice to have made. With one
+            vendor it was telling you the cheapest of one. */}
+        {agg.cheapest && agg.vendors.length > 1 && vendorFilters.length === 0 && (
+          <div className={CARD + ' flex flex-wrap items-center gap-x-2 gap-y-1 px-4 py-2.5 text-[12.5px]'}>
+            <Icon name="star" size={13} className="shrink-0 text-amber-500" />
+            <span className="font-semibold text-slate-500">Cheapest on average</span>
+            <span className="font-bold text-slate-900">{agg.cheapest.vendor}</span>
+            <span data-notranslate className="font-bold text-emerald-700">{formatPaise(agg.cheapest.avgRate)}</span>
+            <span data-notranslate className="text-slate-400">
+              over {agg.cheapest.count} purchase{agg.cheapest.count === 1 ? '' : 's'}
+            </span>
+          </div>
+        )}
+
+        <div className={CARD + ' overflow-hidden'}>
+          <div className="flex items-center justify-between gap-3 px-4 py-2.5 bg-slate-50 border-b border-slate-200">
+            <span className={COL_HEAD}>Purchase history</span>
+            {vendorFilters.length > 0 && (
+              <span className="text-[11px] font-bold text-indigo-600">Filtered: {vendorFilters.join(', ')}</span>
+            )}
+          </div>
+
+          {agg.allRows.length === 0 ? (
+            <div className="px-4 py-14 text-center">
+              <Icon name="cart" size={24} className="mx-auto text-slate-300" />
+              <p className="mt-2 text-[13px] font-bold text-slate-600">
+                No purchase history{vendorFilters.length > 0 ? ' for ' + vendorFilters.join(', ') : ''}
+              </p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto ambria-thin-scroll">
+              <div className="min-w-[46rem]">
+                <div className={HIST + ' px-4 py-2.5 bg-slate-50/60 border-b border-slate-200 ' + COL_HEAD}>
+                  <span>Date</span>
+                  <span>Vendor</span>
+                  <span className="text-right">Qty</span>
+                  <span className="text-right">Rate</span>
+                  <span />
+                  <span className="text-right">Amount</span>
+                  <span className="text-right">Source</span>
+                </div>
+
+                <div className="divide-y divide-slate-100">
+                  {agg.allRows.map(function (h, i) {
+                    var isExp = h.source_type === 'expense'
+                    function handleRowClick() {
+                      if (isExp && h.source_id) openExpenseDetail(h.source_id)
+                    }
+                    return (
+                      <div key={i} onClick={handleRowClick}
+                        className={HIST + ' items-center px-4 py-2.5 ' +
+                          (isExp ? 'cursor-pointer hover:bg-indigo-50/40 transition-colors' : '')}>
+
+                        {/* Two lines whether or not the second has anything in
+                            it, so a row that knows when it was logged is not
+                            taller than one that does not. */}
+                        <span className="min-w-0">
+                          <span data-notranslate className="block text-[12px] font-semibold text-slate-700 leading-tight truncate">
+                            {h.txn_date ? formatDate(h.txn_date) : '—'}
+                          </span>
+                          <span data-notranslate title={h._loggedAt ? 'Entered into the system ' + formatDateTime(h._loggedAt) : undefined}
+                            className="block mt-0.5 h-[13px] text-[10px] font-medium text-slate-400 leading-[13px] truncate">
+                            {h._loggedAt ? 'Logged ' + formatDate(h._loggedAt) : ''}
+                          </span>
+                        </span>
+
+                        <span className="min-w-0">
+                          <span className="block text-[12.5px] font-bold text-slate-900 leading-tight truncate">{h.vendor_name || '—'}</span>
+                          <span className="block mt-0.5 h-[13px] text-[10px] font-medium text-slate-400 leading-[13px] truncate">
+                            {h._creatorName ? 'by ' + h._creatorName : ''}
+                          </span>
+                        </span>
+
+                        <span data-notranslate className="text-right text-[12.5px] font-bold text-slate-900 tabular-nums truncate">
+                          {fmtQty(h.qty)}{h.unit ? ' ' + h.unit : ''}
+                        </span>
+                        <span data-notranslate className="text-right text-[12.5px] font-bold text-slate-900 tabular-nums">
+                          {formatPaise(h.rate_paise || 0)}
+                        </span>
+                        <span className="flex justify-center"><TrendIcon trend={h._trend} prev={h._prev_rate} /></span>
+                        <span data-notranslate className="text-right text-[12.5px] font-bold text-slate-900 tabular-nums">
+                          {formatPaise(h.amount_paise || 0)}
+                        </span>
+
+                        {/* The one colour left on this screen that carries
+                            meaning: which ledger the row came out of. */}
+                        <span className="text-right">
+                          <span data-notranslate className={'inline-block px-1.5 py-0.5 rounded-md text-[10px] font-bold ' +
+                            (isExp ? 'bg-amber-50 text-amber-700' : 'bg-indigo-50 text-indigo-700')}>
+                            {h.source_ref}
+                          </span>
+                        </span>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
             </div>
           )}
         </div>
