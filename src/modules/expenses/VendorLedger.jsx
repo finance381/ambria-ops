@@ -2072,7 +2072,7 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
                       e._creatorName ? { icon: 'user', label: 'Created by', value: e._creatorName } : null,
                       e._submitterName ? { icon: 'send', label: 'Submitted by', value: e._submitterName } : null,
                       e._acknowledgerName ? { icon: 'checkCircle', label: 'Acknowledged by', value: e._acknowledgerName } : null,
-                      { icon: 'clock', label: 'Logged on', value: formatDateTime(e.created_at) },
+                      { icon: 'clock', label: 'Logged on', value: formatDateTime(e.created_at), wide: true },
                       isDeleted ? { icon: 'trash', label: 'Status', value: 'Deleted' } : null,
                     ].filter(Boolean)
                     // Six facts on one wrapping line, each "label: value" in
@@ -2082,13 +2082,13 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
                     // labels are a column you scan and the values are what you
                     // read. The last one takes the full row when it is odd.
                     return (
-                      <div className="mt-3 rounded-xl bg-slate-50/80 border border-slate-200/70 p-3 grid grid-cols-1 min-[420px]:grid-cols-2 gap-x-3 gap-y-3">
+                      <div className="mt-3 rounded-xl bg-slate-50/80 border border-slate-200/70 p-3 grid grid-cols-2 gap-x-3 gap-y-2.5">
                         {facts.map(function (f, fi) {
-                          var last = fi === facts.length - 1 && facts.length % 2 === 1
+                          var full = f.wide || (fi === facts.length - 1 && facts.length % 2 === 1)
                           return (
-                            <span key={fi} className={'flex items-center gap-2.5 min-w-0 ' + (last ? 'min-[420px]:col-span-2' : '')}>
-                              <span className="shrink-0 w-9 h-9 rounded-xl bg-white border border-slate-200 text-slate-500 inline-flex items-center justify-center">
-                                <Icon name={f.icon} size={15} />
+                            <span key={fi} className={'flex items-center gap-2 min-w-0 ' + (full ? 'col-span-2' : '')}>
+                              <span className="shrink-0 w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-500 inline-flex items-center justify-center">
+                                <Icon name={f.icon} size={13} />
                               </span>
                               <span className="min-w-0">
                                 <span className="block text-[11px] font-semibold text-slate-500 leading-tight">{f.label}</span>
@@ -2129,7 +2129,7 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
                         {due && (
                           <span className={"h-6 inline-flex items-center gap-1.5 px-2.5 rounded-md text-[10.5px] font-bold " + (isOverdueRow ? "bg-rose-100 text-rose-700" : "bg-slate-100 text-slate-600")}>
                             <Icon name={isOverdueRow ? 'alert' : 'clock'} size={12} />
-                            Due {due}
+                            <span data-notranslate>Due {formatDate(due)}</span>
                           </span>
                         )}
                       </div>
