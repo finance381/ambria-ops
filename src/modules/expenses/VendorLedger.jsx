@@ -2259,7 +2259,7 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
                     are no longer two. Stacked, the strip below is separated by
                     being below. */}
                 <span aria-hidden="true" className="hidden sm:block self-stretch shrink-0 w-px bg-slate-200" />
-                <div className="flex items-center justify-between gap-3 sm:contents">
+                <div className="flex items-center justify-between gap-3 pl-6 sm:pl-0 sm:contents">
                 {/* Prompt and verdict share one slot, so pressing the first
                     puts the second exactly where you pressed.
 
