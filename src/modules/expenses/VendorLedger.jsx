@@ -83,33 +83,6 @@ function balanceColour(paise) {
 // is kept for the balance running the other way, which is the one worth
 // noticing. Overdue has its chip on the same line and does not need a second
 // colour here.
-// The phone list draws an initial in a circle. The desktop list deliberately
-// does not — its own comment says a vendor's first letter is not a face you
-// would recognise — but on a phone the rows are one per line with a lot of
-// white at their left edge, and the disc is what makes one row findable in a
-// scroll. The colour is hashed from the name: it means nothing on its own, it
-// is there so two vendors next to each other are not the same circle twice.
-var AVATAR_TONES = [
-  'bg-indigo-50 text-indigo-600', 'bg-violet-50 text-violet-600',
-  'bg-emerald-50 text-emerald-600', 'bg-rose-50 text-rose-600',
-  'bg-amber-50 text-amber-600', 'bg-sky-50 text-sky-600',
-]
-
-function avatarTone(name) {
-  var n = String(name || '')
-  var h = 0
-  for (var i = 0; i < n.length; i++) h = (h * 31 + n.charCodeAt(i)) >>> 0
-  return AVATAR_TONES[h % AVATAR_TONES.length]
-}
-
-// A character class covering Devanagari drags in its combining marks, which
-// eslint rejects and which is the wrong idea anyway: the initial is whatever
-// the name starts with, in whatever script it is written in.
-function initialOf(name) {
-  var n = String(name || '').trim()
-  return n ? n.charAt(0).toUpperCase() : '?'
-}
-
 // One of the three counts under the headline figure. Each is also the filter
 // it names, so the whole tile is the button and the chevron is not decoration.
 function PhoneStat({ icon, label, value, tone, ring, text, active, onClick }) {
@@ -1258,10 +1231,7 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
                 var chips = renderChips(v)
                 return (
                   <button key={v.vendor_id} type="button" onClick={function () { openVendor(v) }}
-                    className="w-full text-left bg-white/80 backdrop-blur-xl border border-white/60 rounded-2xl px-3.5 py-3 flex items-center gap-3 shadow-[0_1px_8px_rgba(15,23,42,0.04)] active:scale-[0.99] transition-transform">
-                    <span className={'shrink-0 w-11 h-11 rounded-full inline-flex items-center justify-center font-display text-[17px] font-bold ' + avatarTone(v.vendor_name)}>
-                      {initialOf(v.vendor_name)}
-                    </span>
+                    className="w-full text-left bg-white/80 backdrop-blur-xl border border-white/60 rounded-2xl px-4 py-3 flex items-center gap-3 shadow-[0_1px_8px_rgba(15,23,42,0.04)] active:scale-[0.99] transition-transform">
                     <span className="flex-1 min-w-0">
                       <span className="block text-[14.5px] font-bold text-slate-900 leading-tight truncate">{v.vendor_name || '—'}</span>
                       {/* Reserved whether or not this vendor has a chip, so a
