@@ -1308,22 +1308,30 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
           </div>
 
           {filtersOpen && (
-            <div className="bg-white/80 backdrop-blur-xl border border-white/60 rounded-2xl p-3.5 space-y-3">
-              {PHONE_FILTERS.map(function (f) {
-                return (
-                  <div key={f.label}>
-                    <label className="block text-[11px] font-semibold text-slate-600 mb-1.5">{f.label}</label>
-                    <SearchDropdown items={f.items} value={f.value} onChange={f.onChange} placeholder="All" noVoice />
-                  </div>
-                )
-              })}
-              {(hasDropdownFilter || search) && (
-                <button type="button"
-                  onClick={function () { setSearch(''); setFExpType(''); setFExpSubType(''); setFCategory(''); setFSubCategory('') }}
-                  className="w-full h-10 rounded-xl border border-slate-300 text-[12.5px] font-bold text-slate-600 active:scale-[0.98] transition-transform">
-                  Clear filters
-                </button>
-              )}
+            <div className="bg-white/80 backdrop-blur-xl border border-white/60 rounded-2xl p-3.5">
+              <div className="flex items-center justify-between gap-3 mb-2.5">
+                <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500">Narrow the list</p>
+                {(hasDropdownFilter || search) && (
+                  <button type="button"
+                    onClick={function () { setSearch(''); setFExpType(''); setFExpSubType(''); setFCategory(''); setFSubCategory('') }}
+                    className="text-[11.5px] font-bold text-rose-600 active:scale-95 transition-transform">
+                    Clear all
+                  </button>
+                )}
+              </div>
+              <div className="space-y-2.5">
+                {PHONE_FILTERS.map(function (f) {
+                  return (
+                    <div key={f.label}>
+                      <div className="flex items-baseline justify-between gap-2 mb-1">
+                        <label className="text-[10.5px] font-bold uppercase tracking-[0.07em] text-slate-500">{f.label}</label>
+                        {f.value && <span className="shrink-0 text-[10.5px] font-bold text-indigo-600">On</span>}
+                      </div>
+                      <SearchDropdown items={f.items} value={f.value} onChange={f.onChange} placeholder="All" noVoice />
+                    </div>
+                  )
+                })}
+              </div>
             </div>
           )}
 
