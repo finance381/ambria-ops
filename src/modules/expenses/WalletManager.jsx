@@ -21,6 +21,7 @@ import { registerPdfFont } from '../../lib/pdfFont'
 import { openOrSharePdf } from '../../lib/pdfOutput'
 import { plainParticularsLines, plainDateLines, makeStatementCellHooks } from '../../lib/pdfStatementTable'
 import ExpenseDetail from './ExpenseDetail'
+import GVForm from './GVForm'
 import Icon, { glyphForLabel } from '../../components/ui/Icon'
 
 // A colour per person, hashed from the name rather than taken from the row
@@ -1349,6 +1350,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   // ── Detail overlays: expense (ExpenseDetail reused) + collection (self-contained modal) ──
   var [expenseDetailTarget, setExpenseDetailTarget] = useState(null)  // full expense row for ExpenseDetail
   var [expenseDetailLoading, setExpenseDetailLoading] = useState(false)
+  var [gvExp, setGvExp] = useState(null)  // expense row for the Raise JV modal, opened from the expense detail
   var [detailTarget, setDetailTarget] = useState(null)  // { txn, kind, event, collectorName, imgUrl, loading }
   var [payDetailTarget, setPayDetailTarget] = useState(null)  // { txn, entry, partyName, loading }
 
@@ -1393,7 +1395,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   }
 
   function renderExpenseDetailModal() {
-    if (!expenseDetailTarget) return null
+    if (!expenseDetailTarget || gvExp) return null
     return createPortal((
       <div className="fixed inset-0 z-[9998] bg-black/70 flex items-start sm:items-center justify-center p-0 sm:p-4 overflow-y-auto"
         onClick={function () { closeExpenseDetail(false) }}>
@@ -1422,9 +1424,34 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
               backLabel="Back to wallet"
               onUpdated={function () { closeExpenseDetail(true) }}
               onEdit={function () { var id = expenseDetailTarget.id; closeExpenseDetail(false); onNavigateToExpenses && onNavigateToExpenses(id, 'edit') }}
-              onRaiseGV={function () { var id = expenseDetailTarget.id; closeExpenseDetail(false); onNavigateToExpenses && onNavigateToExpenses(id, 'gv') }}
+              onRaiseGV={function () { setGvExp(expenseDetailTarget) }}
             />
           )}
+        </div>
+      </div>
+    ), document.body)
+  }
+
+  function renderGVModal() {
+    if (!gvExp) return null
+    return createPortal((
+      <div className="fixed inset-0 z-[9999] bg-black/70 flex items-start sm:items-center justify-center p-0 sm:p-4 overflow-y-auto"
+        onClick={function () { setGvExp(null) }}>
+        <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-2xl p-4 sm:p-5 min-h-screen sm:min-h-0 sm:max-h-[92vh] overflow-y-auto"
+          onClick={function (ev) { ev.stopPropagation() }}>
+          <GVForm
+            exp={gvExp}
+            profile={profile}
+            onCancel={function () { setGvExp(null) }}
+            onSaved={function () {
+              var id = gvExp.id
+              setGvExp(null)
+              openExpenseDetail(id)
+              refreshBalance()
+              if (walletView === 'transactions') { openWalletTxns(null) }
+              else if (walletView === 'dashboard') { loadRecentTxns(selectedWallet) }
+            }}
+          />
         </div>
       </div>
     ), document.body)
@@ -2999,6 +3026,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
         {renderCollectionDetailModal()}
         {renderPaymentDetailModal()}
         {renderExpenseDetailModal()}
+        {renderGVModal()}
         {renderEnlargedImg()}
       </div>
       </div>
@@ -4206,6 +4234,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
           {renderCollectionDetailModal()}
           {renderPaymentDetailModal()}
           {renderExpenseDetailModal()}
+          {renderGVModal()}
           {renderEnlargedImg()}
         </div>
       )
@@ -4449,6 +4478,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
         {renderCollectionDetailModal()}
         {renderPaymentDetailModal()}
         {renderExpenseDetailModal()}
+        {renderGVModal()}
         {renderEnlargedImg()}
       </div>
     )
