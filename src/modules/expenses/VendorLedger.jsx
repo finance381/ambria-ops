@@ -334,7 +334,10 @@ function shortDate(s) {
   return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: '2-digit' })
 }
 
-function renderFacts(v) {
+// `noRules` is the wrapping footer. The rule lives inside each fact, ahead of
+// it, so a fact that wraps takes its rule with it and a line starts with a
+// stray vertical mark. Wrapped, the gap between them does the separating.
+function renderFacts(v, noRules) {
   var n = v.entry_count || 0
   var facts = [
     { icon: 'fileText', value: n + (n === 1 ? ' entry' : ' entries') },
@@ -342,7 +345,7 @@ function renderFacts(v) {
     v.earliest_due_date ? { icon: 'clock', label: 'Due', value: shortDate(v.earliest_due_date) } : null,
   ].filter(Boolean)
   return facts.map(function (f, fi) {
-    return <Fact key={fi} first={fi === 0} icon={f.icon} label={f.label} value={f.value} />
+    return <Fact key={fi} first={noRules || fi === 0} icon={f.icon} label={f.label} value={f.value} />
   })
 }
 
@@ -433,10 +436,20 @@ function VendorCardInner({ v, onOpen, phone }) {
           nothing either side of them and nothing under them — the card had
           three rows and its two controls were parked on the second. */}
       <div className="mt-3.5 pt-3 border-t border-slate-100 flex items-center gap-3">
-        {/* One line, and it stays one: nowrap plus a min-w-0 that lets it
-            be clipped rather than pushing the two controls off the end. */}
-        <div className="flex-1 min-w-0 flex flex-nowrap items-center overflow-hidden text-[11.5px] text-slate-500">
-          {renderFacts(v)}
+        {/* One line on the desktop, and it stays one: nowrap plus a min-w-0
+            that lets it be clipped rather than pushing the two controls off
+            the end. There the card is a third of a wide screen and the three
+            facts fit.
+
+            On a phone they measure about 280px against roughly 305 — so they
+            fit until the vendor has a phone number, or the screen is a little
+            narrower, and then a date was being cut mid-word ("Due: 17 Sept
+            2"). Clipping is the wrong failure for a date. Wrapped, it is
+            always whole, and the rules come off because a wrapped line would
+            otherwise start with one. */}
+        <div className={'flex-1 min-w-0 items-center text-[11.5px] text-slate-500 ' +
+          (phone ? 'flex flex-wrap gap-x-3 gap-y-1' : 'flex flex-nowrap overflow-hidden')}>
+          {renderFacts(v, phone)}
         </div>
         {renderCallLink(v)}
         {/* The chevron slides the way it points, so the card says where
