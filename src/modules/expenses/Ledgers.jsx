@@ -1297,18 +1297,24 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
       ) : (
         <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
           <div className="overflow-x-auto ambria-thin-scroll">
-            <div className="min-w-[700px]">
+            <div className="min-w-[940px]">
           {/* One table, not a stack of cards. Every department used to carry its
               own border and its own rounded corners, so four departments were
               four objects with four sets of columns that only happened to line
               up with each other.
 
-              The grid declares 614px of fixed columns and gives the department
-              the 1fr that is left — which on a 298px phone is nothing at all,
-              so the name vanished and the figures landed on top of each other.
-              Below the table's own width the panel scrolls sideways, the way
-              the inventory ledger's does. Squeezing six columns onto a phone
-              would make all six unreadable. */}
+              The department name takes the 1fr that is left after everything
+              else, and everything else is fixed: 614px of columns, 40 of gaps,
+              24 of padding and the 86px export column — 764 before the name
+              gets anything. On a 298px phone that left it nothing, so the name
+              vanished and the three figures landed on top of each other.
+
+              940 rather than the 700 I first tried, because 700 still left the
+              name 46px — the same nothing, just inside a scroller. At 940 it
+              has 176. Below that width the panel scrolls sideways, the way the
+              inventory ledger's does; squeezing six columns onto a phone would
+              make all six unreadable, and they are what carry the drill-down
+              from department to type to sub-type. */}
           <div className="flex items-stretch bg-slate-50 border-b border-slate-200">
             <div className={"flex-1 " + COLS + " px-3 py-2.5"}>
               {/* Headings, not controls. */}
