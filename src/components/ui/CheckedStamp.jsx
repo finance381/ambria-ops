@@ -64,12 +64,8 @@ function CheckedStamp({ checked, checkerName, checkedAt, canToggle, canUncheck, 
       <button type="button" disabled={busy || !interactive} onClick={interactive ? onToggle : undefined} title={title}
         aria-label={title}
         style={{ width: px, height: px }}
-        // Lighter, because the ink is doing the marking and the weight of it
-        // was competing with the figure it vouches for. It comes back up to
-        // full under the pointer on the ones you can press, so the thing that
-        // is also a control still answers.
         className={"shrink-0 inline-flex items-center justify-center transition-opacity " +
-          (interactive ? "cursor-pointer opacity-65 hover:opacity-95" : "cursor-default opacity-55")}>
+          (interactive ? "cursor-pointer opacity-90 hover:opacity-100" : "cursor-default opacity-80")}>
         <img src={checkedStamp} alt="" aria-hidden="true" draggable="false"
           className="w-full h-full object-contain select-none" />
       </button>
