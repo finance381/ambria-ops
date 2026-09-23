@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useDeferredValue, memo } from 'react'
+import { useState, useEffect, useRef, useCallback, useDeferredValue, memo } from 'react'
 import { createPortal } from 'react-dom'
 import { supabase } from '../../lib/supabase'
 import { logActivity } from '../../lib/logger'
@@ -759,9 +759,19 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
     setLoading(false)
   }
 
+  // Ticketed, because "Show deleted" reloads the list and two quick presses
+  // would otherwise race — the slower first reply landing on top of the
+  // second and showing the set you just turned off.
+  var entriesReqRef = useRef(0)
+
   async function loadEntries(v, withDeleted) {
+    var ticket = ++entriesReqRef.current
     setEntriesLoading(true)
-    setEntries([])
+    // The rows are NOT cleared here. Emptying them before asking meant a
+    // filter change tore the whole list down, put "Loading entries…" in its
+    // place and built it again — which is the flicker on every press of the
+    // deleted-entries checkbox. They stay up, dimmed, until the new set
+    // arrives to replace them.
     var q = supabase.from('ledger_entries')
       .select('*')
       .eq('ledger_type', 'vendor')
@@ -771,6 +781,7 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
       .limit(1000)
     if (!withDeleted) q = q.is('deleted_at', null)
     var { data, error } = await q
+    if (entriesReqRef.current !== ticket) return
     if (error) { setEntries([]); setEntriesLoading(false); return }
 
     var rows = data || []
@@ -885,6 +896,7 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
       return r
     })
 
+    if (entriesReqRef.current !== ticket) return
     setEntries(merged)
     setEntriesLoading(false)
   }
@@ -1921,14 +1933,15 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
           words, the same amount and the same day, and a hairline between them
           was the only thing saying where one ended — so a page of them read as
           one long list of repeated text. */}
-      {entriesLoading ? (
+      {entriesLoading && displayEntries.length === 0 ? (
         <p className="text-slate-400 text-[13px] font-medium text-center py-10">Loading entries…</p>
       ) : displayEntries.length === 0 ? (
         <p className="text-slate-400 text-[13px] font-medium text-center py-10">No entries for this vendor.</p>
       ) : visibleEntries.length === 0 ? (
         <p className="text-slate-400 text-[13px] font-medium text-center py-10">No entries match this filter.</p>
       ) : (
-        <div className="space-y-3">
+        <div aria-busy={entriesLoading}
+          className={"space-y-3 transition-opacity duration-150 " + (entriesLoading ? "opacity-60" : "")}>
           {visibleEntries.map(function (e) {
             var isCredit = (e.credit_paise || 0) > 0
             var isDeleted = !!e.deleted_at
