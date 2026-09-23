@@ -261,9 +261,21 @@ function PayVendorModal({ vendor, profile, onClose, onSuccess }) {
                   <span className={"flex items-center gap-2 text-[13.5px] font-bold " + (active ? "text-indigo-700" : "text-slate-800")}>
                     <Icon name={opt.icon} size={15} className={active ? "text-indigo-500" : "text-slate-400"} />
                     {opt.label}
+                    {/* Which one is chosen, said by something other than a
+                        tint. Two cards a shade apart is the whole difference
+                        between "selected" and "not", and on the amount this
+                        form is about to move that is worth a glyph. */}
+                    {active && <Icon name="checkCircle" size={14} className="ml-auto shrink-0 text-indigo-500" />}
                   </span>
-                  <span className={"block mt-0.5 text-[11.5px] tabular-nums " + (active ? "text-indigo-600" : "text-slate-500")} data-notranslate>
-                    Owed: {(opt.bal / 100).toLocaleString('en-IN', { maximumFractionDigits: 2 })} pts
+                  {/* "Owed: 0 pts" is a figure you have to read to find out
+                      there is nothing there. Paying a method that is owed
+                      nothing is allowed — that is what an advance is — but it
+                      should be a thing you chose, so the card says plainly
+                      which of the two is the one with a bill against it. */}
+                  <span className={"block mt-0.5 text-[11.5px] tabular-nums " + (active ? "text-indigo-600" : opt.bal > 0 ? "text-slate-500" : "text-slate-400")} data-notranslate>
+                    {opt.bal > 0
+                      ? 'Owed: ' + (opt.bal / 100).toLocaleString('en-IN', { maximumFractionDigits: 2 }) + ' pts'
+                      : 'Nothing owed'}
                   </span>
                 </button>
               )
