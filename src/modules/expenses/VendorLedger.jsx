@@ -2022,9 +2022,41 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
                 <div className="flex items-start gap-3.5 min-w-0 sm:contents">
                 <span aria-hidden="true" className={"shrink-0 w-2.5 h-2.5 rounded-full mt-2 " + dotColor} />
                 <div className="flex-1 min-w-0">
-                  <p className={"text-[15px] font-bold text-slate-900 leading-snug " + (isDeleted ? "line-through" : "")}>
-                    {e.description || (isCredit ? 'Credit' : 'Debit')}
-                  </p>
+                  {/* These entries are written "TNT-Purchase: iron purchase
+                      from narayana for trussing…" — a name, a colon, then what
+                      it was. Set as one 15px bold paragraph the name had
+                      nothing to mark it out and the sentence was as loud as
+                      the thing it describes. Split on the first colon: the
+                      name leads, the rest goes under it in the grey the meta
+                      band uses. An entry with no colon keeps all of it as the
+                      title and gets no second line. */}
+                  {(function () {
+                    var full = e.description || (isCredit ? 'Credit' : 'Debit')
+                    var ci = full.indexOf(':')
+                    var isPrefix = ci > 0 && ci <= 40 && full.charAt(ci + 1) === ' '
+                    var head = isPrefix ? full.slice(0, ci).trim() : full
+                    var rest = isPrefix ? full.slice(ci + 1).trim() : ''
+                    return (
+                      <>
+                        <div className="flex items-start justify-between gap-3">
+                          <p className={"min-w-0 text-[16px] font-bold text-slate-900 leading-snug " + (isDeleted ? "line-through" : "")}>
+                            {head}
+                          </p>
+                          {e.ref_id && (
+                            <span data-notranslate
+                              className="shrink-0 h-6 inline-flex items-center px-2 rounded-lg bg-slate-100 text-[11.5px] font-bold text-slate-600">
+                              #{e.ref_id}
+                            </span>
+                          )}
+                        </div>
+                        {rest && (
+                          <p className={"mt-1 text-[13px] text-slate-500 leading-snug " + (isDeleted ? "line-through" : "")}>
+                            {rest.charAt(0).toUpperCase() + rest.slice(1)}
+                          </p>
+                        )}
+                      </>
+                    )
+                  })()}
                   {/* One band, not three stacked lines. Date and reference on
                       one, "Logged …" on another and "Submitted by …" on a
                       third gave three runs of grey text at almost the same
@@ -2033,19 +2065,37 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
                       between says what kind of fact each one is, and the band
                       wraps instead of growing a new line per fact. */}
                   {(function () {
+                    var kindWord = kind ? kind.charAt(0).toUpperCase() + kind.slice(1) : 'Entry'
                     var facts = [
-                      { icon: 'calendar', value: formatDate(e.entry_date) },
-                      { icon: 'receipt', value: kind + (e.ref_id ? ' #' + e.ref_id : '') },
-                      e._creatorName ? { icon: 'user', lead: 'by', value: e._creatorName } : null,
-                      { icon: 'clock', label: 'Logged', value: formatDateTime(e.created_at) },
-                      e._submitterName ? { icon: 'send', lead: 'Submitted by', value: e._submitterName } : null,
-                      e._acknowledgerName ? { icon: 'checkCircle', lead: 'Acknowledged by', value: e._acknowledgerName } : null,
-                      isDeleted ? { icon: 'trash', value: 'Deleted' } : null,
+                      { icon: 'calendar', label: kindWord + ' date', value: formatDate(e.entry_date) },
+                      e.ref_id ? { icon: 'receipt', label: kindWord + ' #', value: String(e.ref_id) } : null,
+                      e._creatorName ? { icon: 'user', label: 'Created by', value: e._creatorName } : null,
+                      e._submitterName ? { icon: 'send', label: 'Submitted by', value: e._submitterName } : null,
+                      e._acknowledgerName ? { icon: 'checkCircle', label: 'Acknowledged by', value: e._acknowledgerName } : null,
+                      { icon: 'clock', label: 'Logged on', value: formatDateTime(e.created_at) },
+                      isDeleted ? { icon: 'trash', label: 'Status', value: 'Deleted' } : null,
                     ].filter(Boolean)
+                    // Six facts on one wrapping line, each "label: value" in
+                    // the same grey at the same size, was a paragraph of grey
+                    // that had to be read through to find any one of them. In
+                    // a band, two to a row, with the label over the value, the
+                    // labels are a column you scan and the values are what you
+                    // read. The last one takes the full row when it is odd.
                     return (
-                      <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[12px] text-slate-500">
+                      <div className="mt-3 rounded-xl bg-slate-50/80 border border-slate-200/70 p-3 grid grid-cols-1 min-[420px]:grid-cols-2 gap-x-3 gap-y-3">
                         {facts.map(function (f, fi) {
-                          return <Fact key={fi} first icon={f.icon} label={f.label} lead={f.lead} value={f.value} />
+                          var last = fi === facts.length - 1 && facts.length % 2 === 1
+                          return (
+                            <span key={fi} className={'flex items-center gap-2.5 min-w-0 ' + (last ? 'min-[420px]:col-span-2' : '')}>
+                              <span className="shrink-0 w-9 h-9 rounded-xl bg-white border border-slate-200 text-slate-500 inline-flex items-center justify-center">
+                                <Icon name={f.icon} size={15} />
+                              </span>
+                              <span className="min-w-0">
+                                <span className="block text-[11px] font-semibold text-slate-500 leading-tight">{f.label}</span>
+                                <span data-notranslate className="block text-[13px] font-bold text-slate-900 leading-tight truncate">{f.value}</span>
+                              </span>
+                            </span>
+                          )
                         })}
                       </div>
                     )
@@ -2106,14 +2156,21 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
                       {e._breakdown && (
                         <button type="button" onClick={function (ev) { toggleEntryExpanded(e.id, ev) }}
                           aria-expanded={!!expandedEntryIds[e.id]}
-                          className="shrink-0 inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-slate-200 bg-white text-[12px] font-bold text-slate-600 hover:border-indigo-300 hover:text-indigo-700 hover:bg-indigo-50 transition-colors">
+                          className="flex-1 min-w-[200px] flex items-center gap-3 text-left h-[52px] px-3 rounded-xl border border-slate-200 bg-white hover:border-indigo-300 hover:bg-indigo-50/50 transition-colors">
+                          <span className="min-w-0 flex-1">
+                            <span className="block text-[13px] font-bold text-slate-800 leading-tight truncate">
+                              {expandedEntryIds[e.id] ? 'Hide details' : 'Amount & allocation details'}
+                            </span>
+                            <span className="block mt-0.5 text-[11.5px] text-slate-500 leading-tight truncate">
+                              View purchase amount, item allocation and more
+                            </span>
+                          </span>
                           {/* One chevron that turns, rather than swapping a
                               right-pointing glyph for a down-pointing one: the
                               turn is what says it is the same control in two
                               states. */}
-                          <Icon name="chevronRight" size={13}
-                            className={"transition-transform duration-150 " + (expandedEntryIds[e.id] ? "rotate-90" : "")} />
-                          {expandedEntryIds[e.id] ? 'Hide details' : 'Amount & allocation details'}
+                          <Icon name="chevronRight" size={16}
+                            className={"shrink-0 text-slate-400 transition-transform duration-150 " + (expandedEntryIds[e.id] ? "rotate-90" : "")} />
                         </button>
                       )}
                     </div>
