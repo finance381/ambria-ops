@@ -103,12 +103,7 @@ function PhoneStat({ icon, label, value, text, ring, active, onClick }) {
           "Overdue Vendors" wraps where "Incomplete" does not, and without
           this the three figures sat at three different heights. */}
       <span className="block h-[34px] text-[12.5px] font-bold text-slate-700 leading-[17px] overflow-hidden">{label}</span>
-      <span className="mt-1.5 flex items-center justify-between gap-1">
-        <span data-notranslate className={'font-display text-[24px] font-extrabold tabular-nums leading-none ' + text}>{value}</span>
-        <span className="shrink-0 w-6 h-6 rounded-full inline-flex items-center justify-center bg-slate-100 text-slate-400">
-          <Icon name="chevronRight" size={13} />
-        </span>
-      </span>
+      <span data-notranslate className={'block mt-1.5 font-display text-[24px] font-extrabold tabular-nums leading-none ' + text}>{value}</span>
     </button>
   )
 }
