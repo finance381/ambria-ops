@@ -1339,7 +1339,7 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
                 <div className="flex items-stretch hover:bg-slate-50 transition-colors">
                   <button onClick={function (ev) { toggleDept(g.key, g.allocs, ev.currentTarget.closest('[data-dept-row]')) }}
                     className={"flex-1 " + COLS + " items-center px-3 py-2 text-left"}>
-                    <div className="flex items-center gap-2 min-w-0">
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0">
                       {/* A drawn chevron that turns, not two different characters.
                           ▸ and ▾ are different glyphs at different widths, so the
                           label beside them shifted a pixel on every expand. */}
