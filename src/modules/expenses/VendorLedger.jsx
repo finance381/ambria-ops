@@ -1208,6 +1208,13 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
             <div className="flex-1 min-w-0">
               <SearchField value={search} onChange={function (v) { setSearch(v) }} placeholder="Search vendors..." />
             </div>
+            {canManageVendors && (
+              <button type="button" onClick={function () { setShowMergeModal(true) }}
+                aria-label="Merge vendors" title="Merge vendors"
+                className="shrink-0 w-11 h-11 inline-flex items-center justify-center rounded-2xl border border-white/60 bg-white/80 backdrop-blur-xl text-slate-500 active:scale-95 transition-transform">
+                <Icon name="split" size={17} />
+              </button>
+            )}
             <button type="button" onClick={function () { setFiltersOpen(!filtersOpen) }}
               aria-label="Filters" aria-expanded={filtersOpen}
               className={'shrink-0 w-11 h-11 inline-flex items-center justify-center rounded-2xl border transition-colors ' +
