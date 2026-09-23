@@ -94,16 +94,16 @@ function balanceColour(paise) {
 function PhoneStat({ icon, label, value, text, ring, active, onClick }) {
   return (
     <button type="button" onClick={onClick} aria-pressed={active}
-      className={'text-left rounded-2xl border p-3.5 bg-white/80 backdrop-blur-xl transition-all active:scale-[0.98] ' +
+      className={'text-left rounded-2xl border p-2.5 bg-white/80 backdrop-blur-xl transition-all active:scale-[0.98] ' +
         (active ? ring + ' shadow-[0_2px_12px_rgba(15,23,42,0.08)]' : 'border-white/60')}>
-      <span className={'w-10 h-10 mb-2.5 rounded-full inline-flex items-center justify-center bg-slate-100 ' + text}>
-        <Icon name={icon} size={18} />
+      <span className={'w-8 h-8 mb-2 rounded-full inline-flex items-center justify-center bg-slate-100 ' + text}>
+        <Icon name={icon} size={15} />
       </span>
       {/* Two lines' worth of room whether the label needs them or not.
           "Overdue Vendors" wraps where "Incomplete" does not, and without
           this the three figures sat at three different heights. */}
-      <span className="block h-[34px] text-[12.5px] font-bold text-slate-700 leading-[17px] overflow-hidden">{label}</span>
-      <span data-notranslate className={'block mt-1.5 font-display text-[24px] font-extrabold tabular-nums leading-none ' + text}>{value}</span>
+      <span className="block h-[30px] text-[11.5px] font-bold text-slate-700 leading-[15px] overflow-hidden">{label}</span>
+      <span data-notranslate className={'block mt-1 font-display text-[20px] font-extrabold tabular-nums leading-none ' + text}>{value}</span>
     </button>
   )
 }
@@ -377,9 +377,9 @@ function renderMoneyNotes(v, phone) {
   if (!cashBal && !bankBal && !opening) return null
 
   var parts = [
-    cashBal !== 0 ? { icon: 'banknote', dot: 'bg-emerald-500', label: 'Cash', value: formatPoints(cashBal) } : null,
-    bankBal !== 0 ? { icon: 'bank', dot: 'bg-indigo-500', label: 'Bank', value: formatPoints(bankBal) } : null,
-    opening !== 0 ? { icon: 'wallet', dot: 'bg-amber-500', label: 'Opening',
+    cashBal !== 0 ? { icon: 'banknote', glyph: 'text-emerald-600', label: 'Cash', value: formatPoints(cashBal) } : null,
+    bankBal !== 0 ? { icon: 'bank', glyph: 'text-indigo-600', label: 'Bank', value: formatPoints(bankBal) } : null,
+    opening !== 0 ? { icon: 'wallet', glyph: 'text-amber-600', label: 'Opening',
       value: formatPoints(Math.abs(opening)) + (opening > 0 ? ' Cr' : ' Dr') } : null,
   ].filter(Boolean)
 
@@ -409,7 +409,7 @@ function renderMoneyNotes(v, phone) {
       {parts.map(function (f) {
         return (
           <span key={f.label} className="inline-flex items-center gap-1.5 whitespace-nowrap">
-            <span aria-hidden="true" className={'shrink-0 w-1.5 h-1.5 rounded-full ' + f.dot} />
+            <Icon name={f.icon} size={13} className={'shrink-0 ' + f.glyph} />
             <span className="text-slate-500">{f.label}</span>
             <span data-notranslate className="text-[12px] font-bold text-slate-900 tabular-nums">{f.value}</span>
           </span>
@@ -1256,20 +1256,18 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
                 was saying what the word beside it already said. */}
             {!loading && (totalCash !== 0 || totalBank !== 0) && (
               <span className="mt-3.5 block rounded-2xl bg-white/[0.06] border border-white/10 px-3 py-2.5 grid grid-cols-2 divide-x divide-white/20">
-                {[{ label: 'Cash', value: totalCash, dot: 'bg-emerald-400' },
-                  { label: 'Bank', value: totalBank, dot: 'bg-indigo-400' }].map(function (f, i) {
+                {[{ label: 'Cash', value: totalCash, icon: 'banknote', glyph: 'text-emerald-400' },
+                  { label: 'Bank', value: totalBank, icon: 'bank', glyph: 'text-indigo-400' }].map(function (f, i) {
                   return (
                     <span key={f.label} className={'min-w-0 ' + (i === 0 ? 'pr-3' : 'pl-3')}>
-                      {/* A dot rather than a glyph in a disc. The two columns
-                          read as the same thing twice with only a faint rule
-                          between them, and the disc that used to tell them
-                          apart cost 36px of a 109px column — which is what
-                          made these figures truncate. Six pixels on the label
-                          line, where there is room, and the value keeps the
-                          full width. Emerald for cash and indigo for bank are
-                          the pair this app already uses for the two. */}
+                      {/* The glyph rides the label line, not a 36px disc
+                          beside the pair — that disc took a third of a 109px
+                          column and is what made these figures truncate. Here
+                          it costs the label a few pixels and the value keeps
+                          the full width. Emerald for cash and indigo for bank
+                          are the pair this app already uses for the two. */}
                       <span className="flex items-center gap-1.5">
-                        <span aria-hidden="true" className={'shrink-0 w-1.5 h-1.5 rounded-full ' + f.dot} />
+                        <Icon name={f.icon} size={13} className={'shrink-0 ' + f.glyph} />
                         <span className="text-[11px] font-medium text-slate-400 leading-tight">{f.label}</span>
                       </span>
                       <span data-notranslate className="block mt-0.5 text-[12.5px] font-bold text-white tabular-nums leading-tight whitespace-nowrap">
