@@ -93,10 +93,13 @@ function PhoneStat({ icon, label, value, tone, ring, text, active, onClick }) {
       <span className={'w-8 h-8 mb-2 rounded-full inline-flex items-center justify-center bg-white/70 ' + text}>
         <Icon name={icon} size={16} />
       </span>
-      <span className="block text-[11.5px] font-semibold text-slate-600 leading-tight">{label}</span>
-      <span className="mt-0.5 flex items-center justify-between gap-1">
+      {/* Two lines' worth of room whether the label needs them or not.
+          "Overdue Vendors" wraps where "Incomplete" does not, and without
+          this the three figures sat at three different heights. */}
+      <span className="block h-[30px] text-[11.5px] font-semibold text-slate-600 leading-[15px] overflow-hidden">{label}</span>
+      <span className="mt-1 flex items-center justify-between gap-1">
         <span data-notranslate className={'font-display text-[22px] font-bold tabular-nums leading-none ' + text}>{value}</span>
-        <Icon name="chevronRight" size={14} className="shrink-0 text-slate-400" />
+        <Icon name="chevronRight" size={14} className="shrink-0 text-slate-300" />
       </span>
     </button>
   )
@@ -287,13 +290,21 @@ var CHIP_TONES = {
   plain: { box: 'bg-white border border-slate-200 text-slate-600', glyph: 'text-slate-500' },
 }
 
-function StateChip({ icon, label, tone }) {
+function StateChip({ icon, label, tone, small }) {
   var t = CHIP_TONES[tone] || CHIP_TONES.plain
   return (
     // A fixed height rather than padding, so two chips side by side are the
     // same height whatever is in them, and neither is taller than the line.
-    <span className={"shrink-0 h-6 inline-flex items-center gap-1.5 px-2.5 rounded-md text-[10.5px] font-bold uppercase tracking-[0.04em] whitespace-nowrap " + t.box}>
-      <Icon name={icon} size={11} className={t.glyph} />
+    //
+    // `small` is the phone row, where the chips share one line with a name
+    // above and an amount beside. At the card's size, set in caps and tracked
+    // out, two of them read as louder than either — so they lose the caps and
+    // the tracking and keep the tint, which is the part that was doing the
+    // work.
+    <span className={(small
+      ? "shrink-0 h-5 inline-flex items-center gap-1 px-1.5 rounded text-[10.5px] font-bold whitespace-nowrap "
+      : "shrink-0 h-6 inline-flex items-center gap-1.5 px-2.5 rounded-md text-[10.5px] font-bold uppercase tracking-[0.04em] whitespace-nowrap ") + t.box}>
+      <Icon name={icon} size={small ? 10 : 11} className={t.glyph} />
       {label}
     </span>
   )
@@ -337,12 +348,12 @@ function renderFacts(v) {
   })
 }
 
-function renderChips(v) {
+function renderChips(v, small) {
   var chips = []
   if ((v.overdue_count || 0) > 0) chips.push({ icon: 'alert', label: 'Overdue', tone: 'alarm' })
   if (v.vendor_status === 'incomplete') chips.push({ icon: 'fileText', label: 'Incomplete', tone: 'warn' })
   if (chips.length === 0 && (v.entry_count || 0) === 0) chips.push({ icon: 'clock', label: 'No activity' })
-  return chips.map(function (c, ci) { return <StateChip key={ci} icon={c.icon} label={c.label} tone={c.tone} /> })
+  return chips.map(function (c, ci) { return <StateChip key={ci} icon={c.icon} label={c.label} tone={c.tone} small={small} /> })
 }
 
 function renderMoneyNotes(v) {
@@ -1125,17 +1136,20 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
               total is the total of — so the chevron goes somewhere. */}
           <button type="button" onClick={function () { setStatusFilter('all') }}
             className="w-full text-left bg-white/80 backdrop-blur-xl border border-white/60 rounded-3xl p-4 shadow-[0_2px_16px_rgba(15,23,42,0.06)] active:scale-[0.995] transition-transform">
-            <span className="flex items-center gap-3.5">
-              <span className="shrink-0 w-14 h-14 rounded-full bg-amber-50 text-amber-600 inline-flex items-center justify-center">
-                <Icon name="wallet" size={24} />
+            {/* The figure is the reason for the card, so it gets the card's
+                whole width on its own line. Squeezed between a 56px disc and
+                a chevron it had about 210px for eleven digits and a unit, and
+                came out as "11,58,985.91 p…" — a truncated money figure is
+                worse than none, since it cannot be told from a smaller one
+                that fits. Nothing here truncates any more. */}
+            <span className="flex items-center gap-3">
+              <span className="shrink-0 w-11 h-11 rounded-full bg-amber-50 text-amber-600 inline-flex items-center justify-center">
+                <Icon name="wallet" size={20} />
               </span>
-              <span className="flex-1 min-w-0 text-center">
-                <span className="block text-[13px] font-semibold text-slate-500">Total Outstanding</span>
-                <span data-notranslate className={'block mt-0.5 font-display text-[28px] font-bold tabular-nums leading-tight tracking-[-0.02em] truncate ' + outstandingClass}>
-                  {loading ? '—' : formatPoints(totalOutstanding)}
-                </span>
-              </span>
-              <Icon name="chevronRight" size={20} className="shrink-0 text-slate-300" />
+              <span className="text-[13px] font-semibold text-slate-500">Total Outstanding</span>
+            </span>
+            <span data-notranslate className={'block mt-2 font-display text-[26px] font-bold tabular-nums leading-tight tracking-[-0.02em] ' + outstandingClass}>
+              {loading ? '—' : formatPoints(totalOutstanding)}
             </span>
 
             {!loading && (totalCash !== 0 || totalBank !== 0) && (
@@ -1228,20 +1242,21 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
             <div aria-busy={listStale}
               className={'space-y-2.5 transition-opacity duration-150 ' + (listStale ? 'opacity-60' : '')}>
               {sorted.slice(0, renderLimit).map(function (v) {
-                var chips = renderChips(v)
+                var chips = renderChips(v, true)
                 return (
                   <button key={v.vendor_id} type="button" onClick={function () { openVendor(v) }}
                     className="w-full text-left bg-white/80 backdrop-blur-xl border border-white/60 rounded-2xl px-4 py-3 flex items-center gap-3 shadow-[0_1px_8px_rgba(15,23,42,0.04)] active:scale-[0.99] transition-transform">
                     <span className="flex-1 min-w-0">
                       <span className="block text-[14.5px] font-bold text-slate-900 leading-tight truncate">{v.vendor_name || '—'}</span>
                       {/* Reserved whether or not this vendor has a chip, so a
-                          row with one is not taller than a row without. */}
-                      <span className="mt-1 flex items-center gap-1.5 h-[22px] overflow-hidden">{chips}</span>
+                          row with one is not taller than a row without — and
+                          clipped at the name's width rather than pushing into
+                          the amount, which is what put a chip hard against a
+                          figure on the rows that have two. */}
+                      <span className="mt-1 flex items-center gap-1 h-[20px] overflow-hidden">{chips}</span>
                     </span>
-                    <span className="shrink-0 text-right">
-                      <span data-notranslate className="block text-[14px] font-bold text-slate-900 tabular-nums whitespace-nowrap">
-                        {formatPoints(v.balance_paise || 0)}
-                      </span>
+                    <span data-notranslate className="shrink-0 text-[14px] font-bold text-slate-900 tabular-nums whitespace-nowrap">
+                      {formatPoints(v.balance_paise || 0)}
                     </span>
                     <Icon name="chevronRight" size={17} className="shrink-0 text-slate-300" />
                   </button>
