@@ -1141,22 +1141,22 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
               </span>
             </div>
 
-            {/* Colour on the glyph and the figure, not on the tile — the same
-                rule the vendor ledger's three follow, so the two screens
-                agree about what a tinted card means. */}
-            <div className="grid grid-cols-3 gap-2.5">
+            {/* Three to a row gives each about 61px on a 320px phone, and
+                "15,77,130 pts" wants 90 — so all three were cut. One to a
+                row instead: the glyph and the label lead, the figure ends
+                the line, and each gets the card's full 248px. It is also
+                shorter than the three cards were. */}
+            <div className="rounded-2xl border border-white/60 bg-white/80 backdrop-blur-xl divide-y divide-slate-200/70">
               {[{ icon: 'checkCircle', label: 'Acknowledged', value: totals.committed, text: 'text-emerald-600' },
                 { icon: 'clock', label: 'Debits Pending', value: totals.pending, text: 'text-amber-600' },
                 { icon: 'banknote', label: 'Total Credits', value: totals.credit, text: 'text-rose-600' }].map(function (c) {
                 return (
-                  <div key={c.label} className="rounded-2xl border border-white/60 bg-white/80 backdrop-blur-xl p-2.5">
-                    <span className={'w-8 h-8 mb-2 rounded-full inline-flex items-center justify-center bg-slate-100 ' + c.text}>
+                  <div key={c.label} className="flex items-center gap-2.5 px-3 py-2.5">
+                    <span className={'shrink-0 w-8 h-8 rounded-full inline-flex items-center justify-center bg-slate-100 ' + c.text}>
                       <Icon name={c.icon} size={15} />
                     </span>
-                    {/* Two lines' room whether the label needs them or not, so
-                        the three figures sit at one height. */}
-                    <span className="block h-[30px] text-[11.5px] font-bold text-slate-700 leading-[15px] overflow-hidden">{c.label}</span>
-                    <span data-notranslate className={'block mt-1 font-display text-[15px] font-extrabold tabular-nums leading-none truncate ' + c.text}>
+                    <span className="min-w-0 flex-1 text-[12.5px] font-semibold text-slate-600 truncate">{c.label}</span>
+                    <span data-notranslate className={'shrink-0 font-display text-[15px] font-extrabold tabular-nums whitespace-nowrap ' + c.text}>
                       {formatPoints(c.value)}
                     </span>
                   </div>
@@ -1296,10 +1296,19 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
         <p className="text-center text-sm text-gray-400 py-8">No matches in this range</p>
       ) : (
         <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
+          <div className="overflow-x-auto ambria-thin-scroll">
+            <div className="min-w-[700px]">
           {/* One table, not a stack of cards. Every department used to carry its
               own border and its own rounded corners, so four departments were
               four objects with four sets of columns that only happened to line
-              up with each other. */}
+              up with each other.
+
+              The grid declares 614px of fixed columns and gives the department
+              the 1fr that is left — which on a 298px phone is nothing at all,
+              so the name vanished and the figures landed on top of each other.
+              Below the table's own width the panel scrolls sideways, the way
+              the inventory ledger's does. Squeezing six columns onto a phone
+              would make all six unreadable. */}
           <div className="flex items-stretch bg-slate-50 border-b border-slate-200">
             <div className={"flex-1 " + COLS + " px-3 py-2.5"}>
               {/* Headings, not controls. */}
@@ -1426,6 +1435,8 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
               </div>
             )
           })}
+            </div>
+          </div>
         </div>
       )}
 
