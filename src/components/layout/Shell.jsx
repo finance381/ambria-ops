@@ -445,7 +445,9 @@ function Shell({ profile, onSignOut }) {
   var waveArt = tab === 'broadcast'
   // Screens whose own artwork starts at the top of the viewport, so the bar
   // has to let it through rather than capping it with white.
-  var artHeader = pageArt || waveArt || tab === 'wallet'
+  // The vendor ledger draws its own ground on the phone, the way the wallet
+  // does, so the bar over it is frosted rather than a solid white strip.
+  var artHeader = pageArt || waveArt || tab === 'wallet' || tab === 'vendor_ledger'
 
 
   return (

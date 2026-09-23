@@ -17,6 +17,7 @@ import { useReferenceData } from '../../lib/referenceData.jsx'
 import SearchField from '../../components/ui/SearchField'
 import CheckedStamp from '../../components/ui/CheckedStamp'
 import Icon from '../../components/ui/Icon'
+import vendorBg from '../../assets/vendor-bg.webp'
 import { avatarTint } from '../../lib/avatarTint'
 import { ON, OFF } from '../../lib/ui'
 import { useBodyScrollLock } from '../../lib/useBodyScrollLock'
@@ -125,6 +126,39 @@ function PhoneStat({ icon, label, value, tone, ring, text, active, onClick }) {
         <Icon name="chevronRight" size={14} className="shrink-0 text-slate-400" />
       </span>
     </button>
+  )
+}
+
+// Sampled from the artwork's own last row, so the page below the picture
+// continues it instead of ending in a seam.
+var VENDOR_BG_FOOT = 'linear-gradient(to right, ' + [
+  '#F3EAE0 0%', '#F4ECE2 4%', '#F8F3EC 25%', '#F2EAE0 42%',
+  '#F2EBE1 60%', '#F1EAE0 78%', '#F0E9E0 92%', '#ECE5DA 100%',
+].join(', ') + ')'
+
+// The ground behind the phone list, built the way the wallet's is.
+//
+// Nothing on the desktop: this is one tab of the Ledgers hub and the other
+// seven are plain, so a ground here would make one screen look like it came
+// from a different section.
+//
+// Two pieces stacked, the foot taking whatever the artwork leaves — not the
+// foot painted across the whole element with the artwork over it, because
+// until the picture arrives that foot is the entire screen.
+//
+// Nothing is measured against height. The artwork is as wide as the element
+// and as tall as its own proportions make it, so the element growing when the
+// address bar retracts cannot resize it; aspect-ratio means the box is the
+// right size before the file lands rather than after.
+function VendorBackdrop({ inAdmin }) {
+  if (inAdmin) return null
+  return (
+    <div aria-hidden="true" className="pointer-events-none fixed inset-0 -z-10 flex flex-col overflow-hidden"
+      style={{ backgroundColor: '#F6F0E8' }}>
+      <img src={vendorBg} alt="" fetchpriority="high" decoding="async"
+        className="w-full shrink-0" style={{ aspectRatio: '941 / 1672' }} />
+      <div className="flex-1" style={{ backgroundImage: VENDOR_BG_FOOT }} />
+    </div>
   )
 }
 
@@ -1112,6 +1146,7 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
     if (!inAdmin) {
       return (
         <div className="space-y-3.5">
+          <VendorBackdrop inAdmin={inAdmin} />
           {/* The headline figure, and the two it is made of. Pressing it
               clears the filter back to every vendor, which is what the
               total is the total of — so the chevron goes somewhere. */}
@@ -1613,6 +1648,7 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
 
   return (
     <div className="space-y-4">
+      <VendorBackdrop inAdmin={inAdmin} />
       {/* Just where you came from. The overflow menu that used to sit on
           the right held one item, and a menu you have to open to reach a
           single action is two presses for what a button does in one — the
