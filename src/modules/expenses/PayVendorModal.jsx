@@ -374,11 +374,20 @@ function PayVendorModal({ vendor, profile, onClose, onSuccess }) {
                   className={FIELD} />
               </div>
               <div>
-                <label className={LABEL}>
-                  Which bill(s) is this discount against?
-                  {sourceBills.length === 0 && !sourceBillsLoading && <span className="ml-1 font-normal text-slate-400">(no bills found — the deduction will not be credited to an expense type)</span>}
-                  {sourceExpenseIds.length > 0 && <span className="ml-1 font-normal text-indigo-600">({sourceExpenseIds.length} selected)</span>}
-                </label>
+                <div className="flex items-baseline justify-between gap-2">
+                  <label className={LABEL}>Which bill(s) is this discount against?</label>
+                  {sourceExpenseIds.length > 0 && (
+                    <span data-notranslate className="shrink-0 text-[11.5px] font-bold text-indigo-600">{sourceExpenseIds.length} selected</span>
+                  )}
+                </div>
+                {/* Out of the label rather than inside it: as a trailing
+                    clause it wrapped the heading onto a second and third line
+                    and read as part of the question. */}
+                {sourceBills.length === 0 && !sourceBillsLoading && (
+                  <p className="-mt-1 mb-1.5 text-[11.5px] text-slate-400 leading-snug">
+                    No bills found — the deduction will not be credited to an expense type.
+                  </p>
+                )}
                 {sourceBillsLoading ? (
                   <p className="text-[12.5px] text-slate-500">Loading bills…</p>
                 ) : sourceBills.length > 0 ? (
@@ -412,12 +421,26 @@ function PayVendorModal({ vendor, profile, onClose, onSuccess }) {
                       var checked = sourceExpenseIds.indexOf(String(b.id)) !== -1
                       return (
                         <label key={b.id}
-                          className={"flex items-center gap-2.5 px-2 py-1.5 rounded-lg cursor-pointer transition-colors " + (checked ? "bg-indigo-50" : "hover:bg-slate-50")}>
+                          className={"flex items-start gap-2.5 px-2 py-2 rounded-lg cursor-pointer transition-colors " + (checked ? "bg-indigo-50" : "hover:bg-slate-50")}>
                           <input type="checkbox" checked={checked}
                             onChange={function () { toggleSourceBill(String(b.id)) }}
-                            className="w-4 h-4 shrink-0 accent-indigo-600" />
-                          <span className="min-w-0 text-[12.5px] text-slate-700">
-                            {formatDate(b.expense_date)} — {b.description || 'Expense #' + b.id} ({formatPoints(b.amount_paise)})
+                            className="w-4 h-4 mt-0.5 shrink-0 accent-indigo-600" />
+                          {/* The date, the amount and the description were one
+                              sentence at one size — "17 Sept 2026 — iron
+                              purchase from narayana for trussing, stucture '
+                              cafe & geman hanger ktm (4,51,413 pts)" — and you
+                              pick a bill by the first two. They take the top
+                              line, the date leading and the figure ending it;
+                              the description follows in grey as the thing that
+                              tells them apart when two land on one day. */}
+                          <span className="min-w-0 flex-1">
+                            <span className="flex items-baseline justify-between gap-2">
+                              <span data-notranslate className="text-[12.5px] font-bold text-slate-800">{formatDate(b.expense_date)}</span>
+                              <span data-notranslate className="shrink-0 text-[12.5px] font-bold text-slate-900 tabular-nums">{formatPoints(b.amount_paise)}</span>
+                            </span>
+                            <span className="block mt-0.5 text-[12px] text-slate-500 leading-snug">
+                              {b.description || 'Expense #' + b.id}
+                            </span>
                           </span>
                         </label>
                       )
