@@ -1258,7 +1258,7 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
                 width the number wants. It has the card's full measure, so
                 nothing here can truncate. */}
             <span className="block text-[11.5px] font-bold uppercase tracking-[0.1em] text-slate-400">Total Outstanding</span>
-            <span data-notranslate className="block mt-1.5 font-display text-[30px] font-extrabold text-white tabular-nums leading-none tracking-[-0.02em]">
+            <span data-notranslate className="block mt-1.5 font-serif text-[30px] font-bold text-white tabular-nums leading-none tracking-[-0.02em]">
               {loading ? '—' : splitPoints(totalOutstanding).n}
               {/* The unit steps back. It is the same three letters on every
                   figure on this screen and never wants reading. */}
@@ -1359,7 +1359,7 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
           )}
 
           <div className="flex items-baseline justify-between gap-3 px-1">
-            <h2 className="font-display text-[17px] font-bold text-slate-900 tracking-[-0.01em]">Vendors</h2>
+            <h2 className="font-serif text-[20px] font-bold text-slate-900 tracking-[-0.01em]">Vendors</h2>
             <span data-notranslate className="text-[12px] font-semibold text-slate-500 tabular-nums">
               {loading ? '' : sorted.length + (sorted.length === 1 ? ' vendor' : ' vendors')}
             </span>

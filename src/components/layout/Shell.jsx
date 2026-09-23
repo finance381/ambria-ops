@@ -475,7 +475,12 @@ function Shell({ profile, onSignOut }) {
           {/* min-w-0 + truncate is what stops a long label like "PC & Direct
               Expenses" from wrapping the header onto a second line */}
           <div className="flex-1 min-w-0">
-            <h1 className="text-[15px] font-bold text-slate-900 leading-tight tracking-[-0.01em] truncate">
+            {/* The vendor ledger is set in the serif; every other screen
+                keeps the display sans. The face is loaded for that one
+                screen, so the title it draws follows it there and nowhere
+                else. */}
+            <h1 className={"font-bold text-slate-900 leading-tight tracking-[-0.01em] truncate " +
+              (tab === 'vendor_ledger' ? "font-serif text-[17px]" : "text-[15px]")}>
               {headerTitle}
             </h1>
             {!activeGroup && !tab && (
