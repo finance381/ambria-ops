@@ -480,7 +480,7 @@ function Shell({ profile, onSignOut }) {
                 screen, so the title it draws follows it there and nowhere
                 else. */}
             <h1 className={"font-bold text-slate-900 leading-tight tracking-[-0.01em] truncate " +
-              (tab === 'vendor_ledger' ? "font-serif text-[17px]" : "text-[15px]")}>
+              (tab === 'vendor_ledger' ? "font-serif text-[19px]" : "text-[15px]")}>
               {headerTitle}
             </h1>
             {!activeGroup && !tab && (

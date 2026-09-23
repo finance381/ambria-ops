@@ -28,8 +28,8 @@
 /* Only the vendor ledger's phone headings, which is why only two weights are
    here. A third face is a real cost on a PWA, so it earns its place on one
    screen rather than being available everywhere by habit. */
-@import "@fontsource/source-serif-4/latin-600.css";
-@import "@fontsource/source-serif-4/latin-700.css";
+@import "@fontsource/cormorant-garamond/latin-600.css";
+@import "@fontsource/cormorant-garamond/latin-700.css";
 @import "tailwindcss";
 
 @theme {
@@ -46,7 +46,7 @@
   /* A third face, used on one screen. Neither Jakarta nor Inter carries
      Devanagari and nor does this, so Hindi falls through to the system faces
      exactly as the other two do. */
-  --font-serif: 'Source Serif 4', 'Nirmala UI', 'Noto Sans Devanagari', Georgia, serif;
+  --font-serif: 'Cormorant Garamond', 'Nirmala UI', 'Noto Sans Devanagari', Georgia, serif;
 
   /* Page ground. A hair warmer and deeper than slate-50 so white cards read as
      raised surfaces rather than dissolving into the background — the difference
