@@ -17,12 +17,13 @@ import checkedStamp from '../../assets/checked-stamp.png'
 // than a small one. `size` stays for a caller that genuinely needs another,
 // but nothing passes it today.
 //
-// 72 rather than 96: at 96 it was the largest single thing in a row, and a
-// mark that says "somebody has looked at this" should not outweigh the amount
-// they looked at.
+// 56 rather than the 96 it started at: a mark that says "somebody has looked
+// at this" should not outweigh the amount they looked at, and at 96 it was
+// the largest single thing in a row. The artwork is 360px wide, so even here
+// it has far more pixels than a retina screen asks for.
 function CheckedStamp({ checked, checkerName, checkedAt, canToggle, canUncheck, busy, onToggle, variant, size }) {
   var isStamp = variant === 'stamp'
-  var px = size || 72
+  var px = size || 56
 
   if (!checked) {
     if (!canToggle) return null
