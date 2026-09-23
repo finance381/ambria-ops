@@ -1092,7 +1092,7 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
          text; the picked one does not answer the pointer, because pressing it
          again does nothing. */
       <button type="button" onClick={function () { applyPreset(props.k) }} aria-pressed={active}
-        className={"h-9 px-2 sm:px-4 text-[12.5px] font-bold rounded-lg whitespace-nowrap transition-all duration-150 " +
+        className={"h-9 px-1.5 sm:px-4 text-[11.5px] sm:text-[12.5px] font-bold rounded-lg whitespace-nowrap transition-all duration-150 " +
           (active
             ? "bg-white text-indigo-700 shadow-[0_1px_3px_rgba(15,23,42,0.10)]"
             : "text-slate-500 hover:text-slate-900 hover:bg-white/70")}>
@@ -1247,12 +1247,13 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
             so the line breaks where the window makes it break instead of
             where a breakpoint guessed it would. */}
         <div className="flex flex-wrap items-center gap-2.5">
-          {/* Two by two, not four across. "This month" is 103px with its
-              padding and four across a 320px phone gives each 61 — the chips
-              would not shrink to it, so the group pushed the page wider than
-              the screen and that is the sideways scroll. Two across gives
-              each 126. */}
-          <div className="w-full sm:w-auto grid grid-cols-2 sm:flex items-center gap-1 p-1 bg-slate-100 rounded-xl [&>*]:w-full sm:[&>*]:w-auto">
+          {/* One line from 360px, which is every phone but the smallest.
+              At 11.5px and px-1.5 the widest chip — "This month" — is 75px,
+              and four across a 360px screen get 79 each. A 320px screen only
+              gives 69, so there it falls back to two by two rather than
+              pushing the page wider than itself, which is what four across
+              at full size was doing. */}
+          <div className="w-full sm:w-auto grid grid-cols-2 min-[360px]:grid-cols-4 sm:flex items-center gap-1 p-1 bg-slate-100 rounded-xl [&>*]:w-full sm:[&>*]:w-auto">
             <PresetChip k="month" label="This month" />
             <PresetChip k="lastMonth" label="Last month" />
             <PresetChip k="ytd" label="YTD" />
