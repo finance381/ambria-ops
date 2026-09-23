@@ -327,6 +327,12 @@ function Fact({ icon, label, value, lead, first, title }) {
 // cut to what it cannot lose: "Earliest due" becomes "Due", and the dates
 // drop to a two-digit year. With the full labels and "17 Sept 2026" twice,
 // the line wrapped and the card grew a fourth row to hold half a date.
+function splitPoints(paise) {
+  var t = formatPoints(paise)
+  var i = t.lastIndexOf(' ')
+  return i === -1 ? { n: t, unit: '' } : { n: t.slice(0, i), unit: t.slice(i + 1) }
+}
+
 function shortDate(s) {
   if (!s) return ''
   var d = new Date(s)
@@ -1218,34 +1224,43 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
               total is the total of — so the chevron goes somewhere. */}
           <button type="button" onClick={function () { setStatusFilter('all') }}
             className="w-full text-left bg-white/80 backdrop-blur-xl border border-white/60 rounded-3xl p-4 shadow-[0_2px_16px_rgba(15,23,42,0.06)] active:scale-[0.995] transition-transform">
-            {/* The figure is the reason for the card, so it gets the card's
-                whole width on its own line. Squeezed between a 56px disc and
-                a chevron it had about 210px for eleven digits and a unit, and
-                came out as "11,58,985.91 p…" — a truncated money figure is
-                worse than none, since it cannot be told from a smaller one
-                that fits. Nothing here truncates any more. */}
-            <span className="flex items-center gap-3">
+            {/* The label and the figure are one thing said twice, so they
+                are one block: the figure starts where the label starts,
+                rather than at the card's edge with the disc's width of empty
+                floor under it. It still has the whole width — squeezed
+                beside a disc and a chevron it had about 210px for eleven
+                digits and came out "11,58,985.91 p…", and a truncated money
+                figure cannot be told from a smaller one that fits. */}
+            <span className="flex items-start gap-3">
               <span className="shrink-0 w-11 h-11 rounded-full bg-amber-50 text-amber-600 inline-flex items-center justify-center">
                 <Icon name="wallet" size={20} />
               </span>
-              <span className="text-[13px] font-semibold text-slate-500">Total Outstanding</span>
-            </span>
-            <span data-notranslate className={'block mt-2 font-display text-[26px] font-bold tabular-nums leading-tight tracking-[-0.02em] ' + outstandingClass}>
-              {loading ? '—' : formatPoints(totalOutstanding)}
+              <span className="min-w-0">
+                <span className="block text-[12px] font-semibold uppercase tracking-[0.06em] text-slate-500">Total Outstanding</span>
+                <span data-notranslate className={'block mt-1 font-display text-[27px] font-bold tabular-nums leading-none tracking-[-0.02em] ' + outstandingClass}>
+                  {loading ? '—' : splitPoints(totalOutstanding).n}
+                  {/* The unit steps back. It is the same three letters on
+                      every figure on this screen and never wants reading. */}
+                  {!loading && <span className="ml-1 text-[15px] font-semibold text-slate-400">{splitPoints(totalOutstanding).unit}</span>}
+                </span>
+              </span>
             </span>
 
+            {/* The two it is made of, in the band the vendor cards use for
+                their cash and opening — one language for "here are the parts
+                of that figure", wherever it is said. */}
             {!loading && (totalCash !== 0 || totalBank !== 0) && (
-              <span className="mt-3.5 pt-3.5 border-t border-slate-200/70 grid grid-cols-2 divide-x divide-slate-200/70">
-                {[{ icon: 'banknote', label: 'Cash', value: totalCash },
-                  { icon: 'bank', label: 'Bank', value: totalBank }].map(function (f) {
+              <span className="mt-3.5 rounded-xl bg-slate-50/80 border border-slate-200/70 p-2.5 grid grid-cols-2 gap-x-2">
+                {[{ icon: 'banknote', glyph: 'text-emerald-600', label: 'Cash', value: totalCash },
+                  { icon: 'bank', glyph: 'text-indigo-600', label: 'Bank', value: totalBank }].map(function (f) {
                   return (
-                    <span key={f.label} className="flex items-center gap-2.5 px-1 min-w-0">
-                      <span className="shrink-0 w-9 h-9 rounded-xl bg-slate-100 text-slate-500 inline-flex items-center justify-center">
+                    <span key={f.label} className="flex items-center gap-2.5 min-w-0">
+                      <span className={'shrink-0 w-9 h-9 rounded-xl bg-white border border-slate-200 inline-flex items-center justify-center ' + f.glyph}>
                         <Icon name={f.icon} size={15} />
                       </span>
                       <span className="min-w-0">
-                        <span className="block text-[11.5px] font-semibold text-slate-500 leading-tight">{f.label}</span>
-                        <span data-notranslate className="block text-[13.5px] font-bold text-slate-900 tabular-nums leading-tight truncate">
+                        <span className="block text-[11px] font-semibold text-slate-500 leading-tight">{f.label}</span>
+                        <span data-notranslate className="block text-[13px] font-bold text-slate-900 tabular-nums leading-tight truncate">
                           {formatPoints(f.value)}
                         </span>
                       </span>
