@@ -227,7 +227,7 @@ function Tile({ icon, tone, label, value, valueClass, wide, badge, active, onCli
   // than six separate things — centring gave each figure its own margin,
   // different on every tile because every number is a different length.
   var box = 'h-full flex flex-col justify-center gap-2.5 border rounded-2xl px-4 py-4 text-left transition-colors duration-150 ' +
-    (wide ? 'lg:col-span-2 ' : '') +
+    (wide ? 'col-span-2 ' : '') +
     'border-slate-200 ' +
     (active ? 'bg-indigo-50 ' : 'bg-white ') +
     (onClick && !active ? 'hover:bg-slate-50 ' : '') +
@@ -1742,12 +1742,15 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
           gone: a glyph from the set the rest of the app draws from sits on the
           text's baseline and takes its colour, which a font-dependent picture
           of a banknote does not. */}
-      <div className="flex flex-wrap items-center gap-4 bg-white border border-slate-200 rounded-2xl px-5 py-4">
+      <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-4 bg-white border border-slate-200 rounded-2xl px-4 py-4 sm:px-5">
         {/* One initial circle here, where the list has none. On the list it
             was sixty first letters in six colours down the left of a column
             you read by name; here it is the one thing on the page that says
             which vendor you are looking at, so a mark beside the name helps
             rather than repeats. */}
+        {/* Stacked, the disc and the name sit on one line of their own so
+            the name still has something to lead. */}
+        <div className="flex items-center gap-3 min-w-0 sm:contents">
         <span aria-hidden="true" className={'shrink-0 w-12 h-12 rounded-full inline-flex items-center justify-center text-[17px] font-bold ' + avatarTint(vs.vendor_name)}>
           {(vs.vendor_name || '?').trim().charAt(0).toUpperCase() || '?'}
         </span>
@@ -1762,23 +1765,24 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
           </div>
           <p className="mt-1 text-[12px] text-slate-500" data-notranslate>Vendor #{vs.vendor_id}</p>
         </div>
-        <div className="shrink-0 flex items-center gap-2">
+        </div>
+        <div className="grid grid-cols-3 gap-2 sm:flex sm:shrink-0 sm:items-center">
           <button type="button" onClick={payVendor}
-            className="inline-flex items-center gap-2 h-10 px-4 rounded-xl text-[13px] font-bold text-white bg-indigo-600 hover:bg-indigo-700 active:scale-[0.98] transition-all">
+            className="inline-flex items-center justify-center gap-2 h-10 px-3 sm:px-4 rounded-xl text-[13px] font-bold text-white bg-indigo-600 hover:bg-indigo-700 active:scale-[0.98] transition-all">
             <Icon name="banknote" size={15} />
             Pay Vendor
           </button>
           {vs._phone && (
             <a href={'tel:' + vs._phone.replace(/[^0-9+]/g, '')}
               title={'Call ' + (vs._contact || vs.vendor_name || 'vendor') + (vs._phone2 ? ' · alt: ' + vs._phone2 : '')}
-              className="inline-flex items-center gap-2 h-10 px-4 rounded-xl text-[13px] font-bold text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 hover:text-slate-900 active:scale-[0.98] no-underline transition-all">
+              className="inline-flex items-center justify-center gap-2 h-10 px-3 sm:px-4 rounded-xl text-[13px] font-bold text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 hover:text-slate-900 active:scale-[0.98] no-underline transition-all">
               <Icon name="phone" size={15} />
               Call
             </a>
           )}
           <button type="button" onClick={exportVendorPDF}
             disabled={pdfBusy || !entries || entries.length === 0}
-            className="inline-flex items-center gap-2 h-10 px-4 rounded-xl text-[13px] font-bold text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 hover:text-slate-900 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed transition-all">
+            className="inline-flex items-center justify-center gap-2 h-10 px-3 sm:px-4 rounded-xl text-[13px] font-bold text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 hover:text-slate-900 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed transition-all">
             <Icon name={pdfBusy ? 'refresh' : 'fileText'} size={15} />
             {pdfBusy ? 'Building…' : 'PDF'}
           </button>
