@@ -1109,6 +1109,21 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
         <p className="text-xs text-gray-400">Live financial tracker · {totals.allocs} allocation{totals.allocs !== 1 ? 's' : ''}</p>
       </div>
 
+      {/* Above the block that pins, so it scrolls away with the page rather
+          than taking toolbar height on every screen. The allocation count
+          lives here rather than in the card below, where it was the same
+          number said twice. */}
+      {!inAdmin && (
+        <div className="px-0.5">
+          <h2 className="font-display text-[21px] font-bold text-slate-900 tracking-[-0.015em]">Ledgers</h2>
+          <p className="mt-0.5 text-[12.5px] text-slate-500">
+            Live financial tracker
+            <span aria-hidden="true" className="mx-1.5 text-slate-300">·</span>
+            <span data-notranslate>{(totals.allocs || 0).toLocaleString('en-IN')}</span> allocation{totals.allocs === 1 ? '' : 's'}
+          </p>
+        </div>
+      )}
+
       {/* top-0 put this underneath the shell's own sticky bar rather than below
           it — both were pinned to the top of the window and the shell's is the
           one in front, so the first rows of this block were behind it the whole
@@ -1140,18 +1155,16 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
         {!inAdmin ? (
           <>
             <div className="rounded-3xl p-3.5 shadow-[0_8px_28px_rgba(15,32,68,0.28)]" style={{ backgroundColor: '#1B2C4F' }}>
-              {/* The 44px disc went. A glyph beside a label that already reads
-                  NET TOTAL was saying it twice, and it cost a row of its own.
-                  The allocation count rides the label's line for the same
-                  reason — it had a line to itself for eight words. */}
-              <span className="flex items-baseline justify-between gap-3">
-                <span className="text-[11.5px] font-bold uppercase tracking-[0.1em] text-slate-400">Net Total</span>
-                <span className="shrink-0 text-[11.5px] font-medium text-slate-400">
-                  <span data-notranslate>{(totals.allocs || 0).toLocaleString('en-IN')}</span> allocation{totals.allocs === 1 ? '' : 's'}
+              <span className="flex items-center gap-3">
+                <span className="shrink-0 w-10 h-10 rounded-xl bg-white/10 text-indigo-200 inline-flex items-center justify-center">
+                  <Icon name="chart" size={18} />
                 </span>
-              </span>
-              <span data-notranslate className="block mt-1.5 font-display text-[28px] font-extrabold text-white tabular-nums leading-none tracking-[-0.02em]">
-                {formatPoints(totals.total)}
+                <span className="min-w-0">
+                  <span className="block text-[11.5px] font-bold uppercase tracking-[0.1em] text-slate-400">Net Total</span>
+                  <span data-notranslate className="block mt-1 font-display text-[26px] font-extrabold text-white tabular-nums leading-none tracking-[-0.02em]">
+                    {formatPoints(totals.total)}
+                  </span>
+                </span>
               </span>
 
               {/* Inset into the same dark rather than sitting in a card of
@@ -1162,15 +1175,23 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
 
                   A dot, not a glyph in a disc: the disc was 32px of a 242px
                   row, and the widest of these lines already wants 182. */}
-              <span className="mt-3 block rounded-2xl bg-white/[0.06] border border-white/10 px-3 divide-y divide-white/10">
+              {/* Across from 380px, where each of the three has about 98px —
+                  which is what "17,41,004.91 pts" wants. Below that they
+                  stack, because three columns of 84 would cut all three. A
+                  rule rather than a panel: they are part of the figure above,
+                  not a box under it. */}
+              <span className="mt-3 pt-3 border-t border-white/10 grid grid-cols-1 min-[380px]:grid-cols-3 gap-y-2 min-[380px]:gap-x-2 min-[380px]:divide-x divide-white/10">
                 {[{ label: 'Acknowledged', value: totals.committed, dot: 'bg-emerald-400' },
                   { label: 'Debits Pending', value: totals.pending, dot: 'bg-amber-400' },
-                  { label: 'Total Credits', value: totals.credit, dot: 'bg-rose-400' }].map(function (c) {
+                  { label: 'Total Credits', value: totals.credit, dot: 'bg-rose-400' }].map(function (c, i) {
                   return (
-                    <span key={c.label} className="flex items-center gap-2 py-1.5">
-                      <span aria-hidden="true" className={'shrink-0 w-1.5 h-1.5 rounded-full ' + c.dot} />
-                      <span className="min-w-0 flex-1 text-[12px] font-medium text-slate-400 truncate">{c.label}</span>
-                      <span data-notranslate className="shrink-0 text-[13px] font-bold text-white tabular-nums whitespace-nowrap">
+                    <span key={c.label} className={'min-w-0 flex items-center justify-between gap-2 min-[380px]:block ' +
+                      (i === 0 ? 'min-[380px]:pr-2' : i === 1 ? 'min-[380px]:px-2' : 'min-[380px]:pl-2')}>
+                      <span className="flex items-center gap-1.5 min-w-0">
+                        <span aria-hidden="true" className={'shrink-0 w-1.5 h-1.5 rounded-full ' + c.dot} />
+                        <span className="text-[11.5px] font-medium text-slate-400 truncate">{c.label}</span>
+                      </span>
+                      <span data-notranslate className="shrink-0 min-[380px]:block min-[380px]:mt-1 text-[13px] font-bold text-white tabular-nums whitespace-nowrap">
                         {formatPoints(c.value)}
                       </span>
                     </span>
