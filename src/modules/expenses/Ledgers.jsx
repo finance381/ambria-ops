@@ -59,7 +59,7 @@ function Money({ paise, tone, bold, dashWhenZero, cls }) {
        ragged on both sides — and a money column is read down, not across, so
        the edge the figures share matters more than the one they share with the
        word above them. */
-    <span className={"flex items-baseline justify-end gap-2 whitespace-nowrap " + (cls || '')} data-notranslate>
+    <span className={(cls || 'flex') + " items-baseline justify-end gap-2 whitespace-nowrap"} data-notranslate>
       <span className={"text-[12.5px] tabular-nums " + (bold ? "font-bold " : "font-semibold ") + colour}>
         {dash ? '—' : formatPointsPlain(paise)}
       </span>
@@ -98,7 +98,7 @@ var TONES = {
 // and the button agree on — so the column has one edge instead of the heading
 // keeping its own padding and the button its own margin.
 var EXPORT_COL = 'shrink-0 w-[74px] mr-3'
-var PDF_BTN = EXPORT_COL + ' self-center h-7 inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white text-[11.5px] font-bold text-slate-600 hover:border-indigo-300 hover:text-indigo-700 disabled:opacity-40 transition-all duration-150'
+var PDF_BTN = EXPORT_COL + ' self-center h-7 items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white text-[11.5px] font-bold text-slate-600 hover:border-indigo-300 hover:text-indigo-700 disabled:opacity-40 transition-all duration-150'
 var STATUS_COLORS = {
   recorded: 'bg-amber-100 text-amber-700',
   flagged: 'bg-orange-100 text-orange-700',
@@ -1329,7 +1329,7 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
               <span className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] text-right">Net Total</span>
               <span className={COL_SM + " text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] text-right"}>#</span>
             </div>
-            <span className={EXPORT_COL + " py-2.5 text-center text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em]"}>Export</span>
+            <span className={"hidden sm:block " + EXPORT_COL + " py-2.5 text-center text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em]"}>Export</span>
           </div>
           {visibleGroups.map(function (g) {
             var deptCollapsed = collapsedDepts[g.key]
@@ -1378,7 +1378,7 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
                   <button onClick={function (e) { e.stopPropagation(); exportScopedPDF(g.deptId) }}
                     disabled={pdfBusy}
                     title="Open department PDF in new tab"
-                    className={PDF_BTN}>
+                    className={"hidden sm:inline-flex " + PDF_BTN}>
                     <Icon name="fileText" size={13} />
                     PDF
                   </button>
@@ -1410,7 +1410,7 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
                         <button onClick={function (e) { e.stopPropagation(); exportScopedPDF(g.deptId, t.typeId) }}
                           disabled={pdfBusy}
                           title="Open expense-type PDF in new tab"
-                          className={PDF_BTN}>
+                          className={"hidden sm:inline-flex " + PDF_BTN}>
                           <Icon name="fileText" size={13} />
                           PDF
                         </button>
@@ -1441,7 +1441,7 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
                             <button onClick={function (e) { e.stopPropagation(); exportScopedPDF(g.deptId, r.typeId, r.subTypeId) }}
                               disabled={pdfBusy}
                               title="Open sub-type PDF in new tab"
-                              className={PDF_BTN}>
+                              className={"hidden sm:inline-flex " + PDF_BTN}>
                               <Icon name="fileText" size={13} />
                               PDF
                             </button>
