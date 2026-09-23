@@ -23,7 +23,13 @@ var STATUS_LABELS = { recorded: 'Recorded', flagged: 'Resubmit', acknowledged: '
 // figures, and the unit slot and its gap add another 38. At 104px the content
 // was wider than its own track, so it overflowed into the column beside it and
 // pushed Net Total off the end of the row.
-var COLS = 'grid grid-cols-[1fr_140px_140px_140px_150px_44px] gap-2'
+// Six columns want 764px before the department name gets anything, which is
+// more than twice a phone. Scrolling them sideways worked but made the table
+// the one thing on the page you had to drag — so below sm it is two columns,
+// the name and the net total, and the three it is made of go on a line under
+// the name instead. The drill-down into type and sub-type still opens.
+var COLS = 'grid grid-cols-[1fr_auto] sm:grid-cols-[1fr_140px_140px_140px_150px_44px] gap-2'
+var COL_SM = 'hidden sm:flex'
 
 // A figure in the colour of its own meaning: settled, waiting, credited, and
 // the answer. The colour is on the number and nowhere else — a filled pill
@@ -44,7 +50,7 @@ var COLS = 'grid grid-cols-[1fr_140px_140px_140px_150px_44px] gap-2'
 // The unit takes the figure's colour — it belongs to that number, and in grey
 // it read as page furniture that happened to sit in the column. It stays a size
 // down and a weight down, so the pair still resolves to the figure first.
-function Money({ paise, tone, bold, dashWhenZero }) {
+function Money({ paise, tone, bold, dashWhenZero, cls }) {
   var dash = paise == null || (dashWhenZero && !paise)
   var colour = dash ? 'text-slate-300' : tone
   return (
@@ -53,7 +59,7 @@ function Money({ paise, tone, bold, dashWhenZero }) {
        ragged on both sides — and a money column is read down, not across, so
        the edge the figures share matters more than the one they share with the
        word above them. */
-    <span className="flex items-baseline justify-end gap-2 whitespace-nowrap" data-notranslate>
+    <span className={"flex items-baseline justify-end gap-2 whitespace-nowrap " + (cls || '')} data-notranslate>
       <span className={"text-[12.5px] tabular-nums " + (bold ? "font-bold " : "font-semibold ") + colour}>
         {dash ? '—' : formatPointsPlain(paise)}
       </span>
@@ -1296,8 +1302,6 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
         <p className="text-center text-sm text-gray-400 py-8">No matches in this range</p>
       ) : (
         <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
-          <div className="overflow-x-auto ambria-thin-scroll">
-            <div className="min-w-[940px]">
           {/* One table, not a stack of cards. Every department used to carry its
               own border and its own rounded corners, so four departments were
               four objects with four sets of columns that only happened to line
@@ -1319,11 +1323,11 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
             <div className={"flex-1 " + COLS + " px-3 py-2.5"}>
               {/* Headings, not controls. */}
               <span className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em]">Department / Type</span>
-              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] text-right">Acknowledged</span>
-              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] text-right">Pending</span>
-              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] text-right">Credit</span>
+              <span className={COL_SM + " text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] text-right"}>Acknowledged</span>
+              <span className={COL_SM + " text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] text-right"}>Pending</span>
+              <span className={COL_SM + " text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] text-right"}>Credit</span>
               <span className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] text-right">Net Total</span>
-              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] text-right">#</span>
+              <span className={COL_SM + " text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] text-right"}>#</span>
             </div>
             <span className={EXPORT_COL + " py-2.5 text-center text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em]"}>Export</span>
           </div>
@@ -1350,17 +1354,26 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
                       </span>
                       <span className="text-[13.5px] font-bold text-slate-900 truncate">{g.deptName}</span>
                       <span className="shrink-0 min-w-[20px] px-1.5 py-0.5 rounded-md bg-slate-100 text-[10.5px] font-bold text-slate-500 tabular-nums text-center" data-notranslate>{g.typeGroups.length}</span>
+                      {/* Their columns are gone on a phone, so the two that
+                          make up the total are said under the name instead —
+                          in their own colours, which is how they were told
+                          apart across the row. */}
+                      <span className="sm:hidden basis-full flex items-center gap-2.5 text-[11px] font-semibold tabular-nums" data-notranslate>
+                        <span className={TONES.committed}>{formatPoints(g.committed)}</span>
+                        <span className="text-slate-300">·</span>
+                        <span className={TONES.pending}>{formatPoints(g.pending)}</span>
+                      </span>
                       {delta > 0 && (
                         <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700 font-bold flex-shrink-0 animate-pulse">
                           +{delta}
                         </span>
                       )}
                     </div>
-                    <Money paise={g.committed} tone={TONES.committed} />
-                    <Money paise={g.pending} tone={TONES.pending} />
-                    <Money paise={g.credit} tone={TONES.credit} dashWhenZero />
+                    <Money paise={g.committed} tone={TONES.committed} cls={COL_SM} />
+                    <Money paise={g.pending} tone={TONES.pending} cls={COL_SM} />
+                    <Money paise={g.credit} tone={TONES.credit} dashWhenZero cls={COL_SM} />
                     <Money paise={g.total} tone={TONES.total} bold />
-                    <span className="text-[11.5px] text-right text-slate-400 tabular-nums self-center" data-notranslate>{g.allocs}</span>
+                    <span className={COL_SM + " text-[11.5px] text-right text-slate-400 tabular-nums self-center"} data-notranslate>{g.allocs}</span>
                   </button>
                   <button onClick={function (e) { e.stopPropagation(); exportScopedPDF(g.deptId) }}
                     disabled={pdfBusy}
@@ -1388,9 +1401,9 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
                             <span className="text-[12.5px] font-semibold text-slate-800 truncate">{typeName}</span>
                             <span className="shrink-0 min-w-[20px] px-1.5 py-0.5 rounded-md bg-white text-[10.5px] font-bold text-slate-500 tabular-nums text-center" data-notranslate>{t.subRows.length}</span>
                           </div>
-                          <Money paise={t.committed} tone={TONES.committed} />
-                          <Money paise={t.pending} tone={TONES.pending} />
-                          <Money paise={t.credit} tone={TONES.credit} dashWhenZero />
+                          <Money paise={t.committed} tone={TONES.committed} cls={COL_SM} />
+                          <Money paise={t.pending} tone={TONES.pending} cls={COL_SM} />
+                          <Money paise={t.credit} tone={TONES.credit} dashWhenZero cls={COL_SM} />
                           <Money paise={t.total} tone={TONES.total} bold />
                           <span className="text-[11.5px] text-right text-slate-400 tabular-nums self-center" data-notranslate>{t.allocs}</span>
                         </button>
@@ -1419,9 +1432,9 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
                                 <Icon name="fileText" size={14} className="shrink-0 text-slate-300" />
                                 <p className="text-[12.5px] text-slate-600 truncate">{subTypeName}</p>
                               </div>
-                              <Money paise={r.committed} tone={TONES.committed} />
-                              <Money paise={r.pending} tone={TONES.pending} />
-                              <Money paise={r.credit} tone={TONES.credit} dashWhenZero />
+                              <Money paise={r.committed} tone={TONES.committed} cls={COL_SM} />
+                              <Money paise={r.pending} tone={TONES.pending} cls={COL_SM} />
+                              <Money paise={r.credit} tone={TONES.credit} dashWhenZero cls={COL_SM} />
                               <Money paise={r.total} tone={TONES.total} bold />
                               <span className="text-[11.5px] text-right text-slate-400 tabular-nums" data-notranslate>{r.allocs}</span>
                             </button>
@@ -1441,8 +1454,6 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
               </div>
             )
           })}
-            </div>
-          </div>
         </div>
       )}
 
