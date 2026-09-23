@@ -28,7 +28,7 @@ var STATUS_LABELS = { recorded: 'Recorded', flagged: 'Resubmit', acknowledged: '
 // the one thing on the page you had to drag — so below sm it is two columns,
 // the name and the net total, and the three it is made of go on a line under
 // the name instead. The drill-down into type and sub-type still opens.
-var COLS = 'grid grid-cols-[minmax(0,1fr)_auto] sm:grid-cols-[minmax(0,1fr)_140px_140px_140px_150px_44px] gap-2'
+var COLS = 'grid grid-cols-[minmax(0,1fr)_auto_auto] sm:grid-cols-[minmax(0,1fr)_140px_140px_140px_150px_44px] gap-2'
 var COL_SM = 'hidden sm:flex'
 
 // A figure in the colour of its own meaning: settled, waiting, credited, and
@@ -1494,15 +1494,30 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
                                 the LEFT of its own parent's. */}
                             <button onClick={function () { openRow(g, r) }}
                               className={"flex-1 " + COLS + " items-center px-3 py-1.5 pl-20 text-left"}>
-                              <div className="flex items-center gap-2.5 min-w-0">
-                                <Icon name="fileText" size={14} className="shrink-0 text-slate-300" />
-                                <p className="text-[12.5px] text-slate-600 truncate">{subTypeName}</p>
+                              {/* The tile and the badge its two parents have.
+                                  A bare glyph beside a name, under two rows
+                                  that each put theirs in a box, read as a
+                                  different kind of row rather than the third
+                                  level of the same one. */}
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span className="shrink-0 w-6 h-6 rounded-md bg-white border border-slate-200 text-slate-400 inline-flex items-center justify-center">
+                                  <Icon name="fileText" size={13} />
+                                </span>
+                                <span className="text-[12.5px] text-slate-600 truncate">{subTypeName}</span>
+                                <span className="shrink-0 min-w-[20px] px-1.5 py-0.5 rounded-md bg-white text-[10.5px] font-bold text-slate-500 tabular-nums text-center" data-notranslate>{r.allocs}</span>
                               </div>
                               <Money paise={r.committed} tone={TONES.committed} cls={COL_SM} />
                               <Money paise={r.pending} tone={TONES.pending} cls={COL_SM} />
                               <Money paise={r.credit} tone={TONES.credit} dashWhenZero cls={COL_SM} />
                               <Money paise={r.total} tone={TONES.total} bold />
-                              <span className="text-[11.5px] text-right text-slate-400 tabular-nums" data-notranslate>{r.allocs}</span>
+                              {/* The count moved up beside the name, where the
+                                  other two levels carry theirs. What ends this
+                                  row instead is a chevron: the rows above
+                                  expand in place, this one opens the
+                                  allocations behind it. */}
+                              <span className="flex items-center justify-end text-slate-300">
+                                <Icon name="chevronRight" size={14} />
+                              </span>
                             </button>
                             <button onClick={function (e) { e.stopPropagation(); exportScopedPDF(g.deptId, r.typeId, r.subTypeId) }}
                               disabled={pdfBusy}
