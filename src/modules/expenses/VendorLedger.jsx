@@ -17,6 +17,7 @@ import { useReferenceData } from '../../lib/referenceData.jsx'
 import SearchField from '../../components/ui/SearchField'
 import CheckedStamp from '../../components/ui/CheckedStamp'
 import Icon from '../../components/ui/Icon'
+import EventDatePicker from '../../components/ui/EventDatePicker'
 import vendorBg from '../../assets/vendor-bg.webp'
 import { avatarTint } from '../../lib/avatarTint'
 import { ON, OFF } from '../../lib/ui'
@@ -1887,23 +1888,30 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
         </div>
       )}
 
-      {/* From/To date filter on the entries list below */}
-      <div className="flex items-end gap-2 flex-wrap">
-        <div>
-          <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">From</label>
-          <input type="date" value={entryFrom} max={entryTo || undefined}
-            onChange={function (e) { setEntryFrom(e.target.value) }}
-            className="h-9 px-2.5 bg-white border border-slate-300 rounded-lg text-[12.5px] text-slate-900 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20" />
-        </div>
-        <div>
-          <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">To</label>
-          <input type="date" value={entryTo} min={entryFrom || undefined}
-            onChange={function (e) { setEntryTo(e.target.value) }}
-            className="h-9 px-2.5 bg-white border border-slate-300 rounded-lg text-[12.5px] text-slate-900 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20" />
+      {/* The app's own picker, as the payments ledger already uses for the
+          same job and for the same reason — its comment there: <input
+          type="date"> renders mm/dd/yyyy in US order whatever the locale,
+          which beside "17 Sept 2026" everywhere else on this page is the one
+          thing that looks wrong.
+
+          One labelled group rather than two stacked FROM and TO, with an
+          arrow between them saying which way the range runs. */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-[11px] font-bold uppercase tracking-[0.07em] text-slate-500">Entries</span>
+        <div className="flex items-center gap-2 bg-white/80 backdrop-blur-xl border border-white/60 rounded-xl px-2 py-1.5">
+          <div className="w-[126px]">
+            <EventDatePicker value={entryFrom} onChange={function (v) { if (v) setEntryFrom(v) }}
+              collapsible includePast plain neutral placeholder="From" />
+          </div>
+          <Icon name="arrowRight" size={14} className="shrink-0 text-slate-400" />
+          <div className="w-[126px]">
+            <EventDatePicker value={entryTo} onChange={function (v) { if (v) setEntryTo(v) }}
+              collapsible includePast plain neutral placeholder="To" />
+          </div>
         </div>
         {(entryFrom || entryTo) && (
           <button type="button" onClick={function () { setEntryFrom(''); setEntryTo('') }}
-            className="h-9 px-3 text-[12px] font-bold text-slate-500 hover:text-slate-800 transition-colors">
+            className="h-9 px-3 rounded-xl text-[12px] font-bold text-slate-500 hover:text-slate-800 hover:bg-white/60 transition-colors">
             Clear
           </button>
         )}
