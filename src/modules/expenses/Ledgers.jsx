@@ -125,7 +125,7 @@ function getPresetRange(preset) {
   return null
 }
 
-function Ledgers({ profile, onNavigateToExpenses }) {
+function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
   var isAdmin = hasPerm(profile?.permsNew, 'finance.ledgers.expense')
   var isSysAdmin = hasPerm(profile?.permsNew, 'admin.dashboard')
   var canMarkChecked = hasPerm(profile?.permsNew, 'finance.wallet.mark_checked')
@@ -1119,6 +1119,52 @@ function Ledgers({ profile, onNavigateToExpenses }) {
             and the only part that differs between them — the number — had to
             compete with its own background to be read. Same shape as the
             wallet ledger uses for its four, so the two screens match. */}
+        {/* On the phone the four split: the net total is the figure the
+            screen exists to report, so it goes on the dark on its own, and
+            the three it is made of sit under it. On the desktop they stay
+            four equal cards in a row, which is what a row seven columns wide
+            is for. */}
+        {!inAdmin ? (
+          <>
+            <div className="rounded-3xl p-4 shadow-[0_8px_28px_rgba(15,32,68,0.28)]" style={{ backgroundColor: '#1B2C4F' }}>
+              <span className="flex items-center gap-3">
+                <span className="shrink-0 w-11 h-11 rounded-full bg-white/10 text-indigo-200 inline-flex items-center justify-center">
+                  <Icon name="chart" size={20} />
+                </span>
+                <span className="text-[11.5px] font-bold uppercase tracking-[0.1em] text-slate-400">Net Total</span>
+              </span>
+              <span data-notranslate className="block mt-2 font-display text-[28px] font-extrabold text-white tabular-nums leading-none tracking-[-0.02em]">
+                {formatPoints(totals.total)}
+              </span>
+              <span className="mt-2 block text-[12px] font-medium text-slate-400">
+                <span data-notranslate>{(totals.allocs || 0).toLocaleString('en-IN')}</span> allocation{totals.allocs === 1 ? '' : 's'} in this period
+              </span>
+            </div>
+
+            {/* Colour on the glyph and the figure, not on the tile — the same
+                rule the vendor ledger's three follow, so the two screens
+                agree about what a tinted card means. */}
+            <div className="grid grid-cols-3 gap-2.5">
+              {[{ icon: 'checkCircle', label: 'Acknowledged', value: totals.committed, text: 'text-emerald-600' },
+                { icon: 'clock', label: 'Debits Pending', value: totals.pending, text: 'text-amber-600' },
+                { icon: 'banknote', label: 'Total Credits', value: totals.credit, text: 'text-rose-600' }].map(function (c) {
+                return (
+                  <div key={c.label} className="rounded-2xl border border-white/60 bg-white/80 backdrop-blur-xl p-2.5">
+                    <span className={'w-8 h-8 mb-2 rounded-full inline-flex items-center justify-center bg-slate-100 ' + c.text}>
+                      <Icon name={c.icon} size={15} />
+                    </span>
+                    {/* Two lines' room whether the label needs them or not, so
+                        the three figures sit at one height. */}
+                    <span className="block h-[30px] text-[11.5px] font-bold text-slate-700 leading-[15px] overflow-hidden">{c.label}</span>
+                    <span data-notranslate className={'block mt-1 font-display text-[15px] font-extrabold tabular-nums leading-none truncate ' + c.text}>
+                      {formatPoints(c.value)}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+          </>
+        ) : (
         <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
           <div className="flex items-center gap-3 px-4 py-3 bg-white border border-slate-200 rounded-xl">
             <span className="shrink-0 w-9 h-9 rounded-lg inline-flex items-center justify-center bg-emerald-50 text-emerald-600">
@@ -1157,6 +1203,7 @@ function Ledgers({ profile, onNavigateToExpenses }) {
             </div>
           </div>
         </div>
+        )}
 
         {/* One row: the period, what to look in it for, and what to take away
             with you. These were three separate rows of controls at three
@@ -1164,7 +1211,10 @@ function Ledgers({ profile, onNavigateToExpenses }) {
             so the line breaks where the window makes it break instead of
             where a breakpoint guessed it would. */}
         <div className="flex flex-wrap items-center gap-2.5">
-          <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-xl">
+          {/* Four chips crammed into whatever the row had left, on a phone.
+              Given the width they divide it evenly and each is a thumb-sized
+              target. */}
+          <div className="w-full sm:w-auto grid grid-cols-4 sm:flex items-center gap-1 p-1 bg-slate-100 rounded-xl [&>*]:w-full sm:[&>*]:w-auto">
             <PresetChip k="month" label="This month" />
             <PresetChip k="lastMonth" label="Last month" />
             <PresetChip k="ytd" label="YTD" />
