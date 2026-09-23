@@ -470,9 +470,15 @@ function VendorCardInner({ v, onOpen, phone }) {
 
           items-center on the name row, because a 15.5px name and a 30px pill
           are different heights and aligning their tops staggers them. */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2.5">
         <p className="flex-1 min-w-0 text-[15.5px] font-bold text-slate-900 truncate transition-colors group-hover:text-indigo-700">{v.vendor_name || '—'}</p>
         <BalancePill paise={bal} large />
+        {/* On the phone the call button rides up here. Down in the footer it
+            and the chevron took about 77px off a row that is already three
+            facts wide, which is what kept pushing the last date onto a line
+            of its own. The name is what gives way for it, and the name
+            truncates. */}
+        {phone && renderCallLink(v)}
       </div>
       {(function () {
         var chips = renderChips(v)
@@ -504,12 +510,17 @@ function VendorCardInner({ v, onOpen, phone }) {
           (phone ? 'flex flex-wrap gap-x-3 gap-y-1' : 'flex flex-nowrap overflow-hidden')}>
           {renderFacts(v, phone)}
         </div>
-        {renderCallLink(v)}
+        {!phone && renderCallLink(v)}
         {/* The chevron slides the way it points, so the card says where
-            pressing it goes rather than only that it can be pressed. */}
-        <span aria-hidden="true" className="shrink-0 text-slate-300 transition-all duration-150 group-hover:text-indigo-500 group-hover:translate-x-0.5">
-          <Icon name="chevronRight" size={17} />
-        </span>
+            pressing it goes rather than only that it can be pressed. On the
+            phone there is no pointer to slide it and the whole card is the
+            tap target, so it is 29px of decoration standing between three
+            facts and the room to hold them. */}
+        {!phone && (
+          <span aria-hidden="true" className="shrink-0 text-slate-300 transition-all duration-150 group-hover:text-indigo-500 group-hover:translate-x-0.5">
+            <Icon name="chevronRight" size={17} />
+          </span>
+        )}
       </div>
     </button>
   )
