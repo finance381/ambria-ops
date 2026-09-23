@@ -85,27 +85,27 @@ function balanceColour(paise) {
 // colour here.
 // One of the three counts under the headline figure. Each is also the filter
 // it names, so the whole tile is the button and the chevron is not decoration.
-// The colour is on the glyph and the figure, not on the tile. Three filled
-// tiles side by side made a band of pink, green and yellow across the page
-// that was louder than anything under it — and the tint said the same thing
-// three times over, since each tile already names its own state. The card is
-// the same white the rest of them are; pressing one takes the border in its
-// own colour, which is the one place a fill is still doing work.
-function PhoneStat({ icon, label, value, ring, text, active, onClick }) {
+// Each tile is its own state, and the fill is how you tell three of them
+// apart at a glance. The disc, the figure and the chevron's own circle all
+// take the same tone, so the tile reads as one thing rather than a white box
+// with a coloured number in it.
+function PhoneStat({ icon, label, value, fill, disc, text, ring, active, onClick }) {
   return (
     <button type="button" onClick={onClick} aria-pressed={active}
-      className={'text-left rounded-2xl border p-3 bg-white/80 backdrop-blur-xl transition-all active:scale-[0.98] ' +
-        (active ? ring + ' shadow-[0_2px_10px_rgba(15,23,42,0.06)]' : 'border-white/60')}>
-      <span className={'w-8 h-8 mb-2 rounded-full inline-flex items-center justify-center bg-slate-100 ' + text}>
-        <Icon name={icon} size={16} />
+      className={'text-left rounded-2xl border p-3.5 transition-all active:scale-[0.98] ' + fill + ' ' +
+        (active ? ring + ' shadow-[0_2px_12px_rgba(15,23,42,0.08)]' : 'border-transparent')}>
+      <span className={'w-10 h-10 mb-2.5 rounded-full inline-flex items-center justify-center ' + disc + ' ' + text}>
+        <Icon name={icon} size={18} />
       </span>
       {/* Two lines' worth of room whether the label needs them or not.
           "Overdue Vendors" wraps where "Incomplete" does not, and without
           this the three figures sat at three different heights. */}
-      <span className="block h-[30px] text-[11.5px] font-semibold text-slate-600 leading-[15px] overflow-hidden">{label}</span>
-      <span className="mt-1 flex items-center justify-between gap-1">
-        <span data-notranslate className={'font-display text-[22px] font-bold tabular-nums leading-none ' + text}>{value}</span>
-        <Icon name="chevronRight" size={14} className="shrink-0 text-slate-300" />
+      <span className="block h-[34px] text-[12.5px] font-bold text-slate-700 leading-[17px] overflow-hidden">{label}</span>
+      <span className="mt-1.5 flex items-center justify-between gap-1">
+        <span data-notranslate className={'font-display text-[24px] font-extrabold tabular-nums leading-none ' + text}>{value}</span>
+        <span className={'shrink-0 w-6 h-6 rounded-full inline-flex items-center justify-center ' + disc + ' ' + text}>
+          <Icon name="chevronRight" size={13} />
+        </span>
       </span>
     </button>
   )
@@ -142,6 +142,13 @@ function VendorBackdrop({ inAdmin }) {
       <div className="flex-1" style={{ backgroundImage: VENDOR_BG_FOOT }} />
     </div>
   )
+}
+
+function vendorInitials(name) {
+  var words = String(name || '').trim().split(/\s+/).filter(Boolean)
+  if (words.length === 0) return '?'
+  if (words.length === 1) return words[0].slice(0, 2).toUpperCase()
+  return (words[0].charAt(0) + words[1].charAt(0)).toUpperCase()
 }
 
 function BalancePill({ paise, large }) {
@@ -477,6 +484,12 @@ function VendorCardInner({ v, onOpen, phone }) {
           items-center on the name row, because a 15.5px name and a 30px pill
           are different heights and aligning their tops staggers them. */}
       <div className="flex items-center gap-2.5">
+        {phone && (
+          <span aria-hidden="true"
+            className={'shrink-0 w-11 h-11 rounded-full inline-flex items-center justify-center font-display text-[14px] font-extrabold ' + avatarTint(v.vendor_name)}>
+            {vendorInitials(v.vendor_name)}
+          </span>
+        )}
         <p className="flex-1 min-w-0 text-[15.5px] font-bold text-slate-900 truncate transition-colors group-hover:text-indigo-700">{v.vendor_name || '—'}</p>
         <BalancePill paise={bal} large />
         {/* On the phone the call button rides up here. Down in the footer it
@@ -1234,45 +1247,43 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
           {/* The headline figure, and the two it is made of. Pressing it
               clears the filter back to every vendor, which is what the
               total is the total of — so the chevron goes somewhere. */}
+          {/* Dark, so the one figure the page exists to report is the one
+              thing on it that is not on white. Everything under it is a card
+              on the ground; this is the ground's own statement. */}
           <button type="button" onClick={function () { setStatusFilter('all') }}
-            className="w-full text-left bg-white/80 backdrop-blur-xl border border-white/60 rounded-3xl p-4 shadow-[0_2px_16px_rgba(15,23,42,0.06)] active:scale-[0.995] transition-transform">
-            {/* The label and the figure are one thing said twice, so they
-                are one block: the figure starts where the label starts,
-                rather than at the card's edge with the disc's width of empty
-                floor under it. It still has the whole width — squeezed
-                beside a disc and a chevron it had about 210px for eleven
-                digits and came out "11,58,985.91 p…", and a truncated money
-                figure cannot be told from a smaller one that fits. */}
-            <span className="flex items-start gap-3">
-              <span className="shrink-0 w-11 h-11 rounded-full bg-amber-50 text-amber-600 inline-flex items-center justify-center">
-                <Icon name="wallet" size={20} />
-              </span>
-              <span className="min-w-0">
-                <span className="block text-[12px] font-semibold uppercase tracking-[0.06em] text-slate-500">Total Outstanding</span>
-                <span data-notranslate className={'block mt-1 font-display text-[27px] font-bold tabular-nums leading-none tracking-[-0.02em] ' + outstandingClass}>
-                  {loading ? '—' : splitPoints(totalOutstanding).n}
-                  {/* The unit steps back. It is the same three letters on
-                      every figure on this screen and never wants reading. */}
-                  {!loading && <span className="ml-1 text-[15px] font-semibold text-slate-400">{splitPoints(totalOutstanding).unit}</span>}
-                </span>
-              </span>
+            className="w-full text-left rounded-3xl p-5 shadow-[0_8px_28px_rgba(15,32,68,0.28)] active:scale-[0.995] transition-transform"
+            style={{ backgroundColor: '#1B2C4F' }}>
+            {/* No disc beside it. On the dark the figure is already the
+                brightest thing on the page and a glyph next to it only takes
+                width the number wants. It has the card's full measure, so
+                nothing here can truncate. */}
+            <span className="block text-[11.5px] font-bold uppercase tracking-[0.1em] text-slate-400">Total Outstanding</span>
+            <span data-notranslate className="block mt-1.5 font-display text-[30px] font-extrabold text-white tabular-nums leading-none tracking-[-0.02em]">
+              {loading ? '—' : splitPoints(totalOutstanding).n}
+              {/* The unit steps back. It is the same three letters on every
+                  figure on this screen and never wants reading. */}
+              {!loading && <span className="ml-1.5 text-[16px] font-semibold text-slate-400">{splitPoints(totalOutstanding).unit}</span>}
+            </span>
+            <span className="mt-2.5 flex items-center gap-2.5">
+              <span aria-hidden="true" className="w-7 h-px bg-amber-300/70" />
+              <span className="text-[12px] font-medium text-slate-400">Across all vendors</span>
             </span>
 
-            {/* The two it is made of, in the band the vendor cards use for
-                their cash and opening — one language for "here are the parts
-                of that figure", wherever it is said. */}
+            {/* The two it is made of, inset into the same dark rather than
+                sitting on it — they are parts of the figure above, not two
+                more cards. */}
             {!loading && (totalCash !== 0 || totalBank !== 0) && (
-              <span className="mt-3.5 rounded-xl bg-slate-50/80 border border-slate-200/70 p-2.5 grid grid-cols-2 gap-x-2">
-                {[{ icon: 'banknote', glyph: 'text-emerald-600', label: 'Cash', value: totalCash },
-                  { icon: 'bank', glyph: 'text-indigo-600', label: 'Bank', value: totalBank }].map(function (f) {
+              <span className="mt-4 block rounded-2xl bg-white/[0.06] border border-white/10 p-3 grid grid-cols-2 divide-x divide-white/10">
+                {[{ icon: 'banknote', disc: 'bg-emerald-100 text-emerald-700', label: 'Cash', value: totalCash },
+                  { icon: 'bank', disc: 'bg-indigo-100 text-indigo-700', label: 'Bank', value: totalBank }].map(function (f, i) {
                   return (
-                    <span key={f.label} className="flex items-center gap-2.5 min-w-0">
-                      <span className={'shrink-0 w-9 h-9 rounded-xl bg-white border border-slate-200 inline-flex items-center justify-center ' + f.glyph}>
-                        <Icon name={f.icon} size={15} />
+                    <span key={f.label} className={'flex items-center gap-2.5 min-w-0 ' + (i === 0 ? 'pr-3' : 'pl-3')}>
+                      <span className={'shrink-0 w-9 h-9 rounded-full inline-flex items-center justify-center ' + f.disc}>
+                        <Icon name={f.icon} size={16} />
                       </span>
                       <span className="min-w-0">
-                        <span className="block text-[11px] font-semibold text-slate-500 leading-tight">{f.label}</span>
-                        <span data-notranslate className="block text-[13px] font-bold text-slate-900 tabular-nums leading-tight truncate">
+                        <span className="block text-[11.5px] font-medium text-slate-400 leading-tight">{f.label}</span>
+                        <span data-notranslate className="block text-[13.5px] font-bold text-white tabular-nums leading-tight truncate">
                           {formatPoints(f.value)}
                         </span>
                       </span>
@@ -1284,13 +1295,13 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
           </button>
 
           <div className="grid grid-cols-3 gap-2.5">
-            <PhoneStat icon="clock" label="Overdue Vendors" ring="border-rose-300" text="text-rose-600"
+            <PhoneStat icon="clock" label="Overdue Vendors" fill="bg-rose-50" disc="bg-rose-100" text="text-rose-600" ring="border-rose-300"
               value={loading ? '—' : overdueVendors.length}
               active={statusFilter === 'overdue'} onClick={function () { setStatusFilter(statusFilter === 'overdue' ? 'all' : 'overdue') }} />
-            <PhoneStat icon="checkCircle" label="With Balance" ring="border-emerald-300" text="text-emerald-600"
+            <PhoneStat icon="checkCircle" label="With Balance" fill="bg-emerald-50" disc="bg-emerald-100" text="text-emerald-600" ring="border-emerald-300"
               value={loading ? '—' : vendorsWithBalance}
               active={statusFilter === 'with_balance'} onClick={function () { setStatusFilter(statusFilter === 'with_balance' ? 'all' : 'with_balance') }} />
-            <PhoneStat icon="fileText" label="Incomplete" ring="border-amber-300" text="text-amber-600"
+            <PhoneStat icon="fileText" label="Incomplete" fill="bg-amber-50" disc="bg-amber-100" text="text-amber-600" ring="border-amber-300"
               value={loading ? '—' : incompleteCount}
               active={statusFilter === 'incomplete'} onClick={function () { setStatusFilter(statusFilter === 'incomplete' ? 'all' : 'incomplete') }} />
           </div>
