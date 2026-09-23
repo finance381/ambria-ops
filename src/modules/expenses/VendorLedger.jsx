@@ -1766,12 +1766,15 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
           <p className="mt-1 text-[12px] text-slate-500" data-notranslate>Vendor #{vs.vendor_id}</p>
         </div>
         </div>
-        <div className="grid grid-cols-3 gap-2 sm:flex sm:shrink-0 sm:items-center">
+        <div className="flex flex-col gap-2 sm:flex-row sm:shrink-0 sm:items-center">
           <button type="button" onClick={payVendor}
-            className="inline-flex items-center justify-center gap-2 h-10 px-3 sm:px-4 rounded-xl text-[13px] font-bold text-white bg-indigo-600 hover:bg-indigo-700 active:scale-[0.98] transition-all">
+            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 h-10 px-4 rounded-xl text-[13px] font-bold text-white bg-indigo-600 hover:bg-indigo-700 active:scale-[0.98] transition-all">
             <Icon name="banknote" size={15} />
             Pay Vendor
           </button>
+          {/* contents at sm, so the wide layout is the same flat row of
+              three it has always been. */}
+          <div className="flex gap-2 [&>*]:flex-1 sm:contents">
           {vs._phone && (
             <a href={'tel:' + vs._phone.replace(/[^0-9+]/g, '')}
               title={'Call ' + (vs._contact || vs.vendor_name || 'vendor') + (vs._phone2 ? ' · alt: ' + vs._phone2 : '')}
@@ -1786,6 +1789,7 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
             <Icon name={pdfBusy ? 'refresh' : 'fileText'} size={15} />
             {pdfBusy ? 'Building…' : 'PDF'}
           </button>
+          </div>
         </div>
       </div>
 
@@ -2001,11 +2005,21 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
                 // a shade darker: enough that a card under the pointer is not
                 // the one card on the page that looks dead, and not so much
                 // that it promises something it will not do.
-                className={"flex items-start gap-3.5 bg-white border rounded-2xl px-4 py-4 transition-[border-color,box-shadow,background-color] duration-250 ease-out " +
+                // Below sm it stacks. Across, this row carries a 128px stamp
+                // slot, a 168px figure column and the rule between them —
+                // about 327px of fixed width on a card that has 298, so the
+                // description was left with nothing and came out one word per
+                // line while the figure and the Reverse button ran off the
+                // right edge. Stacked, the description gets the card and the
+                // verdict and the figure take the strip under it.
+                className={"flex flex-col sm:flex-row items-stretch sm:items-start gap-3 sm:gap-3.5 bg-white border rounded-2xl px-4 py-4 transition-[border-color,box-shadow,background-color] duration-250 ease-out " +
                   (isDeleted ? "opacity-50 " : "") +
                   (isExpRow
                     ? "border-slate-200 cursor-pointer hover:border-indigo-200 hover:bg-indigo-50/40 hover:shadow-[0_2px_10px_rgba(79,70,229,0.06)]"
                     : "border-slate-200 hover:border-slate-300")}>
+                {/* contents at sm, so across it is the same flat row of
+                    dot, description, rule, stamp and figure it has been. */}
+                <div className="flex items-start gap-3.5 min-w-0 sm:contents">
                 <span aria-hidden="true" className={"shrink-0 w-2.5 h-2.5 rounded-full mt-2 " + dotColor} />
                 <div className="flex-1 min-w-0">
                   <p className={"text-[15px] font-bold text-slate-900 leading-snug " + (isDeleted ? "line-through" : "")}>
@@ -2183,11 +2197,22 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
                     stamp belongs on that side — it is a verdict, not a detail.
                     The rule itself is what stops two columns of unrelated text
                     reading as one ragged block. */}
-                <span aria-hidden="true" className="self-stretch shrink-0 w-px bg-slate-200" />
+                </div>
+                {/* The rule only separates two columns, so it goes when there
+                    are no longer two. Stacked, the strip below is separated by
+                    being below. */}
+                <span aria-hidden="true" className="hidden sm:block self-stretch shrink-0 w-px bg-slate-200" />
+                <div className="flex items-center justify-between gap-3 sm:contents">
                 {/* Prompt and verdict share one slot, so pressing the first
-                    puts the second exactly where you pressed. */}
+                    puts the second exactly where you pressed.
+
+                    The 128px floor is a desktop concern: it stops the rule to
+                    its left landing somewhere new on every row. Stacked there
+                    is no rule and no column, and 128px of reserved width on a
+                    298px card is a third of it held for something most rows
+                    do not have. */}
                 {(anyEntryChecked || canMarkChecked) && !isDeleted && (
-                  <span className="shrink-0 w-[128px] self-center flex items-center justify-center"
+                  <span className="shrink-0 sm:w-[128px] self-center flex items-center justify-center"
                     onClick={function (ev) { ev.stopPropagation() }}>
                     {checkedProps.checked ? renderChecked('stamp') : (canMarkChecked ? renderChecked() : null)}
                   </span>
@@ -2197,7 +2222,7 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
                     to row — a longer figure, or a "Balance after" line that
                     only appears when it has something to say — so the rule to
                     its left landed somewhere new on every row. */}
-                <div className="shrink-0 min-w-[168px] flex flex-col items-end gap-2.5">
+                <div className="shrink-0 sm:min-w-[168px] flex flex-col items-end gap-2.5">
                   <div className="text-right">
                     {/* The sign carries the colour: + is red and − is green.
                         A credit is a bill arriving, so what it does to this
@@ -2240,6 +2265,7 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
                       Reverse
                     </button>
                   )}
+                </div>
                 </div>
               </div>
             )
