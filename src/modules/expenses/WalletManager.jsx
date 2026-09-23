@@ -3703,7 +3703,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                              one under another. The label takes the room that is
                              left, the figure is pinned right, and tabular-nums
                              lines the digits up inside it. */
-                          <p key={ai} className="flex items-start sm:items-center gap-2 sm:gap-3 text-[12px] leading-relaxed">
+                          <p key={ai} className="flex items-center gap-2 sm:gap-3 text-[12px] leading-relaxed">
                             {/* The label sizes to its own text rather than
                                 taking the whole row, so there is something left
                                 for the leader to fill. It still shrinks and
@@ -3711,15 +3711,19 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                                 The tag glyph went with the rule that replaced
                                 it: a small grey icon at the head of a grey line
                                 is exactly what the footer below already does. */}
-                            {/* On a phone this panel lives inside the row's
-                                description block, which leaves the label about
-                                80px once the leader and the figure have taken
-                                theirs — so "Decor › Food › Snacks" came out as
-                                "Decor › F…". Narrow, the label takes the row
-                                and wraps; the leader is what goes, since a run
-                                of dots is there to carry the eye across a gap
-                                and there is no gap to carry it across. */}
-                            <span className="min-w-0 flex-1 sm:flex-none sm:truncate text-slate-500">
+                            {/* Measured: this panel sits inside the row's
+                                description block, which on a phone leaves it
+                                about 194px. "Decor › Food › Snacks" and its
+                                figure want 189 — so it fits on one line, but
+                                only once the leader is out of the way. That is
+                                what was taking the room and forcing "Decor ›
+                                F…". A run of dots exists to carry the eye
+                                across a gap, and at this width there is no gap
+                                to carry it across.
+
+                                truncate stays as the last resort, for a chain
+                                longer than this one. */}
+                            <span className="min-w-0 flex-1 truncate sm:flex-none text-slate-500">
                               <span className="font-semibold text-slate-700">{a.department || 'Unassigned'}</span>
                               {allocType ? ' › ' + allocType + (allocSubType ? ' › ' + allocSubType : '') : ''}
                             </span>
