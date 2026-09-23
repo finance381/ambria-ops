@@ -2279,7 +2279,7 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
                     to row — a longer figure, or a "Balance after" line that
                     only appears when it has something to say — so the rule to
                     its left landed somewhere new on every row. */}
-                <div className="shrink-0 sm:min-w-[168px] flex flex-col items-end gap-2.5">
+                <div className="ml-auto shrink-0 sm:min-w-[168px] flex flex-col items-end gap-2.5">
                   <div className="text-right">
                     {/* The sign carries the colour: + is red and − is green.
                         A credit is a bill arriving, so what it does to this
