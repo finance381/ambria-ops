@@ -3703,7 +3703,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                              one under another. The label takes the room that is
                              left, the figure is pinned right, and tabular-nums
                              lines the digits up inside it. */
-                          <p key={ai} className="flex items-center gap-3 text-[12px] leading-relaxed">
+                          <p key={ai} className="flex items-start sm:items-center gap-2 sm:gap-3 text-[12px] leading-relaxed">
                             {/* The label sizes to its own text rather than
                                 taking the whole row, so there is something left
                                 for the leader to fill. It still shrinks and
@@ -3711,7 +3711,15 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                                 The tag glyph went with the rule that replaced
                                 it: a small grey icon at the head of a grey line
                                 is exactly what the footer below already does. */}
-                            <span className="min-w-0 truncate text-slate-500">
+                            {/* On a phone this panel lives inside the row's
+                                description block, which leaves the label about
+                                80px once the leader and the figure have taken
+                                theirs — so "Decor › Food › Snacks" came out as
+                                "Decor › F…". Narrow, the label takes the row
+                                and wraps; the leader is what goes, since a run
+                                of dots is there to carry the eye across a gap
+                                and there is no gap to carry it across. */}
+                            <span className="min-w-0 flex-1 sm:flex-none sm:truncate text-slate-500">
                               <span className="font-semibold text-slate-700">{a.department || 'Unassigned'}</span>
                               {allocType ? ' › ' + allocType + (allocSubType ? ' › ' + allocSubType : '') : ''}
                             </span>
@@ -3720,7 +3728,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                                 bigger dot is also a thicker rule and the browser
                                 decides the spacing; a repeated radial gradient
                                 sets the dot and the gap independently. */}
-                            <span aria-hidden="true" className="flex-1 min-w-[1.5rem] self-center h-[2px]"
+                            <span aria-hidden="true" className="hidden sm:block flex-1 min-w-[1.5rem] self-center h-[2px]"
                               style={{
                                 backgroundImage: 'radial-gradient(circle, rgb(203 213 225) 1px, transparent 1.1px)',
                                 backgroundSize: '7px 2px',
