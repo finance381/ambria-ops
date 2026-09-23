@@ -85,16 +85,18 @@ function balanceColour(paise) {
 // colour here.
 // One of the three counts under the headline figure. Each is also the filter
 // it names, so the whole tile is the button and the chevron is not decoration.
-// Each tile is its own state, and the fill is how you tell three of them
-// apart at a glance. The disc, the figure and the chevron's own circle all
-// take the same tone, so the tile reads as one thing rather than a white box
-// with a coloured number in it.
-function PhoneStat({ icon, label, value, fill, disc, text, ring, active, onClick }) {
+// The colour is on the glyph and the figure, not on the tile. Three filled
+// tiles side by side put a band of pink, green and yellow across the page
+// that was louder than anything under it — and the fill said the same thing
+// three times, since each tile already names the state it counts. The card is
+// the white the rest of them are; pressing one takes the border in its own
+// colour, which is the one place a fill still does work.
+function PhoneStat({ icon, label, value, text, ring, active, onClick }) {
   return (
     <button type="button" onClick={onClick} aria-pressed={active}
-      className={'text-left rounded-2xl border p-3.5 transition-all active:scale-[0.98] ' + fill + ' ' +
-        (active ? ring + ' shadow-[0_2px_12px_rgba(15,23,42,0.08)]' : 'border-transparent')}>
-      <span className={'w-10 h-10 mb-2.5 rounded-full inline-flex items-center justify-center ' + disc + ' ' + text}>
+      className={'text-left rounded-2xl border p-3.5 bg-white/80 backdrop-blur-xl transition-all active:scale-[0.98] ' +
+        (active ? ring + ' shadow-[0_2px_12px_rgba(15,23,42,0.08)]' : 'border-white/60')}>
+      <span className={'w-10 h-10 mb-2.5 rounded-full inline-flex items-center justify-center bg-slate-100 ' + text}>
         <Icon name={icon} size={18} />
       </span>
       {/* Two lines' worth of room whether the label needs them or not.
@@ -103,7 +105,7 @@ function PhoneStat({ icon, label, value, fill, disc, text, ring, active, onClick
       <span className="block h-[34px] text-[12.5px] font-bold text-slate-700 leading-[17px] overflow-hidden">{label}</span>
       <span className="mt-1.5 flex items-center justify-between gap-1">
         <span data-notranslate className={'font-display text-[24px] font-extrabold tabular-nums leading-none ' + text}>{value}</span>
-        <span className={'shrink-0 w-6 h-6 rounded-full inline-flex items-center justify-center ' + disc + ' ' + text}>
+        <span className="shrink-0 w-6 h-6 rounded-full inline-flex items-center justify-center bg-slate-100 text-slate-400">
           <Icon name="chevronRight" size={13} />
         </span>
       </span>
@@ -1295,13 +1297,13 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
           </button>
 
           <div className="grid grid-cols-3 gap-2.5">
-            <PhoneStat icon="clock" label="Overdue Vendors" fill="bg-rose-50" disc="bg-rose-100" text="text-rose-600" ring="border-rose-300"
+            <PhoneStat icon="clock" label="Overdue Vendors" text="text-rose-600" ring="border-rose-300"
               value={loading ? '—' : overdueVendors.length}
               active={statusFilter === 'overdue'} onClick={function () { setStatusFilter(statusFilter === 'overdue' ? 'all' : 'overdue') }} />
-            <PhoneStat icon="checkCircle" label="With Balance" fill="bg-emerald-50" disc="bg-emerald-100" text="text-emerald-600" ring="border-emerald-300"
+            <PhoneStat icon="checkCircle" label="With Balance" text="text-emerald-600" ring="border-emerald-300"
               value={loading ? '—' : vendorsWithBalance}
               active={statusFilter === 'with_balance'} onClick={function () { setStatusFilter(statusFilter === 'with_balance' ? 'all' : 'with_balance') }} />
-            <PhoneStat icon="fileText" label="Incomplete" fill="bg-amber-50" disc="bg-amber-100" text="text-amber-600" ring="border-amber-300"
+            <PhoneStat icon="fileText" label="Incomplete" text="text-amber-600" ring="border-amber-300"
               value={loading ? '—' : incompleteCount}
               active={statusFilter === 'incomplete'} onClick={function () { setStatusFilter(statusFilter === 'incomplete' ? 'all' : 'incomplete') }} />
           </div>
