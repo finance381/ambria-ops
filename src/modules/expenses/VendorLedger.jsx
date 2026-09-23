@@ -2043,9 +2043,9 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
                       isDeleted ? { icon: 'trash', value: 'Deleted' } : null,
                     ].filter(Boolean)
                     return (
-                      <div className="mt-1.5 flex flex-wrap items-center gap-y-1.5 text-[12px] text-slate-500">
+                      <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[12px] text-slate-500">
                         {facts.map(function (f, fi) {
-                          return <Fact key={fi} first={fi === 0} icon={f.icon} label={f.label} lead={f.lead} value={f.value} />
+                          return <Fact key={fi} first icon={f.icon} label={f.label} lead={f.lead} value={f.value} />
                         })}
                       </div>
                     )
