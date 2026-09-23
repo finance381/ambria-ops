@@ -111,8 +111,8 @@ function PhoneStat({ icon, label, value, text, ring, active, onClick }) {
 // Sampled from the artwork's own last row, so the page below the picture
 // continues it instead of ending in a seam.
 var VENDOR_BG_FOOT = 'linear-gradient(to right, ' + [
-  '#F3EAE0 0%', '#F4ECE2 4%', '#F8F3EC 25%', '#F2EAE0 42%',
-  '#F2EBE1 60%', '#F1EAE0 78%', '#F0E9E0 92%', '#ECE5DA 100%',
+  '#BCCCEC 0%', '#C9DDF8 4%', '#B4C6DF 25%', '#C9D3E5 42%',
+  '#EEEEF0 60%', '#E5E7EB 78%', '#A9B7D0 92%', '#8E9CB6 100%',
 ].join(', ') + ')'
 
 // The ground behind the phone list, built the way the wallet's is.
@@ -133,9 +133,9 @@ function VendorBackdrop({ inAdmin }) {
   if (inAdmin) return null
   return (
     <div aria-hidden="true" className="pointer-events-none fixed inset-0 -z-10 flex flex-col overflow-hidden"
-      style={{ backgroundColor: '#F6F0E8' }}>
+      style={{ backgroundColor: '#D8DFEA' }}>
       <img src={vendorBg} alt="" fetchpriority="high" decoding="async"
-        className="w-full shrink-0" style={{ aspectRatio: '941 / 1672' }} />
+        className="w-full shrink-0" style={{ aspectRatio: '977 / 1609' }} />
       <div className="flex-1" style={{ backgroundImage: VENDOR_BG_FOOT }} />
     </div>
   )
