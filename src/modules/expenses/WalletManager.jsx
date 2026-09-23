@@ -3684,8 +3684,24 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                       other is when it happened and who did it. The rule makes
                       the breakdown read as belonging to the expense above it
                       rather than as one more line in a grey stack. */}
-                  {allocs.length > 0 && (expandAllTxns || !!expandedTxnIds[t.id]) && (
+                  {allocs.length > 0 && (expandAllTxns || !!expandedTxnIds[t.id]) && (function () {
+                    // "Decor" on every line, when every line is Decor, is 48px
+                    // a row spent repeating the one thing they have in common —
+                    // and it was 48px the chain needed to finish spelling
+                    // itself out. Said once at the head of the list instead,
+                    // and only when they really do all share it; where the
+                    // departments differ each line keeps its own.
+                    var depts = []
+                    allocs.forEach(function (a) {
+                      var d = a.department || 'Unassigned'
+                      if (depts.indexOf(d) === -1) depts.push(d)
+                    })
+                    var oneDept = depts.length === 1 ? depts[0] : null
+                    return (
                     <div className="mt-2 pl-3 border-l-2 border-indigo-100 space-y-1">
+                      {oneDept && (
+                        <p className="text-[11px] font-bold uppercase tracking-[0.06em] text-slate-400">{oneDept}</p>
+                      )}
                       {allocs.map(function (a, ai) {
                         var allocType = a.expense_types?.name || ''
                         var allocSubType = a.expense_sub_types?.name || ''
@@ -3724,8 +3740,16 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                                 truncate stays as the last resort, for a chain
                                 longer than this one. */}
                             <span className="min-w-0 flex-1 truncate sm:flex-none text-slate-500">
-                              <span className="font-semibold text-slate-700">{a.department || 'Unassigned'}</span>
-                              {allocType ? ' › ' + allocType + (allocSubType ? ' › ' + allocSubType : '') : ''}
+                              {oneDept ? (
+                                <span className="font-semibold text-slate-700">
+                                  {allocType ? allocType + (allocSubType ? ' › ' + allocSubType : '') : '—'}
+                                </span>
+                              ) : (
+                                <>
+                                  <span className="font-semibold text-slate-700">{a.department || 'Unassigned'}</span>
+                                  {allocType ? ' › ' + allocType + (allocSubType ? ' › ' + allocSubType : '') : ''}
+                                </>
+                              )}
                             </span>
                             {/* The leader, drawn rather than bordered. A dotted
                                 border only grows by growing its width, so a
@@ -3744,7 +3768,8 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                         )
                       })}
                     </div>
-                  )}
+                    )
+                  })()}
                 </>
               )
             })()}
