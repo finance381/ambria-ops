@@ -1145,29 +1145,30 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
               <span className="mt-2 block text-[12px] font-medium text-slate-400">
                 <span data-notranslate>{(totals.allocs || 0).toLocaleString('en-IN')}</span> allocation{totals.allocs === 1 ? '' : 's'} in this period
               </span>
-            </div>
 
-            {/* Three to a row gives each about 61px on a 320px phone, and
-                "15,77,130 pts" wants 90 — so all three were cut. One to a
-                row instead: the glyph and the label lead, the figure ends
-                the line, and each gets the card's full 248px. It is also
-                shorter than the three cards were. */}
-            <div className="rounded-2xl border border-white/60 bg-white/80 backdrop-blur-xl divide-y divide-slate-200/70">
-              {[{ icon: 'checkCircle', label: 'Acknowledged', value: totals.committed, text: 'text-emerald-600' },
-                { icon: 'clock', label: 'Debits Pending', value: totals.pending, text: 'text-amber-600' },
-                { icon: 'banknote', label: 'Total Credits', value: totals.credit, text: 'text-rose-600' }].map(function (c) {
-                return (
-                  <div key={c.label} className="flex items-center gap-2.5 px-3 py-2.5">
-                    <span className={'shrink-0 w-8 h-8 rounded-full inline-flex items-center justify-center bg-slate-100 ' + c.text}>
-                      <Icon name={c.icon} size={15} />
+              {/* Inset into the same dark rather than sitting in a card of
+                  their own underneath it. These three are what the figure
+                  above is made of, and two cards said they were two separate
+                  things — which is also how the vendor ledger sets its cash
+                  and bank, so the two screens agree.
+
+                  A dot, not a glyph in a disc: the disc was 32px of a 242px
+                  row, and the widest of these lines already wants 182. */}
+              <span className="mt-3.5 block rounded-2xl bg-white/[0.06] border border-white/10 px-3 divide-y divide-white/10">
+                {[{ label: 'Acknowledged', value: totals.committed, dot: 'bg-emerald-400' },
+                  { label: 'Debits Pending', value: totals.pending, dot: 'bg-amber-400' },
+                  { label: 'Total Credits', value: totals.credit, dot: 'bg-rose-400' }].map(function (c) {
+                  return (
+                    <span key={c.label} className="flex items-center gap-2 py-2">
+                      <span aria-hidden="true" className={'shrink-0 w-1.5 h-1.5 rounded-full ' + c.dot} />
+                      <span className="min-w-0 flex-1 text-[12px] font-medium text-slate-400 truncate">{c.label}</span>
+                      <span data-notranslate className="shrink-0 text-[13px] font-bold text-white tabular-nums whitespace-nowrap">
+                        {formatPoints(c.value)}
+                      </span>
                     </span>
-                    <span className="min-w-0 flex-1 text-[12.5px] font-semibold text-slate-600 truncate">{c.label}</span>
-                    <span data-notranslate className={'shrink-0 font-display text-[15px] font-extrabold tabular-nums whitespace-nowrap ' + c.text}>
-                      {formatPoints(c.value)}
-                    </span>
-                  </div>
-                )
-              })}
+                  )
+                })}
+              </span>
             </div>
           </>
         ) : (
