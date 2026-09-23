@@ -1113,8 +1113,15 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
           it — both were pinned to the top of the window and the shell's is the
           one in front, so the first rows of this block were behind it the whole
           time you were scrolled. --app-header-h is what the shell publishes for
-          exactly this. */}
-      <div ref={stickyRef} className="sticky z-10 bg-gray-50 pt-1 pb-3 border-b border-gray-200 space-y-2"
+          exactly this.
+
+          And it only pins from sm. On a desktop this is a toolbar and keeping
+          it in reach while the table scrolls under it is the point. On a phone
+          the same block is the headline card, the three figures, the period
+          chips, the search, two dropdowns, the toggle and both exports — most
+          of the screen — so pinning it left a sliver of table moving under a
+          wall that would not move. */}
+      <div ref={stickyRef} className="sm:sticky z-10 bg-gray-50 pt-1 pb-3 border-b border-gray-200 space-y-2"
         style={{ top: 'var(--app-header-h, 0px)' }}>
         {/* Left-aligned, and the figure given the size of the thing it is. A
             9px label centred over a 16px number made four cards you had to lean
