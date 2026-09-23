@@ -296,21 +296,13 @@ var CHIP_TONES = {
   plain: { box: 'bg-white border border-slate-200 text-slate-600', glyph: 'text-slate-500' },
 }
 
-function StateChip({ icon, label, tone, small }) {
+function StateChip({ icon, label, tone }) {
   var t = CHIP_TONES[tone] || CHIP_TONES.plain
   return (
     // A fixed height rather than padding, so two chips side by side are the
     // same height whatever is in them, and neither is taller than the line.
-    //
-    // `small` is the phone row, where the chips share one line with a name
-    // above and an amount beside. At the card's size, set in caps and tracked
-    // out, two of them read as louder than either — so they lose the caps and
-    // the tracking and keep the tint, which is the part that was doing the
-    // work.
-    <span className={(small
-      ? "shrink-0 h-5 inline-flex items-center gap-1 px-1.5 rounded text-[10.5px] font-bold whitespace-nowrap "
-      : "shrink-0 h-6 inline-flex items-center gap-1.5 px-2.5 rounded-md text-[10.5px] font-bold uppercase tracking-[0.04em] whitespace-nowrap ") + t.box}>
-      <Icon name={icon} size={small ? 10 : 11} className={t.glyph} />
+    <span className={"shrink-0 h-6 inline-flex items-center gap-1.5 px-2.5 rounded-md text-[10.5px] font-bold uppercase tracking-[0.04em] whitespace-nowrap " + t.box}>
+      <Icon name={icon} size={11} className={t.glyph} />
       {label}
     </span>
   )
@@ -354,12 +346,12 @@ function renderFacts(v) {
   })
 }
 
-function renderChips(v, small) {
+function renderChips(v) {
   var chips = []
   if ((v.overdue_count || 0) > 0) chips.push({ icon: 'alert', label: 'Overdue', tone: 'alarm' })
   if (v.vendor_status === 'incomplete') chips.push({ icon: 'fileText', label: 'Incomplete', tone: 'warn' })
   if (chips.length === 0 && (v.entry_count || 0) === 0) chips.push({ icon: 'clock', label: 'No activity' })
-  return chips.map(function (c, ci) { return <StateChip key={ci} icon={c.icon} label={c.label} tone={c.tone} small={small} /> })
+  return chips.map(function (c, ci) { return <StateChip key={ci} icon={c.icon} label={c.label} tone={c.tone} /> })
 }
 
 function renderMoneyNotes(v) {
@@ -390,7 +382,7 @@ function renderCallLink(v) {
 
 // A card and a row are the same facts in two shapes, in the same order:
 // who, what state it is in, how much, then the history under a rule.
-function VendorCardInner({ v, onOpen }) {
+function VendorCardInner({ v, onOpen, phone }) {
   var bal = v.balance_paise || 0
   return (
     <button type="button" onClick={function () { onOpen(v) }}
@@ -398,7 +390,14 @@ function VendorCardInner({ v, onOpen }) {
       // tint and a border tint are both flat, so on a grid of sixty the
       // one under the pointer was a slightly different white. transform-gpu
       // keeps the lift off the layout, and the press puts it back down.
-      className="group text-left w-full bg-white border border-slate-200 rounded-2xl p-4 transform-gpu transition-all duration-150 hover:border-indigo-300 hover:bg-indigo-50/30 hover:-translate-y-0.5 hover:shadow-[0_8px_20px_rgba(79,70,229,0.10)] active:translate-y-0 active:shadow-none active:scale-[0.995] focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/30">
+      // Two shells, one card. On the phone it is translucent, like the
+      // headline card and the three tiles it sits under, so the ground shows
+      // through all of them rather than through some — and it has no hover
+      // lift, because there is no pointer to lift it for.
+      className={'group text-left w-full rounded-2xl p-4 transform-gpu transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/30 ' +
+        (phone
+          ? 'bg-white/80 backdrop-blur-xl border border-white/60 shadow-[0_1px_8px_rgba(15,23,42,0.04)] active:scale-[0.99]'
+          : 'bg-white border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/30 hover:-translate-y-0.5 hover:shadow-[0_8px_20px_rgba(79,70,229,0.10)] active:translate-y-0 active:shadow-none active:scale-[0.995]')}>
       {/* No initial circle. A person's avatar stands in for a face you
           would recognise; a vendor's first letter is just the first letter
           of the name printed beside it, in a colour that means nothing. */}
@@ -1248,25 +1247,7 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
             <div aria-busy={listStale}
               className={'space-y-2.5 transition-opacity duration-150 ' + (listStale ? 'opacity-60' : '')}>
               {sorted.slice(0, renderLimit).map(function (v) {
-                var chips = renderChips(v, true)
-                return (
-                  <button key={v.vendor_id} type="button" onClick={function () { openVendor(v) }}
-                    className="w-full text-left bg-white/80 backdrop-blur-xl border border-white/60 rounded-2xl px-4 py-3 flex items-center gap-3 shadow-[0_1px_8px_rgba(15,23,42,0.04)] active:scale-[0.99] transition-transform">
-                    <span className="flex-1 min-w-0">
-                      <span className="block text-[14.5px] font-bold text-slate-900 leading-tight truncate">{v.vendor_name || '—'}</span>
-                      {/* Reserved whether or not this vendor has a chip, so a
-                          row with one is not taller than a row without — and
-                          clipped at the name's width rather than pushing into
-                          the amount, which is what put a chip hard against a
-                          figure on the rows that have two. */}
-                      <span className="mt-1 flex items-center gap-1 h-[20px] overflow-hidden">{chips}</span>
-                    </span>
-                    <span data-notranslate className="shrink-0 text-[14px] font-bold text-slate-900 tabular-nums whitespace-nowrap">
-                      {formatPoints(v.balance_paise || 0)}
-                    </span>
-                    <Icon name="chevronRight" size={17} className="shrink-0 text-slate-300" />
-                  </button>
-                )
+                return <VendorCard key={v.vendor_id} v={v} onOpen={openVendor} phone />
               })}
             </div>
           )}
