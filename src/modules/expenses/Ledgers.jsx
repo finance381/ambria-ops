@@ -1104,25 +1104,18 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
   // ─── LIST VIEW ───
   return (
     <div className="space-y-3">
-      <div>
-        <h2 className="text-lg font-bold text-gray-900">Ledgers</h2>
-        <p className="text-xs text-gray-400">Live financial tracker · {totals.allocs} allocation{totals.allocs !== 1 ? 's' : ''}</p>
+      {/* Already above the block that pins, so it scrolls away with the page
+          rather than taking toolbar height on every screen. The allocation
+          count reads here and not in the card below, where it would be the
+          same number twice. */}
+      <div className="px-0.5">
+        <h2 className="font-display text-[21px] font-bold text-slate-900 tracking-[-0.015em]">Ledgers</h2>
+        <p className="mt-0.5 text-[12.5px] text-slate-500">
+          Live financial tracker
+          <span aria-hidden="true" className="mx-1.5 text-slate-300">·</span>
+          <span data-notranslate>{(totals.allocs || 0).toLocaleString('en-IN')}</span> allocation{totals.allocs === 1 ? '' : 's'}
+        </p>
       </div>
-
-      {/* Above the block that pins, so it scrolls away with the page rather
-          than taking toolbar height on every screen. The allocation count
-          lives here rather than in the card below, where it was the same
-          number said twice. */}
-      {!inAdmin && (
-        <div className="px-0.5">
-          <h2 className="font-display text-[21px] font-bold text-slate-900 tracking-[-0.015em]">Ledgers</h2>
-          <p className="mt-0.5 text-[12.5px] text-slate-500">
-            Live financial tracker
-            <span aria-hidden="true" className="mx-1.5 text-slate-300">·</span>
-            <span data-notranslate>{(totals.allocs || 0).toLocaleString('en-IN')}</span> allocation{totals.allocs === 1 ? '' : 's'}
-          </p>
-        </div>
-      )}
 
       {/* top-0 put this underneath the shell's own sticky bar rather than below
           it — both were pinned to the top of the window and the shell's is the
