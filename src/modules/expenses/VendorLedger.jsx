@@ -141,13 +141,6 @@ function VendorBackdrop({ inAdmin }) {
   )
 }
 
-function vendorInitials(name) {
-  var words = String(name || '').trim().split(/\s+/).filter(Boolean)
-  if (words.length === 0) return '?'
-  if (words.length === 1) return words[0].slice(0, 2).toUpperCase()
-  return (words[0].charAt(0) + words[1].charAt(0)).toUpperCase()
-}
-
 function BalancePill({ paise, large }) {
   var tone = paise < 0 ? 'bg-emerald-50 text-emerald-700'
     : !paise ? 'bg-slate-100 text-slate-400'
@@ -477,12 +470,6 @@ function VendorCardInner({ v, onOpen, phone }) {
           items-center on the name row, because a 15.5px name and a 30px pill
           are different heights and aligning their tops staggers them. */}
       <div className="flex items-center gap-2.5">
-        {phone && (
-          <span aria-hidden="true"
-            className={'shrink-0 w-11 h-11 rounded-full inline-flex items-center justify-center font-display text-[14px] font-extrabold ' + avatarTint(v.vendor_name)}>
-            {vendorInitials(v.vendor_name)}
-          </span>
-        )}
         <p className="flex-1 min-w-0 text-[15.5px] font-bold text-slate-900 truncate transition-colors group-hover:text-indigo-700">{v.vendor_name || '—'}</p>
         <BalancePill paise={bal} large />
         {/* On the phone the call button rides up here. Down in the footer it
