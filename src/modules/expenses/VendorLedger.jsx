@@ -1258,7 +1258,7 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
                 width the number wants. It has the card's full measure, so
                 nothing here can truncate. */}
             <span className="block text-[11.5px] font-bold uppercase tracking-[0.1em] text-slate-400">Total Outstanding</span>
-            <span data-notranslate className="block mt-1.5 font-serif text-[33px] font-bold text-white tabular-nums leading-none tracking-[-0.01em]">
+            <span data-notranslate className="block mt-1.5 font-display text-[30px] font-extrabold text-white tabular-nums leading-none tracking-[-0.02em]">
               {loading ? '—' : splitPoints(totalOutstanding).n}
               {/* The unit steps back. It is the same three letters on every
                   figure on this screen and never wants reading. */}
@@ -1273,11 +1273,11 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
                 sitting on it — they are parts of the figure above, not two
                 more cards. */}
             {!loading && (totalCash !== 0 || totalBank !== 0) && (
-              <span className="mt-4 block rounded-2xl bg-white/[0.06] border border-white/10 p-3 grid grid-cols-2 divide-x divide-white/10">
+              <span className="mt-4 block rounded-2xl bg-white/[0.06] border border-white/10 p-3 grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-white/10">
                 {[{ icon: 'banknote', disc: 'bg-emerald-100 text-emerald-700', label: 'Cash', value: totalCash },
                   { icon: 'bank', disc: 'bg-indigo-100 text-indigo-700', label: 'Bank', value: totalBank }].map(function (f, i) {
                   return (
-                    <span key={f.label} className={'flex items-center gap-2.5 min-w-0 ' + (i === 0 ? 'pr-3' : 'pl-3')}>
+                    <span key={f.label} className={'flex items-center gap-2.5 min-w-0 py-2 sm:py-0 ' + (i === 0 ? 'sm:pr-3' : 'sm:pl-3')}>
                       <span className={'shrink-0 w-9 h-9 rounded-full inline-flex items-center justify-center ' + f.disc}>
                         <Icon name={f.icon} size={16} />
                       </span>
