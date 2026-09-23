@@ -1319,13 +1319,13 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
                   </button>
                 )}
               </div>
-              <div className="space-y-2.5">
+              <div className="grid grid-cols-2 gap-x-2 gap-y-2.5">
                 {PHONE_FILTERS.map(function (f) {
                   return (
-                    <div key={f.label}>
-                      <div className="flex items-baseline justify-between gap-2 mb-1">
-                        <label className="text-[10.5px] font-bold uppercase tracking-[0.07em] text-slate-500">{f.label}</label>
-                        {f.value && <span className="shrink-0 text-[10.5px] font-bold text-indigo-600">On</span>}
+                    <div key={f.label} className="min-w-0">
+                      <div className="flex items-baseline justify-between gap-1 mb-1">
+                        <label className="min-w-0 truncate text-[10px] font-bold uppercase tracking-[0.06em] text-slate-500">{f.label}</label>
+                        {f.value && <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-indigo-500" title="Filtering" />}
                       </div>
                       <SearchDropdown items={f.items} value={f.value} onChange={f.onChange} placeholder="All" noVoice />
                     </div>
