@@ -1939,10 +1939,6 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
             // two don't visibly disagree on the same entry.
             var headlineAmt = e._breakdown ? Math.round(e._breakdown.amount_paise / 100) * 100 : amt
             var kind = e.metadata && e.metadata.kind ? e.metadata.kind : e.ref_type
-            // The same two colours as the figure on the right of the row. The
-            // dot was amber where the figure is red, so one row was marked in
-            // two colours for one fact.
-            var dotColor = isDeleted ? 'bg-slate-300' : isCredit ? 'bg-rose-500' : 'bg-emerald-500'
             var isExpRow = isExpenseEntry(e)
             function handleRowClick() {
               if (!isExpRow) return
@@ -2019,8 +2015,7 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
                     : "border-slate-200 hover:border-slate-300")}>
                 {/* contents at sm, so across it is the same flat row of
                     dot, description, rule, stamp and figure it has been. */}
-                <div className="flex items-start gap-3.5 min-w-0 sm:contents">
-                <span aria-hidden="true" className={"shrink-0 w-2.5 h-2.5 rounded-full mt-2 " + dotColor} />
+                <div className="min-w-0 sm:contents">
                 <div className="flex-1 min-w-0">
                   {/* These entries are written "TNT-Purchase: iron purchase
                       from narayana for trussing…" — a name, a colon, then what
@@ -2259,7 +2254,7 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
                     are no longer two. Stacked, the strip below is separated by
                     being below. */}
                 <span aria-hidden="true" className="hidden sm:block self-stretch shrink-0 w-px bg-slate-200" />
-                <div className="flex items-center justify-between gap-3 pl-6 sm:pl-0 sm:contents">
+                <div className="flex items-center justify-between gap-3 sm:contents">
                 {/* Prompt and verdict share one slot, so pressing the first
                     puts the second exactly where you pressed.
 
