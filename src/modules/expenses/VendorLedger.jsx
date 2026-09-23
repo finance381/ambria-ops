@@ -1277,12 +1277,23 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
                 needs 91 at 12.5px and both fit side by side again. The glyph
                 was saying what the word beside it already said. */}
             {!loading && (totalCash !== 0 || totalBank !== 0) && (
-              <span className="mt-3.5 block rounded-2xl bg-white/[0.06] border border-white/10 px-3 py-2.5 grid grid-cols-2 divide-x divide-white/10">
-                {[{ label: 'Cash', value: totalCash },
-                  { label: 'Bank', value: totalBank }].map(function (f, i) {
+              <span className="mt-3.5 block rounded-2xl bg-white/[0.06] border border-white/10 px-3 py-2.5 grid grid-cols-2 divide-x divide-white/20">
+                {[{ label: 'Cash', value: totalCash, dot: 'bg-emerald-400' },
+                  { label: 'Bank', value: totalBank, dot: 'bg-indigo-400' }].map(function (f, i) {
                   return (
                     <span key={f.label} className={'min-w-0 ' + (i === 0 ? 'pr-3' : 'pl-3')}>
-                      <span className="block text-[11px] font-medium text-slate-400 leading-tight">{f.label}</span>
+                      {/* A dot rather than a glyph in a disc. The two columns
+                          read as the same thing twice with only a faint rule
+                          between them, and the disc that used to tell them
+                          apart cost 36px of a 109px column — which is what
+                          made these figures truncate. Six pixels on the label
+                          line, where there is room, and the value keeps the
+                          full width. Emerald for cash and indigo for bank are
+                          the pair this app already uses for the two. */}
+                      <span className="flex items-center gap-1.5">
+                        <span aria-hidden="true" className={'shrink-0 w-1.5 h-1.5 rounded-full ' + f.dot} />
+                        <span className="text-[11px] font-medium text-slate-400 leading-tight">{f.label}</span>
+                      </span>
                       <span data-notranslate className="block mt-0.5 text-[12.5px] font-bold text-white tabular-nums leading-tight whitespace-nowrap">
                         {formatPoints(f.value)}
                       </span>
