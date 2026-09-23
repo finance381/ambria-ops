@@ -97,6 +97,8 @@ var TONES = {
 // Both of these sit in the same box — a width and a right margin the heading
 // and the button agree on — so the column has one edge instead of the heading
 // keeping its own padding and the button its own margin.
+var SELECT_FIELD = 'h-11 pl-9 pr-8 w-full bg-white border border-slate-200 rounded-xl text-[12.5px] text-slate-700 appearance-none hover:border-slate-300 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-[border-color,box-shadow] duration-150'
+
 var EXPORT_COL = 'shrink-0 w-[74px] mr-3'
 var PDF_BTN = EXPORT_COL + ' self-center h-7 items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white text-[11.5px] font-bold text-slate-600 hover:border-indigo-300 hover:text-indigo-700 disabled:opacity-40 transition-all duration-150'
 var STATUS_COLORS = {
@@ -1260,7 +1262,9 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
                 className="h-9 px-3 bg-white border border-slate-200 rounded-lg text-[12.5px] text-slate-700 hover:border-slate-300 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-[border-color,box-shadow] duration-150 flex-1 min-w-[130px]" style={{ fontSize: '16px' }} />
             </>
           )}
-          <div className="flex-1 min-w-[180px]">
+          {/* 180px cut the placeholder to "Search dept / typ". It reads in
+              full from 240, and the row wraps rather than squeezing it. */}
+          <div className="flex-1 min-w-[240px]">
             <SearchField
               value={search}
               onChange={function (v) { setSearch(v) }}
@@ -1268,29 +1272,65 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
               className="w-full"
             />
           </div>
-          <select value={userFilter} onChange={function (e) { setUserFilter(e.target.value) }}
-            aria-label="Filter by user"
-            className="h-9 px-3 bg-white border border-slate-200 rounded-lg text-[12.5px] text-slate-700 hover:border-slate-300 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-[border-color,box-shadow] duration-150 flex-1 min-w-[130px]" style={{ fontSize: '16px' }}>
-            <option value="">All users</option>
-            {users.map(function (u) { return <option key={u.id} value={u.id}>{u.name}</option> })}
-          </select>
-          <select value={venueFilter} onChange={function (e) { setVenueFilter(e.target.value) }}
-            aria-label="Filter by venue"
-            className="h-9 px-3 bg-white border border-slate-200 rounded-lg text-[12.5px] text-slate-700 hover:border-slate-300 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-[border-color,box-shadow] duration-150 flex-1 min-w-[130px]" style={{ fontSize: '16px' }}>
-            <option value="">All venues</option>
-            {venues.map(function (v) { return <option key={v.id} value={v.id}>{v.code ? (v.code + ' — ' + v.name) : v.name}</option> })}
-          </select>
-          <select value={statusFilter} onChange={function (e) { setStatusFilter(e.target.value) }}
-            aria-label="Filter by status"
-            className="h-9 px-3 bg-white border border-slate-200 rounded-lg text-[12.5px] text-slate-700 hover:border-slate-300 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-[border-color,box-shadow] duration-150 flex-1 min-w-[130px]" style={{ fontSize: '16px' }}>
-            <option value="">All status</option>
-            <option value="recorded">Recorded</option>
-            <option value="flagged">Resubmit</option>
-            <option value="acknowledged">Acknowledged</option>
-            <option value="deducted">Deducted</option>
-          </select>
+          {/* A native select cannot hold a glyph, so the glyph is placed over
+              it and the text is indented past it. appearance-none takes the
+              platform arrow with it, which is why one is drawn on the right —
+              the two of them at once was a chevron beside a chevron. */}
+          <div className="relative flex-1 min-w-[150px]">
+            <span aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+              <Icon name="users" size={15} />
+            </span>
+            <select value={userFilter} onChange={function (e) { setUserFilter(e.target.value) }}
+              aria-label="Filter by user"
+              className={SELECT_FIELD} style={{ fontSize: '16px' }}>
+              <option value="">All users</option>
+              {users.map(function (u) { return <option key={u.id} value={u.id}>{u.name}</option> })}
+            </select>
+            <span aria-hidden="true" className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
+              <Icon name="chevronDown" size={14} />
+            </span>
+          </div>
+          {/* A native select cannot hold a glyph, so the glyph is placed over
+              it and the text is indented past it. appearance-none takes the
+              platform arrow with it, which is why one is drawn on the right —
+              the two of them at once was a chevron beside a chevron. */}
+          <div className="relative flex-1 min-w-[150px]">
+            <span aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+              <Icon name="mapPin" size={15} />
+            </span>
+            <select value={venueFilter} onChange={function (e) { setVenueFilter(e.target.value) }}
+              aria-label="Filter by venue"
+              className={SELECT_FIELD} style={{ fontSize: '16px' }}>
+              <option value="">All venues</option>
+              {venues.map(function (v) { return <option key={v.id} value={v.id}>{v.code ? (v.code + ' — ' + v.name) : v.name}</option> })}
+            </select>
+            <span aria-hidden="true" className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
+              <Icon name="chevronDown" size={14} />
+            </span>
+          </div>
+          {/* A native select cannot hold a glyph, so the glyph is placed over
+              it and the text is indented past it. appearance-none takes the
+              platform arrow with it, which is why one is drawn on the right —
+              the two of them at once was a chevron beside a chevron. */}
+          <div className="relative flex-1 min-w-[150px]">
+            <span aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+              <Icon name="filter" size={15} />
+            </span>
+            <select value={statusFilter} onChange={function (e) { setStatusFilter(e.target.value) }}
+              aria-label="Filter by status"
+              className={SELECT_FIELD} style={{ fontSize: '16px' }}>
+              <option value="">All status</option>
+              <option value="recorded">Recorded</option>
+              <option value="flagged">Resubmit</option>
+              <option value="acknowledged">Acknowledged</option>
+              <option value="deducted">Deducted</option>
+            </select>
+            <span aria-hidden="true" className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
+              <Icon name="chevronDown" size={14} />
+            </span>
+          </div>
           <button type="button" onClick={function () { setPendingOnly(!pendingOnly) }} aria-pressed={pendingOnly}
-            className={"h-9 px-3.5 inline-flex items-center gap-2 text-[12.5px] font-bold rounded-lg border transition-all duration-150 " +
+            className={"h-11 px-3.5 inline-flex items-center gap-2 text-[12.5px] font-bold rounded-xl border transition-all duration-150 " +
               (pendingOnly
                 ? "bg-indigo-50 border-indigo-300 text-indigo-800"
                 : "bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:text-slate-900")}>
@@ -1310,12 +1350,12 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
               Green and red on a pair of downloads read as a verdict on the file,
               when the only difference is the format the word already names. */}
           <button type="button" onClick={exportListCSV} disabled={!deptGroups.length}
-            className="h-9 px-3.5 inline-flex items-center gap-2 text-[12.5px] font-bold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 hover:border-slate-300 disabled:opacity-40 transition-all duration-150">
+            className="h-11 px-4 inline-flex items-center gap-2 text-[12.5px] font-bold text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 hover:border-slate-300 disabled:opacity-40 transition-all duration-150">
             <Icon name="download" size={14} className="text-slate-400" />
             CSV
           </button>
           <button type="button" onClick={exportListPDF} disabled={!visibleGroups.length || pdfBusy}
-            className="h-9 px-3.5 inline-flex items-center gap-2 text-[12.5px] font-bold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 hover:border-slate-300 disabled:opacity-40 transition-all duration-150">
+            className="h-11 px-4 inline-flex items-center gap-2 text-[12.5px] font-bold text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 hover:border-slate-300 disabled:opacity-40 transition-all duration-150">
             <Icon name={pdfBusy ? 'refresh' : 'fileText'} size={14} className="text-slate-400" />
             {pdfBusy ? 'Generating…' : 'PDF'}
           </button>
