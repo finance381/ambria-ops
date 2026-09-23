@@ -85,12 +85,18 @@ function balanceColour(paise) {
 // colour here.
 // One of the three counts under the headline figure. Each is also the filter
 // it names, so the whole tile is the button and the chevron is not decoration.
-function PhoneStat({ icon, label, value, tone, ring, text, active, onClick }) {
+// The colour is on the glyph and the figure, not on the tile. Three filled
+// tiles side by side made a band of pink, green and yellow across the page
+// that was louder than anything under it — and the tint said the same thing
+// three times over, since each tile already names its own state. The card is
+// the same white the rest of them are; pressing one takes the border in its
+// own colour, which is the one place a fill is still doing work.
+function PhoneStat({ icon, label, value, ring, text, active, onClick }) {
   return (
     <button type="button" onClick={onClick} aria-pressed={active}
-      className={'text-left rounded-2xl border p-3 transition-all active:scale-[0.98] ' +
-        (active ? ring + ' shadow-[0_2px_10px_rgba(15,23,42,0.06)]' : 'border-transparent') + ' ' + tone}>
-      <span className={'w-8 h-8 mb-2 rounded-full inline-flex items-center justify-center bg-white/70 ' + text}>
+      className={'text-left rounded-2xl border p-3 bg-white/80 backdrop-blur-xl transition-all active:scale-[0.98] ' +
+        (active ? ring + ' shadow-[0_2px_10px_rgba(15,23,42,0.06)]' : 'border-white/60')}>
+      <span className={'w-8 h-8 mb-2 rounded-full inline-flex items-center justify-center bg-slate-100 ' + text}>
         <Icon name={icon} size={16} />
       </span>
       {/* Two lines' worth of room whether the label needs them or not.
@@ -1175,13 +1181,13 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
           </button>
 
           <div className="grid grid-cols-3 gap-2.5">
-            <PhoneStat icon="clock" label="Overdue Vendors" tone="bg-rose-50/80" ring="border-rose-300" text="text-rose-600"
+            <PhoneStat icon="clock" label="Overdue Vendors" ring="border-rose-300" text="text-rose-600"
               value={loading ? '—' : overdueVendors.length}
               active={statusFilter === 'overdue'} onClick={function () { setStatusFilter(statusFilter === 'overdue' ? 'all' : 'overdue') }} />
-            <PhoneStat icon="checkCircle" label="With Balance" tone="bg-emerald-50/80" ring="border-emerald-300" text="text-emerald-600"
+            <PhoneStat icon="checkCircle" label="With Balance" ring="border-emerald-300" text="text-emerald-600"
               value={loading ? '—' : vendorsWithBalance}
               active={statusFilter === 'with_balance'} onClick={function () { setStatusFilter(statusFilter === 'with_balance' ? 'all' : 'with_balance') }} />
-            <PhoneStat icon="fileText" label="Incomplete" tone="bg-amber-50/80" ring="border-amber-300" text="text-amber-600"
+            <PhoneStat icon="fileText" label="Incomplete" ring="border-amber-300" text="text-amber-600"
               value={loading ? '—' : incompleteCount}
               active={statusFilter === 'incomplete'} onClick={function () { setStatusFilter(statusFilter === 'incomplete' ? 'all' : 'incomplete') }} />
           </div>
