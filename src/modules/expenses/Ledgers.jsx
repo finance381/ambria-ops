@@ -1139,18 +1139,19 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
             is for. */}
         {!inAdmin ? (
           <>
-            <div className="rounded-3xl p-4 shadow-[0_8px_28px_rgba(15,32,68,0.28)]" style={{ backgroundColor: '#1B2C4F' }}>
-              <span className="flex items-center gap-3">
-                <span className="shrink-0 w-11 h-11 rounded-full bg-white/10 text-indigo-200 inline-flex items-center justify-center">
-                  <Icon name="chart" size={20} />
-                </span>
+            <div className="rounded-3xl p-3.5 shadow-[0_8px_28px_rgba(15,32,68,0.28)]" style={{ backgroundColor: '#1B2C4F' }}>
+              {/* The 44px disc went. A glyph beside a label that already reads
+                  NET TOTAL was saying it twice, and it cost a row of its own.
+                  The allocation count rides the label's line for the same
+                  reason — it had a line to itself for eight words. */}
+              <span className="flex items-baseline justify-between gap-3">
                 <span className="text-[11.5px] font-bold uppercase tracking-[0.1em] text-slate-400">Net Total</span>
+                <span className="shrink-0 text-[11.5px] font-medium text-slate-400">
+                  <span data-notranslate>{(totals.allocs || 0).toLocaleString('en-IN')}</span> allocation{totals.allocs === 1 ? '' : 's'}
+                </span>
               </span>
-              <span data-notranslate className="block mt-2 font-display text-[28px] font-extrabold text-white tabular-nums leading-none tracking-[-0.02em]">
+              <span data-notranslate className="block mt-1.5 font-display text-[28px] font-extrabold text-white tabular-nums leading-none tracking-[-0.02em]">
                 {formatPoints(totals.total)}
-              </span>
-              <span className="mt-2 block text-[12px] font-medium text-slate-400">
-                <span data-notranslate>{(totals.allocs || 0).toLocaleString('en-IN')}</span> allocation{totals.allocs === 1 ? '' : 's'} in this period
               </span>
 
               {/* Inset into the same dark rather than sitting in a card of
@@ -1161,12 +1162,12 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
 
                   A dot, not a glyph in a disc: the disc was 32px of a 242px
                   row, and the widest of these lines already wants 182. */}
-              <span className="mt-3.5 block rounded-2xl bg-white/[0.06] border border-white/10 px-3 divide-y divide-white/10">
+              <span className="mt-3 block rounded-2xl bg-white/[0.06] border border-white/10 px-3 divide-y divide-white/10">
                 {[{ label: 'Acknowledged', value: totals.committed, dot: 'bg-emerald-400' },
                   { label: 'Debits Pending', value: totals.pending, dot: 'bg-amber-400' },
                   { label: 'Total Credits', value: totals.credit, dot: 'bg-rose-400' }].map(function (c) {
                   return (
-                    <span key={c.label} className="flex items-center gap-2 py-2">
+                    <span key={c.label} className="flex items-center gap-2 py-1.5">
                       <span aria-hidden="true" className={'shrink-0 w-1.5 h-1.5 rounded-full ' + c.dot} />
                       <span className="min-w-0 flex-1 text-[12px] font-medium text-slate-400 truncate">{c.label}</span>
                       <span data-notranslate className="shrink-0 text-[13px] font-bold text-white tabular-nums whitespace-nowrap">
