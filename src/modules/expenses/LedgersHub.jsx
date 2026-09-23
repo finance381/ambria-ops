@@ -134,7 +134,10 @@ function LedgersHub(props) {
         })}
       </div>
       <Suspense fallback={<p className="text-gray-400 text-sm py-8 text-center">Loading...</p>}>
-        <Cmp profile={props.profile} onNavigate={props.onNavigate} onNavigateToExpenses={props.onNavigateToExpenses} />
+        {/* Everything under this hub is the desktop shell. A tab that has
+            a phone layout as well as a desktop one tells them apart by
+            this, the way WalletManager already does. */}
+        <Cmp inAdmin profile={props.profile} onNavigate={props.onNavigate} onNavigateToExpenses={props.onNavigateToExpenses} />
       </Suspense>
     </div>
   )

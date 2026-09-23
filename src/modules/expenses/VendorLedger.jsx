@@ -82,6 +82,52 @@ function balanceColour(paise) {
 // is kept for the balance running the other way, which is the one worth
 // noticing. Overdue has its chip on the same line and does not need a second
 // colour here.
+// The phone list draws an initial in a circle. The desktop list deliberately
+// does not — its own comment says a vendor's first letter is not a face you
+// would recognise — but on a phone the rows are one per line with a lot of
+// white at their left edge, and the disc is what makes one row findable in a
+// scroll. The colour is hashed from the name: it means nothing on its own, it
+// is there so two vendors next to each other are not the same circle twice.
+var AVATAR_TONES = [
+  'bg-indigo-50 text-indigo-600', 'bg-violet-50 text-violet-600',
+  'bg-emerald-50 text-emerald-600', 'bg-rose-50 text-rose-600',
+  'bg-amber-50 text-amber-600', 'bg-sky-50 text-sky-600',
+]
+
+function avatarTone(name) {
+  var n = String(name || '')
+  var h = 0
+  for (var i = 0; i < n.length; i++) h = (h * 31 + n.charCodeAt(i)) >>> 0
+  return AVATAR_TONES[h % AVATAR_TONES.length]
+}
+
+// A character class covering Devanagari drags in its combining marks, which
+// eslint rejects and which is the wrong idea anyway: the initial is whatever
+// the name starts with, in whatever script it is written in.
+function initialOf(name) {
+  var n = String(name || '').trim()
+  return n ? n.charAt(0).toUpperCase() : '?'
+}
+
+// One of the three counts under the headline figure. Each is also the filter
+// it names, so the whole tile is the button and the chevron is not decoration.
+function PhoneStat({ icon, label, value, tone, ring, text, active, onClick }) {
+  return (
+    <button type="button" onClick={onClick} aria-pressed={active}
+      className={'text-left rounded-2xl border p-3 transition-all active:scale-[0.98] ' +
+        (active ? ring + ' shadow-[0_2px_10px_rgba(15,23,42,0.06)]' : 'border-transparent') + ' ' + tone}>
+      <span className={'w-8 h-8 mb-2 rounded-full inline-flex items-center justify-center bg-white/70 ' + text}>
+        <Icon name={icon} size={16} />
+      </span>
+      <span className="block text-[11.5px] font-semibold text-slate-600 leading-tight">{label}</span>
+      <span className="mt-0.5 flex items-center justify-between gap-1">
+        <span data-notranslate className={'font-display text-[22px] font-bold tabular-nums leading-none ' + text}>{value}</span>
+        <Icon name="chevronRight" size={14} className="shrink-0 text-slate-400" />
+      </span>
+    </button>
+  )
+}
+
 function BalancePill({ paise, large }) {
   var tone = paise < 0 ? 'bg-emerald-50 text-emerald-700'
     : !paise ? 'bg-slate-100 text-slate-400'
@@ -392,7 +438,7 @@ function VendorCardInner({ v, onOpen }) {
 // reason. If either really changes, the card re-renders.
 var VendorCard = memo(VendorCardInner)
 
-function VendorLedger({ profile, onNavigateToExpenses }) {
+function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
   var permsNew = (profile && profile.permsNew) || []
   var isAdmin = hasPerm(permsNew, 'admin.dashboard')
   var canView = isAdmin || hasPerm(permsNew, 'finance.ledgers.vendor')
@@ -1043,6 +1089,165 @@ function VendorLedger({ profile, onNavigateToExpenses }) {
     var sorted = filtered.slice().sort(function (a, b) {
       return (b.balance_paise || 0) - (a.balance_paise || 0)
     })
+
+    // The four narrowing dropdowns, written once and laid out twice: down
+    // the page on a phone, across a row on the desktop.
+    var PHONE_FILTERS = [
+      { label: 'Expense type', value: fExpType, onChange: setFExpType,
+        items: expenseTypes.map(function (t) { return { label: t.name, value: String(t.id) } }) },
+      { label: 'Expense sub-type', value: fExpSubType, onChange: setFExpSubType,
+        items: (fExpType ? expenseSubTypes.filter(function (st) { return String(st.expense_type_id) === String(fExpType) }) : expenseSubTypes)
+          .map(function (st) { return { label: st.name, value: String(st.id) } }) },
+      { label: 'Item category', value: fCategory, onChange: setFCategory,
+        items: categories.map(function (c) { return { label: c.name, value: String(c.id) } }) },
+      { label: 'Item sub-category', value: fSubCategory, onChange: setFSubCategory,
+        items: (fCategory ? subCategories.filter(function (sc) { return String(sc.category_id) === String(fCategory) }) : subCategories)
+          .map(function (sc) { return { label: sc.name, value: String(sc.id) } }) },
+    ]
+
+    // ── PHONE ──────────────────────────────────────────────────────────
+    // The same numbers and the same list, set for one column and a thumb.
+    // The desktop layout below is untouched: it runs in the admin shell,
+    // where six tiles across and a three-column grid of cards are right.
+    if (!inAdmin) {
+      return (
+        <div className="space-y-3.5">
+          {/* The headline figure, and the two it is made of. Pressing it
+              clears the filter back to every vendor, which is what the
+              total is the total of — so the chevron goes somewhere. */}
+          <button type="button" onClick={function () { setStatusFilter('all') }}
+            className="w-full text-left bg-white/80 backdrop-blur-xl border border-white/60 rounded-3xl p-4 shadow-[0_2px_16px_rgba(15,23,42,0.06)] active:scale-[0.995] transition-transform">
+            <span className="flex items-center gap-3.5">
+              <span className="shrink-0 w-14 h-14 rounded-full bg-amber-50 text-amber-600 inline-flex items-center justify-center">
+                <Icon name="wallet" size={24} />
+              </span>
+              <span className="flex-1 min-w-0 text-center">
+                <span className="block text-[13px] font-semibold text-slate-500">Total Outstanding</span>
+                <span data-notranslate className={'block mt-0.5 font-display text-[28px] font-bold tabular-nums leading-tight tracking-[-0.02em] truncate ' + outstandingClass}>
+                  {loading ? '—' : formatPoints(totalOutstanding)}
+                </span>
+              </span>
+              <Icon name="chevronRight" size={20} className="shrink-0 text-slate-300" />
+            </span>
+
+            {!loading && (totalCash !== 0 || totalBank !== 0) && (
+              <span className="mt-3.5 pt-3.5 border-t border-slate-200/70 grid grid-cols-2 divide-x divide-slate-200/70">
+                {[{ icon: 'banknote', label: 'Cash', value: totalCash },
+                  { icon: 'bank', label: 'Bank', value: totalBank }].map(function (f) {
+                  return (
+                    <span key={f.label} className="flex items-center gap-2.5 px-1 min-w-0">
+                      <span className="shrink-0 w-9 h-9 rounded-xl bg-slate-100 text-slate-500 inline-flex items-center justify-center">
+                        <Icon name={f.icon} size={15} />
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block text-[11.5px] font-semibold text-slate-500 leading-tight">{f.label}</span>
+                        <span data-notranslate className="block text-[13.5px] font-bold text-slate-900 tabular-nums leading-tight truncate">
+                          {formatPoints(f.value)}
+                        </span>
+                      </span>
+                    </span>
+                  )
+                })}
+              </span>
+            )}
+          </button>
+
+          <div className="grid grid-cols-3 gap-2.5">
+            <PhoneStat icon="clock" label="Overdue Vendors" tone="bg-rose-50/80" ring="border-rose-300" text="text-rose-600"
+              value={loading ? '—' : overdueVendors.length}
+              active={statusFilter === 'overdue'} onClick={function () { setStatusFilter(statusFilter === 'overdue' ? 'all' : 'overdue') }} />
+            <PhoneStat icon="checkCircle" label="With Balance" tone="bg-emerald-50/80" ring="border-emerald-300" text="text-emerald-600"
+              value={loading ? '—' : vendorsWithBalance}
+              active={statusFilter === 'with_balance'} onClick={function () { setStatusFilter(statusFilter === 'with_balance' ? 'all' : 'with_balance') }} />
+            <PhoneStat icon="fileText" label="Incomplete" tone="bg-amber-50/80" ring="border-amber-300" text="text-amber-600"
+              value={loading ? '—' : incompleteCount}
+              active={statusFilter === 'incomplete'} onClick={function () { setStatusFilter(statusFilter === 'incomplete' ? 'all' : 'incomplete') }} />
+          </div>
+
+          <div className="flex items-center gap-2.5">
+            <div className="flex-1 min-w-0">
+              <SearchField value={search} onChange={function (v) { setSearch(v) }} placeholder="Search vendors..." />
+            </div>
+            <button type="button" onClick={function () { setFiltersOpen(!filtersOpen) }}
+              aria-label="Filters" aria-expanded={filtersOpen}
+              className={'shrink-0 w-11 h-11 inline-flex items-center justify-center rounded-2xl border transition-colors ' +
+                (filtersOpen || dropdownFilterCount > 0 ? 'border-indigo-300 bg-indigo-50 text-indigo-700' : 'border-white/60 bg-white/80 backdrop-blur-xl text-slate-500')}>
+              <Icon name="filter" size={17} />
+              {dropdownFilterCount > 0 && (
+                <span data-notranslate className="absolute -mt-6 ml-6 min-w-[16px] h-4 px-1 rounded-full bg-indigo-600 text-white text-[10px] font-bold tabular-nums inline-flex items-center justify-center">
+                  {dropdownFilterCount}
+                </span>
+              )}
+            </button>
+          </div>
+
+          {filtersOpen && (
+            <div className="bg-white/80 backdrop-blur-xl border border-white/60 rounded-2xl p-3.5 space-y-3">
+              {PHONE_FILTERS.map(function (f) {
+                return (
+                  <div key={f.label}>
+                    <label className="block text-[11px] font-semibold text-slate-600 mb-1.5">{f.label}</label>
+                    <SearchDropdown items={f.items} value={f.value} onChange={f.onChange} placeholder="All" noVoice />
+                  </div>
+                )
+              })}
+              {(hasDropdownFilter || search) && (
+                <button type="button"
+                  onClick={function () { setSearch(''); setFExpType(''); setFExpSubType(''); setFCategory(''); setFSubCategory('') }}
+                  className="w-full h-10 rounded-xl border border-slate-300 text-[12.5px] font-bold text-slate-600 active:scale-[0.98] transition-transform">
+                  Clear filters
+                </button>
+              )}
+            </div>
+          )}
+
+          <div className="flex items-baseline justify-between gap-3 px-1">
+            <h2 className="font-display text-[17px] font-bold text-slate-900 tracking-[-0.01em]">Vendors</h2>
+            <span data-notranslate className="text-[12px] font-semibold text-slate-500 tabular-nums">
+              {loading ? '' : sorted.length + (sorted.length === 1 ? ' vendor' : ' vendors')}
+            </span>
+          </div>
+
+          {loading ? (
+            <div className="space-y-2.5">
+              {SKELETON_ROWS.map(function (shape, i) { return <VendorCardSkeleton key={i} shape={shape} /> })}
+            </div>
+          ) : sorted.length === 0 ? (
+            <p className="text-slate-400 text-sm text-center py-12">
+              {vendors.length === 0 ? 'No vendors yet' : 'No vendors match your filter'}
+            </p>
+          ) : (
+            <div aria-busy={listStale}
+              className={'space-y-2.5 transition-opacity duration-150 ' + (listStale ? 'opacity-60' : '')}>
+              {sorted.slice(0, renderLimit).map(function (v) {
+                var chips = renderChips(v)
+                return (
+                  <button key={v.vendor_id} type="button" onClick={function () { openVendor(v) }}
+                    className="w-full text-left bg-white/80 backdrop-blur-xl border border-white/60 rounded-2xl px-3.5 py-3 flex items-center gap-3 shadow-[0_1px_8px_rgba(15,23,42,0.04)] active:scale-[0.99] transition-transform">
+                    <span className={'shrink-0 w-11 h-11 rounded-full inline-flex items-center justify-center font-display text-[17px] font-bold ' + avatarTone(v.vendor_name)}>
+                      {initialOf(v.vendor_name)}
+                    </span>
+                    <span className="flex-1 min-w-0">
+                      <span className="block text-[14.5px] font-bold text-slate-900 leading-tight truncate">{v.vendor_name || '—'}</span>
+                      {/* Reserved whether or not this vendor has a chip, so a
+                          row with one is not taller than a row without. */}
+                      <span className="mt-1 flex items-center gap-1.5 h-[22px] overflow-hidden">{chips}</span>
+                    </span>
+                    <span className="shrink-0 text-right">
+                      <span data-notranslate className="block text-[14px] font-bold text-slate-900 tabular-nums whitespace-nowrap">
+                        {formatPoints(v.balance_paise || 0)}
+                      </span>
+                    </span>
+                    <Icon name="chevronRight" size={17} className="shrink-0 text-slate-300" />
+                  </button>
+                )
+              })}
+            </div>
+          )}
+          {renderMergeModal()}
+        </div>
+      )
+    }
 
     return (
       <div className="space-y-4">
