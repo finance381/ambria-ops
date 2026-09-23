@@ -28,7 +28,7 @@ var STATUS_LABELS = { recorded: 'Recorded', flagged: 'Resubmit', acknowledged: '
 // the one thing on the page you had to drag — so below sm it is two columns,
 // the name and the net total, and the three it is made of go on a line under
 // the name instead. The drill-down into type and sub-type still opens.
-var COLS = 'grid grid-cols-[1fr_auto] sm:grid-cols-[1fr_140px_140px_140px_150px_44px] gap-2'
+var COLS = 'grid grid-cols-[minmax(0,1fr)_auto] sm:grid-cols-[minmax(0,1fr)_140px_140px_140px_150px_44px] gap-2'
 var COL_SM = 'hidden sm:flex'
 
 // A figure in the colour of its own meaning: settled, waiting, credited, and
@@ -1092,7 +1092,7 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
          text; the picked one does not answer the pointer, because pressing it
          again does nothing. */
       <button type="button" onClick={function () { applyPreset(props.k) }} aria-pressed={active}
-        className={"h-9 px-4 text-[12.5px] font-bold rounded-lg transition-all duration-150 " +
+        className={"h-9 px-2 sm:px-4 text-[12.5px] font-bold rounded-lg whitespace-nowrap transition-all duration-150 " +
           (active
             ? "bg-white text-indigo-700 shadow-[0_1px_3px_rgba(15,23,42,0.10)]"
             : "text-slate-500 hover:text-slate-900 hover:bg-white/70")}>
@@ -1217,10 +1217,12 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
             so the line breaks where the window makes it break instead of
             where a breakpoint guessed it would. */}
         <div className="flex flex-wrap items-center gap-2.5">
-          {/* Four chips crammed into whatever the row had left, on a phone.
-              Given the width they divide it evenly and each is a thumb-sized
-              target. */}
-          <div className="w-full sm:w-auto grid grid-cols-4 sm:flex items-center gap-1 p-1 bg-slate-100 rounded-xl [&>*]:w-full sm:[&>*]:w-auto">
+          {/* Two by two, not four across. "This month" is 103px with its
+              padding and four across a 320px phone gives each 61 — the chips
+              would not shrink to it, so the group pushed the page wider than
+              the screen and that is the sideways scroll. Two across gives
+              each 126. */}
+          <div className="w-full sm:w-auto grid grid-cols-2 sm:flex items-center gap-1 p-1 bg-slate-100 rounded-xl [&>*]:w-full sm:[&>*]:w-auto">
             <PresetChip k="month" label="This month" />
             <PresetChip k="lastMonth" label="Last month" />
             <PresetChip k="ytd" label="YTD" />
