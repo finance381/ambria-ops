@@ -223,7 +223,7 @@ function Tile({ icon, tone, label, value, valueClass, wide, badge, active, onCli
   // across, and a left edge they all share is what makes that a row rather
   // than six separate things — centring gave each figure its own margin,
   // different on every tile because every number is a different length.
-  var box = 'h-full flex flex-col justify-center gap-2.5 border rounded-2xl px-4 py-4 text-left transition-colors duration-150 ' +
+  var box = 'h-full flex flex-col justify-center gap-1.5 sm:gap-2.5 border rounded-2xl px-3 py-2.5 sm:px-4 sm:py-4 text-left transition-colors duration-150 ' +
     (wide ? 'col-span-2 ' : '') +
     'border-slate-200 ' +
     (active ? 'bg-indigo-50 ' : 'bg-white ') +
@@ -250,10 +250,10 @@ function Tile({ icon, tone, label, value, valueClass, wide, badge, active, onCli
           state belongs on a tile whose figure is the point: beside the name of
           the thing, not underneath the number. */}
       <div className="flex w-full items-center gap-2.5">
-        <span aria-hidden="true" className={'shrink-0 w-9 h-9 rounded-full inline-flex items-center justify-center ' + tone}>
+        <span aria-hidden="true" className={'shrink-0 w-7 h-7 sm:w-9 sm:h-9 rounded-full inline-flex items-center justify-center ' + tone}>
           <Icon name={icon} size={17} />
         </span>
-        <p className={'min-w-0 flex-1 truncate text-[13px] font-semibold ' + (active ? 'text-indigo-700' : 'text-slate-600')}>{label}</p>
+        <p className={'min-w-0 flex-1 truncate text-[11.5px] sm:text-[13px] font-semibold ' + (active ? 'text-indigo-700' : 'text-slate-600')}>{label}</p>
         {badge}
       </div>
       {/* One size for every tile in a row, whichever is wide. The five narrow
@@ -265,8 +265,8 @@ function Tile({ icon, tone, label, value, valueClass, wide, badge, active, onCli
           is a character, so it reads as a value that happens to be blank,
           and it does not say the page is still working. */}
       {value === null
-        ? <span aria-hidden="true" className={'ambria-skeleton block ' + (wide ? 'h-[25px] w-[58%]' : 'h-[23px] w-[70%]')} />
-        : <p className={'font-display font-extrabold tabular-nums leading-none whitespace-nowrap ' + (wide ? 'text-[25px] ' : 'text-[23px] ') + valueClass} data-notranslate>{value}</p>}
+        ? <span aria-hidden="true" className={'ambria-skeleton block h-[19px] sm:h-[23px] ' + (wide ? 'w-[58%]' : 'w-[70%]')} />
+        : <p className={'font-display font-extrabold tabular-nums leading-none whitespace-nowrap ' + (wide ? 'text-[19px] sm:text-[25px] ' : 'text-[16px] sm:text-[23px] ') + valueClass} data-notranslate>{value}</p>}
       {children}
     </>
   )
