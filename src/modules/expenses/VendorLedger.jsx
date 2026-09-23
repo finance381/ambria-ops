@@ -389,9 +389,9 @@ function renderMoneyNotes(v, phone) {
   if (!cashBal && !bankBal && !opening) return null
 
   var parts = [
-    cashBal !== 0 ? { icon: 'banknote', glyph: 'text-emerald-600', label: 'Cash', value: formatPoints(cashBal) } : null,
-    bankBal !== 0 ? { icon: 'bank', glyph: 'text-indigo-600', label: 'Bank', value: formatPoints(bankBal) } : null,
-    opening !== 0 ? { icon: 'wallet', glyph: 'text-amber-600', label: 'Opening',
+    cashBal !== 0 ? { icon: 'banknote', dot: 'bg-emerald-500', label: 'Cash', value: formatPoints(cashBal) } : null,
+    bankBal !== 0 ? { icon: 'bank', dot: 'bg-indigo-500', label: 'Bank', value: formatPoints(bankBal) } : null,
+    opening !== 0 ? { icon: 'wallet', dot: 'bg-amber-500', label: 'Opening',
       value: formatPoints(Math.abs(opening)) + (opening > 0 ? ' Cr' : ' Dr') } : null,
   ].filter(Boolean)
 
@@ -407,28 +407,23 @@ function renderMoneyNotes(v, phone) {
     )
   }
 
-  // On the phone these are the two or three figures the card exists to show,
-  // and inline at 11.5px — "Cash: 3,00,000 pts · Opening: 95,000 pts Cr" —
-  // the labels and the amounts were the same size and ran together. Given a
-  // band of their own, with the label over the figure, the figures are what
-  // you land on. Two to a row; a third wraps under and keeps its width.
+  // A box with a 36px disc in it, per figure, two to a row. On a vendor
+  // with one method that was a whole banded row holding one number and an
+  // empty half, and it was the tallest thing on a card that has four blocks
+  // stacked in it.
   //
-  // The disc is neutral and only the glyph is tinted, which is where this
-  // screen puts colour everywhere else.
+  // One line instead: a dot in the method's own colour, the label, the
+  // figure. "Bank 4,51,413 pts" measures 111px and the widest of the three
+  // is 137, so two fit across a 264px card and a third wraps. It is the same
+  // mark the headline card uses for the same two words.
   return (
-    <div className="mt-3 rounded-xl bg-slate-50/80 border border-slate-200/70 p-2.5 grid grid-cols-2 gap-x-2 gap-y-2.5">
+    <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11.5px]">
       {parts.map(function (f) {
         return (
-          <span key={f.label} className="flex items-center gap-2.5 min-w-0">
-            <span className={'shrink-0 w-9 h-9 rounded-xl bg-white border border-slate-200 inline-flex items-center justify-center ' + f.glyph}>
-              <Icon name={f.icon} size={15} />
-            </span>
-            <span className="min-w-0">
-              <span className="block text-[11px] font-semibold text-slate-500 leading-tight">{f.label}</span>
-              <span data-notranslate className="block text-[13px] font-bold text-slate-900 tabular-nums leading-tight truncate">
-                {f.value}
-              </span>
-            </span>
+          <span key={f.label} className="inline-flex items-center gap-1.5 whitespace-nowrap">
+            <span aria-hidden="true" className={'shrink-0 w-1.5 h-1.5 rounded-full ' + f.dot} />
+            <span className="text-slate-500">{f.label}</span>
+            <span data-notranslate className="text-[12px] font-bold text-slate-900 tabular-nums">{f.value}</span>
           </span>
         )
       })}
@@ -462,7 +457,8 @@ function VendorCardInner({ v, onOpen, phone }) {
       // headline card and the three tiles it sits under, so the ground shows
       // through all of them rather than through some — and it has no hover
       // lift, because there is no pointer to lift it for.
-      className={'group text-left w-full rounded-2xl p-4 transform-gpu transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/30 ' +
+      className={'group text-left w-full rounded-2xl transform-gpu transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/30 ' +
+        (phone ? 'px-4 py-3.5 ' : 'p-4 ') +
         (phone
           ? 'bg-white/80 backdrop-blur-xl border border-white/60 shadow-[0_1px_8px_rgba(15,23,42,0.04)] active:scale-[0.99]'
           : 'bg-white border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50 hover:-translate-y-0.5 hover:shadow-[0_8px_20px_rgba(79,70,229,0.10)] active:translate-y-0 active:shadow-none active:scale-[0.995]')}>
@@ -504,7 +500,7 @@ function VendorCardInner({ v, onOpen, phone }) {
       {(function () {
         var chips = renderChips(v)
         if (chips.length === 0) return null
-        return <div className="mt-2 flex flex-wrap items-center gap-1.5">{chips}</div>
+        return <div className={(phone ? 'mt-1.5 ' : 'mt-2 ') + 'flex flex-wrap items-center gap-1.5'}>{chips}</div>
       })()}
       {renderMoneyNotes(v, phone)}
       {/* The call button and the chevron end the card together, on the
@@ -512,7 +508,7 @@ function VendorCardInner({ v, onOpen, phone }) {
           white box and an arrow floating in the middle of the card with
           nothing either side of them and nothing under them — the card had
           three rows and its two controls were parked on the second. */}
-      <div className="mt-3.5 pt-3 border-t border-slate-100 flex items-center gap-3">
+      <div className={(phone ? 'mt-2.5 pt-2.5 ' : 'mt-3.5 pt-3 ') + 'border-t border-slate-100 flex items-center gap-3'}>
         {/* One line either way, but held there differently.
 
             The desktop clips rather than letting the facts push the call
