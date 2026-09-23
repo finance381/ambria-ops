@@ -312,9 +312,9 @@ function StateChip({ icon, label, tone }) {
 // so the value is what you land on rather than its label.
 // `label` reads "Last: 17 Sep 26"; `lead` reads "by Ompal Sharma" — the same
 // shape without the colon, for the facts that are a phrase rather than a field.
-function Fact({ icon, label, value, lead, first }) {
+function Fact({ icon, label, value, lead, first, title }) {
   return (
-    <span className="shrink-0 inline-flex items-center whitespace-nowrap">
+    <span title={title} className="shrink-0 inline-flex items-center whitespace-nowrap">
       {!first && <span aria-hidden="true" className="mx-2 w-px h-3.5 bg-slate-200" />}
       <Icon name={icon} size={13} className="shrink-0 mr-1.5 text-slate-400" />
       {label ? label + ':' : (lead || '')}
@@ -339,13 +339,23 @@ function shortDate(s) {
 // stray vertical mark. Wrapped, the gap between them does the separating.
 function renderFacts(v, noRules) {
   var n = v.entry_count || 0
-  var facts = [
+  // On the phone the footer shares its line with a call button and a chevron
+  // and has about 257px left. With "Last:" and "Due:" spelled out the three
+  // facts want 277 and went to a second row; without them, 233. So the glyph
+  // carries the label — a calendar is the last entry and a clock is the date
+  // it falls due — and the words live in the title, where a long press finds
+  // them.
+  var facts = noRules ? [
+    { icon: 'fileText', value: n + (n === 1 ? ' entry' : ' entries'), title: 'Ledger entries' },
+    v.last_entry_date ? { icon: 'calendar', value: shortDate(v.last_entry_date), title: 'Last entry' } : null,
+    v.earliest_due_date ? { icon: 'clock', value: shortDate(v.earliest_due_date), title: 'Earliest due date' } : null,
+  ].filter(Boolean) : [
     { icon: 'fileText', value: n + (n === 1 ? ' entry' : ' entries') },
     v.last_entry_date ? { icon: 'calendar', label: 'Last', value: shortDate(v.last_entry_date) } : null,
     v.earliest_due_date ? { icon: 'clock', label: 'Due', value: shortDate(v.earliest_due_date) } : null,
   ].filter(Boolean)
   return facts.map(function (f, fi) {
-    return <Fact key={fi} first={noRules || fi === 0} icon={f.icon} label={f.label} value={f.value} />
+    return <Fact key={fi} first={noRules || fi === 0} title={f.title} icon={f.icon} label={f.label} value={f.value} />
   })
 }
 
@@ -357,16 +367,56 @@ function renderChips(v) {
   return chips.map(function (c, ci) { return <StateChip key={ci} icon={c.icon} label={c.label} tone={c.tone} /> })
 }
 
-function renderMoneyNotes(v) {
+function renderMoneyNotes(v, phone) {
   var cashBal = v.cash_balance_paise || 0
   var bankBal = v.bank_balance_paise || 0
   var opening = v._opening_paise || 0
   if (!cashBal && !bankBal && !opening) return null
+
+  var parts = [
+    cashBal !== 0 ? { icon: 'banknote', glyph: 'text-emerald-600', label: 'Cash', value: formatPoints(cashBal) } : null,
+    bankBal !== 0 ? { icon: 'bank', glyph: 'text-indigo-600', label: 'Bank', value: formatPoints(bankBal) } : null,
+    opening !== 0 ? { icon: 'wallet', glyph: 'text-amber-600', label: 'Opening',
+      value: formatPoints(Math.abs(opening)) + (opening > 0 ? ' Cr' : ' Dr') } : null,
+  ].filter(Boolean)
+
+  // The desktop keeps the one-line form: the card sits in a grid of sixty and
+  // a band in each would make the page a stack of bands.
+  if (!phone) {
+    return (
+      <div className="mt-2.5 flex flex-wrap items-center gap-y-1 text-[11.5px] text-slate-500">
+        {parts.map(function (f, i) {
+          return <Fact key={f.label} first={i === 0} icon={f.icon} label={f.label} value={f.value} />
+        })}
+      </div>
+    )
+  }
+
+  // On the phone these are the two or three figures the card exists to show,
+  // and inline at 11.5px — "Cash: 3,00,000 pts · Opening: 95,000 pts Cr" —
+  // the labels and the amounts were the same size and ran together. Given a
+  // band of their own, with the label over the figure, the figures are what
+  // you land on. Two to a row; a third wraps under and keeps its width.
+  //
+  // The disc is neutral and only the glyph is tinted, which is where this
+  // screen puts colour everywhere else.
   return (
-    <div className="mt-2.5 flex flex-wrap items-center gap-y-1 text-[11.5px] text-slate-500">
-      {cashBal !== 0 && <Fact first icon="banknote" label="Cash" value={formatPoints(cashBal)} />}
-      {bankBal !== 0 && <Fact first={!cashBal} icon="bank" label="Bank" value={formatPoints(bankBal)} />}
-      {opening !== 0 && <Fact first={!cashBal && !bankBal} icon="wallet" label="Opening" value={formatPoints(Math.abs(opening)) + (opening > 0 ? ' Cr' : ' Dr')} />}
+    <div className="mt-3 rounded-xl bg-slate-50/80 border border-slate-200/70 p-2.5 grid grid-cols-2 gap-x-2 gap-y-2.5">
+      {parts.map(function (f) {
+        return (
+          <span key={f.label} className="flex items-center gap-2.5 min-w-0">
+            <span className={'shrink-0 w-9 h-9 rounded-xl bg-white border border-slate-200 inline-flex items-center justify-center ' + f.glyph}>
+              <Icon name={f.icon} size={15} />
+            </span>
+            <span className="min-w-0">
+              <span className="block text-[11px] font-semibold text-slate-500 leading-tight">{f.label}</span>
+              <span data-notranslate className="block text-[13px] font-bold text-slate-900 tabular-nums leading-tight truncate">
+                {f.value}
+              </span>
+            </span>
+          </span>
+        )
+      })}
     </div>
   )
 }
@@ -429,24 +479,27 @@ function VendorCardInner({ v, onOpen, phone }) {
         if (chips.length === 0) return null
         return <div className="mt-2 flex flex-wrap items-center gap-1.5">{chips}</div>
       })()}
-      {renderMoneyNotes(v)}
+      {renderMoneyNotes(v, phone)}
       {/* The call button and the chevron end the card together, on the
           footer's right. They used to sit on the money line, which left a
           white box and an arrow floating in the middle of the card with
           nothing either side of them and nothing under them — the card had
           three rows and its two controls were parked on the second. */}
       <div className="mt-3.5 pt-3 border-t border-slate-100 flex items-center gap-3">
-        {/* One line on the desktop, and it stays one: nowrap plus a min-w-0
-            that lets it be clipped rather than pushing the two controls off
-            the end. There the card is a third of a wide screen and the three
-            facts fit.
+        {/* One line either way, but held there differently.
 
-            On a phone they measure about 280px against roughly 305 — so they
-            fit until the vendor has a phone number, or the screen is a little
-            narrower, and then a date was being cut mid-word ("Due: 17 Sept
-            2"). Clipping is the wrong failure for a date. Wrapped, it is
-            always whole, and the rules come off because a wrapped line would
-            otherwise start with one. */}
+            The desktop clips rather than letting the facts push the call
+            button and the chevron off the end — there the card is a third of
+            a wide screen and the three facts fit anyway.
+
+            The phone cannot clip: a date cut mid-word ("Due: 17 Sept 2") is
+            not a shorter date, it is a wrong one. So it is made to fit
+            instead — the glyph carries the label, which takes the three from
+            277px to 233 against the 257 that is left beside the call button.
+            flex-wrap is the safety net rather than the plan: if a longer
+            date ever arrives it drops a line whole instead of being cut. The
+            rules come off with it, since a wrapped line would start with
+            one. */}
         <div className={'flex-1 min-w-0 items-center text-[11.5px] text-slate-500 ' +
           (phone ? 'flex flex-wrap gap-x-3 gap-y-1' : 'flex flex-nowrap overflow-hidden')}>
           {renderFacts(v, phone)}
