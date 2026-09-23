@@ -1253,7 +1253,7 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
               thing on it that is not on white. Everything under it is a card
               on the ground; this is the ground's own statement. */}
           <button type="button" onClick={function () { setStatusFilter('all') }}
-            className="w-full text-left rounded-3xl p-5 shadow-[0_8px_28px_rgba(15,32,68,0.28)] active:scale-[0.995] transition-transform"
+            className="w-full text-left rounded-3xl p-4 shadow-[0_8px_28px_rgba(15,32,68,0.28)] active:scale-[0.995] transition-transform"
             style={{ backgroundColor: '#1B2C4F' }}>
             {/* No disc beside it. On the dark the figure is already the
                 brightest thing on the page and a glyph next to it only takes
@@ -1266,28 +1266,25 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
                   figure on this screen and never wants reading. */}
               {!loading && <span className="ml-1.5 text-[16px] font-semibold text-slate-400">{splitPoints(totalOutstanding).unit}</span>}
             </span>
-            <span className="mt-2.5 flex items-center gap-2.5">
-              <span aria-hidden="true" className="w-7 h-px bg-amber-300/70" />
-              <span className="text-[12px] font-medium text-slate-400">Across all vendors</span>
-            </span>
 
             {/* The two it is made of, inset into the same dark rather than
                 sitting on it — they are parts of the figure above, not two
-                more cards. */}
+                more cards.
+
+                No discs. They were 36px of the 109 a column has, which left
+                59 for a value that wants 102 — so these two stacked to stop
+                being cut, and the card grew a row. Without them the value
+                needs 91 at 12.5px and both fit side by side again. The glyph
+                was saying what the word beside it already said. */}
             {!loading && (totalCash !== 0 || totalBank !== 0) && (
-              <span className="mt-4 block rounded-2xl bg-white/[0.06] border border-white/10 p-3 grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-white/10">
-                {[{ icon: 'banknote', disc: 'bg-emerald-100 text-emerald-700', label: 'Cash', value: totalCash },
-                  { icon: 'bank', disc: 'bg-indigo-100 text-indigo-700', label: 'Bank', value: totalBank }].map(function (f, i) {
+              <span className="mt-3.5 block rounded-2xl bg-white/[0.06] border border-white/10 px-3 py-2.5 grid grid-cols-2 divide-x divide-white/10">
+                {[{ label: 'Cash', value: totalCash },
+                  { label: 'Bank', value: totalBank }].map(function (f, i) {
                   return (
-                    <span key={f.label} className={'flex items-center gap-2.5 min-w-0 py-2 sm:py-0 ' + (i === 0 ? 'sm:pr-3' : 'sm:pl-3')}>
-                      <span className={'shrink-0 w-9 h-9 rounded-full inline-flex items-center justify-center ' + f.disc}>
-                        <Icon name={f.icon} size={16} />
-                      </span>
-                      <span className="min-w-0">
-                        <span className="block text-[11.5px] font-medium text-slate-400 leading-tight">{f.label}</span>
-                        <span data-notranslate className="block text-[13.5px] font-bold text-white tabular-nums leading-tight truncate">
-                          {formatPoints(f.value)}
-                        </span>
+                    <span key={f.label} className={'min-w-0 ' + (i === 0 ? 'pr-3' : 'pl-3')}>
+                      <span className="block text-[11px] font-medium text-slate-400 leading-tight">{f.label}</span>
+                      <span data-notranslate className="block mt-0.5 text-[12.5px] font-bold text-white tabular-nums leading-tight whitespace-nowrap">
+                        {formatPoints(f.value)}
                       </span>
                     </span>
                   )
