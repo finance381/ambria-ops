@@ -4,11 +4,41 @@ import { logActivity } from '../../lib/logger'
 import { formatPoints } from '../../lib/format'
 import { isPrivilegedRole } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
+import EventDatePicker from '../../components/ui/EventDatePicker'
+import { deptCls, deptOrder } from '../../lib/ui'
 
 function byName(a, b) { return (a.name || '').localeCompare(b.name || '') }
 
 function makeAlloc() {
   return { _key: Date.now() + '_' + Math.random().toString(36).slice(2, 8), departmentId: '', expenseTypeId: '', expenseSubTypeId: '', venueId: '', subVenueId: '', amountPts: '', remarks: '' }
+}
+
+// One evening at one venue is booked as up to four contracts — one per
+// department. Grouped so the picker lists each function once and hangs its
+// contracts off it as department chips (mirrors ExpenseForm's picker).
+function funcKeyOf(r) {
+  return [r.client_name || '', r.venue_name || '', r.session || '', (r.event_name || '').trim().toLowerCase()].join('|')
+}
+
+function groupFunctions(rows) {
+  var byKey = {}
+  var order = []
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i]
+    var k = funcKeyOf(r)
+    if (!byKey[k]) {
+      byKey[k] = {
+        key: k,
+        contracts: [],
+      }
+      order.push(k)
+    }
+    byKey[k].contracts.push(r)
+  }
+  order.forEach(function (k) {
+    byKey[k].contracts.sort(function (a, b) { return deptOrder(a.department) - deptOrder(b.department) })
+  })
+  return order.map(function (k) { return byKey[k] })
 }
 
 function GVForm({ exp, profile, onCancel, onSaved }) {
@@ -28,6 +58,101 @@ function GVForm({ exp, profile, onCancel, onSaved }) {
   var [fieldsExpanded, setFieldsExpanded] = useState(false)
   var [newTypeId, setNewTypeId] = useState(exp.expense_type_id ? String(exp.expense_type_id) : '')
   var [newSubTypeId, setNewSubTypeId] = useState(exp.expense_sub_type_id ? String(exp.expense_sub_type_id) : '')
+  // Optional: attribute this expense's cost to a function/event (drives event_ledger)
+  var [isFunction, setIsFunction] = useState(!!exp.event_id)
+  var [eventDate, setEventDate] = useState(exp.event_id ? (exp.expense_date || '') : '')
+  var [eventId, setEventId] = useState(exp.event_id ? String(exp.event_id) : '')
+  var [events, setEvents] = useState([])
+  var [eventsLoading, setEventsLoading] = useState(false)
+
+  useEffect(function () {
+    if (exp.event_id && exp.expense_date) loadEventsByDate(exp.expense_date)
+  }, [])
+
+  async function loadEventsByDate(dateStr) {
+    if (!dateStr) { setEvents([]); setEventId(''); return }
+    setEventsLoading(true)
+    var { data } = await supabase.from('events')
+      .select('id, event_name, function_date, venue_name, session, client_name, department')
+      .eq('function_date', dateStr)
+      .order('event_name')
+    var rows = data || []
+    setEvents(rows)
+    setEventsLoading(false)
+    if (rows.length === 1) setEventId(String(rows[0].id))
+    else if (!rows.some(function (r) { return String(r.id) === eventId })) setEventId('')
+  }
+
+  function toggleFunction(val) {
+    setIsFunction(val)
+    if (!val) { setEventId(''); setEventDate(''); setEvents([]) }
+  }
+
+  function renderFunctionPicker() {
+    return (
+      <div className="space-y-2">
+        <EventDatePicker label="Function Date" value={eventDate} collapsible
+          onChange={function (dateStr) { setEventDate(dateStr); loadEventsByDate(dateStr) }} />
+        {eventsLoading && <p className="text-[12px] text-slate-500">Loading events...</p>}
+        {eventDate && !eventsLoading && events.length === 0 && <p className="text-[12px] text-slate-500">No events on this date</p>}
+        {events.length > 0 && (function () {
+          var groups = groupFunctions(events)
+          var picked = eventId ? groups.filter(function (g) {
+            return g.contracts.some(function (c) { return String(c.id) === eventId })
+          }) : null
+          var shown = (picked && picked.length === 1) ? picked : groups
+          return (
+            <div className="space-y-2">
+              <div className="grid gap-2 grid-cols-1 sm:grid-cols-2">
+                {shown.map(function (g) {
+                  var head = g.contracts[0]
+                  var sel = g.contracts.filter(function (c) { return String(c.id) === eventId })[0] || null
+                  return (
+                    <button key={g.key} type="button" onClick={function () { setEventId(String(head.id)) }}
+                      className={"text-left rounded-xl border px-2.5 py-2 transition-all duration-150 " +
+                        (sel
+                          ? "border-indigo-500 bg-indigo-50 ring-1 ring-indigo-500"
+                          : "border-slate-200 bg-white hover:border-indigo-300 hover:shadow-[0_2px_8px_rgba(15,23,42,0.06)]")}>
+                      <span className="flex items-start justify-between gap-1.5">
+                        <span className={"min-w-0 flex-1 block text-[11px] font-bold uppercase tracking-[0.03em] leading-snug truncate " +
+                          (sel ? "text-indigo-900" : "text-slate-900")}>
+                          {head.event_name}
+                        </span>
+                        <span className="shrink-0 flex flex-nowrap items-center gap-1">
+                          {g.contracts.map(function (c) {
+                            return (
+                              <span key={c.id}
+                                className={"text-[10px] font-bold uppercase tracking-[0.03em] leading-none px-1.5 py-[3px] rounded " + deptCls(c.department)}>
+                                {c.department}
+                              </span>
+                            )
+                          })}
+                        </span>
+                      </span>
+                      {head.client_name && (
+                        <span className={"block text-[11px] leading-snug truncate " + (sel ? "text-indigo-800" : "text-slate-700")}>
+                          {head.client_name}
+                        </span>
+                      )}
+                      <span className={"block text-[10px] leading-snug truncate " + (sel ? "text-indigo-600" : "text-slate-500")}>
+                        {(head.venue_name || '') + (head.session ? ' · ' + head.session : '')}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+              {shown !== groups && groups.length > 1 && (
+                <button type="button" onClick={function () { setEventId('') }}
+                  className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 px-1">
+                  Change function
+                </button>
+              )}
+            </div>
+          )
+        })()}
+      </div>
+    )
+  }
 
   useEffect(function () {
     Promise.all([
@@ -164,12 +289,20 @@ function GVForm({ exp, profile, onCancel, onSaved }) {
     var subChanged  = fieldsExpanded && Number(newSubTypeId || 0) !== Number(exp.expense_sub_type_id || 0)
     var sendFieldUpdate = typeChanged || subChanged
 
+    // Function attribution: only sent when it actually differs from what the
+    // expense already carries — this both drives and mirrors trg_expense_to_ledger,
+    // which rebuilds the expense's event_ledger row off expenses.event_id.
+    var newEventId = (isFunction && eventId) ? Number(eventId) : null
+    var eventChanged = newEventId !== (exp.event_id || null)
+
     var { data, error: rpcErr } = await supabase.rpc('fn_create_gv', {
       p_expense_id: exp.id,
       p_reason: reason.trim(),
       p_allocations: payload,
       p_new_expense_type_id: sendFieldUpdate ? (newTypeId ? Number(newTypeId) : null) : null,
       p_new_expense_sub_type_id: sendFieldUpdate ? (newSubTypeId ? Number(newSubTypeId) : null) : null,
+      p_update_event: eventChanged,
+      p_event_id: newEventId,
     })
 
     if (rpcErr) {
@@ -208,6 +341,28 @@ function GVForm({ exp, profile, onCancel, onSaved }) {
           rows={2} maxLength={500}
           className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
           style={{ fontSize: '16px' }} />
+      </div>
+
+      {/* Optional: attribute to a function — drives event_ledger */}
+      <div className="bg-white border border-gray-200 rounded-xl p-4">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <label className="block text-[13px] font-semibold text-gray-800">For a function?</label>
+            <span className="block text-[11px] text-gray-500 leading-snug">Ties this expense's cost to an event's ledger</span>
+          </div>
+          <button type="button" onClick={function () { toggleFunction(!isFunction) }}
+            aria-pressed={isFunction} aria-label="For a function?"
+            className="shrink-0 flex items-center gap-2">
+            <div className={"relative w-9 h-5 rounded-full transition-colors " + (isFunction ? "bg-indigo-600" : "bg-slate-300")}>
+              <div className={"absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform " + (isFunction ? "translate-x-4" : "translate-x-0.5")} />
+            </div>
+          </button>
+        </div>
+        {isFunction && (
+          <div className="mt-3 pt-3 border-t border-gray-100">
+            {renderFunctionPicker()}
+          </div>
+        )}
       </div>
 
       {/* Optional: Update parent expense fields */}
