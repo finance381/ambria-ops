@@ -897,6 +897,9 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
   var openVendor = useCallback(async function (v) {
     setSelectedVendor(v)
     setView('detail')
+    if (typeof window !== 'undefined') {
+      window.requestAnimationFrame(function () { window.scrollTo(0, 0) })
+    }
     setShowDeleted(false)
     setPaymentTypeFilter('all')
     setEntryFrom('')
