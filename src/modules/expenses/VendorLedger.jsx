@@ -456,7 +456,7 @@ function VendorCardInner({ v, onOpen, phone }) {
       className={'group text-left w-full rounded-2xl p-4 transform-gpu transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/30 ' +
         (phone
           ? 'bg-white/80 backdrop-blur-xl border border-white/60 shadow-[0_1px_8px_rgba(15,23,42,0.04)] active:scale-[0.99]'
-          : 'bg-white border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/30 hover:-translate-y-0.5 hover:shadow-[0_8px_20px_rgba(79,70,229,0.10)] active:translate-y-0 active:shadow-none active:scale-[0.995]')}>
+          : 'bg-white border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50 hover:-translate-y-0.5 hover:shadow-[0_8px_20px_rgba(79,70,229,0.10)] active:translate-y-0 active:shadow-none active:scale-[0.995]')}>
       {/* No initial circle. A person's avatar stands in for a face you
           would recognise; a vendor's first letter is just the first letter
           of the name printed beside it, in a colour that means nothing. */}
@@ -2015,7 +2015,7 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
                 className={"flex flex-col sm:flex-row items-stretch sm:items-start gap-3 sm:gap-3.5 bg-white border rounded-2xl px-4 py-4 transition-[border-color,box-shadow,background-color] duration-250 ease-out " +
                   (isDeleted ? "opacity-50 " : "") +
                   (isExpRow
-                    ? "border-slate-200 cursor-pointer hover:border-indigo-200 hover:bg-indigo-50/40 hover:shadow-[0_2px_10px_rgba(79,70,229,0.06)]"
+                    ? "border-slate-200 cursor-pointer hover:border-indigo-200 hover:bg-indigo-50 hover:shadow-[0_2px_10px_rgba(79,70,229,0.06)]"
                     : "border-slate-200 hover:border-slate-300")}>
                 {/* contents at sm, so across it is the same flat row of
                     dot, description, rule, stamp and figure it has been. */}
@@ -2156,7 +2156,7 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
                       {e._breakdown && (
                         <button type="button" onClick={function (ev) { toggleEntryExpanded(e.id, ev) }}
                           aria-expanded={!!expandedEntryIds[e.id]}
-                          className="flex-1 min-w-[200px] flex items-center gap-3 text-left h-[52px] px-3 rounded-xl border border-slate-200 bg-white hover:border-indigo-300 hover:bg-indigo-50/50 transition-colors">
+                          className="flex-1 min-w-[200px] flex items-center gap-3 text-left h-[52px] px-3 rounded-xl border border-slate-200 bg-white hover:border-indigo-300 hover:bg-indigo-50 transition-colors">
                           <span className="min-w-0 flex-1">
                             <span className="block text-[13px] font-bold text-slate-800 leading-tight truncate">
                               {expandedEntryIds[e.id] ? 'Hide details' : 'Amount & allocation details'}
