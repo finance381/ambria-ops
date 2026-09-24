@@ -923,27 +923,42 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
             this one, rather than three native selects at full height. */}
         <div className="flex flex-wrap items-center gap-2.5">
           <div className="contents">
+            <div className="relative flex-1 min-w-[100px]">
             <select value={drillUserFilter} onChange={function (e) { setDrillUserFilter(e.target.value) }}
               aria-label="Filter by user"
-              className="h-11 px-2 bg-white border border-slate-200 rounded-xl text-[12.5px] text-slate-700 hover:border-slate-300 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-[border-color,box-shadow] duration-150 flex-1 min-w-[97px]" style={{ fontSize: '16px' }}>
+              className="h-11 pl-2 pr-7 bg-white border border-slate-200 rounded-xl text-[12.5px] text-slate-700 appearance-none hover:border-slate-300 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-[border-color,box-shadow] duration-150 w-full min-w-[100px]" style={{ fontSize: '16px' }}>
               <option value="">All Users</option>
               {users.map(function (u) { return <option key={u.id} value={u.id}>{u.name}</option> })}
             </select>
+            <span aria-hidden="true" className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400">
+              <Icon name="chevronDown" size={14} />
+            </span>
+            </div>
+            <div className="relative flex-1 min-w-[100px]">
             <select value={drillStatusFilter} onChange={function (e) { setDrillStatusFilter(e.target.value) }}
               aria-label="Filter by status"
-              className="h-11 px-2 bg-white border border-slate-200 rounded-xl text-[12.5px] text-slate-700 hover:border-slate-300 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-[border-color,box-shadow] duration-150 flex-1 min-w-[97px]" style={{ fontSize: '16px' }}>
+              className="h-11 pl-2 pr-7 bg-white border border-slate-200 rounded-xl text-[12.5px] text-slate-700 appearance-none hover:border-slate-300 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-[border-color,box-shadow] duration-150 w-full min-w-[100px]" style={{ fontSize: '16px' }}>
               <option value="">All Status</option>
               <option value="recorded">Recorded</option>
               <option value="flagged">Resubmit</option>
               <option value="acknowledged">Acknowledged</option>
               <option value="deducted">Deducted</option>
             </select>
+            <span aria-hidden="true" className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400">
+              <Icon name="chevronDown" size={14} />
+            </span>
+            </div>
+            <div className="relative flex-1 min-w-[100px]">
             <select value={drillVenueFilter} onChange={function (e) { setDrillVenueFilter(e.target.value) }}
               aria-label="Filter by venue"
-              className="h-11 px-2 bg-white border border-slate-200 rounded-xl text-[12.5px] text-slate-700 hover:border-slate-300 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-[border-color,box-shadow] duration-150 flex-1 min-w-[97px]" style={{ fontSize: '16px' }}>
+              className="h-11 pl-2 pr-7 bg-white border border-slate-200 rounded-xl text-[12.5px] text-slate-700 appearance-none hover:border-slate-300 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-[border-color,box-shadow] duration-150 w-full min-w-[100px]" style={{ fontSize: '16px' }}>
               <option value="">All Venues</option>
               {venues.map(function (v) { return <option key={v.id} value={v.id}>{v.code ? (v.code + ' — ' + v.name) : v.name}</option> })}
             </select>
+            <span aria-hidden="true" className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400">
+              <Icon name="chevronDown" size={14} />
+            </span>
+            </div>
           </div>
         </div>
 
