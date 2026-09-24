@@ -1716,20 +1716,14 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
               </div>
             )
           })}
+          <p className="px-4 py-2.5 border-t border-slate-200/70 text-[12px] text-slate-600">
+            Showing
+            <span className="mx-1 font-bold text-slate-900 tabular-nums" data-notranslate>{visibleGroups.length}</span>
+            of
+            <span className="mx-1 font-bold text-slate-900 tabular-nums" data-notranslate>{deptGroups.length}</span>
+            departments
+          </p>
         </div>
-      )}
-
-      {/* On its own over the artwork this was grey type on a photograph. The
-          same translucent card every other surface on this page sits on gives
-          it something to be read against. */}
-      {visibleGroups.length > 0 && (
-        <p className="inline-block px-3 py-1.5 rounded-xl bg-white/80 backdrop-blur-xl sm:bg-transparent sm:px-0 sm:py-0 text-[12px] text-slate-600 sm:text-slate-500">
-          Showing
-          <span className="mx-1 font-bold text-slate-900 tabular-nums" data-notranslate>{visibleGroups.length}</span>
-          of
-          <span className="mx-1 font-bold text-slate-900 tabular-nums" data-notranslate>{deptGroups.length}</span>
-          departments
-        </p>
       )}
     </div>
   )
