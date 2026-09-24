@@ -1826,8 +1826,13 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
                       <span className="shrink-0 w-7 h-7 rounded-lg bg-indigo-50 text-indigo-600 inline-flex items-center justify-center">
                         <Icon name="building" size={16} />
                       </span>
+                      {/* No badge after the name. A count of the children was
+                          a second number on a row whose figures are the point
+                          of it, and on the phone, where the columns are gone,
+                          it was the only number beside the name — so it read
+                          as the row's amount. Expanding the row says how many
+                          there are, exactly. */}
                       <span className="text-[13.5px] font-bold text-slate-900 truncate">{g.deptName}</span>
-                      <span className="shrink-0 min-w-[20px] px-1.5 py-0.5 rounded-md bg-slate-100 text-[10.5px] font-bold text-slate-500 tabular-nums text-center" data-notranslate>{g.typeGroups.length}</span>
                       {delta > 0 && (
                         <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700 font-bold flex-shrink-0 animate-pulse">
                           +{delta}
@@ -1864,7 +1869,6 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
                               <Icon name="box" size={14} />
                             </span>
                             <span className="text-[12.5px] font-semibold text-slate-800 truncate">{typeName}</span>
-                            <span className="shrink-0 min-w-[20px] px-1.5 py-0.5 rounded-md bg-white text-[10.5px] font-bold text-slate-500 tabular-nums text-center" data-notranslate>{t.subRows.length}</span>
                           </div>
                           <Money paise={t.committed} tone={TONES.committed} cls={COL_SM} />
                           <Money paise={t.pending} tone={TONES.pending} />
@@ -1912,12 +1916,17 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
                                   <Icon name="fileText" size={13} />
                                 </span>
                                 <span className="text-[12.5px] text-slate-600 leading-snug sm:truncate">{subTypeName}</span>
-                                <span className={COL_SM_TXT + " shrink-0 min-w-[20px] px-1.5 py-0.5 rounded-md bg-white text-[10.5px] font-bold text-slate-500 tabular-nums text-center"} data-notranslate>{r.allocs}</span>
                               </div>
                               <Money paise={r.committed} tone={TONES.committed} cls={COL_SM} />
                               <Money paise={r.pending} tone={TONES.pending} />
                               <Money paise={r.credit} tone={TONES.credit} dashWhenZero cls={COL_SM} />
                               <Money paise={r.total} tone={TONES.total} bold cls={COL_SM} />
+                              {/* Back in the # column with the two rows above
+                                  it. It sat beside the name because a chevron
+                                  held this track; the chevron has gone, and a
+                                  count in the column headed # beats a count
+                                  next to a word. */}
+                              <span className={COL_SM_TXT + " text-[11.5px] text-right text-slate-400 tabular-nums self-center"} data-notranslate>{r.allocs}</span>
                             </button>
                             <button onClick={function (e) { e.stopPropagation(); exportScopedPDF(g.deptId, r.typeId, r.subTypeId) }}
                               disabled={pdfBusy}
