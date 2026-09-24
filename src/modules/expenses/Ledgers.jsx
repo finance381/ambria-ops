@@ -1201,9 +1201,11 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
       <div className="px-0.5 flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h2 className="font-display text-[21px] font-bold text-slate-900 tracking-[-0.015em]">Ledgers</h2>
-          <p className="mt-0.5 text-[12.5px] text-slate-500 truncate">
-            Live financial tracker
-            <span aria-hidden="true" className="mx-1.5 text-slate-300">·</span>
+          <p className="mt-0.5 text-[12.5px] text-slate-500 whitespace-nowrap">
+            <span className="hidden sm:inline">
+              Live financial tracker
+              <span aria-hidden="true" className="mx-1.5 text-slate-300">·</span>
+            </span>
             <span data-notranslate>{(totals.allocs || 0).toLocaleString('en-IN')}</span> allocation{totals.allocs === 1 ? '' : 's'}
           </p>
         </div>
@@ -1669,8 +1671,11 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
         </div>
       )}
 
+      {/* On its own over the artwork this was grey type on a photograph. The
+          same translucent card every other surface on this page sits on gives
+          it something to be read against. */}
       {visibleGroups.length > 0 && (
-        <p className="text-[12px] text-slate-500">
+        <p className="inline-block px-3 py-1.5 rounded-xl bg-white/80 backdrop-blur-xl sm:bg-transparent sm:px-0 sm:py-0 text-[12px] text-slate-600 sm:text-slate-500">
           Showing
           <span className="mx-1 font-bold text-slate-900 tabular-nums" data-notranslate>{visibleGroups.length}</span>
           of
