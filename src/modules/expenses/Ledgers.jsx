@@ -882,32 +882,32 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
             and the colour sits on the glyph and the number: a filled card puts
             the tint behind the only part that differs between the three, which
             is the figure. */}
-        <div className="grid grid-cols-3 gap-3">
-          <div className="flex items-center gap-3.5 px-4 py-3.5 rounded-2xl border bg-white border-slate-200">
-            <span className="shrink-0 w-11 h-11 rounded-xl inline-flex items-center justify-center bg-indigo-100 text-indigo-600">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3">
+          <div className="flex items-center gap-3 px-3 py-2.5 sm:px-4 sm:py-3.5 rounded-2xl border bg-white border-slate-200">
+            <span className="shrink-0 w-8 h-8 sm:w-11 sm:h-11 rounded-xl inline-flex items-center justify-center bg-indigo-100 text-indigo-600">
               <Icon name="chart" size={20} />
             </span>
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1 flex items-baseline justify-between gap-2 sm:block">
               <p className="text-[12.5px] font-medium text-slate-500 leading-none">Total</p>
-              <p className="mt-2 text-[19px] font-extrabold text-indigo-700 tabular-nums leading-none" data-notranslate>{formatPoints(drillGroup.total)}</p>
+              <p className="sm:mt-2 text-[19px] font-extrabold text-indigo-700 tabular-nums leading-none whitespace-nowrap" data-notranslate>{formatPoints(drillGroup.total)}</p>
             </div>
           </div>
-          <div className="flex items-center gap-3.5 px-4 py-3.5 rounded-2xl border bg-white border-slate-200">
-            <span className="shrink-0 w-11 h-11 rounded-xl inline-flex items-center justify-center bg-emerald-100 text-emerald-600">
+          <div className="flex items-center gap-3 px-3 py-2.5 sm:px-4 sm:py-3.5 rounded-2xl border bg-white border-slate-200">
+            <span className="shrink-0 w-8 h-8 sm:w-11 sm:h-11 rounded-xl inline-flex items-center justify-center bg-emerald-100 text-emerald-600">
               <Icon name="checkCircle" size={20} />
             </span>
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1 flex items-baseline justify-between gap-2 sm:block">
               <p className="text-[12.5px] font-medium text-slate-500 leading-none">Committed</p>
-              <p className="mt-2 text-[19px] font-extrabold text-emerald-700 tabular-nums leading-none" data-notranslate>{formatPoints(drillGroup.committed)}</p>
+              <p className="sm:mt-2 text-[19px] font-extrabold text-emerald-700 tabular-nums leading-none whitespace-nowrap" data-notranslate>{formatPoints(drillGroup.committed)}</p>
             </div>
           </div>
-          <div className="flex items-center gap-3.5 px-4 py-3.5 rounded-2xl border bg-white border-slate-200">
-            <span className="shrink-0 w-11 h-11 rounded-xl inline-flex items-center justify-center bg-amber-100 text-amber-600">
+          <div className="flex items-center gap-3 px-3 py-2.5 sm:px-4 sm:py-3.5 rounded-2xl border bg-white border-slate-200">
+            <span className="shrink-0 w-8 h-8 sm:w-11 sm:h-11 rounded-xl inline-flex items-center justify-center bg-amber-100 text-amber-600">
               <Icon name="clock" size={20} />
             </span>
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1 flex items-baseline justify-between gap-2 sm:block">
               <p className="text-[12.5px] font-medium text-slate-500 leading-none">Pending</p>
-              <p className="mt-2 text-[19px] font-extrabold text-amber-700 tabular-nums leading-none" data-notranslate>{formatPoints(drillGroup.pending)}</p>
+              <p className="sm:mt-2 text-[19px] font-extrabold text-amber-700 tabular-nums leading-none whitespace-nowrap" data-notranslate>{formatPoints(drillGroup.pending)}</p>
             </div>
           </div>
         </div>
@@ -918,13 +918,13 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
           <div className="contents">
             <select value={drillUserFilter} onChange={function (e) { setDrillUserFilter(e.target.value) }}
               aria-label="Filter by user"
-              className="h-9 px-3 bg-white border border-slate-200 rounded-lg text-[12.5px] text-slate-700 hover:border-slate-300 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-[border-color,box-shadow] duration-150 flex-1 min-w-[150px]" style={{ fontSize: '16px' }}>
+              className="h-11 px-3 bg-white border border-slate-200 rounded-xl text-[12.5px] text-slate-700 hover:border-slate-300 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-[border-color,box-shadow] duration-150 flex-1 min-w-[120px]" style={{ fontSize: '16px' }}>
               <option value="">All Users</option>
               {users.map(function (u) { return <option key={u.id} value={u.id}>{u.name}</option> })}
             </select>
             <select value={drillStatusFilter} onChange={function (e) { setDrillStatusFilter(e.target.value) }}
               aria-label="Filter by status"
-              className="h-9 px-3 bg-white border border-slate-200 rounded-lg text-[12.5px] text-slate-700 hover:border-slate-300 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-[border-color,box-shadow] duration-150 flex-1 min-w-[150px]" style={{ fontSize: '16px' }}>
+              className="h-11 px-3 bg-white border border-slate-200 rounded-xl text-[12.5px] text-slate-700 hover:border-slate-300 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-[border-color,box-shadow] duration-150 flex-1 min-w-[120px]" style={{ fontSize: '16px' }}>
               <option value="">All Status</option>
               <option value="recorded">Recorded</option>
               <option value="flagged">Resubmit</option>
@@ -933,7 +933,7 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
             </select>
             <select value={drillVenueFilter} onChange={function (e) { setDrillVenueFilter(e.target.value) }}
               aria-label="Filter by venue"
-              className="h-9 px-3 bg-white border border-slate-200 rounded-lg text-[12.5px] text-slate-700 hover:border-slate-300 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-[border-color,box-shadow] duration-150 flex-1 min-w-[150px]" style={{ fontSize: '16px' }}>
+              className="h-11 px-3 bg-white border border-slate-200 rounded-xl text-[12.5px] text-slate-700 hover:border-slate-300 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-[border-color,box-shadow] duration-150 flex-1 min-w-[120px]" style={{ fontSize: '16px' }}>
               <option value="">All Venues</option>
               {venues.map(function (v) { return <option key={v.id} value={v.id}>{v.code ? (v.code + ' — ' + v.name) : v.name}</option> })}
             </select>
