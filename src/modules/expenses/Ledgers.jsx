@@ -129,6 +129,19 @@ var LEDGER_BG_FOOT = '#DBCCBC'
 // Nothing on the desktop. This is one tab of eight in the hub, and a ground
 // on one of them would make it look like a different section.
 function LedgerBackdrop({ inAdmin }) {
+  // The backdrop is fixed, so it stops at the edge of the viewport — and
+  // dragging past the end of the page shows what is behind it, which is the
+  // body's own canvas colour. That is the white band at the foot. The body
+  // takes the artwork's tone while this screen is up and gives it back on the
+  // way out, so overscrolling reveals more of the same ground rather than a
+  // different page.
+  useEffect(function () {
+    if (inAdmin) return
+    var prev = document.body.style.backgroundColor
+    document.body.style.backgroundColor = LEDGER_BG_FOOT
+    return function () { document.body.style.backgroundColor = prev }
+  }, [inAdmin])
+
   if (inAdmin) return null
   return (
     <div aria-hidden="true" className="pointer-events-none fixed inset-0 -z-10 overflow-hidden"
