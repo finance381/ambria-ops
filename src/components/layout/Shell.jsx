@@ -40,47 +40,19 @@ var Projects = lazy(function () { return import('../../modules/projects/Projects
 var Reviews = lazy(function () { return import('../../modules/reviews/Reviews') })
 var BroadcastHub = lazy(function () { return import('../../modules/broadcast/BroadcastHub.jsx') })
 
-// A tint per group, on the glyph tile's fill only — the glyph itself is
-// GLYPH_INK, one value for all of them.
+// The chip behind a menu glyph. One class, no colour.
 //
-// The tiles were one indigo wash each, so eleven of them read as one striped
-// block and the only way to find Logistics was to read all eleven labels.
-// Colour is the fastest thing on a screen to tell apart, and a menu is the one
-// place that matters — it is the screen you are on longest without wanting to
-// be. The card itself stays white so the colours are a mark to aim at rather
-// than eleven competing backgrounds.
+// It carried a tint per group for a while, on the fill only. The argument for
+// it was that eleven identical tiles read as one striped block and colour is
+// the fastest thing to tell apart — which is true, and it is not what this
+// screen turned out to want. Eleven pale washes on eleven white cards is
+// eleven decisions the eye has to make before it reads a single word, and the
+// words were always going to be the thing you came for.
 //
-// No green in here. Green is a verdict everywhere else in this app — a
-// positive balance, an acknowledged debit, a receipt that attached — and a
-// menu tile is not reporting anything, so a green one reads as a state the
-// group is in rather than as the group's colour. Review and Finance held the
-// two greens; they are cyan and orange now.
-//
-// Anything not listed falls back to slate, so a new group is plain rather than
-// wrong.
-var GROUP_TINTS = {
-  me: 'bg-blue-50',
-  inventory: 'bg-violet-50',
-  review: 'bg-cyan-50',
-  events: 'bg-rose-50',
-  procurement: 'bg-amber-50',
-  logistics: 'bg-sky-50',
-  projects: 'bg-purple-50',
-  expenses: 'bg-orange-50',
-  hr: 'bg-pink-50',
-  broadcast: 'bg-indigo-50',
-  admin: 'bg-slate-100',
-}
-
-// The glyph stays black on every tile. In colour it was the tint twice over,
-// fill and mark, which made the tile read as a coloured blob at a glance and
-// left the drawing inside it doing nothing. Black on a pale fill, the shape is
-// what you see and the colour is what tells the tiles apart.
-//
-// Black, not slate-800. slate-800 is #1E293B — a blue-black — and on a pale
-// tinted fill it picks up the fill's hue, which is exactly the look this was
-// meant to remove.
-var GLYPH_INK = ' text-black'
+// So the chip is the same everywhere and the glyph does the telling apart.
+// Black on slate-100: the shape is the only thing in there, which is what a
+// pictogram is for.
+var GLYPH_CHIP = 'shrink-0 w-9 h-9 rounded-[10px] inline-flex items-center justify-center bg-slate-100 text-black'
 
 var GROUPS = [
   {
@@ -706,8 +678,7 @@ function Shell({ profile, onSignOut }) {
                       {badge > 99 ? '99+' : badge}
                     </span>
                   )}
-                  <span className={"shrink-0 w-9 h-9 rounded-[10px] inline-flex items-center justify-center " +
-                    ((GROUP_TINTS[g.key] || 'bg-slate-100') + GLYPH_INK)}>
+                  <span className={GLYPH_CHIP}>
                     {/* className passed, because Icon falls back to w-4 h-4 when it is not
                         — and that class beats the width/height size sets, so the
                         glyph was drawing at 16. */}
@@ -760,8 +731,7 @@ function Shell({ profile, onSignOut }) {
                       domain is already chosen, so what is left for it to say is
                       which one you are in — and seven different colours inside
                       Finance would say nothing at all. */}
-                  <span className={"shrink-0 w-9 h-9 rounded-[10px] inline-flex items-center justify-center " +
-                    ((GROUP_TINTS[currentGroup.key] || 'bg-slate-100') + GLYPH_INK)}>
+                  <span className={GLYPH_CHIP}>
                     <Icon name={f.icon} size={18} strokeWidth={1.9} className="block" />
                   </span>
                   <span className="mt-2 text-[13.5px] font-bold text-slate-900 leading-snug">{f.label}</span>
