@@ -682,7 +682,7 @@ function Shell({ profile, onSignOut }) {
                 <button
                   key={g.key}
                   onClick={function () { openGroup(g) }}
-                  className="relative bg-white/85 backdrop-blur-xl border border-white/70 shadow-[0_2px_10px_rgba(15,23,42,0.07)] rounded-2xl p-3 flex flex-col items-start text-left hover:bg-white hover:shadow-[0_8px_22px_rgba(15,23,42,0.10)] active:scale-[0.98] transition-all"
+                  className="relative bg-white/85 backdrop-blur-xl border border-white/70 shadow-[0_2px_10px_rgba(15,23,42,0.07)] rounded-2xl p-3 flex flex-col items-center justify-center text-center hover:bg-white hover:shadow-[0_8px_22px_rgba(15,23,42,0.10)] active:scale-[0.98] transition-all"
                 >
                   {badge > 0 && (
                     <span className="absolute -top-1.5 -right-1.5 min-w-[22px] h-[22px] px-1.5 bg-red-500 text-white text-[10.5px] font-bold rounded-full flex items-center justify-center shadow-[0_2px_6px_rgba(239,68,68,0.45)]">
