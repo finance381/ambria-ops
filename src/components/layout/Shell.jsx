@@ -40,7 +40,8 @@ var Projects = lazy(function () { return import('../../modules/projects/Projects
 var Reviews = lazy(function () { return import('../../modules/reviews/Reviews') })
 var BroadcastHub = lazy(function () { return import('../../modules/broadcast/BroadcastHub.jsx') })
 
-// A tint per group, on the glyph tile only.
+// A tint per group, on the glyph tile's fill only — the glyph itself is
+// GLYPH_INK, one value for all of them.
 //
 // The tiles were one indigo wash each, so eleven of them read as one striped
 // block and the only way to find Logistics was to read all eleven labels.
@@ -52,18 +53,24 @@ var BroadcastHub = lazy(function () { return import('../../modules/broadcast/Bro
 // Anything not listed falls back to slate, so a new group is plain rather than
 // wrong.
 var GROUP_TINTS = {
-  me: 'bg-blue-50 text-blue-600',
-  inventory: 'bg-violet-50 text-violet-600',
-  review: 'bg-emerald-50 text-emerald-600',
-  events: 'bg-rose-50 text-rose-600',
-  procurement: 'bg-amber-50 text-amber-600',
-  logistics: 'bg-sky-50 text-sky-700',
-  projects: 'bg-purple-50 text-purple-600',
-  expenses: 'bg-teal-50 text-teal-600',
-  hr: 'bg-pink-50 text-pink-600',
-  broadcast: 'bg-indigo-50 text-indigo-600',
-  admin: 'bg-slate-100 text-slate-600',
+  me: 'bg-blue-50',
+  inventory: 'bg-violet-50',
+  review: 'bg-emerald-50',
+  events: 'bg-rose-50',
+  procurement: 'bg-amber-50',
+  logistics: 'bg-sky-50',
+  projects: 'bg-purple-50',
+  expenses: 'bg-teal-50',
+  hr: 'bg-pink-50',
+  broadcast: 'bg-indigo-50',
+  admin: 'bg-slate-100',
 }
+
+// The glyph stays dark on every tile. In colour it was the tint twice over,
+// fill and mark, which made the tile read as a coloured blob at a glance and
+// left the drawing inside it doing nothing. Dark on a pale fill, the shape is
+// what you see and the colour is what tells the tiles apart.
+var GLYPH_INK = ' text-slate-800'
 
 var GROUPS = [
   {
@@ -690,7 +697,7 @@ function Shell({ profile, onSignOut }) {
                     </span>
                   )}
                   <span className={"shrink-0 w-9 h-9 rounded-[10px] inline-flex items-center justify-center " +
-                    (GROUP_TINTS[g.key] || 'bg-slate-100 text-slate-600')}>
+                    ((GROUP_TINTS[g.key] || 'bg-slate-100') + GLYPH_INK)}>
                     <Icon name={g.icon} size={18} strokeWidth={1.9} />
                   </span>
                   <span className="mt-2 text-[13.5px] font-bold text-slate-900 leading-snug">{g.label}</span>
@@ -741,7 +748,7 @@ function Shell({ profile, onSignOut }) {
                       which one you are in — and seven different colours inside
                       Finance would say nothing at all. */}
                   <span className={"shrink-0 w-9 h-9 rounded-[10px] inline-flex items-center justify-center " +
-                    (GROUP_TINTS[currentGroup.key] || 'bg-slate-100 text-slate-600')}>
+                    ((GROUP_TINTS[currentGroup.key] || 'bg-slate-100') + GLYPH_INK)}>
                     <Icon name={f.icon} size={18} strokeWidth={1.9} />
                   </span>
                   <span className="mt-2 text-[13.5px] font-bold text-slate-900 leading-snug">{f.label}</span>
