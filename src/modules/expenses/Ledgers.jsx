@@ -106,12 +106,13 @@ var TONES = {
 // That technique suits the wallet and the vendor ledger because their
 // pictures end on something calm. This one ends on foliage at the left, so
 // continuing it drew that dark olive — #75715F at the 0% stop — down the
-// whole page below the image, which is the band across the foot.
+// whole page below the image, which was a band across the foot.
 //
-// Taken from the right 65% of the bottom instead, which is the floor: one
-// quiet tone for the page to end on rather than a stripe of whatever object
-// happened to be standing at the edge of the frame.
-var LEDGER_BG_FOOT = '#DBCCBC'
+// The value is the average of the image's own last rows, not of the floor in
+// the middle of it. Those differ by a lot — #C4B6A6 against #DBCCBC — and the
+// lighter one drew a visible step wherever a sliver of tone met the picture,
+// which is the line at the end. Matched to the edge, any sliver continues it.
+var LEDGER_BG_FOOT = '#C4B6A6'
 
 // The ground behind the phone ledger. The artwork covers the whole screen
 // rather than sitting at the top with a colour under it.
