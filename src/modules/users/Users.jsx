@@ -695,14 +695,14 @@ function Users({ profile }) {
                     )}
                   </td>
                   <td className="px-4 py-3">
-                    <div className="flex flex-wrap gap-1">
-                      <span className="text-[10px] bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded font-medium" title="Expense types">
+                    <div className="flex flex-nowrap gap-1">
+                      <span className="text-[10px] bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded font-medium whitespace-nowrap" title="Expense types">
                         {expTypeCount} types
                       </span>
-                      <span className="text-[10px] bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded font-medium" title="Inventory categories">
+                      <span className="text-[10px] bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded font-medium whitespace-nowrap" title="Inventory categories">
                         {catCount} categories
                       </span>
-                      <span className="text-[10px] bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded font-medium" title="Mobile + desktop permissions">
+                      <span className="text-[10px] bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded font-medium whitespace-nowrap" title="Mobile + desktop permissions">
                         {permCount} perms
                       </span>
                     </div>
