@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
-import { supabase } from '../../lib/supabase'
+import { supabase, edgeFnErrorMessage } from '../../lib/supabase'
 import Icon from '../../components/ui/Icon'
 import EventDatePicker from '../../components/ui/EventDatePicker'
 import { CTRL, BTN_GHOST, BTN_PRIMARY, BTN_SEND, CARD, Labeled, Notice } from './ui'
@@ -62,8 +62,10 @@ function CheckRow({ done, label, hint }) {
 function CampaignBuilder({ campaignId, onClose, onSaved }) {
   var [templates, setTemplates] = useState([])
   var [venues, setVenues] = useState([])
+  var [lists, setLists] = useState([])
   var [name, setName] = useState('')
   var [templateId, setTemplateId] = useState('')
+  var [listId, setListId] = useState('')
   var [tagsText, setTagsText] = useState('')
   var [venueIds, setVenueIds] = useState([])
   var [source, setSource] = useState('')
@@ -98,6 +100,7 @@ function CampaignBuilder({ campaignId, onClose, onSaved }) {
   useEffect(function () {
     supabase.from('wa_templates').select('*').eq('meta_status', 'approved').then(function (res) { setTemplates(res.data || []) })
     supabase.from('venues').select('id, code, name').then(function (res) { setVenues(res.data || []) })
+    supabase.from('wa_contact_lists').select('id, name, type').order('name').then(function (res) { setLists(res.data || []) })
     supabase.from('wa_settings').select('confirmation_threshold_recipients').eq('id', 1).maybeSingle()
       .then(function (res) {
         if (res.data && res.data.confirmation_threshold_recipients != null) {
@@ -109,6 +112,7 @@ function CampaignBuilder({ campaignId, onClose, onSaved }) {
         if (!res.data) return
         var c = res.data
         setName(c.name); setTemplateId(String(c.template_id))
+        setListId(c.list_id ? String(c.list_id) : '')
         var f = c.audience_filter_json || {}
         setTagsText((f.tags || []).join(', '))
         setVenueIds((f.venue_ids || []).map(String))
@@ -163,7 +167,11 @@ function CampaignBuilder({ campaignId, onClose, onSaved }) {
 
     var payload = {
       name: name, template_id: Number(templateId),
-      audience_filter_json: buildAudienceFilter(),
+      list_id: listId ? Number(listId) : null,
+      // fn_wa_resolve_audience (migration 00028) ignores audience_filter_json
+      // whenever list_id is set — cleared here too so a leftover ad-hoc
+      // filter from before a list was picked doesn't linger in the row.
+      audience_filter_json: listId ? null : buildAudienceFilter(),
       variable_mapping_json: mapping,
       scheduled_at: scheduledAt ? new Date(scheduledAt).toISOString() : null,
     }
@@ -215,7 +223,7 @@ function CampaignBuilder({ campaignId, onClose, onSaved }) {
       body: { campaign_id: currentId }, headers: token ? { Authorization: 'Bearer ' + token } : {},
     })
     setSending(false)
-    if (invokeRes.error) { setError('Send failed: ' + invokeRes.error.message); setSendProgress(null); return }
+    if (invokeRes.error) { setError('Send failed: ' + await edgeFnErrorMessage(invokeRes.error)); setSendProgress(null); return }
     setSendProgress('done')
     if (onSaved) onSaved()
   }
@@ -292,47 +300,59 @@ function CampaignBuilder({ campaignId, onClose, onSaved }) {
 
             <StepCard n={3} title="Audience" icon="users"
               hint="Leave a filter blank to ignore it. Opted-out contacts are always excluded.">
-              <Labeled label="Tags" hint="Comma-separated — a contact matching any of them is included">
-                <input type="text" value={tagsText} onChange={function (ev) { setTagsText(ev.target.value) }}
-                  placeholder="delhi, wedding" className={CTRL} />
-              </Labeled>
-              <div>
-                <label className="block text-[12px] font-semibold text-slate-900 mb-1">Venues</label>
-                {venues.length === 0 ? (
-                  <p className="text-[11px] text-slate-400">No venues loaded.</p>
-                ) : (
-                  <div className="flex flex-wrap gap-1.5">
-                    {venues.map(function (v) {
-                      var active = venueIds.indexOf(String(v.id)) !== -1
-                      return (
-                        <button key={v.id} type="button" onClick={function () { toggleVenue(v.id) }}
-                          aria-pressed={active}
-                          className={'inline-flex items-center gap-1 h-8 px-2.5 text-[12px] font-semibold rounded-xl border transition-colors ' +
-                            (active
-                              ? 'bg-indigo-600 border-indigo-600 text-white'
-                              : 'bg-white border-slate-300 text-slate-600 hover:border-slate-400')}>
-                          {active && <Icon name="check" size={12} strokeWidth={2.6} />}
-                          {v.code || v.name}
-                        </button>
-                      )
-                    })}
-                  </div>
-                )}
-                <p className="text-[11px] text-slate-400 mt-1 leading-snug">None selected means every venue.</p>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <Labeled label="Source" hint="Where the contact came from">
-                  <select value={source} onChange={function (ev) { setSource(ev.target.value) }}
-                    aria-label="Source" className={CTRL + ' capitalize'}>
-                    {SOURCE_OPTIONS.map(function (s) { return <option key={s} value={s}>{s || 'Any'}</option> })}
+              {lists.length > 0 && (
+                <Labeled label="Saved list" hint="Pick one to target it directly — Custom filter below is ignored while a list is selected">
+                  <select value={listId} onChange={function (ev) { setListId(ev.target.value) }} className={CTRL}>
+                    <option value="">— Custom filter instead —</option>
+                    {lists.map(function (l) { return <option key={l.id} value={String(l.id)}>{l.name} ({l.type})</option> })}
                   </select>
                 </Labeled>
-                <Labeled label="Min days since last sent" hint="Skips anyone messaged more recently than this">
-                  <input type="number" min="0" value={minLastSentDays}
-                    onChange={function (ev) { setMinLastSentDays(ev.target.value) }}
-                    placeholder="e.g. 30" className={CTRL} />
-                </Labeled>
-              </div>
+              )}
+              {!listId && (
+                <>
+                  <Labeled label="Tags" hint="Comma-separated — a contact matching any of them is included">
+                    <input type="text" value={tagsText} onChange={function (ev) { setTagsText(ev.target.value) }}
+                      placeholder="delhi, wedding" className={CTRL} />
+                  </Labeled>
+                  <div>
+                    <label className="block text-[12px] font-semibold text-slate-900 mb-1">Venues</label>
+                    {venues.length === 0 ? (
+                      <p className="text-[11px] text-slate-400">No venues loaded.</p>
+                    ) : (
+                      <div className="flex flex-wrap gap-1.5">
+                        {venues.map(function (v) {
+                          var active = venueIds.indexOf(String(v.id)) !== -1
+                          return (
+                            <button key={v.id} type="button" onClick={function () { toggleVenue(v.id) }}
+                              aria-pressed={active}
+                              className={'inline-flex items-center gap-1 h-8 px-2.5 text-[12px] font-semibold rounded-xl border transition-colors ' +
+                                (active
+                                  ? 'bg-indigo-600 border-indigo-600 text-white'
+                                  : 'bg-white border-slate-300 text-slate-600 hover:border-slate-400')}>
+                              {active && <Icon name="check" size={12} strokeWidth={2.6} />}
+                              {v.code || v.name}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    )}
+                    <p className="text-[11px] text-slate-400 mt-1 leading-snug">None selected means every venue.</p>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <Labeled label="Source" hint="Where the contact came from">
+                      <select value={source} onChange={function (ev) { setSource(ev.target.value) }}
+                        aria-label="Source" className={CTRL + ' capitalize'}>
+                        {SOURCE_OPTIONS.map(function (s) { return <option key={s} value={s}>{s || 'Any'}</option> })}
+                      </select>
+                    </Labeled>
+                    <Labeled label="Min days since last sent" hint="Skips anyone messaged more recently than this">
+                      <input type="number" min="0" value={minLastSentDays}
+                        onChange={function (ev) { setMinLastSentDays(ev.target.value) }}
+                        placeholder="e.g. 30" className={CTRL} />
+                    </Labeled>
+                  </div>
+                </>
+              )}
             </StepCard>
 
             {varCount > 0 && (

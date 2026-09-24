@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
-import { supabase } from '../../lib/supabase'
+import { supabase, edgeFnErrorMessage } from '../../lib/supabase'
 import { hasPerm } from '../../lib/permissions'
 import { formatDate } from '../../lib/format'
 import Modal from '../../components/ui/Modal'
@@ -327,6 +327,67 @@ function ContactDetailDrawer({ contact, onClose, onChanged }) {
   ), document.body)
 }
 
+// Bulk-tagging one contact at a time (ContactDetailDrawer) is how a static
+// list would otherwise have to be built member by member. This is the
+// group-building shortcut: select rows here, then add them all to a list —
+// existing (upsert, so re-adding is harmless) or a new one typed inline.
+function AddToListModal({ open, contactIds, onClose, onDone }) {
+  var [lists, setLists] = useState([])
+  var [selectedListId, setSelectedListId] = useState('')
+  var [newListName, setNewListName] = useState('')
+  var [saving, setSaving] = useState(false)
+  var [error, setError] = useState('')
+
+  useEffect(function () {
+    if (!open) return
+    setSelectedListId(''); setNewListName(''); setError('')
+    supabase.from('wa_contact_lists').select('id, name').eq('type', 'static').order('name')
+      .then(function (res) { setLists(res.data || []) })
+  }, [open])
+
+  async function save() {
+    if (saving) return
+    var listId = selectedListId
+    setSaving(true); setError('')
+    if (!listId) {
+      if (!newListName.trim()) { setSaving(false); setError('Pick a list or name a new one'); return }
+      var createRes = await supabase.from('wa_contact_lists').insert({ name: newListName.trim(), type: 'static' }).select().single()
+      if (createRes.error) { setSaving(false); setError(createRes.error.message); return }
+      listId = createRes.data.id
+    }
+    var rows = contactIds.map(function (id) { return { list_id: listId, contact_id: id } })
+    var res = await supabase.from('wa_list_members').upsert(rows, { onConflict: 'list_id,contact_id' })
+    setSaving(false)
+    if (res.error) { setError(res.error.message); return }
+    onDone()
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} title={'Add ' + contactIds.length + ' to a list'}>
+      <div className="space-y-3">
+        {error && <Notice tone="error">{error}</Notice>}
+        {lists.length > 0 && (
+          <Labeled label="Existing list">
+            <select value={selectedListId} onChange={function (ev) { setSelectedListId(ev.target.value); if (ev.target.value) setNewListName('') }} className={CTRL}>
+              <option value="">— Choose —</option>
+              {lists.map(function (l) { return <option key={l.id} value={String(l.id)}>{l.name}</option> })}
+            </select>
+          </Labeled>
+        )}
+        <Labeled label={lists.length > 0 ? 'Or create a new list' : 'New list name'}>
+          <input type="text" value={newListName}
+            onChange={function (ev) { setNewListName(ev.target.value); if (ev.target.value) setSelectedListId('') }}
+            placeholder="Diwali Regulars" className={CTRL} />
+        </Labeled>
+        <button onClick={save} disabled={saving || (!selectedListId && !newListName.trim())} className={BTN_PRIMARY + ' w-full h-10'}>
+          <Icon name="check" size={14} strokeWidth={2.3} />
+          {saving ? 'Adding…' : 'Add'}
+        </button>
+      </div>
+    </Modal>
+  )
+}
+
 function Contacts({ profile }) {
   var permsNew = (profile && profile.permsNew) || []
   var canEdit = hasPerm(permsNew, 'broadcast.contacts.edit')
@@ -345,6 +406,8 @@ function Contacts({ profile }) {
   var [pullMsg, setPullMsg] = useState('')
   var [pullFailed, setPullFailed] = useState(false)
   var [detail, setDetail] = useState(null)
+  var [selectedIds, setSelectedIds] = useState([])
+  var [addToListOpen, setAddToListOpen] = useState(false)
 
   function loadContacts() {
     setLoading(true)
@@ -372,6 +435,24 @@ function Contacts({ profile }) {
 
   var filtersOn = !!(search || sourceFilter || optStatusFilter || venueFilter)
 
+  function toggleSelected(id) {
+    setSelectedIds(function (prev) {
+      var i = prev.indexOf(id)
+      if (i === -1) return prev.concat([id])
+      return prev.filter(function (x) { return x !== id })
+    })
+  }
+  var visibleIds = filtered.map(function (c) { return c.id })
+  var allVisibleSelected = visibleIds.length > 0 && visibleIds.every(function (id) { return selectedIds.indexOf(id) !== -1 })
+  function toggleSelectAllVisible() {
+    setSelectedIds(function (prev) {
+      if (allVisibleSelected) return prev.filter(function (id) { return visibleIds.indexOf(id) === -1 })
+      var next = prev.slice()
+      visibleIds.forEach(function (id) { if (next.indexOf(id) === -1) next.push(id) })
+      return next
+    })
+  }
+
   async function runPull(fnName, label) {
     if (pulling) return
     setPulling(true); setPullMsg(''); setPullFailed(false)
@@ -381,7 +462,7 @@ function Contacts({ profile }) {
       body: {}, headers: token ? { Authorization: 'Bearer ' + token } : {},
     })
     setPulling(false)
-    if (res.error) { setPullFailed(true); setPullMsg('Pull failed: ' + res.error.message); return }
+    if (res.error) { setPullFailed(true); setPullMsg('Pull failed: ' + await edgeFnErrorMessage(res.error)); return }
     var d = res.data || {}
     var msg = 'Pulled ' + d.total_candidates + ' ' + label + ' — ' + d.inserted + ' new, ' + d.updated + ' updated, ' + d.skipped_invalid_phone + ' invalid phone.'
     if (d.errors && d.errors.length > 0) msg += ' (' + d.errors.length + ' department error(s) — see console)'
@@ -440,6 +521,19 @@ function Contacts({ profile }) {
 
       {pullMsg && <Notice tone={pullFailed ? 'error' : 'ok'}>{pullMsg}</Notice>}
 
+      {canEdit && selectedIds.length > 0 && (
+        <div className="flex items-center justify-between gap-3 bg-indigo-50 border border-indigo-200 rounded-2xl px-3.5 py-2">
+          <p className="text-[12.5px] font-semibold text-indigo-800">{selectedIds.length} selected</p>
+          <div className="flex items-center gap-2">
+            <button onClick={function () { setAddToListOpen(true) }} className={BTN_PRIMARY}>
+              <Icon name="list" size={13} />
+              Add to list
+            </button>
+            <button onClick={function () { setSelectedIds([]) }} className={BTN_GHOST}>Clear</button>
+          </div>
+        </div>
+      )}
+
       {/* Filters in their own card. Loose on the page they read as four
           unrelated controls floating above the table. */}
       <div className="bg-white border border-slate-200 rounded-2xl p-3 shadow-[0_1px_2px_rgba(15,23,42,0.05)]">
@@ -471,6 +565,12 @@ function Contacts({ profile }) {
           <table className="w-full border-collapse">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200">
+                {canEdit && (
+                  <th className={TH + ' w-8'}>
+                    <input type="checkbox" checked={allVisibleSelected} onChange={toggleSelectAllVisible}
+                      aria-label="Select all visible" className="w-3.5 h-3.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" />
+                  </th>
+                )}
                 <th className={TH}>Name</th>
                 <th className={TH}>Phone</th>
                 <th className={TH}>Source</th>
@@ -483,10 +583,10 @@ function Contacts({ profile }) {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={8} className="text-center text-[12px] text-slate-400 py-8">Loading…</td></tr>
+                <tr><td colSpan={canEdit ? 9 : 8} className="text-center text-[12px] text-slate-400 py-8">Loading…</td></tr>
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={8}>
+                  <td colSpan={canEdit ? 9 : 8}>
                     <EmptyState icon="users"
                       title={contacts.length === 0 ? 'No contacts yet' : 'No matches'}
                       hint={contacts.length === 0
@@ -500,6 +600,12 @@ function Contacts({ profile }) {
                 return (
                   <tr key={c.id} onClick={function () { setDetail(c) }}
                     className="group border-b border-slate-100 last:border-b-0 cursor-pointer hover:bg-slate-50 transition-colors">
+                    {canEdit && (
+                      <td className={TD} onClick={function (ev) { ev.stopPropagation() }}>
+                        <input type="checkbox" checked={selectedIds.indexOf(c.id) !== -1} onChange={function () { toggleSelected(c.id) }}
+                          aria-label={'Select ' + (c.name || c.phone_e164)} className="w-3.5 h-3.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" />
+                      </td>
+                    )}
                     <td className={TD + ' font-semibold text-slate-900 whitespace-nowrap'}>{c.name || <span className="font-normal text-slate-300">—</span>}</td>
                     <td className={TD + ' font-mono text-slate-500 whitespace-nowrap'} data-notranslate>{maskPhone(c.phone_e164)}</td>
                     <td className={TD}><Chip>{c.source}</Chip></td>
@@ -533,6 +639,9 @@ function Contacts({ profile }) {
         </div>
       </div>
 
+      <AddToListModal open={addToListOpen} contactIds={selectedIds}
+        onClose={function () { setAddToListOpen(false) }}
+        onDone={function () { setAddToListOpen(false); setSelectedIds([]) }} />
       <AddContactModal open={addOpen} onClose={function () { setAddOpen(false) }} onSaved={loadContacts} />
       <CsvImportModal open={csvOpen} onClose={function () { setCsvOpen(false) }} onSaved={loadContacts} />
       {detail && (

@@ -21,6 +21,23 @@ export async function fetchAll(query, pageSize) {
   return all
 }
 
+// supabase.functions.invoke()'s error.message is always the generic
+// "Edge Function returned a non-2xx status code" — the function's actual
+// { error: "..." } response body lands in error.context (the raw Response)
+// instead, unread by default. Every edge-fn error handler in this app was
+// showing that generic line and throwing away the real reason. Use this
+// wherever a functions.invoke() call's error is shown to a user.
+export async function edgeFnErrorMessage(error) {
+  if (!error) return ''
+  try {
+    if (error.context && typeof error.context.json === 'function') {
+      var body = await error.context.clone().json()
+      if (body && (body.error || body.message)) return body.error || body.message
+    }
+  } catch (_) {}
+  return error.message || 'Request failed'
+}
+
 export function getImageUrl(path) {
   if (!path) return null
   if (path.startsWith('http') || path.startsWith('data:')) return path
