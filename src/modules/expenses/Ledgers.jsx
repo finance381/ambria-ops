@@ -251,6 +251,23 @@ var STATUS_COLORS = {
 }
 var PAGE_SIZE = 50
 
+// The drill is one department, one expense type and one sub-type at a time, so
+// its scope is already narrow — a sub-type on a busy month runs to tens, not
+// thousands. Fifty was a page size for a list that does not need pages: it put
+// a Load more button under a screen that should simply be the answer.
+//
+// 500 is a ceiling rather than a page. It is not meant to be reached; it is
+// there so a scope nobody anticipated cannot pull a year in one request. Load
+// more still exists for that case and should never be seen.
+var DRILL_LIMIT = 500
+
+// Rendering, not fetching. Five hundred allocation cards is five hundred
+// stamps, chip rows and fact lines, and building them all before the first
+// paint would be its own wait — the request is no longer the slow part, so this
+// stops the render becoming it. A screenful lands at once and the rest fills in
+// while the browser is idle.
+var DRILL_FIRST_PAINT = 25
+
 var SUB_MODE_LABEL = { upi: 'UPI', bank_transfer: 'Bank Transfer', cheque: 'Cheque', paytm_card_machine: 'Paytm Card', hdfc_card_machine: 'HDFC Card' }
 
 function _paymentLabel(mode, subMode) {
@@ -362,6 +379,9 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
   // flight; without this the slower one writes its rows last and the list ends
   // up showing the filter you left rather than the one you chose.
   var drillReq = useRef(0)
+  // How many of the loaded rows are on the screen. Not pagination — every row
+  // is already here; this only decides how fast they are drawn.
+  var [drillPaint, setDrillPaint] = useState(DRILL_FIRST_PAINT)
   var [drillUserFilter, setDrillUserFilter] = useState('')
   var [drillStatusFilter, setDrillStatusFilter] = useState('')
   var [drillVenueFilter, setDrillVenueFilter] = useState('')
@@ -381,8 +401,22 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
   }, [dateFrom, dateTo, userFilter, venueFilter, statusFilter, (scopeDeptIds || []).join(',')])
 
   useEffect(function () {
-    if (drillGroup) { setDrillOffset(0); loadDrill(false) }
+    if (drillGroup) { setDrillOffset(0); setDrillPaint(DRILL_FIRST_PAINT); loadDrill(false) }
   }, [drillGroup, drillUserFilter, drillStatusFilter, drillVenueFilter, dateFrom, dateTo])
+
+  // Top up during idle until every loaded row is drawn. requestIdleCallback
+  // where it exists, so this never competes with a scroll; a frame's delay
+  // where it does not.
+  useEffect(function () {
+    if (drillPaint >= drillRows.length) return
+    function grow() { setDrillPaint(function (n) { return n + 40 }) }
+    var idle = typeof window !== 'undefined' && window.requestIdleCallback
+    var id = idle ? window.requestIdleCallback(grow, { timeout: 200 }) : setTimeout(grow, 16)
+    return function () {
+      if (idle) window.cancelIdleCallback(id)
+      else clearTimeout(id)
+    }
+  }, [drillPaint, drillRows.length])
 
   useEffect(function () {
     function schedule() {
@@ -587,7 +621,7 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
       .lte('expense_date', dateTo)
       .order('expense_date', { ascending: false })
       .order('created_at', { ascending: false })
-      .range(offset, offset + PAGE_SIZE)
+      .range(offset, offset + DRILL_LIMIT)
     if (drillGroup.deptId) q = q.eq('department_id', drillGroup.deptId)
     else q = q.is('department_id', null)
     if (drillGroup.typeId) q = q.eq('expense_type_id', drillGroup.typeId)
@@ -602,8 +636,8 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
     if (!current()) return
     if (error) { alert('Drill load failed: ' + error.message); setDrillLoading(false); return }
     var rows = data || []
-    var hasMore = rows.length > PAGE_SIZE
-    if (hasMore) rows = rows.slice(0, PAGE_SIZE)
+    var hasMore = rows.length > DRILL_LIMIT
+    if (hasMore) rows = rows.slice(0, DRILL_LIMIT)
 
     // v_ledger exposes neither expenses.checked_by/checked_at nor
     // expenses.metadata, so both have to be fetched by id afterwards. They used
@@ -1249,7 +1283,7 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
                 The column exists when any row in the list is checked, and is
                 empty on the rows that are not — so every rule lands on the same
                 x. When nothing is checked there is no column to reserve. */}
-            {drillRows.map(function (r) {
+            {drillRows.slice(0, drillPaint).map(function (r) {
               // The row hands over what it is already showing, so the overlay
               // opens on it rather than on a spinner. amount_paise is this
               // allocation's share rather than the expense's total, so it is
