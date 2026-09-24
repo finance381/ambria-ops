@@ -1256,7 +1256,7 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
           before anything else does. */}
       <div className="px-0.5 flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <h2 className="font-display text-[21px] font-bold text-slate-900 tracking-[-0.015em]">Ledgers</h2>
+          <h2 className="font-serif text-[23px] font-bold text-slate-900 tracking-[-0.005em]">Ledgers</h2>
           <p className="mt-0.5 text-[12.5px] text-slate-500 whitespace-nowrap">
             <span className="hidden sm:inline">
               Live financial tracker
@@ -1312,7 +1312,12 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
             is for. */}
         {!inAdmin ? (
           <>
-            <div className="rounded-3xl p-3.5 shadow-[0_8px_28px_rgba(15,32,68,0.28)]" style={{ backgroundColor: '#1B2C4F' }}>
+            {/* Warm, not navy. #1B2C4F came from the vendor ledger, where the
+                ground is a cool blue-white and it belongs; on this cream it
+                read as a card from another screen. This is the artwork's own
+                hue — 32 degrees, the same as its average — taken down to a
+                dark. The shadow warms with it. */}
+            <div className="rounded-3xl p-3.5 shadow-[0_8px_28px_rgba(60,44,28,0.30)]" style={{ backgroundColor: '#31281D' }}>
               <span className="flex items-center gap-3">
                 <span className="shrink-0 w-10 h-10 rounded-xl bg-white/10 text-indigo-200 inline-flex items-center justify-center">
                   <Icon name="chart" size={18} />
