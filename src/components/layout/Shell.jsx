@@ -66,11 +66,15 @@ var GROUP_TINTS = {
   admin: 'bg-slate-100',
 }
 
-// The glyph stays dark on every tile. In colour it was the tint twice over,
+// The glyph stays black on every tile. In colour it was the tint twice over,
 // fill and mark, which made the tile read as a coloured blob at a glance and
-// left the drawing inside it doing nothing. Dark on a pale fill, the shape is
+// left the drawing inside it doing nothing. Black on a pale fill, the shape is
 // what you see and the colour is what tells the tiles apart.
-var GLYPH_INK = ' text-slate-800'
+//
+// Black, not slate-800. slate-800 is #1E293B — a blue-black — and on a pale
+// tinted fill it picks up the fill's hue, which is exactly the look this was
+// meant to remove.
+var GLYPH_INK = ' text-black'
 
 var GROUPS = [
   {
@@ -698,7 +702,10 @@ function Shell({ profile, onSignOut }) {
                   )}
                   <span className={"shrink-0 w-9 h-9 rounded-[10px] inline-flex items-center justify-center " +
                     ((GROUP_TINTS[g.key] || 'bg-slate-100') + GLYPH_INK)}>
-                    <Icon name={g.icon} size={18} strokeWidth={1.9} />
+                    {/* className passed, because Icon falls back to w-4 h-4 when it is not
+                        — and that class beats the width/height size sets, so the
+                        glyph was drawing at 16. */}
+                    <Icon name={g.icon} size={18} strokeWidth={1.9} className="block" />
                   </span>
                   <span className="mt-2 text-[13.5px] font-bold text-slate-900 leading-snug">{g.label}</span>
                 </button>
@@ -749,7 +756,7 @@ function Shell({ profile, onSignOut }) {
                       Finance would say nothing at all. */}
                   <span className={"shrink-0 w-9 h-9 rounded-[10px] inline-flex items-center justify-center " +
                     ((GROUP_TINTS[currentGroup.key] || 'bg-slate-100') + GLYPH_INK)}>
-                    <Icon name={f.icon} size={18} strokeWidth={1.9} />
+                    <Icon name={f.icon} size={18} strokeWidth={1.9} className="block" />
                   </span>
                   <span className="mt-2 text-[13.5px] font-bold text-slate-900 leading-snug">{f.label}</span>
                   {extra && <span className="mt-1 block">{extra}</span>}
