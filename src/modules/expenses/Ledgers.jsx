@@ -1753,9 +1753,9 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
                                   left once the tile, the badge, the figure and
                                   the chevron had taken theirs. The indent
                                   halves, the tile and the badge stand down —
-                                  the row is already the third level and the
-                                  only one with a chevron — and what is left
-                                  wraps rather than truncating, because these
+                                  the indent already says which level this is —
+                                  and what is left wraps rather than
+                                  truncating, because these
                                   names are the whole point of the row and
                                   "FLR-Casual La…" is not one. */}
                               <div className="flex items-center gap-2 min-w-0">
@@ -1769,14 +1769,6 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
                               <Money paise={r.pending} tone={TONES.pending} />
                               <Money paise={r.credit} tone={TONES.credit} dashWhenZero cls={COL_SM} />
                               <Money paise={r.total} tone={TONES.total} bold cls={COL_SM} />
-                              {/* The count moved up beside the name, where the
-                                  other two levels carry theirs. What ends this
-                                  row instead is a chevron: the rows above
-                                  expand in place, this one opens the
-                                  allocations behind it. */}
-                              <span className="flex items-center justify-end text-slate-300">
-                                <Icon name="chevronRight" size={14} />
-                              </span>
                             </button>
                             <button onClick={function (e) { e.stopPropagation(); exportScopedPDF(g.deptId, r.typeId, r.subTypeId) }}
                               disabled={pdfBusy}
