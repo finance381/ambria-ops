@@ -689,15 +689,9 @@ function Shell({ profile, onSignOut }) {
                       {badge > 99 ? '99+' : badge}
                     </span>
                   )}
-                  {/* The chevron sits level with the tile rather than with the
-                      label, so a group whose name wraps to two lines does not
-                      drag it down out of line with its neighbours. */}
-                  <span className="w-full flex items-center justify-between">
-                    <span className={"shrink-0 w-9 h-9 rounded-[10px] inline-flex items-center justify-center " +
-                      (GROUP_TINTS[g.key] || 'bg-slate-100 text-slate-600')}>
-                      <Icon name={g.icon} size={18} strokeWidth={1.9} />
-                    </span>
-                    <Icon name="chevronRight" size={16} className="shrink-0 text-slate-300" />
+                  <span className={"shrink-0 w-9 h-9 rounded-[10px] inline-flex items-center justify-center " +
+                    (GROUP_TINTS[g.key] || 'bg-slate-100 text-slate-600')}>
+                    <Icon name={g.icon} size={18} strokeWidth={1.9} />
                   </span>
                   <span className="mt-2 text-[13.5px] font-bold text-slate-900 leading-snug">{g.label}</span>
                 </button>
