@@ -1051,8 +1051,15 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
                     {/* The figure gets a panel and a rule of its own. It was a
                         bold number floating at the end of a paragraph, which is
                         the one thing on this row you scan a column of. */}
-                    <div className="shrink-0 self-center flex items-stretch gap-4">
-                      <span aria-hidden="true" className="w-px self-stretch bg-slate-200" />
+                    {/* Side by side, the stamp's 128px slot and the figure's
+                        124px panel wanted 280 of a 298px card and everything
+                        to their left was crushed — which is also how the stamp
+                        ended up over the Event Date chip. On a phone they
+                        stack, the verdict above the figure it is a verdict on,
+                        and the rule between them goes because there are no
+                        longer two columns for it to separate. */}
+                    <div className="shrink-0 self-center flex flex-col sm:flex-row items-center sm:items-stretch gap-2 sm:gap-4">
+                      <span aria-hidden="true" className="hidden sm:block w-px self-stretch bg-slate-200" />
                       {/* Right of the rule is what this row came to, and
                           whether it has been checked is a verdict on that
                           rather than another label beside the description — so
@@ -1061,7 +1068,7 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
                           chips where it read as one more label. Nothing is
                           drawn for someone who cannot mark a row. */}
                       {(anyDrillChecked || canMarkChecked) && (
-                        <span className="shrink-0 w-[128px] self-center flex items-center justify-center"
+                        <span className="shrink-0 sm:w-[128px] self-center flex items-center justify-center"
                           onClick={function (ev) { ev.stopPropagation() }}>
                           {r._checkedBy ? (
                             <CheckedStamp
@@ -1086,9 +1093,9 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
                       {/* min-w for the same reason as the vendor ledger's: a
                           panel sized to its own figure puts the rule beside it
                           in a different place on every row. */}
-                      <div className="min-w-[124px] px-4 py-2.5 text-right">
+                      <div className="min-w-[124px] px-4 py-2.5 text-center sm:text-right">
                         <p className="text-[11.5px] font-medium text-slate-500 leading-none">Amount</p>
-                        <p className="mt-2 text-[17px] font-extrabold text-slate-900 tabular-nums leading-none" data-notranslate>{formatPoints(r.amount_paise)}</p>
+                        <p className="mt-1.5 inline-block px-2.5 py-1 rounded-lg bg-emerald-50 text-[17px] font-extrabold text-slate-900 tabular-nums leading-none" data-notranslate>{formatPoints(r.amount_paise)}</p>
                       </div>
                     </div>
                   </div>
