@@ -156,20 +156,24 @@ function LedgerBackdrop({ inAdmin }) {
   return (
     <div aria-hidden="true" className="pointer-events-none fixed inset-0 -z-10 overflow-hidden"
       style={{ backgroundColor: LEDGER_BG_FOOT }}>
-      {/* Fills the parent, and is never shorter than 100lvh.
-          height:100% alone would be the current viewport, which shrinks as
-          the address bar comes back and makes cover rescale the image —
-          the zoom-while-scrolling the wallet's backdrop warns about.
-          A fixed 100lvh alone left a strip whenever the parent measured
-          taller than that. Both together: no gap either way, and one size. */}
-      <div className="w-full"
+      {/* inset-0 and 100% 100%: the image is drawn to exactly this box,
+          whatever the box measures. cover kept its own proportions and so
+          left the flat tone showing wherever the two did not agree, which is
+          the line across the foot — and the tone could never match the
+          picture everywhere, because the picture is not one colour.
+          Stretched, there is nothing for it to meet.
+
+          Distortion is the price and it is not visible here: the file is
+          blurred, so there is no edge left in it whose proportions a reader
+          could check. That is also why rescaling as the address bar slides
+          does not show — the wallet's backdrop avoids cover for that reason,
+          but its artwork has detail to see moving and this one has none. */}
+      <div className="absolute inset-0"
         style={{
-          height: '100%',
-          minHeight: '100lvh',
           backgroundColor: LEDGER_BG_FOOT,
           backgroundImage: 'url(' + ledgerBg + ')',
-          backgroundSize: 'cover',
-          backgroundPosition: 'center top',
+          backgroundSize: '100% 100%',
+          backgroundPosition: 'center',
           backgroundRepeat: 'no-repeat',
         }} />
     </div>
