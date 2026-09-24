@@ -3303,7 +3303,20 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
               their own because the title has no spare width. */}
           <div className={inAdmin ? "relative flex items-start justify-between gap-4" : "relative"}>
             <div className="min-w-0">
-              <h1 className="font-display text-[30px] font-extrabold text-slate-900 leading-none tracking-[-0.03em]">Wallet</h1>
+              {/* The phone heading takes the vendor ledger's face, the way
+                  that screen and the expense ledger already do. font-bold
+                  rather than extrabold because Cormorant Garamond has no
+                  800 — asking for one gets a synthesised weight, which on a
+                  face with strokes this fine smears them.
+
+                  32 rather than 30: the same word in a display serif reads
+                  smaller than in Jakarta at the same size, and this is the
+                  largest thing on the screen.
+
+                  Admin keeps Jakarta. There the wallet is one page of a
+                  console whose other pages all head in that face. */}
+              <h1 className={"text-slate-900 leading-none tracking-[-0.03em] " +
+                (inAdmin ? "font-display text-[30px] font-extrabold" : "font-serif text-[32px] font-bold")}>Wallet</h1>
               <p className="mt-2 text-[14px] font-medium text-slate-500">Manage and track wallet balances</p>
             </div>
             {inAdmin && <div className="shrink-0">{renderWalletActions()}</div>}
