@@ -122,7 +122,18 @@ serve(async function (req) {
       }
 
       if (!metaRes.ok) {
-        var rejMsg = (metaData.error && metaData.error.message) || "Meta rejected the template"
+        // Meta's top-level error.message is usually a generic wrapper
+        // ("Invalid parameter") — the actually-useful reason is one level
+        // deeper, in error_user_msg or error_data.details, when present.
+        var metaErr = metaData.error || {}
+        var rejMsg = metaErr.error_user_msg
+          || (metaErr.error_data && metaErr.error_data.details)
+          || metaErr.message
+          || "Meta rejected the template"
+        // 422 doesn't hit bad()'s own >=500 logging — log the full error object
+        // here (not metaBody/template text) so a still-vague rejMsg has the raw
+        // Meta response to check in the function logs.
+        console.error("wa-template-meta meta_rejected (template " + templateId + "): " + JSON.stringify(metaErr))
         await authClient.rpc("rpc_wa_template_sync", {
           p_template_id: templateId, p_meta_status: "rejected", p_meta_id: null, p_rejection_reason: rejMsg,
         })
