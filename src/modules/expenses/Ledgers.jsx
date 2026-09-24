@@ -154,6 +154,13 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
   var [venueFilter, setVenueFilter] = useState('')
   var [statusFilter, setStatusFilter] = useState('')
   var [pendingOnly, setPendingOnly] = useState(false)
+  // The three dropdowns and the toggle go behind a button. Out on the bar they
+  // were four controls reading "All …" taking most of the row to say that
+  // nothing was narrowed — the same trade the vendor and inventory ledgers
+  // already made. The button carries the count, so a closed panel still says
+  // how many are on; otherwise hiding them hides the fact that the list is not
+  // showing everything.
+  var [filtersOpen, setFiltersOpen] = useState(false)
   var [pdfBusy, setPdfBusy] = useState(false)
 
   // Master maps
@@ -1103,6 +1110,9 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
     )
   }
 
+  var ledgerFilterCount = (userFilter ? 1 : 0) + (venueFilter ? 1 : 0) +
+    (statusFilter ? 1 : 0) + (pendingOnly ? 1 : 0)
+
   // ─── LIST VIEW ───
   return (
     <div className="space-y-3">
@@ -1277,79 +1287,22 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
               className="w-full"
             />
           </div>
-          {/* A native select cannot hold a glyph, so the glyph is placed over
-              it and the text is indented past it. appearance-none takes the
-              platform arrow with it, which is why one is drawn on the right —
-              the two of them at once was a chevron beside a chevron. */}
-          <div className="relative flex-1 min-w-[150px]">
-            <span aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
-              <Icon name="users" size={15} />
-            </span>
-            <select value={userFilter} onChange={function (e) { setUserFilter(e.target.value) }}
-              aria-label="Filter by user"
-              className={SELECT_FIELD} style={{ fontSize: '16px' }}>
-              <option value="">All users</option>
-              {users.map(function (u) { return <option key={u.id} value={u.id}>{u.name}</option> })}
-            </select>
-            <span aria-hidden="true" className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
-              <Icon name="chevronDown" size={14} />
-            </span>
-          </div>
-          {/* A native select cannot hold a glyph, so the glyph is placed over
-              it and the text is indented past it. appearance-none takes the
-              platform arrow with it, which is why one is drawn on the right —
-              the two of them at once was a chevron beside a chevron. */}
-          <div className="relative flex-1 min-w-[150px]">
-            <span aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
-              <Icon name="mapPin" size={15} />
-            </span>
-            <select value={venueFilter} onChange={function (e) { setVenueFilter(e.target.value) }}
-              aria-label="Filter by venue"
-              className={SELECT_FIELD} style={{ fontSize: '16px' }}>
-              <option value="">All venues</option>
-              {venues.map(function (v) { return <option key={v.id} value={v.id}>{v.code ? (v.code + ' — ' + v.name) : v.name}</option> })}
-            </select>
-            <span aria-hidden="true" className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
-              <Icon name="chevronDown" size={14} />
-            </span>
-          </div>
-          {/* A native select cannot hold a glyph, so the glyph is placed over
-              it and the text is indented past it. appearance-none takes the
-              platform arrow with it, which is why one is drawn on the right —
-              the two of them at once was a chevron beside a chevron. */}
-          <div className="relative flex-1 min-w-[150px]">
-            <span aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
-              <Icon name="filter" size={15} />
-            </span>
-            <select value={statusFilter} onChange={function (e) { setStatusFilter(e.target.value) }}
-              aria-label="Filter by status"
-              className={SELECT_FIELD} style={{ fontSize: '16px' }}>
-              <option value="">All status</option>
-              <option value="recorded">Recorded</option>
-              <option value="flagged">Resubmit</option>
-              <option value="acknowledged">Acknowledged</option>
-              <option value="deducted">Deducted</option>
-            </select>
-            <span aria-hidden="true" className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
-              <Icon name="chevronDown" size={14} />
-            </span>
-          </div>
-          <button type="button" onClick={function () { setPendingOnly(!pendingOnly) }} aria-pressed={pendingOnly}
-            className={"h-11 px-3.5 inline-flex items-center gap-2 text-[12.5px] font-bold rounded-xl border transition-all duration-150 " +
-              (pendingOnly
-                ? "bg-indigo-50 border-indigo-300 text-indigo-800"
-                : "bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:text-slate-900")}>
-            {/* A switch, so its state is visible without having to remember
-                what the unpressed colour looked like.
-
-                Indigo, not amber. Amber is what this page says about money that
-                is pending — the figure, the column, the card. On a filter it was
-                saying the same colour about something else entirely: that the
-                filter is on, which everything else here says in indigo. */}
-            <span aria-hidden="true" className={"w-8 h-[18px] rounded-full p-0.5 transition-colors " + (pendingOnly ? "bg-indigo-600" : "bg-slate-300")}>
-              <span className={"block w-[14px] h-[14px] rounded-full bg-white transition-transform " + (pendingOnly ? "translate-x-[14px]" : "")} />
-            </span>
-            Pending only
+          {/* Beside the search, not instead of it: the search is the one you
+              reach for without thinking, the rest is a narrowing you do
+              occasionally. */}
+          <button type="button" onClick={function () { setFiltersOpen(!filtersOpen) }}
+            aria-expanded={filtersOpen}
+            className={"h-11 px-4 inline-flex items-center gap-2 text-[12.5px] font-bold rounded-xl border transition-colors " +
+              (filtersOpen || ledgerFilterCount > 0
+                ? "border-indigo-300 bg-indigo-50 text-indigo-700"
+                : "border-slate-200 bg-white text-slate-700 hover:border-slate-300")}>
+            <Icon name="filter" size={15} />
+            Filters
+            {ledgerFilterCount > 0 && (
+              <span data-notranslate className="min-w-[18px] px-1.5 rounded-md bg-indigo-600 text-white text-[10.5px] font-bold tabular-nums">
+                {ledgerFilterCount}
+              </span>
+            )}
           </button>
           {/* Both of these do the same harmless thing, so they look the same.
               Green and red on a pair of downloads read as a verdict on the file,
@@ -1365,6 +1318,97 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
             {pdfBusy ? 'Generating…' : 'PDF'}
           </button>
         </div>
+
+        {filtersOpen && (
+          <div className="rounded-2xl border border-slate-200 bg-white p-3.5">
+            <div className="flex items-center justify-between gap-3 mb-2.5">
+              <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500">Narrow the list</p>
+              {ledgerFilterCount > 0 && (
+                <button type="button"
+                  onClick={function () { setUserFilter(''); setVenueFilter(''); setStatusFilter(''); setPendingOnly(false) }}
+                  className="text-[11.5px] font-bold text-rose-600 hover:text-rose-700 transition-colors">
+                  Clear all
+                </button>
+              )}
+            </div>
+            <div className="flex flex-wrap items-center gap-2.5">
+          {/* A native select cannot hold a glyph, so the glyph is placed over
+              it and the text is indented past it. appearance-none takes the
+              platform arrow with it, which is why one is drawn on the right —
+              the two of them at once was a chevron beside a chevron. */}
+          <div className="relative flex-1 min-w-[150px]">
+            <span aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+              <Icon name="users" size={15} />
+            </span>
+            <select value={userFilter} onChange={function (e) { setUserFilter(e.target.value) }}
+              aria-label="Filter by user"
+              className={SELECT_FIELD} style={{ fontSize: '16px' }}>
+              <option value="">All users</option>
+              {users.map(function (u) { return <option key={u.id} value={u.id}>{u.name}</option> })}
+            </select>
+            <span aria-hidden="true" className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
+              <Icon name="chevronDown" size={14} />
+            </span>
+          </div>
+          {/* A native select cannot hold a glyph, so the glyph is placed over
+              it and the text is indented past it. appearance-none takes the
+              platform arrow with it, which is why one is drawn on the right —
+              the two of them at once was a chevron beside a chevron. */}
+          <div className="relative flex-1 min-w-[150px]">
+            <span aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+              <Icon name="mapPin" size={15} />
+            </span>
+            <select value={venueFilter} onChange={function (e) { setVenueFilter(e.target.value) }}
+              aria-label="Filter by venue"
+              className={SELECT_FIELD} style={{ fontSize: '16px' }}>
+              <option value="">All venues</option>
+              {venues.map(function (v) { return <option key={v.id} value={v.id}>{v.code ? (v.code + ' — ' + v.name) : v.name}</option> })}
+            </select>
+            <span aria-hidden="true" className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
+              <Icon name="chevronDown" size={14} />
+            </span>
+          </div>
+          {/* A native select cannot hold a glyph, so the glyph is placed over
+              it and the text is indented past it. appearance-none takes the
+              platform arrow with it, which is why one is drawn on the right —
+              the two of them at once was a chevron beside a chevron. */}
+          <div className="relative flex-1 min-w-[150px]">
+            <span aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+              <Icon name="filter" size={15} />
+            </span>
+            <select value={statusFilter} onChange={function (e) { setStatusFilter(e.target.value) }}
+              aria-label="Filter by status"
+              className={SELECT_FIELD} style={{ fontSize: '16px' }}>
+              <option value="">All status</option>
+              <option value="recorded">Recorded</option>
+              <option value="flagged">Resubmit</option>
+              <option value="acknowledged">Acknowledged</option>
+              <option value="deducted">Deducted</option>
+            </select>
+            <span aria-hidden="true" className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
+              <Icon name="chevronDown" size={14} />
+            </span>
+          </div>
+          <button type="button" onClick={function () { setPendingOnly(!pendingOnly) }} aria-pressed={pendingOnly}
+            className={"h-11 px-3.5 inline-flex items-center gap-2 text-[12.5px] font-bold rounded-xl border transition-all duration-150 " +
+              (pendingOnly
+                ? "bg-indigo-50 border-indigo-300 text-indigo-800"
+                : "bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:text-slate-900")}>
+            {/* A switch, so its state is visible without having to remember
+                what the unpressed colour looked like.
+
+                Indigo, not amber. Amber is what this page says about money that
+                is pending — the figure, the column, the card. On a filter it was
+                saying the same colour about something else entirely: that the
+                filter is on, which everything else here says in indigo. */}
+            <span aria-hidden="true" className={"w-8 h-[18px] rounded-full p-0.5 transition-colors " + (pendingOnly ? "bg-indigo-600" : "bg-slate-300")}>
+              <span className={"block w-[14px] h-[14px] rounded-full bg-white transition-transform " + (pendingOnly ? "translate-x-[14px]" : "")} />
+            </span>
+            Pending only
+          </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {loading && deptGroups.length === 0 ? (
