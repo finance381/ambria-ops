@@ -1170,23 +1170,28 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
 
                   A dot, not a glyph in a disc: the disc was 32px of a 242px
                   row, and the widest of these lines already wants 182. */}
-              {/* Across from 380px, where each of the three has about 98px —
-                  which is what "17,41,004.91 pts" wants. Below that they
-                  stack, because three columns of 84 would cut all three. A
+              {/* Across from 400px, not 380. A column has to hold the wider
+                  of its two lines plus its padding: the figure is 98px and
+                  "Debits Pending" with its dot is 96, so 114 each and 346 for
+                  the three — which is a 400px viewport once the page and the
+                  card have taken theirs. At 380 the label was cut to "Debits
+                  Pen…" and the last two figures ran into each other.
+
+                  Below that they stack, one to a line, which always fits. A
                   rule rather than a panel: they are part of the figure above,
                   not a box under it. */}
-              <span className="mt-3 pt-3 border-t border-white/10 grid grid-cols-1 min-[380px]:grid-cols-3 gap-y-2 min-[380px]:gap-x-2 min-[380px]:divide-x divide-white/10">
+              <span className="mt-3 pt-3 border-t border-white/10 grid grid-cols-1 min-[400px]:grid-cols-3 gap-y-1.5 min-[400px]:gap-x-2 min-[400px]:divide-x divide-white/10">
                 {[{ label: 'Acknowledged', value: totals.committed, dot: 'bg-emerald-400' },
                   { label: 'Debits Pending', value: totals.pending, dot: 'bg-amber-400' },
                   { label: 'Total Credits', value: totals.credit, dot: 'bg-rose-400' }].map(function (c, i) {
                   return (
-                    <span key={c.label} className={'min-w-0 flex items-center justify-between gap-2 min-[380px]:block ' +
-                      (i === 0 ? 'min-[380px]:pr-2' : i === 1 ? 'min-[380px]:px-2' : 'min-[380px]:pl-2')}>
+                    <span key={c.label} className={'min-w-0 flex items-center justify-between gap-2 min-[400px]:block ' +
+                      (i === 0 ? 'min-[400px]:pr-2' : i === 1 ? 'min-[400px]:px-2' : 'min-[400px]:pl-2')}>
                       <span className="flex items-center gap-1.5 min-w-0">
                         <span aria-hidden="true" className={'shrink-0 w-1.5 h-1.5 rounded-full ' + c.dot} />
                         <span className="text-[11.5px] font-medium text-slate-400 truncate">{c.label}</span>
                       </span>
-                      <span data-notranslate className="shrink-0 min-[380px]:block min-[380px]:mt-1 text-[13px] font-bold text-white tabular-nums whitespace-nowrap">
+                      <span data-notranslate className="shrink-0 min-[400px]:block min-[400px]:mt-1 text-[13px] font-bold text-white tabular-nums whitespace-nowrap">
                         {formatPoints(c.value)}
                       </span>
                     </span>
