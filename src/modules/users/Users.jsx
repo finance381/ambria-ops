@@ -649,17 +649,16 @@ function Users({ profile }) {
               <th className="text-left px-4 py-3 text-[11px] font-bold text-gray-500 uppercase tracking-wider">Phone</th>
               <th className="text-left px-4 py-3 text-[11px] font-bold text-gray-500 uppercase tracking-wider">Role</th>
               <th className="text-left px-4 py-3 text-[11px] font-bold text-gray-500 uppercase tracking-wider" title="LMS user_id mapped to profile">LMS</th>
-              <th className="text-left px-4 py-3 text-[11px] font-bold text-gray-500 uppercase tracking-wider">Categories</th>
+              <th className="text-left px-4 py-3 text-[11px] font-bold text-gray-500 uppercase tracking-wider">Access</th>
               <th className="text-left px-4 py-3 text-[11px] font-bold text-gray-500 uppercase tracking-wider">Status</th>
               <th className="px-4 py-3" style={{ width: 80 }}></th>
             </tr>
           </thead>
           <tbody>
             {filtered.map(function (user) {
-              var userCats = (user.category_ids || []).map(function (cid) {
-                var cat = categories.find(function (c) { return c.id === cid })
-                return cat ? cat.name : null
-              }).filter(Boolean)
+              var expTypeCount = (user.expense_type_ids || []).length
+              var catCount = (user.category_ids || []).length
+              var permCount = (user.mobile_permissions || []).length + (user.desktop_permissions || []).length
 
               return (
                 <tr key={user.id} className="border-b border-gray-100 hover:bg-gray-50">
@@ -696,14 +695,16 @@ function Users({ profile }) {
                     )}
                   </td>
                   <td className="px-4 py-3">
-                    <div className="flex flex-wrap gap-1">
-                      {userCats.length > 0 ? userCats.map(function (name) {
-                        return (
-                          <span key={name} className="text-[10px] bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded font-medium">
-                            {name}
-                          </span>
-                        )
-                      }) : <span className="text-[11px] text-gray-400">—</span>}
+                    <div className="flex flex-nowrap gap-1">
+                      <span className="text-[10px] bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded font-medium whitespace-nowrap" title="Expense types">
+                        {expTypeCount} types
+                      </span>
+                      <span className="text-[10px] bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded font-medium whitespace-nowrap" title="Inventory categories">
+                        {catCount} categories
+                      </span>
+                      <span className="text-[10px] bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded font-medium whitespace-nowrap" title="Mobile + desktop permissions">
+                        {permCount} perms
+                      </span>
                     </div>
                   </td>
                   <td className="px-4 py-3">

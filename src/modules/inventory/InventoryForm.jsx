@@ -57,6 +57,12 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved }) {
   var [saving, setSaving] = useState(false)
   var [errors, setErrors] = useState({})
   var itemSearchTimer = useRef(null)
+  // validate()'s dimension-based name-generation sets this synchronously so
+  // handleSubmit can use it right away — setName() alone isn't enough since
+  // that state update isn't visible until the next render, and handleSubmit
+  // keeps running (and used to read the still-empty `name` state) in the
+  // meantime.
+  var resolvedNameRef = useRef('')
   var [dimensionValues, setDimensionValues] = useState(seed?.dimensions || [])
   var [categoryDimFields, setCategoryDimFields] = useState([])
   var [cateringStoreSubDeptId, setCateringStoreSubDeptId] = useState(null)
@@ -374,6 +380,7 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved }) {
     }
     if (!effectiveName) errs.item = 'Item name is required'
     if (!qty && qty !== 0) errs.qty = 'Quantity is required'
+    resolvedNameRef.current = effectiveName
     setErrors(errs); return Object.keys(errs).length === 0
   }
 
@@ -387,11 +394,12 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved }) {
 
   async function handleSubmit(e) {
     e.preventDefault(); if (saving) return; if (!validate()) return; setSaving(true)
+    var effectiveName = resolvedNameRef.current || name.trim()
     var hindiName = nameHindi.trim()
-    if (name.trim() && !hindiName) {
+    if (effectiveName && !hindiName) {
       hindiName = await new Promise(function (resolve) {
         var done = false
-        translateToHindi(name.trim(), function (translated) {
+        translateToHindi(effectiveName, function (translated) {
           if (!done) { done = true; resolve(translated || '') }
         })
         setTimeout(function () { if (!done) { done = true; resolve('') } }, 3000)
@@ -417,9 +425,9 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved }) {
     if (cleanDims.length === 0) cleanDims = null
     var payload
     if (isCatStore) {
-      payload = { name: name.trim(), category_id: Number(categoryId), sub_category_id: subCategoryId ? Number(subCategoryId) : null, type: type, qty: Number(qty) || 0, unit: unit, description: description.trim() || null, name_hindi: hindiName || null, brand: packSizeBrand.trim() || null, pack_size_qty: packSizeQty ? Number(packSizeQty) : null, pack_size_unit: packSizeUnit, season_reorder_qty: minOrderQty ? Number(minOrderQty) : null, off_season_reorder_qty: reorderQty ? Number(reorderQty) : null, rate_paise: ratePaise ? Math.round(Number(ratePaise) * 100) : null, is_asset: isAsset, department: allocations[0]?.department || null, dimensions: cleanDims }
+      payload = { name: effectiveName, category_id: Number(categoryId), sub_category_id: subCategoryId ? Number(subCategoryId) : null, type: type, qty: Number(qty) || 0, unit: unit, description: description.trim() || null, name_hindi: hindiName || null, brand: packSizeBrand.trim() || null, pack_size_qty: packSizeQty ? Number(packSizeQty) : null, pack_size_unit: packSizeUnit, season_reorder_qty: minOrderQty ? Number(minOrderQty) : null, off_season_reorder_qty: reorderQty ? Number(reorderQty) : null, rate_paise: ratePaise ? Math.round(Number(ratePaise) * 100) : null, is_asset: isAsset, department: allocations[0]?.department || null, dimensions: cleanDims }
     } else {
-      payload = { name: name.trim(), category_id: Number(categoryId), sub_category_id: subCategoryId ? Number(subCategoryId) : null, type: type, qty: Number(qty) || 0, unit: unit, description: description.trim() || null, name_hindi: hindiName || null, min_order_qty: minOrderQty ? Number(minOrderQty) : null, reorder_qty: reorderQty ? Number(reorderQty) : null, rate_paise: ratePaise ? Math.round(Number(ratePaise) * 100) : null, is_asset: isAsset, department: allocations[0]?.department || null, dimensions: cleanDims }
+      payload = { name: effectiveName, category_id: Number(categoryId), sub_category_id: subCategoryId ? Number(subCategoryId) : null, type: type, qty: Number(qty) || 0, unit: unit, description: description.trim() || null, name_hindi: hindiName || null, min_order_qty: minOrderQty ? Number(minOrderQty) : null, reorder_qty: reorderQty ? Number(reorderQty) : null, rate_paise: ratePaise ? Math.round(Number(ratePaise) * 100) : null, is_asset: isAsset, department: allocations[0]?.department || null, dimensions: cleanDims }
     }
     if (!isEdit && profile?.id) { payload.submitted_by = profile.id }
     if (!isEdit) {
@@ -464,6 +472,17 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved }) {
         }
 
         if (mergeTarget) {
+          // Bump the target's own qty by the edited item's qty BEFORE touching
+          // allocations — this never happened before, so the allocation-vs-qty
+          // trigger rejected the merge every time the target's existing qty
+          // couldn't cover the incoming allocations, even though the merge
+          // itself was legitimate. Mirrors the equivalent NEW-ITEM merge path
+          // below (existing.qty + qty).
+          var mergedQty = Math.round(((mergeTarget.qty || 0) + (Number(qty) || 0)) * 1000) / 1000
+          var { error: qtyBumpErr } = await supabase.from(tableName).update({ qty: mergedQty }).eq('id', mergeTarget.id)
+          if (qtyBumpErr) throw new Error('Merge qty update failed: ' + qtyBumpErr.message)
+          mergeTarget.qty = mergedQty
+
           // Gather all allocations to merge: form entries + any DB entries not in form
           var { data: dbAllocs } = await supabase.from(allocTable).select('*').eq('item_id', item.id)
           var { data: targetAllocs } = await supabase.from(allocTable).select('*').eq('item_id', mergeTarget.id)
@@ -570,7 +589,7 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved }) {
         }
       }
       var logAction = isEdit ? 'ITEM_UPDATE' : 'ITEM_SUBMIT'
-      var logDetail = name.trim() + ' | Cat: ' + (categories.find(function (c) { return String(c.id) === categoryId })?.name || '—') + ' | Qty: ' + (Number(qty) || 0)
+      var logDetail = effectiveName + ' | Cat: ' + (categories.find(function (c) { return String(c.id) === categoryId })?.name || '—') + ' | Qty: ' + (Number(qty) || 0)
       try { await logActivity(logAction, logDetail) } catch (_) {}
       onSaved(targetItem, tableName)
     } catch (err) { setErrors(function (prev) { return { ...prev, submit: err.message || 'Failed to save' } }) }
