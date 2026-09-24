@@ -675,14 +675,14 @@ function Shell({ profile, onSignOut }) {
           <>
           {/* The wallet card that used to head this screen is the chip on
               the bar now — visible everywhere instead of only here. */}
-          <div className="grid grid-cols-2 auto-rows-fr gap-3 pt-2">
+          <div className="grid grid-cols-2 auto-rows-fr gap-2.5 pt-2">
             {visibleGroups.map(function (g) {
               var badge = groupBadge(g)
               return (
                 <button
                   key={g.key}
                   onClick={function () { openGroup(g) }}
-                  className="relative bg-white/85 backdrop-blur-xl border border-white/70 shadow-[0_2px_10px_rgba(15,23,42,0.07)] rounded-2xl p-3.5 flex flex-col items-start text-left hover:bg-white hover:shadow-[0_8px_22px_rgba(15,23,42,0.10)] active:scale-[0.98] transition-all"
+                  className="relative bg-white/85 backdrop-blur-xl border border-white/70 shadow-[0_2px_10px_rgba(15,23,42,0.07)] rounded-2xl p-3 flex flex-col items-start text-left hover:bg-white hover:shadow-[0_8px_22px_rgba(15,23,42,0.10)] active:scale-[0.98] transition-all"
                 >
                   {badge > 0 && (
                     <span className="absolute -top-1.5 -right-1.5 min-w-[22px] h-[22px] px-1.5 bg-red-500 text-white text-[10.5px] font-bold rounded-full flex items-center justify-center shadow-[0_2px_6px_rgba(239,68,68,0.45)]">
@@ -699,7 +699,7 @@ function Shell({ profile, onSignOut }) {
                     </span>
                     <Icon name="chevronRight" size={16} className="shrink-0 text-slate-300" />
                   </span>
-                  <span className="mt-3 text-[14.5px] font-bold text-slate-900 leading-snug">{g.label}</span>
+                  <span className="mt-2 text-[13.5px] font-bold text-slate-900 leading-snug">{g.label}</span>
                 </button>
               )
             })}
