@@ -101,6 +101,11 @@ var TONES = {
 // Both of these sit in the same box — a width and a right margin the heading
 // and the button agree on — so the column has one edge instead of the heading
 // keeping its own padding and the button its own margin.
+// Back to the artwork as it was first converted: the whole picture at blur
+// radius 10, not the flat strip of floor at radius 25 scaled six times up the
+// screen. The wall-and-floor edge inside it comes back with it — that is the
+// trade for keeping the composition and the lighter blur.
+//
 // A flat tone, not a gradient continuing the artwork's last row.
 //
 // That technique suits the wallet and the vendor ledger because their
@@ -110,7 +115,7 @@ var TONES = {
 //
 // The value is the average of the image's own last rows, so a sliver of it
 // continues the picture rather than interrupting it.
-var LEDGER_BG_FOOT = '#D5C7B4'
+var LEDGER_BG_FOOT = '#C6B9A8'
 
 // The ground behind the phone ledger. The artwork covers the whole screen
 // rather than sitting at the top with a colour under it.
