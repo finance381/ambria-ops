@@ -101,12 +101,17 @@ var TONES = {
 // Both of these sit in the same box — a width and a right margin the heading
 // and the button agree on — so the column has one edge instead of the heading
 // keeping its own padding and the button its own margin.
-// Sampled from the artwork's own last row, after the blur, so the page below
-// the picture continues it instead of ending in a seam.
-var LEDGER_BG_FOOT = 'linear-gradient(to right, ' + [
-  '#75715F 0%', '#ABA08F 4%', '#C1B4AA 25%', '#B2A79F 42%',
-  '#CFC0B2 60%', '#E9D8C7 78%', '#F6E0C8 92%', '#E6D7C7 100%',
-].join(', ') + ')'
+// A flat tone, not a gradient continuing the artwork's last row.
+//
+// That technique suits the wallet and the vendor ledger because their
+// pictures end on something calm. This one ends on foliage at the left, so
+// continuing it drew that dark olive — #75715F at the 0% stop — down the
+// whole page below the image, which is the band across the foot.
+//
+// Taken from the right 65% of the bottom instead, which is the floor: one
+// quiet tone for the page to end on rather than a stripe of whatever object
+// happened to be standing at the edge of the frame.
+var LEDGER_BG_FOOT = '#DBCCBC'
 
 // The ground behind the phone ledger, built the way the wallet's and the
 // vendor ledger's are: the artwork at its own proportions at the top, and
@@ -119,10 +124,10 @@ function LedgerBackdrop({ inAdmin }) {
   if (inAdmin) return null
   return (
     <div aria-hidden="true" className="pointer-events-none fixed inset-0 -z-10 flex flex-col overflow-hidden"
-      style={{ backgroundColor: '#CDBFB2' }}>
+      style={{ backgroundColor: LEDGER_BG_FOOT }}>
       <img src={ledgerBg} alt="" fetchpriority="high" decoding="async"
         className="w-full shrink-0" style={{ aspectRatio: '996 / 1578' }} />
-      <div className="flex-1" style={{ backgroundImage: LEDGER_BG_FOOT }} />
+      <div className="flex-1" style={{ backgroundColor: LEDGER_BG_FOOT }} />
     </div>
   )
 }
