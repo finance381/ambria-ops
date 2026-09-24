@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { supabase } from '../../lib/supabase'
-import { formatPoints, formatDate, formatDateTime, formatTime } from '../../lib/format'
+import { formatPoints, formatDate, formatDateTime } from '../../lib/format'
 import { pushBack } from '../../lib/backNav'
 import { registerPdfFont } from '../../lib/pdfFont'
 import { openOrSharePdf } from '../../lib/pdfOutput'
@@ -1169,26 +1169,25 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
                       </div>
                       {r.remarks && <p className="mt-1 text-[12px] italic text-slate-500">"{r.remarks}"</p>}
                       {r.venue_id && <p className="mt-1 text-[11.5px] text-slate-500">Venue: <span className="font-semibold text-slate-700">{venueMap[r.venue_id] || '—'}</span></p>}
+                      {/* A line each, not a box each. The label over the value
+                          in a bordered pill cost two lines and about 34px of
+                          height to say one short thing — and a card that is
+                          mostly one-line facts had one part of it built out of
+                          boxes for no reason the reader can see.
+
+                          The label stays, because a glyph alone does not say
+                          which field this is: these are whatever the expense
+                          type was configured with, so the words are the only
+                          thing that identifies them. Grey label, dark value,
+                          the way the venue line above already reads. */}
                       {r._fieldChips && r._fieldChips.length > 0 && (
-                        <div className="flex flex-wrap gap-2 mt-2.5">
+                        <div className="mt-1.5 flex flex-col gap-0.5">
                           {r._fieldChips.map(function (c, i) {
-                            // The label and the value were side by side in a
-                            // pill, so a two-word value wrapped inside it and
-                            // the pill grew into a box twice the height of its
-                            // neighbour. Stacked, the value gets the pill's
-                            // width and the row of them stays one height.
-                            //
-                            // Weight, not colour. Indigo on the value made
-                            // every chip look like a link to somewhere, and a
-                            // row of them a row of links; the label is already
-                            // the quiet half of the pair.
                             return (
-                              <span key={i} className="inline-flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-slate-50 border border-slate-200">
-                                <Icon name={glyphForLabel(c.label)} size={13} className="shrink-0 text-slate-400" />
-                                <span className="min-w-0">
-                                  <span className="block text-[10.5px] text-slate-500 leading-tight">{c.label}</span>
-                                  <span className="block text-[11.5px] font-bold text-slate-800 leading-tight">{c.value}</span>
-                                </span>
+                              <span key={i} className="inline-flex items-center text-[11.5px] text-slate-500 min-w-0">
+                                <Icon name={glyphForLabel(c.label)} size={13} className="shrink-0 mr-1.5 text-slate-400" />
+                                <span className="shrink-0">{c.label}:</span>
+                                <span className="ml-1 font-semibold text-slate-700 truncate">{c.value}</span>
                               </span>
                             )
                           })}
@@ -1226,24 +1225,21 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
                         longer two columns for it to separate. */}
                     <div className="shrink-0 self-center flex flex-col sm:flex-row items-center sm:items-stretch gap-2 sm:gap-4">
                       <span aria-hidden="true" className="hidden sm:block w-px self-stretch bg-slate-200" />
-                      {/* When it was logged, over the verdict on it. It used
-                          to run along the facts line with the event date and
-                          the name, where it was the one fact of the three that
-                          is about the record rather than the spending.
+                      {/* When it was logged, over the verdict on it — the two
+                          things on this card that are about the record rather
+                          than about the spending.
 
-                          Two lines, not one. Whole, it measures 155px at its
-                          widest — "30 Sept 2026, 12:08 pm" — and this slot is
-                          128; on a phone the column is beside the description
-                          rather than under it, so 155 here would have left the
-                          description about 95px. Stacked it is 94 with the
-                          glyph, which fits both without widening anything. */}
-                      <div className="shrink-0 sm:w-[128px] self-center flex flex-col items-center gap-1.5">
-                        <span className="inline-flex items-start gap-1.5 text-[11px] leading-tight text-slate-500">
-                          <Icon name="clock" size={13} className="shrink-0 mt-px text-slate-400" />
-                          <span data-notranslate>
-                            <span className="block font-semibold text-slate-700 whitespace-nowrap">{formatDate(r.created_at)}</span>
-                            <span className="block whitespace-nowrap">{formatTime(r.created_at)}</span>
-                          </span>
+                          One line, which is wider than the stamp's 128px slot:
+                          "30 Sept 2026, 12:08 pm" measures 153 at 11px with
+                          the glyph, so the column is 156 and the description
+                          beside it gives up 28px. On a 360px phone that leaves
+                          the description about 125, where it wraps rather than
+                          truncates — the cost of the single line, paid where
+                          it does least harm. */}
+                      <div className="shrink-0 sm:w-[156px] self-center flex flex-col items-center gap-1.5">
+                        <span className="inline-flex items-center gap-1.5 text-[11px] leading-tight text-slate-500 whitespace-nowrap">
+                          <Icon name="clock" size={13} className="shrink-0 text-slate-400" />
+                          <span className="font-semibold text-slate-700" data-notranslate>{formatDateTime(r.created_at)}</span>
                         </span>
                       {/* Right of the rule is what this row came to, and
                           whether it has been checked is a verdict on that
