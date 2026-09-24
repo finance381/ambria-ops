@@ -1449,9 +1449,19 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
                 className="h-9 px-3 bg-white border border-slate-200 rounded-lg text-[12.5px] text-slate-700 hover:border-slate-300 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-[border-color,box-shadow] duration-150 flex-1 min-w-[130px]" style={{ fontSize: '16px' }} />
             </>
           )}
-          {/* 180px cut the placeholder to "Search dept / typ". It reads in
-              full from 240, and the row wraps rather than squeezing it. */}
-          <div className="flex-1 min-w-[240px]">
+          {/* The placeholder measures 238px at 16px, so the field wants 286
+              to hold it whole once the magnifier and the right pad are paid
+              for — 240 never did, and this said otherwise.
+
+              What 240 did do was push the Filters button onto its own line.
+              A 360px screen leaves 328 inside px-4; 240 + 10 + 98 is 348, so
+              the row broke there while a 390px screen's 358 just took it.
+              200 is the floor now: the pair costs 308 and fits, and flex-1
+              still hands the field the 318 it actually gets, which is more
+              than the 286 the placeholder needs. Below 360 the placeholder
+              clips instead of the button leaving the row — a cut word is
+              easier to read past than a control that moved. */}
+          <div className="flex-1 min-w-[200px] sm:min-w-[240px]">
             <SearchField
               value={search}
               onChange={function (v) { setSearch(v) }}
