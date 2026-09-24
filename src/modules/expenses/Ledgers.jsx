@@ -1335,14 +1335,22 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
                 The column exists when any row in the list is checked, and is
                 empty on the rows that are not — so every rule lands on the same
                 x. When nothing is checked there is no column to reserve. */}
-            {drillRows.slice(0, drillPaint).map(function (r) {
+            {drillRows.slice(0, drillPaint).map(function (r, ri) {
               // The row hands over what it is already showing, so the overlay
               // opens on it rather than on a spinner. amount_paise is this
               // allocation's share rather than the expense's total, so it is
               // deliberately not passed — a figure that changes under you a
               // moment after it appears is worse than one that arrives late.
               return (
-                <div key={r.allocation_id}
+                // Not allocation_id on its own. Nothing guarantees it is
+                // unique down this list — v_ledger emits a row per ledger
+                // movement, and a cost transfer produces more than one for
+                // the same allocation — and a repeated or null key makes
+                // React keep one child and drop the rest. Worse, which ones
+                // survive differs between a first mount and an update, which
+                // is how the same filter showed four rows on opening and six
+                // after coming back to it.
+                <div key={String(r.allocation_id) + ':' + (r.source || '') + ':' + ri}
                   onClick={function () {
                     openExpenseDetail(r.expense_id, {
                       description: r.description,
