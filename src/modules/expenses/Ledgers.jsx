@@ -118,28 +118,6 @@ var TONES = {
 // continues the picture rather than interrupting it.
 var LEDGER_BG_FOOT = '#C6B9A8'
 
-// The two shapes a PDF can take, in the words the sheet shows. Out here rather
-// than inline, because the difference between them is a fact about the exports
-// and not about the control that offers them. The scope they apply to is named
-// above them in the sheet, so these no longer have to describe it.
-var PDF_SHAPES = [
-  {
-    mode: 'summary',
-    glyph: 'list',
-    // A verb. "Summary" beside "Every allocation" reads as two more things to
-    // choose between, which is what the list above them is for — and after
-    // ticking two types the question in hand is how to finish, not what to
-    // pick next.
-    action: 'Generate summary',
-    primary: true,
-  },
-  {
-    mode: 'detailed',
-    glyph: 'fileText',
-    action: 'Generate full detail',
-    primary: false,
-  },
-]
 
 // The ground behind the phone ledger. The artwork covers the whole screen
 // rather than sitting at the top with a colour under it.
@@ -920,76 +898,6 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
     ctx.startY = (doc.lastAutoTable ? doc.lastAutoTable.finalY : ctx.startY) + 8
   }
 
-  // The screen's own table, printed. Every figure it needs is already in
-  // deptGroups — this is what the page has just finished computing — so unlike
-  // the detailed export it fetches nothing and is done in a frame.
-  //
-  // Indentation carries the hierarchy rather than three columns of repeated
-  // names: a department appears once, its types once each, and a sub-type's
-  // row is the only one that is not a subtotal.
-  function _renderSummaryTable(ctx, groups) {
-    var doc = ctx.doc, FONT = ctx.FONT, autoTable = ctx.autoTable, pageW = ctx.pageW, pageH = ctx.pageH
-    var DEPT_FILL = [226, 232, 240]
-    var TYPE_FILL = [241, 245, 249]
-    var body = []
-
-    function figures(o, bold) {
-      var st = bold ? { fontStyle: 'bold' } : {}
-      return [
-        { content: _fmtPts(o.committed), styles: Object.assign({ halign: 'right', textColor: [20, 100, 60] }, st) },
-        { content: _fmtPts(o.pending), styles: Object.assign({ halign: 'right', textColor: [140, 90, 20] }, st) },
-        { content: o.credit ? _fmtPts(o.credit) : '—', styles: Object.assign({ halign: 'right', textColor: o.credit ? [170, 40, 60] : [150, 150, 150] }, st) },
-        { content: _fmtPts(o.total), styles: Object.assign({ halign: 'right' }, st) },
-        { content: String(o.allocs), styles: Object.assign({ halign: 'right', textColor: [120, 120, 120] }, st) },
-      ]
-    }
-
-    groups.forEach(function (g) {
-      var dName = g.deptId ? (deptMap[g.deptId] || 'Unassigned') : 'Unallocated'
-      body.push([{ content: dName, styles: { fontStyle: 'bold', fillColor: DEPT_FILL } }]
-        .concat(figures(g, true).map(function (c) {
-          c.styles.fillColor = DEPT_FILL; return c
-        })))
-      g.typeGroups.forEach(function (t) {
-        var tName = t.typeId ? (typeMap[t.typeId] || 'Untyped') : 'Untyped'
-        body.push([{ content: '    ' + tName, styles: { fontStyle: 'bold', fillColor: TYPE_FILL } }]
-          .concat(figures(t, true).map(function (c) {
-            c.styles.fillColor = TYPE_FILL; return c
-          })))
-        t.subRows.forEach(function (r) {
-          var sName = r.subTypeId ? (subTypeMap[r.subTypeId] || '—') : '—'
-          body.push([{ content: '        ' + sName }].concat(figures(r, false)))
-        })
-      })
-    })
-
-    autoTable(doc, {
-      startY: ctx.startY + 3,
-      head: [['Department / Type / Sub-Type',
-        { content: 'Acknowledged', styles: { halign: 'right' } },
-        { content: 'Pending', styles: { halign: 'right' } },
-        { content: 'Credit', styles: { halign: 'right' } },
-        { content: 'Net Total', styles: { halign: 'right' } },
-        { content: 'Allocs', styles: { halign: 'right' } }]],
-      body: body,
-      styles: { font: FONT, fontSize: 8, cellPadding: 1.6, overflow: 'linebreak' },
-      headStyles: { font: FONT, fillColor: [50, 50, 50], textColor: 255, fontStyle: 'bold', fontSize: 7.5 },
-      columnStyles: {
-        0: { cellWidth: 'auto' },
-        1: { cellWidth: 30, halign: 'right' }, 2: { cellWidth: 30, halign: 'right' },
-        3: { cellWidth: 28, halign: 'right' }, 4: { cellWidth: 32, halign: 'right' },
-        5: { cellWidth: 16, halign: 'right' },
-      },
-      margin: { left: 10, right: 10 },
-      didDrawPage: function () {
-        doc.setFontSize(6); doc.setTextColor(120)
-        doc.text('Page ' + doc.internal.getCurrentPageInfo().pageNumber, pageW - 14, pageH - 5, { align: 'right' })
-        doc.setTextColor(0)
-      },
-    })
-    ctx.startY = (doc.lastAutoTable ? doc.lastAutoTable.finalY : ctx.startY) + 8
-  }
-
   // One door for every PDF the sheet can ask for: a shape, and how far down
   // the tree it applies.
   //
@@ -998,38 +906,34 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
   // request at all. Detailed has to go and fetch the allocations underneath,
   // which is what exportScopedPDF already does for the desktop's row buttons;
   // this is the phone finally getting at them.
-  async function runLedgerPdf(mode, g, typeKeys) {
+  // Every PDF this sheet makes is the detailed one. The summary version was a
+  // second answer to a question nobody was asking at the moment of pressing —
+  // by then the scope is chosen and what is wanted is the entries in it.
+  //
+  // Three scopes reach here: no department is the whole sheet, a department
+  // with nothing ticked is all of it, and a department with ticks is those
+  // expense types.
+  async function runLedgerPdf(g, typeKeys) {
     if (pdfBusy) return
     var picked = (g && typeKeys && typeKeys.length)
       ? g.typeGroups.filter(function (x) { return typeKeys.indexOf(x.typeKey) !== -1 })
       : null
 
-    if (!g) return exportListPDF(mode)
-    // One type ticked is the scope exportScopedPDF already takes, so it keeps
-    // doing that job rather than being reimplemented for the count of one.
-    if (mode === 'detailed' && !picked) return exportScopedPDF(g.deptId)
-    if (mode === 'detailed' && picked.length === 1) return exportScopedPDF(g.deptId, picked[0].typeId)
+    if (!g) return exportListPDF()
+    // Nothing ticked, or one ticked, is a scope exportScopedPDF already takes.
+    // It keeps doing that job rather than being reimplemented for a count of
+    // one.
+    if (!picked) return exportScopedPDF(g.deptId)
+    if (picked.length === 1) return exportScopedPDF(g.deptId, picked[0].typeId)
 
     setPdfBusy(true)
     try {
       var dName = g.deptId ? (deptMap[g.deptId] || 'Unassigned') : 'Unallocated'
-      var label = picked
-        ? dName + ' (' + picked.length + ' expense types)'
-        : dName
-
-      if (mode === 'summary') {
-        // The renderer walks whatever tree it is handed, so narrowing the
-        // scope is narrowing the tree rather than teaching it about scopes.
-        var groups = [picked ? Object.assign({}, g, { typeGroups: picked }) : g]
-        var sctx = await _pdfSetup('Expense Ledger — Summary — ' + label)
-        _renderSummaryTable(sctx, groups)
-        await openOrSharePdf(sctx.doc, _pdfName('summary', label))
-        return
-      }
+      var label = dName + ' (' + picked.length + ' expense types)'
 
       // Several types at once. v_ledger's type filter is an equality, and the
-      // one value it cannot express is Untyped — null is not a value `in` can
-      // match. So this asks for the department once and keeps the types it
+      // one value it cannot express is Untyped — null is not something `in`
+      // can match. So this asks for the department once and keeps the types it
       // wants, which is also one request instead of one per tick.
       var ctx = await _pdfSetup('Expense Ledger — ' + label)
       var wanted = {}
@@ -1073,22 +977,12 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
     setPdfDeptKey(null); setPdfTypeKeys([]); setPdfSheet(true)
   }
 
-  async function exportListPDF(mode) {
+  async function exportListPDF() {
     if (pdfBusy) return
     var groups = visibleGroups
     if (!groups.length) return
     setPdfBusy(true)
     try {
-      // The summary reaches the file without a request. deptGroups is what the
-      // page has just finished computing, so this prints the table already on
-      // the screen; the detailed export below has to go and fetch every
-      // allocation behind it, which on a wide range is thousands of rows.
-      if (mode === 'summary') {
-        var sctx = await _pdfSetup('Expense Ledger — Summary')
-        _renderSummaryTable(sctx, groups)
-        await openOrSharePdf(sctx.doc, 'ledger_summary_' + dateFrom + '_' + dateTo + '.pdf')
-        return
-      }
       var ctx = await _pdfSetup('Expense Ledger — Detailed')
       var allocs = await fetchAllocDetail(null)
       if (allocs.length === 0) {
@@ -2036,79 +1930,34 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
           rows over a phone connection. */}
       <BottomSheet open={pdfSheet} onClose={function () { setPdfSheet(false) }} title="Export PDF">
         {(function () {
-          // null = still choosing. '__all' = the whole sheet, which is a scope
-          // with no group behind it; anything else is a department key.
-          var atScope = pdfDeptKey !== null
-          var g = (atScope && pdfDeptKey !== '__all')
-            ? visibleGroups.find(function (x) { return x.key === pdfDeptKey })
-            : null
+          var g = pdfDeptKey ? visibleGroups.find(function (x) { return x.key === pdfDeptKey }) : null
           // The branch can go while the sheet is open — a refresh lands, or a
           // filter changes underneath it. Saying so beats a panel of nothing.
-          if (atScope && pdfDeptKey !== '__all' && !g) {
+          if (pdfDeptKey && !g) {
             return <p className="text-[12.5px] text-slate-500">That department has left the list. Close this and open it again.</p>
           }
 
-          var dName = g ? (g.deptId ? (deptMap[g.deptId] || 'Unassigned') : 'Unallocated') : null
-          var picked = g ? g.typeGroups.filter(function (x) { return pdfTypeKeys.indexOf(x.typeKey) !== -1 }) : []
-          var scopeNote = !g
-            ? 'every department in the list'
-            : picked.length === 0
-              ? 'everything in ' + dName
-              : picked.length + (picked.length === 1 ? ' expense type' : ' expense types') + ' in ' + dName
-
-          // The buttons, wherever they are put. Both screens want the same
-          // pair pointed at a different scope, so they are written once.
-          function actions() {
-            return (
-              <div className="space-y-2">
-                <p className="text-[11.5px] text-slate-500">
-                  Export <span className="font-bold text-slate-700">{scopeNote}</span>
-                </p>
-                {PDF_SHAPES.map(function (o) {
-                  return (
-                    <button key={o.mode} type="button" disabled={pdfBusy}
-                      onClick={function () { setPdfSheet(false); runLedgerPdf(o.mode, g, pdfTypeKeys) }}
-                      className={'w-full flex items-center justify-center gap-2 h-11 px-3 rounded-xl font-bold text-[13px] disabled:opacity-40 transition-all duration-150 ' +
-                        (o.primary
-                          ? 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-[0_2px_10px_rgba(79,70,229,0.28)]'
-                          : 'bg-white text-indigo-700 border border-indigo-200 hover:border-indigo-400 hover:bg-indigo-50')}>
-                      <Icon name={pdfBusy ? 'refresh' : o.glyph} size={15} className="shrink-0" />
-                      <span className="min-w-0 truncate">{o.action}</span>
-                    </button>
-                  )
-                })}
-                <p className="text-[11px] text-slate-400 leading-snug">
-                  Summary prints the figures at once. Full detail fetches each entry behind them first.
-                </p>
-              </div>
-            )
-          }
-
-          // ── Picking a department ──────────────────────────────────────
+          // ── Choosing ──────────────────────────────────────────────────
           //
-          // No buttons on this screen. They used to sit at its foot aimed at
-          // the whole sheet while a list of departments filled the panel above
-          // them, so the screen asked one question and offered to answer a
-          // different one. Here the whole sheet is the first row rather than a
-          // standing assumption, and every row leads somewhere.
-          if (!atScope) {
+          // The whole sheet is one press, not a screen of its own: there is
+          // nothing to narrow about it and nothing to choose once you are
+          // there, so a second screen would have existed only to hold a
+          // button.
+          if (!g) {
             return (
               <div className="space-y-4">
                 <div>
                   <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500">What to export</p>
                   <button type="button" disabled={pdfBusy}
-                    onClick={function () { setPdfDeptKey('__all') }}
-                    className="w-full flex items-center gap-2.5 px-3 py-3 rounded-xl bg-white border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/40 disabled:opacity-40 transition-all duration-150 text-left">
-                    <span className="shrink-0 w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 inline-flex items-center justify-center">
-                      <Icon name="list" size={16} />
-                    </span>
+                    onClick={function () { setPdfSheet(false); runLedgerPdf(null, []) }}
+                    className="w-full flex items-center gap-3 px-3.5 py-3 rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-40 shadow-[0_2px_10px_rgba(79,70,229,0.28)] transition-all duration-150 text-left">
+                    <Icon name={pdfBusy ? 'refresh' : 'fileText'} size={17} className="shrink-0" />
                     <span className="min-w-0 flex-1">
-                      <span className="block text-[13px] font-bold text-slate-900">The whole sheet</span>
-                      <span className="block text-[11.5px] text-slate-500">
-                        <span data-notranslate>{visibleGroups.length}</span> {visibleGroups.length === 1 ? 'department' : 'departments'}
+                      <span className="block text-[13px] font-bold">The whole sheet</span>
+                      <span className="block text-[11.5px] text-indigo-100">
+                        Every entry in <span data-notranslate>{visibleGroups.length}</span> {visibleGroups.length === 1 ? 'department' : 'departments'}
                       </span>
                     </span>
-                    <Icon name="chevronRight" size={14} className="shrink-0 text-slate-400" />
                   </button>
                 </div>
 
@@ -2135,12 +1984,10 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
             )
           }
 
-          // ── A scope in hand ───────────────────────────────────────────
-          //
-          // The buttons lead, because by now the scope is decided and this
-          // screen exists to act on it. The ticks under them are optional: a
-          // department with none ticked is the whole department, which is the
-          // same answer as ticking all of them.
+          // ── One department ────────────────────────────────────────────
+          var dName = g.deptId ? (deptMap[g.deptId] || 'Unassigned') : 'Unallocated'
+          var pickedCount = g.typeGroups.filter(function (x) { return pdfTypeKeys.indexOf(x.typeKey) !== -1 }).length
+
           return (
             <div>
               <div className="flex items-center gap-2 mb-3">
@@ -2149,16 +1996,49 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
                   className="shrink-0 w-8 h-8 inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 transition-colors">
                   <Icon name="chevronRight" size={14} className="rotate-180" />
                 </button>
-                <p className="min-w-0 flex-1 text-[13px] font-bold text-slate-900 truncate">{dName || 'The whole sheet'}</p>
+                <p className="min-w-0 flex-1 text-[13px] font-bold text-slate-900 truncate">{dName}</p>
               </div>
 
-              {actions()}
+              {/* Two exports, and they are different things rather than two
+                  settings of one: the whole department, or the expense types
+                  ticked below it.
 
-              {g && g.typeGroups.length > 0 && (
+                  The second stays disabled until something is ticked, because
+                  with nothing ticked it would either do nothing or quietly do
+                  what the first one does — and a button that turns into its
+                  neighbour is worse than one that is plainly not ready. */}
+              <div className="space-y-2">
+                <button type="button" disabled={pdfBusy}
+                  onClick={function () { setPdfSheet(false); runLedgerPdf(g, []) }}
+                  className="w-full flex items-center justify-center gap-2 h-11 px-3 rounded-xl bg-indigo-600 text-white font-bold text-[13px] hover:bg-indigo-700 disabled:opacity-40 shadow-[0_2px_10px_rgba(79,70,229,0.28)] transition-all duration-150">
+                  <Icon name={pdfBusy ? 'refresh' : 'fileText'} size={15} className="shrink-0" />
+                  <span className="min-w-0 truncate">Complete department</span>
+                </button>
+                <button type="button" disabled={pdfBusy || pickedCount === 0}
+                  onClick={function () { setPdfSheet(false); runLedgerPdf(g, pdfTypeKeys) }}
+                  className={'w-full flex items-center justify-center gap-2 h-11 px-3 rounded-xl font-bold text-[13px] border transition-all duration-150 ' +
+                    (pickedCount === 0
+                      ? 'bg-slate-50 text-slate-400 border-slate-200 cursor-not-allowed'
+                      : 'bg-white text-indigo-700 border-indigo-200 hover:border-indigo-400 hover:bg-indigo-50')}>
+                  <Icon name="check" size={15} className="shrink-0" />
+                  <span className="min-w-0 truncate">
+                    {pickedCount === 0
+                      ? 'Selected types'
+                      : 'Selected types (' + pickedCount + ')'}
+                  </span>
+                </button>
+                <p className="text-[11px] text-slate-400 leading-snug">
+                  {pickedCount === 0
+                    ? 'Tick one or more expense types below to export just those.'
+                    : 'Only the ticked expense types will be in the file.'}
+                </p>
+              </div>
+
+              {g.typeGroups.length > 0 && (
                 <div className="mt-4 pt-3.5 border-t border-slate-200">
                   <div className="flex items-center justify-between gap-3 mb-2">
-                    <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500">Narrow to expense types</p>
-                    {picked.length > 0 && (
+                    <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500">Expense types</p>
+                    {pickedCount > 0 && (
                       <button type="button" onClick={function () { setPdfTypeKeys([]) }}
                         className="text-[11.5px] font-bold text-rose-600 hover:text-rose-700 transition-colors">
                         Clear
