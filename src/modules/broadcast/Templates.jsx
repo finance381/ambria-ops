@@ -263,6 +263,26 @@ function Templates({ profile }) {
     setNotice('Duplicated as a new draft — give it a unique name before saving.')
   }
 
+  async function deleteTemplate() {
+    if (saving || !form.id) return
+    if (!window.confirm('Delete "' + form.name + '"? This cannot be undone.')) return
+    setSaving(true); setError(''); setNotice('')
+    var res = await supabase.from('wa_templates').delete().eq('id', form.id)
+    setSaving(false)
+    if (res.error) {
+      // FK RESTRICT on wa_campaigns.template_id / wa_messages.template_id —
+      // a template that's ever actually been used can't be removed, the
+      // database enforces that rather than this screen guessing at it.
+      setError(res.error.code === '23503'
+        ? 'Can’t delete — this template has been used in a campaign or message. It stays for that history.'
+        : res.error.message)
+      return
+    }
+    setNotice('Template deleted.')
+    openNew()
+    loadTemplates()
+  }
+
   var isLocked = form.id && form.meta_status !== 'draft' && form.meta_status !== 'rejected'
 
   // buttons_text stays the single source of truth — it is what saveDraft
@@ -795,6 +815,13 @@ function Templates({ profile }) {
                 className="inline-flex items-center gap-1.5 h-9 px-3 text-[13px] font-semibold text-slate-700 bg-white border border-slate-300 rounded-xl hover:bg-slate-50 active:scale-[0.98] transition-all">
                 <Icon name="copy" size={14} />
                 Duplicate
+              </button>
+            )}
+            {canEdit && form.id && (
+              <button onClick={deleteTemplate} disabled={saving}
+                className="inline-flex items-center gap-1.5 h-9 px-3 text-[13px] font-semibold text-red-700 bg-white border border-red-200 rounded-xl hover:bg-red-50 hover:border-red-300 active:scale-[0.98] disabled:opacity-50 transition-all">
+                <Icon name="trash" size={14} />
+                Delete
               </button>
             )}
             {canEdit && !isLocked && (
