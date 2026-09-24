@@ -40,6 +40,31 @@ var Projects = lazy(function () { return import('../../modules/projects/Projects
 var Reviews = lazy(function () { return import('../../modules/reviews/Reviews') })
 var BroadcastHub = lazy(function () { return import('../../modules/broadcast/BroadcastHub.jsx') })
 
+// A tint per group, on the glyph tile only.
+//
+// The tiles were one indigo wash each, so eleven of them read as one striped
+// block and the only way to find Logistics was to read all eleven labels.
+// Colour is the fastest thing on a screen to tell apart, and a menu is the one
+// place that matters — it is the screen you are on longest without wanting to
+// be. The card itself stays white so the colours are a mark to aim at rather
+// than eleven competing backgrounds.
+//
+// Anything not listed falls back to slate, so a new group is plain rather than
+// wrong.
+var GROUP_TINTS = {
+  me: 'bg-blue-50 text-blue-600',
+  inventory: 'bg-violet-50 text-violet-600',
+  review: 'bg-emerald-50 text-emerald-600',
+  events: 'bg-rose-50 text-rose-600',
+  procurement: 'bg-amber-50 text-amber-600',
+  logistics: 'bg-sky-50 text-sky-700',
+  projects: 'bg-purple-50 text-purple-600',
+  expenses: 'bg-teal-50 text-teal-600',
+  hr: 'bg-pink-50 text-pink-600',
+  broadcast: 'bg-indigo-50 text-indigo-600',
+  admin: 'bg-slate-100 text-slate-600',
+}
+
 var GROUPS = [
   {
     key: 'me', label: 'My Profile', icon: 'idCard', items: [
@@ -450,7 +475,11 @@ function Shell({ profile, onSignOut }) {
   return (
     <div className={"relative isolate " + (tab === 'quote' ? "min-h-screen lg:h-screen lg:overflow-hidden" : "min-h-screen")}
       style={{ '--app-header-h': tab !== 'quote' ? '3.5rem' : '0px' }}>
-      {pageArt && <PageBackdrop />}
+      {/* The photograph is for the menu screens — the grid of groups and
+          each group's tiles. The expenses screen shares this backdrop and
+          keeps the drawn washes: it is a dense list, and a picture under
+          one is a different argument from a picture under eleven tiles. */}
+      {pageArt && <PageBackdrop photo={!tab} />}
       {waveArt && <PageWave />}
       {/* Header — hidden on the quote screen, which carries its own topbar */}
       {/* backdrop-blur is safe here now: the menu's click-outside overlay is
@@ -653,15 +682,24 @@ function Shell({ profile, onSignOut }) {
                 <button
                   key={g.key}
                   onClick={function () { openGroup(g) }}
-                  className="relative ambria-glass-card bg-indigo-200/40 shadow-[inset_0_1px_0_rgba(255,255,255,0.85),0_2px_8px_rgba(15,23,42,0.07),0_0_0_1px_rgba(99,102,241,0.18)] rounded-2xl p-5 flex flex-col items-center justify-center gap-2 hover:bg-white/70 hover:shadow-[0_8px_22px_rgba(79,70,229,0.16)] active:scale-[0.98] transition-all"
+                  className="relative bg-white/85 backdrop-blur-xl border border-white/70 shadow-[0_2px_10px_rgba(15,23,42,0.07)] rounded-2xl p-3.5 flex flex-col items-start text-left hover:bg-white hover:shadow-[0_8px_22px_rgba(15,23,42,0.10)] active:scale-[0.98] transition-all"
                 >
                   {badge > 0 && (
-                    <span className="absolute top-2 right-2 min-w-[20px] h-5 px-1.5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+                    <span className="absolute -top-1.5 -right-1.5 min-w-[22px] h-[22px] px-1.5 bg-red-500 text-white text-[10.5px] font-bold rounded-full flex items-center justify-center shadow-[0_2px_6px_rgba(239,68,68,0.45)]">
                       {badge > 99 ? '99+' : badge}
                     </span>
                   )}
-                  <Icon name={g.icon} className="w-6 h-6 text-slate-700" strokeWidth={1.7} />
-                  <span className="text-[13px] font-semibold text-slate-900 text-center leading-snug">{g.label}</span>
+                  {/* The chevron sits level with the tile rather than with the
+                      label, so a group whose name wraps to two lines does not
+                      drag it down out of line with its neighbours. */}
+                  <span className="w-full flex items-center justify-between">
+                    <span className={"shrink-0 w-11 h-11 rounded-xl inline-flex items-center justify-center " +
+                      (GROUP_TINTS[g.key] || 'bg-slate-100 text-slate-600')}>
+                      <Icon name={g.icon} size={21} strokeWidth={1.9} />
+                    </span>
+                    <Icon name="chevronRight" size={16} className="shrink-0 text-slate-300" />
+                  </span>
+                  <span className="mt-3 text-[14.5px] font-bold text-slate-900 leading-snug">{g.label}</span>
                 </button>
               )
             })}

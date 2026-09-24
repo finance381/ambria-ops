@@ -1,6 +1,8 @@
+import landingBg from '../../assets/landing-bg.webp'
+
 // The ground behind a page.
 //
-// Drawn rather than photographed. It was a WebP of hard diagonals, and a
+// Drawn, on every page but the menu. It was a WebP of hard diagonals, and a
 // picture gives you no say in any of this: how many lines cross the screen is
 // whatever `cover` decides, and on a phone that was a dozen of them, each as
 // crisp as the card borders in front. Blurring and enlarging it got the edge
@@ -46,17 +48,44 @@ var WASHES = [
 // how wide the page is: behind one 540px column of cards on a phone it frames
 // the content, but across a 1500px admin content area the same colour spreads
 // under tables and card borders.
-function PageBackdrop({ veil }) {
+//
+// `photo` puts a picture back, on the menu screens only. That is not a reversal
+// of everything above it: what made the old artwork wrong was a dozen hard
+// diagonals, each as crisp as the card borders in front of them. This one is
+// defocused before it ever reaches the file — there is not an edge in it — so
+// it reads as depth the same way the washes do, and it is 45KB.
+//
+// 100% 100% rather than cover, for the reason the ledger's ground records: a
+// fixed box is the viewport, the viewport changes height every time the address
+// bar slides, and cover rescales the image each time, which reads as the
+// background zooming while you scroll. Stretching has no such tell here because
+// there is no edge left in the picture whose proportions a reader could check.
+function PageBackdrop({ veil, photo }) {
   return (
     <div aria-hidden="true" className="pointer-events-none fixed inset-0 -z-10 overflow-hidden"
-      style={{ backgroundColor: '#eef1f7' }}>
-      <div className="absolute inset-0" style={{ backgroundImage: WASHES }} />
+      style={{ backgroundColor: '#eef1f7', minHeight: '100lvh' }}>
+      {photo ? (
+        <div className="absolute inset-x-0 top-0 -bottom-px"
+          style={{
+            backgroundImage: 'url(' + landingBg + ')',
+            backgroundSize: '100% 100%',
+            backgroundPosition: 'center',
+            backgroundRepeat: 'no-repeat',
+          }} />
+      ) : (
+        <div className="absolute inset-0" style={{ backgroundImage: WASHES }} />
+      )}
       {/* A white scrim, graded rather than flat: heaviest at the top, where the
           header and the first row of cards are, and lifting towards the bottom,
           where there is usually nothing to read and the colour can be itself. A
           single flat value had to be calm enough for the busiest part of the
           page, which left the rest of it duller than it needed to be. */}
-      <div className={'absolute inset-0 ' + (veil || 'bg-gradient-to-b from-white/72 via-white/60 to-white/45')} />
+      <div className={'absolute inset-0 ' + (veil || (photo
+        // Lighter over the photograph. The scrim exists to keep text off the
+        // ground, and the cards on the menu carry their own white — over a
+        // picture this pale, the full veil washed it to nothing.
+        ? 'bg-gradient-to-b from-white/45 via-white/30 to-white/20'
+        : 'bg-gradient-to-b from-white/72 via-white/60 to-white/45'))} />
     </div>
   )
 }
