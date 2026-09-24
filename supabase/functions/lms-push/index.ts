@@ -225,8 +225,11 @@ serve(async (req) => {
     // and always sent the stored amount + chip label even when toggled off.
     const decorRupees = includeDecor ? String(decorHR) : "0"
     const djRupees = includeDj ? String(djHR) : "0"
-    const decorRemarks = includeDecor ? decorLabel : ""
-    const djRemarks = includeDj ? djLabel : ""
+    // LMS's backend treats an empty string as a missing required field (same
+    // PHP empty("") quirk as fisd_extra_plate_charge) — "-" keeps it toggled
+    // off in spirit while staying non-empty, same convention as location_name below.
+    const decorRemarks = includeDecor ? decorLabel : "-"
+    const djRemarks = includeDj ? djLabel : "-"
     const totalRupees = String(roundedAggHR)
 
     const body: Record<string, string | number> = {
