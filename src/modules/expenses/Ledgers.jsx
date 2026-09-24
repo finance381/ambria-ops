@@ -118,21 +118,22 @@ var TONES = {
 // continues the picture rather than interrupting it.
 var LEDGER_BG_FOOT = '#C6B9A8'
 
-// What the two PDF exports are, in the words the sheet shows. Out here rather
-// than inline in the sheet, because the difference between them is a fact
-// about the exports and not about the control that offers them.
+// The two shapes a PDF can take, in the words the sheet shows. Out here rather
+// than inline, because the difference between them is a fact about the exports
+// and not about the control that offers them. The scope they apply to is named
+// above them in the sheet, so these no longer have to describe it.
 var PDF_SHAPES = [
   {
     mode: 'summary',
     glyph: 'list',
     title: 'Summary',
-    blurb: 'The table as it is on screen — each department, type and sub-type with its four figures. Ready at once.',
+    blurb: 'The figures as the table shows them. Ready at once.',
   },
   {
     mode: 'detailed',
     glyph: 'fileText',
     title: 'Every allocation',
-    blurb: 'Each entry behind those figures, with its date, who logged it, the venue, the description and the status. Fetches the rows first, so a wide range takes a moment.',
+    blurb: 'Each entry behind those figures — date, who logged it, venue, description, status. Fetches the rows first.',
   },
 ]
 
@@ -319,6 +320,11 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
   // preference — they answer different questions — so the sheet says what each
   // one is for instead of labelling them Short and Long.
   var [pdfSheet, setPdfSheet] = useState(false)
+  // Where in the tree the sheet is standing. Keys, not the objects: the tree is
+  // rebuilt on every render and on every refresh, so a held object would be a
+  // stale copy of a row that may no longer exist.
+  var [pdfDeptKey, setPdfDeptKey] = useState(null)
+  var [pdfTypeKey, setPdfTypeKey] = useState(null)
   // The three dropdowns and the toggle go behind a button. Out on the bar they
   // were four controls reading "All …" taking most of the row to say that
   // nothing was narrowed — the same trade the vendor and inventory ledgers
@@ -977,6 +983,46 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
     ctx.startY = (doc.lastAutoTable ? doc.lastAutoTable.finalY : ctx.startY) + 8
   }
 
+  // One door for every PDF the sheet can ask for: a shape, and how far down
+  // the tree it applies.
+  //
+  // The two shapes are not the same kind of work. A summary is the rows the
+  // page has already computed, narrowed to the branch in hand and printed — no
+  // request at all. Detailed has to go and fetch the allocations underneath,
+  // which is what exportScopedPDF already does for the desktop's row buttons;
+  // this is the phone finally getting at them.
+  async function runLedgerPdf(mode, g, t, r) {
+    if (pdfBusy) return
+    if (mode === 'detailed') {
+      if (!g) return exportListPDF('detailed')
+      if (r) return exportScopedPDF(g.deptId, r.typeId, r.subTypeId)
+      if (t) return exportScopedPDF(g.deptId, t.typeId)
+      return exportScopedPDF(g.deptId)
+    }
+    if (!g) return exportListPDF('summary')
+
+    setPdfBusy(true)
+    try {
+      var dName = g.deptId ? (deptMap[g.deptId] || 'Unassigned') : 'Unallocated'
+      var tName = t ? (t.typeId ? (typeMap[t.typeId] || 'Untyped') : 'Untyped') : null
+      var label = tName ? (dName + ' → ' + tName) : dName
+      // The renderer walks whatever tree it is handed, so narrowing the scope
+      // is narrowing the tree rather than teaching it about scopes.
+      var groups = t ? [Object.assign({}, g, { typeGroups: [t] })] : [g]
+      var ctx = await _pdfSetup('Expense Ledger — Summary — ' + label)
+      _renderSummaryTable(ctx, groups)
+      await openOrSharePdf(ctx.doc, 'ledger_summary_' + label.replace(/[^a-zA-Z0-9]+/g, '_') + '_' + dateFrom + '_' + dateTo + '.pdf')
+    } catch (err) {
+      alert('PDF export failed: ' + (err.message || err))
+    } finally {
+      setPdfBusy(false)
+    }
+  }
+
+  function openPdfSheet() {
+    setPdfDeptKey(null); setPdfTypeKey(null); setPdfSheet(true)
+  }
+
   async function exportListPDF(mode) {
     if (pdfBusy) return
     var groups = visibleGroups
@@ -1461,7 +1507,7 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
             <Icon name="download" size={14} className="text-slate-400" />
             CSV
           </button>
-          <button type="button" onClick={function () { setPdfSheet(true) }} disabled={!visibleGroups.length || pdfBusy}
+          <button type="button" onClick={openPdfSheet} disabled={!visibleGroups.length || pdfBusy}
             className="h-11 px-4 inline-flex items-center gap-2 text-[12.5px] font-bold text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 hover:border-slate-300 disabled:opacity-40 transition-all duration-150">
             <Icon name={pdfBusy ? 'refresh' : 'fileText'} size={14} className="text-slate-400" />
             {pdfBusy ? 'Generating…' : 'PDF'}
@@ -1939,23 +1985,94 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
           every allocation behind it, which on a wide range is thousands of
           rows over a phone connection. */}
       <BottomSheet open={pdfSheet} onClose={function () { setPdfSheet(false) }} title="Export PDF">
-        <div className="space-y-2.5">
-          {PDF_SHAPES.map(function (o) {
-            return (
-              <button key={o.mode} type="button" disabled={pdfBusy}
-                onClick={function () { setPdfSheet(false); exportListPDF(o.mode) }}
-                className="w-full flex items-start gap-3 text-left p-3.5 rounded-2xl bg-white border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/40 disabled:opacity-40 transition-all duration-150">
-                <span className="shrink-0 w-9 h-9 rounded-xl bg-slate-100 text-slate-500 inline-flex items-center justify-center">
-                  <Icon name={o.glyph} size={17} />
-                </span>
-                <span className="min-w-0">
-                  <span className="block text-[13.5px] font-bold text-slate-900">{o.title}</span>
-                  <span className="block mt-0.5 text-[12px] text-slate-500 leading-snug">{o.blurb}</span>
-                </span>
-              </button>
-            )
-          })}
-        </div>
+        {(function () {
+          var g = pdfDeptKey ? visibleGroups.find(function (x) { return x.key === pdfDeptKey }) : null
+          var t = (g && pdfTypeKey) ? g.typeGroups.find(function (x) { return x.typeKey === pdfTypeKey }) : null
+          // The branch can go while the sheet is open — a refresh lands, or a
+          // filter changes underneath it. Saying so beats a panel of nothing.
+          if (pdfDeptKey && !g) {
+            return <p className="text-[12.5px] text-slate-500">That department has left the list. Close this and open it again.</p>
+          }
+
+          var dName = g ? (g.deptId ? (deptMap[g.deptId] || 'Unassigned') : 'Unallocated') : null
+          var tName = t ? (t.typeId ? (typeMap[t.typeId] || 'Untyped') : 'Untyped') : null
+          var children = t ? t.subRows : g ? g.typeGroups : visibleGroups
+
+          return (
+            <div>
+              {/* Where you are standing, and the way back up. A picker three
+                  levels deep has to say which level it is on, or the two export
+                  buttons under it are verbs with no object. */}
+              <div className="flex items-center gap-2 mb-3">
+                {g && (
+                  <button type="button" aria-label="Back"
+                    onClick={function () { if (t) setPdfTypeKey(null); else setPdfDeptKey(null) }}
+                    className="shrink-0 w-8 h-8 inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 transition-colors">
+                    <Icon name="chevronRight" size={14} className="rotate-180" />
+                  </button>
+                )}
+                <p className="min-w-0 text-[12.5px] text-slate-500 truncate">
+                  {g
+                    ? <span><span className="font-bold text-slate-900">{dName}</span>{tName ? <span> › <span className="font-bold text-slate-900">{tName}</span></span> : null}</span>
+                    : <span className="font-bold text-slate-900">The whole sheet</span>}
+                </p>
+              </div>
+
+              {/* What gets made, for wherever you are standing. */}
+              <div className="space-y-2.5">
+                {PDF_SHAPES.map(function (o) {
+                  return (
+                    <button key={o.mode} type="button" disabled={pdfBusy}
+                      onClick={function () { setPdfSheet(false); runLedgerPdf(o.mode, g, t, null) }}
+                      className="w-full flex items-start gap-3 text-left p-3.5 rounded-2xl bg-white border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/40 disabled:opacity-40 transition-all duration-150">
+                      <span className="shrink-0 w-9 h-9 rounded-xl bg-slate-100 text-slate-500 inline-flex items-center justify-center">
+                        <Icon name={o.glyph} size={17} />
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block text-[13.5px] font-bold text-slate-900">{o.title}</span>
+                        <span className="block mt-0.5 text-[12px] text-slate-500 leading-snug">{o.blurb}</span>
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+
+              {/* Or go further in. A sub-type has nothing under it, so tapping
+                  one is the export itself rather than another level — and it is
+                  the detailed one, because the summary of a single sub-type is
+                  the row you just tapped. */}
+              {children.length > 0 && (
+                <div className="mt-4 pt-3.5 border-t border-slate-200">
+                  <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500">
+                    {t ? 'Or one sub-type' : g ? 'Or one expense type' : 'Or one department'}
+                  </p>
+                  <div className="space-y-1.5">
+                    {children.map(function (c, i) {
+                      var label = t
+                        ? (c.subTypeId ? (subTypeMap[c.subTypeId] || '—') : '—')
+                        : g
+                          ? (c.typeId ? (typeMap[c.typeId] || 'Untyped') : 'Untyped')
+                          : (c.deptId ? (deptMap[c.deptId] || 'Unassigned') : 'Unallocated')
+                      return (
+                        <button key={i} type="button" disabled={pdfBusy}
+                          onClick={function () {
+                            if (t) { setPdfSheet(false); runLedgerPdf('detailed', g, t, c) }
+                            else if (g) setPdfTypeKey(c.typeKey)
+                            else setPdfDeptKey(c.key)
+                          }}
+                          className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-white border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/40 disabled:opacity-40 transition-all duration-150 text-left">
+                          <span className="min-w-0 flex-1 text-[12.5px] font-semibold text-slate-800 truncate">{label}</span>
+                          <span className="shrink-0 text-[11.5px] text-slate-400 tabular-nums" data-notranslate>{formatPoints(c.total)}</span>
+                          <Icon name={t ? 'fileText' : 'chevronRight'} size={13} className="shrink-0 text-slate-400" />
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          )
+        })()}
       </BottomSheet>
     </div>
   )
