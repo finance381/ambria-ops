@@ -117,6 +117,11 @@ var VENDOR_BG_FOOT = 'linear-gradient(to right, ' + [
   '#EFEFF1 60%', '#E2E4E9 78%', '#A8B7CF 92%', '#9EAFC7 100%',
 ].join(', ') + ')'
 
+// The same foot as one tone: the area under that gradient. The canvas behind
+// the page cannot hold a gradient, and anything it does hold has to read as
+// the same ground when a drag past the end of the list reveals it.
+var VENDOR_BG_FLAT = '#CBD6E6'
+
 // The ground behind the phone list, built the way the wallet's is.
 //
 // Nothing on the desktop: this is one tab of the Ledgers hub and the other
@@ -132,13 +137,53 @@ var VENDOR_BG_FOOT = 'linear-gradient(to right, ' + [
 // address bar retracts cannot resize it; aspect-ratio means the box is the
 // right size before the file lands rather than after.
 function VendorBackdrop({ inAdmin }) {
+  // This is fixed, so it stops at the edge of the viewport, and dragging past
+  // the end of the list shows what is behind it — the body's own canvas, which
+  // is a pale cool grey and nothing like this ground. The canvas takes the
+  // foot's tone while the screen is up and gives it back on the way out.
+  //
+  // Both html and body: body's background reaches the canvas only while html
+  // has none, and that is a stylesheet's choice rather than a guarantee.
+  useEffect(function () {
+    if (inAdmin) return
+    var b = document.body
+    var h = document.documentElement
+    var prevBg = b.style.backgroundColor
+    var prevHtmlBg = h.style.backgroundColor
+    var prevOver = b.style.overscrollBehaviorY
+    b.style.backgroundColor = VENDOR_BG_FLAT
+    h.style.backgroundColor = VENDOR_BG_FLAT
+    b.style.overscrollBehaviorY = 'none'
+    return function () {
+      b.style.backgroundColor = prevBg
+      h.style.backgroundColor = prevHtmlBg
+      b.style.overscrollBehaviorY = prevOver
+    }
+  }, [inAdmin])
+
   if (inAdmin) return null
   return (
+    // min-height as well as inset-0: a fixed box is the viewport, and which
+    // viewport that means depends on whether the address bar is showing. lvh
+    // is the taller of the two, so the ground reaches the foot either way and
+    // overflows rather than falling short — it is clipped and untouchable, so
+    // overflowing costs nothing.
     <div aria-hidden="true" className="pointer-events-none fixed inset-0 -z-10 flex flex-col overflow-hidden"
-      style={{ backgroundColor: '#D9E0EB' }}>
+      style={{ backgroundColor: '#D9E0EB', minHeight: '100lvh' }}>
       <img src={vendorBg} alt="" fetchpriority="high" decoding="async"
         className="w-full shrink-0" style={{ aspectRatio: '977 / 1609' }} />
-      <div className="flex-1" style={{ backgroundImage: VENDOR_BG_FOOT }} />
+      {/* -mt-px, and the reason is the joint.
+
+          The picture's height is the screen's width times 1609/977, which is
+          almost never a whole number of device pixels. Its last row lands on
+          a fraction of one, the renderer resolves that by blending toward
+          what is under it, and the blend is a seam a pixel tall sitting
+          exactly where the two pieces meet.
+
+          One pixel is why it reads as a line rather than a band, and the
+          device pixel ratio is why one phone shows it and the next does not.
+          Sliding the foot up under that row leaves it nothing to blend with. */}
+      <div className="flex-1 -mt-px" style={{ backgroundImage: VENDOR_BG_FOOT }} />
     </div>
   )
 }
