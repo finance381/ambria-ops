@@ -2054,7 +2054,7 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
                       : 'Selected types (' + pickedCount + ')'}
                   </span>
                 </button>
-                <p className="text-[11px] text-slate-400 leading-snug">
+                <p className="text-[11.5px] text-slate-500 leading-snug">
                   {pickedCount === 0
                     ? 'Tick one or more expense types below to export just those.'
                     : 'Only the ticked expense types will be in the file.'}
