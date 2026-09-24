@@ -117,10 +117,59 @@ function Expenses({ profile, masterMode, inAdmin, deepLinkExpense, onDeepLinkHan
   var [amountMin, setAmountMin] = useState('')
   var [amountMax, setAmountMax] = useState('')
 
+  // What the search box looks in.
+  //
+  // It looked in description and nowhere else, so typing a person's name found
+  // nothing — while the same letters inside somebody's venue note matched, which
+  // is how "pus" returned two Pushpanjali rows and none of the Puspender ones.
+  // A row shows the submitter, the expense type and the sub-type above its
+  // description; a box that ignores three of the four is not a search, it is a
+  // description filter wearing a magnifier.
+  //
+  // The names are matched here rather than on the server because they are
+  // already here: profileMap is loaded at mount and the two type lists come
+  // from the shared reference data. So this resolves to ids and hands the
+  // server an OR over columns it can index, with no extra round trip — and the
+  // filtering still happens server-side, which matters because the list is
+  // paged. Matching after the fetch would only ever search the current page.
+  function buildSearchOr(term, withUsers) {
+    var q = String(term || '').trim()
+    if (!q) return null
+    // PostgREST reads or=() as a comma-separated list of column.op.value, so a
+    // comma or a bracket in the term would be parsed as syntax. Dropping them
+    // narrows the search; leaving them in breaks the request.
+    var safe = q.replace(/[,()"\\]/g, ' ').replace(/\s+/g, ' ').trim()
+    if (!safe) return null
+    var lower = safe.toLowerCase()
+    var parts = ['description.ilike.%' + safe + '%']
+
+    function idsOf(list, getId, getName) {
+      var out = []
+      for (var i = 0; i < list.length && out.length < 200; i++) {
+        var n = getName(list[i])
+        if (n && String(n).toLowerCase().indexOf(lower) !== -1) out.push(getId(list[i]))
+      }
+      return out
+    }
+
+    if (withUsers) {
+      var pids = Object.keys(profileMap)
+      var uids = idsOf(pids, function (id) { return id }, function (id) { return profileMap[id] })
+      if (uids.length) parts.push('user_id.in.(' + uids.join(',') + ')')
+    }
+    var tids = idsOf(refData.expenseTypes || [], function (t) { return t.id }, function (t) { return t.name })
+    if (tids.length) parts.push('expense_type_id.in.(' + tids.join(',') + ')')
+    var sids = idsOf(refData.expenseSubTypes || [], function (t) { return t.id }, function (t) { return t.name })
+    if (sids.length) parts.push('expense_sub_type_id.in.(' + sids.join(',') + ')')
+
+    return parts.join(',')
+  }
+
   // Filter lookups
   var [deptOptions, setDeptOptions] = useState([])
   var [subDeptOptions, setSubDeptOptions] = useState([])
-  var venueOptions = useReferenceData().venues.filter(function (v) { return v.active }).slice().sort(function (a, b) { return (a.name || '').localeCompare(b.name || '') })
+  var refData = useReferenceData()
+  var venueOptions = refData.venues.filter(function (v) { return v.active }).slice().sort(function (a, b) { return (a.name || '').localeCompare(b.name || '') })
   var [userOptions, setUserOptions] = useState([])
   var [profileMap, setProfileMap] = useState({})
 
@@ -227,7 +276,9 @@ function Expenses({ profile, masterMode, inAdmin, deepLinkExpense, onDeepLinkHan
     if (statusFilter) query = query.eq('status', statusFilter)
     if (dateFrom) query = query.gte('expense_date', dateFrom)
     if (dateTo) query = query.lte('expense_date', dateTo)
-    if (expSearchDebounced) query = query.ilike('description', '%' + expSearchDebounced + '%')
+    // No submitter clause on this one: every row here is already yours.
+    var myOr = buildSearchOr(expSearchDebounced, false)
+    if (myOr) query = query.or(myOr)
     if (deptFilter) query = query.eq('expense_allocations.department_id', Number(deptFilter))
     if (venueFilter) query = query.eq('expense_allocations.venue_id', Number(venueFilter))
     if (amountMin) query = query.gte('amount_paise', Math.round(Number(amountMin) * 100))
@@ -280,7 +331,8 @@ function Expenses({ profile, masterMode, inAdmin, deepLinkExpense, onDeepLinkHan
 
     if (dateFrom) query = query.gte('expense_date', dateFrom)
     if (dateTo) query = query.lte('expense_date', dateTo)
-    if (expSearchDebounced) query = query.ilike('description', '%' + expSearchDebounced + '%')
+    var apprOr = buildSearchOr(expSearchDebounced, true)
+    if (apprOr) query = query.or(apprOr)
     if (userFilter) query = query.eq('user_id', userFilter)
     if (deptFilter) query = query.eq('expense_allocations.department_id', Number(deptFilter))
     if (venueFilter) query = query.eq('expense_allocations.venue_id', Number(venueFilter))
@@ -976,7 +1028,17 @@ function Expenses({ profile, masterMode, inAdmin, deepLinkExpense, onDeepLinkHan
               <span className={"absolute left-0 top-0 bottom-0 w-[3px] " + (STATUS_RAIL[exp.status] || 'bg-slate-300')} />
               <div className="flex items-start justify-between gap-2.5">
                 <div className="flex-1 min-w-0">
-                  <p className="text-[13.5px] font-semibold text-slate-900 leading-snug truncate">
+                  {/* Two lines, not one. This line carries the submitter,
+                      the type and the sub-type, and on a 390px phone the
+                      box left beside the amount is 246px — the names that
+                      actually turn up measure 364 to 430, so every one of
+                      them was cut, and cut inside the sub-type, which is
+                      the half that says which expense this is.
+
+                      1.7 lines is the worst of them, so two is enough for
+                      all of them — and clamped rather than free, so one
+                      very long name cannot push a row to four. */}
+                  <p className="text-[13.5px] font-semibold text-slate-900 leading-snug line-clamp-2">
                     {view === 'approve' && isSingleton && grp.submitter ? grp.submitter + ' · ' : ''}
                     {exp.expense_types?.name
                       ? exp.expense_types.name + (exp.expense_sub_types?.name ? ' › ' + exp.expense_sub_types.name : '')
