@@ -68,6 +68,7 @@ var Reviews = lazyTab(function () { return import('../../modules/reviews/Reviews
 var BroadcastHub = lazyTab(function () { return import('../../modules/broadcast/BroadcastHub') })
 var BroadcastTemplates = lazyTab(function () { return import('../../modules/broadcast/Templates') })
 var BroadcastContacts = lazyTab(function () { return import('../../modules/broadcast/Contacts') })
+var BroadcastLists = lazyTab(function () { return import('../../modules/broadcast/Lists') })
 var BroadcastCampaigns = lazyTab(function () { return import('../../modules/broadcast/Campaigns') })
 var BroadcastInbox = lazyTab(function () { return import('../../modules/broadcast/Inbox') })
 var BroadcastSettings = lazyTab(function () { return import('../../modules/broadcast/Settings') })
@@ -146,6 +147,7 @@ var SUB_TAB_CONFIG = {
   broadcast: [
     { key: 'templates', label: 'Templates', icon: 'fileText', component: BroadcastTemplates, perm: 'broadcast.templates.view' },
     { key: 'contacts',  label: 'Contacts',  icon: 'users',    component: BroadcastContacts,  perm: 'broadcast.contacts.view' },
+    { key: 'lists',     label: 'Lists',     icon: 'list',     component: BroadcastLists,     perm: 'broadcast.contacts.view' },
     { key: 'campaigns', label: 'Campaigns', icon: 'send',     component: BroadcastCampaigns, perm: 'broadcast.campaigns.view' },
     { key: 'inbox',     label: 'Inbox',     icon: 'inbox',    component: BroadcastInbox,     perm: 'broadcast.inbox.view' },
     { key: 'settings',  label: 'Settings',  icon: 'settings', component: BroadcastSettings,  perm: 'broadcast.settings' },
