@@ -918,13 +918,13 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
           <div className="contents">
             <select value={drillUserFilter} onChange={function (e) { setDrillUserFilter(e.target.value) }}
               aria-label="Filter by user"
-              className="h-11 px-3 bg-white border border-slate-200 rounded-xl text-[12.5px] text-slate-700 hover:border-slate-300 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-[border-color,box-shadow] duration-150 flex-1 min-w-[120px]" style={{ fontSize: '16px' }}>
+              className="h-11 px-2 bg-white border border-slate-200 rounded-xl text-[12.5px] text-slate-700 hover:border-slate-300 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-[border-color,box-shadow] duration-150 flex-1 min-w-[97px]" style={{ fontSize: '16px' }}>
               <option value="">All Users</option>
               {users.map(function (u) { return <option key={u.id} value={u.id}>{u.name}</option> })}
             </select>
             <select value={drillStatusFilter} onChange={function (e) { setDrillStatusFilter(e.target.value) }}
               aria-label="Filter by status"
-              className="h-11 px-3 bg-white border border-slate-200 rounded-xl text-[12.5px] text-slate-700 hover:border-slate-300 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-[border-color,box-shadow] duration-150 flex-1 min-w-[120px]" style={{ fontSize: '16px' }}>
+              className="h-11 px-2 bg-white border border-slate-200 rounded-xl text-[12.5px] text-slate-700 hover:border-slate-300 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-[border-color,box-shadow] duration-150 flex-1 min-w-[97px]" style={{ fontSize: '16px' }}>
               <option value="">All Status</option>
               <option value="recorded">Recorded</option>
               <option value="flagged">Resubmit</option>
@@ -933,7 +933,7 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
             </select>
             <select value={drillVenueFilter} onChange={function (e) { setDrillVenueFilter(e.target.value) }}
               aria-label="Filter by venue"
-              className="h-11 px-3 bg-white border border-slate-200 rounded-xl text-[12.5px] text-slate-700 hover:border-slate-300 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-[border-color,box-shadow] duration-150 flex-1 min-w-[120px]" style={{ fontSize: '16px' }}>
+              className="h-11 px-2 bg-white border border-slate-200 rounded-xl text-[12.5px] text-slate-700 hover:border-slate-300 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-[border-color,box-shadow] duration-150 flex-1 min-w-[97px]" style={{ fontSize: '16px' }}>
               <option value="">All Venues</option>
               {venues.map(function (v) { return <option key={v.id} value={v.id}>{v.code ? (v.code + ' — ' + v.name) : v.name}</option> })}
             </select>
