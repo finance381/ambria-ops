@@ -142,15 +142,22 @@ function LedgerBackdrop({ inAdmin }) {
   useEffect(function () {
     if (inAdmin) return
     var b = document.body
+    var h = document.documentElement
     var prevBg = b.style.backgroundColor
+    var prevHtmlBg = h.style.backgroundColor
     var prevOver = b.style.overscrollBehaviorY
     b.style.backgroundColor = LEDGER_BG_FOOT
+    // body's background propagates to the canvas only while html has none,
+    // and html having none is a stylesheet's choice, not a guarantee. Setting
+    // both means it does not matter which one the browser ends up painting.
+    h.style.backgroundColor = LEDGER_BG_FOOT
     // Colouring the body stopped the band being white, but a flat strip under
     // a blurred photograph still reads as the page ending twice. none takes
     // the rubber-band away, so there is nothing past the end to reveal.
     b.style.overscrollBehaviorY = 'none'
     return function () {
       b.style.backgroundColor = prevBg
+      h.style.backgroundColor = prevHtmlBg
       b.style.overscrollBehaviorY = prevOver
     }
   }, [inAdmin])
@@ -158,7 +165,7 @@ function LedgerBackdrop({ inAdmin }) {
   if (inAdmin) return null
   return (
     <div aria-hidden="true" className="pointer-events-none fixed inset-0 -z-10 overflow-hidden"
-      style={{ backgroundColor: LEDGER_BG_FOOT }}>
+      style={{ backgroundColor: LEDGER_BG_FOOT, minHeight: '100lvh' }}>
       {/* inset-0 and 100% 100%: the image is drawn to exactly this box,
           whatever the box measures. cover kept its own proportions and so
           left the flat tone showing wherever the two did not agree, which is
@@ -171,7 +178,22 @@ function LedgerBackdrop({ inAdmin }) {
           could check. That is also why rescaling as the address bar slides
           does not show — the wallet's backdrop avoids cover for that reason,
           but its artwork has detail to see moving and this one has none. */}
-      <div className="absolute inset-0"
+      {/* -bottom-px, and the reason is the line at the foot.
+
+          100% 100% stretches the file to whatever this box measures, and the
+          box is a viewport height — which on a phone is rarely a whole number
+          of device pixels. The last row of the image then lands on a fraction
+          of one and the renderer has to resolve it, which it does by blending
+          toward what is behind: a seam exactly one pixel tall, lighter than
+          the image above it.
+
+          That it is one pixel is why it reads as a line rather than a band,
+          and the device pixel ratio is why one phone shows it and the next
+          does not — the fraction only appears at some ratios.
+
+          Hanging a pixel past the bottom puts the blend outside the box the
+          parent clips to, so there is no last row for it to happen on. */}
+      <div className="absolute inset-x-0 top-0 -bottom-px"
         style={{
           backgroundColor: LEDGER_BG_FOOT,
           backgroundImage: 'url(' + ledgerBg + ')',
