@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
-import { supabase } from '../../lib/supabase'
+import { supabase, edgeFnErrorMessage } from '../../lib/supabase'
 import Icon from '../../components/ui/Icon'
 import EventDatePicker from '../../components/ui/EventDatePicker'
 import { CTRL, BTN_GHOST, BTN_PRIMARY, BTN_SEND, CARD, Labeled, Notice } from './ui'
@@ -215,7 +215,7 @@ function CampaignBuilder({ campaignId, onClose, onSaved }) {
       body: { campaign_id: currentId }, headers: token ? { Authorization: 'Bearer ' + token } : {},
     })
     setSending(false)
-    if (invokeRes.error) { setError('Send failed: ' + invokeRes.error.message); setSendProgress(null); return }
+    if (invokeRes.error) { setError('Send failed: ' + await edgeFnErrorMessage(invokeRes.error)); setSendProgress(null); return }
     setSendProgress('done')
     if (onSaved) onSaved()
   }

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { supabase } from '../../lib/supabase'
+import { supabase, edgeFnErrorMessage } from '../../lib/supabase'
 import Icon from '../../components/ui/Icon'
 import { CTRL, BTN_GHOST, BTN_PRIMARY, CARD, Chip, Labeled, Notice, CHIP_GOOD, CHIP_WARN, CHIP_BAD, CHIP_NEUTRAL } from './ui'
 
@@ -76,7 +76,7 @@ function Settings() {
     var token = sessionRes.data && sessionRes.data.session ? sessionRes.data.session.access_token : null
     var res = await supabase.functions.invoke('wa-account-info', { body: {}, headers: token ? { Authorization: 'Bearer ' + token } : {} })
     setFetchingAccount(false)
-    if (res.error) { setError(res.error.message); return }
+    if (res.error) { setError(await edgeFnErrorMessage(res.error)); return }
     setAccount((res.data || {}).account || null)
   }
 

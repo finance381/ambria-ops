@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
-import { supabase } from '../../lib/supabase'
+import { supabase, edgeFnErrorMessage } from '../../lib/supabase'
 import { hasPerm } from '../../lib/permissions'
 import { formatDate } from '../../lib/format'
 import Modal from '../../components/ui/Modal'
@@ -381,7 +381,7 @@ function Contacts({ profile }) {
       body: {}, headers: token ? { Authorization: 'Bearer ' + token } : {},
     })
     setPulling(false)
-    if (res.error) { setPullFailed(true); setPullMsg('Pull failed: ' + res.error.message); return }
+    if (res.error) { setPullFailed(true); setPullMsg('Pull failed: ' + await edgeFnErrorMessage(res.error)); return }
     var d = res.data || {}
     var msg = 'Pulled ' + d.total_candidates + ' ' + label + ' — ' + d.inserted + ' new, ' + d.updated + ' updated, ' + d.skipped_invalid_phone + ' invalid phone.'
     if (d.errors && d.errors.length > 0) msg += ' (' + d.errors.length + ' department error(s) — see console)'

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { supabase } from '../../lib/supabase'
+import { supabase, edgeFnErrorMessage } from '../../lib/supabase'
 import { hasPerm } from '../../lib/permissions'
 import Icon from '../../components/ui/Icon'
 
@@ -349,7 +349,7 @@ function Templates({ profile }) {
       headers: token ? { Authorization: 'Bearer ' + token } : {},
     })
     setSaving(false)
-    if (callRes.error) { setError('Submitted, but Meta call failed: ' + callRes.error.message); loadTemplates(); return }
+    if (callRes.error) { setError('Submitted, but Meta call failed: ' + await edgeFnErrorMessage(callRes.error)); loadTemplates(); return }
     setNotice('Submitted to Meta for review.')
     loadTemplates()
     supabase.from('wa_templates').select('*').eq('id', form.id).maybeSingle().then(function (r) { if (r.data) openTemplate(r.data) })
@@ -365,7 +365,7 @@ function Templates({ profile }) {
       headers: token ? { Authorization: 'Bearer ' + token } : {},
     })
     setSaving(false)
-    if (callRes.error) { setError(callRes.error.message); return }
+    if (callRes.error) { setError(await edgeFnErrorMessage(callRes.error)); return }
     setNotice('Status refreshed from Meta.')
     loadTemplates()
     supabase.from('wa_templates').select('*').eq('id', form.id).maybeSingle().then(function (r) { if (r.data) openTemplate(r.data) })
