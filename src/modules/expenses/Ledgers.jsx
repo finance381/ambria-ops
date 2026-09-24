@@ -12,6 +12,7 @@ import SearchField from '../../components/ui/SearchField'
 import Icon, { glyphForLabel } from '../../components/ui/Icon'
 import ledgerBg from '../../assets/ledger-bg.webp'
 import CheckedStamp from '../../components/ui/CheckedStamp'
+import BottomSheet from '../../components/ui/BottomSheet'
 
 var STATUS_LABELS = { recorded: 'Recorded', flagged: 'Resubmit', acknowledged: 'Acknowledged', deducted: 'Deducted' }
 
@@ -116,6 +117,24 @@ var TONES = {
 // The value is the average of the image's own last rows, so a sliver of it
 // continues the picture rather than interrupting it.
 var LEDGER_BG_FOOT = '#C6B9A8'
+
+// What the two PDF exports are, in the words the sheet shows. Out here rather
+// than inline in the sheet, because the difference between them is a fact
+// about the exports and not about the control that offers them.
+var PDF_SHAPES = [
+  {
+    mode: 'summary',
+    glyph: 'list',
+    title: 'Summary',
+    blurb: 'The table as it is on screen — each department, type and sub-type with its four figures. Ready at once.',
+  },
+  {
+    mode: 'detailed',
+    glyph: 'fileText',
+    title: 'Every allocation',
+    blurb: 'Each entry behind those figures, with its date, who logged it, the venue, the description and the status. Fetches the rows first, so a wide range takes a moment.',
+  },
+]
 
 // The ground behind the phone ledger. The artwork covers the whole screen
 // rather than sitting at the top with a colour under it.
@@ -295,6 +314,11 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
   var [venueFilter, setVenueFilter] = useState('')
   var [statusFilter, setStatusFilter] = useState('')
   var [pendingOnly, setPendingOnly] = useState(false)
+  // Which shape of PDF, asked once rather than settled by a second button on a
+  // row that has no width for one. The two exports are not variants of a
+  // preference — they answer different questions — so the sheet says what each
+  // one is for instead of labelling them Short and Long.
+  var [pdfSheet, setPdfSheet] = useState(false)
   // The three dropdowns and the toggle go behind a button. Out on the bar they
   // were four controls reading "All …" taking most of the row to say that
   // nothing was narrowed — the same trade the vendor and inventory ledgers
@@ -883,12 +907,92 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
     ctx.startY = (doc.lastAutoTable ? doc.lastAutoTable.finalY : ctx.startY) + 8
   }
 
-  async function exportListPDF() {
+  // The screen's own table, printed. Every figure it needs is already in
+  // deptGroups — this is what the page has just finished computing — so unlike
+  // the detailed export it fetches nothing and is done in a frame.
+  //
+  // Indentation carries the hierarchy rather than three columns of repeated
+  // names: a department appears once, its types once each, and a sub-type's
+  // row is the only one that is not a subtotal.
+  function _renderSummaryTable(ctx, groups) {
+    var doc = ctx.doc, FONT = ctx.FONT, autoTable = ctx.autoTable, pageW = ctx.pageW, pageH = ctx.pageH
+    var DEPT_FILL = [226, 232, 240]
+    var TYPE_FILL = [241, 245, 249]
+    var body = []
+
+    function figures(o, bold) {
+      var st = bold ? { fontStyle: 'bold' } : {}
+      return [
+        { content: _fmtPts(o.committed), styles: Object.assign({ halign: 'right', textColor: [20, 100, 60] }, st) },
+        { content: _fmtPts(o.pending), styles: Object.assign({ halign: 'right', textColor: [140, 90, 20] }, st) },
+        { content: o.credit ? _fmtPts(o.credit) : '—', styles: Object.assign({ halign: 'right', textColor: o.credit ? [170, 40, 60] : [150, 150, 150] }, st) },
+        { content: _fmtPts(o.total), styles: Object.assign({ halign: 'right' }, st) },
+        { content: String(o.allocs), styles: Object.assign({ halign: 'right', textColor: [120, 120, 120] }, st) },
+      ]
+    }
+
+    groups.forEach(function (g) {
+      var dName = g.deptId ? (deptMap[g.deptId] || 'Unassigned') : 'Unallocated'
+      body.push([{ content: dName, styles: { fontStyle: 'bold', fillColor: DEPT_FILL } }]
+        .concat(figures(g, true).map(function (c) {
+          c.styles.fillColor = DEPT_FILL; return c
+        })))
+      g.typeGroups.forEach(function (t) {
+        var tName = t.typeId ? (typeMap[t.typeId] || 'Untyped') : 'Untyped'
+        body.push([{ content: '    ' + tName, styles: { fontStyle: 'bold', fillColor: TYPE_FILL } }]
+          .concat(figures(t, true).map(function (c) {
+            c.styles.fillColor = TYPE_FILL; return c
+          })))
+        t.subRows.forEach(function (r) {
+          var sName = r.subTypeId ? (subTypeMap[r.subTypeId] || '—') : '—'
+          body.push([{ content: '        ' + sName }].concat(figures(r, false)))
+        })
+      })
+    })
+
+    autoTable(doc, {
+      startY: ctx.startY + 3,
+      head: [['Department / Type / Sub-Type',
+        { content: 'Acknowledged', styles: { halign: 'right' } },
+        { content: 'Pending', styles: { halign: 'right' } },
+        { content: 'Credit', styles: { halign: 'right' } },
+        { content: 'Net Total', styles: { halign: 'right' } },
+        { content: 'Allocs', styles: { halign: 'right' } }]],
+      body: body,
+      styles: { font: FONT, fontSize: 8, cellPadding: 1.6, overflow: 'linebreak' },
+      headStyles: { font: FONT, fillColor: [50, 50, 50], textColor: 255, fontStyle: 'bold', fontSize: 7.5 },
+      columnStyles: {
+        0: { cellWidth: 'auto' },
+        1: { cellWidth: 30, halign: 'right' }, 2: { cellWidth: 30, halign: 'right' },
+        3: { cellWidth: 28, halign: 'right' }, 4: { cellWidth: 32, halign: 'right' },
+        5: { cellWidth: 16, halign: 'right' },
+      },
+      margin: { left: 10, right: 10 },
+      didDrawPage: function () {
+        doc.setFontSize(6); doc.setTextColor(120)
+        doc.text('Page ' + doc.internal.getCurrentPageInfo().pageNumber, pageW - 14, pageH - 5, { align: 'right' })
+        doc.setTextColor(0)
+      },
+    })
+    ctx.startY = (doc.lastAutoTable ? doc.lastAutoTable.finalY : ctx.startY) + 8
+  }
+
+  async function exportListPDF(mode) {
     if (pdfBusy) return
     var groups = visibleGroups
     if (!groups.length) return
     setPdfBusy(true)
     try {
+      // The summary reaches the file without a request. deptGroups is what the
+      // page has just finished computing, so this prints the table already on
+      // the screen; the detailed export below has to go and fetch every
+      // allocation behind it, which on a wide range is thousands of rows.
+      if (mode === 'summary') {
+        var sctx = await _pdfSetup('Expense Ledger — Summary')
+        _renderSummaryTable(sctx, groups)
+        await openOrSharePdf(sctx.doc, 'ledger_summary_' + dateFrom + '_' + dateTo + '.pdf')
+        return
+      }
       var ctx = await _pdfSetup('Expense Ledger — Detailed')
       var allocs = await fetchAllocDetail(null)
       if (allocs.length === 0) {
@@ -1357,7 +1461,7 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
             <Icon name="download" size={14} className="text-slate-400" />
             CSV
           </button>
-          <button type="button" onClick={exportListPDF} disabled={!visibleGroups.length || pdfBusy}
+          <button type="button" onClick={function () { setPdfSheet(true) }} disabled={!visibleGroups.length || pdfBusy}
             className="h-11 px-4 inline-flex items-center gap-2 text-[12.5px] font-bold text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 hover:border-slate-300 disabled:opacity-40 transition-all duration-150">
             <Icon name={pdfBusy ? 'refresh' : 'fileText'} size={14} className="text-slate-400" />
             {pdfBusy ? 'Generating…' : 'PDF'}
@@ -1823,6 +1927,36 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
           </p>
         </div>
       )}
+
+      {/* Two exports, not one with a switch buried in the filters. They are not
+          long and short versions of a preference — they answer different
+          questions, so each says what it is for and the reader picks by the
+          question they came with.
+
+          The cost is named on the second one. It is the honest difference
+          between them: the summary is the table already on the screen and
+          needs no request at all, while the detailed export goes and fetches
+          every allocation behind it, which on a wide range is thousands of
+          rows over a phone connection. */}
+      <BottomSheet open={pdfSheet} onClose={function () { setPdfSheet(false) }} title="Export PDF">
+        <div className="space-y-2.5">
+          {PDF_SHAPES.map(function (o) {
+            return (
+              <button key={o.mode} type="button" disabled={pdfBusy}
+                onClick={function () { setPdfSheet(false); exportListPDF(o.mode) }}
+                className="w-full flex items-start gap-3 text-left p-3.5 rounded-2xl bg-white border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/40 disabled:opacity-40 transition-all duration-150">
+                <span className="shrink-0 w-9 h-9 rounded-xl bg-slate-100 text-slate-500 inline-flex items-center justify-center">
+                  <Icon name={o.glyph} size={17} />
+                </span>
+                <span className="min-w-0">
+                  <span className="block text-[13.5px] font-bold text-slate-900">{o.title}</span>
+                  <span className="block mt-0.5 text-[12px] text-slate-500 leading-snug">{o.blurb}</span>
+                </span>
+              </button>
+            )
+          })}
+        </div>
+      </BottomSheet>
     </div>
   )
 }
