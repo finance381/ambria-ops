@@ -464,6 +464,17 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved }) {
         }
 
         if (mergeTarget) {
+          // Bump the target's own qty by the edited item's qty BEFORE touching
+          // allocations — this never happened before, so the allocation-vs-qty
+          // trigger rejected the merge every time the target's existing qty
+          // couldn't cover the incoming allocations, even though the merge
+          // itself was legitimate. Mirrors the equivalent NEW-ITEM merge path
+          // below (existing.qty + qty).
+          var mergedQty = Math.round(((mergeTarget.qty || 0) + (Number(qty) || 0)) * 1000) / 1000
+          var { error: qtyBumpErr } = await supabase.from(tableName).update({ qty: mergedQty }).eq('id', mergeTarget.id)
+          if (qtyBumpErr) throw new Error('Merge qty update failed: ' + qtyBumpErr.message)
+          mergeTarget.qty = mergedQty
+
           // Gather all allocations to merge: form entries + any DB entries not in form
           var { data: dbAllocs } = await supabase.from(allocTable).select('*').eq('item_id', item.id)
           var { data: targetAllocs } = await supabase.from(allocTable).select('*').eq('item_id', mergeTarget.id)
