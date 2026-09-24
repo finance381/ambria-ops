@@ -2060,28 +2060,7 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
                     <Icon name="chevronRight" size={14} className="rotate-180" />
                   </button>
                 )}
-                <p className="min-w-0 flex-1">
-                  <span className="block text-[13px] font-bold text-slate-900 truncate">{g ? dName : 'The whole sheet'}</span>
-                  <span className="block text-[11.5px] text-slate-500">{scopeNote}</span>
-                </p>
-              </div>
-
-              <div className="space-y-2.5">
-                {PDF_SHAPES.map(function (o) {
-                  return (
-                    <button key={o.mode} type="button" disabled={pdfBusy}
-                      onClick={function () { setPdfSheet(false); runLedgerPdf(o.mode, g, pdfTypeKeys) }}
-                      className="w-full flex items-start gap-3 text-left p-3.5 rounded-2xl bg-white border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/40 disabled:opacity-40 transition-all duration-150">
-                      <span className="shrink-0 w-9 h-9 rounded-xl bg-slate-100 text-slate-500 inline-flex items-center justify-center">
-                        <Icon name={o.glyph} size={17} />
-                      </span>
-                      <span className="min-w-0">
-                        <span className="block text-[13.5px] font-bold text-slate-900">{o.title}</span>
-                        <span className="block mt-0.5 text-[12px] text-slate-500 leading-snug">{o.blurb}</span>
-                      </span>
-                    </button>
-                  )
-                })}
+                <p className="min-w-0 flex-1 text-[13px] font-bold text-slate-900 truncate">{g ? dName : 'The whole sheet'}</p>
               </div>
 
               {/* At the top level this list is how you go in; inside a
@@ -2147,6 +2126,41 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
                   </div>
                 )
               )}
+
+              {/* Pinned, because this is what you press after choosing and the
+                  choosing is a scroll. Above the list these were the first
+                  thing on the sheet and the last thing you could see: by the
+                  time two types were ticked they were off the top, and the
+                  sheet looked like it had no way to finish.
+
+                  It bleeds to the sheet's own edges — the panel pads its
+                  children by 5 and 4, and a bar that stops short of that reads
+                  as a card floating over the list rather than as the floor. */}
+              <div className="sticky bottom-0 -mx-5 -mb-4 mt-4 px-5 pt-3 pb-4 bg-white/80 backdrop-blur-xl border-t border-slate-200">
+                <p className="mb-2 text-[11.5px] text-slate-500">
+                  Export <span className="font-bold text-slate-700">{scopeNote.toLowerCase()}</span>
+                </p>
+                <div className="flex items-stretch gap-2">
+                  {PDF_SHAPES.map(function (o) {
+                    return (
+                      <button key={o.mode} type="button" disabled={pdfBusy}
+                        title={o.blurb}
+                        onClick={function () { setPdfSheet(false); runLedgerPdf(o.mode, g, pdfTypeKeys) }}
+                        className="flex-1 min-w-0 flex items-center justify-center gap-2 h-11 px-3 rounded-xl bg-white border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/40 disabled:opacity-40 transition-all duration-150">
+                        <Icon name={o.glyph} size={15} className="shrink-0 text-slate-400" />
+                        <span className="min-w-0 truncate text-[12.5px] font-bold text-slate-800">{o.title}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+                {/* A phone has no hover, so the difference between the two
+                    cannot live in a title attribute. One line, because it is
+                    one fact: the summary is already computed and the other has
+                    to go and fetch what it is a summary of. */}
+                <p className="mt-2 text-[11px] text-slate-400 leading-snug">
+                  Summary prints the figures at once. Every allocation fetches each entry behind them first.
+                </p>
+              </div>
             </div>
           )
         })()}
