@@ -1257,7 +1257,7 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
       <div className="px-0.5 flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h2 className="font-serif text-[23px] font-bold text-slate-900 tracking-[-0.005em]">Ledgers</h2>
-          <p className="mt-0.5 text-[12.5px] text-slate-500 whitespace-nowrap">
+          <p className="mt-0.5 text-[12.5px] font-semibold text-slate-600 whitespace-nowrap">
             <span className="hidden sm:inline">
               Live financial tracker
               <span aria-hidden="true" className="mx-1.5 text-slate-300">·</span>
