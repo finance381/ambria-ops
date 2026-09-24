@@ -447,7 +447,7 @@ function Shell({ profile, onSignOut }) {
   // has to let it through rather than capping it with white.
   // The vendor ledger draws its own ground on the phone, the way the wallet
   // does, so the bar over it is frosted rather than a solid white strip.
-  var artHeader = pageArt || waveArt || tab === 'wallet' || tab === 'vendor_ledger'
+  var artHeader = pageArt || waveArt || tab === 'wallet' || tab === 'vendor_ledger' || tab === 'ledgers'
 
 
   return (

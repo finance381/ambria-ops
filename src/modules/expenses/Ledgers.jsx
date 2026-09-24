@@ -10,6 +10,7 @@ import { useReferenceData } from '../../lib/referenceData.jsx'
 import { useExpenseDetailModal } from '../../hooks/useExpenseDetailModal.jsx'
 import SearchField from '../../components/ui/SearchField'
 import Icon, { glyphForLabel } from '../../components/ui/Icon'
+import ledgerBg from '../../assets/ledger-bg.webp'
 import CheckedStamp from '../../components/ui/CheckedStamp'
 
 var STATUS_LABELS = { recorded: 'Recorded', flagged: 'Resubmit', acknowledged: 'Acknowledged', deducted: 'Deducted' }
@@ -100,6 +101,32 @@ var TONES = {
 // Both of these sit in the same box — a width and a right margin the heading
 // and the button agree on — so the column has one edge instead of the heading
 // keeping its own padding and the button its own margin.
+// Sampled from the artwork's own last row, after the blur, so the page below
+// the picture continues it instead of ending in a seam.
+var LEDGER_BG_FOOT = 'linear-gradient(to right, ' + [
+  '#75715F 0%', '#ABA08F 4%', '#C1B4AA 25%', '#B2A79F 42%',
+  '#CFC0B2 60%', '#E9D8C7 78%', '#F6E0C8 92%', '#E6D7C7 100%',
+].join(', ') + ')'
+
+// The ground behind the phone ledger, built the way the wallet's and the
+// vendor ledger's are: the artwork at its own proportions at the top, and
+// below it a gradient continuing its last row. Nothing measured against
+// height, so the address bar sliding away cannot rescale it.
+//
+// Nothing on the desktop. This is one tab of eight in the hub, and a ground
+// on one of them would make it look like a different section.
+function LedgerBackdrop({ inAdmin }) {
+  if (inAdmin) return null
+  return (
+    <div aria-hidden="true" className="pointer-events-none fixed inset-0 -z-10 flex flex-col overflow-hidden"
+      style={{ backgroundColor: '#CDBFB2' }}>
+      <img src={ledgerBg} alt="" fetchpriority="high" decoding="async"
+        className="w-full shrink-0" style={{ aspectRatio: '996 / 1578' }} />
+      <div className="flex-1" style={{ backgroundImage: LEDGER_BG_FOOT }} />
+    </div>
+  )
+}
+
 var SELECT_FIELD = 'h-11 pl-9 pr-8 w-full bg-white border border-slate-200 rounded-xl text-[12.5px] text-slate-700 appearance-none hover:border-slate-300 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-[border-color,box-shadow] duration-150'
 
 var EXPORT_COL = 'shrink-0 w-[74px] mr-3'
@@ -874,6 +901,7 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
     var anyDrillChecked = drillRows.some(function (r) { return !!r._checkedBy })
     return (
       <div className="space-y-4">
+        <LedgerBackdrop inAdmin={inAdmin} />
         <div>
           <button type="button" onClick={closeDrill}
             className="inline-flex items-center gap-1.5 h-8 -ml-2 px-2 mb-1 rounded-lg text-[13px] font-bold text-indigo-600 hover:bg-indigo-50 transition-colors">
@@ -1160,6 +1188,7 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
   // ─── LIST VIEW ───
   return (
     <div className="space-y-3">
+      <LedgerBackdrop inAdmin={inAdmin} />
       {/* Already above the block that pins, so it scrolls away with the page
           rather than taking toolbar height on every screen. The allocation
           count reads here and not in the card below, where it would be the
