@@ -498,7 +498,14 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
           }
           if (field.source === 'vendors') return vendorMap[rawValue] || ('#' + rawValue)
         }
-        return String(rawValue)
+        var str = String(rawValue)
+        // A plain ISO day, and nothing else: a value that merely starts with
+        // one — a reference, a code — is left exactly as it was entered.
+        if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+          var d = formatDate(str)
+          if (d) return d
+        }
+        return str
       }
 
       rows = rows.map(function (r) {
@@ -1031,20 +1038,20 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
                           flat slate-400 with slate-300 glyphs and weight only
                           on the name at the end, so two of the three facts read
                           as background and the third as the only thing said. */}
-                      <div className="mt-2.5 flex flex-wrap items-center gap-y-1 text-[11.5px] text-slate-500">
+                      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11.5px] text-slate-500">
                         <span className="inline-flex items-center whitespace-nowrap">
                           <Icon name="calendar" size={13} className="shrink-0 mr-1.5 text-slate-400" />
                           <span className="font-semibold text-slate-700">{formatDate(r.expense_date)}</span>
                         </span>
-                        <span aria-hidden="true" className="mx-3 w-px h-3.5 bg-slate-200" />
+                        <span aria-hidden="true" className="hidden sm:block w-px h-3.5 bg-slate-200" />
                         <span className="inline-flex items-center whitespace-nowrap">
                           <Icon name="clock" size={13} className="shrink-0 mr-1.5 text-slate-400" />
-                          logged&nbsp;<span className="font-semibold text-slate-700">{formatDateTime(r.created_at)}</span>
+                          <span className="font-semibold text-slate-700">{formatDateTime(r.created_at)}</span>
                         </span>
-                        <span aria-hidden="true" className="mx-3 w-px h-3.5 bg-slate-200" />
+                        <span aria-hidden="true" className="hidden sm:block w-px h-3.5 bg-slate-200" />
                         <span className="inline-flex items-center whitespace-nowrap">
                           <Icon name="user" size={13} className="shrink-0 mr-1.5 text-slate-400" />
-                          <span>by&nbsp;<span className="font-semibold text-slate-700">{userMap[r.user_id] || '—'}</span></span>
+                          <span className="font-semibold text-slate-700">{userMap[r.user_id] || '—'}</span>
                         </span>
                       </div>
                     </div>
