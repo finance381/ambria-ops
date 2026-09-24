@@ -1457,7 +1457,7 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
                     <div key={t.typeKey}>
                       <div className="flex items-stretch border-t border-slate-100 bg-slate-50/70 hover:bg-slate-100 transition-colors">
                         <button onClick={function () { toggleType(g.key, t.typeKey) }}
-                          className={"flex-1 " + COLS + " items-center px-3 py-1.5 pl-9 text-left"}>
+                          className={"flex-1 " + COLS + " items-center px-3 py-1.5 pl-5 sm:pl-9 text-left"}>
                           <div className="flex items-center gap-2 min-w-0">
                             <Icon name="chevronRight" size={13}
                               className={"shrink-0 text-slate-400 transition-transform duration-150 " + (typeCollapsed ? "" : "rotate-90")} />
@@ -1471,7 +1471,7 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
                           <Money paise={t.pending} tone={TONES.pending} cls={COL_SM} />
                           <Money paise={t.credit} tone={TONES.credit} dashWhenZero cls={COL_SM} />
                           <Money paise={t.total} tone={TONES.total} bold />
-                          <span className="text-[11.5px] text-right text-slate-400 tabular-nums self-center" data-notranslate>{t.allocs}</span>
+                          <span className={COL_SM + " text-[11.5px] text-right text-slate-400 tabular-nums self-center"} data-notranslate>{t.allocs}</span>
                         </button>
                         <button onClick={function (e) { e.stopPropagation(); exportScopedPDF(g.deptId, t.typeId) }}
                           disabled={pdfBusy}
@@ -1493,18 +1493,27 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
                                 sub-type's name actually started nine pixels to
                                 the LEFT of its own parent's. */}
                             <button onClick={function () { openRow(g, r) }}
-                              className={"flex-1 " + COLS + " items-center px-3 py-1.5 pl-20 text-left"}>
+                              className={"flex-1 " + COLS + " items-start sm:items-center px-3 py-1.5 pl-9 sm:pl-20 text-left"}>
                               {/* The tile and the badge its two parents have.
                                   A bare glyph beside a name, under two rows
                                   that each put theirs in a box, read as a
                                   different kind of row rather than the third
                                   level of the same one. */}
+                              {/* Measured: at the old indent the name had 9px
+                                  left once the tile, the badge, the figure and
+                                  the chevron had taken theirs. The indent
+                                  halves, the tile and the badge stand down —
+                                  the row is already the third level and the
+                                  only one with a chevron — and what is left
+                                  wraps rather than truncating, because these
+                                  names are the whole point of the row and
+                                  "FLR-Casual La…" is not one. */}
                               <div className="flex items-center gap-2 min-w-0">
-                                <span className="shrink-0 w-6 h-6 rounded-md bg-white border border-slate-200 text-slate-400 inline-flex items-center justify-center">
+                                <span className="hidden sm:inline-flex shrink-0 w-6 h-6 rounded-md bg-white border border-slate-200 text-slate-400 items-center justify-center">
                                   <Icon name="fileText" size={13} />
                                 </span>
-                                <span className="text-[12.5px] text-slate-600 truncate">{subTypeName}</span>
-                                <span className="shrink-0 min-w-[20px] px-1.5 py-0.5 rounded-md bg-white text-[10.5px] font-bold text-slate-500 tabular-nums text-center" data-notranslate>{r.allocs}</span>
+                                <span className="text-[12.5px] text-slate-600 leading-snug sm:truncate">{subTypeName}</span>
+                                <span className={COL_SM + " shrink-0 min-w-[20px] px-1.5 py-0.5 rounded-md bg-white text-[10.5px] font-bold text-slate-500 tabular-nums text-center"} data-notranslate>{r.allocs}</span>
                               </div>
                               <Money paise={r.committed} tone={TONES.committed} cls={COL_SM} />
                               <Money paise={r.pending} tone={TONES.pending} cls={COL_SM} />
