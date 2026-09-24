@@ -1451,9 +1451,9 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
               {/* Headings, not controls. */}
               <span className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em]">Department / Type</span>
               <span className={COL_SM_TXT + " text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] text-right"}>Acknowledged</span>
-              <span className={COL_SM_TXT + " text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] text-right"}>Pending</span>
+              <span className={"text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] text-right"}>Pending</span>
               <span className={COL_SM_TXT + " text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] text-right"}>Credit</span>
-              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] text-right">Net Total</span>
+              <span className={COL_SM_TXT + " text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] text-right"}>Net Total</span>
               <span className={COL_SM_TXT + " text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] text-right"}>#</span>
             </div>
             <span className={"hidden sm:block " + EXPORT_COL + " py-2.5 text-center text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em]"}>Export</span>
@@ -1481,15 +1481,6 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
                       </span>
                       <span className="text-[13.5px] font-bold text-slate-900 truncate">{g.deptName}</span>
                       <span className="shrink-0 min-w-[20px] px-1.5 py-0.5 rounded-md bg-slate-100 text-[10.5px] font-bold text-slate-500 tabular-nums text-center" data-notranslate>{g.typeGroups.length}</span>
-                      {/* Their columns are gone on a phone, so the two that
-                          make up the total are said under the name instead —
-                          in their own colours, which is how they were told
-                          apart across the row. */}
-                      <span className="sm:hidden basis-full flex items-center gap-2.5 text-[11px] font-semibold tabular-nums" data-notranslate>
-                        <span className={TONES.committed}>{formatPoints(g.committed)}</span>
-                        <span className="text-slate-300">·</span>
-                        <span className={TONES.pending}>{formatPoints(g.pending)}</span>
-                      </span>
                       {delta > 0 && (
                         <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700 font-bold flex-shrink-0 animate-pulse">
                           +{delta}
@@ -1497,9 +1488,9 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
                       )}
                     </div>
                     <Money paise={g.committed} tone={TONES.committed} cls={COL_SM} />
-                    <Money paise={g.pending} tone={TONES.pending} cls={COL_SM} />
+                    <Money paise={g.pending} tone={TONES.pending} />
                     <Money paise={g.credit} tone={TONES.credit} dashWhenZero cls={COL_SM} />
-                    <Money paise={g.total} tone={TONES.total} bold />
+                    <Money paise={g.total} tone={TONES.total} bold cls={COL_SM} />
                     <span className={COL_SM_TXT + " text-[11.5px] text-right text-slate-400 tabular-nums self-center"} data-notranslate>{g.allocs}</span>
                   </button>
                   <button onClick={function (e) { e.stopPropagation(); exportScopedPDF(g.deptId) }}
@@ -1529,9 +1520,9 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
                             <span className="shrink-0 min-w-[20px] px-1.5 py-0.5 rounded-md bg-white text-[10.5px] font-bold text-slate-500 tabular-nums text-center" data-notranslate>{t.subRows.length}</span>
                           </div>
                           <Money paise={t.committed} tone={TONES.committed} cls={COL_SM} />
-                          <Money paise={t.pending} tone={TONES.pending} cls={COL_SM} />
+                          <Money paise={t.pending} tone={TONES.pending} />
                           <Money paise={t.credit} tone={TONES.credit} dashWhenZero cls={COL_SM} />
-                          <Money paise={t.total} tone={TONES.total} bold />
+                          <Money paise={t.total} tone={TONES.total} bold cls={COL_SM} />
                           <span className={COL_SM_TXT + " text-[11.5px] text-right text-slate-400 tabular-nums self-center"} data-notranslate>{t.allocs}</span>
                         </button>
                         <button onClick={function (e) { e.stopPropagation(); exportScopedPDF(g.deptId, t.typeId) }}
@@ -1577,9 +1568,9 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
                                 <span className={COL_SM_TXT + " shrink-0 min-w-[20px] px-1.5 py-0.5 rounded-md bg-white text-[10.5px] font-bold text-slate-500 tabular-nums text-center"} data-notranslate>{r.allocs}</span>
                               </div>
                               <Money paise={r.committed} tone={TONES.committed} cls={COL_SM} />
-                              <Money paise={r.pending} tone={TONES.pending} cls={COL_SM} />
+                              <Money paise={r.pending} tone={TONES.pending} />
                               <Money paise={r.credit} tone={TONES.credit} dashWhenZero cls={COL_SM} />
-                              <Money paise={r.total} tone={TONES.total} bold />
+                              <Money paise={r.total} tone={TONES.total} bold cls={COL_SM} />
                               {/* The count moved up beside the name, where the
                                   other two levels carry theirs. What ends this
                                   row instead is a chevron: the rows above
