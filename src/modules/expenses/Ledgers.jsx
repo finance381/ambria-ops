@@ -979,7 +979,11 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
                           read to know what you are looking at was the one line
                           that was not at the top. */}
                       <div className="flex items-center gap-2 flex-wrap">
-                        <p className="text-[14px] font-semibold text-slate-900 truncate">{r.description || '—'}</p>
+                        {/* basis-full: both chips are shrink-0, so in a flex
+                            row the description was the only thing that could
+                            give — and it gave everything, down to "m…". It
+                            takes the line and the chips wrap under it. */}
+                        <p className="basis-full sm:basis-auto sm:min-w-0 sm:truncate text-[14px] font-semibold text-slate-900 leading-snug">{r.description || '—'}</p>
                         <span className={"shrink-0 text-[10.5px] px-2 py-0.5 rounded-md font-bold " + (STATUS_COLORS[r.status] || 'bg-gray-100 text-gray-600')}>
                           {STATUS_LABELS[r.status] || r.status}
                         </span>
@@ -997,15 +1001,23 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
                       {r._fieldChips && r._fieldChips.length > 0 && (
                         <div className="flex flex-wrap gap-2 mt-2.5">
                           {r._fieldChips.map(function (c, i) {
+                            // The label and the value were side by side in a
+                            // pill, so a two-word value wrapped inside it and
+                            // the pill grew into a box twice the height of its
+                            // neighbour. Stacked, the value gets the pill's
+                            // width and the row of them stays one height.
+                            //
+                            // Weight, not colour. Indigo on the value made
+                            // every chip look like a link to somewhere, and a
+                            // row of them a row of links; the label is already
+                            // the quiet half of the pair.
                             return (
-                              <span key={i} className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-[11.5px] text-slate-600">
-                                <Icon name={glyphForLabel(c.label)} size={13} className="shrink-0 text-slate-500" />
-                                {c.label}:
-                                {/* Weight, not colour. Indigo on the value made
-                                    every chip look like a link to somewhere, and
-                                    a row of them a row of links; the label is
-                                    already the quiet half of the pair. */}
-                                <span className="font-bold text-slate-800">{c.value}</span>
+                              <span key={i} className="inline-flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-slate-50 border border-slate-200">
+                                <Icon name={glyphForLabel(c.label)} size={13} className="shrink-0 text-slate-400" />
+                                <span className="min-w-0">
+                                  <span className="block text-[10.5px] text-slate-500 leading-tight">{c.label}</span>
+                                  <span className="block text-[11.5px] font-bold text-slate-800 leading-tight">{c.value}</span>
+                                </span>
                               </span>
                             )
                           })}
