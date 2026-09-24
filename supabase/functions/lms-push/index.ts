@@ -219,17 +219,18 @@ serve(async (req) => {
     // who looks at the lead.
     const extraPlateStr = "1"
 
-    // Off means off: a décor/DJ toggle switched off must zero both the
-    // amount and its remarks (tier name), not just fall out of the total —
-    // previously these two fields ignored includeDecor/includeDj entirely
-    // and always sent the stored amount + chip label even when toggled off.
+    // Off means off: a décor/DJ toggle switched off must zero the amount —
+    // previously this ignored includeDecor/includeDj entirely and always sent
+    // the stored amount even when toggled off. The remarks (tier name) stays
+    // populated either way — see decorRemarks/djRemarks below.
     const decorRupees = includeDecor ? String(decorHR) : "0"
     const djRupees = includeDj ? String(djHR) : "0"
-    // LMS's backend treats an empty string as a missing required field (same
-    // PHP empty("") quirk as fisd_extra_plate_charge) — "-" keeps it toggled
-    // off in spirit while staying non-empty, same convention as location_name below.
-    const decorRemarks = includeDecor ? decorLabel : "-"
-    const djRemarks = includeDj ? djLabel : "-"
+    // Always the tier label (Premium/Standard/Banquet, DJ + LED/Std DJ), on or
+    // off — it says which tier was picked, not whether it's charged for, and
+    // decorLabel/djLabel are never empty so this also sidesteps LMS's
+    // empty("") = "required" quirk (same class of bug as fisd_extra_plate_charge).
+    const decorRemarks = decorLabel
+    const djRemarks = djLabel
     const totalRupees = String(roundedAggHR)
 
     const body: Record<string, string | number> = {
