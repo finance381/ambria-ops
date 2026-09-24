@@ -133,7 +133,7 @@ var GROUPS = [
 ]
 
 import { pushBack, goBack as navBack } from '../../lib/backNav'
-import { formatPoints } from '../../lib/format'
+import { formatPoints, formatPointsPlain } from '../../lib/format'
 import Icon from '../ui/Icon'
 import PageBackdrop from '../ui/PageBackdrop'
 import PageWave from '../ui/PageWave'
@@ -691,7 +691,11 @@ function Shell({ profile, onSignOut }) {
               } else if (f.key === 'finance.expenses' && financeStats.expMonthCount > 0) {
                 extra = <span className="text-[11.5px] font-medium text-slate-500 tabular-nums">{financeStats.expMonthCount + ' · ' + formatPoints(financeStats.expMonthTotal)}</span>
               } else if (f.key === 'finance.ledgers.expense' && financeStats.ledgerMonthTotal > 0) {
-                extra = <span className="text-[11.5px] font-medium text-slate-500 tabular-nums">{formatPoints(financeStats.ledgerMonthTotal) + ' this month'}</span>
+                // Plain, because "this month" follows it. "pts this month" put
+                // the unit in the middle of a phrase, where it read as a word
+                // in the sentence rather than as the figure's unit — and this
+                // tile is the only one whose figure has a phrase after it.
+                extra = <span className="text-[11.5px] font-medium text-slate-500 tabular-nums">{formatPointsPlain(financeStats.ledgerMonthTotal) + ' this month'}</span>
               }
               return (
                 <button
