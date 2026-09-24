@@ -179,6 +179,20 @@ function LedgerBackdrop({ inAdmin }) {
           backgroundPosition: 'center',
           backgroundRepeat: 'no-repeat',
         }} />
+
+      {/* The heading sits straight on the photograph, and under it the ground
+          runs from luminance 82 to 242 — a swing of 160. The letters were
+          never the problem; a serif this fine loses its hairlines wherever
+          the ground happens to go dark, so the word breaks up in patches
+          rather than reading evenly.
+
+          A wash of the artwork's own light tone mixes toward one value, and
+          mixing toward one value is what closes a spread: at 0.72 the 160
+          becomes about 45. It fades out before the first card, so there is no
+          edge anywhere for it to read as a band — which is what an opaque
+          strip across the top would have been. */}
+      <div className="absolute inset-x-0 top-0 h-[34%] sm:hidden"
+        style={{ backgroundImage: 'linear-gradient(to bottom, rgba(240,234,218,0.72) 0%, rgba(240,234,218,0.55) 34%, rgba(240,234,218,0) 100%)' }} />
     </div>
   )
 }
@@ -1256,7 +1270,7 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
           before anything else does. */}
       <div className="px-0.5 flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <h2 className="font-serif text-[23px] font-bold text-slate-900 tracking-[-0.005em]">Ledgers</h2>
+          <h2 className="font-serif text-[26px] sm:text-[23px] font-bold text-slate-900 tracking-[-0.005em]">Ledgers</h2>
           <p className="mt-0.5 text-[12.5px] font-semibold text-slate-600 whitespace-nowrap">
             <span className="hidden sm:inline">
               Live financial tracker
