@@ -59,5 +59,13 @@ export function titleCase(str) {
 
 export function formatPoints(paise) {
   if (paise == null) return '—'
-  return (paise / 100).toLocaleString('en-IN') + ' pts'
+  return formatPointsPlain(paise) + ' pts'
+}
+
+// The figure without its unit, for the places that have already said what the
+// number is. formatPoints is built from it rather than the grouping being
+// written twice, so the two cannot come to disagree about where a lakh breaks.
+export function formatPointsPlain(paise) {
+  if (paise == null) return '—'
+  return (paise / 100).toLocaleString('en-IN')
 }

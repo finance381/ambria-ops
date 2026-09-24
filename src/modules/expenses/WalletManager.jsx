@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { supabase } from '../../lib/supabase'
-import { formatDate, formatPoints } from '../../lib/format'
+import { formatDate, formatPoints, formatPointsPlain } from '../../lib/format'
 import { logActivity } from '../../lib/logger'
 import { prepUpload, isVoiceNotePath, getReceiptUrl } from '../../lib/uploadHelper'
 import SearchDropdown from '../../components/ui/SearchDropdown'
@@ -3349,8 +3349,8 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                   <Icon name="wallet" size={19} />
                 </span>
                 <span className="min-w-0">
-                  <span className="block font-display text-[17px] font-bold text-slate-900 leading-snug">All Wallets</span>
-                  <span className="block text-[13px] font-medium text-slate-500 tabular-nums" data-notranslate>
+                  <span className="block font-display text-[17px] font-bold text-slate-900 leading-snug truncate">All Wallets</span>
+                  <span className="block text-[13px] font-medium text-slate-500 tabular-nums truncate" data-notranslate>
                     {filteredWallets.length} wallets
                   </span>
                 </span>
@@ -3364,7 +3364,13 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                 // question nobody asked.
                 var total = filteredWallets.reduce(function (s, w) { return s + (w.balance_paise || 0) }, 0)
                 return (
-                  <div className="flex-1 min-w-0 flex items-center gap-3">
+                  // Not flex-1. Split half and half, the figure's box came to
+                  // 102px on a 390px phone and "32,14,588.4 pts" measures 128,
+                  // so with whitespace-nowrap it ran straight out of the card.
+                  // Sized to its content instead, with the left half giving way
+                  // and truncating — a clipped word inside the card beats a
+                  // number outside it.
+                  <div className="shrink-0 flex items-center gap-3">
                     <span className={"shrink-0 w-10 h-10 rounded-2xl inline-flex items-center justify-center " +
                       (total < 0 ? "bg-red-100 text-red-600" : "bg-emerald-100 text-emerald-600")}>
                       <Icon name="banknote" size={19} />
@@ -3372,7 +3378,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                     <span className="min-w-0">
                       <span className="block text-[13px] font-medium text-slate-500 leading-snug">Total Points</span>
                       <span className={"block font-display text-[16px] font-bold tabular-nums leading-snug whitespace-nowrap " +
-                        (total < 0 ? "text-red-700" : "text-slate-900")} data-notranslate>{formatPoints(total)}</span>
+                        (total < 0 ? "text-red-700" : "text-slate-900")} data-notranslate>{formatPointsPlain(total)}</span>
                     </span>
                   </div>
                 )
