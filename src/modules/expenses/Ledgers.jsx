@@ -1030,7 +1030,7 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
             Back to Ledgers
           </button>
           <h2 className="font-display text-[19px] font-bold text-slate-900 leading-tight">{drillGroup.deptName}</h2>
-          <p className="mt-0.5 text-[12.5px] text-slate-500">{drillGroup.typeName} › {drillGroup.subTypeName}</p>
+          <p className="mt-0.5 text-[12.5px] font-semibold text-slate-600">{drillGroup.typeName} › {drillGroup.subTypeName}</p>
         </div>
 
         {/* Three readings of one sub-type, so they get one shape — the same one
