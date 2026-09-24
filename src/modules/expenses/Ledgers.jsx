@@ -427,12 +427,34 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
     }
   }, [drillPaint, drillRows.length])
 
+  // What the live subscription should run when something changes, kept current
+  // on every render.
+  //
+  // This is the bug behind "the same selection shows a different number each
+  // time". The subscription's callback used to close over loadDrill, and its
+  // effect did not depend on the three drill filters — so the loader it held
+  // was the one built when the channel was opened, back when the drill filter
+  // was still empty. Any allocation change, or any expenses UPDATE (checking a
+  // row is one), fired it 800ms later and rewrote the list from that older
+  // filter. Pick a user, and a moment afterwards you were looking at everyone
+  // again, with the select still saying the user.
+  //
+  // A ref cannot go stale: it is reassigned every render, so the callback runs
+  // whatever the newest one is.
+  var liveRef = useRef(null)
+  liveRef.current = { ledger: loadLedger, drill: loadDrill, group: drillGroup }
+
+  // No dependencies. The channel had been torn down and resubscribed on every
+  // date, user, venue, status and drill change — a websocket rebuilt each time
+  // a dropdown moved, for a subscription whose filters never mattered to it.
   useEffect(function () {
     function schedule() {
       if (reloadTimer.current) clearTimeout(reloadTimer.current)
       reloadTimer.current = setTimeout(function () {
-        loadLedger()
-        if (drillGroup) { setDrillOffset(0); loadDrill(false) }
+        var live = liveRef.current
+        if (!live) return
+        live.ledger()
+        if (live.group) { setDrillOffset(0); live.drill(false) }
       }, 800)
     }
     var channel = supabase.channel('ledgers-live')
@@ -443,7 +465,7 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
       if (reloadTimer.current) clearTimeout(reloadTimer.current)
       supabase.removeChannel(channel)
     }
-  }, [dateFrom, dateTo, userFilter, venueFilter, statusFilter, drillGroup])
+  }, [])
 
   async function loadMaps() {
     var res = await Promise.all([
@@ -786,6 +808,10 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
     var typeName = r.typeId ? (typeMap[r.typeId] || 'Untyped') : 'Untyped'
     var subTypeName = r.subTypeId ? (subTypeMap[r.subTypeId] || '—') : '—'
     pushBack(function () { setDrillGroup(null); setDrillRows([]); setDrillOffset(0); setDrillUserFilter(''); setDrillStatusFilter(''); setDrillVenueFilter('') })
+    // A drill starts clean. Only the back handler and closeDrill cleared
+    // these, so a route out that used neither left the next drill opening
+    // with the last one's user still selected.
+    setDrillUserFilter(''); setDrillStatusFilter(''); setDrillVenueFilter('')
     setDrillGroup({
       deptId: g.deptId, typeId: r.typeId, subTypeId: r.subTypeId,
       deptName: deptName, typeName: typeName, subTypeName: subTypeName,
