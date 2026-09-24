@@ -108,11 +108,9 @@ var TONES = {
 // continuing it drew that dark olive — #75715F at the 0% stop — down the
 // whole page below the image, which was a band across the foot.
 //
-// The value is the average of the image's own last rows, not of the floor in
-// the middle of it. Those differ by a lot — #C4B6A6 against #DBCCBC — and the
-// lighter one drew a visible step wherever a sliver of tone met the picture,
-// which is the line at the end. Matched to the edge, any sliver continues it.
-var LEDGER_BG_FOOT = '#C4B6A6'
+// The value is the average of the image's own last rows, so a sliver of it
+// continues the picture rather than interrupting it.
+var LEDGER_BG_FOOT = '#D5C7B4'
 
 // The ground behind the phone ledger. The artwork covers the whole screen
 // rather than sitting at the top with a colour under it.
