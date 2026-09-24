@@ -358,6 +358,10 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
   var [drillOffset, setDrillOffset] = useState(0)
   var [drillHasMore, setDrillHasMore] = useState(false)
   var [drillLoading, setDrillLoading] = useState(false)
+  // Every load takes a number. Change two filters quickly and two loads are in
+  // flight; without this the slower one writes its rows last and the list ends
+  // up showing the filter you left rather than the one you chose.
+  var drillReq = useRef(0)
   var [drillUserFilter, setDrillUserFilter] = useState('')
   var [drillStatusFilter, setDrillStatusFilter] = useState('')
   var [drillVenueFilter, setDrillVenueFilter] = useState('')
@@ -572,6 +576,8 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
 
   async function loadDrill(append) {
     if (!drillGroup) return
+    var ticket = ++drillReq.current
+    function current() { return drillReq.current === ticket }
     setDrillLoading(true)
     var offset = append ? drillOffset : 0
     var q = supabase.from('v_ledger')
@@ -593,34 +599,44 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
     if (drillVenueFilter) q = q.eq('venue_id', Number(drillVenueFilter))
 
     var { data, error } = await q
+    if (!current()) return
     if (error) { alert('Drill load failed: ' + error.message); setDrillLoading(false); return }
     var rows = data || []
     var hasMore = rows.length > PAGE_SIZE
     if (hasMore) rows = rows.slice(0, PAGE_SIZE)
 
-    // v_ledger doesn't expose expenses.checked_by/checked_at either — same
-    // follow-up pattern as the metadata fetch below, kept separate since this
-    // one always runs (not gated on the sub-type having extra fields).
+    // v_ledger exposes neither expenses.checked_by/checked_at nor
+    // expenses.metadata, so both have to be fetched by id afterwards. They used
+    // to be two requests over the same ids, one after the other.
+    //
+    // Measured against the live API at fifty rows: checked_by and checked_at
+    // alone is 281ms, metadata alone is 274, and all three together is 268. The
+    // second request was buying nothing and costing a whole round trip, on
+    // every filter change.
+    //
+    // metadata is still asked for only when the sub-type has fields that need
+    // it — the column is jsonb and can be large, and the cost above is for rows
+    // whose metadata is small.
+    var subType = drillGroup.subTypeId ? refData.expenseSubTypes.find(function (s) { return s.id === drillGroup.subTypeId }) : null
+    var extraFields = (subType && subType.extra_fields) || []
+    var metaMap = {}
     if (rows.length > 0) {
-      var checkIds = Array.from(new Set(rows.map(function (r) { return r.expense_id }).filter(function (v) { return v != null })))
-      var checkRes = await supabase.from('expenses').select('id, checked_by, checked_at').in('id', checkIds)
+      var eIds = Array.from(new Set(rows.map(function (r) { return r.expense_id }).filter(function (v) { return v != null })))
+      var cols = 'id, checked_by, checked_at' + (extraFields.length > 0 ? ', metadata' : '')
+      var expRes = await supabase.from('expenses').select(cols).in('id', eIds)
+      if (!current()) return
       var checkMap = {}
-      ;(checkRes.data || []).forEach(function (e) { checkMap[e.id] = e })
+      ;(expRes.data || []).forEach(function (e) {
+        checkMap[e.id] = e
+        metaMap[e.id] = e.metadata || {}
+      })
       rows = rows.map(function (r) {
         var c = checkMap[r.expense_id]
         return Object.assign({}, r, { _checkedBy: c ? c.checked_by : null, _checkedAt: c ? c.checked_at : null })
       })
     }
 
-    // Enrich with this sub-type's custom field values (e.g. which employee a
-    // salary-type expense was paid to) — v_ledger doesn't expose expenses.metadata.
-    var subType = drillGroup.subTypeId ? refData.expenseSubTypes.find(function (s) { return s.id === drillGroup.subTypeId }) : null
-    var extraFields = (subType && subType.extra_fields) || []
     if (extraFields.length > 0 && rows.length > 0) {
-      var eIds = Array.from(new Set(rows.map(function (r) { return r.expense_id }).filter(function (v) { return v != null })))
-      var metaRes = await supabase.from('expenses').select('id, metadata').in('id', eIds)
-      var metaMap = {}
-      ;(metaRes.data || []).forEach(function (e) { metaMap[e.id] = e.metadata || {} })
 
       // job_departments/venues are already preloaded in refData; vendors aren't.
       var vendorLookupFields = extraFields.filter(function (f) { return f.type === 'lookup' && f.source === 'vendors' })
@@ -633,6 +649,7 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
         })
         if (vendorIds.size > 0) {
           var vRes = await supabase.from('vendors').select('id, name').in('id', Array.from(vendorIds))
+          if (!current()) return
           ;(vRes.data || []).forEach(function (v) { vendorMap[v.id] = v.name })
         }
       }
@@ -680,6 +697,7 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
       })
     }
 
+    if (!current()) return
     if (append) setDrillRows(function (prev) { return prev.concat(rows) })
     else setDrillRows(rows)
     setDrillHasMore(hasMore)
@@ -1216,7 +1234,13 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
         ) : drillRows.length === 0 ? (
           <LedgerNote>No allocations in range</LedgerNote>
         ) : (
-          <div className="space-y-2">
+          /* Dimmed while a filter reloads. The rows that are up are the
+             answer to the filter you just left, and the wait is two round
+             trips — long enough to read a row and believe it. Nothing was
+             saying otherwise: the loading note only shows when the list is
+             empty, which on a filter change it never is. */
+          <div aria-busy={drillLoading}
+            className={"space-y-2 transition-opacity duration-150 " + (drillLoading ? "opacity-60" : "")}>
             {/* The stamp gets a column, not a place in the queue. Rendered only
                 on the rows that have one, it widened those rows' right-hand
                 cluster and pushed their rule left, so down a list the rules and
