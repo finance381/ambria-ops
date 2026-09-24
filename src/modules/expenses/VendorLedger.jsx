@@ -47,10 +47,11 @@ var MERGE_LABEL = 'block text-[12px] font-semibold text-slate-600 mb-1.5'
 var FIRST_PAINT = 24
 
 // A vendor card is tall — a name, a balance, chips, a facts band — so these
-// are the wallet list's sizes rather than a table's. 30 is four or five
-// thumb-lengths on a phone, which is as far as anyone scrolls before they go
-// back to the search.
-var VENDOR_PAGE_SIZES = [30, 60, 120]
+// are shorter than a table's pages. 10 is the default and the first option:
+// on a phone that is about a screen and a half, so the pager at the foot is
+// reachable rather than something you scroll a minute to find. The larger
+// three are for the admin grid, where three cards sit across a row.
+var VENDOR_PAGE_SIZES = [10, 30, 60, 120]
 
 function isExpenseEntry(e) {
   return e.ref_type === 'expense' && e.ref_id && /^[0-9]+$/.test(String(e.ref_id)) && !e.deleted_at
