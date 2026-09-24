@@ -747,7 +747,15 @@ function Templates({ profile }) {
         {form.meta_rejection_reason && (
           <p className="flex items-start gap-1.5 text-[12px] text-red-700 bg-red-50 border border-red-200 rounded-xl px-3 py-2">
             <span className="shrink-0 mt-px"><Icon name="alert" size={13} /></span>
-            <span>Meta rejected: {form.meta_rejection_reason}</span>
+            {/* Meta's own API literally returns the string "NONE" for rejections it
+                doesn't attach a specific machine-readable reason to — showing that
+                verbatim reads as a bug even though it's the real (unhelpful) answer.
+                WhatsApp Manager's own dashboard sometimes has more detail than this API field does. */}
+            <span>
+              {form.meta_rejection_reason === 'NONE'
+                ? "Meta rejected this template without giving a specific reason. Check WhatsApp Manager (business.facebook.com → Message Templates) for more detail, or try rewording the body/category and resubmitting."
+                : 'Meta rejected: ' + form.meta_rejection_reason}
+            </span>
           </p>
         )}
 
