@@ -712,7 +712,7 @@ function Shell({ profile, onSignOut }) {
              the grid, so a two-line label or an extra stat line does not make
              one row taller than the next. No fixed height — the tiles resize
              themselves if a label or a figure ever grows. */
-          <div className="grid grid-cols-2 auto-rows-fr gap-3 pt-2">
+          <div className="grid grid-cols-2 auto-rows-fr gap-2.5 pt-2">
             {currentGroup.items.map(function (f) {
               var extra = null
               if (f.key === 'finance.wallet' && walletBalance !== null) {
@@ -728,20 +728,24 @@ function Shell({ profile, onSignOut }) {
                 <button
                   key={f.key}
                   onClick={function () { openModule(f) }}
-                  /* Frosted: every menu page has artwork behind it now, and
-                     opaque white cards would blank it out in rectangles. Hover
-                     deepens the glass rather than adding a border, which on a
-                     patterned ground reads as noise. */
-                  className="relative ambria-glass-card bg-indigo-200/40 shadow-[inset_0_1px_0_rgba(255,255,255,0.85),0_2px_8px_rgba(15,23,42,0.07),0_0_0_1px_rgba(99,102,241,0.18)] rounded-2xl p-5 flex flex-col items-center justify-center gap-2 hover:bg-white/70 hover:shadow-[0_8px_22px_rgba(79,70,229,0.16)] active:scale-[0.98] transition-all"
+                  className="relative bg-white/85 backdrop-blur-xl border border-white/70 shadow-[0_2px_10px_rgba(15,23,42,0.07)] rounded-2xl p-3 flex flex-col items-center justify-center text-center hover:bg-white hover:shadow-[0_8px_22px_rgba(15,23,42,0.10)] active:scale-[0.98] transition-all"
                 >
                   {badges[f.key] > 0 && (
-                    <span className="absolute top-2 right-2 min-w-[20px] h-5 px-1.5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+                    <span className="absolute -top-1.5 -right-1.5 min-w-[22px] h-[22px] px-1.5 bg-red-500 text-white text-[10.5px] font-bold rounded-full flex items-center justify-center shadow-[0_2px_6px_rgba(239,68,68,0.45)]">
                       {badges[f.key] > 99 ? '99+' : badges[f.key]}
                     </span>
                   )}
-                  <Icon name={f.icon} className="w-6 h-6 text-slate-700" strokeWidth={1.7} />
-                  <span className="text-[13px] font-semibold text-slate-900 text-center leading-snug">{f.label}</span>
-                  {extra}
+                  {/* The group's own tint, not one per item. Upstairs the
+                      colour tells eleven unrelated domains apart; here the
+                      domain is already chosen, so what is left for it to say is
+                      which one you are in — and seven different colours inside
+                      Finance would say nothing at all. */}
+                  <span className={"shrink-0 w-9 h-9 rounded-[10px] inline-flex items-center justify-center " +
+                    (GROUP_TINTS[currentGroup.key] || 'bg-slate-100 text-slate-600')}>
+                    <Icon name={f.icon} size={18} strokeWidth={1.9} />
+                  </span>
+                  <span className="mt-2 text-[13.5px] font-bold text-slate-900 leading-snug">{f.label}</span>
+                  {extra && <span className="mt-1 block">{extra}</span>}
                 </button>
               )
             })}
