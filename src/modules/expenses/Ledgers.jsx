@@ -2036,44 +2036,84 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
           rows over a phone connection. */}
       <BottomSheet open={pdfSheet} onClose={function () { setPdfSheet(false) }} title="Export PDF">
         {(function () {
-          var g = pdfDeptKey ? visibleGroups.find(function (x) { return x.key === pdfDeptKey }) : null
+          // null = still choosing. '__all' = the whole sheet, which is a scope
+          // with no group behind it; anything else is a department key.
+          var atScope = pdfDeptKey !== null
+          var g = (atScope && pdfDeptKey !== '__all')
+            ? visibleGroups.find(function (x) { return x.key === pdfDeptKey })
+            : null
           // The branch can go while the sheet is open — a refresh lands, or a
           // filter changes underneath it. Saying so beats a panel of nothing.
-          if (pdfDeptKey && !g) {
+          if (atScope && pdfDeptKey !== '__all' && !g) {
             return <p className="text-[12.5px] text-slate-500">That department has left the list. Close this and open it again.</p>
           }
 
           var dName = g ? (g.deptId ? (deptMap[g.deptId] || 'Unassigned') : 'Unallocated') : null
           var picked = g ? g.typeGroups.filter(function (x) { return pdfTypeKeys.indexOf(x.typeKey) !== -1 }) : []
           var scopeNote = !g
-            ? 'Every department in the list'
+            ? 'every department in the list'
             : picked.length === 0
-              ? 'Everything in this department'
-              : picked.length + (picked.length === 1 ? ' expense type' : ' expense types')
+              ? 'everything in ' + dName
+              : picked.length + (picked.length === 1 ? ' expense type' : ' expense types') + ' in ' + dName
 
-          return (
-            <div>
-              {/* Where the two buttons below will apply. Without this they are
-                  verbs with no object, and the sheet can be standing in three
-                  different places by the time you reach them. */}
-              <div className="flex items-center gap-2 mb-3">
-                {g && (
-                  <button type="button" aria-label="Back"
-                    onClick={function () { setPdfDeptKey(null); setPdfTypeKeys([]) }}
-                    className="shrink-0 w-8 h-8 inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 transition-colors">
-                    <Icon name="chevronRight" size={14} className="rotate-180" />
-                  </button>
-                )}
-                <p className="min-w-0 flex-1 text-[13px] font-bold text-slate-900 truncate">{g ? dName : 'The whole sheet'}</p>
+          // The buttons, wherever they are put. Both screens want the same
+          // pair pointed at a different scope, so they are written once.
+          function actions() {
+            return (
+              <div className="space-y-2">
+                <p className="text-[11.5px] text-slate-500">
+                  Export <span className="font-bold text-slate-700">{scopeNote}</span>
+                </p>
+                {PDF_SHAPES.map(function (o) {
+                  return (
+                    <button key={o.mode} type="button" disabled={pdfBusy}
+                      onClick={function () { setPdfSheet(false); runLedgerPdf(o.mode, g, pdfTypeKeys) }}
+                      className={'w-full flex items-center justify-center gap-2 h-11 px-3 rounded-xl font-bold text-[13px] disabled:opacity-40 transition-all duration-150 ' +
+                        (o.primary
+                          ? 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-[0_2px_10px_rgba(79,70,229,0.28)]'
+                          : 'bg-white text-indigo-700 border border-indigo-200 hover:border-indigo-400 hover:bg-indigo-50')}>
+                      <Icon name={pdfBusy ? 'refresh' : o.glyph} size={15} className="shrink-0" />
+                      <span className="min-w-0 truncate">{o.action}</span>
+                    </button>
+                  )
+                })}
+                <p className="text-[11px] text-slate-400 leading-snug">
+                  Summary prints the figures at once. Full detail fetches each entry behind them first.
+                </p>
               </div>
+            )
+          }
 
-              {/* At the top level this list is how you go in; inside a
-                  department it is how you narrow. Ticking none is the whole
-                  department, which is the same answer as ticking all of them,
-                  so there is nothing to press before exporting. */}
-              {!g ? (
-                visibleGroups.length > 0 && (
-                  <div className="mt-4 pt-3.5 border-t border-slate-200">
+          // ── Picking a department ──────────────────────────────────────
+          //
+          // No buttons on this screen. They used to sit at its foot aimed at
+          // the whole sheet while a list of departments filled the panel above
+          // them, so the screen asked one question and offered to answer a
+          // different one. Here the whole sheet is the first row rather than a
+          // standing assumption, and every row leads somewhere.
+          if (!atScope) {
+            return (
+              <div className="space-y-4">
+                <div>
+                  <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500">What to export</p>
+                  <button type="button" disabled={pdfBusy}
+                    onClick={function () { setPdfDeptKey('__all') }}
+                    className="w-full flex items-center gap-2.5 px-3 py-3 rounded-xl bg-white border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/40 disabled:opacity-40 transition-all duration-150 text-left">
+                    <span className="shrink-0 w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 inline-flex items-center justify-center">
+                      <Icon name="list" size={16} />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-[13px] font-bold text-slate-900">The whole sheet</span>
+                      <span className="block text-[11.5px] text-slate-500">
+                        <span data-notranslate>{visibleGroups.length}</span> {visibleGroups.length === 1 ? 'department' : 'departments'}
+                      </span>
+                    </span>
+                    <Icon name="chevronRight" size={14} className="shrink-0 text-slate-400" />
+                  </button>
+                </div>
+
+                {visibleGroups.length > 0 && (
+                  <div>
                     <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500">Or one department</p>
                     <div className="space-y-1.5">
                       {visibleGroups.map(function (c) {
@@ -2090,87 +2130,67 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
                       })}
                     </div>
                   </div>
-                )
-              ) : (
-                g.typeGroups.length > 0 && (
-                  <div className="mt-4 pt-3.5 border-t border-slate-200">
-                    <div className="flex items-center justify-between gap-3 mb-2">
-                      <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500">Or pick expense types</p>
-                      {picked.length > 0 && (
-                        <button type="button" onClick={function () { setPdfTypeKeys([]) }}
-                          className="text-[11.5px] font-bold text-rose-600 hover:text-rose-700 transition-colors">
-                          Clear
-                        </button>
-                      )}
-                    </div>
-                    <div className="space-y-1.5">
-                      {g.typeGroups.map(function (c) {
-                        var on = pdfTypeKeys.indexOf(c.typeKey) !== -1
-                        var label = c.typeId ? (typeMap[c.typeId] || 'Untyped') : 'Untyped'
-                        return (
-                          <button key={c.typeKey} type="button" disabled={pdfBusy}
-                            aria-pressed={on}
-                            onClick={function () {
-                              setPdfTypeKeys(on
-                                ? pdfTypeKeys.filter(function (k) { return k !== c.typeKey })
-                                : pdfTypeKeys.concat([c.typeKey]))
-                            }}
-                            className={'w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl border transition-all duration-150 text-left disabled:opacity-40 ' +
-                              (on ? 'bg-indigo-50 border-indigo-300' : 'bg-white border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/40')}>
-                            <span className={'shrink-0 w-[18px] h-[18px] rounded-[6px] border inline-flex items-center justify-center ' +
-                              (on ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white border-slate-300 text-transparent')}>
-                              <Icon name="check" size={12} />
-                            </span>
-                            <span className="min-w-0 flex-1 text-[12.5px] font-semibold text-slate-800 truncate">{label}</span>
-                            <span className="shrink-0 text-[11.5px] text-slate-400 tabular-nums" data-notranslate>{formatPoints(c.total)}</span>
-                          </button>
-                        )
-                      })}
-                    </div>
-                  </div>
-                )
-              )}
-
-              {/* Pinned, because this is what you press after choosing and the
-                  choosing is a scroll. Above the list these were the first
-                  thing on the sheet and the last thing you could see: by the
-                  time two types were ticked they were off the top, and the
-                  sheet looked like it had no way to finish.
-
-                  It bleeds to the sheet's own edges — the panel pads its
-                  children by 5 and 4, and a bar that stops short of that reads
-                  as a card floating over the list rather than as the floor. */}
-              <div className="sticky bottom-0 -mx-5 -mb-4 mt-4 px-5 pt-3 pb-4 bg-white/80 backdrop-blur-xl border-t border-slate-200">
-                <p className="mb-2 text-[11.5px] text-slate-500">
-                  Export <span className="font-bold text-slate-700">{scopeNote.toLowerCase()}</span>
-                </p>
-                {/* Stacked, not side by side: "Generate summary" measures 173
-                    with its glyph and two across a 390px sheet get 171 each.
-                    Full width also happens to be the shape a thing you press to
-                    finish already has. */}
-                <div className="space-y-2">
-                  {PDF_SHAPES.map(function (o) {
-                    return (
-                      <button key={o.mode} type="button" disabled={pdfBusy}
-                        onClick={function () { setPdfSheet(false); runLedgerPdf(o.mode, g, pdfTypeKeys) }}
-                        className={'w-full flex items-center justify-center gap-2 h-11 px-3 rounded-xl font-bold text-[13px] disabled:opacity-40 transition-all duration-150 ' +
-                          (o.primary
-                            ? 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-[0_2px_10px_rgba(79,70,229,0.28)]'
-                            : 'bg-white text-indigo-700 border border-indigo-200 hover:border-indigo-400 hover:bg-indigo-50')}>
-                        <Icon name={pdfBusy ? 'refresh' : o.glyph} size={15} className="shrink-0" />
-                        <span className="min-w-0 truncate">{o.action}</span>
-                      </button>
-                    )
-                  })}
-                </div>
-                {/* A phone has no hover, so the difference between the two
-                    cannot live in a title attribute. One line, because it is
-                    one fact: the summary is already computed and the other has
-                    to go and fetch what it is a summary of. */}
-                <p className="mt-2 text-[11px] text-slate-400 leading-snug">
-                  Summary prints the figures at once. Every allocation fetches each entry behind them first.
-                </p>
+                )}
               </div>
+            )
+          }
+
+          // ── A scope in hand ───────────────────────────────────────────
+          //
+          // The buttons lead, because by now the scope is decided and this
+          // screen exists to act on it. The ticks under them are optional: a
+          // department with none ticked is the whole department, which is the
+          // same answer as ticking all of them.
+          return (
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                <button type="button" aria-label="Back"
+                  onClick={function () { setPdfDeptKey(null); setPdfTypeKeys([]) }}
+                  className="shrink-0 w-8 h-8 inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 transition-colors">
+                  <Icon name="chevronRight" size={14} className="rotate-180" />
+                </button>
+                <p className="min-w-0 flex-1 text-[13px] font-bold text-slate-900 truncate">{dName || 'The whole sheet'}</p>
+              </div>
+
+              {actions()}
+
+              {g && g.typeGroups.length > 0 && (
+                <div className="mt-4 pt-3.5 border-t border-slate-200">
+                  <div className="flex items-center justify-between gap-3 mb-2">
+                    <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500">Narrow to expense types</p>
+                    {picked.length > 0 && (
+                      <button type="button" onClick={function () { setPdfTypeKeys([]) }}
+                        className="text-[11.5px] font-bold text-rose-600 hover:text-rose-700 transition-colors">
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                  <div className="space-y-1.5">
+                    {g.typeGroups.map(function (c) {
+                      var on = pdfTypeKeys.indexOf(c.typeKey) !== -1
+                      var label = c.typeId ? (typeMap[c.typeId] || 'Untyped') : 'Untyped'
+                      return (
+                        <button key={c.typeKey} type="button" disabled={pdfBusy}
+                          aria-pressed={on}
+                          onClick={function () {
+                            setPdfTypeKeys(on
+                              ? pdfTypeKeys.filter(function (k) { return k !== c.typeKey })
+                              : pdfTypeKeys.concat([c.typeKey]))
+                          }}
+                          className={'w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl border transition-all duration-150 text-left disabled:opacity-40 ' +
+                            (on ? 'bg-indigo-50 border-indigo-300' : 'bg-white border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/40')}>
+                          <span className={'shrink-0 w-[18px] h-[18px] rounded-[6px] border inline-flex items-center justify-center ' +
+                            (on ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white border-slate-300 text-transparent')}>
+                            <Icon name="check" size={12} />
+                          </span>
+                          <span className="min-w-0 flex-1 text-[12.5px] font-semibold text-slate-800 truncate">{label}</span>
+                          <span className="shrink-0 text-[11.5px] text-slate-400 tabular-nums" data-notranslate>{formatPoints(c.total)}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           )
         })()}
