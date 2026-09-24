@@ -10,7 +10,6 @@ import { useReferenceData } from '../../lib/referenceData.jsx'
 import { useExpenseDetailModal } from '../../hooks/useExpenseDetailModal.jsx'
 import SearchField from '../../components/ui/SearchField'
 import Icon, { glyphForLabel } from '../../components/ui/Icon'
-import ledgerBg from '../../assets/ledger-bg.webp'
 import CheckedStamp from '../../components/ui/CheckedStamp'
 
 var STATUS_LABELS = { recorded: 'Recorded', flagged: 'Resubmit', acknowledged: 'Acknowledged', deducted: 'Deducted' }
@@ -101,48 +100,44 @@ var TONES = {
 // Both of these sit in the same box — a width and a right margin the heading
 // and the button agree on — so the column has one edge instead of the heading
 // keeping its own padding and the button its own margin.
-// A flat tone, not a gradient continuing the artwork's last row.
+// The ground behind the phone ledger. Drawn, not photographed.
 //
-// That technique suits the wallet and the vendor ledger because their
-// pictures end on something calm. This one ends on foliage at the left, so
-// continuing it drew that dark olive — #75715F at the 0% stop — down the
-// whole page below the image, which was a band across the foot.
+// Six rounds of this artwork kept producing a line across the foot, and each
+// time it was in the picture rather than in the layout: a brightness scan
+// found a step of 16 where the wall meets the floor and 29 at the shadow band
+// under it. Stretching cannot remove content. Blur could not either — at
+// radius 80 that band was still a step of 10, because blur softens small
+// features and those are large ones. Cropping to the one flat stretch of
+// floor worked, but then the ground was a 900px strip scaled six times up a
+// phone, which is a photograph of nothing.
 //
-// The value is the average of the image's own last rows, so a sliver of it
-// continues the picture rather than interrupting it.
-var LEDGER_BG_FOOT = '#D5C7B4'
+// PageBackdrop reached the same conclusion for the rest of the app and its
+// comment says why: a picture gives you no say in any of this. So these are
+// the artwork's own colours — sampled corner by corner from the file — as
+// four soft washes. They read as depth rather than as marks, there is no edge
+// anywhere near the screen for a change of viewport height to move, and it is
+// a few hundred bytes of CSS with nothing to load and nothing to arrive late.
+var LEDGER_BG_FOOT = '#DACBB8'
 
-// The ground behind the phone ledger. The artwork covers the whole screen
-// rather than sitting at the top with a colour under it.
-//
-// Height is 100lvh, not 100% of a fixed box. The wallet's backdrop avoids
-// cover for a reason its own comment records: a fixed element is as tall as
-// the viewport, the viewport changes height every time the address bar slides
-// away, and cover rescales the image each time — which reads as the
-// background zooming while you scroll. lvh is the height with the browser
-// chrome retracted and does not move, so the image is sized once.
-//
-// The flat tone stays behind it for the moment before the file lands, and for
-// the sliver below 100lvh when the bar is showing.
-//
+var LEDGER_WASHES = [
+  'radial-gradient(70% 55% at 10% 0%,   rgba(226,213,194,0.95), transparent 70%)',
+  'radial-gradient(65% 50% at 100% 8%,  rgba(203,183,163,0.80), transparent 72%)',
+  'radial-gradient(80% 60% at 92% 100%, rgba(236,219,199,0.90), transparent 72%)',
+  'radial-gradient(70% 55% at -5% 95%,  rgba(183,172,150,0.65), transparent 72%)',
+].join(', ')
+
 // Nothing on the desktop. This is one tab of eight in the hub, and a ground
 // on one of them would make it look like a different section.
 function LedgerBackdrop({ inAdmin }) {
-  // The backdrop is fixed, so it stops at the edge of the viewport — and
-  // dragging past the end of the page shows what is behind it, which is the
-  // body's own canvas colour. That is the white band at the foot. The body
-  // takes the artwork's tone while this screen is up and gives it back on the
-  // way out, so overscrolling reveals more of the same ground rather than a
-  // different page.
+  // Dragging past the end of the page shows what is behind a fixed element,
+  // which is the body's own canvas colour. The body takes this ground's tone
+  // while the screen is up and gives back whatever it had on the way out.
   useEffect(function () {
     if (inAdmin) return
     var b = document.body
     var prevBg = b.style.backgroundColor
     var prevOver = b.style.overscrollBehaviorY
     b.style.backgroundColor = LEDGER_BG_FOOT
-    // Colouring the body stopped the band being white, but a flat strip under
-    // a blurred photograph still reads as the page ending twice. none takes
-    // the rubber-band away, so there is nothing past the end to reveal.
     b.style.overscrollBehaviorY = 'none'
     return function () {
       b.style.backgroundColor = prevBg
@@ -154,26 +149,7 @@ function LedgerBackdrop({ inAdmin }) {
   return (
     <div aria-hidden="true" className="pointer-events-none fixed inset-0 -z-10 overflow-hidden"
       style={{ backgroundColor: LEDGER_BG_FOOT }}>
-      {/* inset-0 and 100% 100%: the image is drawn to exactly this box,
-          whatever the box measures. cover kept its own proportions and so
-          left the flat tone showing wherever the two did not agree, which is
-          the line across the foot — and the tone could never match the
-          picture everywhere, because the picture is not one colour.
-          Stretched, there is nothing for it to meet.
-
-          Distortion is the price and it is not visible here: the file is
-          blurred, so there is no edge left in it whose proportions a reader
-          could check. That is also why rescaling as the address bar slides
-          does not show — the wallet's backdrop avoids cover for that reason,
-          but its artwork has detail to see moving and this one has none. */}
-      <div className="absolute inset-0"
-        style={{
-          backgroundColor: LEDGER_BG_FOOT,
-          backgroundImage: 'url(' + ledgerBg + ')',
-          backgroundSize: '100% 100%',
-          backgroundPosition: 'center',
-          backgroundRepeat: 'no-repeat',
-        }} />
+      <div className="absolute inset-0" style={{ backgroundImage: LEDGER_WASHES }} />
     </div>
   )
 }
