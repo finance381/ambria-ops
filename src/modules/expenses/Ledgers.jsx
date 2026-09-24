@@ -155,9 +155,16 @@ function LedgerBackdrop({ inAdmin }) {
   return (
     <div aria-hidden="true" className="pointer-events-none fixed inset-0 -z-10 overflow-hidden"
       style={{ backgroundColor: LEDGER_BG_FOOT }}>
+      {/* Fills the parent, and is never shorter than 100lvh.
+          height:100% alone would be the current viewport, which shrinks as
+          the address bar comes back and makes cover rescale the image —
+          the zoom-while-scrolling the wallet's backdrop warns about.
+          A fixed 100lvh alone left a strip whenever the parent measured
+          taller than that. Both together: no gap either way, and one size. */}
       <div className="w-full"
         style={{
-          height: '100lvh',
+          height: '100%',
+          minHeight: '100lvh',
           backgroundColor: LEDGER_BG_FOOT,
           backgroundImage: 'url(' + ledgerBg + ')',
           backgroundSize: 'cover',
