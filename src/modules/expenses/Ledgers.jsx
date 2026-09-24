@@ -395,14 +395,23 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
     return function () { clearTimeout(t) }
   }, [search])
 
+  // The scope as one string, so both effects can be compared on it. An array
+  // in a dependency list is a new array every render; joined, it changes only
+  // when the scope does.
+  var scopeKey = (scopeDeptIds || []).join(',')
+
   useEffect(function () {
     isFirstLoad.current = true
     loadLedger()
-  }, [dateFrom, dateTo, userFilter, venueFilter, statusFilter, (scopeDeptIds || []).join(',')])
+  }, [dateFrom, dateTo, userFilter, venueFilter, statusFilter, scopeKey])
 
   useEffect(function () {
     if (drillGroup) { setDrillOffset(0); setDrillPaint(DRILL_FIRST_PAINT); loadDrill(false) }
-  }, [drillGroup, drillUserFilter, drillStatusFilter, drillVenueFilter, dateFrom, dateTo])
+    // The page's filters are in the query now, so they have to be in here too
+    // — otherwise narrowing the ledger behind an open drill leaves the drill
+    // showing the answer to the filter before it.
+  }, [drillGroup, drillUserFilter, drillStatusFilter, drillVenueFilter, dateFrom, dateTo,
+    userFilter, venueFilter, statusFilter, scopeKey])
 
   // Top up during idle until every loaded row is drawn. requestIdleCallback
   // where it exists, so this never competes with a scroll; a frame's delay
@@ -614,14 +623,31 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
     function current() { return drillReq.current === ticket }
     setDrillLoading(true)
     var offset = append ? drillOffset : 0
+    // The same question the table asked.
+    //
+    // This list is what one row of that table is made of, so it has to be
+    // built from the same rows the row was counted from. It was not: the table
+    // narrows by the scope you are allowed to see and by the page's own user,
+    // venue and status filters, and this query applied none of the four. So a
+    // row that said six could open onto a different six — or onto rows from a
+    // department the table had excluded — and the two numbers had no reason to
+    // agree with each other.
+    //
+    // statusIn, not the four statuses spelled out again: with a status chosen
+    // in the page filter the table counts one status and this was still
+    // fetching all four.
+    var drillStatusIn = statusFilter ? [statusFilter] : ['recorded', 'flagged', 'acknowledged', 'deducted']
     var q = supabase.from('v_ledger')
       .select('allocation_id, expense_id, user_id, venue_id, amount_paise, remarks, expense_date, description, status, created_at, source')
-      .in('status', ['recorded', 'flagged', 'acknowledged', 'deducted'])
+      .in('status', drillStatusIn)
       .gte('expense_date', dateFrom)
       .lte('expense_date', dateTo)
       .order('expense_date', { ascending: false })
       .order('created_at', { ascending: false })
       .range(offset, offset + DRILL_LIMIT)
+    if (hasScope) q = q.in('department_id', scopeDeptIds)
+    if (userFilter) q = q.eq('user_id', userFilter)
+    if (venueFilter) q = q.eq('venue_id', Number(venueFilter))
     if (drillGroup.deptId) q = q.eq('department_id', drillGroup.deptId)
     else q = q.is('department_id', null)
     if (drillGroup.typeId) q = q.eq('expense_type_id', drillGroup.typeId)
