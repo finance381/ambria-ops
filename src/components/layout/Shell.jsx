@@ -133,7 +133,7 @@ var GROUPS = [
 ]
 
 import { pushBack, goBack as navBack } from '../../lib/backNav'
-import { formatPoints, formatPointsPlain } from '../../lib/format'
+import { formatPoints } from '../../lib/format'
 import Icon from '../ui/Icon'
 import PageBackdrop from '../ui/PageBackdrop'
 import PageWave from '../ui/PageWave'
@@ -161,7 +161,7 @@ function Shell({ profile, onSignOut }) {
   var [lastBadgeLoad, setLastBadgeLoad] = useState(0)
   var [walletBalance, setWalletBalance] = useState(null)
   var [walletPending, setWalletPending] = useState(0)
-  var [financeStats, setFinanceStats] = useState({ expMonthCount: 0, expMonthTotal: 0, ledgerMonthTotal: 0 })
+  var [financeStats, setFinanceStats] = useState({ expMonthCount: 0, expMonthTotal: 0 })
 
   useEffect(function () {
     if (!profile?.id) return
@@ -179,24 +179,21 @@ function Shell({ profile, onSignOut }) {
 
     var monthStart = new Date().toISOString().slice(0, 7) + '-01'
     var hasExp = hasPerm(permsNew, 'finance.expenses')
-    var hasLedger = hasPerm(permsNew, 'finance.ledgers.expense')
-    if (hasExp || hasLedger) {
-      Promise.all([
-        hasExp
-          ? supabase.from('expenses').select('amount_paise').eq('user_id', profile.id).gte('expense_date', monthStart).is('deleted_at', null).limit(5000)
-          : Promise.resolve({ data: [] }),
-        hasLedger
-          ? supabase.from('v_ledger').select('amount_paise').gte('expense_date', monthStart).limit(10000)
-          : Promise.resolve({ data: [] })
-      ]).then(function (res) {
-        var exps = res[0].data || []
-        var ledgs = res[1].data || []
-        setFinanceStats({
-          expMonthCount: exps.length,
-          expMonthTotal: exps.reduce(function (s, e) { return s + (e.amount_paise || 0) }, 0),
-          ledgerMonthTotal: ledgs.reduce(function (s, a) { return s + (a.amount_paise || 0) }, 0),
+    // The v_ledger read that sat beside this one is gone with the figure it
+    // was for. It pulled up to ten thousand rows of the month on every visit
+    // to the menu, summed them in the browser, and printed one line nobody
+    // had asked to see — the most expensive request on the screen, for the
+    // least of what the screen says.
+    if (hasExp) {
+      supabase.from('expenses').select('amount_paise').eq('user_id', profile.id)
+        .gte('expense_date', monthStart).is('deleted_at', null).limit(5000)
+        .then(function (res) {
+          var exps = res.data || []
+          setFinanceStats({
+            expMonthCount: exps.length,
+            expMonthTotal: exps.reduce(function (s, e) { return s + (e.amount_paise || 0) }, 0),
+          })
         })
-      })
     }
   }, [profile?.id, tab])
 
@@ -690,13 +687,11 @@ function Shell({ profile, onSignOut }) {
                 extra = <span className={"text-xs font-bold " + (walletBalance < 0 ? "text-red-600" : "text-green-700")}>{formatPoints(walletBalance)}</span>
               } else if (f.key === 'finance.expenses' && financeStats.expMonthCount > 0) {
                 extra = <span className="text-[11.5px] font-medium text-slate-500 tabular-nums">{financeStats.expMonthCount + ' · ' + formatPoints(financeStats.expMonthTotal)}</span>
-              } else if (f.key === 'finance.ledgers.expense' && financeStats.ledgerMonthTotal > 0) {
-                // Plain, because "this month" follows it. "pts this month" put
-                // the unit in the middle of a phrase, where it read as a word
-                // in the sentence rather than as the figure's unit — and this
-                // tile is the only one whose figure has a phrase after it.
-                extra = <span className="text-[11.5px] font-medium text-slate-500 tabular-nums">{formatPointsPlain(financeStats.ledgerMonthTotal) + ' this month'}</span>
               }
+              // The expense ledger tile carries no figure. A month's total is
+              // not a thing you read on the way past — it is what the screen
+              // behind the tile is for, and it was the largest number on the
+              // menu without being the most useful one on it.
               return (
                 <button
                   key={f.key}
