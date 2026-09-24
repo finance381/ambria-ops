@@ -400,3 +400,11 @@ entrypoint = "./functions/sync-events/index.ts"
 
 # Cross-project catering integration — shared-secret auth (FNB_TO_OPS_SECRET),
 # not JWT. Gateway JWT check MUST be off; secret is validated inside the function.
+
+# Meta calls this directly with its own verify-token handshake + an
+# X-Hub-Signature-256 (checked against WA_APP_SECRET inside the function) —
+# it never sends a Supabase JWT, so the gateway's JWT check MUST be off or
+# every webhook call 401s before the function code ever runs.
+[functions.wa-webhook]
+enabled = true
+verify_jwt = false
