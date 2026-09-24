@@ -137,9 +137,18 @@ function LedgerBackdrop({ inAdmin }) {
   // different page.
   useEffect(function () {
     if (inAdmin) return
-    var prev = document.body.style.backgroundColor
-    document.body.style.backgroundColor = LEDGER_BG_FOOT
-    return function () { document.body.style.backgroundColor = prev }
+    var b = document.body
+    var prevBg = b.style.backgroundColor
+    var prevOver = b.style.overscrollBehaviorY
+    b.style.backgroundColor = LEDGER_BG_FOOT
+    // Colouring the body stopped the band being white, but a flat strip under
+    // a blurred photograph still reads as the page ending twice. none takes
+    // the rubber-band away, so there is nothing past the end to reveal.
+    b.style.overscrollBehaviorY = 'none'
+    return function () {
+      b.style.backgroundColor = prevBg
+      b.style.overscrollBehaviorY = prevOver
+    }
   }, [inAdmin])
 
   if (inAdmin) return null
