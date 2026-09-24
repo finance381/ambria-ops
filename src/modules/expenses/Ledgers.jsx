@@ -918,7 +918,7 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
             the tint behind the only part that differs between the three, which
             is the figure. */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3">
-          <div className="flex items-center gap-3 px-3 py-2.5 sm:px-4 sm:py-3.5 rounded-2xl border bg-white border-slate-200">
+          <div className="flex items-center gap-3 px-3 py-2.5 sm:px-4 sm:py-3.5 rounded-2xl border bg-white/80 backdrop-blur-xl sm:bg-white border-white/60 sm:border-slate-200">
             <span className="shrink-0 w-8 h-8 sm:w-11 sm:h-11 rounded-xl inline-flex items-center justify-center bg-indigo-100 text-indigo-600">
               <Icon name="chart" size={20} />
             </span>
@@ -927,7 +927,7 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
               <p className="sm:mt-2 text-[19px] font-extrabold text-indigo-700 tabular-nums leading-none whitespace-nowrap" data-notranslate>{formatPoints(drillGroup.total)}</p>
             </div>
           </div>
-          <div className="flex items-center gap-3 px-3 py-2.5 sm:px-4 sm:py-3.5 rounded-2xl border bg-white border-slate-200">
+          <div className="flex items-center gap-3 px-3 py-2.5 sm:px-4 sm:py-3.5 rounded-2xl border bg-white/80 backdrop-blur-xl sm:bg-white border-white/60 sm:border-slate-200">
             <span className="shrink-0 w-8 h-8 sm:w-11 sm:h-11 rounded-xl inline-flex items-center justify-center bg-emerald-100 text-emerald-600">
               <Icon name="checkCircle" size={20} />
             </span>
@@ -936,7 +936,7 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
               <p className="sm:mt-2 text-[19px] font-extrabold text-emerald-700 tabular-nums leading-none whitespace-nowrap" data-notranslate>{formatPoints(drillGroup.committed)}</p>
             </div>
           </div>
-          <div className="flex items-center gap-3 px-3 py-2.5 sm:px-4 sm:py-3.5 rounded-2xl border bg-white border-slate-200">
+          <div className="flex items-center gap-3 px-3 py-2.5 sm:px-4 sm:py-3.5 rounded-2xl border bg-white/80 backdrop-blur-xl sm:bg-white border-white/60 sm:border-slate-200">
             <span className="shrink-0 w-8 h-8 sm:w-11 sm:h-11 rounded-xl inline-flex items-center justify-center bg-amber-100 text-amber-600">
               <Icon name="clock" size={20} />
             </span>
@@ -1021,7 +1021,7 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
                       created_at: r.created_at,
                     })
                   }}
-                  className="group bg-white border border-slate-200 rounded-2xl px-4 py-3.5 cursor-pointer hover:border-indigo-300 hover:shadow-[0_4px_14px_rgba(79,70,229,0.08)] transition-all duration-150">
+                  className="group bg-white/80 backdrop-blur-xl sm:bg-white border border-white/60 sm:border-slate-200 rounded-2xl px-4 py-3.5 cursor-pointer hover:border-indigo-300 hover:shadow-[0_4px_14px_rgba(79,70,229,0.08)] transition-all duration-150">
                   <div className="flex items-start gap-4">
                     <div className="flex-1 min-w-0">
                       {/* What it was, first. The date and who logged it led the
@@ -1236,7 +1236,7 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
           chips, the search, two dropdowns, the toggle and both exports — most
           of the screen — so pinning it left a sliver of table moving under a
           wall that would not move. */}
-      <div ref={stickyRef} className="sm:sticky z-10 bg-gray-50 pt-1 pb-3 border-b border-gray-200 space-y-2"
+      <div ref={stickyRef} className="sm:sticky z-10 sm:bg-gray-50 pt-1 pb-3 border-b border-transparent sm:border-gray-200 space-y-2"
         style={{ top: 'var(--app-header-h, 0px)' }}>
         {/* Left-aligned, and the figure given the size of the thing it is. A
             9px label centred over a 16px number made four cards you had to lean
@@ -1402,7 +1402,7 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
         </div>
 
         {filtersOpen && (
-          <div className="rounded-2xl border border-slate-200 bg-white p-3.5">
+          <div className="rounded-2xl border border-white/60 sm:border-slate-200 bg-white/80 backdrop-blur-xl sm:bg-white p-3.5">
             <div className="flex items-center justify-between gap-3 mb-2.5">
               <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500">Narrow the list</p>
               {ledgerFilterCount > 0 && (
@@ -1498,7 +1498,7 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
       ) : visibleGroups.length === 0 ? (
         <p className="text-center text-sm text-gray-400 py-8">No matches in this range</p>
       ) : (
-        <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
+        <div className="bg-white/80 backdrop-blur-xl sm:bg-white border border-white/60 sm:border-slate-200 rounded-2xl overflow-hidden">
           {/* One table, not a stack of cards. Every department used to carry its
               own border and its own rounded corners, so four departments were
               four objects with four sets of columns that only happened to line
@@ -1516,7 +1516,7 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
               inventory ledger's does; squeezing six columns onto a phone would
               make all six unreadable, and they are what carry the drill-down
               from department to type to sub-type. */}
-          <div className="flex items-stretch bg-slate-50 border-b border-slate-200">
+          <div className="flex items-stretch bg-slate-50/60 sm:bg-slate-50 border-b border-slate-200/70 sm:border-slate-200">
             <div className={"flex-1 " + COLS + " px-3 py-2.5"}>
               {/* Headings, not controls. */}
               <span className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em]">Department / Type</span>
