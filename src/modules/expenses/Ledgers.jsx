@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { supabase } from '../../lib/supabase'
-import { formatPoints, formatDate, formatDateTime } from '../../lib/format'
+import { formatPoints, formatDate, formatDateTime, formatTime } from '../../lib/format'
 import { pushBack } from '../../lib/backNav'
 import { registerPdfFont } from '../../lib/pdfFont'
 import { openOrSharePdf } from '../../lib/pdfOutput'
@@ -1209,11 +1209,6 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
                         </span>
                         <span aria-hidden="true" className="hidden sm:block w-px h-3.5 bg-slate-200" />
                         <span className="inline-flex items-center whitespace-nowrap">
-                          <Icon name="clock" size={13} className="shrink-0 mr-1.5 text-slate-400" />
-                          <span className="font-semibold text-slate-700">{formatDateTime(r.created_at)}</span>
-                        </span>
-                        <span aria-hidden="true" className="hidden sm:block w-px h-3.5 bg-slate-200" />
-                        <span className="inline-flex items-center whitespace-nowrap">
                           <Icon name="user" size={13} className="shrink-0 mr-1.5 text-slate-400" />
                           <span className="font-semibold text-slate-700">{userMap[r.user_id] || '—'}</span>
                         </span>
@@ -1231,6 +1226,25 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
                         longer two columns for it to separate. */}
                     <div className="shrink-0 self-center flex flex-col sm:flex-row items-center sm:items-stretch gap-2 sm:gap-4">
                       <span aria-hidden="true" className="hidden sm:block w-px self-stretch bg-slate-200" />
+                      {/* When it was logged, over the verdict on it. It used
+                          to run along the facts line with the event date and
+                          the name, where it was the one fact of the three that
+                          is about the record rather than the spending.
+
+                          Two lines, not one. Whole, it measures 155px at its
+                          widest — "30 Sept 2026, 12:08 pm" — and this slot is
+                          128; on a phone the column is beside the description
+                          rather than under it, so 155 here would have left the
+                          description about 95px. Stacked it is 94 with the
+                          glyph, which fits both without widening anything. */}
+                      <div className="shrink-0 sm:w-[128px] self-center flex flex-col items-center gap-1.5">
+                        <span className="inline-flex items-start gap-1.5 text-[11px] leading-tight text-slate-500">
+                          <Icon name="clock" size={13} className="shrink-0 mt-px text-slate-400" />
+                          <span data-notranslate>
+                            <span className="block font-semibold text-slate-700 whitespace-nowrap">{formatDate(r.created_at)}</span>
+                            <span className="block whitespace-nowrap">{formatTime(r.created_at)}</span>
+                          </span>
+                        </span>
                       {/* Right of the rule is what this row came to, and
                           whether it has been checked is a verdict on that
                           rather than another label beside the description — so
@@ -1239,7 +1253,7 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
                           chips where it read as one more label. Nothing is
                           drawn for someone who cannot mark a row. */}
                       {(anyDrillChecked || canMarkChecked) && (
-                        <span className="shrink-0 sm:w-[128px] self-center flex items-center justify-center"
+                        <span className="flex items-center justify-center"
                           onClick={function (ev) { ev.stopPropagation() }}>
                           {r._checkedBy ? (
                             <CheckedStamp
@@ -1261,6 +1275,7 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
                           )}
                         </span>
                       )}
+                      </div>
                       {/* min-w for the same reason as the vendor ledger's: a
                           panel sized to its own figure puts the rule beside it
                           in a different place on every row. */}

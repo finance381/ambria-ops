@@ -38,7 +38,15 @@ export function formatDateTime(dateStr) {
     day: 'numeric',
     month: 'short',
     year: 'numeric',
-  }) + ', ' + d.toLocaleTimeString('en-IN', {
+  }) + ', ' + formatTime(dateStr)
+}
+
+// The time half on its own, for the places that stack the two lines instead of
+// running them together. formatDateTime is built from it rather than the two
+// being written out twice, so they cannot drift into different clocks.
+export function formatTime(dateStr) {
+  if (!dateStr) return ''
+  return new Date(dateStr).toLocaleTimeString('en-IN', {
     hour: 'numeric',
     minute: '2-digit',
   })
