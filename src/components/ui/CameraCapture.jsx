@@ -23,7 +23,10 @@ function CameraCapture({ onCapture, onClose }) {
       setError('Camera not supported on this browser. Use Gallery instead.')
       return
     }
-    navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false })
+    navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+      audio: false,
+    })
       .then(function (stream) {
         if (cancelled) { stream.getTracks().forEach(function (t) { t.stop() }); return }
         streamRef.current = stream
@@ -51,10 +54,18 @@ function CameraCapture({ onCapture, onClose }) {
   function takeShot() {
     var video = videoRef.current
     if (!video || !video.videoWidth) return
+    // Some phones report the camera's full sensor resolution here (4000x3000
+    // or more) regardless of the ideal constraint above. A canvas that big
+    // fails to allocate on lower-memory devices with a "low memory" error —
+    // it's a RAM/heap limit, not the phone's free storage. Capping the long
+    // edge at 1600px (matching imageCompress.js's own cap for gallery photos)
+    // keeps every capture well inside what any device can allocate.
+    var maxDim = 1600
+    var scale = Math.min(maxDim / video.videoWidth, maxDim / video.videoHeight, 1)
     var canvas = document.createElement('canvas')
-    canvas.width = video.videoWidth
-    canvas.height = video.videoHeight
-    canvas.getContext('2d').drawImage(video, 0, 0)
+    canvas.width = Math.round(video.videoWidth * scale)
+    canvas.height = Math.round(video.videoHeight * scale)
+    canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height)
     canvas.toBlob(function (blob) {
       if (!blob) return
       setShotBlob(blob)
