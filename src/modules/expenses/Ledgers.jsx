@@ -30,6 +30,9 @@ var STATUS_LABELS = { recorded: 'Recorded', flagged: 'Resubmit', acknowledged: '
 // the name instead. The drill-down into type and sub-type still opens.
 var COLS = 'grid grid-cols-[minmax(0,1fr)_auto_auto] sm:grid-cols-[minmax(0,1fr)_140px_140px_140px_150px_44px] gap-2'
 var COL_SM = 'hidden sm:flex'
+// For cells that are only text: sm:flex would make them flex containers and
+// text-right would stop reaching the text inside them.
+var COL_SM_TXT = 'hidden sm:block'
 
 // A figure in the colour of its own meaning: settled, waiting, credited, and
 // the answer. The colour is on the number and nowhere else — a filled pill
@@ -1438,11 +1441,11 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
             <div className={"flex-1 " + COLS + " px-3 py-2.5"}>
               {/* Headings, not controls. */}
               <span className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em]">Department / Type</span>
-              <span className={COL_SM + " text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] text-right"}>Acknowledged</span>
-              <span className={COL_SM + " text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] text-right"}>Pending</span>
-              <span className={COL_SM + " text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] text-right"}>Credit</span>
+              <span className={COL_SM_TXT + " text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] text-right"}>Acknowledged</span>
+              <span className={COL_SM_TXT + " text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] text-right"}>Pending</span>
+              <span className={COL_SM_TXT + " text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] text-right"}>Credit</span>
               <span className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] text-right">Net Total</span>
-              <span className={COL_SM + " text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] text-right"}>#</span>
+              <span className={COL_SM_TXT + " text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] text-right"}>#</span>
             </div>
             <span className={"hidden sm:block " + EXPORT_COL + " py-2.5 text-center text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em]"}>Export</span>
           </div>
@@ -1488,7 +1491,7 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
                     <Money paise={g.pending} tone={TONES.pending} cls={COL_SM} />
                     <Money paise={g.credit} tone={TONES.credit} dashWhenZero cls={COL_SM} />
                     <Money paise={g.total} tone={TONES.total} bold />
-                    <span className={COL_SM + " text-[11.5px] text-right text-slate-400 tabular-nums self-center"} data-notranslate>{g.allocs}</span>
+                    <span className={COL_SM_TXT + " text-[11.5px] text-right text-slate-400 tabular-nums self-center"} data-notranslate>{g.allocs}</span>
                   </button>
                   <button onClick={function (e) { e.stopPropagation(); exportScopedPDF(g.deptId) }}
                     disabled={pdfBusy}
@@ -1520,7 +1523,7 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
                           <Money paise={t.pending} tone={TONES.pending} cls={COL_SM} />
                           <Money paise={t.credit} tone={TONES.credit} dashWhenZero cls={COL_SM} />
                           <Money paise={t.total} tone={TONES.total} bold />
-                          <span className={COL_SM + " text-[11.5px] text-right text-slate-400 tabular-nums self-center"} data-notranslate>{t.allocs}</span>
+                          <span className={COL_SM_TXT + " text-[11.5px] text-right text-slate-400 tabular-nums self-center"} data-notranslate>{t.allocs}</span>
                         </button>
                         <button onClick={function (e) { e.stopPropagation(); exportScopedPDF(g.deptId, t.typeId) }}
                           disabled={pdfBusy}
@@ -1562,7 +1565,7 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
                                   <Icon name="fileText" size={13} />
                                 </span>
                                 <span className="text-[12.5px] text-slate-600 leading-snug sm:truncate">{subTypeName}</span>
-                                <span className={COL_SM + " shrink-0 min-w-[20px] px-1.5 py-0.5 rounded-md bg-white text-[10.5px] font-bold text-slate-500 tabular-nums text-center"} data-notranslate>{r.allocs}</span>
+                                <span className={COL_SM_TXT + " shrink-0 min-w-[20px] px-1.5 py-0.5 rounded-md bg-white text-[10.5px] font-bold text-slate-500 tabular-nums text-center"} data-notranslate>{r.allocs}</span>
                               </div>
                               <Money paise={r.committed} tone={TONES.committed} cls={COL_SM} />
                               <Money paise={r.pending} tone={TONES.pending} cls={COL_SM} />
