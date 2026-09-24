@@ -219,6 +219,25 @@ function LedgerBackdrop({ inAdmin }) {
   )
 }
 
+// The four states where the table has nothing to draw.
+//
+// They were bare lines of gray-400 text laid straight on the artwork. Against
+// a ground measuring about 200 that is a contrast of 1.8:1, where text needs
+// 4.5 — and with nothing behind them they were also fighting the picture's own
+// texture, which is what made them look washed rather than merely pale.
+//
+// So they take the surface the list itself would have taken. An empty state
+// reads better in the shape of the thing that is missing than as a caption
+// floating where that thing should be, and on this page every other piece of
+// text sits on a surface.
+function LedgerNote({ children }) {
+  return (
+    <div className="bg-white/80 backdrop-blur-xl sm:bg-white border border-white/60 sm:border-slate-200 rounded-2xl py-10 px-4">
+      <p className="text-center text-sm font-medium text-slate-600">{children}</p>
+    </div>
+  )
+}
+
 var SELECT_FIELD = 'h-11 pl-9 pr-8 w-full bg-white border border-slate-200 rounded-xl text-[12.5px] text-slate-700 appearance-none hover:border-slate-300 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-[border-color,box-shadow] duration-150'
 
 var EXPORT_COL = 'shrink-0 w-[74px] mr-3'
@@ -1083,9 +1102,9 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
         </div>
 
         {drillLoading && drillRows.length === 0 ? (
-          <p className="text-center text-sm text-gray-400 py-8">Loading...</p>
+          <LedgerNote>Loading...</LedgerNote>
         ) : drillRows.length === 0 ? (
-          <p className="text-center text-sm text-gray-400 py-8">No allocations in range</p>
+          <LedgerNote>No allocations in range</LedgerNote>
         ) : (
           <div className="space-y-2">
             {/* The stamp gets a column, not a place in the queue. Rendered only
@@ -1603,9 +1622,9 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
       </div>
 
       {loading && deptGroups.length === 0 ? (
-        <p className="text-center text-sm text-gray-400 py-8">Loading ledger...</p>
+        <LedgerNote>Loading ledger...</LedgerNote>
       ) : visibleGroups.length === 0 ? (
-        <p className="text-center text-sm text-gray-400 py-8">No matches in this range</p>
+        <LedgerNote>No matches in this range</LedgerNote>
       ) : (
         <div className="bg-white/80 backdrop-blur-xl sm:bg-white border border-white/60 sm:border-slate-200 rounded-2xl overflow-hidden">
           {/* One table, not a stack of cards. Every department used to carry its
