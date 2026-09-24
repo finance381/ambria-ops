@@ -30,11 +30,10 @@ var STATUS_LABELS = { recorded: 'Recorded', flagged: 'Resubmit', acknowledged: '
 // the one thing on the page you had to drag — so below sm it is two columns,
 // the name and the net total, and the three it is made of go on a line under
 // the name instead. The drill-down into type and sub-type still opens.
-var COLS = 'grid grid-cols-[minmax(0,1fr)_auto_auto] sm:grid-cols-[minmax(0,1fr)_140px_140px_140px_150px_44px] gap-2'
-var COL_SM = 'hidden sm:flex'
+var COL_SM_ADMIN = 'hidden sm:flex'
 // For cells that are only text: sm:flex would make them flex containers and
 // text-right would stop reaching the text inside them.
-var COL_SM_TXT = 'hidden sm:block'
+var COL_SM_TXT_ADMIN = 'hidden sm:block'
 
 // A figure in the colour of its own meaning: settled, waiting, credited, and
 // the answer. The colour is on the number and nowhere else — a filled pill
@@ -1418,6 +1417,34 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
   var ledgerFilterCount = (userFilter ? 1 : 0) + (venueFilter ? 1 : 0) +
     (statusFilter ? 1 : 0) + (pendingOnly ? 1 : 0)
 
+  // The wide table is a function of the container, not the window.
+  //
+  // sm: measures the viewport, and the phone layout's column is capped at
+  // max-w-[540px] however wide the window gets. So on a desktop browser at
+  // this page — not the admin shell — the six fixed columns switched on inside
+  // a column that could never hold them: 140+140+140+150+44 is 614, the five
+  // gaps are 40, and the row had about 484. minmax(0,1fr) went to nothing, and
+  // the department name with it, leaving a chevron, a tile and a count stacked
+  // on top of each other while the heading broke one word to a line.
+  //
+  // Inside the admin shell the container really is as wide as the window, so
+  // there the breakpoints stand exactly as they were.
+  var COLS = inAdmin
+    ? 'grid grid-cols-[minmax(0,1fr)_auto_auto] sm:grid-cols-[minmax(0,1fr)_140px_140px_140px_150px_44px] gap-2'
+    : 'grid grid-cols-[minmax(0,1fr)_auto_auto] gap-2'
+  var COL_SM = inAdmin ? COL_SM_ADMIN : 'hidden'
+  var COL_SM_TXT = inAdmin ? COL_SM_TXT_ADMIN : 'hidden'
+  // The indents and the row alignment were on the same breakpoint and had the
+  // same problem: a sub-type indented to pl-20 inside a 484px row.
+  var IND_TYPE = inAdmin ? 'pl-5 sm:pl-9' : 'pl-5'
+  var IND_SUB = inAdmin ? 'pl-9 sm:pl-20' : 'pl-9'
+  var ROW_ALIGN = inAdmin ? 'items-start sm:items-center' : 'items-start'
+  // The per-row PDF buttons are part of the same width. w-74 and mr-3 come out
+  // of the row before the grid sees any of it, so in the phone column they
+  // were taking 86 of the 484 that was already short.
+  var EXPORT_CELL = inAdmin ? 'hidden sm:inline-flex ' : 'hidden '
+  var EXPORT_HEAD = inAdmin ? 'hidden sm:block ' : 'hidden '
+
   // ─── LIST VIEW ───
   return (
     <div className="space-y-3">
@@ -1776,7 +1803,7 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
               <span className={COL_SM_TXT + " text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] text-right"}>Net Total</span>
               <span className={COL_SM_TXT + " text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] text-right"}>#</span>
             </div>
-            <span className={"hidden sm:block " + EXPORT_COL + " py-2.5 text-center text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em]"}>Export</span>
+            <span className={EXPORT_HEAD + EXPORT_COL + " py-2.5 text-center text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em]"}>Export</span>
           </div>
           {visibleGroups.map(function (g) {
             var deptCollapsed = collapsedDepts[g.key]
@@ -1816,7 +1843,7 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
                   <button onClick={function (e) { e.stopPropagation(); exportScopedPDF(g.deptId) }}
                     disabled={pdfBusy}
                     title="Open department PDF in new tab"
-                    className={"hidden sm:inline-flex " + PDF_BTN}>
+                    className={EXPORT_CELL + PDF_BTN}>
                     <Icon name="fileText" size={13} />
                     PDF
                   </button>
@@ -1829,7 +1856,7 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
                     <div key={t.typeKey}>
                       <div className="flex items-stretch border-t border-slate-100 bg-slate-50/70 hover:bg-slate-100 transition-colors">
                         <button onClick={function () { toggleType(g.key, t.typeKey) }}
-                          className={"flex-1 " + COLS + " items-center px-3 py-1.5 pl-5 sm:pl-9 text-left"}>
+                          className={"flex-1 " + COLS + " items-center px-3 py-1.5 " + IND_TYPE + " text-left"}>
                           <div className="flex items-center gap-2 min-w-0">
                             <Icon name="chevronRight" size={13}
                               className={"shrink-0 text-slate-400 transition-transform duration-150 " + (typeCollapsed ? "" : "rotate-90")} />
@@ -1848,7 +1875,7 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
                         <button onClick={function (e) { e.stopPropagation(); exportScopedPDF(g.deptId, t.typeId) }}
                           disabled={pdfBusy}
                           title="Open expense-type PDF in new tab"
-                          className={"hidden sm:inline-flex " + PDF_BTN}>
+                          className={EXPORT_CELL + PDF_BTN}>
                           <Icon name="fileText" size={13} />
                           PDF
                         </button>
@@ -1865,7 +1892,7 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
                                 sub-type's name actually started nine pixels to
                                 the LEFT of its own parent's. */}
                             <button onClick={function () { openRow(g, r) }}
-                              className={"flex-1 " + COLS + " items-start sm:items-center px-3 py-1.5 pl-9 sm:pl-20 text-left"}>
+                              className={"flex-1 " + COLS + " " + ROW_ALIGN + " px-3 py-1.5 " + IND_SUB + " text-left"}>
                               {/* The tile and the badge its two parents have.
                                   A bare glyph beside a name, under two rows
                                   that each put theirs in a box, read as a
@@ -1881,7 +1908,7 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
                                   names are the whole point of the row and
                                   "FLR-Casual La…" is not one. */}
                               <div className="flex items-center gap-2 min-w-0">
-                                <span className="hidden sm:inline-flex shrink-0 w-6 h-6 rounded-md bg-white border border-slate-200 text-slate-400 items-center justify-center">
+                                <span className={EXPORT_CELL + "shrink-0 w-6 h-6 rounded-md bg-white border border-slate-200 text-slate-400 items-center justify-center"}>
                                   <Icon name="fileText" size={13} />
                                 </span>
                                 <span className="text-[12.5px] text-slate-600 leading-snug sm:truncate">{subTypeName}</span>
@@ -1895,7 +1922,7 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
                             <button onClick={function (e) { e.stopPropagation(); exportScopedPDF(g.deptId, r.typeId, r.subTypeId) }}
                               disabled={pdfBusy}
                               title="Open sub-type PDF in new tab"
-                              className={"hidden sm:inline-flex " + PDF_BTN}>
+                              className={EXPORT_CELL + PDF_BTN}>
                               <Icon name="fileText" size={13} />
                               PDF
                             </button>
