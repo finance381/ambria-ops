@@ -113,21 +113,35 @@ var TONES = {
 // happened to be standing at the edge of the frame.
 var LEDGER_BG_FOOT = '#DBCCBC'
 
-// The ground behind the phone ledger, built the way the wallet's and the
-// vendor ledger's are: the artwork at its own proportions at the top, and
-// below it a gradient continuing its last row. Nothing measured against
-// height, so the address bar sliding away cannot rescale it.
+// The ground behind the phone ledger. The artwork covers the whole screen
+// rather than sitting at the top with a colour under it.
+//
+// Height is 100lvh, not 100% of a fixed box. The wallet's backdrop avoids
+// cover for a reason its own comment records: a fixed element is as tall as
+// the viewport, the viewport changes height every time the address bar slides
+// away, and cover rescales the image each time — which reads as the
+// background zooming while you scroll. lvh is the height with the browser
+// chrome retracted and does not move, so the image is sized once.
+//
+// The flat tone stays behind it for the moment before the file lands, and for
+// the sliver below 100lvh when the bar is showing.
 //
 // Nothing on the desktop. This is one tab of eight in the hub, and a ground
 // on one of them would make it look like a different section.
 function LedgerBackdrop({ inAdmin }) {
   if (inAdmin) return null
   return (
-    <div aria-hidden="true" className="pointer-events-none fixed inset-0 -z-10 flex flex-col overflow-hidden"
+    <div aria-hidden="true" className="pointer-events-none fixed inset-0 -z-10 overflow-hidden"
       style={{ backgroundColor: LEDGER_BG_FOOT }}>
-      <img src={ledgerBg} alt="" fetchpriority="high" decoding="async"
-        className="w-full shrink-0" style={{ aspectRatio: '996 / 1578' }} />
-      <div className="flex-1" style={{ backgroundColor: LEDGER_BG_FOOT }} />
+      <div className="w-full"
+        style={{
+          height: '100lvh',
+          backgroundColor: LEDGER_BG_FOOT,
+          backgroundImage: 'url(' + ledgerBg + ')',
+          backgroundSize: 'cover',
+          backgroundPosition: 'center top',
+          backgroundRepeat: 'no-repeat',
+        }} />
     </div>
   )
 }
