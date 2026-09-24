@@ -9,6 +9,7 @@ import SearchDropdown from '../../components/ui/SearchDropdown'
 import { useExpenseDetailModal } from '../../hooks/useExpenseDetailModal.jsx'
 import LedgerSourceMedia from '../../components/ledger/LedgerSourceMedia'
 import { filterVisibleVendors } from '../../lib/vendorGating'
+import { scrollToTopOf } from '../../lib/scrollToTop'
 import { registerPdfFont } from '../../lib/pdfFont'
 import { openOrSharePdf } from '../../lib/pdfOutput'
 import { plainParticularsLines, plainDateLines, makeStatementCellHooks } from '../../lib/pdfStatementTable'
@@ -44,6 +45,12 @@ var MERGE_LABEL = 'block text-[12px] font-semibold text-slate-600 mb-1.5'
 // A constant, so the effect that tops up from it is not re-created every
 // render to chase a value that never changes.
 var FIRST_PAINT = 24
+
+// A vendor card is tall — a name, a balance, chips, a facts band — so these
+// are the wallet list's sizes rather than a table's. 30 is four or five
+// thumb-lengths on a phone, which is as far as anyone scrolls before they go
+// back to the search.
+var VENDOR_PAGE_SIZES = [30, 60, 120]
 
 function isExpenseEntry(e) {
   return e.ref_type === 'expense' && e.ref_id && /^[0-9]+$/.test(String(e.ref_id)) && !e.deleted_at
@@ -628,15 +635,33 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
   // So it draws a screenful, and fills in the rest while the browser is idle.
   // Nothing is hidden and there is nothing to press — by the time you have
   // read the first row the last one is there.
+  var [vendorPage, setVendorPage] = useState(0)
+  var [vendorPageSize, setVendorPageSize] = useState(VENDOR_PAGE_SIZES[0])
+  var vendorListRef = useRef(null)
+
+  // renderLimit is not pagination and stays. It is the first-paint budget:
+  // a screenful now, the rest topped up while the browser is idle, so opening
+  // the tab does not block on building every card. Pagination sits over it and
+  // decides which cards exist at all; this decides how fast they arrive.
   var [renderLimit, setRenderLimit] = useState(FIRST_PAINT)
 
-  // Back to a screenful whenever the list becomes a different list.
+  // Back to a screenful whenever the list becomes a different list — and back
+  // to its first page, because page four of the old list is not page four of
+  // the new one, and landing on it looks like the filter found nothing.
   useEffect(function () {
     setRenderLimit(FIRST_PAINT)
+    setVendorPage(0)
   }, [deferredSearch, deferredStatus, fExpType, fExpSubType, fCategory, fSubCategory, vendors])
 
+  // A new page is a new screenful to stage.
   useEffect(function () {
-    if (renderLimit >= vendors.length) return
+    setRenderLimit(FIRST_PAINT)
+  }, [vendorPage, vendorPageSize])
+
+  useEffect(function () {
+    // The page is the ceiling now. Growing past it built cards that pagination
+    // had already decided were on another page.
+    if (renderLimit >= Math.min(vendors.length, vendorPageSize)) return
     function grow() { setRenderLimit(function (n) { return n + 80 }) }
     // requestIdleCallback where it exists, so topping up never competes with a
     // scroll or a keystroke; a frame's delay where it does not.
@@ -646,7 +671,7 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
       if (idle) window.cancelIdleCallback(id)
       else clearTimeout(id)
     }
-  }, [renderLimit, vendors.length])
+  }, [renderLimit, vendors.length, vendorPageSize])
 
   // Filter dropdowns (all optional, cascade where hierarchical)
   var [fExpType, setFExpType] = useState('')
@@ -1251,6 +1276,74 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
       return (b.balance_paise || 0) - (a.balance_paise || 0)
     })
 
+    var vTotalPages = Math.max(1, Math.ceil(sorted.length / vendorPageSize))
+    // Clamped rather than corrected in state: deleting the last vendor on the
+    // last page would otherwise render an empty list for the frame before an
+    // effect noticed and moved the page back.
+    var vPageNow = Math.min(vendorPage, vTotalPages - 1)
+    var pageVendors = sorted.slice(vPageNow * vendorPageSize, (vPageNow + 1) * vendorPageSize)
+    var vFirstShown = sorted.length === 0 ? 0 : vPageNow * vendorPageSize + 1
+    var vLastShown = Math.min((vPageNow + 1) * vendorPageSize, sorted.length)
+
+    // First, last, and the one either side of where you are. Everything else
+    // is an ellipsis, so the control is the same width at page 2 and page 40.
+    var vPageButtons = []
+    for (var vpb = 0; vpb < vTotalPages; vpb++) {
+      if (vpb === 0 || vpb === vTotalPages - 1 || (vpb >= vPageNow - 1 && vpb <= vPageNow + 1)) vPageButtons.push(vpb)
+      else if (vPageButtons[vPageButtons.length - 1] !== '…') vPageButtons.push('…')
+    }
+
+    function goVendorPage(n) {
+      setVendorPage(n)
+      scrollToTopOf(vendorListRef.current)
+    }
+
+    // Vendors are found by name in the search above, not by page number. This
+    // is here so a few hundred cards are not all built at once, and so the
+    // foot of the list says where in it you are standing.
+    function renderVendorPager() {
+      if (loading || sorted.length === 0) return null
+      return (
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 bg-white border border-slate-200 rounded-2xl">
+          <p className="text-[12px] font-semibold text-slate-500" data-notranslate>
+            Showing {vFirstShown}–{vLastShown} of {sorted.length}
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            {vTotalPages > 1 && (
+              <div className="flex items-center gap-1">
+                <button type="button" disabled={vPageNow === 0} onClick={function () { goVendorPage(vPageNow - 1) }}
+                  aria-label="Previous page"
+                  className="w-8 h-8 inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-500 hover:bg-slate-100 disabled:opacity-30 transition-colors">
+                  <Icon name="chevronRight" size={14} className="rotate-180" />
+                </button>
+                {vPageButtons.map(function (b, i) {
+                  if (b === '…') return <span key={'vg' + i} className="px-1 text-[12px] font-bold text-slate-300">…</span>
+                  return (
+                    <button key={b} type="button" onClick={function () { goVendorPage(b) }}
+                      className={'min-w-8 h-8 px-2 rounded-lg text-[12px] font-bold tabular-nums transition-colors ' +
+                        (b === vPageNow ? 'bg-indigo-600 text-white' : 'border border-slate-300 bg-white text-slate-600 hover:bg-slate-100')}
+                      data-notranslate>{b + 1}</button>
+                  )
+                })}
+                <button type="button" disabled={vPageNow >= vTotalPages - 1} onClick={function () { goVendorPage(vPageNow + 1) }}
+                  aria-label="Next page"
+                  className="w-8 h-8 inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-500 hover:bg-slate-100 disabled:opacity-30 transition-colors">
+                  <Icon name="chevronRight" size={14} />
+                </button>
+              </div>
+            )}
+            <select value={vendorPageSize}
+              onChange={function (e) { setVendorPageSize(Number(e.target.value)); setVendorPage(0); scrollToTopOf(vendorListRef.current) }}
+              aria-label="Vendors per page"
+              style={{ fontSize: '13px' }}
+              className="h-8 px-2 rounded-lg border border-slate-300 bg-white text-[12px] font-bold text-slate-700 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20">
+              {VENDOR_PAGE_SIZES.map(function (n) { return <option key={n} value={n}>{n} / page</option> })}
+            </select>
+          </div>
+        </div>
+      )
+    }
+
     // The four narrowing dropdowns, written once and laid out twice: down
     // the page on a phone, across a row on the desktop.
     var PHONE_FILTERS = [
@@ -1410,13 +1503,14 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
               {vendors.length === 0 ? 'No vendors yet' : 'No vendors match your filter'}
             </p>
           ) : (
-            <div aria-busy={listStale}
+            <div ref={vendorListRef} aria-busy={listStale}
               className={'space-y-2.5 transition-opacity duration-150 ' + (listStale ? 'opacity-60' : '')}>
-              {sorted.slice(0, renderLimit).map(function (v) {
+              {pageVendors.slice(0, renderLimit).map(function (v) {
                 return <VendorCard key={v.vendor_id} v={v} onOpen={openVendor} phone />
               })}
             </div>
           )}
+          {renderVendorPager()}
           {renderMergeModal()}
         </div>
       )
@@ -1551,13 +1645,14 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
             {vendors.length === 0 ? 'No vendors yet' : 'No vendors match your filter'}
           </p>
         ) : (
-          <div aria-busy={listStale}
+          <div ref={vendorListRef} aria-busy={listStale}
             className={"grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 transition-opacity duration-150 " + (listStale ? "opacity-60" : "")}>
-            {sorted.slice(0, renderLimit).map(function (v) {
+            {pageVendors.slice(0, renderLimit).map(function (v) {
               return <VendorCard key={v.vendor_id} v={v} onOpen={openVendor} />
             })}
           </div>
         )}
+        {renderVendorPager()}
         {renderMergeModal()}
       </div>
     )
