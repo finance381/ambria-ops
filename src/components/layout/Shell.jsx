@@ -50,17 +50,23 @@ var BroadcastHub = lazy(function () { return import('../../modules/broadcast/Bro
 // be. The card itself stays white so the colours are a mark to aim at rather
 // than eleven competing backgrounds.
 //
+// No green in here. Green is a verdict everywhere else in this app — a
+// positive balance, an acknowledged debit, a receipt that attached — and a
+// menu tile is not reporting anything, so a green one reads as a state the
+// group is in rather than as the group's colour. Review and Finance held the
+// two greens; they are cyan and orange now.
+//
 // Anything not listed falls back to slate, so a new group is plain rather than
 // wrong.
 var GROUP_TINTS = {
   me: 'bg-blue-50',
   inventory: 'bg-violet-50',
-  review: 'bg-emerald-50',
+  review: 'bg-cyan-50',
   events: 'bg-rose-50',
   procurement: 'bg-amber-50',
   logistics: 'bg-sky-50',
   projects: 'bg-purple-50',
-  expenses: 'bg-teal-50',
+  expenses: 'bg-orange-50',
   hr: 'bg-pink-50',
   broadcast: 'bg-indigo-50',
   admin: 'bg-slate-100',
