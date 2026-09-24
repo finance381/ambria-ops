@@ -1123,13 +1123,35 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
           rather than taking toolbar height on every screen. The allocation
           count reads here and not in the card below, where it would be the
           same number twice. */}
-      <div className="px-0.5">
-        <h2 className="font-display text-[21px] font-bold text-slate-900 tracking-[-0.015em]">Ledgers</h2>
-        <p className="mt-0.5 text-[12.5px] text-slate-500">
-          Live financial tracker
-          <span aria-hidden="true" className="mx-1.5 text-slate-300">·</span>
-          <span data-notranslate>{(totals.allocs || 0).toLocaleString('en-IN')}</span> allocation{totals.allocs === 1 ? '' : 's'}
-        </p>
+      {/* The two exports ride up here. The heading had the row's whole right
+          half empty and they had a line of their own under the toolbar —
+          169px of buttons against the 185 this leaves on a 390px phone, so
+          the heading block keeps what it needs and its subtitle truncates
+          before anything else does. */}
+      <div className="px-0.5 flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="font-display text-[21px] font-bold text-slate-900 tracking-[-0.015em]">Ledgers</h2>
+          <p className="mt-0.5 text-[12.5px] text-slate-500 truncate">
+            Live financial tracker
+            <span aria-hidden="true" className="mx-1.5 text-slate-300">·</span>
+            <span data-notranslate>{(totals.allocs || 0).toLocaleString('en-IN')}</span> allocation{totals.allocs === 1 ? '' : 's'}
+          </p>
+        </div>
+        <div className="shrink-0 flex items-center gap-2">
+        {/* Both of these do the same harmless thing, so they look the same.
+              Green and red on a pair of downloads read as a verdict on the file,
+              when the only difference is the format the word already names. */}
+          <button type="button" onClick={exportListCSV} disabled={!deptGroups.length}
+            className="h-11 px-4 inline-flex items-center gap-2 text-[12.5px] font-bold text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 hover:border-slate-300 disabled:opacity-40 transition-all duration-150">
+            <Icon name="download" size={14} className="text-slate-400" />
+            CSV
+          </button>
+          <button type="button" onClick={exportListPDF} disabled={!visibleGroups.length || pdfBusy}
+            className="h-11 px-4 inline-flex items-center gap-2 text-[12.5px] font-bold text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 hover:border-slate-300 disabled:opacity-40 transition-all duration-150">
+            <Icon name={pdfBusy ? 'refresh' : 'fileText'} size={14} className="text-slate-400" />
+            {pdfBusy ? 'Generating…' : 'PDF'}
+          </button>
+        </div>
       </div>
 
       {/* top-0 put this underneath the shell's own sticky bar rather than below
@@ -1306,19 +1328,6 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
                 {ledgerFilterCount}
               </span>
             )}
-          </button>
-          {/* Both of these do the same harmless thing, so they look the same.
-              Green and red on a pair of downloads read as a verdict on the file,
-              when the only difference is the format the word already names. */}
-          <button type="button" onClick={exportListCSV} disabled={!deptGroups.length}
-            className="h-11 px-4 inline-flex items-center gap-2 text-[12.5px] font-bold text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 hover:border-slate-300 disabled:opacity-40 transition-all duration-150">
-            <Icon name="download" size={14} className="text-slate-400" />
-            CSV
-          </button>
-          <button type="button" onClick={exportListPDF} disabled={!visibleGroups.length || pdfBusy}
-            className="h-11 px-4 inline-flex items-center gap-2 text-[12.5px] font-bold text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 hover:border-slate-300 disabled:opacity-40 transition-all duration-150">
-            <Icon name={pdfBusy ? 'refresh' : 'fileText'} size={14} className="text-slate-400" />
-            {pdfBusy ? 'Generating…' : 'PDF'}
           </button>
         </div>
 
