@@ -649,6 +649,16 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
       rows = rows.map(function (r) {
         var meta = metaMap[r.expense_id] || {}
         var chips = extraFields.map(function (f) {
+          // Event Date is dropped, because the row already carries it. The
+          // calendar fact under this block is expense_date, which for an event
+          // expense is the same day — so the chip was a two-line box saying
+          // what a one-line fact three pixels below it already said.
+          //
+          // By label, because that is the only handle there is: these chips
+          // are whatever the expense type has been configured with, and the
+          // label is the part of that configuration this component sees.
+          // Rename the field in admin and the chip comes back.
+          if (String(f.label || '').trim().toLowerCase() === 'event date') return null
           var resolved = resolveField(f, meta[f.key])
           return resolved ? { label: f.label, value: resolved } : null
         }).filter(Boolean)
@@ -1192,7 +1202,7 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
                           flat slate-400 with slate-300 glyphs and weight only
                           on the name at the end, so two of the three facts read
                           as background and the third as the only thing said. */}
-                      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11.5px] text-slate-500">
+                      <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11.5px] text-slate-500">
                         <span className="inline-flex items-center whitespace-nowrap">
                           <Icon name="calendar" size={13} className="shrink-0 mr-1.5 text-slate-400" />
                           <span className="font-semibold text-slate-700">{formatDate(r.expense_date)}</span>
