@@ -104,7 +104,7 @@ function LedgersHub(props) {
           var isActive = l.key === active
           var c = counts[l.key]
           return (
-            <div key={l.key} className="flex flex-1 items-center min-w-0">
+            <div key={l.key} className="flex flex-1 items-center min-w-max">
               {li > 0 && <span aria-hidden="true" className="shrink-0 w-px h-5 bg-slate-200" />}
               <button type="button" onClick={function () { setActive(l.key) }} aria-pressed={isActive}
                 onPointerEnter={function () { if (l.component.load) l.component.load() }}
