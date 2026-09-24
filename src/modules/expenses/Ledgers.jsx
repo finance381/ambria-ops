@@ -126,14 +126,18 @@ var PDF_SHAPES = [
   {
     mode: 'summary',
     glyph: 'list',
-    title: 'Summary',
-    blurb: 'The figures as the table shows them. Ready at once.',
+    // A verb. "Summary" beside "Every allocation" reads as two more things to
+    // choose between, which is what the list above them is for — and after
+    // ticking two types the question in hand is how to finish, not what to
+    // pick next.
+    action: 'Generate summary',
+    primary: true,
   },
   {
     mode: 'detailed',
     glyph: 'fileText',
-    title: 'Every allocation',
-    blurb: 'Each entry behind those figures — date, who logged it, venue, description, status. Fetches the rows first.',
+    action: 'Generate full detail',
+    primary: false,
   },
 ]
 
@@ -2140,15 +2144,21 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
                 <p className="mb-2 text-[11.5px] text-slate-500">
                   Export <span className="font-bold text-slate-700">{scopeNote.toLowerCase()}</span>
                 </p>
-                <div className="flex items-stretch gap-2">
+                {/* Stacked, not side by side: "Generate summary" measures 173
+                    with its glyph and two across a 390px sheet get 171 each.
+                    Full width also happens to be the shape a thing you press to
+                    finish already has. */}
+                <div className="space-y-2">
                   {PDF_SHAPES.map(function (o) {
                     return (
                       <button key={o.mode} type="button" disabled={pdfBusy}
-                        title={o.blurb}
                         onClick={function () { setPdfSheet(false); runLedgerPdf(o.mode, g, pdfTypeKeys) }}
-                        className="flex-1 min-w-0 flex items-center justify-center gap-2 h-11 px-3 rounded-xl bg-white border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/40 disabled:opacity-40 transition-all duration-150">
-                        <Icon name={o.glyph} size={15} className="shrink-0 text-slate-400" />
-                        <span className="min-w-0 truncate text-[12.5px] font-bold text-slate-800">{o.title}</span>
+                        className={'w-full flex items-center justify-center gap-2 h-11 px-3 rounded-xl font-bold text-[13px] disabled:opacity-40 transition-all duration-150 ' +
+                          (o.primary
+                            ? 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-[0_2px_10px_rgba(79,70,229,0.28)]'
+                            : 'bg-white text-indigo-700 border border-indigo-200 hover:border-indigo-400 hover:bg-indigo-50')}>
+                        <Icon name={pdfBusy ? 'refresh' : o.glyph} size={15} className="shrink-0" />
+                        <span className="min-w-0 truncate">{o.action}</span>
                       </button>
                     )
                   })}
