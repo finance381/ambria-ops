@@ -1070,12 +1070,19 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
 
         {/* One row of controls at the size of the controls on the screen behind
             this one, rather than three native selects at full height. */}
+        {/* 118, because "All Venues" is 82px at the 16px these actually render
+            at — the inline size that stops iOS zooming the page on focus, which
+            overrides the 12.5px in the class — plus 8 of left pad and 28 for
+            the arrow. At 100 all three were cut rather than only the long one:
+            flex-1 gives them equal widths, so the widest label sets what every
+            one of them needs. Three at 118 will not fit a 360px row, so they
+            wrap two and one instead of clipping. */}
         <div className="flex flex-wrap items-center gap-2.5">
           <div className="contents">
-            <div className="relative flex-1 min-w-[100px]">
+            <div className="relative flex-1 min-w-[118px]">
             <select value={drillUserFilter} onChange={function (e) { setDrillUserFilter(e.target.value) }}
               aria-label="Filter by user"
-              className="h-11 pl-2 pr-7 bg-white border border-slate-200 rounded-xl text-[12.5px] text-slate-700 appearance-none hover:border-slate-300 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-[border-color,box-shadow] duration-150 w-full min-w-[100px]" style={{ fontSize: '16px' }}>
+              className="h-11 pl-2 pr-7 bg-white border border-slate-200 rounded-xl text-[12.5px] text-slate-700 appearance-none hover:border-slate-300 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-[border-color,box-shadow] duration-150 w-full min-w-[118px]" style={{ fontSize: '16px' }}>
               <option value="">All Users</option>
               {users.map(function (u) { return <option key={u.id} value={u.id}>{u.name}</option> })}
             </select>
@@ -1083,10 +1090,10 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
               <Icon name="chevronDown" size={14} />
             </span>
             </div>
-            <div className="relative flex-1 min-w-[100px]">
+            <div className="relative flex-1 min-w-[118px]">
             <select value={drillStatusFilter} onChange={function (e) { setDrillStatusFilter(e.target.value) }}
               aria-label="Filter by status"
-              className="h-11 pl-2 pr-7 bg-white border border-slate-200 rounded-xl text-[12.5px] text-slate-700 appearance-none hover:border-slate-300 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-[border-color,box-shadow] duration-150 w-full min-w-[100px]" style={{ fontSize: '16px' }}>
+              className="h-11 pl-2 pr-7 bg-white border border-slate-200 rounded-xl text-[12.5px] text-slate-700 appearance-none hover:border-slate-300 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-[border-color,box-shadow] duration-150 w-full min-w-[118px]" style={{ fontSize: '16px' }}>
               <option value="">All Status</option>
               <option value="recorded">Recorded</option>
               <option value="flagged">Resubmit</option>
@@ -1097,10 +1104,10 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
               <Icon name="chevronDown" size={14} />
             </span>
             </div>
-            <div className="relative flex-1 min-w-[100px]">
+            <div className="relative flex-1 min-w-[118px]">
             <select value={drillVenueFilter} onChange={function (e) { setDrillVenueFilter(e.target.value) }}
               aria-label="Filter by venue"
-              className="h-11 pl-2 pr-7 bg-white border border-slate-200 rounded-xl text-[12.5px] text-slate-700 appearance-none hover:border-slate-300 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-[border-color,box-shadow] duration-150 w-full min-w-[100px]" style={{ fontSize: '16px' }}>
+              className="h-11 pl-2 pr-7 bg-white border border-slate-200 rounded-xl text-[12.5px] text-slate-700 appearance-none hover:border-slate-300 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-[border-color,box-shadow] duration-150 w-full min-w-[118px]" style={{ fontSize: '16px' }}>
               <option value="">All Venues</option>
               {venues.map(function (v) { return <option key={v.id} value={v.id}>{v.code ? (v.code + ' — ' + v.name) : v.name}</option> })}
             </select>
