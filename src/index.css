@@ -556,25 +556,28 @@
   .ambria-event-night .bg-white,
   .ambria-event-night .bg-slate-50\/60,
   .ambria-event-night .bg-slate-50\/70 {
-    background-color: rgba(23, 19, 52, 0.72);
+    background-color: rgba(46, 39, 96, 0.80);
     backdrop-filter: blur(16px);
   }
   .ambria-event-night .bg-slate-50,
-  .ambria-event-night .bg-slate-100 { background-color: rgba(255, 255, 255, 0.06); }
+  .ambria-event-night .bg-slate-100 { background-color: rgba(255, 255, 255, 0.09); }
 
   .ambria-event-night.border-slate-200,
   .ambria-event-night .border-slate-200,
-  .ambria-event-night .border-slate-300 { border-color: rgba(255, 255, 255, 0.10); }
+  .ambria-event-night .border-slate-300 { border-color: rgba(255, 255, 255, 0.14); }
   .ambria-event-night .border-slate-100,
-  .ambria-event-night .divide-slate-100 > * + * { border-color: rgba(255, 255, 255, 0.07); }
+  .ambria-event-night .divide-slate-100 > * + * { border-color: rgba(255, 255, 255, 0.10); }
 
   .ambria-event-night .text-slate-900,
   .ambria-event-night .text-slate-800 { color: #F3F1FD; }
   .ambria-event-night .text-slate-700,
   .ambria-event-night .text-slate-600 { color: #C9C3E8; }
   .ambria-event-night .text-slate-500,
-  .ambria-event-night .text-slate-400 { color: #8F88B8; }
-  .ambria-event-night .text-slate-300 { color: #5C5580; }
+  .ambria-event-night .text-slate-400 { color: #9E97C6; }
+  .ambria-event-night .text-slate-300 { color: #746CA0; }
+  /* The quiet tones came up with the surface, not for taste: against the
+     lighter card the old #8F88B8 measured 4.3:1, under the 4.5 text needs.
+     #9E97C6 is 5.2. */
 
   /* Indigo is the accent on this screen and it has to lift off the ground
      rather than sink into it. */
@@ -593,5 +596,5 @@
   .ambria-event-night .bg-red-50 { background-color: rgba(244, 63, 94, 0.16); }
   .ambria-event-night .border-red-200 { border-color: rgba(251, 113, 133, 0.45); }
   .ambria-event-night .text-red-700 { color: #FDA4AF; }
-  .ambria-event-night .ring-white { --tw-ring-color: #171334; }
+  .ambria-event-night .ring-white { --tw-ring-color: #2E2760; }
 }
