@@ -546,6 +546,13 @@
 @media (max-width: 639px) {
   .ambria-event-night { color: #E7E4F7; }
 
+  /* Self as well as descendant.
+   *
+   * The shell header carries this class and bg-white on the same element,
+   * and a descendant selector cannot match the element it is written on. So
+   * the bar kept its white while everything inside it took the dark palette
+   * — near-white text on a white strip, which is what looked washed out. */
+  .ambria-event-night.bg-white,
   .ambria-event-night .bg-white,
   .ambria-event-night .bg-slate-50\/60,
   .ambria-event-night .bg-slate-50\/70 {
@@ -555,6 +562,7 @@
   .ambria-event-night .bg-slate-50,
   .ambria-event-night .bg-slate-100 { background-color: rgba(255, 255, 255, 0.06); }
 
+  .ambria-event-night.border-slate-200,
   .ambria-event-night .border-slate-200,
   .ambria-event-night .border-slate-300 { border-color: rgba(255, 255, 255, 0.10); }
   .ambria-event-night .border-slate-100,
