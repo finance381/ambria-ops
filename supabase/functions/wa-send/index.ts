@@ -63,9 +63,17 @@ serve(async function (req) {
 
     var authHeader = req.headers.get("authorization")
     if (!authHeader) return bad(401, "unauthorized", "No auth header")
-    var authClient = createClient(SUPABASE_URL, ANON_KEY, { global: { headers: { Authorization: authHeader } } })
-    var authRes = await authClient.auth.getUser()
-    if (authRes.error || !authRes.data.user) return bad(401, "unauthorized", "Invalid session")
+    // Two callers: a real logged-in user (Campaigns/Inbox, existing path) OR
+    // wa-webhook triggering an auto-reply server-to-server — the service role
+    // key is never exposed to a client, only ever readable by another Edge
+    // Function's own env, so accepting it here as a second valid bearer is a
+    // trusted-caller check, not a public bypass.
+    var bearerToken = authHeader.replace(/^Bearer\s+/i, "")
+    if (bearerToken !== SERVICE_ROLE) {
+      var authClient = createClient(SUPABASE_URL, ANON_KEY, { global: { headers: { Authorization: authHeader } } })
+      var authRes = await authClient.auth.getUser()
+      if (authRes.error || !authRes.data.user) return bad(401, "unauthorized", "Invalid session")
+    }
 
     var supa = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } })
 

@@ -71,6 +71,7 @@ var BroadcastContacts = lazyTab(function () { return import('../../modules/broad
 var BroadcastLists = lazyTab(function () { return import('../../modules/broadcast/Lists') })
 var BroadcastCampaigns = lazyTab(function () { return import('../../modules/broadcast/Campaigns') })
 var BroadcastInbox = lazyTab(function () { return import('../../modules/broadcast/Inbox') })
+var BroadcastAutoReplies = lazyTab(function () { return import('../../modules/broadcast/AutoReplies') })
 var BroadcastSettings = lazyTab(function () { return import('../../modules/broadcast/Settings') })
 
 function ExpenseTypesMaster(props) {
@@ -150,6 +151,7 @@ var SUB_TAB_CONFIG = {
     { key: 'lists',     label: 'Lists',     icon: 'list',     component: BroadcastLists,     perm: 'broadcast.contacts.view' },
     { key: 'campaigns', label: 'Campaigns', icon: 'send',     component: BroadcastCampaigns, perm: 'broadcast.campaigns.view' },
     { key: 'inbox',     label: 'Inbox',     icon: 'inbox',    component: BroadcastInbox,     perm: 'broadcast.inbox.view' },
+    { key: 'autoreplies', label: 'Auto-Replies', icon: 'send', component: BroadcastAutoReplies, perm: 'broadcast.settings' },
     { key: 'settings',  label: 'Settings',  icon: 'settings', component: BroadcastSettings,  perm: 'broadcast.settings' },
   ],
   expenses: [
