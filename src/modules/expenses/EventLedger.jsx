@@ -533,10 +533,17 @@ function EventLedger(props) {
   // anything — every row starts at the left and ends wherever its longest label
   // happens to.
   //
-  // Two columns on a phone, so every option is the same width and the panel has
-  // one edge down each side. A row from sm, where there is width to let them
-  // sit at their own size.
-  var TXN_FILTER_ROW = 'grid grid-cols-2 gap-1.5 sm:flex sm:flex-wrap'
+  // Columns on a phone, so every option is the same width and the panel has one
+  // edge down each side. A row from sm, where there is width to let them sit at
+  // their own size.
+  //
+  // Three across when there are three, two otherwise — so a set of three is one
+  // line rather than two and a gap. Measured: a 390px phone leaves 334 inside
+  // the panel, three cells come to 107 each, and the widest label in either
+  // three-option set is "Unchecked" at 92.
+  function txnFilterRow(n) {
+    return 'grid gap-1.5 sm:flex sm:flex-wrap ' + (n === 3 ? 'grid-cols-3' : 'grid-cols-2')
+  }
   var TXN_FILTER_LABEL = 'text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500 mb-1.5'
   function txnPillCls(on, dead) {
     return 'inline-flex items-center justify-center gap-1.5 h-9 px-2.5 rounded-lg text-[12px] font-bold border transition-colors ' +
@@ -1391,7 +1398,7 @@ function EventLedger(props) {
                   the Filter button says when one is set. */}
               <div className="@3xl:col-span-3">
                 <p className={TXN_FILTER_LABEL}>Type</p>
-                <div className={TXN_FILTER_ROW}>
+                <div className={txnFilterRow(ENTRY_TYPES.length)}>
                   {ENTRY_TYPES.map(function (t) {
                     var active = filter === t.key
                     var n = t.key === 'all' ? entries.length : entries.filter(function (e) { return e.entry_type === t.key }).length
@@ -1412,7 +1419,7 @@ function EventLedger(props) {
               </div>
               <div>
                 <p className={TXN_FILTER_LABEL}>Direction</p>
-                <div className={TXN_FILTER_ROW}>
+                <div className={txnFilterRow(3)}>
                   {[{ k: '', l: 'Any' }, { k: 'in', l: 'Money in' }, { k: 'out', l: 'Money out' }].map(function (o) {
                     return (
                       <button key={o.k || 'any'} type="button"
@@ -1426,7 +1433,7 @@ function EventLedger(props) {
               </div>
               <div>
                 <p className={TXN_FILTER_LABEL}>Mode</p>
-                <div className={TXN_FILTER_ROW}>
+                <div className={txnFilterRow(txnModes.length + 1)}>
                   <button type="button" onClick={function () { setTxnMode(''); setTxnPage(1) }}
                     className={txnPillCls(txnMode === '', false)}>Any</button>
                   {txnModes.map(function (m) {
@@ -1439,7 +1446,7 @@ function EventLedger(props) {
               </div>
               <div>
                 <p className={TXN_FILTER_LABEL}>Finance check</p>
-                <div className={TXN_FILTER_ROW}>
+                <div className={txnFilterRow(3)}>
                   {[{ k: '', l: 'Any' }, { k: 'checked', l: 'Checked' }, { k: 'unchecked', l: 'Unchecked' }].map(function (o) {
                     return (
                       <button key={o.k || 'any'} type="button"
