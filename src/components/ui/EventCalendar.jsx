@@ -126,8 +126,12 @@ function EventCalendar({ value, onChange, year, month, onMonthChange, byDate, lo
             var isToday = cell.dateStr === todayStr
 
             var tone
-            if (isSelected) tone = 'bg-indigo-600 text-white shadow-[0_2px_10px_rgba(79,70,229,0.4)]'
-            else if (hasEvent) tone = 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100 hover:shadow-[0_1px_6px_rgba(79,70,229,0.15)]'
+            // The ambria-cal-* names carry no style of their own. They are
+            // what the event ledger's phone palette hooks on to, because there
+            // a busy day is an unfilled number with its dots under it — which
+            // a remap of bg-indigo-50 could not tell apart from a chip.
+            if (isSelected) tone = 'ambria-cal-picked bg-indigo-600 text-white shadow-[0_2px_10px_rgba(79,70,229,0.4)]'
+            else if (hasEvent) tone = 'ambria-cal-busy bg-indigo-50 text-indigo-700 hover:bg-indigo-100 hover:shadow-[0_1px_6px_rgba(79,70,229,0.15)]'
             else tone = 'text-slate-600 hover:bg-slate-100'
             // Today is a ring rather than a fill, so it can sit under a
             // selection or under an event tint without either one losing.

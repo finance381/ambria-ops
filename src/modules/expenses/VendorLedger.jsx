@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useDeferredValue, memo } from 'react'
+import { pushBack } from '../../lib/backNav'
 import { createPortal } from 'react-dom'
 import { supabase } from '../../lib/supabase'
 import { logActivity } from '../../lib/logger'
@@ -967,7 +968,15 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
     setEntriesLoading(false)
   }
 
+  // On a phone, opening a vendor is a step on the app's back stack, so the
+  // header's arrow — and a swipe — return to the list and the page carries no
+  // Back of its own. The admin console has no such arrow and keeps the
+  // button. Through a ref because openVendor is memoised once, and the list
+  // it returns to must be reloaded with the filters of the moment, not of
+  // the first render.
+  var backToListRef = useRef(null)
   var openVendor = useCallback(async function (v) {
+    if (!inAdmin) pushBack(function () { if (backToListRef.current) backToListRef.current() })
     setSelectedVendor(v)
     setView('detail')
     if (typeof window !== 'undefined') {
@@ -1023,6 +1032,7 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
     setRenderLimit(FIRST_PAINT)
     loadVendors(true)  // refresh in case something changed, without blanking it
   }
+  backToListRef.current = backToList
 
   var [showPayModal, setShowPayModal] = useState(false)
   var [pdfBusy, setPdfBusy] = useState(false)
@@ -1887,11 +1897,13 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
           the right held one item, and a menu you have to open to reach a
           single action is two presses for what a button does in one — the
           call moved onto the header card beside the other two. */}
-      <button type="button" onClick={backToList}
-        className="inline-flex items-center gap-1.5 h-9 -ml-1 px-2 rounded-lg text-[13px] font-bold text-indigo-600 hover:bg-indigo-50 transition-colors">
-        <Icon name="arrowLeft" size={15} />
-        Vendors
-      </button>
+      {inAdmin && (
+        <button type="button" onClick={backToList}
+          className="inline-flex items-center gap-1.5 h-9 -ml-1 px-2 rounded-lg text-[13px] font-bold text-indigo-600 hover:bg-indigo-50 transition-colors">
+          <Icon name="arrowLeft" size={15} />
+          Vendors
+        </button>
+      )}
 
       {/* Who this is, and the three things you came here to do. The emoji are
           gone: a glyph from the set the rest of the app draws from sits on the
@@ -2036,26 +2048,34 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
           thing that looks wrong.
 
           One labelled group rather than two stacked FROM and TO, with an
-          arrow between them saying which way the range runs. */}
-      <div className="flex items-center gap-2 flex-wrap">
-        <span className="text-[11px] font-bold uppercase tracking-[0.07em] text-slate-500">Entries</span>
-        <div className="flex items-center gap-2 bg-white/80 backdrop-blur-xl border border-white/60 rounded-xl px-2 py-1.5">
-          <div className="w-[126px]">
+          arrow between them saying which way the range runs.
+
+          The two fields share the row between them. At a fixed 126px each,
+          inside a tray of their own, they left the right third of the row
+          empty and put a box around two boxes; the label wrapped onto a line
+          of its own anyway. Clear sits on the label's line, so appearing
+          does not push the fields about. */}
+      <div>
+        <div className="flex items-center justify-between h-6 mb-1">
+          <span className="text-[11px] font-bold uppercase tracking-[0.07em] text-slate-500">Entries</span>
+          {(entryFrom || entryTo) && (
+            <button type="button" onClick={function () { setEntryFrom(''); setEntryTo('') }}
+              className="h-6 px-2 -mr-2 rounded-lg text-[12px] font-bold text-indigo-600 hover:bg-white/60 transition-colors">
+              Clear
+            </button>
+          )}
+        </div>
+        <div className="flex items-center gap-2 sm:max-w-md">
+          <div className="flex-1 min-w-0">
             <EventDatePicker value={entryFrom} onChange={function (v) { if (v) setEntryFrom(v) }}
               collapsible includePast plain neutral placeholder="From" />
           </div>
           <Icon name="arrowRight" size={14} className="shrink-0 text-slate-400" />
-          <div className="w-[126px]">
+          <div className="flex-1 min-w-0">
             <EventDatePicker value={entryTo} onChange={function (v) { if (v) setEntryTo(v) }}
               collapsible includePast plain neutral placeholder="To" />
           </div>
         </div>
-        {(entryFrom || entryTo) && (
-          <button type="button" onClick={function () { setEntryFrom(''); setEntryTo('') }}
-            className="h-9 px-3 rounded-xl text-[12px] font-bold text-slate-500 hover:text-slate-800 hover:bg-white/60 transition-colors">
-            Clear
-          </button>
-        )}
       </div>
 
       {/* Admin toggle: show deleted */}

@@ -23,6 +23,7 @@ var Purchase = lazy(function () { return import('../../modules/purchase/Purchase
 var Expenses = lazy(function () { return import('../../modules/expenses/Expenses') })
 var Ledgers = lazy(function () { return import('../../modules/expenses/Ledgers') })
 var VendorLedger = lazy(function () { return import('../../modules/expenses/VendorLedger') })
+var EventLedger = lazy(function () { return import('../../modules/expenses/EventLedger') })
 var Payments = lazy(function () { return import('../../modules/expenses/Payments') })
 var CostTransfers = lazy(function () { return import('../../modules/expenses/CostTransfers') })
 var SalaryPayouts = lazy(function () { return import('../../modules/expenses/SalaryPayouts') })
@@ -112,9 +113,10 @@ var GROUPS = [
   {
     key: 'expenses', label: 'Finance', icon: 'wallet', items: [
       { key: 'finance.wallet', label: 'Wallet', icon: 'wallet', tab: 'wallet' },
-      { key: 'finance.expenses', label: 'PC & Direct Expenses', icon: 'banknote', tab: 'expenses' },
+      { key: 'finance.expenses', label: 'Expenses', icon: 'banknote', tab: 'expenses' },
       { key: 'finance.cost_transfers', label: 'Cost Transfers', icon: 'transfer', tab: 'cost_transfers' },
       { key: 'finance.ledgers.expense', label: 'Expense Ledger', icon: 'fileText', tab: 'ledgers' },
+      { key: 'finance.ledgers.event', label: 'Event Ledger', icon: 'calendar', tab: 'event_ledger' },
       { key: 'finance.payments', label: 'Payments', icon: 'creditCard', tab: 'payments' },
       { key: 'finance.salary_payouts', label: 'Salary Payouts', icon: 'bank', tab: 'salary_payouts' },
       { key: 'finance.ledgers.vendor', label: 'Vendor Ledger', icon: 'building', tab: 'vendor_ledger' },
@@ -474,14 +476,19 @@ function Shell({ profile, onSignOut }) {
       {/* backdrop-blur is safe here now: the menu's click-outside overlay is
           portalled to <body>, so it is no longer a fixed child of this header
           for backdrop-filter's containing block to capture. */}
+      {/* The event ledger's phone screen sits on a photograph, and a white
+          strip across the top of it cuts the picture in two. The bar takes
+          the screen's scoped palette, which lets the light through. */}
       {tab !== 'quote' && (
-      <header className={"sticky top-0 z-40 " + (artHeader ? "bg-white/45 backdrop-blur-xl shadow-[0_1px_12px_rgba(15,23,42,0.05)]" : "border-b bg-white border-slate-200")}>
+      <header className={"sticky top-0 z-40 " +
+        (tab === 'event_ledger' ? "ambria-event-day " : "") +
+        (artHeader ? "bg-white/45 backdrop-blur-xl shadow-[0_1px_12px_rgba(15,23,42,0.05)]" : "border-b bg-white border-slate-200")}>
         <div className="max-w-[540px] mx-auto h-14 flex items-center gap-2 px-3">
           {(activeGroup || tab) && (
             <button
               onClick={goBack}
               aria-label="Back"
-              className="-ml-1 w-9 h-9 shrink-0 flex items-center justify-center rounded-xl text-slate-600 hover:bg-slate-100 hover:text-slate-900 active:scale-95 transition-all"
+              className="ambria-head-back -ml-1 w-9 h-9 shrink-0 flex items-center justify-center rounded-xl text-slate-600 hover:bg-slate-100 hover:text-slate-900 active:scale-95 transition-all"
             >
               <Icon name="arrowLeft" className="w-[18px] h-[18px]" />
             </button>
@@ -791,6 +798,9 @@ function Shell({ profile, onSignOut }) {
         {tab === 'ledgers' && (
           <Ledgers profile={profile} onNavigateToExpenses={navigateToExpenses} />
         )}
+        {tab === 'event_ledger' && (
+          <EventLedger profile={profile} onNavigateToExpenses={navigateToExpenses} />
+        )}
         {tab === 'vendor_ledger' && (
           <VendorLedger profile={profile} onNavigateToExpenses={navigateToExpenses} />
         )}
@@ -842,10 +852,10 @@ function Shell({ profile, onSignOut }) {
       {/* Footer — home screen only. Inside a module it is decoration that sits
           below the action bar and reads as a gap. */}
       {!activeGroup && !tab && (
-      /* slate-400, not 300: the home screen has artwork behind it now, and
-         the lightest grey in the scale disappeared into the pattern. */
-      <footer className="text-center py-4 text-[11px] text-slate-400 tracking-wider">
-        Ambria <span className="text-amber-400">●</span> Ops
+      /* slate-700, not 400: the home screen sits on a bright photograph now,
+         and a light grey over the lit floor all but disappeared. */
+      <footer className="text-center py-4 text-[11px] font-semibold text-slate-700 tracking-wider">
+        Ambria <span className="text-amber-500">●</span> Ops
       </footer>
       )}
     </div>

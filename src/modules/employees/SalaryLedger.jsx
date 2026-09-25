@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { pushBack } from '../../lib/backNav'
 import { supabase } from '../../lib/supabase'
 import { logActivity } from '../../lib/logger'
 import { formatPoints, formatDate, formatDateTime } from '../../lib/format'
@@ -13,7 +14,7 @@ import { useExpenseDetailModal } from '../../hooks/useExpenseDetailModal.jsx'
 import Icon from '../../components/ui/Icon'
 import ReverseDialog from '../../components/ui/ReverseDialog'
 
-function SalaryLedger({ profile }) {
+function SalaryLedger({ profile, inAdmin }) {
   var permsNew = (profile && profile.permsNew) || []
   var isAdmin = hasPerm(permsNew, 'admin.dashboard')
   var canSeeSalary = hasPerm(permsNew, 'hr.employees.salary_view')
@@ -122,7 +123,11 @@ function SalaryLedger({ profile }) {
     setEntriesLoading(false)
   }
 
+  // On a phone, opening an employee is a step on the app's back stack: the
+  // header's arrow and a swipe return to the list, and the page needs no Back
+  // of its own. The admin console has no arrow and keeps the button.
   async function openEmployee(emp) {
+    if (!inAdmin) pushBack(function () { backToList() })
     setSelectedEmp(emp)
     setView('detail')
     setShowDeleted(false)
@@ -368,9 +373,11 @@ function SalaryLedger({ profile }) {
 
   return (
     <div className="space-y-4">
-      <button onClick={backToList} className="text-sm text-indigo-600 font-medium hover:text-indigo-800 transition-colors">
-        ← Back to employees
-      </button>
+      {inAdmin && (
+        <button onClick={backToList} className="text-sm text-indigo-600 font-medium hover:text-indigo-800 transition-colors">
+          ← Back to employees
+        </button>
+      )}
 
       {/* Employee header card */}
       <div className="bg-white border border-gray-200 rounded-xl p-4">

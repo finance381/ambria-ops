@@ -19,6 +19,20 @@ export function pushBack(fn) {
   window.history.pushState({ d: stack.length }, '')
 }
 
+// Several steps back at once — a "Change date" that leaves an event and its
+// day together. Each handler runs, deepest first, and history rewinds by the
+// same count in one go, so no step is left behind to swallow a later back
+// press. history.go fires a single popstate however far it travels, which is
+// the one ignoreNext covers.
+export function unwind(n) {
+  var fns = []
+  while (n > 0 && stack.length > 0) { fns.push(stack.pop()); n-- }
+  if (fns.length === 0) return
+  ignoreNext = true
+  window.history.go(-fns.length)
+  fns.forEach(function (fn) { fn() })
+}
+
 // Call when programmatically going back (← Back button click)
 // Removes handler + goes back in history without triggering the handler
 export function goBack() {

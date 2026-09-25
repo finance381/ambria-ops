@@ -655,14 +655,18 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds, glass, prof
               <div className={(glass ? "ambria-glass-card" : "bg-white border border-slate-200 shadow-[0_1px_2px_rgba(15,23,42,0.05)]") + " rounded-2xl p-3.5 space-y-3.5"}>
                 <div>
                   <label className="block text-[10.5px] font-bold uppercase tracking-[0.08em] text-slate-500 mb-1.5">Status</label>
-                  <div className="flex gap-1.5 flex-wrap">
+                  {/* Six statuses as an even three-by-two grid. Wrapping by
+                      width put four on the first row and two stranded on the
+                      second, each chip its own size, which read as a list
+                      that had run out of room rather than a set of choices. */}
+                  <div className="grid grid-cols-3 gap-1.5">
                     {['', 'recorded', 'acknowledged', 'flagged', 'deducted', 'deleted'].map(function (s) {
                       // Never trust the map for the visible text: a status with
                       // no entry used to render a chip with nothing in it.
                       var label = s ? (APPROVAL_STATUS_LABELS[s] || (s.charAt(0).toUpperCase() + s.slice(1))) : 'All'
                       return (
                         <button key={s} onClick={function () { setAllExpStatus(s === allExpStatus ? '' : s) }}
-                          className={"h-7 px-2.5 text-[11px] font-semibold rounded-full border transition-colors " +
+                          className={"h-8 min-w-0 px-2 truncate text-[11px] font-semibold rounded-full border transition-colors " +
                             (allExpStatus === s ? "bg-slate-900 border-slate-900 text-white" : "bg-white border-slate-300 text-slate-600 hover:bg-slate-50 hover:text-slate-900")}>
                           {label}
                         </button>

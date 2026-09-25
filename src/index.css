@@ -68,6 +68,13 @@
     overscroll-behavior-y: none;
   }
 
+  /* Nothing may make the page wider than the screen. iOS Safari lets a pinch
+     zoom out as far as the widest thing on the page, so one decoration or
+     off-screen panel poking past the right edge let the whole app be shrunk
+     into a corner. clip, not hidden: hidden makes these a scroll container,
+     and the sticky header would stop sticking. */
+  html, body { overflow-x: clip; }
+
   body {
     background-color: var(--color-canvas);
     color: var(--color-slate-900);
@@ -268,6 +275,7 @@
      scrollbar — and on Windows that bar is 17px of grey under a row of
      tabs, which is taller than the gap it sits in. Used by LedgersHub and
      the event detail tabs. */
+
   .no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
   .no-scrollbar::-webkit-scrollbar { display: none; }
 
@@ -514,4 +522,126 @@
        brace, for a preference that changes after the page has loaded. */
     .ambria-ripple-dot { animation: none; opacity: 0; }
   }
+}
+
+/* Deliberately outside @layer base.
+ *
+ * Everything above lives in that layer, and Tailwind's utilities layer comes
+ * after it. Layer order beats specificity, so `.ambria-event-day .bg-white`
+ * inside base would lose to a plain `.bg-white` in utilities however specific
+ * it is. Unlayered rules beat every layered one, which is what these
+ * overrides need to be able to do.
+ */
+/* The event ledger's phone screen, and only it.
+ *
+ * White cards on a soft photograph of daylight, with maroon as the accent in
+ * place of the app's indigo. The markup stays the markup it is on a desktop;
+ * this block says what its tokens mean on this one screen, in one place,
+ * rather than a few hundred class strings forked across two files.
+ *
+ * max-width, not a variant: it is one screen's design at phone width, and
+ * the admin console and the desktop keep the look they share with the rest.
+ */
+@media (max-width: 639px) {
+  /* Cards: solid white, rounder, lifted by a wide soft shadow rather than a
+     rule, so they sit on the picture instead of being outlined against it. */
+  .ambria-event-day .rounded-2xl { border-radius: 1.5rem; }
+  .ambria-event-day .shadow-\[0_1px_2px_rgba\(15\2c 23\2c 42\2c 0\.05\)\] {
+    box-shadow: 0 12px 32px rgba(15, 23, 42, 0.08);
+  }
+  .ambria-event-day .bg-white.border-slate-200.rounded-2xl { border-color: rgba(15, 23, 42, 0.04); }
+
+  /* The shell header carries this class and bg-white on the same element,
+     which a descendant selector cannot match. The bar is not a white strip
+     here: the picture shows through, and a blur keeps the title readable
+     once the cards scroll up underneath. */
+  .ambria-event-day.bg-white {
+    background-color: rgba(246, 244, 243, 0.55);
+    backdrop-filter: blur(16px);
+  }
+  .ambria-event-day.border-slate-200 { border-color: transparent; }
+
+  /* Maroon is the accent on this screen. White on #9E1B4F is 8.3:1, and the
+     maroon on its pale chip 6.6:1. */
+  .ambria-event-day .text-indigo-700,
+  .ambria-event-day .text-indigo-600,
+  .ambria-event-day .text-indigo-500 { color: #9E1B4F; }
+  .ambria-event-day .bg-indigo-50,
+  .ambria-event-day .bg-indigo-100 { background-color: #F9DCE6; }
+  .ambria-event-day .bg-indigo-600 { background-color: #9E1B4F; }
+  .ambria-event-day .border-indigo-500,
+  .ambria-event-day .border-indigo-300 { border-color: rgba(158, 27, 79, 0.45); }
+  .ambria-event-day .ring-indigo-400 { --tw-ring-color: #9E1B4F; }
+  .ambria-event-day .hover\:bg-indigo-50:hover,
+  .ambria-event-day .hover\:bg-indigo-50\/40:hover,
+  .ambria-event-day .active\:bg-indigo-50\/60:active { background-color: rgba(158, 27, 79, 0.05); }
+  .ambria-event-day .hover\:text-indigo-700:hover,
+  .ambria-event-day .group:hover .group-hover\:text-indigo-500 { color: #9E1B4F; }
+
+  /* The calendar. A busy day is its number and its dots, nothing behind it;
+     the picked day is the only filled disc on the grid, so the eye goes to
+     the choice first and the dots say which venues. */
+  .ambria-event-day .ambria-cal-busy { background-color: transparent; color: #0F172A; }
+  .ambria-event-day .ambria-cal-busy:hover { background-color: rgba(15, 23, 42, 0.05); box-shadow: none; }
+  .ambria-event-day .ambria-cal-picked { background-color: #9E1B4F; box-shadow: 0 6px 16px rgba(158, 27, 79, 0.35); }
+  .ambria-event-day .text-slate-200 { color: #A3A9B5; }
+  .ambria-event-day .bg-slate-50\/60 { background-color: #FFFFFF; }
+
+  /* A list of events is a stack of outlined tiles inside its card rather
+     than rows ruled off from each other.
+     minmax(0, 1fr), not the implicit auto column: an auto track grows to its
+     widest content, so a long client name would push the tile past the card
+     instead of letting the title's truncate cut it. */
+  .ambria-event-day .ambria-day-tiles {
+    padding: 0.75rem;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.5rem;
+  }
+  .ambria-event-day .ambria-day-tiles > * {
+    border: 1px solid #E5E7EB;
+    border-radius: 1rem;
+  }
+}
+
+@media (max-width: 639px) {
+  /* The event's own screen. Three things on it are written to sit straight
+     on a white page — the two buttons above the event card and the tab strip
+     under it — and on the photograph they were words floating over a wall.
+     Each takes a white glass surface of its own, the same family as the
+     cards, so nothing on the screen is left standing on the picture bare. */
+  .ambria-event-day .ambria-day-pill {
+    margin-left: 0;
+    padding: 0 0.875rem;
+    border-radius: 9999px;
+    background-color: rgba(255, 255, 255, 0.72);
+    backdrop-filter: blur(14px);
+    box-shadow: 0 4px 14px rgba(15, 23, 42, 0.06);
+    color: #334155;
+  }
+  .ambria-event-day .ambria-day-pill:hover { background-color: #FFFFFF; color: #9E1B4F; }
+
+  .ambria-event-day .ambria-day-tabbar {
+    background-color: #FFFFFF;
+    border: 1px solid rgba(15, 23, 42, 0.04);
+    border-radius: 1rem;
+    box-shadow: 0 12px 32px rgba(15, 23, 42, 0.08);
+    overflow: hidden;
+  }
+}
+
+@media (max-width: 639px) {
+  /* The header's back arrow on the event ledger. It is the only way back on
+     this screen now — it walks event → day → month → out, one step a press —
+     so it wears the same white glass as the pills below it rather than
+     sitting as a bare glyph on the photograph. */
+  .ambria-event-day .ambria-head-back {
+    margin-left: 0;
+    border-radius: 9999px;
+    background-color: rgba(255, 255, 255, 0.72);
+    backdrop-filter: blur(14px);
+    box-shadow: 0 4px 14px rgba(15, 23, 42, 0.08);
+    color: #334155;
+  }
+  .ambria-event-day .ambria-head-back:hover { background-color: #FFFFFF; color: #9E1B4F; }
 }

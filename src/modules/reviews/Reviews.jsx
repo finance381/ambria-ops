@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { pushBack } from '../../lib/backNav'
 import { supabase } from '../../lib/supabase'
 import { hasPerm } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
@@ -33,8 +34,15 @@ function applyAgeFilter(items, ageFilter) {
   return items.filter(function (it) { return it.priority === 'aging' || it.priority === 'urgent' })
 }
 
-function Reviews({ profile }) {
+function Reviews({ profile, inAdmin }) {
   var permsNew = (profile && profile.permsNew) || []
+  // On a phone, History is a step on the app's back stack: the header's
+  // arrow and a swipe come back to the inbox, and the page needs no Back of
+  // its own. The admin console has no arrow and keeps the button.
+  function openHistory() {
+    if (!inAdmin) pushBack(function () { setView('inbox') })
+    setView('history')
+  }
   var visibleTabs = TAB_ORDER.filter(function (d) { return hasPerm(permsNew, TAB_PERM[d]) })
   var canBulk = hasPerm(permsNew, 'review.bulk')
   var canSeeHistory = hasPerm(permsNew, 'review.history')
@@ -129,7 +137,7 @@ function Reviews({ profile }) {
   if (view === 'history') {
     return (
       <div className="space-y-3">
-        <button onClick={function () { setView('inbox') }} className="text-sm text-indigo-600 font-medium hover:text-indigo-800 transition-colors">← Back to Reviews</button>
+        {inAdmin && <button onClick={function () { setView('inbox') }} className="text-sm text-indigo-600 font-medium hover:text-indigo-800 transition-colors">← Back to Reviews</button>}
         <ReviewsHistory profile={profile} />
       </div>
     )
@@ -231,7 +239,7 @@ function Reviews({ profile }) {
           </div>
           <div className="flex gap-2">
             {canSeeHistory && (
-              <button onClick={function () { setView('history') }} className="px-3 py-1.5 text-xs font-bold text-gray-700 bg-gray-100 rounded-lg">History</button>
+              <button onClick={openHistory} className="px-3 py-1.5 text-xs font-bold text-gray-700 bg-gray-100 rounded-lg">History</button>
             )}
             {canBulk && !isAuditDomain && (
               <button onClick={function () { setSelectMode(!selectMode); queueApi.clearSelection() }}
@@ -296,7 +304,7 @@ function Reviews({ profile }) {
                 </label>
               )}
               {canSeeHistory && (
-                <button onClick={function () { setView('history') }} className="text-xs font-bold text-gray-500">History</button>
+                <button onClick={openHistory} className="text-xs font-bold text-gray-500">History</button>
               )}
               {canBulk && !isAuditDomain && (
                 <button onClick={function () { setSelectMode(true) }} className="text-xs font-bold text-indigo-600">Select</button>

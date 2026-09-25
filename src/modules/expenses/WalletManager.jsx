@@ -2296,9 +2296,11 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                 <>
                   <div className="flex items-center justify-between gap-3 mb-2">
                     <div className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em]">Pending Balance</div>
-                    <button type="button" onClick={function () { setShowActualCash(!showActualCash) }}
-                      className="shrink-0 px-2 py-1 rounded-lg text-[11px] font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 transition-colors">
-                      {showActualCash ? 'Actual ×10' : 'LMS scale'}
+                    {/* Cash ×10. A faint dot, not a labelled button. */}
+                    <button type="button" aria-hidden="true" tabIndex={-1}
+                      onClick={function () { setShowActualCash(!showActualCash) }}
+                      className="shrink-0 p-1.5 -m-1.5">
+                      <span className="block w-2.5 h-2.5 rounded-full bg-slate-200 opacity-25" />
                     </button>
                   </div>
                   {/* Nil is slate, owed is red, settled is emerald. Three states,
@@ -2308,7 +2310,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                     <div>
                       <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
                         <Icon name="banknote" size={13} className="shrink-0 text-slate-400" />
-                        Cash{showActualCash && agrCashP > 0 ? ' (actual)' : ''}
+                        Cash
                       </div>
                       <div className={"mt-0.5 text-[15px] font-bold tabular-nums whitespace-nowrap " +
                         (pendCashP > 0 ? "text-red-600" : (agrCashP > 0 || colCashP > 0) ? "text-emerald-600" : "text-slate-400")}
@@ -3139,9 +3141,9 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
       )
     }
 
-    // The five controls over this list. They are the same controls in both
-    // layouts — a phone stacks them down the page, a desktop lays them along
-    // one toolbar — so they are written once and arranged twice.
+    // The five controls over this list. The desktop lays them along one
+    // toolbar; the phone keeps the search and folds the other four into the
+    // pill row further down.
     function renderWalletSearch() {
       return (
         <div className="relative flex-1 min-w-[220px]">
@@ -3235,6 +3237,75 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             </select>
           </span>
         </span>
+      )
+    }
+
+    // The phone's filter row: role, balance, pending and sort as four pills on
+    // one line. Stacked they took two rows under the search box — a select
+    // beside four segments, then a checkbox beside the sort — before the first
+    // wallet. Each pill names its current value and is tinted while it is
+    // doing something, so what is filtering the list reads at a glance.
+    //
+    // The real <select> rides invisibly over each pill, the same trick the
+    // desktop's sort uses, so the tap target is the whole pill and the phone's
+    // own picker opens.
+    var PILL = 'relative min-w-0 h-10 px-2.5 inline-flex items-center justify-center gap-1 rounded-full border text-[13px] font-semibold transition-colors '
+    var PILL_IDLE = 'bg-white border-slate-200 text-slate-700'
+    var PILL_ON = 'bg-indigo-50 border-indigo-200 text-indigo-700'
+    var BALANCE_SHORT = { all: '± All', positive: '+ve', zero: 'Zero', negative: '−ve' }
+    var SORT_SHORT = { name: 'Name', balance_desc: 'High ↓', balance_asc: 'Low ↑', pending: 'Pending', activity: 'Recent' }
+
+    function renderPhoneFilters() {
+      var roleOn = !!walletRoleFilter
+      var balOn = walletBalanceState !== 'all'
+      var sortOn = walletSort && walletSort !== 'name'
+      return (
+        <div className="flex items-center gap-1.5">
+          <span className={PILL + 'flex-1 ' + (roleOn ? PILL_ON : PILL_IDLE)}>
+            <span className="truncate">{roleOn ? walletRoleFilter : 'Role'}</span>
+            <Icon name="chevronDown" size={14} className="shrink-0 opacity-60" />
+            <select value={walletRoleFilter} onChange={function (e) { setWalletRoleFilter(e.target.value) }}
+              aria-label="Filter by role"
+              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" style={{ fontSize: '16px' }}>
+              <option value="">All Roles</option>
+              {roleOptions.map(function (r) { return <option key={r} value={r}>{r}</option> })}
+            </select>
+          </span>
+
+          <span className={PILL + 'flex-1 ' + (balOn ? PILL_ON : PILL_IDLE)}>
+            <span className="truncate">{BALANCE_SHORT[walletBalanceState] || '± All'}</span>
+            <Icon name="chevronDown" size={14} className="shrink-0 opacity-60" />
+            <select value={walletBalanceState} onChange={function (e) { setWalletBalanceState(e.target.value) }}
+              aria-label="Filter by balance"
+              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" style={{ fontSize: '16px' }}>
+              <option value="all">All balances</option>
+              <option value="positive">Positive (+ve)</option>
+              <option value="zero">Zero</option>
+              <option value="negative">Negative (−ve)</option>
+            </select>
+          </span>
+
+          <button type="button" onClick={function () { setWalletPendingOnly(!walletPendingOnly) }}
+            aria-pressed={walletPendingOnly}
+            className={PILL + 'shrink-0 ' + (walletPendingOnly ? PILL_ON : PILL_IDLE)}>
+            {walletPendingOnly && <Icon name="check" size={14} className="shrink-0" />}
+            Pending
+          </button>
+
+          <span className={PILL + 'flex-1 ' + (sortOn ? PILL_ON : PILL_IDLE)}>
+            <Icon name="filter" size={13} className="shrink-0 opacity-60" />
+            <span className="truncate" data-notranslate>{SORT_SHORT[walletSort] || 'Name'}</span>
+            <select value={walletSort} onChange={function (e) { setWalletSort(e.target.value) }}
+              aria-label="Sort by"
+              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" style={{ fontSize: '16px' }}>
+              <option value="name">Sort: Name</option>
+              <option value="balance_desc">Balance high → low</option>
+              <option value="balance_asc">Balance low → high</option>
+              <option value="pending">Most pending</option>
+              <option value="activity">Recent activity</option>
+            </select>
+          </span>
+        </div>
       )
     }
 
@@ -3403,14 +3474,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
           <>
             {renderWalletActions()}
             {renderWalletSearch()}
-            <div className="flex items-center gap-2.5">
-              {renderRoleSelect()}
-              {renderBalanceTabs()}
-            </div>
-            <div className="flex items-center justify-between gap-3">
-              {renderPendingToggle()}
-              {renderWalletSort()}
-            </div>
+            {renderPhoneFilters()}
           </>
         )}
 
@@ -3503,9 +3567,12 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             <div className="flex gap-2">
               <button onClick={function () { setBulkMode(false); setBulkSelected({}); setBulkAmount(''); setBulkDesc('') }}
                 className="flex-1 py-2.5 text-sm text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors font-medium">Cancel</button>
+              {/* The same button as the single Issue: the indigo gradient and
+                  its glow when it can go, flat grey when it cannot — so one
+                  action looks like one action in both places. */}
               <button onClick={runBulkIssue}
                 disabled={bulkSaving || !bulkAmount || Number(bulkAmount) <= 0 || Object.values(bulkSelected).filter(Boolean).length === 0}
-                className="flex-1 py-2.5 text-sm text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors font-medium">
+                className="flex-1 h-12 inline-flex items-center justify-center rounded-xl text-[14px] font-bold text-white transition-all bg-gradient-to-b from-indigo-500 to-indigo-600 shadow-[0_2px_8px_rgba(79,70,229,0.30)] hover:from-indigo-600 hover:to-indigo-700 active:scale-[0.98] disabled:from-slate-300 disabled:to-slate-300 disabled:shadow-none disabled:cursor-not-allowed disabled:active:scale-100">
                 {bulkSaving ? 'Issuing...' : 'Issue to ' + Object.values(bulkSelected).filter(Boolean).length + ' users'}
               </button>
             </div>

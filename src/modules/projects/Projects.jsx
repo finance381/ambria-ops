@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import { pushBack, unwind } from '../../lib/backNav'
 import { supabase } from '../../lib/supabase'
 import { formatDate, formatPoints } from '../../lib/format'
 import { hasPerm } from '../../lib/permissions'
@@ -30,7 +31,7 @@ var WIZARD_STEPS = [
   { key: 'review', label: 'Estimation & Review' },
 ]
 
-function Projects({ profile }) {
+function Projects({ profile, inAdmin }) {
   var permsNew = (profile && profile.permsNew) || []
   var canView = hasPerm(permsNew, 'projects.view')
   var canCreate = hasPerm(permsNew, 'projects.create')
@@ -57,7 +58,7 @@ function Projects({ profile }) {
   var [wizardStep, setWizardStep] = useState(0)
 
   var formApi = useProjectForm()
-  var submitApi = useProjectSubmit(formApi, function (projectId) { loadList(); setView('list'); setWizardStep(0) })
+  var submitApi = useProjectSubmit(formApi, function (projectId) { exitToList(); setWizardStep(0) })
 
   useEffect(function () {
     if (canView) loadList()
@@ -84,7 +85,30 @@ function Projects({ profile }) {
     setLoading(false)
   }
 
+  // List, project, ledger: on a phone each step in is a step on the app's
+  // back stack, so the header's arrow and a swipe walk back out one level at
+  // a time and the page carries no Back of its own. The admin console has no
+  // arrow and keeps its buttons.
+  //
+  // stepDepth counts what this screen has pushed, so a save — which returns
+  // to the list by itself — can unwind exactly those steps and leave none
+  // behind to swallow a later back press.
+  var stepDepth = useRef(0)
+  function pushStep(fn) {
+    stepDepth.current += 1
+    pushBack(function () { stepDepth.current -= 1; fn() })
+  }
+  function exitToList() {
+    if (stepDepth.current > 0) unwind(stepDepth.current)
+    else backToList()
+  }
+  function openLedger() {
+    if (!inAdmin) pushStep(function () { setView('form') })
+    setView('ledger')
+  }
+
   function startNew() {
+    if (!inAdmin && view === 'list') pushStep(backToList)
     formApi.reset()
     setWizardStep(0)
     setView('form')
@@ -100,6 +124,7 @@ function Projects({ profile }) {
     if (!pRes.data) { alert('Failed to load project: ' + (pRes.error?.message || 'not found')); return }
     formApi.loadFromExisting(pRes.data, vRes.data, eRes.data, aRes.data)
     setWizardStep(0)
+    if (!inAdmin && view === 'list') pushStep(backToList)
     setView('form')
     try { await logActivity('PROJECT_VIEW', pRes.data.name + ' (#' + id + ')') } catch (_) {}
   }
@@ -124,7 +149,7 @@ function Projects({ profile }) {
       name: formApi.project.name,
       status: formApi.project.status,
       approved_budget_paise: formApi.project.approved_budget_rupees ? Math.round(Number(formApi.project.approved_budget_rupees) * 100) : 0,
-    }} onBack={function () { setView('form') }} />
+    }} onBack={inAdmin ? function () { setView('form') } : undefined} />
   }
 
   // ═══ FORM VIEW ═══
@@ -138,7 +163,7 @@ function Projects({ profile }) {
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <div>
-              <button onClick={backToList} className="text-sm text-indigo-600 font-medium hover:text-indigo-800 transition-colors mb-1">← Back to Projects</button>
+              {inAdmin && <button onClick={backToList} className="text-sm text-indigo-600 font-medium hover:text-indigo-800 transition-colors mb-1">← Back to Projects</button>}
               <h2 className="text-lg font-bold text-gray-900">{p.id ? p.name || 'Project' : 'New Project'}</h2>
               <p className="text-xs text-gray-500">
                 {p.project_code && <span className="font-mono">{p.project_code}</span>}
@@ -148,7 +173,7 @@ function Projects({ profile }) {
             <div className="flex gap-2">
               {formApi.error && <span className="text-xs text-red-600 self-center max-w-md">{formApi.error}</span>}
               {p.id && hasPerm(permsNew, 'projects.ledger.view') && (
-                <button onClick={function () { setView('ledger') }}
+                <button onClick={openLedger}
                   className="px-3 py-2 text-sm font-bold text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200">
                   📒 Ledger
                 </button>
@@ -249,7 +274,9 @@ function Projects({ profile }) {
     return (
       <div className="space-y-3 pb-4">
         <div className="flex items-center justify-between">
-          <button onClick={backToList} className="text-sm text-indigo-600 font-medium hover:text-indigo-800 transition-colors">← Back to Projects</button>
+          {inAdmin
+            ? <button onClick={backToList} className="text-sm text-indigo-600 font-medium hover:text-indigo-800 transition-colors">← Back to Projects</button>
+            : <span />}
           {!readOnly && (
             <button onClick={saveDraft} disabled={submitApi.saving}
               className="text-xs font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5 disabled:opacity-50">
@@ -365,7 +392,7 @@ function Projects({ profile }) {
           <button onClick={approveProject} disabled={submitApi.saving} className="w-full py-2.5 text-sm font-bold text-white bg-green-600 rounded-lg disabled:opacity-50">✓ Approve Project</button>
         )}
         {p.id && hasPerm(permsNew, 'projects.ledger.view') && (
-          <button onClick={function () { setView('ledger') }} className="w-full py-2.5 text-sm font-bold text-gray-700 bg-gray-100 rounded-lg">📒 Open Ledger</button>
+          <button onClick={openLedger} className="w-full py-2.5 text-sm font-bold text-gray-700 bg-gray-100 rounded-lg">📒 Open Ledger</button>
         )}
       </div>
     )
