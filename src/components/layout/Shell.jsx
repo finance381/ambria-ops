@@ -852,10 +852,10 @@ function Shell({ profile, onSignOut }) {
       {/* Footer — home screen only. Inside a module it is decoration that sits
           below the action bar and reads as a gap. */}
       {!activeGroup && !tab && (
-      /* slate-400, not 300: the home screen has artwork behind it now, and
-         the lightest grey in the scale disappeared into the pattern. */
-      <footer className="text-center py-4 text-[11px] text-slate-400 tracking-wider">
-        Ambria <span className="text-amber-400">●</span> Ops
+      /* slate-700, not 400: the home screen sits on a bright photograph now,
+         and a light grey over the lit floor all but disappeared. */
+      <footer className="text-center py-4 text-[11px] font-semibold text-slate-700 tracking-wider">
+        Ambria <span className="text-amber-500">●</span> Ops
       </footer>
       )}
     </div>
