@@ -607,7 +607,71 @@ function EventLedger(props) {
       )
     }
     return (
-      <div className="overflow-x-auto ambria-thin-scroll">
+      <>
+      {/* A card each on a phone, the table from sm up.
+          The table is 960px wide and a phone gives 358, so it scrolled — and
+          what you could see of a transaction was its date and its type. Reading
+          one meant dragging sideways and back, and comparing two meant doing
+          that twice. The same seven columns become four lines: what and when,
+          how much, what it was for, and who logged it. */}
+      <div className="sm:hidden divide-y divide-slate-100">
+        {rows.map(function (e) {
+          var isExpRow = e.entry_type === 'expense' && !!e.reference_id
+          var isCollRow = e.entry_type === 'collection' && !!e._wt
+          var isClickable = isExpRow || isCollRow
+          var person = rowPerson(e)
+          var on = isExpRow ? e._checkedBy : (isCollRow ? e._wt.checked_by : null)
+          return (
+            <div key={e.id} onClick={function () { openRow(e) }}
+              className={'px-4 py-3 ' + (isClickable ? 'cursor-pointer active:bg-indigo-50/60' : '')}>
+              <div className="flex items-start justify-between gap-3">
+                <span className={'shrink-0 inline-flex items-center h-[22px] px-2 rounded-md text-[11px] font-bold ' + badgeClass(e.entry_type, e.direction)}>
+                  {entryLabel(e.entry_type)}
+                </span>
+                {/* One figure, coloured by direction. In and Out were two
+                    columns because a table needs them aligned; a card has one
+                    amount and the colour already says which way it went. */}
+                <span data-notranslate className={'shrink-0 text-[15px] font-bold tabular-nums ' +
+                  (e.direction === 'in' ? 'text-emerald-700' : 'text-rose-700')}>
+                  {(e.direction === 'in' ? '+' : '−') + formatPoints(e.amount_paise)}
+                </span>
+              </div>
+
+              {e.description && (
+                <p className="mt-1.5 text-[13px] text-slate-700 leading-snug">{e.description}</p>
+              )}
+
+              <div className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[11.5px] text-slate-500">
+                <span data-notranslate className="font-semibold text-slate-600 whitespace-nowrap">{formatDate(rowDate(e))}</span>
+                {e.payment_mode && <span className="whitespace-nowrap">{titleCase(e.payment_mode)}</span>}
+                {multiContract && contractByEventId[e.event_id] && contractByEventId[e.event_id].department && (
+                  <DeptChip name={contractByEventId[e.event_id].department} />
+                )}
+                {person && <span className="whitespace-nowrap">{person}</span>}
+              </div>
+
+              {(isExpRow || isCollRow) && (canMarkChecked || on) && (
+                <span className="mt-2 flex" onClick={function (ev) { ev.stopPropagation() }}>
+                  <CheckedStamp
+                    variant="stamp"
+                    checked={!!on}
+                    checkedAt={isExpRow ? e._checkedAt : e._wt.checked_at}
+                    canToggle={canMarkChecked}
+                    canUncheck={on === profile?.id || isSysAdmin}
+                    busy={isExpRow ? checkingExpId === Number(e.reference_id) : checkingTxnId === e.reference_id}
+                    onToggle={function () {
+                      if (isExpRow) toggleExpenseCheck(Number(e.reference_id))
+                      else toggleCollectionCheck(e.reference_id)
+                    }}
+                  />
+                </span>
+              )}
+            </div>
+          )
+        })}
+      </div>
+
+      <div className="hidden sm:block overflow-x-auto ambria-thin-scroll">
         {/* Left to itself the browser splits the table by content, and the
             short columns — a date, a chip, a word, two figures — each took a
             share of a very wide panel, putting a hand's width of nothing
@@ -728,6 +792,7 @@ function EventLedger(props) {
           </tbody>
         </table>
       </div>
+      </>
     )
   }
   function renderPlatesTable() {
@@ -1160,8 +1225,12 @@ function EventLedger(props) {
               })}
             </div>
 
-            <div className="flex items-center gap-2 ml-auto">
-              <div className="relative w-[220px] @3xl:w-[260px]">
+            {/* w-full so this row starts on its own line on a phone, where the
+                filter pills above it already fill one. The search was a fixed
+                220 and the three together came to 422 against the 358 a phone
+                has, which is why Export was over the edge. */}
+            <div className="flex items-center gap-2 w-full sm:w-auto sm:ml-auto">
+              <div className="relative flex-1 min-w-0 sm:flex-none sm:w-[220px] @3xl:w-[260px]">
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
                   <Icon name="search" size={15} />
                 </span>
@@ -1184,7 +1253,10 @@ function EventLedger(props) {
                 title="Export everything shown, in the order it is shown"
                 className="inline-flex items-center gap-1.5 h-10 px-3.5 rounded-xl text-[13px] font-bold text-white bg-indigo-600 hover:bg-indigo-700 active:scale-[0.98] disabled:opacity-40 disabled:hover:bg-indigo-600 transition-all">
                 <Icon name="download" size={14} />
-                Export
+                {/* The word goes on a phone and the glyph carries it. A
+                    download arrow is not ambiguous, and the alternative was
+                    the button sitting off the screen. */}
+                <span className="hidden sm:inline">Export</span>
               </button>
             </div>
           </div>
