@@ -341,3 +341,56 @@ export async function generateReceivingListPdf(items) {
   y = addSignatures(doc, y + 4, ['Store Keeper', 'Verified By'])
   await openOrSharePdf(doc, 'Receiving_Pending_' + new Date().toISOString().split('T')[0] + '.pdf')
 }
+
+// ═══════════════════════════════════════
+// USERS LIST PDF
+// ═══════════════════════════════════════
+function userStatusLabel(user) {
+  if (user._source === 'approved') return 'Awaiting Sign-in'
+  return user.active ? 'Active' : 'Inactive'
+}
+
+export async function generateUsersListPdf(users, statusFilterLabel) {
+  var doc = newDoc('landscape')
+  var subtitle = users.length + ' user' + (users.length !== 1 ? 's' : '') +
+    (statusFilterLabel && statusFilterLabel !== 'All' ? '  —  Status: ' + statusFilterLabel : '')
+  var y = addHeader(doc, 'Users', subtitle)
+
+  y = addMeta(doc, y, [
+    ['Date', new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })],
+    ['Total Users', users.length],
+  ])
+
+  var headers = ['#', 'Name', 'Email', 'Phone', 'Role', 'LMS', 'Expense Types', 'Categories', 'Perms', 'Status']
+  var rows = users.map(function (u, idx) {
+    return [
+      idx + 1,
+      u.name || '—',
+      u.email || '—',
+      u.phone || '—',
+      titleCase(u.role || ''),
+      u._source === 'approved' ? '—' : (u.lms_user_id ? 'Y' : 'N'),
+      (u.expense_type_ids || []).length,
+      (u.category_ids || []).length,
+      (u.mobile_permissions || []).length + (u.desktop_permissions || []).length,
+      userStatusLabel(u),
+    ]
+  })
+
+  y = addTable(doc, y, headers, rows, {
+    didParseCell: function (data) {
+      if (data.section === 'body' && data.column.index === 9) {
+        var val = data.cell.raw
+        if (val === 'Active') data.cell.styles.textColor = [0, 130, 0]
+        else if (val === 'Inactive') data.cell.styles.textColor = [200, 0, 0]
+        else if (val === 'Awaiting Sign-in') data.cell.styles.textColor = [30, 80, 190]
+      }
+    }
+  })
+
+  doc.setFontSize(9)
+  doc.setTextColor(DARK[0], DARK[1], DARK[2])
+  doc.text('Total: ' + users.length, 14, y)
+
+  await openOrSharePdf(doc, 'Users_' + new Date().toISOString().split('T')[0] + '.pdf')
+}

@@ -6,11 +6,14 @@ import { prepUpload } from '../../lib/uploadHelper'
 import { DEFAULT_ROLES } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
 import PermMatrix from '../../components/PermMatrix'
+import { generateUsersListPdf } from '../../lib/pdf'
 
 function Users({ profile }) {
   var [users, setUsers] = useState([])
   var [loading, setLoading] = useState(true)
   var [search, setSearch] = useState('')
+  var [statusFilter, setStatusFilter] = useState('all')
+  var [exportingPdf, setExportingPdf] = useState(false)
   var [saving, setSaving] = useState(false)
   var [error, setError] = useState('')
 
@@ -584,13 +587,30 @@ function Users({ profile }) {
   // ═══ COMPUTED ═══
   var allUsers = users.map(function (u) { return Object.assign({}, u, { _source: 'profile' }) }).concat(pendingUsers)
   var searchLower = search.toLowerCase()
+  function userStatus(u) {
+    if (u._source === 'approved') return 'pending'
+    return u.active ? 'active' : 'inactive'
+  }
   var filtered = allUsers.filter(function (u) {
-    return !search ||
+    var matchesSearch = !search ||
       (u.name || '').toLowerCase().includes(searchLower) ||
       (u.email || '').toLowerCase().includes(searchLower) ||
       (u.phone || '').includes(search) ||
       (u.role || '').toLowerCase().includes(searchLower)
+    var matchesStatus = statusFilter === 'all' || userStatus(u) === statusFilter
+    return matchesSearch && matchesStatus
   })
+
+  async function exportUsersPdf() {
+    if (exportingPdf) return
+    setExportingPdf(true)
+    try {
+      var label = statusFilter === 'all' ? 'All' : statusFilter === 'active' ? 'Active' : statusFilter === 'inactive' ? 'Inactive' : 'Awaiting Sign-in'
+      await generateUsersListPdf(filtered, label)
+    } finally {
+      setExportingPdf(false)
+    }
+  }
 
   var filteredSubCats = editCatIds.length > 0
     ? subCategories.filter(function (sc) { return editCatIds.includes(sc.category_id) })
@@ -628,9 +648,26 @@ function Users({ profile }) {
           placeholder="Search by name, phone, role..."
           className="flex-1 min-w-[200px] px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
         />
+        <select
+          value={statusFilter}
+          onChange={function (e) { setStatusFilter(e.target.value) }}
+          className="px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+        >
+          <option value="all">All statuses</option>
+          <option value="active">Active</option>
+          <option value="inactive">Inactive</option>
+          <option value="pending">Awaiting Sign-in</option>
+        </select>
         <div className="text-sm text-gray-400 self-center">
           {filtered.length} user{filtered.length !== 1 ? 's' : ''}
         </div>
+        <button
+          onClick={exportUsersPdf}
+          disabled={exportingPdf || filtered.length === 0}
+          className="px-4 py-2.5 text-sm text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-medium disabled:opacity-50"
+        >
+          {exportingPdf ? 'Exporting…' : 'Export PDF'}
+        </button>
         <button
           onClick={function () { setAddOpen(true); setError('') }}
           className="px-4 py-2.5 text-sm text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors font-medium"
