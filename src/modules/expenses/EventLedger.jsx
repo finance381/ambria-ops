@@ -519,7 +519,11 @@ function EventLedger(props) {
   entries.forEach(function (e) {
     if (e.payment_mode && txnModes.indexOf(e.payment_mode) === -1) txnModes.push(e.payment_mode)
   })
-  var txnFilterCount = (txnDir ? 1 : 0) + (txnMode ? 1 : 0) + (txnCheck ? 1 : 0)
+  // The entry type counts too, now that it lives in the panel with the rest.
+  // A filter you cannot see unless you open a panel has to be announced on the
+  // thing that opens it, or the list is narrowed and nothing on the screen says
+  // by what.
+  var txnFilterCount = (filter !== 'all' ? 1 : 0) + (txnDir ? 1 : 0) + (txnMode ? 1 : 0) + (txnCheck ? 1 : 0)
 
   function visibleEntries() {
     var q = txnSearch.trim().toLowerCase()
@@ -1321,38 +1325,9 @@ function EventLedger(props) {
         return (
         <div className="space-y-3">
           <div className="flex flex-wrap items-center gap-2">
-            {/* Four pills, two by two on a phone. Left to wrap they came
-                out three and one, which reads as a row and an afterthought
-                rather than as one set of four. A grid also makes them the
-                same width, so the odd one out is not the longest label. */}
-            <div className="w-full sm:w-auto grid grid-cols-2 gap-1.5 sm:flex sm:flex-wrap">
-              {ENTRY_TYPES.map(function (t) {
-                var active = filter === t.key
-                var n = t.key === 'all' ? entries.length : entries.filter(function (e) { return e.entry_type === t.key }).length
-                // A pill that filters to nothing is a dead end — it can only
-                // ever produce "nothing matches". It still shows, because a
-                // zero is an answer, but it stops inviting the press.
-                var empty = n === 0 && t.key !== 'all'
-                return (
-                  <button key={t.key} type="button" aria-pressed={active} disabled={empty}
-                    onClick={function () { setFilter(t.key); setTxnPage(1) }}
-                    className={'inline-flex items-center justify-center gap-1.5 h-9 px-3 rounded-xl text-[13px] font-bold transition-colors ' +
-                      (active
-                        ? 'bg-indigo-600 text-white'
-                        : empty
-                          ? 'bg-white border border-slate-200 text-slate-400 cursor-default'
-                          : 'bg-white border border-slate-300 text-slate-600 hover:bg-slate-50 hover:text-slate-900')}>
-                    {t.label}
-                    <span data-notranslate className={'tabular-nums ' + (active ? 'text-white/70' : 'text-slate-400')}>{n}</span>
-                  </button>
-                )
-              })}
-            </div>
-
-            {/* w-full so this row starts on its own line on a phone, where the
-                filter pills above it already fill one. The search was a fixed
-                220 and the three together came to 422 against the 358 a phone
-                has, which is why Export was over the edge. */}
+            {/* The search takes what is left of the row rather than a fixed
+                220: at 220 the three controls came to 422 against the 358 a
+                phone has, and Export sat over the edge. */}
             <div className="flex items-center gap-2 w-full sm:w-auto sm:ml-auto">
               <div className="relative flex-1 min-w-0 sm:flex-none sm:w-[220px] @3xl:w-[260px]">
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
@@ -1387,6 +1362,37 @@ function EventLedger(props) {
 
           {showTxnFilter && (
             <div className={CARD + ' p-3 grid gap-3 @3xl:grid-cols-3'}>
+              {/* The type pills were a row of their own above the search, four
+                  buttons taking a line of the screen to say which of them was
+                  on — and three of them were usually off. They are a filter
+                  like the three below, so they sit with them, and the count on
+                  the Filter button says when one is set. */}
+              <div className="@3xl:col-span-3">
+                <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500 mb-1.5">Type</p>
+                <div className="grid grid-cols-2 gap-1.5 sm:flex sm:flex-wrap">
+                  {ENTRY_TYPES.map(function (t) {
+                    var active = filter === t.key
+                    var n = t.key === 'all' ? entries.length : entries.filter(function (e) { return e.entry_type === t.key }).length
+                    // A pill that filters to nothing is a dead end — it can only
+                    // ever produce "nothing matches". It still shows, because a
+                    // zero is an answer, but it stops inviting the press.
+                    var empty = n === 0 && t.key !== 'all'
+                    return (
+                      <button key={t.key} type="button" aria-pressed={active} disabled={empty}
+                        onClick={function () { setFilter(t.key); setTxnPage(1) }}
+                        className={'inline-flex items-center justify-center gap-1.5 h-8 px-2.5 rounded-lg text-[12px] font-bold border transition-colors ' +
+                          (active
+                            ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
+                            : empty
+                              ? 'border-slate-200 bg-white text-slate-400 cursor-default'
+                              : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50')}>
+                        {t.label}
+                        <span data-notranslate className={active ? 'text-indigo-400' : 'text-slate-400'}>{n}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
               <div>
                 <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500 mb-1.5">Direction</p>
                 <div className="flex gap-1.5">
@@ -1431,7 +1437,7 @@ function EventLedger(props) {
                     )
                   })}
                   {txnFilterCount > 0 && (
-                    <button type="button" onClick={function () { setTxnDir(''); setTxnMode(''); setTxnCheck(''); setTxnPage(1) }}
+                    <button type="button" onClick={function () { setFilter('all'); setTxnDir(''); setTxnMode(''); setTxnCheck(''); setTxnPage(1) }}
                       className="ml-auto h-8 px-2.5 rounded-lg text-[12px] font-bold text-rose-600 hover:bg-rose-50 transition-colors">
                       Clear
                     </button>
