@@ -23,6 +23,7 @@ var Purchase = lazy(function () { return import('../../modules/purchase/Purchase
 var Expenses = lazy(function () { return import('../../modules/expenses/Expenses') })
 var Ledgers = lazy(function () { return import('../../modules/expenses/Ledgers') })
 var VendorLedger = lazy(function () { return import('../../modules/expenses/VendorLedger') })
+var EventLedger = lazy(function () { return import('../../modules/expenses/EventLedger') })
 var Payments = lazy(function () { return import('../../modules/expenses/Payments') })
 var CostTransfers = lazy(function () { return import('../../modules/expenses/CostTransfers') })
 var SalaryPayouts = lazy(function () { return import('../../modules/expenses/SalaryPayouts') })
@@ -112,9 +113,10 @@ var GROUPS = [
   {
     key: 'expenses', label: 'Finance', icon: 'wallet', items: [
       { key: 'finance.wallet', label: 'Wallet', icon: 'wallet', tab: 'wallet' },
-      { key: 'finance.expenses', label: 'PC & Direct Expenses', icon: 'banknote', tab: 'expenses' },
+      { key: 'finance.expenses', label: 'Expenses', icon: 'banknote', tab: 'expenses' },
       { key: 'finance.cost_transfers', label: 'Cost Transfers', icon: 'transfer', tab: 'cost_transfers' },
       { key: 'finance.ledgers.expense', label: 'Expense Ledger', icon: 'fileText', tab: 'ledgers' },
+      { key: 'finance.ledgers.event', label: 'Event Ledger', icon: 'calendar', tab: 'event_ledger' },
       { key: 'finance.payments', label: 'Payments', icon: 'creditCard', tab: 'payments' },
       { key: 'finance.salary_payouts', label: 'Salary Payouts', icon: 'bank', tab: 'salary_payouts' },
       { key: 'finance.ledgers.vendor', label: 'Vendor Ledger', icon: 'building', tab: 'vendor_ledger' },
@@ -790,6 +792,9 @@ function Shell({ profile, onSignOut }) {
         )}
         {tab === 'ledgers' && (
           <Ledgers profile={profile} onNavigateToExpenses={navigateToExpenses} />
+        )}
+        {tab === 'event_ledger' && (
+          <EventLedger profile={profile} onNavigateToExpenses={navigateToExpenses} />
         )}
         {tab === 'vendor_ledger' && (
           <VendorLedger profile={profile} onNavigateToExpenses={navigateToExpenses} />
