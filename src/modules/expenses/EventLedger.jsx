@@ -1205,7 +1205,7 @@ function EventLedger(props) {
                 out three and one, which reads as a row and an afterthought
                 rather than as one set of four. A grid also makes them the
                 same width, so the odd one out is not the longest label. */}
-            <div className="grid grid-cols-2 gap-1.5 sm:flex sm:flex-wrap">
+            <div className="w-full sm:w-auto grid grid-cols-2 gap-1.5 sm:flex sm:flex-wrap">
               {ENTRY_TYPES.map(function (t) {
                 var active = filter === t.key
                 var n = t.key === 'all' ? entries.length : entries.filter(function (e) { return e.entry_type === t.key }).length
