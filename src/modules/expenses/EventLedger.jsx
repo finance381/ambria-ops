@@ -1373,15 +1373,14 @@ function EventLedger(props) {
                   <span data-notranslate className="px-1.5 rounded-md bg-indigo-600 text-white text-[11px] tabular-nums">{txnFilterCount}</span>
                 )}
               </button>
-              {/* Below sm this lives in the filter panel instead. A solid
-                  indigo square beside the search read as the main thing to do
-                  on the screen, which taking a copy away is not — and it was
-                  the third control on a row with space for two. */}
               <button type="button" onClick={function () { exportCsv(vis) }} disabled={vis.length === 0}
                 title="Export everything shown, in the order it is shown"
-                className="hidden sm:inline-flex items-center gap-1.5 h-10 px-3.5 rounded-xl text-[13px] font-bold text-white bg-indigo-600 hover:bg-indigo-700 active:scale-[0.98] disabled:opacity-40 disabled:hover:bg-indigo-600 transition-all">
+                className="inline-flex items-center gap-1.5 h-10 px-3.5 rounded-xl text-[13px] font-bold text-white bg-indigo-600 hover:bg-indigo-700 active:scale-[0.98] disabled:opacity-40 disabled:hover:bg-indigo-600 transition-all">
                 <Icon name="download" size={14} />
-                Export
+                {/* The word goes on a phone and the glyph carries it. A
+                    download arrow is not ambiguous, and the alternative was
+                    the button sitting off the screen. */}
+                <span className="hidden sm:inline">Export</span>
               </button>
             </div>
           </div>
@@ -1439,16 +1438,6 @@ function EventLedger(props) {
                   )}
                 </div>
               </div>
-
-              {/* Export belongs here on a phone rather than on the toolbar: it
-                  takes what these filters have narrowed the list to, so it is
-                  the last thing you do in this panel, not a control competing
-                  with the search above it. */}
-              <button type="button" onClick={function () { exportCsv(vis) }} disabled={vis.length === 0}
-                className="sm:hidden w-full h-10 inline-flex items-center justify-center gap-2 rounded-xl text-[13px] font-bold text-white bg-indigo-600 active:bg-indigo-700 disabled:opacity-40 transition-colors">
-                <Icon name="download" size={15} className="block" />
-                Export <span data-notranslate>{vis.length}</span> shown
-              </button>
             </div>
           )}
 
