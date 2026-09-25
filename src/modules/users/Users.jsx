@@ -604,9 +604,13 @@ function Users({ profile }) {
   async function exportUsersPdf() {
     if (exportingPdf) return
     setExportingPdf(true)
+    setError('')
     try {
       var label = statusFilter === 'all' ? 'All' : statusFilter === 'active' ? 'Active' : statusFilter === 'inactive' ? 'Inactive' : 'Awaiting Sign-in'
       await generateUsersListPdf(filtered, label)
+    } catch (err) {
+      console.error('exportUsersPdf failed:', err)
+      setError('PDF export failed: ' + (err && err.message ? err.message : String(err)))
     } finally {
       setExportingPdf(false)
     }
@@ -675,6 +679,12 @@ function Users({ profile }) {
           + Add User
         </button>
       </div>
+
+      {error && (
+        <div className="px-4 py-2.5 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+          {error}
+        </div>
+      )}
 
       {/* Table */}
       <div className="bg-white border border-gray-200 rounded-lg overflow-x-auto shadow-sm">
