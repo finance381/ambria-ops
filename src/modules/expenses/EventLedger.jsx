@@ -962,18 +962,26 @@ function EventLedger(props) {
                 }
                 if (eventDetail.created_user_name) facts.push({ k: 'by', icon: 'user', text: eventDetail.created_user_name })
                 if (facts.length === 0) return null
+                // Two by two on a phone. Four facts left to wrap came out
+                // three and one; the grid also gives them a column each, so they
+                // line up down the card instead of sitting wherever the previous
+                // one ended. A row of them from sm up, as before.
                 return (
-                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 sm:gap-y-1.5">
+                  <div className="grid grid-cols-2 gap-x-3 gap-y-1 sm:flex sm:flex-wrap sm:items-center sm:gap-y-1.5">
                     {facts.map(function (f, i) {
                       return (
-                        <span key={f.k} className="flex items-center gap-3">
+                        <span key={f.k} className="flex items-center gap-3 min-w-0">
                           {i > 0 && <span aria-hidden="true" className="hidden sm:block w-px h-4 bg-slate-200" />}
                           {/* whitespace-nowrap: the row may wrap between facts,
                               but a venue called "Ambria Restro" breaking into
                               "Ambria" and "Restro" reads as two facts. */}
-                          <span className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-slate-600 whitespace-nowrap">
+                          <span className="inline-flex items-center gap-1.5 min-w-0 text-[13px] font-semibold text-slate-600">
                             <Icon name={f.icon} size={14} className="shrink-0 text-slate-400" />
-                            <span>{f.text}</span>
+                            {/* truncate, not nowrap: it keeps the fact on one
+                                line either way, and in a 157px cell a long
+                                venue clips instead of running out of it. From
+                                sm there is no width to clip against. */}
+                            <span className="truncate">{f.text}</span>
                           </span>
                         </span>
                       )
