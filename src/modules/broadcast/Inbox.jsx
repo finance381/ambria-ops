@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { pushBack } from '../../lib/backNav'
 import { supabase } from '../../lib/supabase'
 import { hasPerm } from '../../lib/permissions'
 import { formatDate } from '../../lib/format'
@@ -89,7 +90,7 @@ function ConversationRow({ conv, active, onClick }) {
   )
 }
 
-function Inbox({ profile }) {
+function Inbox({ profile, inAdmin }) {
   var permsNew = (profile && profile.permsNew) || []
   var canReply = hasPerm(permsNew, 'broadcast.inbox.reply')
 
@@ -135,7 +136,12 @@ function Inbox({ profile }) {
       .then(function (res) { setMessages(res.data || []); setLoadingMsgs(false) })
   }
 
+  // On a phone an open conversation is a step on the app's back stack, so
+  // the header's arrow and a swipe return to the list and the thread drops
+  // its own back button. Only the first open is a step — the list is hidden
+  // while a thread is up, so a phone cannot switch from one to another.
   function openConversation(conv) {
+    if (!inAdmin && !activeConv) pushBack(function () { setActiveConv(null) })
     setActiveConv(conv); setComposerText(''); setTemplatePickerOpen(false); setError('')
     loadMessages(conv)
     supabase.rpc('rpc_wa_mark_read', { p_conversation_id: conv.id }).then(function () { loadConversations() })
@@ -248,12 +254,15 @@ function Inbox({ profile }) {
             <div className="shrink-0 px-3.5 py-2.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between gap-3">
               <div className="flex items-center gap-2.5 min-w-0">
                 {/* md:hidden — from md the list is still beside this, so there
-                    is nothing to go back to. */}
-                <button type="button" onClick={function () { setActiveConv(null) }}
-                  aria-label="Back to conversations"
-                  className="md:hidden shrink-0 -ml-1 inline-flex items-center justify-center w-8 h-8 rounded-lg text-slate-500 hover:bg-white hover:text-slate-900 transition-colors">
-                  <Icon name="arrowLeft" size={17} />
-                </button>
+                    is nothing to go back to. Admin only: a phone goes back
+                    with the header's arrow. */}
+                {inAdmin && (
+                  <button type="button" onClick={function () { setActiveConv(null) }}
+                    aria-label="Back to conversations"
+                    className="md:hidden shrink-0 -ml-1 inline-flex items-center justify-center w-8 h-8 rounded-lg text-slate-500 hover:bg-white hover:text-slate-900 transition-colors">
+                    <Icon name="arrowLeft" size={17} />
+                  </button>
+                )}
                 <span aria-hidden="true" data-notranslate
                   className="shrink-0 inline-flex items-center justify-center w-9 h-9 rounded-full bg-indigo-100 text-indigo-700 text-[12px] font-bold">
                   {initialsOf(activeConv.wa_contacts.name, activeConv.wa_contacts.phone_e164)}

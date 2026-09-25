@@ -810,7 +810,11 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
     var deptName = g.deptId ? (deptMap[g.deptId] || 'Unassigned') : 'Unallocated'
     var typeName = r.typeId ? (typeMap[r.typeId] || 'Untyped') : 'Untyped'
     var subTypeName = r.subTypeId ? (subTypeMap[r.subTypeId] || '—') : '—'
-    pushBack(function () { setDrillGroup(null); setDrillRows([]); setDrillOffset(0); setDrillUserFilter(''); setDrillStatusFilter(''); setDrillVenueFilter('') })
+    // A phone steps back out of a drill with the header's arrow, so opening
+    // one is a step on the back stack there. The admin console has no arrow
+    // and closes it with the page's own button instead — and pushing a step
+    // it never pops would leave one behind to swallow a later back press.
+    if (!inAdmin) pushBack(function () { setDrillGroup(null); setDrillRows([]); setDrillOffset(0); setDrillUserFilter(''); setDrillStatusFilter(''); setDrillVenueFilter('') })
     // A drill starts clean. Only the back handler and closeDrill cleared
     // these, so a route out that used neither left the next drill opening
     // with the last one's user still selected.
@@ -1253,11 +1257,13 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
       <div className="space-y-4">
         <LedgerBackdrop inAdmin={inAdmin} />
         <div>
-          <button type="button" onClick={closeDrill}
-            className="inline-flex items-center gap-1.5 h-8 -ml-2 px-2 mb-1 rounded-lg text-[13px] font-bold text-indigo-600 hover:bg-indigo-50 transition-colors">
-            <Icon name="arrowLeft" size={15} />
-            Back to Ledgers
-          </button>
+          {inAdmin && (
+            <button type="button" onClick={closeDrill}
+              className="inline-flex items-center gap-1.5 h-8 -ml-2 px-2 mb-1 rounded-lg text-[13px] font-bold text-indigo-600 hover:bg-indigo-50 transition-colors">
+              <Icon name="arrowLeft" size={15} />
+              Back to Ledgers
+            </button>
+          )}
           <h2 className="font-display text-[19px] font-bold text-slate-900 leading-tight">{drillGroup.deptName}</h2>
           <p className="mt-0.5 text-[12.5px] font-semibold text-slate-600">{drillGroup.typeName} › {drillGroup.subTypeName}</p>
         </div>
@@ -1273,7 +1279,7 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
               <Icon name="chart" size={20} />
             </span>
             <div className="min-w-0 flex-1 flex items-baseline justify-between gap-2 sm:block">
-              <p className="text-[12.5px] font-medium text-slate-500 leading-none">Total</p>
+              <p className="text-[13px] font-bold text-slate-700 leading-none">Total</p>
               <p className="sm:mt-2 text-[19px] font-extrabold text-indigo-700 tabular-nums leading-none whitespace-nowrap" data-notranslate>{formatPoints(drillGroup.total)}</p>
             </div>
           </div>
@@ -1282,7 +1288,7 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
               <Icon name="checkCircle" size={20} />
             </span>
             <div className="min-w-0 flex-1 flex items-baseline justify-between gap-2 sm:block">
-              <p className="text-[12.5px] font-medium text-slate-500 leading-none">Committed</p>
+              <p className="text-[13px] font-bold text-slate-700 leading-none">Committed</p>
               <p className="sm:mt-2 text-[19px] font-extrabold text-emerald-700 tabular-nums leading-none whitespace-nowrap" data-notranslate>{formatPoints(drillGroup.committed)}</p>
             </div>
           </div>
@@ -1291,7 +1297,7 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
               <Icon name="clock" size={20} />
             </span>
             <div className="min-w-0 flex-1 flex items-baseline justify-between gap-2 sm:block">
-              <p className="text-[12.5px] font-medium text-slate-500 leading-none">Pending</p>
+              <p className="text-[13px] font-bold text-slate-700 leading-none">Pending</p>
               <p className="sm:mt-2 text-[19px] font-extrabold text-amber-700 tabular-nums leading-none whitespace-nowrap" data-notranslate>{formatPoints(drillGroup.pending)}</p>
             </div>
           </div>

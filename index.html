@@ -4,7 +4,11 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
     <link rel="apple-touch-icon" href="./icon-192.png" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- minimum-scale=1: a phone could pinch the page smaller than the screen
+         and the app shrank into a corner of a blank page. Zooming in is left
+         alone — that is for reading, and taking it away fails people who need
+         it. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0" />
     <meta name="theme-color" content="#0B0B0D" />
     <title>Ambria OPs</title>
   </head>

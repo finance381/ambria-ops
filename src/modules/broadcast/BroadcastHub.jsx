@@ -30,7 +30,7 @@ var SUB_TABS = [
 ]
 
 
-function BroadcastHub({ profile, activeSubTab }) {
+function BroadcastHub({ profile, activeSubTab, inAdmin }) {
   var permsNew = (profile && profile.permsNew) || []
   var visible = SUB_TABS.filter(function (t) { return hasPerm(permsNew, t.perm) })
   var _initial = activeSubTab && visible.find(function (t) { return t.key === activeSubTab })
@@ -109,7 +109,7 @@ function BroadcastHub({ profile, activeSubTab }) {
       {ActiveComponent && (
         <div className="lg:flex-1 lg:min-h-0 lg:overflow-y-auto ambria-thin-scroll lg:pr-1">
           <Suspense fallback={<p className="text-center text-[13px] text-slate-400 py-10">Loading…</p>}>
-            <ActiveComponent profile={profile} />
+            <ActiveComponent profile={profile} inAdmin={inAdmin} />
           </Suspense>
         </div>
       )}

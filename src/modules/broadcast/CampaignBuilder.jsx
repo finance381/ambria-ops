@@ -59,7 +59,7 @@ function CheckRow({ done, label, hint }) {
   )
 }
 
-function CampaignBuilder({ campaignId, onClose, onSaved }) {
+function CampaignBuilder({ campaignId, onClose, onSaved, hideBack }) {
   var [templates, setTemplates] = useState([])
   var [venues, setVenues] = useState([])
   var [lists, setLists] = useState([])
@@ -245,10 +245,12 @@ function CampaignBuilder({ campaignId, onClose, onSaved }) {
           saved draft, so it has to be reachable from anywhere in the form. */}
       <div className="shrink-0 flex items-start justify-between gap-3 flex-wrap mb-3">
         <div className="flex items-center gap-2.5 min-w-0">
-          <button onClick={onClose} title="Back to Campaigns" aria-label="Back to Campaigns"
-            className={BTN_GHOST + ' shrink-0 w-9 px-0'}>
-            <Icon name="arrowLeft" size={16} />
-          </button>
+          {!hideBack && (
+            <button onClick={onClose} title="Back to Campaigns" aria-label="Back to Campaigns"
+              className={BTN_GHOST + ' shrink-0 w-9 px-0'}>
+              <Icon name="arrowLeft" size={16} />
+            </button>
+          )}
           <div className="min-w-0">
             <h2 className="font-display text-[17px] font-extrabold text-slate-900 leading-tight tracking-[-0.015em] truncate">{currentId ? 'Edit Campaign' : 'New Campaign'}</h2>
             <p className="text-[11.5px] text-slate-500 leading-snug mt-0.5">

@@ -488,7 +488,7 @@ function Shell({ profile, onSignOut }) {
             <button
               onClick={goBack}
               aria-label="Back"
-              className="-ml-1 w-9 h-9 shrink-0 flex items-center justify-center rounded-xl text-slate-600 hover:bg-slate-100 hover:text-slate-900 active:scale-95 transition-all"
+              className="ambria-head-back -ml-1 w-9 h-9 shrink-0 flex items-center justify-center rounded-xl text-slate-600 hover:bg-slate-100 hover:text-slate-900 active:scale-95 transition-all"
             >
               <Icon name="arrowLeft" className="w-[18px] h-[18px]" />
             </button>

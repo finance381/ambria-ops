@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
+import { pushBack, unwind } from '../../lib/backNav'
 import { generateCollectionReceiptPdf } from '../../lib/pdfReceipt'
 import { formatPoints, formatDate, formatDateTime, titleCase } from '../../lib/format'
 import EventCalendar from '../../components/ui/EventCalendar'
@@ -288,6 +289,35 @@ function EventLedger(props) {
     setBalancesByContract({})
     setEntries([])
     setPlateEvents([])
+  }
+
+  // Month, day, event: three steps deep, and each one going in is a step on
+  // the app's back stack. So the header's back arrow — and a phone's swipe —
+  // walk back out one level at a time instead of leaving the ledger from
+  // wherever you were standing, and the screen needs no Back button of its
+  // own on a phone.
+  //
+  // backDepth counts the steps this screen has put on the stack, so a control
+  // that jumps several levels (Change date, Whole month) can unwind exactly
+  // those and leave no stale step behind to eat a later back press.
+  var backDepth = useRef(0)
+  function pushLedgerBack(fn) {
+    backDepth.current += 1
+    pushBack(function () { backDepth.current -= 1; fn() })
+  }
+  function backTo(level) {
+    var n = backDepth.current - level
+    if (n > 0) unwind(n)
+  }
+  // Only the first step into a level is a step: picking another date while a
+  // date is already open changes the day, it does not go deeper.
+  function stepIntoDate(d) {
+    if (!date && d) pushLedgerBack(function () { pickDate('') })
+    pickDate(d)
+  }
+  function stepIntoGroup(g) {
+    if (!eventId) pushLedgerBack(function () { selectGroup(null) })
+    selectGroup(g)
   }
 
   function selectGroup(g) {
@@ -1034,14 +1064,19 @@ function EventLedger(props) {
 
   var detailView = eventDetail && (
     <div className="space-y-4">
+      {/* Back to Events is the admin console's alone. On a phone the
+          header's own arrow now walks back one step at a time, and a second
+          Back under it said the same thing twice. */}
       {!propEventId && (
-        <div className="flex items-center justify-between gap-3">
-          <button type="button" onClick={function () { selectGroup(null) }}
-            className="ambria-day-pill inline-flex items-center gap-1.5 h-9 px-3 -ml-1 rounded-xl text-[13px] font-bold text-slate-600 hover:text-indigo-700 hover:bg-indigo-50 transition-colors">
-            <Icon name="arrowLeft" size={15} />
-            Back to Events
-          </button>
-          <button type="button" onClick={function () { pickDate('') }}
+        <div className={'flex items-center gap-3 ' + (inAdmin ? 'justify-between' : 'justify-end')}>
+          {inAdmin && (
+            <button type="button" onClick={function () { backTo(1) }}
+              className="ambria-day-pill inline-flex items-center gap-1.5 h-9 px-3 -ml-1 rounded-xl text-[13px] font-bold text-slate-600 hover:text-indigo-700 hover:bg-indigo-50 transition-colors">
+              <Icon name="arrowLeft" size={15} />
+              Back to Events
+            </button>
+          )}
+          <button type="button" onClick={function () { backTo(0) }}
             className="ambria-day-pill inline-flex items-center gap-1.5 h-9 px-3 rounded-xl text-[13px] font-bold text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors">
             <Icon name="calendar" size={14} />
             Change date
@@ -1718,7 +1753,7 @@ function EventLedger(props) {
         // had to press a day to learn whether it was worth pressing.
         <div className="flex flex-col @3xl:flex-row gap-4 items-start">
           <div className="w-full @3xl:w-[400px] @3xl:shrink-0">
-            <EventCalendar value={date} onChange={pickDate}
+            <EventCalendar value={date} onChange={stepIntoDate}
               year={monthYear} month={monthMonth}
               onMonthChange={function (y, m) {
                 setMonthYear(y); setMonthMonth(m)
@@ -1729,7 +1764,7 @@ function EventLedger(props) {
                 // a step back, so it takes you back to the month list.
                 if (date) {
                   var d = new Date(date + 'T00:00:00')
-                  if (d.getFullYear() !== y || d.getMonth() !== m) pickDate('')
+                  if (d.getFullYear() !== y || d.getMonth() !== m) backTo(0)
                 }
               }}
               byDate={monthByDate} loading={monthLoading} total={monthRows.length}
@@ -1813,8 +1848,8 @@ function EventLedger(props) {
                         // several. A date reading 3 can still be one event.
                         <button key={d} type="button"
                           onClick={function () {
-                            pickDate(d)
-                            if (groups.length === 1) selectGroup(groups[0])
+                            stepIntoDate(d)
+                            if (groups.length === 1) stepIntoGroup(groups[0])
                           }}
                           className="group w-full text-left px-4 py-3 flex items-start gap-3 hover:bg-indigo-50/40 transition-colors">
                           {/* The date reads as one block — a number under its
@@ -1879,7 +1914,7 @@ function EventLedger(props) {
                         {_groups.length} {_groups.length === 1 ? 'Event' : 'Events'}
                       </span>
                     )}
-                    <button type="button" onClick={function () { pickDate('') }}
+                    <button type="button" onClick={function () { backTo(0) }}
                       className="h-7 px-2.5 rounded-lg text-[12px] font-bold text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors">
                       Whole month
                     </button>
@@ -1911,7 +1946,7 @@ function EventLedger(props) {
                       })
                       var numbers = g.contracts.filter(function (c) { return c.contract_no })
                       return (
-                        <button key={g.key} type="button" onClick={function () { selectGroup(g) }}
+                        <button key={g.key} type="button" onClick={function () { stepIntoGroup(g) }}
                           className="group w-full text-left px-4 py-3 flex items-start gap-3 hover:bg-indigo-50/40 transition-colors">
                           <span className="min-w-0 flex-1 space-y-1.5">
                             <span className="block font-display text-[15px] font-bold text-slate-900 leading-snug truncate">

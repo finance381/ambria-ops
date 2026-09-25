@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { pushBack } from '../../lib/backNav'
 import { supabase } from '../../lib/supabase'
 import { hasPerm } from '../../lib/permissions'
 import { formatDate } from '../../lib/format'
@@ -63,7 +64,16 @@ function RowAction({ icon, label, tone, onClick }) {
   )
 }
 
-function Campaigns({ profile }) {
+function Campaigns({ profile, inAdmin }) {
+  // On a phone the builder is a step on the app's back stack: the header's
+  // arrow and a swipe come back to the list, and the builder drops its own
+  // back button. The admin console has no arrow and keeps it. The builder
+  // closes only through that button, so there is nothing else to unwind.
+  function openCampaign(id) {
+    if (!inAdmin && openId === undefined) pushBack(closeCampaign)
+    setOpenId(id)
+  }
+  function closeCampaign() { setOpenId(undefined); loadCampaigns() }
   var permsNew = (profile && profile.permsNew) || []
   var canCreate = hasPerm(permsNew, 'broadcast.campaigns.create')
   var canCancel = hasPerm(permsNew, 'broadcast.campaigns.cancel') || canCreate
@@ -104,13 +114,13 @@ function Campaigns({ profile }) {
       name: c.name + ' (copy)', template_id: c.template_id, list_id: c.list_id,
       audience_filter_json: c.audience_filter_json, variable_mapping_json: c.variable_mapping_json,
     }).select().single().then(function (res) {
-      if (!res.error) setOpenId(res.data.id)
+      if (!res.error) openCampaign(res.data.id)
     })
   }
 
   if (openId !== undefined) {
     return (
-      <CampaignBuilder campaignId={openId} onClose={function () { setOpenId(undefined); loadCampaigns() }}
+      <CampaignBuilder campaignId={openId} onClose={closeCampaign} hideBack={!inAdmin}
         onSaved={function () { loadCampaigns() }} />
     )
   }
@@ -126,7 +136,7 @@ function Campaigns({ profile }) {
           <p className="text-[11.5px] text-slate-500 mt-0.5">{countLine}</p>
         </div>
         {canCreate && (
-          <button onClick={function () { setOpenId(null) }} className={BTN_PRIMARY}>
+          <button onClick={function () { openCampaign(null) }} className={BTN_PRIMARY}>
             <Icon name="plus" size={14} strokeWidth={2.4} />
             New Campaign
           </button>
@@ -164,7 +174,7 @@ function Campaigns({ profile }) {
                 return (
                   // The whole row opens the builder, not just the name cell —
                   // the name was the only hit target and nothing said so.
-                  <tr key={c.id} onClick={function () { setOpenId(c.id) }}
+                  <tr key={c.id} onClick={function () { openCampaign(c.id) }}
                     className="group border-b border-slate-100 last:border-b-0 cursor-pointer hover:bg-slate-50 transition-colors">
                     <td className={TD + ' font-semibold text-slate-900'}>{c.name}</td>
                     <td className={TD + ' text-slate-500 whitespace-nowrap'}>
@@ -177,7 +187,7 @@ function Campaigns({ profile }) {
                     </td>
                     <td className={TD + ' text-right whitespace-nowrap'}>
                       <span className="inline-flex items-center gap-0.5">
-                        <RowAction icon="eye" label="View campaign" onClick={function () { setOpenId(c.id) }} />
+                        <RowAction icon="eye" label="View campaign" onClick={function () { openCampaign(c.id) }} />
                         {canCreate && <RowAction icon="copy" label="Duplicate as a new draft" onClick={function () { duplicateCampaign(c) }} />}
                         {cancellable && <RowAction icon="close" label="Cancel campaign" tone="danger" onClick={function () { cancelCampaign(c) }} />}
                       </span>

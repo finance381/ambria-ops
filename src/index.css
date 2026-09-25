@@ -68,6 +68,13 @@
     overscroll-behavior-y: none;
   }
 
+  /* Nothing may make the page wider than the screen. iOS Safari lets a pinch
+     zoom out as far as the widest thing on the page, so one decoration or
+     off-screen panel poking past the right edge let the whole app be shrunk
+     into a corner. clip, not hidden: hidden makes these a scroll container,
+     and the sticky header would stop sticking. */
+  html, body { overflow-x: clip; }
+
   body {
     background-color: var(--color-canvas);
     color: var(--color-slate-900);
@@ -621,4 +628,20 @@
     box-shadow: 0 12px 32px rgba(15, 23, 42, 0.08);
     overflow: hidden;
   }
+}
+
+@media (max-width: 639px) {
+  /* The header's back arrow on the event ledger. It is the only way back on
+     this screen now — it walks event → day → month → out, one step a press —
+     so it wears the same white glass as the pills below it rather than
+     sitting as a bare glyph on the photograph. */
+  .ambria-event-day .ambria-head-back {
+    margin-left: 0;
+    border-radius: 9999px;
+    background-color: rgba(255, 255, 255, 0.72);
+    backdrop-filter: blur(14px);
+    box-shadow: 0 4px 14px rgba(15, 23, 42, 0.08);
+    color: #334155;
+  }
+  .ambria-event-day .ambria-head-back:hover { background-color: #FFFFFF; color: #9E1B4F; }
 }
