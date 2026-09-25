@@ -139,6 +139,15 @@ function EventLedger(props) {
   var isAdmin = hasPerm(profile?.permsNew, 'finance.ledgers.event')
   var isSysAdmin = hasPerm(profile?.permsNew, 'admin.dashboard')
   var canMarkChecked = hasPerm(profile?.permsNew, 'finance.wallet.mark_checked')
+  // The five tabs measure 598px and a 390px phone gives 358, so two of them
+  // are always off the end. The row scrolls and always did — nothing said so,
+  // which is the actual complaint: Documents and Plates were not missing, they
+  // were invisible.
+  //
+  // Wrapping was the other option and it does not work here: the order is
+  // fixed, so the five break into three rows rather than two.
+  var tabScrollRef = useRef(null)
+  var [tabEdges, setTabEdges] = useState({ left: false, right: false })
   var [checkingExpId, setCheckingExpId] = useState(null)
   var [checkingTxnId, setCheckingTxnId] = useState(null)
   var [collDetail, setCollDetail] = useState(null)
@@ -776,6 +785,27 @@ function EventLedger(props) {
     )
   }
 
+  function syncTabEdges() {
+    var el = tabScrollRef.current
+    if (!el) return
+    var left = el.scrollLeft > 2
+    var right = el.scrollLeft + el.clientWidth < el.scrollWidth - 2
+    // Compared before setting: this runs on every scroll event, and setting
+    // state to the value it already holds re-renders the whole detail view.
+    setTabEdges(function (prev) {
+      return (prev.left === left && prev.right === right) ? prev : { left: left, right: right }
+    })
+  }
+
+  // After the tab row is on the screen, and again whenever the window changes
+  // width — a phone turned sideways can fit all five, and then there is nothing
+  // to fade.
+  useEffect(function () {
+    syncTabEdges()
+    window.addEventListener('resize', syncTabEdges)
+    return function () { window.removeEventListener('resize', syncTabEdges) }
+  }, [eventDetail, tab])
+
   var detailView = eventDetail && (
     <div className="space-y-4">
       {!propEventId && (
@@ -925,12 +955,25 @@ function EventLedger(props) {
         </div>
       </div>
 
-      <div className="flex gap-1 overflow-x-auto no-scrollbar border-b border-slate-200">
+      {/* The fades are the affordance, not decoration: one appears only on a
+          side that has something hidden behind it, so an edge with a fade means
+          there is more that way and an edge without one means there is not. */}
+      <div className="relative border-b border-slate-200">
+      <div ref={tabScrollRef} onScroll={syncTabEdges}
+        className="flex gap-1 overflow-x-auto no-scrollbar scroll-smooth">
         {TABS.map(function (t) {
           var active = tab === t.key
           var count = tabCounts[t.key]
           return (
-            <button key={t.key} type="button" onClick={function () { setTab(t.key) }} aria-pressed={active}
+            <button key={t.key} type="button" aria-pressed={active}
+              onClick={function (ev) {
+                setTab(t.key)
+                // A tab half off the end stays half off the end after you press
+                // it, which reads as the press not having landed.
+                if (ev.currentTarget && ev.currentTarget.scrollIntoView) {
+                  ev.currentTarget.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' })
+                }
+              }}
               className={'relative shrink-0 inline-flex items-center gap-2 px-3.5 h-10 text-[13px] font-bold transition-colors ' +
                 (active ? 'text-indigo-700' : 'text-slate-500 hover:text-slate-900')}>
               <Icon name={t.icon} size={14} />
@@ -943,6 +986,13 @@ function EventLedger(props) {
             </button>
           )
         })}
+      </div>
+        {tabEdges.left && (
+          <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 left-0 w-8 bg-gradient-to-r from-white to-transparent" />
+        )}
+        {tabEdges.right && (
+          <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-white to-transparent" />
+        )}
       </div>
 
       {tab === 'overview' && (
