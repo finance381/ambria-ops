@@ -13,15 +13,19 @@ import Icon from '../../components/ui/Icon'
 // into the main bundle for every user, not just those with broadcast perms.
 var Templates = lazy(function () { return import('./Templates') })
 var Contacts = lazy(function () { return import('./Contacts') })
+var Lists = lazy(function () { return import('./Lists') })
 var Campaigns = lazy(function () { return import('./Campaigns') })
 var Inbox = lazy(function () { return import('./Inbox') })
+var AutoReplies = lazy(function () { return import('./AutoReplies') })
 var Settings = lazy(function () { return import('./Settings') })
 
 var SUB_TABS = [
   { key: 'templates', label: 'Templates', icon: 'fileText', component: Templates, perm: 'broadcast.templates.view' },
   { key: 'contacts', label: 'Contacts', icon: 'users', component: Contacts, perm: 'broadcast.contacts.view' },
+  { key: 'lists', label: 'Lists', icon: 'list', component: Lists, perm: 'broadcast.contacts.view' },
   { key: 'campaigns', label: 'Campaigns', icon: 'send', component: Campaigns, perm: 'broadcast.campaigns.view' },
   { key: 'inbox', label: 'Inbox', icon: 'inbox', component: Inbox, perm: 'broadcast.inbox.view' },
+  { key: 'autoreplies', label: 'Auto-Replies', icon: 'send', component: AutoReplies, perm: 'broadcast.settings' },
   { key: 'settings', label: 'Settings', icon: 'settings', component: Settings, perm: 'broadcast.settings' },
 ]
 

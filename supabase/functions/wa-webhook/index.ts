@@ -30,7 +30,41 @@ async function verifySignature(rawBody, signatureHeader, appSecret) {
   return computedHex === providedHex
 }
 
-async function handleInboundMessage(supa, value, msg) {
+// Fires the first active auto-reply rule that matches, if any. Queues a
+// plain-text wa_messages row and hands it to wa-send (server-to-server,
+// via the service role — see the matching change in wa-send/index.ts) so
+// the actual Meta call, the opted-out/invalid-phone compliance gate
+// (fn_wa_can_send) and wa_send_events logging all stay the one existing
+// path every other send already goes through — nothing duplicated here.
+async function maybeAutoReply(supa, SUPABASE_URL, SERVICE_ROLE, contactId, bodyText) {
+  if (!bodyText || !bodyText.trim()) return
+  var lowerBody = bodyText.toLowerCase()
+
+  var rulesRes = await supa.from("wa_auto_replies").select("*").eq("active", true).order("priority", { ascending: true })
+  var rules = rulesRes.data || []
+  var match = rules.find(function (r) {
+    if (r.trigger_type === "always") return true
+    return Array.isArray(r.keywords) && r.keywords.some(function (k) { return k && lowerBody.indexOf(String(k).toLowerCase()) !== -1 })
+  })
+  if (!match) return
+
+  var insRes = await supa.from("wa_messages").insert({
+    contact_id: contactId, direction: "out", rendered_body: match.reply_text, status: "queued",
+  }).select("id").single()
+  if (insRes.error) { console.error("wa-webhook: auto-reply queue insert failed"); return }
+
+  try {
+    await fetch(SUPABASE_URL + "/functions/v1/wa-send", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + SERVICE_ROLE },
+      body: JSON.stringify({ message_id: insRes.data.id }),
+    })
+  } catch (sendErr) {
+    console.error("wa-webhook: auto-reply send call failed")
+  }
+}
+
+async function handleInboundMessage(supa, value, msg, SUPABASE_URL, SERVICE_ROLE) {
   var fromPhone = "+" + String(msg.from || "").replace(/^\+/, "")
   if (fromPhone === "+") return
 
@@ -58,12 +92,17 @@ async function handleInboundMessage(supa, value, msg) {
 
   // The wa_messages_after_insert + wa_stop_keyword_handler triggers (migration
   // 00030) handle the conversation upsert, session window, and any STOP
-  // auto-opt-out from here — nothing else to do in this function.
+  // auto-opt-out from here — both run synchronously as part of this insert,
+  // so by the time it resolves below a stop-keyword message has already been
+  // opted out in wa_opt_outs, and maybeAutoReply's downstream fn_wa_can_send
+  // check (inside wa-send) will correctly refuse to auto-reply to it.
   var insMsg = await supa.from("wa_messages").insert({
     contact_id: contactId, direction: "in", wa_message_id: msg.id,
     rendered_body: bodyText, status: "delivered",
   })
-  if (insMsg.error) console.error("wa-webhook: inbound message insert failed: " + insMsg.error.message)
+  if (insMsg.error) { console.error("wa-webhook: inbound message insert failed: " + insMsg.error.message); return }
+
+  await maybeAutoReply(supa, SUPABASE_URL, SERVICE_ROLE, contactId, bodyText)
 }
 
 async function handleStatusUpdate(supa, status) {
@@ -172,7 +211,7 @@ serve(async function (req) {
         }
 
         var messages = value.messages || []
-        for (var m = 0; m < messages.length; m++) await handleInboundMessage(supa, value, messages[m])
+        for (var m = 0; m < messages.length; m++) await handleInboundMessage(supa, value, messages[m], SUPABASE_URL, SERVICE_ROLE)
 
         var statuses = value.statuses || []
         for (var s = 0; s < statuses.length; s++) await handleStatusUpdate(supa, statuses[s])

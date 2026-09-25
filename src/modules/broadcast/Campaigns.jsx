@@ -101,7 +101,7 @@ function Campaigns({ profile }) {
 
   function duplicateCampaign(c) {
     supabase.from('wa_campaigns').insert({
-      name: c.name + ' (copy)', template_id: c.template_id,
+      name: c.name + ' (copy)', template_id: c.template_id, list_id: c.list_id,
       audience_filter_json: c.audience_filter_json, variable_mapping_json: c.variable_mapping_json,
     }).select().single().then(function (res) {
       if (!res.error) setOpenId(res.data.id)
