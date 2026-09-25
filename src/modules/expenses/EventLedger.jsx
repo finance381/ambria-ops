@@ -1480,7 +1480,25 @@ function EventLedger(props) {
                       var isToday = d === isoDate(new Date())
                       var groups = _buildGroups(info.rows)
                       return (
-                        <button key={d} type="button" onClick={function () { pickDate(d) }}
+                        // One function on the day goes straight to it.
+                        // The day screen in between listed a single row
+                        // and its only purpose was to be pressed, so it
+                        // asked which event on a date that has one.
+                        //
+                        // pickDate first, then selectGroup: pickDate
+                        // clears the open event and selectGroup sets it,
+                        // and React batches both into one render, so the
+                        // detail is what lands. It still sets the date, so
+                        // Back goes to that day rather than the month.
+                        //
+                        // groups.length, not the count beside the row:
+                        // that counts contracts, and one function can have
+                        // several. A date reading 3 can still be one event.
+                        <button key={d} type="button"
+                          onClick={function () {
+                            pickDate(d)
+                            if (groups.length === 1) selectGroup(groups[0])
+                          }}
                           className="group w-full text-left px-4 py-3 flex items-start gap-3.5 hover:bg-indigo-50/40 transition-colors">
                           {/* The date reads as one block — a number under its
                               weekday — so the eye finds the day it wants down
