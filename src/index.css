@@ -318,6 +318,17 @@
     .ambria-event-night .bg-indigo-50 { background-color: rgba(139, 92, 246, 0.18); }
     .ambria-event-night .border-indigo-500,
     .ambria-event-night .border-indigo-300 { border-color: rgba(167, 139, 250, 0.55); }
+
+    /* The header comes with the screen, so its own colours need the same
+       treatment: the wallet chip, and the ring that separates the pending
+       dot from whatever is behind it. */
+    .ambria-event-night .bg-emerald-50 { background-color: rgba(16, 185, 129, 0.16); }
+    .ambria-event-night .border-emerald-200 { border-color: rgba(52, 211, 153, 0.45); }
+    .ambria-event-night .text-emerald-700 { color: #6EE7B7; }
+    .ambria-event-night .bg-red-50 { background-color: rgba(244, 63, 94, 0.16); }
+    .ambria-event-night .border-red-200 { border-color: rgba(251, 113, 133, 0.45); }
+    .ambria-event-night .text-red-700 { color: #FDA4AF; }
+    .ambria-event-night .ring-white { --tw-ring-color: #171334; }
   }
 
   .no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }

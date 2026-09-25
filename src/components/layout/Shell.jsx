@@ -476,8 +476,14 @@ function Shell({ profile, onSignOut }) {
       {/* backdrop-blur is safe here now: the menu's click-outside overlay is
           portalled to <body>, so it is no longer a fixed child of this header
           for backdrop-filter's containing block to capture. */}
+      {/* The event ledger's phone screen is dark, and the bar sits on top
+          of it — a white strip over that ground reads as a different app.
+          It takes the same scoped palette the screen uses, which already
+          knows what bg-white and text-slate-900 mean down there. */}
       {tab !== 'quote' && (
-      <header className={"sticky top-0 z-40 " + (artHeader ? "bg-white/45 backdrop-blur-xl shadow-[0_1px_12px_rgba(15,23,42,0.05)]" : "border-b bg-white border-slate-200")}>
+      <header className={"sticky top-0 z-40 " +
+        (tab === 'event_ledger' ? "ambria-event-night " : "") +
+        (artHeader ? "bg-white/45 backdrop-blur-xl shadow-[0_1px_12px_rgba(15,23,42,0.05)]" : "border-b bg-white border-slate-200")}>
         <div className="max-w-[540px] mx-auto h-14 flex items-center gap-2 px-3">
           {(activeGroup || tab) && (
             <button
