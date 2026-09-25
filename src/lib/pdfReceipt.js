@@ -91,10 +91,18 @@ export async function generateCollectionReceiptPdf(data) {
   doc.text('Receive Receipt', pageW / 2, titleY + 5, { align: 'center' })
 
   var netAmount = data.amountRupees / 100
+  // Optional. A collection carries no discount; an extra-plates collection
+  // can, and there amountRupees is what was actually received — the net — so
+  // the payment line is that plus the discount, and the three rows add up.
+  var discountAmount = (data.discountPaise || 0) / 100
+  var grossAmount = netAmount + discountAmount
   // Cash uses plain "10000.0" per Sahaj convention; bank keeps en-IN grouping
-  var netStr = isBank
-    ? netAmount.toLocaleString('en-IN', { minimumFractionDigits: 1, maximumFractionDigits: 2 })
-    : netAmount.toFixed(1)
+  function money(n) {
+    return isBank
+      ? n.toLocaleString('en-IN', { minimumFractionDigits: 1, maximumFractionDigits: 2 })
+      : n.toFixed(1)
+  }
+  var netStr = money(netAmount)
   var body = [
     ['Receipt No.', { content: data.receiptNo || '', styles: { fontStyle: 'bold' } }, 'Receipt Date', fmtDDMMYYYY(data.createdAt)],
     ['Pay Mode', { content: (data.paymentMode || '').toUpperCase(), styles: { fontStyle: 'bold' } }, 'Remarks', data.description || ''],
@@ -103,8 +111,8 @@ export async function generateCollectionReceiptPdf(data) {
   ]
   if (isBank) body.push(['Cheque No.', '0', 'Cheque Date', ''])
   body.push(
-    ['Payment Amount', { content: netStr, styles: { halign: 'right' } }, 'TDS Amount', { content: '0.0', styles: { halign: 'right' } }],
-    ['Discount', { content: '0.0', styles: { halign: 'right' } }, 'Net Amount', { content: netStr, styles: { halign: 'right', fontStyle: 'bold' } }],
+    ['Payment Amount', { content: money(grossAmount), styles: { halign: 'right' } }, 'TDS Amount', { content: '0.0', styles: { halign: 'right' } }],
+    ['Discount', { content: money(discountAmount), styles: { halign: 'right' } }, 'Net Amount', { content: netStr, styles: { halign: 'right', fontStyle: 'bold' } }],
   )
 
   autoTable(doc, {

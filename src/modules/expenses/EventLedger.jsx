@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
+import { generateCollectionReceiptPdf } from '../../lib/pdfReceipt'
 import { formatPoints, formatDate, formatDateTime, titleCase } from '../../lib/format'
 import EventCalendar from '../../components/ui/EventCalendar'
 import { venueColor } from '../../lib/venueColors'
@@ -7,10 +8,10 @@ import ImageLightbox from '../../components/ui/ImageLightbox'
 import Icon from '../../components/ui/Icon'
 import { hasPerm } from '../../lib/permissions'
 import { scrollToTopOf } from '../../lib/scrollToTop'
-import { useExpenseDetailModal } from '../../hooks/useExpenseDetailModal.jsx'
-import { deptOrder, deptCls, CARD, FIELD_SEARCH } from '../../lib/ui'
-import { avatarTint } from '../../lib/avatarTint'
 import eventBg from '../../assets/event-bg.webp'
+import { useExpenseDetailModal } from '../../hooks/useExpenseDetailModal.jsx'
+import { deptOrder, deptCls, deptHex, CARD, FIELD_SEARCH } from '../../lib/ui'
+import { avatarTint } from '../../lib/avatarTint'
 import { DeptChip } from '../../components/ui/Badge'
 import CheckedStamp from '../../components/ui/CheckedStamp'
 
@@ -40,11 +41,13 @@ function entryLabel(t) {
 // many extra plates went out, where is the contract PDF — that has nothing to
 // do with money moving.
 var TABS = [
-  { key: 'overview',     label: 'Overview',     icon: 'info' },
-  { key: 'financials',   label: 'Financials',   icon: 'wallet' },
-  { key: 'transactions', label: 'Transactions', icon: 'receipt' },
-  { key: 'plates',       label: 'Plates',       icon: 'utensils' },
-  { key: 'documents',    label: 'Documents',    icon: 'paperclip' },
+  // short is the phone's label: five tabs share one row there, about 70px
+  // each, and "Transactions" alone needs more than that.
+  { key: 'overview',     label: 'Overview',     short: 'Overview', icon: 'info' },
+  { key: 'financials',   label: 'Financials',   short: 'Finance',  icon: 'wallet' },
+  { key: 'transactions', label: 'Transactions', short: 'Txns',     icon: 'receipt' },
+  { key: 'plates',       label: 'Plates',       short: 'Plates',   icon: 'utensils' },
+  { key: 'documents',    label: 'Documents',    short: 'Docs',     icon: 'paperclip' },
 ]
 
 var EVT_COLS = 'id, event_name, function_date, contract_date, venue_name, location, client_name, contact_person, session, catering, department, created_user_name, contract_no, is_tentative, pax, total_plates, complementary_plates, synced_at, pdf_link, ppt_link, agreed_cash_paise, agreed_bank_paise'
@@ -146,16 +149,22 @@ function _buildGroups(rows) {
   return out
 }
 
-// The ground behind the phone screen.
+// The ground behind the phone screen: a soft photograph of daylight falling
+// across a pale wall.
 //
-// Drawn rather than photographed, so unlike the other backdrops in this app it
-// needs no blur: soft gradients and a few thin arcs, with nothing in it sharp
-// enough to compete with a card in front of it.
+// It arrives already out of focus, so it needs no blur of its own and has
+// nothing sharp enough in it to compete with a card. The cards stay white and
+// the picture is only the light around them.
 //
-// 100% 100% rather than cover, for the reason the ledger's ground records: a
-// fixed box is the viewport, the viewport changes height every time the address
-// bar slides, and cover rescales the image each time — which reads as the
-// background zooming while you scroll.
+// 100% 100% rather than cover: a fixed box is the viewport, the viewport
+// changes height every time the address bar slides, and cover rescales the
+// image each time — which reads as the background zooming while you scroll.
+// A picture this soft does not show the stretch.
+//
+// The body takes the colour sampled from the picture's foot, so dragging past
+// either end of the page shows more of the same light rather than a seam.
+var LEDGER_GROUND = '#E8E1DE'
+
 function EventBackdrop() {
   useEffect(function () {
     var b = document.body
@@ -163,10 +172,8 @@ function EventBackdrop() {
     var prevBody = b.style.backgroundColor
     var prevHtml = h.style.backgroundColor
     var prevOver = b.style.overscrollBehaviorY
-    // Sampled from the foot of the artwork, so dragging past the end of the
-    // page reveals more of the same night rather than the app's pale canvas.
-    b.style.backgroundColor = '#100E2F'
-    h.style.backgroundColor = '#100E2F'
+    b.style.backgroundColor = LEDGER_GROUND
+    h.style.backgroundColor = LEDGER_GROUND
     b.style.overscrollBehaviorY = 'none'
     return function () {
       b.style.backgroundColor = prevBody
@@ -175,39 +182,37 @@ function EventBackdrop() {
     }
   }, [])
   return (
-    <div aria-hidden="true" className="sm:hidden pointer-events-none fixed inset-0 -z-10 overflow-hidden"
-      style={{ backgroundColor: '#100E2F', minHeight: '100lvh' }}>
-      <div className="absolute inset-x-0 top-0 -bottom-px"
-        style={{
-          backgroundImage: 'url(' + eventBg + ')',
-          backgroundSize: '100% 100%',
-          backgroundPosition: 'center',
-          backgroundRepeat: 'no-repeat',
-        }} />
-    </div>
+    <div aria-hidden="true" className="sm:hidden pointer-events-none fixed inset-0 -z-10"
+      style={{
+        backgroundColor: LEDGER_GROUND,
+        backgroundImage: 'url(' + eventBg + ')',
+        backgroundSize: '100% 100%',
+        backgroundRepeat: 'no-repeat',
+        minHeight: '100lvh',
+      }} />
   )
 }
 
 function EventLedger(props) {
   var profile = props && props.profile
-  // The hub passes this and the screen ignored it. The night treatment is for
-  // the phone screen only, so the admin console keeps the light one it shares
+  // The hub passes this and the screen ignored it. The photographed ground
+  // and its accent are for the phone screen only, so the admin console keeps the plain page it shares
   // with its seven neighbours.
   var inAdmin = !!(props && props.inAdmin)
   var isAdmin = hasPerm(profile?.permsNew, 'finance.ledgers.event')
   var isSysAdmin = hasPerm(profile?.permsNew, 'admin.dashboard')
   var canMarkChecked = hasPerm(profile?.permsNew, 'finance.wallet.mark_checked')
-  // The five tabs measure 598px and a 390px phone gives 358, so two of them
-  // are always off the end. The row scrolls and always did — nothing said so,
-  // which is the actual complaint: Documents and Plates were not missing, they
-  // were invisible.
-  //
-  // Wrapping was the other option and it does not work here: the order is
-  // fixed, so the five break into three rows rather than two.
+  // The five tabs measure 598px and a 390px phone gives 358, so on a phone
+  // two of them were always off the end of a scrolling row, and Documents and
+  // Plates were not missing so much as invisible. There each tab takes an
+  // equal fifth instead, icon over a short label, and all five are on screen.
+  // From sm up the row has the room and keeps its labels; the edge fades
+  // below still cover the widths where it scrolls.
   var tabScrollRef = useRef(null)
   var [tabEdges, setTabEdges] = useState({ left: false, right: false })
   var [checkingExpId, setCheckingExpId] = useState(null)
   var [checkingTxnId, setCheckingTxnId] = useState(null)
+  var [printingDocId, setPrintingDocId] = useState(null)
   var [collDetail, setCollDetail] = useState(null)
   var [currentEventIds, setCurrentEventIds] = useState([])
   var { openExpenseDetail, expenseDetailModal } = useExpenseDetailModal(profile, isAdmin, function () { loadEntries(currentEventIds) }, props && props.onNavigateToExpenses)
@@ -225,6 +230,8 @@ function EventLedger(props) {
   var [filter, setFilter] = useState('all')
   var [balancesByContract, setBalancesByContract] = useState({})
   var [tab, setTab] = useState('overview')
+  // Agreed Cash shown ×10. Display only, and gone on reload.
+  var [cashX10, setCashX10] = useState(false)
   // The transactions tab keeps its own view state: what is typed in it, how
   // it is narrowed, which way the dates run and which page it is on. All of
   // it is per-event, so selecting another event resets it rather than
@@ -297,6 +304,10 @@ function EventLedger(props) {
     loadBalance(g.event_ids)
     loadEntries(g.event_ids)
     loadPlateEvents(g.event_ids)
+    // The row you pressed was halfway down the day's list, and the page keeps
+    // that scroll when the detail replaces it — so the event opened on its
+    // middle. It starts at its own top, on the frame after it has rendered.
+    window.requestAnimationFrame(function () { window.scrollTo(0, 0) })
   }
 
   useEffect(function () {
@@ -448,7 +459,7 @@ function EventLedger(props) {
         .in('event_id', numIds)
         .order('created_at', { ascending: false }),
       supabase.from('extra_plate_collections')
-        .select('id, extras_charged, plates_returned, rate_paise, total_paise, discount_paise, payment_mode, payment_sub_mode, notes, status, cancelled_reason, cancelled_at, created_at, collected_by')
+        .select('id, event_id, extras_charged, plates_returned, rate_paise, total_paise, discount_paise, payment_mode, payment_sub_mode, receipt_path, notes, status, cancelled_reason, cancelled_at, created_at, collected_by')
         .in('event_id', numIds)
         .order('created_at', { ascending: false })
     ])
@@ -489,25 +500,84 @@ function EventLedger(props) {
   var contracts = selectedGroup ? selectedGroup.contracts : (eventDetail ? [eventDetail] : [])
   var multiContract = contracts.length > 1
 
-  // Everything this event has to show that is not a number: the LMS contract
-  // PDF each department files, and the receipt photographed at the moment a
-  // collection was taken. They live in two different systems, which is exactly
-  // why one tab that knows about both is worth having.
+  // The receipts this event has issued: one for every collection taken
+  // against it and one for every extra-plates collection, each printable as
+  // the same Receive Receipt the wallet prints, and each with the photo taken
+  // at the time where there is one.
+  //
+  // The LMS contract PDF used to lead this list. It is a file the booking
+  // arrived with, not something this screen issued, and it stays one tap away
+  // on the event card. Cancelled rows issue nothing, so they are left out.
   var documents = []
-  contracts.forEach(function (c) {
-    if (c.pdf_link) documents.push({ id: 'pdf-' + c.id, kind: 'pdf', label: 'Contract PDF', sub: (c.department || 'Contract') + (c.contract_no ? ' · #' + c.contract_no : ''), href: c.pdf_link })
-    if (c.ppt_link) documents.push({ id: 'ppt-' + c.id, kind: 'ppt', label: 'Presentation', sub: c.department || '', href: c.ppt_link })
-  })
+  function receiptPhoto(path) {
+    return path ? (supabase.storage.from('receipts').getPublicUrl(path).data?.publicUrl || null) : null
+  }
   entries.forEach(function (e) {
-    if (!e._wt || !e._wt.received_image_path) return
-    var url = supabase.storage.from('receipts').getPublicUrl(e._wt.received_image_path).data?.publicUrl
-    if (!url) return
+    var wt = e._wt
+    if (e.entry_type !== 'collection' || !wt || wt.status === 'cancelled') return
     documents.push({
-      id: 'img-' + e.id, kind: 'image', url: url,
+      id: 'coll-' + e.id, kind: 'receipt', icon: 'receipt',
       label: 'Collection receipt',
-      sub: formatPoints(e._wt.amount_paise) + ' · ' + formatDate(e.created_at),
+      sub: formatPoints(wt.amount_paise) + ' · ' + formatDate(e.created_at) + (wt.receipt_no ? ' · #' + wt.receipt_no : ''),
+      photo: receiptPhoto(wt.received_image_path),
+      eventId: e.event_id, collectorId: wt.performed_by,
+      pdf: { receiptNo: wt.receipt_no, paymentMode: wt.payment_mode, amountRupees: wt.amount_paise, description: e.description, createdAt: e.created_at },
     })
   })
+  plateEvents.forEach(function (p) {
+    if (p._kind !== 'collection' || p.status === 'cancelled' || !(p.total_paise > 0)) return
+    var disc = p.discount_paise || 0
+    var net = p.total_paise - disc
+    documents.push({
+      id: 'plates-' + p.id, kind: 'receipt', icon: 'utensils',
+      label: 'Extra plates receipt',
+      sub: formatPoints(net) + ' · ' + formatDate(p.created_at) + ' · ' + p.extras_charged + ' plates',
+      photo: receiptPhoto(p.receipt_path),
+      eventId: p.event_id, collectorId: p.collected_by,
+      // Extra-plate collections have no receipt series of their own, so the
+      // number is the row's, prefixed so it cannot be mistaken for one.
+      pdf: {
+        receiptNo: 'EP-' + p.id, paymentMode: p.payment_mode, amountRupees: net, discountPaise: disc,
+        description: p.extras_charged + ' extra plates × ' + formatPoints(p.rate_paise) + (p.notes ? ' — ' + p.notes : ''),
+        createdAt: p.created_at,
+      },
+    })
+  })
+  contracts.forEach(function (c) {
+    if (c.ppt_link) documents.push({ id: 'ppt-' + c.id, kind: 'link', label: 'Presentation', sub: c.department || '', href: c.ppt_link })
+  })
+
+  // The contract, the collector's name and their signature are not on the
+  // rows in hand, so they are gathered at the moment of printing — the same
+  // three things the wallet's own Print Receipt looks up.
+  async function printReceipt(d) {
+    if (printingDocId) return
+    setPrintingDocId(d.id)
+    try {
+      var c = contractByEventId[d.eventId] || eventDetail || {}
+      var receivedByName = ''
+      var signatureUrl = null
+      if (d.collectorId) {
+        var { data: pr } = await supabase.from('profiles').select('name, signature_path').eq('id', d.collectorId).maybeSingle()
+        if (pr) {
+          receivedByName = pr.name || ''
+          if (pr.signature_path) {
+            var { data: signed } = await supabase.storage.from('images').createSignedUrl(pr.signature_path, 300)
+            signatureUrl = signed?.signedUrl || null
+          }
+        }
+      }
+      await generateCollectionReceiptPdf(Object.assign({}, d.pdf, {
+        contractNo: c.contract_no || null,
+        clientName: c.client_name || '',
+        eventDate: c.function_date || '',
+        dealBy: c.created_user_name || '',
+        receivedByName: receivedByName,
+        signatureUrl: signatureUrl,
+      }))
+    } catch (e) { alert('Receipt generation failed: ' + e.message) }
+    setPrintingDocId(null)
+  }
 
   // Dots for the grid, days for the list. Both are the same rows read the
   // same way, so a day cannot carry a dot the list has no entry for.
@@ -967,12 +1037,12 @@ function EventLedger(props) {
       {!propEventId && (
         <div className="flex items-center justify-between gap-3">
           <button type="button" onClick={function () { selectGroup(null) }}
-            className="inline-flex items-center gap-1.5 h-9 px-3 -ml-1 rounded-xl text-[13px] font-bold text-slate-600 hover:text-indigo-700 hover:bg-indigo-50 transition-colors">
+            className="ambria-day-pill inline-flex items-center gap-1.5 h-9 px-3 -ml-1 rounded-xl text-[13px] font-bold text-slate-600 hover:text-indigo-700 hover:bg-indigo-50 transition-colors">
             <Icon name="arrowLeft" size={15} />
             Back to Events
           </button>
           <button type="button" onClick={function () { pickDate('') }}
-            className="inline-flex items-center gap-1.5 h-9 px-3 rounded-xl text-[13px] font-bold text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors">
+            className="ambria-day-pill inline-flex items-center gap-1.5 h-9 px-3 rounded-xl text-[13px] font-bold text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors">
             <Icon name="calendar" size={14} />
             Change date
           </button>
@@ -1013,11 +1083,6 @@ function EventLedger(props) {
                   <span data-notranslate className="text-[13px] font-semibold text-slate-500">{SHORT_DAYS[d.getDay()]}</span>
                 </span>
               ) : <span />}
-              <span className={'shrink-0 h-7 px-3 inline-flex items-center gap-1.5 rounded-full text-[11px] font-bold uppercase tracking-[0.08em] ' +
-                (eventDetail.is_tentative ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800')}>
-                <span aria-hidden="true" className={'w-1.5 h-1.5 rounded-full ' + (eventDetail.is_tentative ? 'bg-amber-500' : 'bg-emerald-500')} />
-                {eventDetail.is_tentative ? 'Tentative' : 'Confirmed'}
-              </span>
             </div>
           )
         })()}
@@ -1030,32 +1095,26 @@ function EventLedger(props) {
         {/* One row under the name: what this event is filed as, and the one
             thing on the card you can open.
 
-            These were two rows — the number here and the department with the
-            PDF at the foot — with the facts between them. The number and the
-            department are the same kind of thing, a label this booking carries,
-            so they belong beside each other; and the PDF sitting at the end of
-            the card was as far from the contract number it opens as the layout
-            allowed. */}
+            The contract numbers used to lead this row and are gone from the
+            header: they still show on each contract in the Contracts section
+            and on the PDF's own label, which is where anyone needing one
+            looks. The department stays beside the PDF it files. */}
         {(function () {
-          var numbered = contracts.filter(function (c) { return c.contract_no })
           var depts = contracts.filter(function (c) { return c.department })
           var withPdf = contracts.filter(function (c) { return c.pdf_link })[0]
-          if (numbered.length === 0 && depts.length === 0 && !withPdf) return null
+          if (depts.length === 0 && !withPdf) return null
           return (
             <div className="mt-2.5 flex items-center justify-between gap-3">
               <div className="min-w-0 flex flex-wrap items-center gap-1.5">
-                {numbered.map(function (c) {
-                  return (
-                    <span key={'n' + c.id} data-notranslate
-                      className="h-7 px-2.5 inline-flex items-center rounded-lg bg-slate-100 text-slate-600 text-[12px] font-bold">
-                      #{c.contract_no}
-                    </span>
-                  )
-                })}
+                {/* Neutral chips with the department's colour as a dot. Three
+                    filled pastels side by side — blue, purple, pink — fought
+                    the screen's maroon and each other; the dot keeps each
+                    department recognisable without painting the whole chip. */}
                 {depts.map(function (c) {
                   return (
                     <span key={'d' + c.id}
-                      className={'h-7 px-3 inline-flex items-center rounded-full border text-[12px] font-bold ' + deptCls(c.department)}>
+                      className="h-7 px-2.5 inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white text-[12px] font-semibold text-slate-700">
+                      <span aria-hidden="true" className="w-1.5 h-1.5 rounded-full" style={{ background: deptHex(c.department) }} />
                       {c.department}
                     </span>
                   )
@@ -1093,8 +1152,10 @@ function EventLedger(props) {
               {facts.map(function (f, i) {
                 return (
                   <div key={f.k} className={'flex items-center gap-2.5 min-w-0 ' + (i % 2 === 1 ? 'border-l border-slate-100 pl-3' : 'pr-3')}>
-                    <span className="shrink-0 w-9 h-9 rounded-[10px] bg-indigo-50 text-indigo-600 inline-flex items-center justify-center">
-                      <Icon name={f.icon} size={17} className="block" />
+                    {/* The bare outline, no tinted square behind it: four
+                        filled tiles in a grid read as four buttons. */}
+                    <span className="shrink-0 w-6 text-indigo-600 inline-flex items-center justify-center">
+                      <Icon name={f.icon} size={19} className="block" />
                     </span>
                     <span className="min-w-0">
                       <span className="block text-[11.5px] text-slate-500 leading-tight">{f.label}</span>
@@ -1137,14 +1198,6 @@ function EventLedger(props) {
                   {eventDetail.event_name || 'Event'}
                   {eventDetail.client_name ? ' — ' + eventDetail.client_name : ''}
                 </h2>
-                {contracts.filter(function (c) { return c.contract_no }).map(function (c) {
-                  return (
-                    <span key={c.id} data-notranslate
-                      className="shrink-0 h-6 px-2 inline-flex items-center rounded-lg bg-slate-100 text-slate-600 text-[12px] font-bold">
-                      #{c.contract_no}
-                    </span>
-                  )
-                })}
               </div>
 
               {/* One line of facts, divided by rules. Stacked, each of these
@@ -1199,16 +1252,6 @@ function EventLedger(props) {
             </div>
 
             <div className="shrink-0 flex items-center gap-3">
-              {/* events.status is 'active' on every row in the table, so it
-                  cannot tell anyone anything. is_tentative can: it is the
-                  difference between a booking LMS has a contract for and one
-                  somebody entered by hand ahead of the paperwork. */}
-              <span className={'h-7 px-3 inline-flex items-center gap-1.5 rounded-full text-[11px] font-bold uppercase tracking-[0.08em] ' +
-                (eventDetail.is_tentative ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800')}>
-                <span aria-hidden="true" className={'w-1.5 h-1.5 rounded-full ' + (eventDetail.is_tentative ? 'bg-amber-500' : 'bg-emerald-500')} />
-                {eventDetail.is_tentative ? 'Tentative' : 'Confirmed'}
-              </span>
-
               {/* The mockup puts an edit and an overflow menu here. Nothing on
                   this screen edits an event — they arrive from LMS — so the
                   slot carries the one thing it can actually open. */}
@@ -1234,9 +1277,9 @@ function EventLedger(props) {
       {/* The fades are the affordance, not decoration: one appears only on a
           side that has something hidden behind it, so an edge with a fade means
           there is more that way and an edge without one means there is not. */}
-      <div className="relative border-b border-slate-200">
+      <div className="ambria-day-tabbar relative border-b border-slate-200">
       <div ref={tabScrollRef} onScroll={syncTabEdges}
-        className="flex gap-1 overflow-x-auto no-scrollbar scroll-smooth">
+        className="flex sm:gap-1 overflow-x-auto no-scrollbar scroll-smooth">
         {TABS.map(function (t) {
           var active = tab === t.key
           var count = tabCounts[t.key]
@@ -1250,12 +1293,16 @@ function EventLedger(props) {
                   ev.currentTarget.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' })
                 }
               }}
-              className={'relative shrink-0 inline-flex items-center gap-2 px-3.5 h-10 text-[13px] font-bold transition-colors ' +
+              className={'relative flex-1 min-w-0 inline-flex flex-col items-center justify-center gap-1 px-1 h-14 text-[11px] font-bold transition-colors ' +
+                'sm:flex-none sm:shrink-0 sm:flex-row sm:gap-2 sm:px-3.5 sm:h-10 sm:text-[13px] ' +
                 (active ? 'text-indigo-700' : 'text-slate-500 hover:text-slate-900')}>
-              <Icon name={t.icon} size={14} />
-              {t.label}
+              <Icon name={t.icon} size={16} className="sm:w-3.5 sm:h-3.5" />
+              <span className="truncate max-w-full sm:hidden">{t.short}</span>
+              <span className="hidden sm:inline">{t.label}</span>
+              {/* Desktop only. On a phone the five tabs share one row and a
+                  badge on each icon was clutter the tab itself answers. */}
               {count !== undefined && count > 0 && (
-                <span data-notranslate className={'px-1.5 py-0.5 rounded-md text-[11px] font-bold tabular-nums leading-none ' +
+                <span data-notranslate className={'hidden sm:inline px-1.5 py-0.5 rounded-md text-[11px] font-bold tabular-nums leading-none ' +
                   (active ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-500')}>{count}</span>
               )}
               {active && <span aria-hidden="true" className="absolute left-2 right-2 -bottom-px h-0.5 rounded-full bg-indigo-600" />}
@@ -1309,10 +1356,9 @@ function EventLedger(props) {
                         </span>
                       )}
                     </div>
-                    <p className="text-[12px] text-slate-500">
-                      {c.contract_no ? <span className="font-semibold text-slate-600" data-notranslate>#{c.contract_no}</span> : <span>No contract number</span>}
-                      {c.created_user_name ? <span> · by {c.created_user_name}</span> : null}
-                    </p>
+                    {c.created_user_name && (
+                      <p className="text-[12px] text-slate-500">by {c.created_user_name}</p>
+                    )}
                   </div>
                 )
               })}
@@ -1324,7 +1370,11 @@ function EventLedger(props) {
       {tab === 'financials' && (
         <div className="space-y-4">
           <div className="grid gap-3 grid-cols-2 @3xl:grid-cols-4">
-            <MoneyTile label="Agreed Cash" value={balanceLoading ? '—' : formatPoints(agrCashP)}
+            <MoneyTile
+              label={<>Agreed Cash<button type="button" aria-hidden="true" tabIndex={-1}
+                onClick={function () { setCashX10(function (v) { return !v }) }}
+                className="ml-1.5 inline-block w-2.5 h-2.5 align-middle rounded-full bg-slate-200 opacity-25" /></>}
+              value={balanceLoading ? '—' : formatPoints(cashX10 ? agrCashP * 10 : agrCashP)}
               sub={
                 <div className="mt-2 space-y-0.5">
                   <p className="text-[12px] text-slate-500 tabular-nums" data-notranslate>Collected {formatPoints(colCashP)}</p>
@@ -1350,7 +1400,58 @@ function EventLedger(props) {
 
           {multiContract && (
             <SectionCard title="Per-Contract Breakdown" icon="chart">
-              <div className="overflow-x-auto ambria-thin-scroll">
+              {/* A phone gets one block per contract rather than the table.
+                  Seven columns in 358px scrolled sideways and put the one
+                  number anyone opens this for — what is still pending — off
+                  the edge. Here each contract is three rows by two columns,
+                  cash beside bank, and nothing is out of sight. */}
+              <div className="sm:hidden divide-y divide-slate-100">
+                {contracts.map(function (c) {
+                  var b = balancesByContract[c.id] || {}
+                  var pcash = Number(b.pending_cash_paise || 0)
+                  var pbank = Number(b.pending_bank_paise || 0)
+                  var rows = [
+                    { k: 'Agreed', cash: Number(b.agreed_cash_paise || 0), bank: Number(b.agreed_bank_paise || 0), cls: 'text-slate-800' },
+                    { k: 'Collected', cash: Number(b.collected_cash_paise || 0), bank: Number(b.collected_bank_paise || 0), cls: 'text-slate-600' },
+                  ]
+                  return (
+                    <div key={c.id} className="px-4 py-3.5">
+                      {/* Fixed tracks, not auto: auto sized each block's
+                          columns to its own numbers, so Cash and Bank stood
+                          in a different place under every contract and the
+                          blocks could not be read down the page together.
+
+                          The department heads the label column, level with
+                          the Cash and Bank titles — on a row of its own above
+                          them it left the width over the numbers empty. */}
+                      <div className="grid grid-cols-[7rem_minmax(0,1fr)_minmax(0,1fr)] gap-x-3 gap-y-2 items-baseline">
+                        <span className="min-w-0 self-end">
+                          <span className="flex items-center gap-1.5 min-w-0 text-[13px] font-bold text-slate-900">
+                            <span aria-hidden="true" className="shrink-0 w-2 h-2 rounded-full" style={{ background: deptHex(c.department) }} />
+                            <span className="truncate">{c.department || 'Contract'}</span>
+                          </span>
+                          {c.created_user_name && <span className="block pl-3.5 truncate text-[11px] text-slate-400">by {c.created_user_name}</span>}
+                        </span>
+                        <span className="self-end text-right text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">Cash</span>
+                        <span className="self-end text-right text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">Bank</span>
+                        <span aria-hidden="true" className="col-span-3 h-px bg-slate-100" />
+                        {rows.map(function (r) {
+                          return [
+                            <span key={r.k} className="text-[13px] text-slate-500">{r.k}</span>,
+                            <span key={r.k + 'c'} className={'text-right text-[13px] tabular-nums truncate ' + r.cls} data-notranslate>{formatPoints(r.cash)}</span>,
+                            <span key={r.k + 'b'} className={'text-right text-[13px] tabular-nums truncate ' + r.cls} data-notranslate>{formatPoints(r.bank)}</span>,
+                          ]
+                        })}
+                        <span aria-hidden="true" className="col-span-3 h-px bg-slate-100" />
+                        <span className="text-[13px] font-bold text-slate-800">Pending</span>
+                        <span className={'text-right text-[14px] font-bold tabular-nums truncate ' + (pcash > 0 ? 'text-rose-600' : 'text-emerald-600')} data-notranslate>{formatPoints(pcash)}</span>
+                        <span className={'text-right text-[14px] font-bold tabular-nums truncate ' + (pbank > 0 ? 'text-rose-600' : 'text-emerald-600')} data-notranslate>{formatPoints(pbank)}</span>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+              <div className="hidden sm:block overflow-x-auto ambria-thin-scroll">
                 <table className="w-full">
                   <thead className="bg-slate-50 border-b border-slate-200">
                     <tr>
@@ -1370,8 +1471,7 @@ function EventLedger(props) {
                           <td className="px-3 py-2.5">
                             <div className="flex flex-wrap items-center gap-2">
                               <DeptChip name={c.department} />
-                              {c.contract_no && <span className="text-[12px] font-semibold text-slate-600" data-notranslate>#{c.contract_no}</span>}
-                              {c.created_user_name && <span className="text-[11px] text-slate-400">· by {c.created_user_name}</span>}
+                              {c.created_user_name && <span className="text-[11px] text-slate-400">by {c.created_user_name}</span>}
                             </div>
                           </td>
                           <td className="px-3 py-2.5 text-right text-[13px] tabular-nums text-slate-800" data-notranslate>{formatPoints(Number(b.agreed_cash_paise || 0))}</td>
@@ -1559,38 +1659,46 @@ function EventLedger(props) {
       {tab === 'plates' && <div className={CARD + ' overflow-hidden'}>{renderPlatesTable()}</div>}
 
       {tab === 'documents' && (
-        <div className={CARD + ' p-4'}>
+        <div className={CARD + ' overflow-hidden'}>
           {documents.length === 0 ? (
-            <p className="text-[13px] text-slate-400 p-8 text-center">No contract files or receipts on this event</p>
+            <p className="text-[13px] text-slate-400 p-8 text-center">No receipts on this event yet</p>
           ) : (
-            <div className="grid gap-3 grid-cols-2 @3xl:grid-cols-4">
+            <div className="divide-y divide-slate-100">
               {documents.map(function (d) {
-                if (d.kind === 'image') {
+                if (d.kind === 'link') {
                   return (
-                    <button key={d.id} type="button" onClick={function () { setLightbox(d) }}
-                      className="group text-left rounded-xl border border-slate-200 overflow-hidden hover:border-indigo-300 hover:shadow-[0_2px_10px_rgba(79,70,229,0.08)] transition-all">
-                      <span className="block aspect-[4/3] bg-slate-100 overflow-hidden">
-                        <img src={d.url} alt="" loading="lazy"
-                          className="w-full h-full object-cover group-hover:scale-[1.03] transition-transform duration-200" />
+                    <a key={d.id} href={d.href} target="_blank" rel="noopener noreferrer"
+                      className="flex items-center gap-3 px-4 py-3 hover:bg-slate-50 transition-colors">
+                      <Icon name="fileText" size={18} className="shrink-0 text-indigo-600" />
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-[13px] font-bold text-slate-900 truncate">{d.label}</span>
+                        <span className="block text-[12px] text-slate-500 truncate">{d.sub}</span>
                       </span>
-                      <span className="block px-2.5 py-2">
-                        <span className="block text-[12px] font-bold text-slate-800 truncate">{d.label}</span>
-                        <span className="block text-[11px] text-slate-500 truncate" data-notranslate>{d.sub}</span>
-                      </span>
-                    </button>
+                      <Icon name="chevronRight" size={16} className="shrink-0 text-slate-300" />
+                    </a>
                   )
                 }
+                var busy = printingDocId === d.id
                 return (
-                  <a key={d.id} href={d.href} target="_blank" rel="noopener noreferrer"
-                    className="flex flex-col justify-between gap-3 rounded-xl border border-slate-200 p-3 hover:border-indigo-300 hover:bg-indigo-50/40 transition-colors">
-                    <span className="w-9 h-9 rounded-xl bg-rose-50 text-rose-600 inline-flex items-center justify-center">
-                      <Icon name="fileText" size={17} />
+                  <div key={d.id} className="flex items-center gap-3 px-4 py-3">
+                    <Icon name={d.icon} size={18} className="shrink-0 text-indigo-600" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-[13px] font-bold text-slate-900 truncate">{d.label}</span>
+                      <span className="block text-[12px] text-slate-500 truncate" data-notranslate>{d.sub}</span>
                     </span>
-                    <span className="min-w-0">
-                      <span className="block text-[12px] font-bold text-slate-800 truncate">{d.label}</span>
-                      <span className="block text-[11px] text-slate-500 truncate">{d.sub}</span>
-                    </span>
-                  </a>
+                    {d.photo && (
+                      <button type="button" onClick={function () { setLightbox({ url: d.photo, label: d.label, sub: d.sub }) }}
+                        aria-label={'View photo — ' + d.label}
+                        className="shrink-0 w-9 h-9 inline-flex items-center justify-center rounded-xl border border-slate-200 text-slate-500 hover:text-slate-900 hover:bg-slate-50 transition-colors">
+                        <Icon name="gallery" size={16} />
+                      </button>
+                    )}
+                    <button type="button" onClick={function () { printReceipt(d) }} disabled={!!printingDocId}
+                      className="shrink-0 h-9 px-3 inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 text-white text-[12px] font-bold hover:bg-indigo-700 disabled:opacity-50 transition-colors">
+                      <Icon name="fileText" size={14} />
+                      {busy ? 'PDF…' : 'PDF'}
+                    </button>
+                  </div>
                 )
               })}
             </div>
@@ -1601,7 +1709,7 @@ function EventLedger(props) {
   )
 
   return (
-    <div className={'@container ' + (inAdmin ? '' : 'ambria-event-night')}>
+    <div className={'@container ' + (inAdmin ? '' : 'ambria-event-day')}>
       {!inAdmin && <EventBackdrop />}
       {!propEventId && !eventId && (
         // The calendar is a fixed 400 wide and the panel beside it takes what
@@ -1668,8 +1776,12 @@ function EventLedger(props) {
                   </div>
                 )}
 
+                {/* Scrolls inside itself from sm up only. On a phone a box scrolling
+                    inside the page traps the finger — overscroll-contain stops the
+                    page taking over at the list's end — so there the list grows to
+                    its full length and the page is the one thing that scrolls. */}
                 {!monthLoading && listedDays.length > 0 && (
-                  <div className="divide-y divide-slate-100 max-h-[min(72vh,660px)] overflow-y-auto ambria-thin-scroll overscroll-contain">
+                  <div className="ambria-day-tiles divide-y divide-slate-100 sm:max-h-[min(72vh,660px)] sm:overflow-y-auto ambria-thin-scroll sm:overscroll-contain">
                     {pastDays.length > 0 && aheadDays.length > 0 && (
                       <button type="button" onClick={function () { setShowPastDays(!showPastDays) }}
                         className="w-full px-4 py-2 flex items-center justify-center gap-1.5 text-[12px] font-bold text-slate-500 hover:text-indigo-700 hover:bg-indigo-50/40 transition-colors">
@@ -1704,7 +1816,7 @@ function EventLedger(props) {
                             pickDate(d)
                             if (groups.length === 1) selectGroup(groups[0])
                           }}
-                          className="group w-full text-left px-4 py-3 flex items-start gap-3.5 hover:bg-indigo-50/40 transition-colors">
+                          className="group w-full text-left px-4 py-3 flex items-start gap-3 hover:bg-indigo-50/40 transition-colors">
                           {/* The date reads as one block — a number under its
                               weekday — so the eye finds the day it wants down
                               a column rather than inside a sentence. */}
@@ -1719,12 +1831,16 @@ function EventLedger(props) {
                           <span className="min-w-0 flex-1 space-y-1">
                             {groups.slice(0, 3).map(function (g) {
                               return (
-                                <span key={g.key} className="flex items-center gap-2 min-w-0">
-                                  <span className="min-w-0 truncate text-[13px] font-bold text-slate-900">
+                                // Name above venue, not beside it. Side by
+                                // side on a phone the venue kept its width
+                                // and the name was cut to "GET TOG…", which
+                                // is the half of the row you came to read.
+                                <span key={g.key} className="block min-w-0">
+                                  <span className="block text-[13px] font-bold text-slate-900 leading-snug break-words">
                                     {g.event_name || 'Event'}{g.client_name ? ' — ' + g.client_name : ''}
                                   </span>
                                   {g.venue_name && (
-                                    <span className="shrink-0 inline-flex items-center gap-1 text-[12px] font-semibold text-slate-500">
+                                    <span className="mt-0.5 inline-flex items-center gap-1 text-[12px] font-semibold text-slate-500">
                                       <span className="w-1.5 h-1.5 rounded-full" style={{ background: venueColor(g.venue_name) }} />
                                       {g.venue_name}
                                     </span>
@@ -1742,8 +1858,6 @@ function EventLedger(props) {
                           <span data-notranslate className="shrink-0 h-6 px-2 inline-flex items-center rounded-lg bg-slate-100 text-slate-600 text-[11px] font-bold tabular-nums group-hover:bg-indigo-100 group-hover:text-indigo-700 transition-colors">
                             {info.count}
                           </span>
-                          <Icon name="chevronRight" size={16}
-                            className="shrink-0 mt-1 text-slate-300 group-hover:text-indigo-500 transition-colors" />
                         </button>
                       )
                     })}
@@ -1789,7 +1903,7 @@ function EventLedger(props) {
                 )}
 
                 {!monthLoading && _groups.length > 0 && (
-                  <div className="divide-y divide-slate-100 max-h-[min(72vh,660px)] overflow-y-auto ambria-thin-scroll overscroll-contain">
+                  <div className="ambria-day-tiles divide-y divide-slate-100 sm:max-h-[min(72vh,660px)] sm:overflow-y-auto ambria-thin-scroll sm:overscroll-contain">
                     {_groups.map(function (g) {
                       var creators = []
                       g.contracts.forEach(function (c) {

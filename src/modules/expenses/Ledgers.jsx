@@ -322,10 +322,13 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
   // rebuilt on every render and on every refresh, so a held object would be a
   // stale copy of a row that may no longer exist.
   var [pdfDeptKey, setPdfDeptKey] = useState(null)
-  // Ticked expense types within that department. Empty means the whole
-  // department, which is the same answer as ticking all of them and one fewer
-  // thing to do — so there is no "select all" to press before exporting.
-  var [pdfTypeKeys, setPdfTypeKeys] = useState([])
+  // Ticked sub-types within that department, as 'typeKey|subKey' (see
+  // pdfKeysOf). A type is ticked when every one of its sub-types is. Empty
+  // means the whole department, which is the same answer as ticking all of
+  // them and one fewer thing to do — so there is no "select all" to press.
+  var [pdfPicks, setPdfPicks] = useState([])
+  // Expense types opened in the sheet to show their sub-types.
+  var [pdfOpenTypes, setPdfOpenTypes] = useState({})
   // The three dropdowns and the toggle go behind a button. Out on the bar they
   // were four controls reading "All …" taking most of the row to say that
   // nothing was narrowed — the same trade the vendor and inventory ledgers
@@ -1013,36 +1016,65 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
   // second answer to a question nobody was asking at the moment of pressing —
   // by then the scope is chosen and what is wanted is the entries in it.
   //
+  // The sheet ticks sub-types. A type with nothing under it (or all of it
+  // filtered out) still needs something to tick, so it gets one '*' key that
+  // stands for the whole type.
+  function pdfSubKey(t, s) { return t.typeKey + '|' + (s.subTypeId != null ? String(s.subTypeId) : '__no_sub__') }
+  function pdfKeysOf(t) {
+    return t.subRows.length ? t.subRows.map(function (s) { return pdfSubKey(t, s) }) : [t.typeKey + '|*']
+  }
+
   // Three scopes reach here: no department is the whole sheet, a department
   // with nothing ticked is all of it, and a department with ticks is those
-  // expense types.
-  async function runLedgerPdf(g, typeKeys) {
+  // expense types and sub-types.
+  async function runLedgerPdf(g, keys) {
     if (pdfBusy) return
-    var picked = (g && typeKeys && typeKeys.length)
-      ? g.typeGroups.filter(function (x) { return typeKeys.indexOf(x.typeKey) !== -1 })
-      : null
-
     if (!g) return exportListPDF()
-    // Nothing ticked, or one ticked, is a scope exportScopedPDF already takes.
-    // It keeps doing that job rather than being reimplemented for a count of
-    // one.
-    if (!picked) return exportScopedPDF(g.deptId)
-    if (picked.length === 1) return exportScopedPDF(g.deptId, picked[0].typeId)
+
+    // A type with every sub-type ticked goes whole, the same as ticking the
+    // type did before sub-types could be ticked. Only a part-ticked type is
+    // narrowed to its sub-types.
+    var whole = [], parts = []
+    if (keys && keys.length) {
+      g.typeGroups.forEach(function (t) {
+        var own = pdfKeysOf(t)
+        var on = own.filter(function (k) { return keys.indexOf(k) !== -1 })
+        if (on.length === 0) return
+        if (on.length === own.length) { whole.push(t); return }
+        t.subRows.forEach(function (s) { if (keys.indexOf(pdfSubKey(t, s)) !== -1) parts.push({ t: t, s: s }) })
+      })
+    }
+
+    // Nothing ticked, one type or one sub-type is a scope exportScopedPDF
+    // already takes. It keeps doing that job rather than being reimplemented
+    // for a count of one.
+    if (!whole.length && !parts.length) return exportScopedPDF(g.deptId)
+    if (whole.length === 1 && !parts.length) return exportScopedPDF(g.deptId, whole[0].typeId)
+    if (!whole.length && parts.length === 1) return exportScopedPDF(g.deptId, parts[0].t.typeId, parts[0].s.subTypeId)
 
     setPdfBusy(true)
     try {
       var dName = g.deptId ? (deptMap[g.deptId] || 'Unassigned') : 'Unallocated'
-      var label = dName + ' (' + picked.length + ' expense types)'
+      var label = dName + ' (' + (parts.length
+        ? (whole.length + parts.length) + ' selections'
+        : whole.length + ' expense types') + ')'
 
-      // Several types at once. v_ledger's type filter is an equality, and the
-      // one value it cannot express is Untyped — null is not something `in`
-      // can match. So this asks for the department once and keeps the types it
+      // Several at once. v_ledger's filters are equalities, and the one value
+      // they cannot express is null — Untyped, or no sub-type — which `in`
+      // cannot match. So this asks for the department once and keeps what it
       // wants, which is also one request instead of one per tick.
       var ctx = await _pdfSetup('Expense Ledger — ' + label)
-      var wanted = {}
-      picked.forEach(function (x) { wanted[x.typeId != null ? String(x.typeId) : '__u'] = true })
+      var wantedType = {}, wantedSub = {}
+      whole.forEach(function (t) { wantedType[t.typeId != null ? String(t.typeId) : '__u'] = true })
+      parts.forEach(function (p) {
+        wantedSub[(p.t.typeId != null ? String(p.t.typeId) : '__u') + '|' + (p.s.subTypeId != null ? String(p.s.subTypeId) : '__u')] = true
+      })
       var allocs = (await fetchAllocDetail({ deptId: g.deptId != null ? g.deptId : null }))
-        .filter(function (a) { return wanted[a.expense_type_id != null ? String(a.expense_type_id) : '__u'] })
+        .filter(function (a) {
+          var tk = a.expense_type_id != null ? String(a.expense_type_id) : '__u'
+          var sk = a.expense_sub_type_id != null ? String(a.expense_sub_type_id) : '__u'
+          return wantedType[tk] || wantedSub[tk + '|' + sk]
+        })
 
       if (allocs.length === 0) {
         ctx.doc.setFontSize(10); ctx.doc.text('No allocations in this scope for the current filter.', 14, ctx.startY + 6)
@@ -1077,7 +1109,7 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
   }
 
   function openPdfSheet() {
-    setPdfDeptKey(null); setPdfTypeKeys([]); setPdfSheet(true)
+    setPdfDeptKey(null); setPdfPicks([]); setPdfOpenTypes({}); setPdfSheet(true)
   }
 
   async function exportListPDF() {
@@ -1588,18 +1620,18 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
           </p>
         </div>
         <div className="shrink-0 flex items-center gap-2">
-        {/* Both of these do the same harmless thing, so they look the same.
-              Green and red on a pair of downloads read as a verdict on the file,
-              when the only difference is the format the word already names. */}
-          <button type="button" onClick={exportListCSV} disabled={!deptGroups.length}
-            className="h-11 px-4 inline-flex items-center gap-2 text-[12.5px] font-bold text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 hover:border-slate-300 disabled:opacity-40 transition-all duration-150">
-            <Icon name="download" size={14} className="text-slate-400" />
-            CSV
-          </button>
-          <button type="button" onClick={openPdfSheet} disabled={!visibleGroups.length || pdfBusy}
-            className="h-11 px-4 inline-flex items-center gap-2 text-[12.5px] font-bold text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 hover:border-slate-300 disabled:opacity-40 transition-all duration-150">
-            <Icon name={pdfBusy ? 'refresh' : 'fileText'} size={14} className="text-slate-400" />
-            {pdfBusy ? 'Generating…' : 'PDF'}
+        {/* Both of these do the same harmless thing, so they look the same.
+              Green and red on a pair of downloads read as a verdict on the file,
+              when the only difference is the format the word already names. */}
+          <button type="button" onClick={exportListCSV} disabled={!deptGroups.length}
+            className="h-11 px-4 inline-flex items-center gap-2 text-[12.5px] font-bold text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 hover:border-slate-300 disabled:opacity-40 transition-all duration-150">
+            <Icon name="download" size={14} className="text-slate-400" />
+            CSV
+          </button>
+          <button type="button" onClick={openPdfSheet} disabled={!visibleGroups.length || pdfBusy}
+            className="h-11 px-4 inline-flex items-center gap-2 text-[12.5px] font-bold text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 hover:border-slate-300 disabled:opacity-40 transition-all duration-150">
+            <Icon name={pdfBusy ? 'refresh' : 'fileText'} size={14} className="text-slate-400" />
+            {pdfBusy ? 'Generating…' : 'PDF'}
           </button>
         </div>
       </div>
@@ -1809,79 +1841,79 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
               )}
             </div>
             <div className="flex flex-wrap items-center gap-2.5">
-          {/* A native select cannot hold a glyph, so the glyph is placed over
-              it and the text is indented past it. appearance-none takes the
-              platform arrow with it, which is why one is drawn on the right —
-              the two of them at once was a chevron beside a chevron. */}
-          <div className="relative flex-1 min-w-[150px]">
-            <span aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
-              <Icon name="users" size={15} />
-            </span>
-            <select value={userFilter} onChange={function (e) { setUserFilter(e.target.value) }}
-              aria-label="Filter by user"
-              className={SELECT_FIELD} style={{ fontSize: '16px' }}>
-              <option value="">All users</option>
-              {users.map(function (u) { return <option key={u.id} value={u.id}>{u.name}</option> })}
-            </select>
-            <span aria-hidden="true" className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
-              <Icon name="chevronDown" size={14} />
-            </span>
-          </div>
-          {/* A native select cannot hold a glyph, so the glyph is placed over
-              it and the text is indented past it. appearance-none takes the
-              platform arrow with it, which is why one is drawn on the right —
-              the two of them at once was a chevron beside a chevron. */}
-          <div className="relative flex-1 min-w-[150px]">
-            <span aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
-              <Icon name="mapPin" size={15} />
-            </span>
-            <select value={venueFilter} onChange={function (e) { setVenueFilter(e.target.value) }}
-              aria-label="Filter by venue"
-              className={SELECT_FIELD} style={{ fontSize: '16px' }}>
-              <option value="">All venues</option>
-              {venues.map(function (v) { return <option key={v.id} value={v.id}>{v.code ? (v.code + ' — ' + v.name) : v.name}</option> })}
-            </select>
-            <span aria-hidden="true" className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
-              <Icon name="chevronDown" size={14} />
-            </span>
-          </div>
-          {/* A native select cannot hold a glyph, so the glyph is placed over
-              it and the text is indented past it. appearance-none takes the
-              platform arrow with it, which is why one is drawn on the right —
-              the two of them at once was a chevron beside a chevron. */}
-          <div className="relative flex-1 min-w-[150px]">
-            <span aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
-              <Icon name="filter" size={15} />
-            </span>
-            <select value={statusFilter} onChange={function (e) { setStatusFilter(e.target.value) }}
-              aria-label="Filter by status"
-              className={SELECT_FIELD} style={{ fontSize: '16px' }}>
-              <option value="">All status</option>
-              <option value="recorded">Recorded</option>
-              <option value="flagged">Resubmit</option>
-              <option value="acknowledged">Acknowledged</option>
-              <option value="deducted">Deducted</option>
-            </select>
-            <span aria-hidden="true" className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
-              <Icon name="chevronDown" size={14} />
-            </span>
-          </div>
-          <button type="button" onClick={function () { setPendingOnly(!pendingOnly) }} aria-pressed={pendingOnly}
-            className={"h-11 px-3.5 inline-flex items-center gap-2 text-[12.5px] font-bold rounded-xl border transition-all duration-150 " +
-              (pendingOnly
-                ? "bg-indigo-50 border-indigo-300 text-indigo-800"
-                : "bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:text-slate-900")}>
-            {/* A switch, so its state is visible without having to remember
-                what the unpressed colour looked like.
-
-                Indigo, not amber. Amber is what this page says about money that
-                is pending — the figure, the column, the card. On a filter it was
-                saying the same colour about something else entirely: that the
-                filter is on, which everything else here says in indigo. */}
-            <span aria-hidden="true" className={"w-8 h-[18px] rounded-full p-0.5 transition-colors " + (pendingOnly ? "bg-indigo-600" : "bg-slate-300")}>
-              <span className={"block w-[14px] h-[14px] rounded-full bg-white transition-transform " + (pendingOnly ? "translate-x-[14px]" : "")} />
-            </span>
-            Pending only
+          {/* A native select cannot hold a glyph, so the glyph is placed over
+              it and the text is indented past it. appearance-none takes the
+              platform arrow with it, which is why one is drawn on the right —
+              the two of them at once was a chevron beside a chevron. */}
+          <div className="relative flex-1 min-w-[150px]">
+            <span aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+              <Icon name="users" size={15} />
+            </span>
+            <select value={userFilter} onChange={function (e) { setUserFilter(e.target.value) }}
+              aria-label="Filter by user"
+              className={SELECT_FIELD} style={{ fontSize: '16px' }}>
+              <option value="">All users</option>
+              {users.map(function (u) { return <option key={u.id} value={u.id}>{u.name}</option> })}
+            </select>
+            <span aria-hidden="true" className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
+              <Icon name="chevronDown" size={14} />
+            </span>
+          </div>
+          {/* A native select cannot hold a glyph, so the glyph is placed over
+              it and the text is indented past it. appearance-none takes the
+              platform arrow with it, which is why one is drawn on the right —
+              the two of them at once was a chevron beside a chevron. */}
+          <div className="relative flex-1 min-w-[150px]">
+            <span aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+              <Icon name="mapPin" size={15} />
+            </span>
+            <select value={venueFilter} onChange={function (e) { setVenueFilter(e.target.value) }}
+              aria-label="Filter by venue"
+              className={SELECT_FIELD} style={{ fontSize: '16px' }}>
+              <option value="">All venues</option>
+              {venues.map(function (v) { return <option key={v.id} value={v.id}>{v.code ? (v.code + ' — ' + v.name) : v.name}</option> })}
+            </select>
+            <span aria-hidden="true" className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
+              <Icon name="chevronDown" size={14} />
+            </span>
+          </div>
+          {/* A native select cannot hold a glyph, so the glyph is placed over
+              it and the text is indented past it. appearance-none takes the
+              platform arrow with it, which is why one is drawn on the right —
+              the two of them at once was a chevron beside a chevron. */}
+          <div className="relative flex-1 min-w-[150px]">
+            <span aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+              <Icon name="filter" size={15} />
+            </span>
+            <select value={statusFilter} onChange={function (e) { setStatusFilter(e.target.value) }}
+              aria-label="Filter by status"
+              className={SELECT_FIELD} style={{ fontSize: '16px' }}>
+              <option value="">All status</option>
+              <option value="recorded">Recorded</option>
+              <option value="flagged">Resubmit</option>
+              <option value="acknowledged">Acknowledged</option>
+              <option value="deducted">Deducted</option>
+            </select>
+            <span aria-hidden="true" className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
+              <Icon name="chevronDown" size={14} />
+            </span>
+          </div>
+          <button type="button" onClick={function () { setPendingOnly(!pendingOnly) }} aria-pressed={pendingOnly}
+            className={"h-11 px-3.5 inline-flex items-center gap-2 text-[12.5px] font-bold rounded-xl border transition-all duration-150 " +
+              (pendingOnly
+                ? "bg-indigo-50 border-indigo-300 text-indigo-800"
+                : "bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:text-slate-900")}>
+            {/* A switch, so its state is visible without having to remember
+                what the unpressed colour looked like.
+
+                Indigo, not amber. Amber is what this page says about money that
+                is pending — the figure, the column, the card. On a filter it was
+                saying the same colour about something else entirely: that the
+                filter is on, which everything else here says in indigo. */}
+            <span aria-hidden="true" className={"w-8 h-[18px] rounded-full p-0.5 transition-colors " + (pendingOnly ? "bg-indigo-600" : "bg-slate-300")}>
+              <span className={"block w-[14px] h-[14px] rounded-full bg-white transition-transform " + (pendingOnly ? "translate-x-[14px]" : "")} />
+            </span>
+            Pending only
           </button>
             </div>
           </div>
@@ -2123,7 +2155,7 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
                         var label = c.deptId ? (deptMap[c.deptId] || 'Unassigned') : 'Unallocated'
                         return (
                           <button key={c.key} type="button" disabled={pdfBusy}
-                            onClick={function () { setPdfDeptKey(c.key); setPdfTypeKeys([]) }}
+                            onClick={function () { setPdfDeptKey(c.key); setPdfPicks([]) }}
                             className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-white border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/40 disabled:opacity-40 transition-all duration-150 text-left">
                             <span className="min-w-0 flex-1 text-[12.5px] font-semibold text-slate-800 truncate">{label}</span>
                             <span className="shrink-0 text-[11.5px] text-slate-400 tabular-nums" data-notranslate>{formatPoints(c.total)}</span>
@@ -2140,13 +2172,18 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
 
           // ── One department ────────────────────────────────────────────
           var dName = g.deptId ? (deptMap[g.deptId] || 'Unassigned') : 'Unallocated'
-          var pickedCount = g.typeGroups.filter(function (x) { return pdfTypeKeys.indexOf(x.typeKey) !== -1 }).length
+          // A whole type counts once; a part-ticked one counts its sub-types.
+          var pickedCount = g.typeGroups.reduce(function (n, x) {
+            var own = pdfKeysOf(x)
+            var on = own.filter(function (k) { return pdfPicks.indexOf(k) !== -1 }).length
+            return n + (on === own.length ? 1 : on)
+          }, 0)
 
           return (
             <div>
               <div className="flex items-center gap-2 mb-3">
                 <button type="button" aria-label="Back"
-                  onClick={function () { setPdfDeptKey(null); setPdfTypeKeys([]) }}
+                  onClick={function () { setPdfDeptKey(null); setPdfPicks([]) }}
                   className="shrink-0 w-8 h-8 inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 transition-colors">
                   <Icon name="chevronRight" size={14} className="rotate-180" />
                 </button>
@@ -2169,7 +2206,7 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
                   <span className="min-w-0 truncate">Complete department</span>
                 </button>
                 <button type="button" disabled={pdfBusy || pickedCount === 0}
-                  onClick={function () { setPdfSheet(false); runLedgerPdf(g, pdfTypeKeys) }}
+                  onClick={function () { setPdfSheet(false); runLedgerPdf(g, pdfPicks) }}
                   className={'w-full flex items-center justify-center gap-2 h-11 px-3 rounded-xl font-bold text-[13px] border transition-all duration-150 ' +
                     (pickedCount === 0
                       ? 'bg-slate-50 text-slate-400 border-slate-200 cursor-not-allowed'
@@ -2177,14 +2214,14 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
                   <Icon name="check" size={15} className="shrink-0" />
                   <span className="min-w-0 truncate">
                     {pickedCount === 0
-                      ? 'Selected types'
-                      : 'Selected types (' + pickedCount + ')'}
+                      ? 'Selected'
+                      : 'Selected (' + pickedCount + ')'}
                   </span>
                 </button>
                 <p className="text-[11.5px] text-slate-500 leading-snug">
                   {pickedCount === 0
-                    ? 'Tick one or more expense types below to export just those.'
-                    : 'Only the ticked expense types will be in the file.'}
+                    ? 'Tick expense types below, or open one to tick its sub-types.'
+                    : 'Only what is ticked will be in the file.'}
                 </p>
               </div>
 
@@ -2193,7 +2230,7 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
                   <div className="flex items-center justify-between gap-3 mb-2">
                     <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500">Expense types</p>
                     {pickedCount > 0 && (
-                      <button type="button" onClick={function () { setPdfTypeKeys([]) }}
+                      <button type="button" onClick={function () { setPdfPicks([]) }}
                         className="text-[11.5px] font-bold text-rose-600 hover:text-rose-700 transition-colors">
                         Clear
                       </button>
@@ -2201,25 +2238,73 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
                   </div>
                   <div className="space-y-1.5">
                     {g.typeGroups.map(function (c) {
-                      var on = pdfTypeKeys.indexOf(c.typeKey) !== -1
+                      var own = pdfKeysOf(c)
+                      var onCount = own.filter(function (k) { return pdfPicks.indexOf(k) !== -1 }).length
+                      var on = onCount === own.length
+                      var some = onCount > 0 && !on
                       var label = c.typeId ? (typeMap[c.typeId] || 'Untyped') : 'Untyped'
+                      // One sub-type is the type by another name, so there is
+                      // nothing to open.
+                      var hasSubs = c.subRows.length > 1
+                      var open = hasSubs && !!pdfOpenTypes[c.typeKey]
                       return (
-                        <button key={c.typeKey} type="button" disabled={pdfBusy}
-                          aria-pressed={on}
-                          onClick={function () {
-                            setPdfTypeKeys(on
-                              ? pdfTypeKeys.filter(function (k) { return k !== c.typeKey })
-                              : pdfTypeKeys.concat([c.typeKey]))
-                          }}
-                          className={'w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl border transition-all duration-150 text-left disabled:opacity-40 ' +
-                            (on ? 'bg-indigo-50 border-indigo-300' : 'bg-white border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/40')}>
-                          <span className={'shrink-0 w-[18px] h-[18px] rounded-[6px] border inline-flex items-center justify-center ' +
-                            (on ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white border-slate-300 text-transparent')}>
-                            <Icon name="check" size={12} />
-                          </span>
-                          <span className="min-w-0 flex-1 text-[12.5px] font-semibold text-slate-800 truncate">{label}</span>
-                          <span className="shrink-0 text-[11.5px] text-slate-400 tabular-nums" data-notranslate>{formatPoints(c.total)}</span>
-                        </button>
+                        <div key={c.typeKey}>
+                          <div className={'flex items-stretch rounded-xl border transition-all duration-150 ' +
+                            (on || some ? 'bg-indigo-50 border-indigo-300' : 'bg-white border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/40')}>
+                            <button type="button" disabled={pdfBusy}
+                              aria-pressed={on ? true : (some ? 'mixed' : false)}
+                              onClick={function () {
+                                // Ticking the type ticks all of it; a
+                                // part-ticked type fills in rather than empties.
+                                var rest = pdfPicks.filter(function (k) { return own.indexOf(k) === -1 })
+                                setPdfPicks(on ? rest : rest.concat(own))
+                              }}
+                              className="min-w-0 flex-1 flex items-center gap-2.5 px-3 py-2.5 text-left disabled:opacity-40">
+                              <span className={'shrink-0 w-[18px] h-[18px] rounded-[6px] border inline-flex items-center justify-center ' +
+                                (on || some ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white border-slate-300 text-transparent')}>
+                                <Icon name={some ? 'minus' : 'check'} size={12} />
+                              </span>
+                              <span className="min-w-0 flex-1 text-[12.5px] font-semibold text-slate-800 truncate">
+                                {label}
+                                {some && <span className="ml-1.5 text-[11px] font-medium text-indigo-600" data-notranslate>{onCount}/{own.length}</span>}
+                              </span>
+                              <span className="shrink-0 text-[11.5px] text-slate-400 tabular-nums" data-notranslate>{formatPoints(c.total)}</span>
+                            </button>
+                            {hasSubs && (
+                              <button type="button" aria-label={open ? 'Hide sub-types' : 'Show sub-types'} aria-expanded={open}
+                                onClick={function () { setPdfOpenTypes(function (p) { return Object.assign({}, p, { [c.typeKey]: !p[c.typeKey] }) }) }}
+                                className="shrink-0 w-10 inline-flex items-center justify-center border-l border-slate-200 text-slate-400 hover:text-indigo-600 transition-colors">
+                                <Icon name="chevronDown" size={14} className={'transition-transform duration-150 ' + (open ? 'rotate-180' : '')} />
+                              </button>
+                            )}
+                          </div>
+                          {open && (
+                            <div className="mt-1 ml-5 pl-2.5 border-l border-slate-200 space-y-1">
+                              {c.subRows.map(function (s) {
+                                var k = pdfSubKey(c, s)
+                                var sOn = pdfPicks.indexOf(k) !== -1
+                                var sLabel = s.subTypeId != null ? (subTypeMap[s.subTypeId] || '—') : 'No sub-type'
+                                return (
+                                  <button key={k} type="button" disabled={pdfBusy} aria-pressed={sOn}
+                                    onClick={function () {
+                                      setPdfPicks(sOn
+                                        ? pdfPicks.filter(function (x) { return x !== k })
+                                        : pdfPicks.concat([k]))
+                                    }}
+                                    className={'w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg border transition-all duration-150 text-left disabled:opacity-40 ' +
+                                      (sOn ? 'bg-indigo-50 border-indigo-300' : 'bg-white border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/40')}>
+                                    <span className={'shrink-0 w-4 h-4 rounded-[5px] border inline-flex items-center justify-center ' +
+                                      (sOn ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white border-slate-300 text-transparent')}>
+                                      <Icon name="check" size={11} />
+                                    </span>
+                                    <span className="min-w-0 flex-1 text-[12px] font-medium text-slate-700 truncate">{sLabel}</span>
+                                    <span className="shrink-0 text-[11px] text-slate-400 tabular-nums" data-notranslate>{formatPoints(s.total)}</span>
+                                  </button>
+                                )
+                              })}
+                            </div>
+                          )}
+                        </div>
                       )
                     })}
                   </div>

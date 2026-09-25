@@ -76,7 +76,17 @@ function StatTile({ label, value, sub, accent, onClick }) {
 }
 
 function Expenses({ profile, masterMode, inAdmin, deepLinkExpense, onDeepLinkHandled }) {
-  var [view, setView] = useState('list') // list | form | detail | approve
+  // list | form | detail | approve | all
+  //
+  // All is where anyone who has the tab lands. That is the same test the tab
+  // row itself makes further down — admin or auditor, finance approval being
+  // part of admin — worked out here because the permission flags are declared
+  // after this state. Everyone else has no tabs at all and starts on their own.
+  var [view, setView] = useState(function () {
+    var seesAll = profile?.role === 'admin' || profile?.role === 'auditor' ||
+      hasPerm(profile?.permsNew, 'finance.expenses.approve')
+    return seesAll ? 'all' : 'list'
+  })
   var [myExpenses, setMyExpenses] = useState([])
   var [approvalExpenses, setApprovalExpenses] = useState([])
   var [myHasMore, setMyHasMore] = useState(false)
