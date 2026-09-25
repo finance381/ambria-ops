@@ -3567,9 +3567,12 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             <div className="flex gap-2">
               <button onClick={function () { setBulkMode(false); setBulkSelected({}); setBulkAmount(''); setBulkDesc('') }}
                 className="flex-1 py-2.5 text-sm text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors font-medium">Cancel</button>
+              {/* The same button as the single Issue: the indigo gradient and
+                  its glow when it can go, flat grey when it cannot — so one
+                  action looks like one action in both places. */}
               <button onClick={runBulkIssue}
                 disabled={bulkSaving || !bulkAmount || Number(bulkAmount) <= 0 || Object.values(bulkSelected).filter(Boolean).length === 0}
-                className="flex-1 py-2.5 text-sm text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors font-medium">
+                className="flex-1 h-12 inline-flex items-center justify-center rounded-xl text-[14px] font-bold text-white transition-all bg-gradient-to-b from-indigo-500 to-indigo-600 shadow-[0_2px_8px_rgba(79,70,229,0.30)] hover:from-indigo-600 hover:to-indigo-700 active:scale-[0.98] disabled:from-slate-300 disabled:to-slate-300 disabled:shadow-none disabled:cursor-not-allowed disabled:active:scale-100">
                 {bulkSaving ? 'Issuing...' : 'Issue to ' + Object.values(bulkSelected).filter(Boolean).length + ' users'}
               </button>
             </div>
