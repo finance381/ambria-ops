@@ -798,15 +798,20 @@ function EventLedger(props) {
           entirely and becomes the block you read first; the facts that used to
           be stacked sit on one line divided by rules, which is what a rule is
           for. */}
+      {/* Two columns from sm, one below it. A 92px rail beside the text is a
+          fifth of a 390px screen, and what was left could not hold the event's
+          name — "GET TOGETHER — virender" broke across three lines and every
+          fact wrapped inside itself. On a phone the date becomes a strip along
+          the top instead, and the text gets the whole width. */}
       <div className={CARD + ' overflow-hidden'}>
-        <div className="flex items-stretch">
+        <div className="flex flex-col sm:flex-row sm:items-stretch">
           {(function () {
             var raw = eventDetail.function_date || eventDetail.contract_date
             var d = raw ? new Date(String(raw).slice(0, 10) + 'T00:00:00') : null
             if (!d || isNaN(d)) return null
             return (
-              <div className="shrink-0 w-[92px] flex flex-col items-center justify-center gap-0.5 bg-slate-50 border-r border-slate-200 px-3 py-4">
-                <p data-notranslate className="font-display text-[30px] font-bold text-slate-900 leading-none tracking-[-0.02em] tabular-nums">
+              <div className="shrink-0 w-full sm:w-[92px] flex sm:flex-col items-center sm:justify-center gap-2 sm:gap-0.5 bg-slate-50 border-b sm:border-b-0 sm:border-r border-slate-200 px-4 py-2.5 sm:px-3 sm:py-4">
+                <p data-notranslate className="font-display text-[22px] sm:text-[30px] font-bold text-slate-900 leading-none tracking-[-0.02em] tabular-nums">
                   {d.getDate()}
                 </p>
                 <p data-notranslate className="text-[12px] font-bold uppercase tracking-[0.08em] text-indigo-600">
@@ -820,7 +825,7 @@ function EventLedger(props) {
           })()}
 
           <div className="min-w-0 flex-1 flex flex-wrap items-start justify-between gap-x-4 gap-y-3 px-4 py-4 @3xl:px-5">
-            <div className="min-w-0 flex-1 space-y-2">
+            <div className="min-w-0 w-full sm:w-auto sm:flex-1 space-y-2">
               <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
                 <h2 className="min-w-0 font-display text-[21px] font-bold text-slate-900 leading-tight tracking-[-0.015em]">
                   {eventDetail.event_name || 'Event'}
@@ -852,12 +857,15 @@ function EventLedger(props) {
                 if (eventDetail.created_user_name) facts.push({ k: 'by', icon: 'user', text: eventDetail.created_user_name })
                 if (facts.length === 0) return null
                 return (
-                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 sm:gap-y-1.5">
                     {facts.map(function (f, i) {
                       return (
                         <span key={f.k} className="flex items-center gap-3">
-                          {i > 0 && <span aria-hidden="true" className="w-px h-4 bg-slate-200" />}
-                          <span className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-slate-600">
+                          {i > 0 && <span aria-hidden="true" className="hidden sm:block w-px h-4 bg-slate-200" />}
+                          {/* whitespace-nowrap: the row may wrap between facts,
+                              but a venue called "Ambria Restro" breaking into
+                              "Ambria" and "Restro" reads as two facts. */}
+                          <span className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-slate-600 whitespace-nowrap">
                             <Icon name={f.icon} size={14} className="shrink-0 text-slate-400" />
                             <span>{f.text}</span>
                           </span>
@@ -884,7 +892,7 @@ function EventLedger(props) {
               </div>
             </div>
 
-            <div className="shrink-0 flex items-center gap-3">
+            <div className="shrink-0 w-full sm:w-auto flex items-center gap-3 justify-end sm:justify-start">
               {/* events.status is 'active' on every row in the table, so it
                   cannot tell anyone anything. is_tentative can: it is the
                   difference between a booking LMS has a contract for and one
