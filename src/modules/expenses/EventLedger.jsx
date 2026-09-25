@@ -947,18 +947,50 @@ function EventLedger(props) {
           {eventDetail.client_name ? ' — ' + eventDetail.client_name : ''}
         </h2>
 
-        {contracts.filter(function (c) { return c.contract_no }).length > 0 && (
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            {contracts.filter(function (c) { return c.contract_no }).map(function (c) {
-              return (
-                <span key={c.id} data-notranslate
-                  className="h-6 px-2 inline-flex items-center rounded-lg bg-slate-100 text-slate-600 text-[12px] font-bold">
-                  #{c.contract_no}
-                </span>
-              )
-            })}
-          </div>
-        )}
+        {/* One row under the name: what this event is filed as, and the one
+            thing on the card you can open.
+
+            These were two rows — the number here and the department with the
+            PDF at the foot — with the facts between them. The number and the
+            department are the same kind of thing, a label this booking carries,
+            so they belong beside each other; and the PDF sitting at the end of
+            the card was as far from the contract number it opens as the layout
+            allowed. */}
+        {(function () {
+          var numbered = contracts.filter(function (c) { return c.contract_no })
+          var depts = contracts.filter(function (c) { return c.department })
+          var withPdf = contracts.filter(function (c) { return c.pdf_link })[0]
+          if (numbered.length === 0 && depts.length === 0 && !withPdf) return null
+          return (
+            <div className="mt-2.5 flex items-center justify-between gap-3">
+              <div className="min-w-0 flex flex-wrap items-center gap-1.5">
+                {numbered.map(function (c) {
+                  return (
+                    <span key={'n' + c.id} data-notranslate
+                      className="h-7 px-2.5 inline-flex items-center rounded-lg bg-slate-100 text-slate-600 text-[12px] font-bold">
+                      #{c.contract_no}
+                    </span>
+                  )
+                })}
+                {depts.map(function (c) {
+                  return (
+                    <span key={'d' + c.id}
+                      className={'h-7 px-3 inline-flex items-center rounded-full border text-[12px] font-bold ' + deptCls(c.department)}>
+                      {c.department}
+                    </span>
+                  )
+                })}
+              </div>
+              {withPdf && (
+                <a href={withPdf.pdf_link} target="_blank" rel="noopener noreferrer"
+                  title="Open the LMS contract PDF" aria-label="Open the LMS contract PDF"
+                  className="shrink-0 w-9 h-9 inline-flex items-center justify-center rounded-xl border border-slate-200 text-slate-500 active:bg-slate-50 transition-colors">
+                  <Icon name="fileText" size={16} className="block" />
+                </a>
+              )}
+            </div>
+          )
+        })()}
 
         {(function () {
           var facts = []
@@ -995,32 +1027,6 @@ function EventLedger(props) {
           )
         })()}
 
-        {(function () {
-          var depts = contracts.filter(function (c) { return c.department })
-          var withPdf = contracts.filter(function (c) { return c.pdf_link })[0]
-          if (depts.length === 0 && !withPdf) return null
-          return (
-            <div className="mt-4 flex items-center justify-between gap-3">
-              <div className="min-w-0 flex flex-wrap items-center gap-1.5">
-                {depts.map(function (c) {
-                  return (
-                    <span key={c.id}
-                      className={'h-7 px-3 inline-flex items-center rounded-full border text-[12px] font-bold ' + deptCls(c.department)}>
-                      {c.department}
-                    </span>
-                  )
-                })}
-              </div>
-              {withPdf && (
-                <a href={withPdf.pdf_link} target="_blank" rel="noopener noreferrer"
-                  title="Open the LMS contract PDF" aria-label="Open the LMS contract PDF"
-                  className="shrink-0 w-10 h-10 inline-flex items-center justify-center rounded-xl border border-slate-200 text-slate-500 active:bg-slate-50 transition-colors">
-                  <Icon name="fileText" size={17} className="block" />
-                </a>
-              )}
-            </div>
-          )
-        })()}
       </div>
 
       <div className={CARD + ' hidden sm:block overflow-hidden'}>
