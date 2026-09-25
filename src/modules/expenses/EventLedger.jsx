@@ -67,10 +67,21 @@ function longDate(s) {
 
 // Label left, answer right, hairline between — the same fact row the expense
 // detail uses, so a reader who has learnt one screen has learnt this one.
-function InfoRow({ label, value }) {
+// `inCard` marks a row the header card already states.
+//
+// Seven of these fourteen repeat the card directly above them — the name, the
+// client, the venue, the session, the date, the guest count and who created it
+// are all on it. On a desktop that is a reference table beside a summary and it
+// reads as thorough. On a phone the card is the screen you just scrolled past,
+// so it is the same facts twice, one under the other, and the six that are only
+// here — the location, the contract date, the contact, the catering, the
+// complimentary plates and the last sync — are buried among them.
+//
+// They stay from sm up, where the width makes the repetition cheap.
+function InfoRow({ label, value, inCard }) {
   if (value === null || value === undefined || value === '') return null
   return (
-    <div className="flex items-baseline justify-between gap-4 py-2.5">
+    <div className={'items-baseline justify-between gap-4 py-2.5 ' + (inCard ? 'hidden sm:flex' : 'flex')}>
       <span className="shrink-0 text-[12px] font-medium text-slate-500">{label}</span>
       <span className="min-w-0 text-right text-[13px] font-semibold text-slate-900">{value}</span>
     </div>
@@ -999,19 +1010,21 @@ function EventLedger(props) {
         <div className="grid gap-4 @3xl:grid-cols-12">
           <SectionCard title="Event Information" icon="info" className="@3xl:col-span-7">
             <div className="px-4 divide-y divide-slate-100">
-              <InfoRow label="Function" value={eventDetail.event_name} />
-              <InfoRow label="Client" value={eventDetail.client_name} />
-              <InfoRow label="Venue" value={eventDetail.venue_name} />
+              <InfoRow inCard label="Function" value={eventDetail.event_name} />
+              <InfoRow inCard label="Client" value={eventDetail.client_name} />
+              <InfoRow inCard label="Venue" value={eventDetail.venue_name} />
               <InfoRow label="Location" value={eventDetail.location} />
-              <InfoRow label="Session" value={eventDetail.session} />
-              <InfoRow label="Event Date" value={eventDetail.function_date ? longDate(eventDetail.function_date) : null} />
+              <InfoRow inCard label="Session" value={eventDetail.session} />
+              <InfoRow inCard label="Event Date" value={eventDetail.function_date ? longDate(eventDetail.function_date) : null} />
               <InfoRow label="Contract Date" value={eventDetail.contract_date ? longDate(eventDetail.contract_date) : null} />
               <InfoRow label="Contact" value={eventDetail.contact_person} />
               <InfoRow label="Catering" value={eventDetail.catering} />
-              <InfoRow label="Pax" value={eventDetail.pax > 0 ? eventDetail.pax : null} />
+              {/* Pax is the head count the card prints; plates is not, unless
+                  there is no pax to print instead — so plates stays. */}
+              <InfoRow inCard label="Pax" value={eventDetail.pax > 0 ? eventDetail.pax : null} />
               <InfoRow label="Plates" value={eventDetail.total_plates > 0 ? eventDetail.total_plates : null} />
               <InfoRow label="Complimentary" value={eventDetail.complementary_plates > 0 ? eventDetail.complementary_plates : null} />
-              <InfoRow label="Created By" value={eventDetail.created_user_name} />
+              <InfoRow inCard label="Created By" value={eventDetail.created_user_name} />
               <InfoRow label="Last Synced" value={eventDetail.synced_at ? formatDateTime(eventDetail.synced_at) : null} />
             </div>
           </SectionCard>
