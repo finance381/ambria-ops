@@ -1201,7 +1201,11 @@ function EventLedger(props) {
         return (
         <div className="space-y-3">
           <div className="flex flex-wrap items-center gap-2">
-            <div className="flex flex-wrap gap-1.5">
+            {/* Four pills, two by two on a phone. Left to wrap they came
+                out three and one, which reads as a row and an afterthought
+                rather than as one set of four. A grid also makes them the
+                same width, so the odd one out is not the longest label. */}
+            <div className="grid grid-cols-2 gap-1.5 sm:flex sm:flex-wrap">
               {ENTRY_TYPES.map(function (t) {
                 var active = filter === t.key
                 var n = t.key === 'all' ? entries.length : entries.filter(function (e) { return e.entry_type === t.key }).length
@@ -1212,7 +1216,7 @@ function EventLedger(props) {
                 return (
                   <button key={t.key} type="button" aria-pressed={active} disabled={empty}
                     onClick={function () { setFilter(t.key); setTxnPage(1) }}
-                    className={'inline-flex items-center gap-1.5 h-9 px-3 rounded-xl text-[13px] font-bold transition-colors ' +
+                    className={'inline-flex items-center justify-center gap-1.5 h-9 px-3 rounded-xl text-[13px] font-bold transition-colors ' +
                       (active
                         ? 'bg-indigo-600 text-white'
                         : empty
