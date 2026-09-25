@@ -10,6 +10,7 @@ import { scrollToTopOf } from '../../lib/scrollToTop'
 import { useExpenseDetailModal } from '../../hooks/useExpenseDetailModal.jsx'
 import { deptOrder, deptCls, CARD, FIELD_SEARCH } from '../../lib/ui'
 import { avatarTint } from '../../lib/avatarTint'
+import eventBg from '../../assets/event-bg.webp'
 import { DeptChip } from '../../components/ui/Badge'
 import CheckedStamp from '../../components/ui/CheckedStamp'
 
@@ -145,8 +146,54 @@ function _buildGroups(rows) {
   return out
 }
 
+// The ground behind the phone screen.
+//
+// Drawn rather than photographed, so unlike the other backdrops in this app it
+// needs no blur: soft gradients and a few thin arcs, with nothing in it sharp
+// enough to compete with a card in front of it.
+//
+// 100% 100% rather than cover, for the reason the ledger's ground records: a
+// fixed box is the viewport, the viewport changes height every time the address
+// bar slides, and cover rescales the image each time — which reads as the
+// background zooming while you scroll.
+function EventBackdrop() {
+  useEffect(function () {
+    var b = document.body
+    var h = document.documentElement
+    var prevBody = b.style.backgroundColor
+    var prevHtml = h.style.backgroundColor
+    var prevOver = b.style.overscrollBehaviorY
+    // Sampled from the foot of the artwork, so dragging past the end of the
+    // page reveals more of the same night rather than the app's pale canvas.
+    b.style.backgroundColor = '#100E2F'
+    h.style.backgroundColor = '#100E2F'
+    b.style.overscrollBehaviorY = 'none'
+    return function () {
+      b.style.backgroundColor = prevBody
+      h.style.backgroundColor = prevHtml
+      b.style.overscrollBehaviorY = prevOver
+    }
+  }, [])
+  return (
+    <div aria-hidden="true" className="sm:hidden pointer-events-none fixed inset-0 -z-10 overflow-hidden"
+      style={{ backgroundColor: '#100E2F', minHeight: '100lvh' }}>
+      <div className="absolute inset-x-0 top-0 -bottom-px"
+        style={{
+          backgroundImage: 'url(' + eventBg + ')',
+          backgroundSize: '100% 100%',
+          backgroundPosition: 'center',
+          backgroundRepeat: 'no-repeat',
+        }} />
+    </div>
+  )
+}
+
 function EventLedger(props) {
   var profile = props && props.profile
+  // The hub passes this and the screen ignored it. The night treatment is for
+  // the phone screen only, so the admin console keeps the light one it shares
+  // with its seven neighbours.
+  var inAdmin = !!(props && props.inAdmin)
   var isAdmin = hasPerm(profile?.permsNew, 'finance.ledgers.event')
   var isSysAdmin = hasPerm(profile?.permsNew, 'admin.dashboard')
   var canMarkChecked = hasPerm(profile?.permsNew, 'finance.wallet.mark_checked')
@@ -1554,7 +1601,8 @@ function EventLedger(props) {
   )
 
   return (
-    <div className="@container">
+    <div className={'@container ' + (inAdmin ? '' : 'ambria-event-night')}>
+      {!inAdmin && <EventBackdrop />}
       {!propEventId && !eventId && (
         // The calendar is a fixed 400 wide and the panel beside it takes what
         // is left. On its own, centred, the calendar left most of a 1600px

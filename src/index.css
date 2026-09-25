@@ -268,6 +268,58 @@
      scrollbar — and on Windows that bar is 17px of grey under a row of
      tabs, which is taller than the gap it sits in. Used by LedgersHub and
      the event detail tabs. */
+
+  /* The event ledger's phone screen, and only it.
+   *
+   * It sits on a dark ground, so every surface and every word on it has to
+   * invert. Doing that by hand would mean touching a few hundred class strings
+   * across two files and keeping them in step forever; a reader would have no
+   * way to tell which of them were about this screen and which were about
+   * anything else.
+   *
+   * So the remap is here, in one block, scoped to one wrapper and one width.
+   * It rewrites the tokens the screen already uses rather than introducing new
+   * ones — the markup stays the light-mode markup it is on a desktop, and this
+   * says what those tokens mean when the ground behind them is dark.
+   *
+   * max-width, not a dark: variant: this is not the system's dark mode, it is
+   * one screen's design, and it must not follow a phone that happens to be set
+   * to dark while the rest of the app stays light.
+   */
+  @media (max-width: 639px) {
+    .ambria-event-night { color: #E7E4F7; }
+
+    .ambria-event-night .bg-white,
+    .ambria-event-night .bg-slate-50\/60,
+    .ambria-event-night .bg-slate-50\/70 {
+      background-color: rgba(23, 19, 52, 0.72);
+      backdrop-filter: blur(16px);
+    }
+    .ambria-event-night .bg-slate-50,
+    .ambria-event-night .bg-slate-100 { background-color: rgba(255, 255, 255, 0.06); }
+
+    .ambria-event-night .border-slate-200,
+    .ambria-event-night .border-slate-300 { border-color: rgba(255, 255, 255, 0.10); }
+    .ambria-event-night .border-slate-100,
+    .ambria-event-night .divide-slate-100 > * + * { border-color: rgba(255, 255, 255, 0.07); }
+
+    .ambria-event-night .text-slate-900,
+    .ambria-event-night .text-slate-800 { color: #F3F1FD; }
+    .ambria-event-night .text-slate-700,
+    .ambria-event-night .text-slate-600 { color: #C9C3E8; }
+    .ambria-event-night .text-slate-500,
+    .ambria-event-night .text-slate-400 { color: #8F88B8; }
+    .ambria-event-night .text-slate-300 { color: #5C5580; }
+
+    /* Indigo is the accent on this screen and it has to lift off the ground
+       rather than sink into it. */
+    .ambria-event-night .text-indigo-700,
+    .ambria-event-night .text-indigo-600 { color: #A78BFA; }
+    .ambria-event-night .bg-indigo-50 { background-color: rgba(139, 92, 246, 0.18); }
+    .ambria-event-night .border-indigo-500,
+    .ambria-event-night .border-indigo-300 { border-color: rgba(167, 139, 250, 0.55); }
+  }
+
   .no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
   .no-scrollbar::-webkit-scrollbar { display: none; }
 
