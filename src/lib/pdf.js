@@ -1,5 +1,5 @@
 import jsPDF from 'jspdf'
-import 'jspdf-autotable'
+import autoTable from 'jspdf-autotable'
 import { formatPaise, formatDate, titleCase } from './format'
 import { openOrSharePdf } from './pdfOutput'
 
@@ -52,7 +52,7 @@ function addMeta(doc, y, pairs) {
 }
 
 function addTable(doc, y, headers, rows, opts) {
-  doc.autoTable(Object.assign({
+  autoTable(doc, Object.assign({
     startY: y,
     head: [headers],
     body: rows,
