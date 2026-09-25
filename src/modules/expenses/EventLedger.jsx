@@ -904,20 +904,134 @@ function EventLedger(props) {
           entirely and becomes the block you read first; the facts that used to
           be stacked sit on one line divided by rules, which is what a rule is
           for. */}
-      {/* Two columns from sm, one below it. A 92px rail beside the text is a
-          fifth of a 390px screen, and what was left could not hold the event's
-          name — "GET TOGETHER — virender" broke across three lines and every
-          fact wrapped inside itself. On a phone the date becomes a strip along
-          the top instead, and the text gets the whole width. */}
-      <div className={CARD + ' overflow-hidden'}>
-        <div className="flex flex-col sm:flex-row sm:items-stretch">
+      {/* The phone card, to the supplied design: the date on a line of its own
+          with the status opposite it, the name across the full width, then the
+          four facts as a labelled 2x2.
+
+          Labels are what the desktop card never had. Unlabelled, a venue and a
+          person are two names with two glyphs, and "Dinner" beside a clock
+          could be a time — the words cost one small grey line each and the
+          tiles stop needing to be guessed at.
+
+          The desktop card below is untouched. It keeps the date rail, which
+          works at that width and does not here. */}
+      <div className={CARD + ' sm:hidden p-4'}>
+        {(function () {
+          var raw = eventDetail.function_date || eventDetail.contract_date
+          var d = raw ? new Date(String(raw).slice(0, 10) + 'T00:00:00') : null
+          return (
+            <div className="flex items-center justify-between gap-3">
+              {d && !isNaN(d) ? (
+                <span className="inline-flex items-center gap-2 min-w-0">
+                  <span className="shrink-0 w-8 h-8 rounded-[10px] bg-indigo-50 text-indigo-600 inline-flex items-center justify-center">
+                    <Icon name="calendar" size={16} className="block" />
+                  </span>
+                  <span data-notranslate className="text-[14px] font-bold text-indigo-700 whitespace-nowrap">
+                    {d.getDate() + ' ' + SHORT_MONTHS[d.getMonth()] + ' ' + d.getFullYear()}
+                  </span>
+                  <span aria-hidden="true" className="w-px h-4 bg-slate-200" />
+                  <span data-notranslate className="text-[13px] font-semibold text-slate-500">{SHORT_DAYS[d.getDay()]}</span>
+                </span>
+              ) : <span />}
+              <span className={'shrink-0 h-7 px-3 inline-flex items-center gap-1.5 rounded-full text-[11px] font-bold uppercase tracking-[0.08em] ' +
+                (eventDetail.is_tentative ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800')}>
+                <span aria-hidden="true" className={'w-1.5 h-1.5 rounded-full ' + (eventDetail.is_tentative ? 'bg-amber-500' : 'bg-emerald-500')} />
+                {eventDetail.is_tentative ? 'Tentative' : 'Confirmed'}
+              </span>
+            </div>
+          )
+        })()}
+
+        <h2 className="mt-3 font-display text-[23px] font-bold text-slate-900 leading-tight tracking-[-0.02em]">
+          {eventDetail.event_name || 'Event'}
+          {eventDetail.client_name ? ' — ' + eventDetail.client_name : ''}
+        </h2>
+
+        {contracts.filter(function (c) { return c.contract_no }).length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {contracts.filter(function (c) { return c.contract_no }).map(function (c) {
+              return (
+                <span key={c.id} data-notranslate
+                  className="h-6 px-2 inline-flex items-center rounded-lg bg-slate-100 text-slate-600 text-[12px] font-bold">
+                  #{c.contract_no}
+                </span>
+              )
+            })}
+          </div>
+        )}
+
+        {(function () {
+          var facts = []
+          if (eventDetail.venue_name) facts.push({ k: 'venue', icon: 'mapPin', label: 'Venue', text: eventDetail.venue_name })
+          if (eventDetail.session) facts.push({ k: 'session', icon: 'utensils', label: 'Session', text: eventDetail.session })
+          var heads = eventDetail.pax > 0 ? eventDetail.pax : (eventDetail.total_plates > 0 ? eventDetail.total_plates : 0)
+          if (heads > 0) {
+            facts.push({
+              k: 'heads', icon: 'users',
+              label: eventDetail.pax > 0 ? 'Guests' : 'Plates',
+              text: heads + (eventDetail.pax > 0 ? ' Guests' : ' Plates'),
+            })
+          }
+          // "Created By", not "Client". The client is in the title beside the
+          // event's name; this is the person who entered it.
+          if (eventDetail.created_user_name) facts.push({ k: 'by', icon: 'user', label: 'Created By', text: eventDetail.created_user_name })
+          if (facts.length === 0) return null
+          return (
+            <div className="mt-4 grid grid-cols-2 gap-y-4">
+              {facts.map(function (f, i) {
+                return (
+                  <div key={f.k} className={'flex items-center gap-2.5 min-w-0 ' + (i % 2 === 1 ? 'border-l border-slate-100 pl-3' : 'pr-3')}>
+                    <span className="shrink-0 w-9 h-9 rounded-[10px] bg-indigo-50 text-indigo-600 inline-flex items-center justify-center">
+                      <Icon name={f.icon} size={17} className="block" />
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block text-[11.5px] text-slate-500 leading-tight">{f.label}</span>
+                      <span className="block text-[13.5px] font-bold text-slate-900 leading-tight truncate">{f.text}</span>
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+          )
+        })()}
+
+        {(function () {
+          var depts = contracts.filter(function (c) { return c.department })
+          var withPdf = contracts.filter(function (c) { return c.pdf_link })[0]
+          if (depts.length === 0 && !withPdf) return null
+          return (
+            <div className="mt-4 flex items-center justify-between gap-3">
+              <div className="min-w-0 flex flex-wrap items-center gap-1.5">
+                {depts.map(function (c) {
+                  return (
+                    <span key={c.id}
+                      className={'h-7 px-3 inline-flex items-center rounded-full border text-[12px] font-bold ' + deptCls(c.department)}>
+                      {c.department}
+                    </span>
+                  )
+                })}
+              </div>
+              {withPdf && (
+                <a href={withPdf.pdf_link} target="_blank" rel="noopener noreferrer"
+                  title="Open the LMS contract PDF" aria-label="Open the LMS contract PDF"
+                  className="shrink-0 w-10 h-10 inline-flex items-center justify-center rounded-xl border border-slate-200 text-slate-500 active:bg-slate-50 transition-colors">
+                  <Icon name="fileText" size={17} className="block" />
+                </a>
+              )}
+            </div>
+          )
+        })()}
+      </div>
+
+      <div className={CARD + ' hidden sm:block overflow-hidden'}>
+        <div className="flex items-stretch">
           {(function () {
             var raw = eventDetail.function_date || eventDetail.contract_date
             var d = raw ? new Date(String(raw).slice(0, 10) + 'T00:00:00') : null
             if (!d || isNaN(d)) return null
             return (
-              <div className="shrink-0 w-full sm:w-[92px] flex sm:flex-col items-center sm:justify-center gap-2 sm:gap-0.5 bg-slate-50 border-b sm:border-b-0 sm:border-r border-slate-200 px-4 py-2.5 sm:px-3 sm:py-4">
-                <p data-notranslate className="font-display text-[22px] sm:text-[30px] font-bold text-slate-900 leading-none tracking-[-0.02em] tabular-nums">
+              <div className="shrink-0 w-[92px] flex flex-col items-center justify-center gap-0.5 bg-slate-50 border-r border-slate-200 px-3 py-4">
+                <p data-notranslate className="font-display text-[30px] font-bold text-slate-900 leading-none tracking-[-0.02em] tabular-nums">
                   {d.getDate()}
                 </p>
                 <p data-notranslate className="text-[12px] font-bold uppercase tracking-[0.08em] text-indigo-600">
@@ -931,7 +1045,7 @@ function EventLedger(props) {
           })()}
 
           <div className="min-w-0 flex-1 flex flex-wrap items-start justify-between gap-x-4 gap-y-3 px-4 py-4 @3xl:px-5">
-            <div className="min-w-0 w-full sm:w-auto sm:flex-1 space-y-2">
+            <div className="min-w-0 flex-1 space-y-2">
               <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
                 <h2 className="min-w-0 font-display text-[21px] font-bold text-slate-900 leading-tight tracking-[-0.015em]">
                   {eventDetail.event_name || 'Event'}
@@ -962,26 +1076,18 @@ function EventLedger(props) {
                 }
                 if (eventDetail.created_user_name) facts.push({ k: 'by', icon: 'user', text: eventDetail.created_user_name })
                 if (facts.length === 0) return null
-                // Two by two on a phone. Four facts left to wrap came out
-                // three and one; the grid also gives them a column each, so they
-                // line up down the card instead of sitting wherever the previous
-                // one ended. A row of them from sm up, as before.
                 return (
-                  <div className="grid grid-cols-2 gap-x-3 gap-y-1 sm:flex sm:flex-wrap sm:items-center sm:gap-y-1.5">
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
                     {facts.map(function (f, i) {
                       return (
-                        <span key={f.k} className="flex items-center gap-3 min-w-0">
-                          {i > 0 && <span aria-hidden="true" className="hidden sm:block w-px h-4 bg-slate-200" />}
-                          {/* whitespace-nowrap: the row may wrap between facts,
-                              but a venue called "Ambria Restro" breaking into
+                        <span key={f.k} className="flex items-center gap-3">
+                          {i > 0 && <span aria-hidden="true" className="w-px h-4 bg-slate-200" />}
+                          {/* nowrap: the row may wrap between facts, but a
+                              venue called "Ambria Restro" breaking into
                               "Ambria" and "Restro" reads as two facts. */}
-                          <span className="inline-flex items-center gap-1.5 min-w-0 text-[13px] font-semibold text-slate-600">
+                          <span className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-slate-600 whitespace-nowrap">
                             <Icon name={f.icon} size={14} className="shrink-0 text-slate-400" />
-                            {/* truncate, not nowrap: it keeps the fact on one
-                                line either way, and in a 157px cell a long
-                                venue clips instead of running out of it. From
-                                sm there is no width to clip against. */}
-                            <span className="truncate">{f.text}</span>
+                            <span>{f.text}</span>
                           </span>
                         </span>
                       )
@@ -1006,7 +1112,7 @@ function EventLedger(props) {
               </div>
             </div>
 
-            <div className="shrink-0 w-full sm:w-auto flex items-center gap-3 justify-end sm:justify-start">
+            <div className="shrink-0 flex items-center gap-3">
               {/* events.status is 'active' on every row in the table, so it
                   cannot tell anyone anything. is_tentative can: it is the
                   difference between a booking LMS has a contract for and one
