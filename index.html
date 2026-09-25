@@ -18,17 +18,31 @@
          would take the page below its normal size is cancelled; a pinch to
          zoom in, or back out of a zoom, still works — that is for reading.
          Other browsers never fire these events and honour minimum-scale. -->
+    <!-- gesturechange alone was not enough on a phone with the app installed
+         to the home screen: the shrink had already begun before the first one
+         arrived. touchmove comes with every movement of two fingers, and iOS
+         puts the pinch's running scale on it, so the same test there stops
+         the gesture from its first frame. -->
     <script>
       (function () {
         var startScale = 1
         function currentScale() {
           return window.visualViewport ? window.visualViewport.scale : 1
         }
+        function wouldShrink(scale) {
+          return typeof scale === 'number' && startScale * scale < 1
+        }
+        document.addEventListener('touchstart', function (e) {
+          if (e.touches.length > 1) startScale = currentScale()
+        }, { passive: true })
+        document.addEventListener('touchmove', function (e) {
+          if (e.touches.length > 1 && wouldShrink(e.scale)) e.preventDefault()
+        }, { passive: false })
         document.addEventListener('gesturestart', function () {
           startScale = currentScale()
         }, { passive: false })
         document.addEventListener('gesturechange', function (e) {
-          if (startScale * e.scale < 1) e.preventDefault()
+          if (wouldShrink(e.scale)) e.preventDefault()
         }, { passive: false })
       })()
     </script>
