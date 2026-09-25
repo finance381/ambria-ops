@@ -11,6 +11,27 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0" />
     <meta name="theme-color" content="#0B0B0D" />
     <title>Ambria OPs</title>
+    <!-- iOS Safari ignores minimum-scale while the fingers are still down: a
+         pinch-out shrinks the whole app into a corner of a blank page for as
+         long as the gesture lasts, and only springs back on release. Its own
+         gesture events are the one place that can be stopped. A pinch that
+         would take the page below its normal size is cancelled; a pinch to
+         zoom in, or back out of a zoom, still works — that is for reading.
+         Other browsers never fire these events and honour minimum-scale. -->
+    <script>
+      (function () {
+        var startScale = 1
+        function currentScale() {
+          return window.visualViewport ? window.visualViewport.scale : 1
+        }
+        document.addEventListener('gesturestart', function () {
+          startScale = currentScale()
+        }, { passive: false })
+        document.addEventListener('gesturechange', function (e) {
+          if (startScale * e.scale < 1) e.preventDefault()
+        }, { passive: false })
+      })()
+    </script>
   </head>
   <body>
     <div id="root"></div>
