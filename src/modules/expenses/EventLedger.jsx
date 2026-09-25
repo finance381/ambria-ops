@@ -525,6 +525,28 @@ function EventLedger(props) {
   // by what.
   var txnFilterCount = (filter !== 'all' ? 1 : 0) + (txnDir ? 1 : 0) + (txnMode ? 1 : 0) + (txnCheck ? 1 : 0)
 
+  // The filter panel's four sections, written once.
+  //
+  // They had drifted into four shapes: one full-width 2x2, two content-width
+  // rows and one that wrapped. Down a narrow panel that reads as four unrelated
+  // controls rather than one set of choices, because nothing lines up with
+  // anything — every row starts at the left and ends wherever its longest label
+  // happens to.
+  //
+  // Two columns on a phone, so every option is the same width and the panel has
+  // one edge down each side. A row from sm, where there is width to let them
+  // sit at their own size.
+  var TXN_FILTER_ROW = 'grid grid-cols-2 gap-1.5 sm:flex sm:flex-wrap'
+  var TXN_FILTER_LABEL = 'text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500 mb-1.5'
+  function txnPillCls(on, dead) {
+    return 'inline-flex items-center justify-center gap-1.5 h-9 px-2.5 rounded-lg text-[12px] font-bold border transition-colors ' +
+      (on
+        ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
+        : dead
+          ? 'border-slate-200 bg-white text-slate-400 cursor-default'
+          : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50')
+  }
+
   function visibleEntries() {
     var q = txnSearch.trim().toLowerCase()
     var out = entries.filter(function (e) {
@@ -1368,8 +1390,8 @@ function EventLedger(props) {
                   like the three below, so they sit with them, and the count on
                   the Filter button says when one is set. */}
               <div className="@3xl:col-span-3">
-                <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500 mb-1.5">Type</p>
-                <div className="grid grid-cols-2 gap-1.5 sm:flex sm:flex-wrap">
+                <p className={TXN_FILTER_LABEL}>Type</p>
+                <div className={TXN_FILTER_ROW}>
                   {ENTRY_TYPES.map(function (t) {
                     var active = filter === t.key
                     var n = t.key === 'all' ? entries.length : entries.filter(function (e) { return e.entry_type === t.key }).length
@@ -1380,12 +1402,7 @@ function EventLedger(props) {
                     return (
                       <button key={t.key} type="button" aria-pressed={active} disabled={empty}
                         onClick={function () { setFilter(t.key); setTxnPage(1) }}
-                        className={'inline-flex items-center justify-center gap-1.5 h-8 px-2.5 rounded-lg text-[12px] font-bold border transition-colors ' +
-                          (active
-                            ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
-                            : empty
-                              ? 'border-slate-200 bg-white text-slate-400 cursor-default'
-                              : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50')}>
+                        className={txnPillCls(active, empty)}>
                         {t.label}
                         <span data-notranslate className={active ? 'text-indigo-400' : 'text-slate-400'}>{n}</span>
                       </button>
@@ -1394,14 +1411,13 @@ function EventLedger(props) {
                 </div>
               </div>
               <div>
-                <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500 mb-1.5">Direction</p>
-                <div className="flex gap-1.5">
+                <p className={TXN_FILTER_LABEL}>Direction</p>
+                <div className={TXN_FILTER_ROW}>
                   {[{ k: '', l: 'Any' }, { k: 'in', l: 'Money in' }, { k: 'out', l: 'Money out' }].map(function (o) {
                     return (
                       <button key={o.k || 'any'} type="button"
                         onClick={function () { setTxnDir(o.k); setTxnPage(1) }}
-                        className={'h-8 px-2.5 rounded-lg text-[12px] font-bold border transition-colors ' +
-                          (txnDir === o.k ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50')}>
+                        className={txnPillCls(txnDir === o.k, false)}>
                         {o.l}
                       </button>
                     )
@@ -1409,41 +1425,45 @@ function EventLedger(props) {
                 </div>
               </div>
               <div>
-                <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500 mb-1.5">Mode</p>
-                <div className="flex flex-wrap gap-1.5">
+                <p className={TXN_FILTER_LABEL}>Mode</p>
+                <div className={TXN_FILTER_ROW}>
                   <button type="button" onClick={function () { setTxnMode(''); setTxnPage(1) }}
-                    className={'h-8 px-2.5 rounded-lg text-[12px] font-bold border transition-colors ' +
-                      (txnMode === '' ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50')}>Any</button>
+                    className={txnPillCls(txnMode === '', false)}>Any</button>
                   {txnModes.map(function (m) {
                     return (
                       <button key={m} type="button" onClick={function () { setTxnMode(m); setTxnPage(1) }}
-                        className={'h-8 px-2.5 rounded-lg text-[12px] font-bold border transition-colors ' +
-                          (txnMode === m ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50')}>{m}</button>
+                        className={txnPillCls(txnMode === m, false)}>{titleCase(m)}</button>
                     )
                   })}
                 </div>
               </div>
               <div>
-                <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500 mb-1.5">Finance check</p>
-                <div className="flex items-center gap-1.5">
+                <p className={TXN_FILTER_LABEL}>Finance check</p>
+                <div className={TXN_FILTER_ROW}>
                   {[{ k: '', l: 'Any' }, { k: 'checked', l: 'Checked' }, { k: 'unchecked', l: 'Unchecked' }].map(function (o) {
                     return (
                       <button key={o.k || 'any'} type="button"
                         onClick={function () { setTxnCheck(o.k); setTxnPage(1) }}
-                        className={'h-8 px-2.5 rounded-lg text-[12px] font-bold border transition-colors ' +
-                          (txnCheck === o.k ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50')}>
+                        className={txnPillCls(txnCheck === o.k, false)}>
                         {o.l}
                       </button>
                     )
                   })}
-                  {txnFilterCount > 0 && (
-                    <button type="button" onClick={function () { setFilter('all'); setTxnDir(''); setTxnMode(''); setTxnCheck(''); setTxnPage(1) }}
-                      className="ml-auto h-8 px-2.5 rounded-lg text-[12px] font-bold text-rose-600 hover:bg-rose-50 transition-colors">
-                      Clear
-                    </button>
-                  )}
                 </div>
               </div>
+
+              {/* Clear sat inside the Finance check row on an ml-auto, which
+                  made it the fourth option in a set of three. It undoes all
+                  four sections, so it belongs under all four. */}
+              {txnFilterCount > 0 && (
+                <div className="@3xl:col-span-3">
+                  <button type="button"
+                    onClick={function () { setFilter('all'); setTxnDir(''); setTxnMode(''); setTxnCheck(''); setTxnPage(1) }}
+                    className="w-full sm:w-auto h-9 px-3 inline-flex items-center justify-center rounded-lg text-[12px] font-bold text-rose-600 border border-rose-200 hover:bg-rose-50 transition-colors">
+                    Clear <span data-notranslate className="ml-1">{txnFilterCount}</span> filter{txnFilterCount === 1 ? '' : 's'}
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
