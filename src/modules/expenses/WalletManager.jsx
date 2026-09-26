@@ -798,7 +798,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
           : none,
         expIdsNum.length > 0
           ? supabase.from('expenses')
-              .select('id, description, amount_paise, expense_date, event_id, vendor_name, metadata, status, checked_by, checked_at, deleted_at, receipt_path, receipt_paths, payment_cash_paise, payment_credit_paise, payment_credit_cash_paise, payment_credit_bank_paise, cash_due_date, bank_due_date, expense_types(name, icon), expense_sub_types(name, extra_fields), expense_allocations(department, amount_paise, expense_types(name), expense_sub_types(name))')
+              .select('id, description, amount_paise, expense_date, event_id, vendor_name, metadata, status, checked_by, checked_at, acknowledged_by, acknowledged_at, deleted_at, receipt_path, receipt_paths, payment_cash_paise, payment_credit_paise, payment_credit_cash_paise, payment_credit_bank_paise, cash_due_date, bank_due_date, expense_types(name, icon), expense_sub_types(name, extra_fields), expense_allocations(department, amount_paise, expense_types(name), expense_sub_types(name))')
               .in('id', expIdsNum)
           : none,
         // Matched on ref_id, not id — see openPaymentDetail for why.
@@ -844,6 +844,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
         eMap[e.id] = e
         if (e.event_id) evIds[e.event_id] = true
         if (e.checked_by) cpIds[e.checked_by] = true
+        if (e.acknowledged_by) cpIds[e.acknowledged_by] = true
       })
       setExpenseRefs(eMap)
       if (eData && eData.length > 0) resolveExpenseLookups(eMap)
@@ -3697,6 +3698,13 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             </div>
             {isCancelled && t.cancelled_reason && (
               <p className="text-[10px] text-rose-600 italic mt-0.5">Reason: {t.cancelled_reason}</p>
+            )}
+            {(t.reference_type === 'expense' || t.reference_type === 'expense_refund') && t.reference_id && expenseRefs[t.reference_id]
+              && expenseRefs[t.reference_id].status === 'acknowledged' && expenseRefs[t.reference_id].acknowledged_by && (
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                Acknowledged by <span className="font-semibold text-slate-700">{walletProfiles[expenseRefs[t.reference_id].acknowledged_by]?.name || '—'}</span>
+                {expenseRefs[t.reference_id].acknowledged_at ? ' · ' + formatDate(expenseRefs[t.reference_id].acknowledged_at) : ''}
+              </p>
             )}
             {/* Enrichment: collection → guest · session · event date, same facts the detail modal shows on click */}
             {t.reference_type === 'collection' && t.reference_id && collectionEventRefs[t.reference_id] && (function () {
