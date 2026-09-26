@@ -100,8 +100,12 @@ function RuleFormModal({ open, rule, onClose, onSaved }) {
             <label className="block text-[12px] font-semibold text-slate-900 mb-1">Active</label>
             <button type="button" onClick={function () { setActive(!active) }} aria-pressed={active}
               className="flex items-center gap-2 h-10 px-3 border border-slate-300 rounded-xl bg-white hover:bg-slate-50 transition-colors">
-              <span className={'relative w-9 h-5 rounded-full transition-colors ' + (active ? 'bg-indigo-600' : 'bg-slate-300')}>
-                <span className={'absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ' + (active ? 'translate-x-4' : 'translate-x-0.5')} />
+              {/* A bare span is display:inline, which ignores width/height —
+                  the track collapsed to its content size and the thumb (an
+                  absolutely-positioned child) rendered adrift, overlapping the
+                  On/Off label. inline-flex makes the size classes apply. */}
+              <span className={'relative inline-flex shrink-0 w-9 h-5 rounded-full transition-colors ' + (active ? 'bg-indigo-600' : 'bg-slate-300')}>
+                <span className={'absolute left-0.5 top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ' + (active ? 'translate-x-4' : 'translate-x-0')} />
               </span>
               <span className="text-[13px] font-semibold text-slate-700">{active ? 'On' : 'Off'}</span>
             </button>
@@ -202,8 +206,8 @@ function AutoReplies({ profile }) {
                     <td className={TD + ' text-slate-600 max-w-xs truncate'} title={r.reply_text}>{r.reply_text}</td>
                     <td className={TD}>
                       <button onClick={function () { toggleActive(r) }} aria-pressed={r.active}
-                        className={'relative w-9 h-5 rounded-full transition-colors ' + (r.active ? 'bg-indigo-600' : 'bg-slate-300')}>
-                        <span className={'absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ' + (r.active ? 'translate-x-4' : 'translate-x-0.5')} />
+                        className={'relative inline-flex shrink-0 w-9 h-5 rounded-full transition-colors ' + (r.active ? 'bg-indigo-600' : 'bg-slate-300')}>
+                        <span className={'absolute left-0.5 top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ' + (r.active ? 'translate-x-4' : 'translate-x-0')} />
                       </button>
                     </td>
                     <td className={TD}>
