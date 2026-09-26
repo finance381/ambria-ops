@@ -67,22 +67,22 @@ function parseTtdMonths(label) {
 }
 
 // Each numbered tier's threshold is the MAXIMUM lead time it applies to
-// ("3 months" -> applies once <=3 months remain, i.e. more discount for less
-// notice); the unnumbered tier ("Full rate") is the catch-all once the event
-// is further out than every numbered tier covers. Checking numbered tiers
-// smallest-threshold-first and only falling back to the no-threshold tier
-// when none match is what correctly picks "Full rate" for an event many
-// months out — checking in a fixed order and taking the first satisfied
-// bound would instead match the *loosest* numbered tier every time, since a
-// large lead time trivially satisfies every tier's ">=" bound.
+// ("3 months" -> applies once the event is on or before today+3 calendar
+// months, i.e. more discount for less notice); the unnumbered tier
+// ("Full rate") is the catch-all once the event is further out than every
+// numbered tier covers. This compares actual dates (today+N months vs. the
+// event date), not a floored integer month count — flooring first and then
+// checking "<= N" wrongly buckets anything from N.0 up to N.99 real months
+// into the N-month tier (e.g. 3 months 26 days floors to 3, which then
+// passed "<=3" despite being MORE than 3 months out). Checking numbered
+// tiers smallest-threshold-first and only falling back to the no-threshold
+// tier when none match is what correctly picks "Full rate" for an event
+// many months out.
 function autoTtdIdx(eventDateStr, tiers) {
   if (!eventDateStr || !Array.isArray(tiers) || tiers.length === 0) return 0
-  var now = new Date()
+  var now = new Date(); now.setHours(0, 0, 0, 0)
   var ev = new Date(eventDateStr + 'T00:00:00')
   if (isNaN(ev)) return 0
-  var months = (ev.getFullYear() - now.getFullYear()) * 12 + ev.getMonth() - now.getMonth()
-  if (ev.getDate() < now.getDate()) months--
-  if (months < 0) months = 0
 
   var numbered = []
   var fallbackIdx = -1
@@ -93,7 +93,9 @@ function autoTtdIdx(eventDateStr, tiers) {
   })
   numbered.sort(function (a, b) { return a.threshold - b.threshold })
   for (var i = 0; i < numbered.length; i++) {
-    if (months <= numbered[i].threshold) return numbered[i].idx
+    var cutoff = new Date(now.getTime())
+    cutoff.setMonth(cutoff.getMonth() + numbered[i].threshold)
+    if (ev <= cutoff) return numbered[i].idx
   }
   return fallbackIdx !== -1 ? fallbackIdx : tiers.length - 1
 }
