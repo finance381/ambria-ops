@@ -21,7 +21,9 @@ import checkedStamp from '../../assets/checked-stamp.png'
 // at this" should not outweigh the amount they looked at, and at 96 it was
 // the largest single thing in a row. The artwork is 360px wide, so even here
 // it has far more pixels than a retina screen asks for.
-function CheckedStamp({ checked, checkerName, checkedAt, canToggle, canUncheck, busy, onToggle, variant, size }) {
+// compact: a narrower Mark checked chip — less padding, tighter letters —
+// for a phone card where the chip shares a corner with the amount.
+function CheckedStamp({ checked, checkerName, checkedAt, canToggle, canUncheck, busy, onToggle, variant, size, compact }) {
   var isStamp = variant === 'stamp'
   var px = size || 56
 
@@ -35,7 +37,8 @@ function CheckedStamp({ checked, checkerName, checkedAt, canToggle, canUncheck, 
         // shrink-0 and nowrap because the two ledgers drop this into a
         // fixed-width slot as a flex item, where it was being squeezed until
         // "MARK CHECKED" broke across two lines inside a 22px-tall pill.
-        className="h-[22px] shrink-0 whitespace-nowrap inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-[0.04em] px-2 rounded-md border border-dashed border-slate-300 text-slate-500 hover:border-emerald-300 hover:text-emerald-600 hover:bg-emerald-50 transition-colors disabled:opacity-50">
+        className={"h-[22px] shrink-0 whitespace-nowrap inline-flex items-center text-[10px] font-bold uppercase rounded-md border border-dashed border-slate-300 text-slate-500 hover:border-emerald-300 hover:text-emerald-600 hover:bg-emerald-50 transition-colors disabled:opacity-50 " +
+          (compact ? "gap-[3px] px-1.5 tracking-[0.01em]" : "gap-1 px-2 tracking-[0.04em]")}>
         <Icon name="checkCircle" size={10} />
         Mark checked
       </button>
