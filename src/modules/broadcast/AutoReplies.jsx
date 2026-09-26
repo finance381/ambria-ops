@@ -131,7 +131,7 @@ function AutoReplies({ profile }) {
 
   function load() {
     setLoading(true)
-    supabase.from('wa_auto_replies').select('*').order('priority', { ascending: true })
+    supabase.from('wa_auto_replies').select('*').order('priority', { ascending: true }).order('id', { ascending: true })
       .then(function (res) { setRules(res.data || []); setLoading(false) })
   }
 

@@ -40,7 +40,11 @@ async function maybeAutoReply(supa, SUPABASE_URL, SERVICE_ROLE, contactId, bodyT
   if (!bodyText || !bodyText.trim()) return
   var lowerBody = bodyText.toLowerCase()
 
-  var rulesRes = await supa.from("wa_auto_replies").select("*").eq("active", true).order("priority", { ascending: true })
+  // id as a secondary sort: two rules can share a priority (nothing in the
+  // schema forbids it), and without a tiebreaker Postgres doesn't guarantee
+  // which one comes first — this makes the older rule win consistently
+  // instead of leaving it to chance.
+  var rulesRes = await supa.from("wa_auto_replies").select("*").eq("active", true).order("priority", { ascending: true }).order("id", { ascending: true })
   var rules = rulesRes.data || []
   var match = rules.find(function (r) {
     if (r.trigger_type === "always") return true
