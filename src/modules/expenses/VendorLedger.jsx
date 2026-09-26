@@ -2116,11 +2116,17 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
             var isCredit = (e.credit_paise || 0) > 0
             var isDeleted = !!e.deleted_at
             var amt = isCredit ? (e.credit_paise || 0) : (e.debit_paise || 0)
-            // GST-driven fractional-rupee amounts (e.g. 7,584.84) are exact in the
-            // ledger, but the headline figure shows the same rounded whole-rupee
-            // total as "Grand total (rounded)" in the breakdown panel below, so the
-            // two don't visibly disagree on the same entry.
-            var headlineAmt = e._breakdown ? Math.round(e._breakdown.amount_paise / 100) * 100 : amt
+            // GST-driven fractional-rupee amounts (e.g. 7,584.84) round to the
+            // nearest rupee for display. This used to substitute the source
+            // expense's own gross amount_paise instead of rounding amt itself —
+            // harmless when one expense always produced exactly one ledger
+            // row, but a split-payment expense now produces several (a
+            // "purchase" credit row for the full bill, a separate
+            // "cash_at_source" debit row for just the cash paid now), all
+            // sharing the same e._breakdown since it's keyed by expense, not by
+            // ledger row — so every row but the full-bill one showed the wrong
+            // sibling's amount.
+            var headlineAmt = Math.round(amt / 100) * 100
             var kind = e.metadata && e.metadata.kind ? e.metadata.kind : e.ref_type
             var isExpRow = isExpenseEntry(e)
             function handleRowClick() {
