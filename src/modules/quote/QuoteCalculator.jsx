@@ -52,17 +52,50 @@ function classifyDate(val, seasonDates) {
   if (seasonDates && seasonDates[key] != null) return seasonDates[key]
   return 2
 }
-function autoTtdIdx(eventDateStr) {
-  if (!eventDateStr) return 0
+// Parses the month threshold a TTD tier's label encodes ("Full rate" -> no
+// threshold/never expires, "3 months" -> 3, "1 month" -> 1). Reading this off
+// the actual configured tiers (rather than hardcoding index positions for a
+// fixed tier count) is what survives Rate Card edits — a hardcoded 4-tier
+// index scheme silently mis-picked once a tier was removed, handing out a
+// bigger discount than any configured tier justified.
+function parseTtdMonths(label) {
+  if (!label) return null
+  var l = String(label).toLowerCase()
+  if (l.indexOf('full') !== -1) return Infinity
+  var m = l.match(/(\d+)\s*\+?\s*month/)
+  return m ? Number(m[1]) : null
+}
+
+// Each numbered tier's threshold is the MAXIMUM lead time it applies to
+// ("3 months" -> applies once <=3 months remain, i.e. more discount for less
+// notice); the unnumbered tier ("Full rate") is the catch-all once the event
+// is further out than every numbered tier covers. Checking numbered tiers
+// smallest-threshold-first and only falling back to the no-threshold tier
+// when none match is what correctly picks "Full rate" for an event many
+// months out — checking in a fixed order and taking the first satisfied
+// bound would instead match the *loosest* numbered tier every time, since a
+// large lead time trivially satisfies every tier's ">=" bound.
+function autoTtdIdx(eventDateStr, tiers) {
+  if (!eventDateStr || !Array.isArray(tiers) || tiers.length === 0) return 0
   var now = new Date()
   var ev = new Date(eventDateStr + 'T00:00:00')
   if (isNaN(ev)) return 0
   var months = (ev.getFullYear() - now.getFullYear()) * 12 + ev.getMonth() - now.getMonth()
   if (ev.getDate() < now.getDate()) months--
-  if (months >= 5) return 0
-  if (months >= 4) return 1
-  if (months >= 3) return 2
-  return 3
+  if (months < 0) months = 0
+
+  var numbered = []
+  var fallbackIdx = -1
+  tiers.forEach(function (t, i) {
+    var threshold = parseTtdMonths(t.label)
+    if (threshold == null || threshold === Infinity) { if (fallbackIdx === -1) fallbackIdx = i }
+    else numbered.push({ idx: i, threshold: threshold })
+  })
+  numbered.sort(function (a, b) { return a.threshold - b.threshold })
+  for (var i = 0; i < numbered.length; i++) {
+    if (months <= numbered[i].threshold) return numbered[i].idx
+  }
+  return fallbackIdx !== -1 ? fallbackIdx : tiers.length - 1
 }
 
 function fmtDate(val) {
@@ -1376,7 +1409,7 @@ function QuoteCalculator({ profile, onExit, onSignOut }) {
 
   function handleDateChange(val) {
     setEventDate(val)
-    setTtdIdx(autoTtdIdx(val))
+    setTtdIdx(autoTtdIdx(val, ttdData))
     var c = classifyDate(val, seasonDates)
     if (c >= 0) setCatOverride(c)
   }
@@ -1627,7 +1660,7 @@ function QuoteCalculator({ profile, onExit, onSignOut }) {
     setVenueId(vid || '')
     setFoodPref(q.food_pref || 0); setPax(q.pax || 400); setSlot(q.slot || 0)
     setCatOverride(q.date_category || 2); setMenuIdx(q.menu_idx != null ? q.menu_idx : 3)
-    setDecorIdx(q.decor_idx != null ? q.decor_idx : 0); setDjIdx(q.dj_idx != null ? q.dj_idx : 1); setTtdIdx(q.ttd_idx != null ? q.ttd_idx : autoTtdIdx(q.event_date)); setDealVm(''); setDealDecor(''); setDealEnt(''); setDealDiscount(''); setDealVal(14); setTaxMode(0); setSplit5(50)
+    setDecorIdx(q.decor_idx != null ? q.decor_idx : 0); setDjIdx(q.dj_idx != null ? q.dj_idx : 1); setTtdIdx(q.ttd_idx != null ? q.ttd_idx : autoTtdIdx(q.event_date, ttdData)); setDealVm(''); setDealDecor(''); setDealEnt(''); setDealDiscount(''); setDealVal(14); setTaxMode(0); setSplit5(50)
     if (q.deal_vm_paise != null) setDealVm(String(fromPaise(q.deal_vm_paise)))
     if (q.deal_decor_paise != null) setDealDecor(String(fromPaise(q.deal_decor_paise)))
     if (q.deal_ent_paise != null) setDealEnt(String(fromPaise(q.deal_ent_paise)))
@@ -2897,7 +2930,7 @@ function QuoteCalculator({ profile, onExit, onSignOut }) {
         onPushLms={function () { updateStatus('sent') }}
         onToggleProposal={function () { setShowProposal(!showProposal) }}
         onToggleAI={function () { if (showAnalysis) { setShowAnalysis(false) } else { askAI() } }}
-        onContinue={function () { setTtdIdx(autoTtdIdx(eventDate)); setPage(1) }}
+        onContinue={function () { setTtdIdx(autoTtdIdx(eventDate, ttdData)); setPage(1) }}
         onBack={function () { setPage(0) }}
         onNewQuote={newQuote}
       />
