@@ -616,7 +616,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     if (expRefIds.length > 0) {
       var expIdsNum = expRefIds.map(function (x) { return Number(x) }).filter(function (n) { return !isNaN(n) })
       var { data: eData } = await supabase.from('expenses')
-        .select('id, description, amount_paise, expense_date, event_id, vendor_name, metadata, checked_by, checked_at, deleted_at, expense_types(name, icon), expense_sub_types(name, extra_fields), expense_allocations(department, amount_paise, expense_types(name), expense_sub_types(name))')
+        .select('id, description, amount_paise, expense_date, event_id, vendor_name, metadata, checked_by, checked_at, deleted_at, payment_cash_paise, payment_credit_paise, payment_credit_cash_paise, payment_credit_bank_paise, cash_due_date, bank_due_date, expense_types(name, icon), expense_sub_types(name, extra_fields), expense_allocations(department, amount_paise, expense_types(name), expense_sub_types(name))')
         .in('id', expIdsNum)
       var eMap = {}
       var evIds = {}
@@ -798,7 +798,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
           : none,
         expIdsNum.length > 0
           ? supabase.from('expenses')
-              .select('id, description, amount_paise, expense_date, event_id, vendor_name, metadata, status, checked_by, checked_at, deleted_at, receipt_path, receipt_paths, expense_types(name, icon), expense_sub_types(name, extra_fields), expense_allocations(department, amount_paise, expense_types(name), expense_sub_types(name))')
+              .select('id, description, amount_paise, expense_date, event_id, vendor_name, metadata, status, checked_by, checked_at, deleted_at, receipt_path, receipt_paths, payment_cash_paise, payment_credit_paise, payment_credit_cash_paise, payment_credit_bank_paise, cash_due_date, bank_due_date, expense_types(name, icon), expense_sub_types(name, extra_fields), expense_allocations(department, amount_paise, expense_types(name), expense_sub_types(name))')
               .in('id', expIdsNum)
           : none,
         // Matched on ref_id, not id — see openPaymentDetail for why.
@@ -1372,7 +1372,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     setExpenseDetailLoading(!seed)
     setExpenseDetailTarget(seed ? Object.assign({}, seed) : { _placeholder: true, id: expenseId })
     var { data: row, error } = await supabase.from('expenses')
-      .select('id, user_id, batch_id, expense_type_id, expense_sub_type_id, amount_paise, tax_paise, description, status, expense_date, receipt_path, receipt_paths, created_at, rejection_reason, flag_reason, penalty_paise, penalized_at, penalized_by, reviewed_at, reviewed_by, acknowledged_at, acknowledged_by, deduction_type, vendor_name, travel_from, travel_to, travel_mode, metadata, event_id, deleted_at, expense_types(name, extra_fields), expense_sub_types(name, extra_fields), events(event_name, venue_name, function_date, pax), expense_allocations(department, department_id, venue_id, amount_paise)')
+      .select('id, user_id, batch_id, expense_type_id, expense_sub_type_id, amount_paise, tax_paise, description, status, expense_date, receipt_path, receipt_paths, created_at, rejection_reason, flag_reason, penalty_paise, penalized_at, penalized_by, reviewed_at, reviewed_by, acknowledged_at, acknowledged_by, deduction_type, vendor_name, travel_from, travel_to, travel_mode, metadata, event_id, deleted_at, checked_by, checked_at, payment_cash_paise, payment_credit_paise, payment_credit_cash_paise, payment_credit_bank_paise, cash_due_date, bank_due_date, expense_types(name, extra_fields), expense_sub_types(name, extra_fields), events(event_name, venue_name, function_date, pax), expense_allocations(department, department_id, venue_id, amount_paise)')
       .eq('id', Number(expenseId)).maybeSingle()
     setExpenseDetailLoading(false)
     if (error || !row) {
@@ -3780,7 +3780,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                       <LedgerSourceMedia paths={sourceReceipts} />
                     </div>
                   )}
-                  {allocs.length > 0 && !expandAllTxns && (
+                  {(allocs.length > 0 || (e.payment_credit_paise || 0) > 0) && !expandAllTxns && (
                     <button type="button" onClick={function (ev) { toggleTxnExpanded(t.id, ev) }}
                       // 12.5px against the 12px allocation rows it opens: the
                       // control that reveals a section should not be smaller
@@ -3884,6 +3884,22 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                     </div>
                     )
                   })()}
+                  {/* Split-payment purchases put part of the bill on vendor
+                      credit rather than debiting the wallet in full — the
+                      wallet balance change above only ever reflects the cash
+                      leg, so without this the remainder is invisible here. */}
+                  {(expandAllTxns || !!expandedTxnIds[t.id]) && (e.payment_credit_paise || 0) > 0 && (
+                    <div className="mt-2 pl-3 border-l-2 border-amber-100 space-y-1">
+                      <p className="flex items-center justify-between gap-2 text-[12px]">
+                        <span className="text-emerald-600">Paid now (cash)</span>
+                        <span className="font-bold text-emerald-700 tabular-nums" data-notranslate>{formatPoints(e.payment_cash_paise || 0)}</span>
+                      </p>
+                      <p className="flex items-center justify-between gap-2 text-[12px]">
+                        <span className="text-amber-600">On vendor credit</span>
+                        <span className="font-bold text-amber-700 tabular-nums" data-notranslate>{formatPoints(e.payment_credit_paise)}</span>
+                      </p>
+                    </div>
+                  )}
                 </>
               )
             })()}

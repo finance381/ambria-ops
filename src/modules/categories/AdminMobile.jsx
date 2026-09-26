@@ -36,10 +36,9 @@ function AdminMobile({ profile }) {
   useEffect(function () { loadAll() }, [])
 
   async function loadAll() {
-    var [pendCat, pendSub, pendItem, deptRes, catRes, subRes, venueRes, profilesRes] = await Promise.all([
+    var [pendCat, pendSub, deptRes, catRes, subRes, venueRes, profilesRes] = await Promise.all([
       supabase.from('categories').select('*').eq('status', 'pending'),
       supabase.from('sub_categories').select('*, categories(name)').eq('status', 'pending'),
-      supabase.from('inventory_items').select('*, categories(name)').eq('status', 'pending'),
       supabase.from('departments').select('*').order('name'),
       supabase.from('categories').select('*').order('name'),
       supabase.from('sub_categories').select('*, categories(name)').order('name'),
@@ -57,9 +56,9 @@ function AdminMobile({ profile }) {
     ;(pendSub.data || []).forEach(function (s) {
       allPending.push({ id: s.id, table: 'sub_categories', type: 'Cat/Sub', name: s.name, category: s.categories?.name || '—', by: profileMap[s.added_by] || '—' })
     })
-    ;(pendItem.data || []).forEach(function (i) {
-      allPending.push({ id: i.id, table: 'inventory_items', type: 'Item', name: i.name, category: i.categories?.name || '—', by: profileMap[i.submitted_by] || '—' })
-    })
+    // Inventory items are dept-head-only now (no admin tier) — see
+    // 00058_inventory_single_stage_approval.sql. Admins keep visibility via
+    // Inventory > All Items, just not an approve/reject action here.
 
     setPending(allPending)
     setDepartments(deptRes.data || [])
@@ -80,9 +79,6 @@ function AdminMobile({ profile }) {
   async function confirmReject() {
     if (!rejectTarget || !rejectReason.trim()) return
     setSaving(true)
-    if (rejectTarget.table === 'inventory_items') {
-      await supabase.from('venue_allocations').delete().eq('item_id', rejectTarget.id)
-    }
     await supabase.from(rejectTarget.table).delete().eq('id', rejectTarget.id)
     logActivity('REJECT_' + rejectTarget.type.toUpperCase().replace('/', '_'), rejectTarget.name + ' | Reason: ' + rejectReason.trim())
     setRejectTarget(null)

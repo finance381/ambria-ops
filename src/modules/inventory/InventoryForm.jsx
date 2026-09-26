@@ -432,25 +432,50 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved }) {
     if (!isEdit && profile?.id) { payload.submitted_by = profile.id }
     if (!isEdit) {
       var isAdminRole = hasPerm(profile?.permsNew, 'review.pending.approve')
-      if (prefill || isAdminRole) {
-        payload.status = 'approved'
+      if (isCatStore) {
+        // item_receipt keeps the two-stage flow: dept clears it, then admin
+        // gives final approval — unchanged by the inventory single-stage change.
+        if (prefill || isAdminRole) {
+          payload.status = 'approved'
+        } else {
+          var catIdNum = Number(categoryId)
+          var { data: hasDeptApprover } = await supabase.rpc('has_category_dept_approver', {
+            p_category_id: catIdNum,
+            p_exclude_id: profile.id,
+          })
+          var selfIsDeptApprover = hasPerm(profile?.permsNew, 'review.dept.approve') && (profile?.category_ids || []).includes(Number(categoryId))
+          if (selfIsDeptApprover) {
+            payload.status = 'pending'
+            payload.dept_approved_by = profile.id
+            payload.dept_approved_at = new Date().toISOString()
+          } else if (hasDeptApprover) {
+            payload.status = 'pending_dept'
+          } else {
+            payload.status = 'pending'
+          }
+        }
       } else {
-        // Check if a dept approver exists for this category (other than the submitter)
-        var catIdNum = Number(categoryId)
-        var { data: hasDeptApprover } = await supabase.rpc('has_category_dept_approver', {
-          p_category_id: catIdNum,
-          p_exclude_id: profile.id,
-        })
-        // If submitter IS a dept approver for this category, skip dept tier
-        var selfIsDeptApprover = hasPerm(profile?.permsNew, 'review.dept.approve') && (profile?.category_ids || []).includes(Number(categoryId))
-        if (selfIsDeptApprover) {
-          payload.status = 'pending'
+        // inventory: single stage — the category dept head's approval is
+        // final. A category with no dept head has no fallback approver, so
+        // it auto-approves (see fn_is_inventory_dept_head / has_category_dept_approver).
+        var isDeptHeadHere = profile?.role === 'dept. head'
+          && hasPerm(profile?.permsNew, 'review.dept.approve')
+          && (profile?.category_ids || []).includes(Number(categoryId))
+        if (prefill || isAdminRole) {
+          payload.status = 'approved'
+        } else if (isDeptHeadHere) {
+          payload.status = 'approved'
           payload.dept_approved_by = profile.id
           payload.dept_approved_at = new Date().toISOString()
-        } else if (hasDeptApprover) {
-          payload.status = 'pending_dept'
+          payload.reviewed_by = profile.id
+          payload.reviewed_at = new Date().toISOString()
         } else {
-          payload.status = 'pending'
+          var catIdNum2 = Number(categoryId)
+          var { data: hasDeptApprover2 } = await supabase.rpc('has_category_dept_approver', {
+            p_category_id: catIdNum2,
+            p_exclude_id: profile.id,
+          })
+          payload.status = hasDeptApprover2 ? 'pending_dept' : 'approved'
         }
       }
     }

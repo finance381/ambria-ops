@@ -346,7 +346,7 @@ function Inventory({ profile }) {
                   (item.status === 'pending_dept' ? "bg-blue-100 text-blue-700" :
                    item.status === 'pending' ? "bg-amber-100 text-amber-700" :
                    "bg-gray-100 text-gray-600")}>
-                  {item.status === 'pending_dept' ? 'Pending (Dept)' : item.status === 'pending' ? 'Pending (Admin)' : item.status}
+                  {item.status === 'pending_dept' ? 'Pending' : item.status === 'pending' ? 'Pending' : item.status}
                 </span>
               </div>
             )}

@@ -55,8 +55,9 @@
       var weekOut = new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0]
 
       var results = await Promise.allSettled([
-        // 0: Pending inventory
-        supabase.from('inventory_items').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
+        // 0: Pending inventory — single-stage now, so "pending" means pending_dept
+        // (legacy 'pending' rows are backfilled away, but kept here defensively)
+        supabase.from('inventory_items').select('id', { count: 'exact', head: true }).in('status', ['pending_dept', 'pending']),
 
         // 1: Pending requisitions
         supabase.from('requisitions').select('id', { count: 'exact', head: true }).in('status', ['pending', 'pending_dept']),
