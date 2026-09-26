@@ -663,6 +663,24 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
           <Row label="Type" value={exp.expense_types.name + (exp.expense_sub_types?.name ? ' › ' + exp.expense_sub_types.name : '')} />
         )}
         {exp.vendor_name && <Row label="Vendor" value={exp.vendor_name} />}
+        {/* Split-payment purchases put part of the bill on vendor credit
+            rather than debiting the wallet in full — worth showing here,
+            not just in the vendor ledger, since the headline Total alone
+            doesn't say how much of it actually left the wallet just now. */}
+        {(exp.payment_credit_paise || 0) > 0 && (
+          <>
+            <Row label="Paid Now (Cash)" money value={formatPoints(exp.payment_cash_paise || 0)} />
+            <Row label="On Vendor Credit" money value={formatPoints(exp.payment_credit_paise)} />
+            {(exp.payment_credit_cash_paise || 0) > 0 && (
+              <Row label="— Credit via Cash" money
+                value={formatPoints(exp.payment_credit_cash_paise) + (exp.cash_due_date ? ' · due ' + formatDate(exp.cash_due_date) : '')} />
+            )}
+            {(exp.payment_credit_bank_paise || 0) > 0 && (
+              <Row label="— Credit via Bank" money
+                value={formatPoints(exp.payment_credit_bank_paise) + (exp.bank_due_date ? ' · due ' + formatDate(exp.bank_due_date) : '')} />
+            )}
+          </>
+        )}
         {exp.travel_from && (
           <Row label="Travel" value={exp.travel_from + (exp.travel_to ? ' → ' + exp.travel_to : '') + (exp.travel_mode ? ' (' + exp.travel_mode + ')' : '')} />
         )}
