@@ -670,7 +670,11 @@ function Sidebar({ page, setPage, quotes, savedId, onLoadQuote, loadingQuotes, p
 
 function LivePreview({ page, guestName, venName, etLabel, pax, slotLabel, effVm, effDecor, effEnt, effTotal, adjTotalQ, adjTotalT, adjTotalF, hasDeal, savedId, lmsRef, discountAmt, isDesktop }) {
   var isP0 = page === 0
-  function lineVal(v) { return isP0 ? '' : ('\u20B9' + (Math.round(v * 10) / 10) + 'L') }
+  // Ceil to the nearest half-lakh, matching fmtRound everywhere else in this
+  // calculator \u2014 this used to round to the nearest 0.1L instead, so this row
+  // showed raw decimals (22.3L) while the summary boxes below it already
+  // snapped to clean 0.5 steps (22.5L).
+  function lineVal(v) { return isP0 ? '' : ('\u20B9' + (Math.ceil(v * 2) / 2) + 'L') }
 
   var rows = [
     { label: 'Venue + Menu', icon: 'building', val: effVm },
@@ -1392,11 +1396,14 @@ function QuoteCalculator({ profile, onExit, onSignOut }) {
   var guestPays = taxMode ? dealVal : rd(dealVal + ttx)
   var netToYou = taxMode ? rd(dealVal - ttx) : dealVal
 
-  // Sync tax slider to effective total (post-discount) or quote total
+  // Sync tax slider to effective total (post-discount) or quote total.
+  // Ceil to nearest half-lakh, matching fmtRound — nearest-rounding here
+  // would let this figure disagree with the displayed total (e.g. 22.7
+  // would settle at 22.5 instead of the 23 shown everywhere else).
   useEffect(function () {
     var val = effTotal > 0 ? effTotal : adjTotal.q
     if (val) {
-      var rounded = Math.round(val * 2) / 2
+      var rounded = Math.ceil(val * 2) / 2
       setDealVal(Math.max(5, Math.min(60, rounded)))
     }
   }, [adjTotal.q, effTotal])
