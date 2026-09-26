@@ -375,7 +375,13 @@ CREATE POLICY review_events_insert ON review_events FOR INSERT WITH CHECK (
 -- 0 rows today fall in "pending_dept, category has no dept head" (confirmed
 -- via introspection) — so the Decision A auto-approve path has nothing to
 -- backfill; it only affects future submissions via InventoryForm.jsx.
+--
+-- These are direct updates, not calls through rpc_review_approve, so they'd
+-- trip the guard trigger from step 2 — set its bypass flag first (SELECT, not
+-- PERFORM: this is plain SQL here, not inside a function body).
 -- ═══════════════════════════════════════
+SELECT set_config('app.review_rpc', '1', true);
+
 WITH backfilled AS (
   UPDATE inventory_items
      SET status = 'approved', reviewed_by = dept_approved_by, reviewed_at = now()
