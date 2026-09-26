@@ -2376,17 +2376,17 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
               <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] mb-2">4. Amount Received</label>
               <input type="number" min="1" step="any" inputMode="decimal" value={collectAmount}
                 onChange={function (e) { setCollectAmount(e.target.value) }}
-                placeholder="0" className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="0" className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 style={{ fontSize: '16px' }} />
             </div>
           )}
 
           {collectEventId && (
             <div>
-              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">5. Description</label>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] mb-2">5. Description</label>
               <VoiceInput type="text" value={collectDesc} onChange={function (e) { setCollectDesc(e.target.value) }}
                 placeholder="e.g. Advance payment, Final settlement..."
-                maxLength="300" className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                maxLength="300" className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
             </div>
           )}
 
@@ -2463,7 +2463,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             <input type="text" value={tentativeGuestName}
               onChange={function (e) { setTentativeGuestName(e.target.value) }}
               placeholder="e.g. Himanshu Vats"
-              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              className="w-full px-3 py-2.5 bg-white border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
               style={{ fontSize: '16px' }} />
           </div>
           <div>
@@ -4237,7 +4237,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                     <EventDatePicker value={txnFrom} placeholder="From date" collapsible includePast plain
                       onChange={function (v) { setTxnFrom(v); openWalletTxns(null, v, null) }} />
                   </div>
-                  <span aria-hidden="true" className="shrink-0 text-slate-300"><Icon name="arrowRight" size={15} /></span>
+                  <span aria-hidden="true" className="shrink-0 text-slate-500"><Icon name="arrowRight" size={16} strokeWidth={2.6} /></span>
                   <div className="flex-1 min-w-0">
                     <EventDatePicker value={txnTo} placeholder="To date" collapsible includePast plain
                       onChange={function (v) { setTxnTo(v); openWalletTxns(null, null, v) }} />

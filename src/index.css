@@ -645,3 +645,11 @@
   }
   .ambria-event-day .ambria-head-back:hover { background-color: #FFFFFF; color: #9E1B4F; }
 }
+
+/* The New Cost Transfer form. Its placeholders — its own fields and the
+   shared SearchDropdown's alike — read as too faint at slate-400/500 on
+   white, so inside this one form they are slate-600. Scoped to the form's
+   class: the shared components keep their colour everywhere else. Unlayered,
+   so it beats the placeholder: utilities on those inputs. */
+.ambria-ct-form input::placeholder,
+.ambria-ct-form textarea::placeholder { color: #475569; opacity: 1; }

@@ -8,7 +8,8 @@ import { useBodyScrollLock } from '../../lib/useBodyScrollLock'
 // subtree can paint over the sidebar. In place, a modal opened from an admin
 // page had the sidebar showing through its left 248px. EventDatePicker's panel
 // portals for the same reason.
-function Modal({ open, onClose, title, wide, children }) {
+// subtitle: an optional line under the title saying what the form is for.
+function Modal({ open, onClose, title, subtitle, wide, children }) {
   // Before the early return: a hook cannot be called conditionally, and this
   // one already does nothing when it is not locked.
   useBodyScrollLock(open)
@@ -24,7 +25,10 @@ function Modal({ open, onClose, title, wide, children }) {
         " sm:m-4"
       }>
         <div className="sticky top-0 bg-white flex items-center justify-between gap-3 px-4 sm:px-5 py-3 border-b border-slate-200 z-10">
-          <h3 className="text-[15px] sm:text-base font-bold text-slate-900 truncate">{title}</h3>
+          <div className="min-w-0">
+            <h3 className="text-[15px] sm:text-base font-bold text-slate-900 truncate">{title}</h3>
+            {subtitle && <p className="mt-0.5 text-[12.5px] text-slate-600 truncate">{subtitle}</p>}
+          </div>
           <button onClick={onClose} aria-label="Close" title="Close"
             className="shrink-0 w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors">
             <Icon name="close" size={16} />
