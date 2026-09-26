@@ -17,6 +17,7 @@ import { useAudioRecorder } from '../../hooks/useAudioRecorder'
 import { getReceiptUrl, isVoiceNotePath } from '../../lib/uploadHelper'
 import { compressImage } from '../../lib/imageCompress'
 import ReverseDialog from '../../components/ui/ReverseDialog'
+import { pushBack, goBack as navBack } from '../../lib/backNav'
 
 function byName(a, b) { return (a.name || '').localeCompare(b.name || '') }
 
@@ -42,7 +43,55 @@ function makeEmptyForm() {
   }
 }
 
-function CostTransfers({ profile }) {
+// The phone's ground behind Cost Transfers, in the app's own indigo and kept
+// quiet: a wash from pale lavender at the top to near-white at the foot, two
+// soft glows with no edges to them, and a fine dot grid that fades out as it
+// goes down. Colour enough that the screen is not a grey sheet, and nothing
+// with an edge or a subject to compete with the white cards on top of it.
+// The body takes the foot's colour while the screen is up, so dragging past
+// either end of the list meets the same tone. The admin console has its own
+// ground and gets none of this.
+var COST_BG_TOP = '#ECEEFF'
+var COST_BG_FOOT = '#F8F8FD'
+
+function CostBackdrop({ inAdmin }) {
+  useEffect(function () {
+    if (inAdmin) return
+    var b = document.body
+    var h = document.documentElement
+    var prevBg = b.style.backgroundColor
+    var prevHtmlBg = h.style.backgroundColor
+    var prevOver = b.style.overscrollBehaviorY
+    b.style.backgroundColor = COST_BG_FOOT
+    h.style.backgroundColor = COST_BG_FOOT
+    b.style.overscrollBehaviorY = 'none'
+    return function () {
+      b.style.backgroundColor = prevBg
+      h.style.backgroundColor = prevHtmlBg
+      b.style.overscrollBehaviorY = prevOver
+    }
+  }, [inAdmin])
+
+  if (inAdmin) return null
+  return (
+    <div aria-hidden="true" className="sm:hidden pointer-events-none fixed inset-0 -z-10 overflow-hidden"
+      style={{ background: 'linear-gradient(180deg, ' + COST_BG_TOP + ' 0%, #F3F3FE 38%, ' + COST_BG_FOOT + ' 100%)', minHeight: '100lvh' }}>
+      <div className="absolute -top-24 -right-24 w-[26rem] h-[26rem] rounded-full"
+        style={{ background: 'radial-gradient(circle, rgba(129,140,248,0.28) 0%, rgba(129,140,248,0) 70%)' }} />
+      <div className="absolute top-[38%] -left-32 w-[28rem] h-[28rem] rounded-full"
+        style={{ background: 'radial-gradient(circle, rgba(167,139,250,0.16) 0%, rgba(167,139,250,0) 70%)' }} />
+      <div className="absolute inset-0"
+        style={{
+          backgroundImage: 'radial-gradient(rgba(79,70,229,0.10) 1px, transparent 1px)',
+          backgroundSize: '18px 18px',
+          WebkitMaskImage: 'linear-gradient(180deg, #000 0%, rgba(0,0,0,0.35) 45%, transparent 80%)',
+          maskImage: 'linear-gradient(180deg, #000 0%, rgba(0,0,0,0.35) 45%, transparent 80%)',
+        }} />
+    </div>
+  )
+}
+
+function CostTransfers({ profile, inAdmin }) {
   var canCreate = hasPerm(profile?.permsNew, 'finance.cost_transfers')
   var isAdmin = hasPerm(profile?.permsNew, 'admin.dashboard')
   var canMarkChecked = hasPerm(profile?.permsNew, 'finance.wallet.mark_checked')
@@ -60,6 +109,13 @@ function CostTransfers({ profile }) {
   var [expandedBatches, setExpandedBatches] = useState({})
   // Desktop only: the table's sort, and which row's ⋮ menu is open.
   var [sortBy, setSortBy] = useState('date_desc')
+  // Ten entries a page. An entry is a group — a split's allocations stay
+  // together on one page rather than breaking across two. Any change to what
+  // the list holds or its order goes back to page one: page three of the old
+  // list is not page three of the new one.
+  var PAGE_SIZE = 10
+  var [page, setPage] = useState(1)
+  var listTopRef = useRef(null)
   var [menuRowId, setMenuRowId] = useState(null)
   var [editTarget, setEditTarget] = useState(null) // the cost_transfers row being edited
   var [editForm, setEditForm] = useState(null)
@@ -211,6 +267,9 @@ function CostTransfers({ profile }) {
   var [searchRaw, setSearchRaw] = useState('')
   var [searchD, setSearchD] = useState('')
   var [filtersOpen, setFiltersOpen] = useState(false)
+  // Here, below the filters it watches: written above them it read each one
+  // before it was assigned, saw undefined every render, and never fired.
+  useEffect(function () { setPage(1) }, [statusFilter, fromPartyFilter, toPartyFilter, dateFrom, dateTo, searchD, sortBy])
 
   useEffect(function () {
     var t = setTimeout(function () { setSearchD(searchRaw) }, 400)
@@ -279,11 +338,13 @@ function CostTransfers({ profile }) {
     return true
   })
 
+  // The filters are what the Filters panel holds — status, the two parties,
+  // the dates. The search box sits outside the panel and has its own clear,
+  // so it is neither counted on the Filters badge nor cleared by Reset.
   function resetFilters() {
     setFromPartyFilter(''); setToPartyFilter('')
     setStatusFilter('all')
     setDateFrom(''); setDateTo('')
-    setSearchRaw('')
   }
 
   function activeFilterCount() {
@@ -293,7 +354,6 @@ function CostTransfers({ profile }) {
     if (statusFilter !== 'all') n++
     if (dateFrom) n++
     if (dateTo) n++
-    if (searchRaw) n++
     return n
   }
 
@@ -520,7 +580,7 @@ function CostTransfers({ profile }) {
         return
       }
     }
-    setShowForm(false)
+    closeForm()
     setForm(makeEmptyForm())
     toggleFunction(false)
     resetProof()
@@ -745,325 +805,204 @@ function CostTransfers({ profile }) {
     )
   }
 
+  // The phone card: date and amount across the top, the move as two labelled
+  // lines — From with its type over its sub-type, To under it — the reason
+  // in grey, and the actions along the foot. It was one run-on line of
+  // arrows ("LGT-Light (ADD) → LGT-Casual Labour Expenses → Parveen…") that
+  // broke wherever the screen ran out.
   function MobileCard({ r }) {
     var isReversed = r.reversed_by_id != null
     var isReversal = r.reversal_of != null
     var canReverse = canCreate && !isReversed && !isReversal
     var canEdit = canEditRow(r)
+    var hasFoot = canReverse || canEdit || isReversal || isReversed || r.edited_at
     return (
-      <div className={"bg-white border border-gray-200 rounded-lg p-3 space-y-1.5 " + (isReversed ? "opacity-60" : "")}>
-        <div className="flex items-center justify-between">
-          <span className="text-xs text-gray-500">{formatDate(r.effective_date)}</span>
-          <span className="font-mono text-sm font-semibold text-gray-800 text-right">
-            <span className="block">Rs {(r.amount_paise / 100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
-            {(canMarkChecked || r.checked_by) && (
-              <span className="mt-1 flex justify-end" onClick={function (ev) { ev.stopPropagation() }}>
-                <CheckedStamp
-                  variant="stamp"
-                  checked={!!r.checked_by}
-                  checkedAt={r.checked_at}
-                  canToggle={canMarkChecked}
-                  canUncheck={r.checked_by === profile?.id || isAdmin}
-                  busy={checkingTransferId === r.id}
-                  onToggle={function () { toggleTransferCheck(r) }}
-                />
-              </span>
-            )}
-          </span>
-        </div>
-        <div className="text-[10px] text-gray-400">Logged {formatDateTime(r.created_at)}</div>
-        <div className="text-xs text-gray-700">
-          <span className="font-medium">{partyLabel(r, 'from')}{partyMeta(r, 'from')}</span>
-          <span className="mx-1 text-gray-400">→</span>
-          <span className="font-medium">{partyLabel(r, 'to')}{partyMeta(r, 'to')}</span>
-        </div>
-        {r.description && <div className="text-xs text-gray-500">{r.description}</div>}
-        <div className="flex items-center justify-between pt-1">
-          <div className="flex items-center gap-1">
-            {isReversal && <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 uppercase">Reversal</span>}
-            {isReversed && <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-200 text-gray-600 uppercase">Reversed</span>}
-            {r.edited_at && <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 uppercase">Edited</span>}
+      <div className={"bg-white border border-slate-200 rounded-2xl shadow-[0_1px_3px_rgba(15,23,42,0.06)] " + (isReversed ? "opacity-60" : "")}>
+        <div className="px-4 pt-3.5 pb-3">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-[14px] font-semibold text-slate-900">{formatDate(r.effective_date)}</p>
+              <p className="text-[11.5px] text-slate-500">Logged {formatDateTime(r.created_at)}</p>
+            </div>
+            {/* The check goes with the figure, as it does in the desktop
+                table — a verdict on the amount, under the amount.
+
+                The slot hangs under the amount out of the flow, lined up with
+                its right edge, so it adds no height to the top row. Right, not
+                centred: the chip is wider than a short amount, and centred it
+                ran past the card's edge and was cut off. In the flow it made
+                that row taller than the date beside it and pushed From down,
+                leaving a gap under "Logged". The chip or the stamp is pinned
+                to the slot's top-right corner. The chip is 22px tall and the stamp 56px, so
+                in the flow the swap grew the card and shoved everything under
+                it down. Pinned, the stamp lands where the chip was and hangs
+                over the empty space to the right of From / To; nothing moves. */}
+            <div className="relative shrink-0">
+              <p className="text-[16px] tabular-nums">
+                <span className="font-semibold text-slate-500">Rs</span>{' '}
+                <span className="font-bold text-slate-900">{(r.amount_paise / 100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+              </p>
+              {(canMarkChecked || r.checked_by) && (
+                <span className="absolute right-0 top-full mt-2.5 w-[104px] h-[22px] z-10" onClick={function (ev) { ev.stopPropagation() }}>
+                  <span className="absolute right-0 top-0 z-10">
+                  <CheckedStamp
+                    variant="stamp" compact
+                    checked={!!r.checked_by}
+                    checkedAt={r.checked_at}
+                    canToggle={canMarkChecked}
+                    canUncheck={r.checked_by === profile?.id || isAdmin}
+                    busy={checkingTransferId === r.id}
+                    onToggle={function () { toggleTransferCheck(r) }}
+                  />
+                  </span>
+                </span>
+              )}
+            </div>
           </div>
-          <div className="flex gap-3">
-            {canEdit && (
-              <button onClick={function () { openEdit(r) }} className="text-xs text-indigo-600 hover:text-indigo-800 font-medium">Edit</button>
-            )}
-            {canReverse && (
-              <button onClick={function () { setReverseTarget(r.id) }} disabled={reversing === r.id}
-                className="h-[22px] inline-flex items-center gap-1 px-2 rounded-md border border-slate-200 bg-white text-[10px] font-bold uppercase tracking-[0.04em] text-slate-600 hover:border-rose-300 hover:text-rose-700 hover:bg-rose-50 transition-colors disabled:opacity-40">
-                <Icon name={reversing === r.id ? 'refresh' : 'reverse'} size={10} />
-                {reversing === r.id ? 'Reversing…' : 'Reverse'}
-              </button>
-            )}
+
+          {/* The move as a short track: a hollow dot for where the cost
+              leaves, a filled one for where it lands, a rule between them.
+              The direction reads before the labels do, with no colour to it
+              beyond the one filled dot. */}
+          <div className="relative mt-3.5 pl-6 text-[13.5px]">
+            <span aria-hidden="true" className="absolute left-[5px] top-[18px] bottom-[18px] w-px bg-slate-300" />
+            <div className="relative">
+              <span aria-hidden="true" className="absolute -left-6 top-[3px] w-[11px] h-[11px] rounded-full border-2 border-slate-400 bg-white" />
+              <p className="text-[10.5px] font-bold uppercase tracking-[0.07em] text-slate-500 leading-none mb-1">From</p>
+              {partyCell(r, 'from')}{partyMeta(r, 'from')}
+            </div>
+            <div className="relative mt-3">
+              <span aria-hidden="true" className="absolute -left-6 top-[3px] w-[11px] h-[11px] rounded-full bg-indigo-600" />
+              <p className="text-[10.5px] font-bold uppercase tracking-[0.07em] text-slate-500 leading-none mb-1">To</p>
+              {partyCell(r, 'to')}{partyMeta(r, 'to')}
+            </div>
           </div>
+
+          {r.description && (
+            <p className="mt-3 flex items-start gap-2 px-3 py-2 rounded-lg bg-slate-50 text-[13px] text-slate-700">
+              <Icon name="fileText" size={14} className="shrink-0 mt-0.5 text-slate-400" />
+              <span className="min-w-0">{r.description}</span>
+            </p>
+          )}
         </div>
+
+        {hasFoot && (
+          <div className="flex items-center justify-between gap-2 px-4 py-2.5 border-t border-slate-100">
+            <div className="min-w-0 flex items-center gap-1.5 flex-wrap">
+              {isReversal && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 uppercase">Reversal</span>}
+              {isReversed && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-200 text-slate-600 uppercase">Reversed</span>}
+              {r.edited_at && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 uppercase">Edited</span>}
+            </div>
+            <div className="shrink-0 flex items-center gap-1.5">
+              {canEdit && (
+                <button type="button" onClick={function () { openEdit(r) }}
+                  className="h-8 px-3 rounded-lg text-[13px] font-semibold text-slate-600 hover:bg-slate-100 transition-colors">Edit</button>
+              )}
+              {canReverse && (
+                <button type="button" onClick={function () { setReverseTarget(r.id) }} disabled={reversing === r.id}
+                  className="h-8 inline-flex items-center gap-1.5 px-3 rounded-lg border border-slate-200 bg-white text-[13px] font-semibold text-slate-700 hover:border-rose-300 hover:text-rose-700 transition-colors disabled:opacity-40">
+                  <Icon name={reversing === r.id ? 'refresh' : 'reverse'} size={13} className="text-indigo-600" />
+                  {reversing === r.id ? 'Reversing…' : 'Reverse'}
+                </button>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     )
   }
 
-  function openNewTransfer() { setForm(makeEmptyForm()); setOpenToKey(null); toggleFunction(false); setError(''); setShowForm(true); prefetchEvents() }
+  // On a phone New Transfer is a page, not a sheet over the list: the form
+  // takes the list's place, and the header's back arrow (or a swipe) closes
+  // it — so opening it is a step on the app's back stack there, and every way
+  // out (Cancel, a save, the arrow) leaves through that step so none is left
+  // behind to swallow a later back press. A desktop keeps the dialog.
+  var formStepRef = useRef(false)
+  function phoneNow() {
+    return typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(max-width: 639px)').matches
+  }
+  var [isPhone, setIsPhone] = useState(phoneNow)
+  useEffect(function () {
+    if (!window.matchMedia) return
+    var mq = window.matchMedia('(max-width: 639px)')
+    function onChange() { setIsPhone(mq.matches) }
+    if (mq.addEventListener) mq.addEventListener('change', onChange)
+    else mq.addListener(onChange)
+    return function () {
+      if (mq.removeEventListener) mq.removeEventListener('change', onChange)
+      else mq.removeListener(onChange)
+    }
+  }, [])
+  var formAsPage = isPhone && !inAdmin
 
-  return (
-    <div>
-      {/* Desktop: one row holding the three things you do here — find,
-          narrow, add. */}
-      <div className="hidden sm:block mb-4">
-        <div className="flex items-center gap-3">
-          <SearchField
-            value={searchRaw}
-            onChange={function (v) { setSearchRaw(v) }}
-            placeholder="Search description..."
-            className="flex-1 min-w-0"
-          />
-          <button type="button" onClick={function () { setFiltersOpen(!filtersOpen) }} aria-expanded={filtersOpen}
-            className={"shrink-0 h-10 inline-flex items-center gap-2 px-4 rounded-xl border text-[13.5px] font-semibold transition-colors " +
-              (filtersOpen || activeFilterCount() > 0 ? "bg-indigo-50 border-indigo-200 text-indigo-700" : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50")}>
-            <Icon name="filter" size={15} />
-            Filters{activeFilterCount() > 0 ? ' · ' + activeFilterCount() : ''}
-            <Icon name={filtersOpen ? 'chevronUp' : 'chevronDown'} size={14} className="text-slate-400" />
-          </button>
-          {activeFilterCount() > 0 && (
-            <button type="button" onClick={resetFilters}
-              className="shrink-0 h-10 px-3 rounded-xl text-[13px] font-semibold text-rose-600 hover:bg-rose-50 transition-colors">
-              Reset
+  function openNewTransfer() {
+    setForm(makeEmptyForm()); setOpenToKey(null); toggleFunction(false); setError(''); setShowForm(true); prefetchEvents()
+    if (!inAdmin && phoneNow()) {
+      formStepRef.current = true
+      pushBack(function () { formStepRef.current = false; setShowForm(false); resetProof() })
+      window.requestAnimationFrame(function () { window.scrollTo(0, 0) })
+    }
+  }
+  function closeForm() {
+    if (formStepRef.current) navBack()
+    else { setShowForm(false); resetProof() }
+  }
+
+  var allGroups = groupedTransfers()
+  var pageCount = Math.max(1, Math.ceil(allGroups.length / PAGE_SIZE))
+  var curPage = Math.min(page, pageCount)
+  var pageGroups = allGroups.slice((curPage - 1) * PAGE_SIZE, curPage * PAGE_SIZE)
+  var fromN = allGroups.length === 0 ? 0 : (curPage - 1) * PAGE_SIZE + 1
+  var toN = Math.min(curPage * PAGE_SIZE, allGroups.length)
+  function goToPage(n) {
+    setPage(n)
+    // The new page replaced the rows under you; bring its top into view.
+    window.requestAnimationFrame(function () {
+      if (listTopRef.current) listTopRef.current.scrollIntoView({ block: 'start', behavior: 'smooth' })
+    })
+  }
+  // First, last, and the pages either side of the current one, with a gap
+  // mark wherever numbers are skipped.
+  function pageNumbers() {
+    var out = []
+    for (var i = 1; i <= pageCount; i++) {
+      if (i === 1 || i === pageCount || Math.abs(i - curPage) <= 1) out.push(i)
+      else if (out[out.length - 1] !== '…') out.push('…')
+    }
+    return out
+  }
+  var pager = pageCount > 1 && (
+    <div className="flex items-center justify-between gap-3 flex-wrap">
+      <p className="text-[13px] text-slate-600">
+        Showing <span className="font-semibold text-slate-900 tabular-nums">{fromN}–{toN}</span> of <span className="font-semibold text-slate-900 tabular-nums">{allGroups.length}</span>
+      </p>
+      {/* ml-auto: on a phone the buttons wrap under the count, and there
+          they keep to the right edge instead of falling to the left. */}
+      <div className="ml-auto flex items-center gap-1">
+        <button type="button" onClick={function () { goToPage(curPage - 1) }} disabled={curPage === 1} aria-label="Previous page"
+          className="w-9 h-9 inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:hover:bg-white transition-colors">
+          <Icon name="chevronRight" size={15} className="rotate-180" />
+        </button>
+        {pageNumbers().map(function (n, i) {
+          if (n === '…') return <span key={'gap' + i} className="w-7 text-center text-[13px] text-slate-400">…</span>
+          var on = n === curPage
+          return (
+            <button key={n} type="button" onClick={function () { goToPage(n) }} aria-current={on ? 'page' : undefined}
+              className={"min-w-9 h-9 px-2 rounded-lg text-[13px] font-semibold tabular-nums transition-colors " +
+                (on ? "bg-indigo-600 text-white" : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50")}>
+              {n}
             </button>
-          )}
-          {canCreate && (
-            <button type="button" onClick={openNewTransfer}
-              className="shrink-0 h-10 inline-flex items-center gap-2 px-5 rounded-xl bg-indigo-600 text-white text-[14px] font-bold shadow-[0_2px_8px_rgba(79,70,229,0.25)] hover:bg-indigo-700 transition-colors">
-              <Icon name="plus" size={16} />
-              New Transfer
-            </button>
-          )}
-        </div>
+          )
+        })}
+        <button type="button" onClick={function () { goToPage(curPage + 1) }} disabled={curPage === pageCount} aria-label="Next page"
+          className="w-9 h-9 inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:hover:bg-white transition-colors">
+          <Icon name="chevronRight" size={15} />
+        </button>
       </div>
+    </div>
+  )
 
-      <div className="sm:hidden flex items-center justify-end mb-4">
-        {canCreate && (
-          <button onClick={openNewTransfer}
-            className="px-3 py-1.5 rounded-md bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700">
-            <i className="ti ti-plus" style={{ fontSize: '14px', marginRight: '4px' }} aria-hidden="true"></i>
-            New Transfer
-          </button>
-        )}
-      </div>
-
-      {error && !showForm && (
-        <div className="mb-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">{error}</div>
-      )}
-
-      {/* ─── FILTERS ─────────────────────────────────── */}
-      <div className="mb-3 space-y-2">
-        <div className="sm:hidden space-y-2">
-        <SearchField
-          value={searchRaw}
-          onChange={function (v) { setSearchRaw(v) }}
-          placeholder="Search description..."
-          className="w-full"
-        />
-        <div className="flex gap-2">
-          <button onClick={function () { setFiltersOpen(!filtersOpen) }}
-            className={"flex-1 py-2 text-xs font-bold rounded-lg border transition-colors " + (filtersOpen ? "bg-indigo-50 border-indigo-300 text-indigo-700" : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50")}>
-            {filtersOpen ? '▲' : '▼'} Filters{activeFilterCount() > 0 ? ' · ' + activeFilterCount() : ''}
-          </button>
-          {activeFilterCount() > 0 && (
-            <button onClick={resetFilters}
-              className="px-3 py-2 text-xs font-bold text-red-600 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100">
-              Reset
-            </button>
-          )}
-        </div>
-        </div>
-        {/* One row on a desktop — status, the two parties, the date range —
-            where it was three full-width rows of controls sized for a phone.
-            The parties use the same dropdown as the expense filters, and the
-            dates the app's own picker: <input type="date"> printed mm/dd/yyyy
-            in US order whatever the locale, beside "23 Sept 2026" in the
-            table right under it. */}
-        {filtersOpen && (
-          <div className="bg-white border border-slate-200 rounded-xl sm:rounded-2xl p-3 sm:p-4">
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[auto_minmax(0,2fr)_minmax(0,1.4fr)] lg:items-end lg:gap-4">
-              <div>
-                <label className="block text-[11px] font-bold uppercase tracking-[0.07em] text-slate-500 mb-1.5">Status</label>
-                <div className="flex h-10 p-1 gap-1 bg-slate-100 rounded-xl">
-                  {['all', 'active', 'reversed'].map(function (s) {
-                    var lbl = s === 'all' ? 'All' : (s === 'active' ? 'Active' : 'Reversed')
-                    var on = statusFilter === s
-                    return (
-                      <button key={s} type="button" onClick={function () { setStatusFilter(s) }} aria-pressed={on}
-                        className={"flex-1 lg:flex-none px-3 rounded-lg text-[12.5px] font-semibold transition-colors " +
-                          (on ? "bg-white text-slate-900 shadow-[0_1px_3px_rgba(15,23,42,0.10)]" : "text-slate-500 hover:text-slate-900")}>
-                        {lbl}
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
-              {/* The two parties are one question — cost moving from one to the
-                  other — so they sit together with the arrow between them,
-                  the way the date range beside them does. */}
-              <div className="sm:col-span-2 lg:col-span-1">
-                <div className="flex items-end gap-2">
-                  <div className="flex-1 min-w-0">
-                    <label className="block text-[11px] font-bold uppercase tracking-[0.07em] text-slate-500 mb-1.5">From (party)</label>
-                    <FilterDropdown value={fromPartyFilter} compact placeholder="All parties"
-                      options={PARTY_TYPES.map(function (p) { return { label: p.label, value: p.key } })}
-                      onChange={setFromPartyFilter} />
-                  </div>
-                  <span aria-hidden="true" className="shrink-0 h-10 inline-flex items-center text-slate-500">
-                    <Icon name="arrowRight" size={16} strokeWidth={2.6} />
-                  </span>
-                  <div className="flex-1 min-w-0">
-                    <label className="block text-[11px] font-bold uppercase tracking-[0.07em] text-slate-500 mb-1.5">To (party)</label>
-                    <FilterDropdown value={toPartyFilter} compact placeholder="All parties"
-                      options={PARTY_TYPES.map(function (p) { return { label: p.label, value: p.key } })}
-                      onChange={setToPartyFilter} />
-                  </div>
-                </div>
-              </div>
-              <div className="sm:col-span-2 lg:col-span-1">
-                <label className="block text-[11px] font-bold uppercase tracking-[0.07em] text-slate-500 mb-1.5">Date</label>
-                <div className="flex items-center gap-2">
-                  <div className="flex-1 min-w-0">
-                    <EventDatePicker value={dateFrom} onChange={function (v) { setDateFrom(v || '') }}
-                      collapsible includePast plain neutral placeholder="From" />
-                  </div>
-                  <Icon name="arrowRight" size={16} strokeWidth={2.6} className="shrink-0 text-slate-500" />
-                  <div className="flex-1 min-w-0">
-                    <EventDatePicker value={dateTo} onChange={function (v) { setDateTo(v || '') }}
-                      collapsible includePast plain neutral placeholder="To" />
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-        {!loading && shownTransfers.length > 0 && (
-          <div className="sm:hidden px-1 text-xs text-gray-600">
-            <span className="font-semibold text-gray-900">{shownTransfers.length}</span> shown
-          </div>
-        )}
-      </div>
-
-      {loading ? (
-        <p className="text-center text-sm text-gray-400 py-8">Loading...</p>
-      ) : shownTransfers.length === 0 ? (
-        <p className="text-center text-sm text-gray-400 py-8">{activeFilterCount() > 0 ? 'No transfers match filters.' : 'No cost transfers yet.'}</p>
-      ) : (
-        <>
-          <div aria-busy={refreshing}
-            className={"hidden sm:block bg-white border border-slate-200 rounded-2xl shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition-opacity duration-150 " + (refreshing ? "opacity-60" : "")}>
-            <div className="flex items-center justify-between gap-3 px-4 pt-4 pb-3">
-              <p className="text-[15px] text-slate-900"><span className="font-bold tabular-nums">{shownTransfers.length}</span> shown</p>
-              {/* A native select laid over its own label: the label is what
-                  shows, the select is what opens. */}
-              <label className="relative inline-flex items-center gap-2 text-[13px] text-slate-600 cursor-pointer">
-                <span>Sort by <span className="font-semibold text-slate-900">{({ date_desc: 'Date (Newest)', date_asc: 'Date (Oldest)', amount_desc: 'Amount (High)', amount_asc: 'Amount (Low)' })[sortBy]}</span></span>
-                <Icon name="chevronDown" size={14} className="text-slate-400" />
-                <select value={sortBy} onChange={function (e) { setSortBy(e.target.value) }} aria-label="Sort transfers"
-                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer">
-                  <option value="date_desc">Date (Newest)</option>
-                  <option value="date_asc">Date (Oldest)</option>
-                  <option value="amount_desc">Amount (High)</option>
-                  <option value="amount_asc">Amount (Low)</option>
-                </select>
-              </label>
-            </div>
-            <div className="px-2 pb-2 overflow-x-auto">
-            <table className="w-full text-sm table-fixed">
-              <colgroup>
-                {/* Date is a fixed 220: "Logged 23 Sept 2026, 2:37 pm" does not
-                    wrap, and as a share of a narrower window it ran out of its
-                    column into From. From is fixed too, at about its longest
-                    sub-type: as a share of a wide window it left a wide blank
-                    after the text, and the arrow stood far from From and
-                    right up against To. Description takes what is left. */}
-                <col className="w-[220px]" />
-                <col className="w-[240px]" />
-                <col className="w-[48px]" />
-                <col className="w-[18%]" />
-                <col className="w-[10%]" />
-                <col />
-                <col className="w-[180px]" />
-              </colgroup>
-              <thead>
-                <tr className="text-[11px] font-bold uppercase tracking-[0.06em] text-slate-500">
-                  <th className="text-left px-4 py-3 bg-slate-50 rounded-l-xl">Date</th>
-                  <th className="text-left px-4 py-3 bg-slate-50">From</th>
-                  <th aria-hidden="true" className="bg-slate-50" />
-                  <th className="text-left px-4 py-3 bg-slate-50">To</th>
-                  <th className="text-left px-4 py-3 bg-slate-50">Amount</th>
-                  <th className="text-left px-4 py-3 bg-slate-50">Description</th>
-                  <th className="text-center px-4 py-3 bg-slate-50 rounded-r-xl">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {groupedTransfers().map(function (g) {
-                  if (g.rows.length === 1) return <React.Fragment key={g.batchId}>{DesktopRow({ r: g.rows[0] })}</React.Fragment>
-                  var expanded = !!expandedBatches[g.batchId]
-                  return (
-                    <React.Fragment key={g.batchId}>
-                      <tr className="bg-indigo-50/40 hover:bg-indigo-50/70 cursor-pointer transition-colors" onClick={function () { toggleBatch(g.batchId) }}>
-                        <td className="px-4 py-3.5 align-middle whitespace-nowrap">
-                          <div className="text-[14px] font-semibold text-slate-900">{formatDate(g.rows[0].effective_date)}</div>
-                          <div className="mt-0.5 text-[12px] text-slate-500">Logged {formatDateTime(g.rows[0].created_at)}</div>
-                        </td>
-                        <td className="px-4 py-3.5 align-middle text-[13.5px]">{partyCell(g.rows[0], 'from')}{partyMeta(g.rows[0], 'from')}</td>
-                        <td aria-hidden="true" className="px-0 py-3.5 align-middle text-center text-slate-500"><Icon name="arrowRight" size={18} strokeWidth={2.6} className="inline-block" /></td>
-                        <td className="px-4 py-3.5 align-middle text-[13.5px] text-indigo-700 font-semibold">{expanded ? '▾' : '▸'} {g.rows.length} allocations</td>
-                        <td className="px-4 py-3.5 align-middle whitespace-nowrap text-[14px] tabular-nums">
-                          <span className="font-semibold text-slate-500">Rs</span>{' '}
-                          <span className="font-bold text-slate-900">{(g.totalPaise / 100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
-                        </td>
-                        <td className="px-4 py-3.5 align-middle text-[13.5px] text-slate-700">{g.rows[0].description}</td>
-                        <td className="px-4 py-3.5 align-middle text-center text-[13px] text-indigo-600 font-semibold">{expanded ? 'Collapse' : 'Expand'}</td>
-                      </tr>
-                      {expanded && g.rows.map(function (r) { return <React.Fragment key={r.id}>{DesktopRow({ r: r, indent: true })}</React.Fragment> })}
-                    </React.Fragment>
-                  )
-                })}
-              </tbody>
-            </table>
-            </div>
-          </div>
-
-          <div aria-busy={refreshing} className={"sm:hidden space-y-2 transition-opacity duration-150 " + (refreshing ? "opacity-60" : "")}>
-            {groupedTransfers().map(function (g) {
-              if (g.rows.length === 1) return <React.Fragment key={g.batchId}>{MobileCard({ r: g.rows[0] })}</React.Fragment>
-              var expanded = !!expandedBatches[g.batchId]
-              return (
-                <div key={g.batchId} className="space-y-2">
-                  <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-3 space-y-1.5 cursor-pointer" onClick={function () { toggleBatch(g.batchId) }}>
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs text-gray-500">{formatDate(g.rows[0].effective_date)}</span>
-                      <span className="font-mono text-sm font-semibold text-gray-800">
-                        Rs {(g.totalPaise / 100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                      </span>
-                    </div>
-                    <div className="text-xs font-semibold text-indigo-700">{expanded ? '▾' : '▸'} {g.rows.length} allocations from {partyLabel(g.rows[0], 'from')}</div>
-                    {g.rows[0].description && <div className="text-xs text-gray-500">{g.rows[0].description}</div>}
-                  </div>
-                  {expanded && (
-                    <div className="pl-3 space-y-2 border-l-2 border-indigo-200">
-                      {g.rows.map(function (r) { return <React.Fragment key={r.id}>{MobileCard({ r: r })}</React.Fragment> })}
-                    </div>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        </>
-      )}
-
-      {/* Plain on purpose: labels, fields and a rule between sections —
-          no glyph tiles, no card inside a card, no microphone beside every
-          dropdown. Four bands read top to bottom: whether it is for a
-          function; the move itself, one From on the left and its To rows on
-          the right, each To carrying its own amount; when and why; proof.
-
-          With several To rows one is open and the rest fold to a line each. */}
-      <Modal open={showForm} onClose={function () { setShowForm(false); resetProof() }} wide
-        title="New Cost Transfer">
+  var formBody = (
         <div className="ambria-ct-form divide-y divide-slate-200 -mt-1">
 
           {/* 1 · For a function */}
@@ -1290,18 +1229,353 @@ function CostTransfers({ profile }) {
           <div className="pt-5 space-y-3">
             {error && <p className="text-[13px] text-red-600">{error}</p>}
             <div className="flex justify-end gap-3">
-              <button type="button" onClick={function () { setShowForm(false); resetProof() }}
-                className="h-11 px-5 rounded-xl border border-slate-300 bg-white text-[14px] font-semibold text-slate-700 hover:bg-slate-50 transition-colors">
+              <button type="button" onClick={closeForm}
+                className="flex-1 sm:flex-none h-11 px-5 rounded-xl border border-slate-300 bg-white text-[14px] font-semibold text-slate-700 hover:bg-slate-50 transition-colors">
                 Cancel
               </button>
               <button type="button" onClick={handleSave} disabled={saving}
-                className="h-11 px-6 rounded-xl bg-indigo-600 text-white text-[14px] font-semibold hover:bg-indigo-700 disabled:opacity-50 transition-colors">
+                className="flex-1 sm:flex-none h-11 px-6 rounded-xl bg-indigo-600 text-white text-[14px] font-semibold hover:bg-indigo-700 disabled:opacity-50 transition-colors">
                 {saving ? 'Saving...' : (form.to_rows.length > 1 ? 'Save ' + form.to_rows.length + ' transfers' : 'Save transfer')}
               </button>
             </div>
           </div>
         </div>
-      </Modal>
+  )
+
+  // Phone: the form as the page.
+  if (showForm && formAsPage) {
+    return (
+      <div className="pb-6">
+        <CostBackdrop inAdmin={inAdmin} />
+        <div className="bg-white border border-slate-200 rounded-2xl shadow-[0_1px_3px_rgba(15,23,42,0.06)] px-4 pt-4 pb-5">
+          <h2 className="mb-4 text-[17px] font-bold text-slate-900">New cost transfer</h2>
+          {formBody}
+        </div>
+        {showCamera && (
+          <CameraCapture
+            onCapture={function (file) { setProofFile(file); setShowCamera(false) }}
+            onClose={function () { setShowCamera(false) }}
+          />
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      <CostBackdrop inAdmin={inAdmin} />
+      {/* Desktop: one row holding the three things you do here — find,
+          narrow, add. */}
+      <div className="hidden sm:block mb-4">
+        <div className="flex items-center gap-3">
+          <SearchField
+            value={searchRaw}
+            onChange={function (v) { setSearchRaw(v) }}
+            placeholder="Search description..."
+            className="flex-1 min-w-0"
+          />
+          <button type="button" onClick={function () { setFiltersOpen(!filtersOpen) }} aria-expanded={filtersOpen}
+            className={"shrink-0 h-10 inline-flex items-center gap-2 px-4 rounded-xl border text-[13.5px] font-semibold transition-colors " +
+              (filtersOpen || activeFilterCount() > 0 ? "bg-indigo-50 border-indigo-200 text-indigo-700" : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50")}>
+            <Icon name="filter" size={15} />
+            Filters{activeFilterCount() > 0 ? ' · ' + activeFilterCount() : ''}
+            <Icon name={filtersOpen ? 'chevronUp' : 'chevronDown'} size={14} className="text-slate-400" />
+          </button>
+          {activeFilterCount() > 0 && (
+            <button type="button" onClick={resetFilters}
+              className="shrink-0 h-10 px-3 rounded-xl text-[13px] font-semibold text-rose-600 hover:bg-rose-50 transition-colors">
+              Reset
+            </button>
+          )}
+          {canCreate && (
+            <button type="button" onClick={openNewTransfer}
+              className="shrink-0 h-10 inline-flex items-center gap-2 px-5 rounded-xl bg-indigo-600 text-white text-[14px] font-bold shadow-[0_2px_8px_rgba(79,70,229,0.25)] hover:bg-indigo-700 transition-colors">
+              <Icon name="plus" size={16} />
+              New Transfer
+            </button>
+          )}
+        </div>
+      </div>
+
+
+      {error && !showForm && (
+        <div className="mb-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">{error}</div>
+      )}
+
+      {/* ─── FILTERS ─────────────────────────────────── */}
+      <div className="mb-3 space-y-2">
+        {/* Phone: the three controls on one line — search taking what is
+            left, a filter button that carries its count, and add. They were
+            three rows, the add button on a line of its own above them. */}
+        <div className="sm:hidden flex items-center gap-2">
+          <SearchField
+            value={searchRaw}
+            onChange={function (v) { setSearchRaw(v) }}
+            placeholder="Search description..."
+            className="flex-1 min-w-0"
+          />
+          <button type="button" onClick={function () { setFiltersOpen(!filtersOpen) }} aria-expanded={filtersOpen}
+            aria-label={'Filters' + (activeFilterCount() > 0 ? ', ' + activeFilterCount() + ' on' : '')}
+            className={"relative shrink-0 w-10 h-10 inline-flex items-center justify-center rounded-xl border transition-colors " +
+              (filtersOpen || activeFilterCount() > 0 ? "bg-indigo-50 border-indigo-200 text-indigo-700" : "bg-white border-slate-300 text-slate-600")}>
+            <Icon name="filter" size={16} />
+            {activeFilterCount() > 0 && (
+              <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-indigo-600 text-white text-[10px] font-bold inline-flex items-center justify-center">{activeFilterCount()}</span>
+            )}
+          </button>
+          {canCreate && (
+            <button type="button" onClick={openNewTransfer} aria-label="New transfer"
+              className="shrink-0 h-10 inline-flex items-center gap-1.5 px-3.5 rounded-xl bg-indigo-600 text-white text-[13.5px] font-semibold hover:bg-indigo-700 transition-colors">
+              <Icon name="plus" size={16} />
+              New
+            </button>
+          )}
+        </div>
+        {/* One row on a desktop — status, the two parties, the date range —
+            where it was three full-width rows of controls sized for a phone.
+            The parties use the same dropdown as the expense filters, and the
+            dates the app's own picker: <input type="date"> printed mm/dd/yyyy
+            in US order whatever the locale, beside "23 Sept 2026" in the
+            table right under it. */}
+        {filtersOpen && (
+          <div className="bg-white border border-slate-200 rounded-xl sm:rounded-2xl p-3 sm:p-4">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[auto_minmax(0,2fr)_minmax(0,1.4fr)] lg:items-end lg:gap-4">
+              <div>
+                <label className="block text-[11px] font-bold uppercase tracking-[0.07em] text-slate-500 mb-1.5">Status</label>
+                <div className="flex h-10 p-1 gap-1 bg-slate-100 rounded-xl">
+                  {['all', 'active', 'reversed'].map(function (s) {
+                    var lbl = s === 'all' ? 'All' : (s === 'active' ? 'Active' : 'Reversed')
+                    var on = statusFilter === s
+                    return (
+                      <button key={s} type="button" onClick={function () { setStatusFilter(s) }} aria-pressed={on}
+                        className={"flex-1 lg:flex-none px-3 rounded-lg text-[12.5px] font-semibold transition-colors " +
+                          (on ? "bg-white text-slate-900 shadow-[0_1px_3px_rgba(15,23,42,0.10)]" : "text-slate-500 hover:text-slate-900")}>
+                        {lbl}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+              {/* The two parties are one question — cost moving from one to the
+                  other — so they sit together with the arrow between them,
+                  the way the date range beside them does. */}
+              <div className="sm:col-span-2 lg:col-span-1">
+                <div className="flex items-end gap-2">
+                  <div className="flex-1 min-w-0">
+                    <label className="block text-[11px] font-bold uppercase tracking-[0.07em] text-slate-500 mb-1.5">From (party)</label>
+                    <FilterDropdown value={fromPartyFilter} compact placeholder="All parties"
+                      options={PARTY_TYPES.map(function (p) { return { label: p.label, value: p.key } })}
+                      onChange={setFromPartyFilter} />
+                  </div>
+                  <span aria-hidden="true" className="shrink-0 h-10 inline-flex items-center text-slate-500">
+                    <Icon name="arrowRight" size={16} strokeWidth={2.6} />
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <label className="block text-[11px] font-bold uppercase tracking-[0.07em] text-slate-500 mb-1.5">To (party)</label>
+                    <FilterDropdown value={toPartyFilter} compact placeholder="All parties"
+                      options={PARTY_TYPES.map(function (p) { return { label: p.label, value: p.key } })}
+                      onChange={setToPartyFilter} />
+                  </div>
+                </div>
+              </div>
+              <div className="sm:col-span-2 lg:col-span-1">
+                <label className="block text-[11px] font-bold uppercase tracking-[0.07em] text-slate-500 mb-1.5">Date</label>
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 min-w-0">
+                    <EventDatePicker value={dateFrom} onChange={function (v) { setDateFrom(v || '') }}
+                      collapsible includePast plain neutral placeholder="From" />
+                  </div>
+                  <Icon name="arrowRight" size={16} strokeWidth={2.6} className="shrink-0 text-slate-500" />
+                  <div className="flex-1 min-w-0">
+                    <EventDatePicker value={dateTo} onChange={function (v) { setDateTo(v || '') }}
+                      collapsible includePast plain neutral placeholder="To" />
+                  </div>
+                </div>
+              </div>
+            </div>
+            {/* The panel's own way out: Reset clears every filter here, and
+                on a phone Done folds the panel away so the list comes back
+                into view. Reset used to live only beside the count, which is
+                not drawn while a filter has left the list empty. */}
+            <div className="mt-4 pt-3 flex items-center justify-between gap-3 border-t border-slate-100">
+              <button type="button" onClick={resetFilters} disabled={activeFilterCount() === 0}
+                className="inline-flex items-center gap-1.5 h-9 px-3 -ml-3 rounded-lg text-[13px] font-semibold text-slate-600 hover:text-red-600 hover:bg-red-50 disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-slate-600 transition-colors">
+                <Icon name="refresh" size={14} />
+                Reset filters{activeFilterCount() > 0 ? ' (' + activeFilterCount() + ')' : ''}
+              </button>
+              <button type="button" onClick={function () { setFiltersOpen(false) }}
+                className="sm:hidden h-9 px-4 rounded-lg bg-slate-900 text-white text-[13px] font-semibold hover:bg-slate-800 transition-colors">
+                Done
+              </button>
+            </div>
+          </div>
+        )}
+        {!loading && shownTransfers.length > 0 && (
+          <div className="sm:hidden flex items-center justify-between gap-3 px-0.5 pt-1">
+            <p className="text-[13px] font-medium text-slate-700">
+              <span className="font-bold text-slate-900 tabular-nums">{shownTransfers.length}</span> shown
+              {activeFilterCount() > 0 && (
+                <button type="button" onClick={resetFilters} className="ml-2 text-[12.5px] font-semibold text-indigo-600">Reset</button>
+              )}
+            </p>
+            <label className="relative inline-flex items-center gap-1 text-[12.5px] text-slate-600">
+              <span className="font-semibold text-slate-800">{({ date_desc: 'Newest', date_asc: 'Oldest', amount_desc: 'Amount ↓', amount_asc: 'Amount ↑' })[sortBy]}</span>
+              <Icon name="chevronDown" size={13} className="text-slate-400" />
+              <select value={sortBy} onChange={function (e) { setSortBy(e.target.value) }} aria-label="Sort transfers"
+                className="absolute inset-0 w-full h-full opacity-0" style={{ fontSize: '16px' }}>
+                <option value="date_desc">Date (Newest)</option>
+                <option value="date_asc">Date (Oldest)</option>
+                <option value="amount_desc">Amount (High)</option>
+                <option value="amount_asc">Amount (Low)</option>
+              </select>
+            </label>
+          </div>
+        )}
+      </div>
+
+      {loading ? (
+        <p className="text-center text-sm text-gray-400 py-8">Loading...</p>
+      ) : shownTransfers.length === 0 ? (
+        <p className="text-center text-sm text-gray-400 py-8">{activeFilterCount() > 0 || searchRaw ? 'No transfers match.' : 'No cost transfers yet.'}</p>
+      ) : (
+        <>
+          <div ref={listTopRef} className="scroll-mt-20" />
+          <div aria-busy={refreshing}
+            className={"hidden sm:block bg-white border border-slate-200 rounded-2xl shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition-opacity duration-150 " + (refreshing ? "opacity-60" : "")}>
+            <div className="flex items-center justify-between gap-3 px-4 pt-4 pb-3">
+              <p className="text-[15px] text-slate-900"><span className="font-bold tabular-nums">{shownTransfers.length}</span> shown</p>
+              {/* A native select laid over its own label: the label is what
+                  shows, the select is what opens. */}
+              <label className="relative inline-flex items-center gap-2 text-[13px] text-slate-600 cursor-pointer">
+                <span>Sort by <span className="font-semibold text-slate-900">{({ date_desc: 'Date (Newest)', date_asc: 'Date (Oldest)', amount_desc: 'Amount (High)', amount_asc: 'Amount (Low)' })[sortBy]}</span></span>
+                <Icon name="chevronDown" size={14} className="text-slate-400" />
+                <select value={sortBy} onChange={function (e) { setSortBy(e.target.value) }} aria-label="Sort transfers"
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer">
+                  <option value="date_desc">Date (Newest)</option>
+                  <option value="date_asc">Date (Oldest)</option>
+                  <option value="amount_desc">Amount (High)</option>
+                  <option value="amount_asc">Amount (Low)</option>
+                </select>
+              </label>
+            </div>
+            <div className="px-2 pb-2 overflow-x-auto">
+            <table className="w-full text-sm table-fixed">
+              <colgroup>
+                {/* Date is a fixed 220: "Logged 23 Sept 2026, 2:37 pm" does not
+                    wrap, and as a share of a narrower window it ran out of its
+                    column into From. From is fixed too, at about its longest
+                    sub-type: as a share of a wide window it left a wide blank
+                    after the text, and the arrow stood far from From and
+                    right up against To. Description takes what is left. */}
+                <col className="w-[220px]" />
+                <col className="w-[240px]" />
+                <col className="w-[48px]" />
+                <col className="w-[18%]" />
+                <col className="w-[10%]" />
+                <col />
+                <col className="w-[180px]" />
+              </colgroup>
+              <thead>
+                <tr className="text-[11px] font-bold uppercase tracking-[0.06em] text-slate-500">
+                  <th className="text-left px-4 py-3 bg-slate-50 rounded-l-xl">Date</th>
+                  <th className="text-left px-4 py-3 bg-slate-50">From</th>
+                  <th aria-hidden="true" className="bg-slate-50" />
+                  <th className="text-left px-4 py-3 bg-slate-50">To</th>
+                  <th className="text-left px-4 py-3 bg-slate-50">Amount</th>
+                  <th className="text-left px-4 py-3 bg-slate-50">Description</th>
+                  <th className="text-center px-4 py-3 bg-slate-50 rounded-r-xl">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {pageGroups.map(function (g) {
+                  if (g.rows.length === 1) return <React.Fragment key={g.batchId}>{DesktopRow({ r: g.rows[0] })}</React.Fragment>
+                  var expanded = !!expandedBatches[g.batchId]
+                  return (
+                    <React.Fragment key={g.batchId}>
+                      <tr className="bg-indigo-50/40 hover:bg-indigo-50/70 cursor-pointer transition-colors" onClick={function () { toggleBatch(g.batchId) }}>
+                        <td className="px-4 py-3.5 align-middle whitespace-nowrap">
+                          <div className="text-[14px] font-semibold text-slate-900">{formatDate(g.rows[0].effective_date)}</div>
+                          <div className="mt-0.5 text-[12px] text-slate-500">Logged {formatDateTime(g.rows[0].created_at)}</div>
+                        </td>
+                        <td className="px-4 py-3.5 align-middle text-[13.5px]">{partyCell(g.rows[0], 'from')}{partyMeta(g.rows[0], 'from')}</td>
+                        <td aria-hidden="true" className="px-0 py-3.5 align-middle text-center text-slate-500"><Icon name="arrowRight" size={18} strokeWidth={2.6} className="inline-block" /></td>
+                        <td className="px-4 py-3.5 align-middle text-[13.5px] text-indigo-700 font-semibold">{expanded ? '▾' : '▸'} {g.rows.length} allocations</td>
+                        <td className="px-4 py-3.5 align-middle whitespace-nowrap text-[14px] tabular-nums">
+                          <span className="font-semibold text-slate-500">Rs</span>{' '}
+                          <span className="font-bold text-slate-900">{(g.totalPaise / 100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                        </td>
+                        <td className="px-4 py-3.5 align-middle text-[13.5px] text-slate-700">{g.rows[0].description}</td>
+                        <td className="px-4 py-3.5 align-middle text-center text-[13px] text-indigo-600 font-semibold">{expanded ? 'Collapse' : 'Expand'}</td>
+                      </tr>
+                      {expanded && g.rows.map(function (r) { return <React.Fragment key={r.id}>{DesktopRow({ r: r, indent: true })}</React.Fragment> })}
+                    </React.Fragment>
+                  )
+                })}
+              </tbody>
+            </table>
+            </div>
+            {pager && <div className="px-4 py-3 border-t border-slate-100">{pager}</div>}
+          </div>
+
+          <div aria-busy={refreshing} className={"sm:hidden space-y-2 transition-opacity duration-150 " + (refreshing ? "opacity-60" : "")}>
+            {pageGroups.map(function (g) {
+              if (g.rows.length === 1) return <React.Fragment key={g.batchId}>{MobileCard({ r: g.rows[0] })}</React.Fragment>
+              var expanded = !!expandedBatches[g.batchId]
+              return (
+                <div key={g.batchId} className="space-y-2">
+                  <button type="button" onClick={function () { toggleBatch(g.batchId) }} aria-expanded={expanded}
+                    className="w-full text-left bg-white border border-slate-200 border-l-4 border-l-indigo-500 rounded-2xl px-4 py-3.5">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-[14px] font-semibold text-slate-900">{formatDate(g.rows[0].effective_date)}</p>
+                        <p className="text-[11.5px] text-slate-500">Logged {formatDateTime(g.rows[0].created_at)}</p>
+                      </div>
+                      <p className="shrink-0 text-[16px] tabular-nums">
+                        <span className="font-semibold text-slate-500">Rs</span>{' '}
+                        <span className="font-bold text-slate-900">{(g.totalPaise / 100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                      </p>
+                    </div>
+                    <div className="relative mt-3.5 pl-6 text-[13.5px]">
+                      <span aria-hidden="true" className="absolute left-0 top-[3px] w-[11px] h-[11px] rounded-full border-2 border-slate-400 bg-white" />
+                      <p className="text-[10.5px] font-bold uppercase tracking-[0.07em] text-slate-500 leading-none mb-1">From</p>
+                      {partyCell(g.rows[0], 'from')}
+                    </div>
+                    {g.rows[0].description && (
+                      <p className="mt-3 flex items-start gap-2 px-3 py-2 rounded-lg bg-slate-50 text-[13px] text-slate-700">
+                        <Icon name="fileText" size={14} className="shrink-0 mt-0.5 text-slate-400" />
+                        <span className="min-w-0">{g.rows[0].description}</span>
+                      </p>
+                    )}
+                    <p className="mt-2.5 inline-flex items-center gap-1 text-[13px] font-semibold text-indigo-600">
+                      <Icon name={expanded ? 'chevronUp' : 'chevronDown'} size={14} />
+                      {g.rows.length} allocations
+                    </p>
+                  </button>
+                  {expanded && (
+                    <div className="pl-3 space-y-2 border-l-2 border-indigo-200">
+                      {g.rows.map(function (r) { return <React.Fragment key={r.id}>{MobileCard({ r: r })}</React.Fragment> })}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+            {pager && <div className="pt-2">{pager}</div>}
+          </div>
+        </>
+      )}
+
+      {/* Plain on purpose: labels, fields and a rule between sections —
+          no glyph tiles, no card inside a card, no microphone beside every
+          dropdown. Four bands read top to bottom: whether it is for a
+          function; the move itself, one From on the left and its To rows on
+          the right, each To carrying its own amount; when and why; proof.
+
+          With several To rows one is open and the rest fold to a line each. */}
+      {!formAsPage && (
+        <Modal open={showForm} onClose={closeForm} wide title="New Cost Transfer">
+          {formBody}
+        </Modal>
+      )}
       {showCamera && (
         <CameraCapture
           onCapture={function (file) { setProofFile(file); setShowCamera(false) }}
@@ -1482,7 +1756,7 @@ function ExpenseTypeFields({ value, onChange, expTypes, expSubTypes, stacked, qu
   var subItems = subs.map(function (x) { return { value: String(x.id), label: x.name } })
 
   return (
-    <div className={stacked ? "space-y-2.5" : "grid grid-cols-2 gap-2.5"}>
+    <div className={stacked ? "space-y-2.5" : "grid grid-cols-1 sm:grid-cols-2 gap-2.5"}>
       <SearchDropdown items={etItems} noVoice={stacked} inlineVoice={quiet}
         value={value.expense_type_id}
         onChange={function (v) { onChange({ expense_type_id: v, expense_sub_type_id: '' }) }}
@@ -1503,7 +1777,7 @@ function ToRowFields({ row, idx, onChange, expTypes, expSubTypes }) {
     <div className="space-y-3">
       <ExpenseTypeFields quiet value={row} onChange={function (patch) { onChange(idx, patch) }}
         expTypes={expTypes} expSubTypes={expSubTypes} />
-      <div className="grid grid-cols-2 gap-2.5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
         <div className="relative">
           <span aria-hidden="true" className="absolute left-3 top-1/2 -translate-y-1/2 text-[15px] text-slate-500 pointer-events-none">₹</span>
           <input type="number" step="0.01" min="0" inputMode="decimal" value={row.amount_pts}
