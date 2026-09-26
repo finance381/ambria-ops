@@ -1,7 +1,9 @@
 import { useState, useRef, useEffect, useId } from 'react'
 import Icon from './Icon'
 
-function SearchDropdown({ items, value, onChange, onAdd, onInputChange, placeholder, allowAdd, label, labelIcon, required, error, voiceLang, noVoice, id }) {
+// inlineVoice: the microphone sits inside the field at its right edge instead
+// of in a box of its own beside it — for a form that wants one box per field.
+function SearchDropdown({ items, value, onChange, onAdd, onInputChange, placeholder, allowAdd, label, labelIcon, required, error, voiceLang, noVoice, inlineVoice, id }) {
   // Tie the label to the input so tapping the label focuses the field, and so a
   // screen reader announces which field it is reading. Nothing was associated
   // before, which on a phone is a daily miss -- the label is a big, obvious
@@ -206,7 +208,8 @@ function SearchDropdown({ items, value, onChange, onAdd, onInputChange, placehol
               onKeyDown={handleKeyDown}
               placeholder={placeholder || 'Search or select...'}
               className={
-                "w-full pl-3 pr-9 py-2.5 bg-white border rounded-xl text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 transition-shadow " +
+                "w-full pl-3 py-2.5 bg-white border rounded-xl text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 transition-shadow " +
+                (inlineVoice && !noVoice ? (query ? "pr-16 " : "pr-10 ") : "pr-9 ") +
                 (error ? "border-red-400 focus:border-red-500 focus:ring-red-500/20"
                        : "border-slate-300 focus:border-indigo-500 focus:ring-indigo-500/20")
               }
@@ -222,16 +225,29 @@ function SearchDropdown({ items, value, onChange, onAdd, onInputChange, placehol
                 type="button"
                 onClick={handleClear}
                 aria-label="Clear"
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 w-5 h-5 flex items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors"
+                className={"absolute top-1/2 -translate-y-1/2 w-5 h-5 flex items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors " +
+                  (inlineVoice && !noVoice ? "right-10" : "right-2.5")}
               >
                 <Icon name="close" size={12} />
+              </button>
+            )}
+            {inlineVoice && !noVoice && (
+              <button
+                type="button"
+                onClick={startVoice}
+                className={"absolute right-2 top-1/2 -translate-y-1/2 w-7 h-7 flex items-center justify-center rounded-lg transition-colors " +
+                  (listening ? "bg-red-500 text-white animate-pulse" : "text-slate-400 hover:bg-slate-100 hover:text-indigo-600")}
+                aria-label={listening ? 'Stop voice input' : 'Voice input'}
+                title="Voice input"
+              >
+                <Icon name="mic" size={16} />
               </button>
             )}
           </div>
           {/* Dictation earns its button where someone is filling a form with
               their hands full. On a row of filters it is four more buttons
               than there are filters, so a screen can turn it off. */}
-          {!noVoice && (
+          {!noVoice && !inlineVoice && (
             <button
               type="button"
               onClick={startVoice}

@@ -168,7 +168,7 @@ function EventDatePicker({ value, onChange, label, collapsible, includePast, tri
       {open && (function () {
       var panel = (
         <div ref={panelRef}
-          className={"bg-white border border-gray-200 rounded-lg p-3" + (collapsible ? " shadow-xl" : "")}
+          className={"bg-white border border-slate-200 rounded-2xl p-3.5" + (collapsible ? " shadow-xl" : "")}
           style={collapsible ? {
             position: 'fixed', zIndex: 9999, width: pos ? pos.width : 300,
             top: pos ? pos.top : -9999, left: pos ? pos.left : -9999,
@@ -177,16 +177,22 @@ function EventDatePicker({ value, onChange, label, collapsible, includePast, tri
             fontFamily: 'Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif',
           } : undefined}>
         {/* Month nav */}
-        <div className="flex items-center justify-between mb-3">
-          <button type="button" onClick={prevMonth} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-500 transition-colors">‹</button>
-          <span className="text-sm font-semibold text-gray-800">{monthNames[viewMonth] + ' ' + viewYear}</span>
-          <button type="button" onClick={nextMonth} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-500 transition-colors">›</button>
+        <div className="flex items-center justify-between mb-2.5">
+          <button type="button" onClick={prevMonth} aria-label="Previous month"
+            className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-900 transition-colors">
+            <Icon name="chevronRight" size={16} className="rotate-180" />
+          </button>
+          <span className="text-[14.5px] font-bold text-slate-900">{monthNames[viewMonth] + ' ' + viewYear}</span>
+          <button type="button" onClick={nextMonth} aria-label="Next month"
+            className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-900 transition-colors">
+            <Icon name="chevronRight" size={16} />
+          </button>
         </div>
 
         {/* Day headers */}
         <div className="grid grid-cols-7 mb-1">
           {DAY_NAMES.map(function (dn) {
-            return <div key={dn} className="text-center text-[10px] font-bold text-gray-400 uppercase py-1">{dn}</div>
+            return <div key={dn} className="text-center text-[10.5px] font-semibold text-slate-500 uppercase tracking-[0.04em] py-1">{dn}</div>
           })}
         </div>
 
@@ -194,7 +200,7 @@ function EventDatePicker({ value, onChange, label, collapsible, includePast, tri
         <div className="grid grid-cols-7">
           {cells.map(function (cell, idx) {
             if (!cell.current) {
-              return <div key={'e' + idx} className="text-center py-1.5"><span className="text-xs text-gray-300">{cell.day}</span></div>
+              return <div key={'e' + idx} className="h-10 flex items-center justify-center"><span className="text-[12.5px] text-slate-300">{cell.day}</span></div>
             }
 
             var isSelected = value === cell.dateStr
@@ -202,32 +208,36 @@ function EventDatePicker({ value, onChange, label, collapsible, includePast, tri
             var venues = eventDates[cell.dateStr] || []
             var hasEvent = venues.length > 0
 
-            var baseClass = "relative mx-auto w-9 h-9 flex flex-col items-center justify-center rounded-full text-xs font-medium cursor-pointer transition-colors "
+            // A day with functions is its number in full weight with a dot
+            // per venue under it — not a filled disc. Filled, most of a busy
+            // month turned into a sheet of blue and the selected day had to
+            // shout over it. Now the only filled day is the one you picked.
+            var baseClass = "mx-auto w-10 h-10 flex flex-col items-center justify-center gap-[3px] rounded-xl text-[13px] cursor-pointer transition-colors "
 
             var colorClass
             if (isSelected) {
-              colorClass = "bg-indigo-600 text-white"
+              colorClass = "bg-indigo-600 text-white font-bold shadow-[0_2px_8px_rgba(79,70,229,0.35)]"
             } else if (hasEvent) {
-              colorClass = "bg-indigo-50 text-indigo-700 hover:bg-indigo-100 font-semibold"
-            } else if (isToday) {
-              colorClass = "bg-gray-100 text-gray-900 font-semibold"
+              colorClass = "text-slate-900 font-semibold hover:bg-slate-100"
             } else {
-              colorClass = "text-gray-600 hover:bg-gray-50"
+              colorClass = "text-slate-500 hover:bg-slate-100 hover:text-slate-900"
             }
 
             if (isToday && !isSelected) {
-              baseClass += "ring-2 ring-indigo-400 "
+              baseClass += "ring-1 ring-inset ring-indigo-400 text-indigo-700 font-semibold "
             }
 
             return (
-              <div key={cell.dateStr} className="text-center py-0.5">
+              <div key={cell.dateStr} className="py-0.5">
                 <button type="button" onClick={function () { selectDate(cell.dateStr) }}
                   className={baseClass + colorClass}>
-                  {cell.day}
-                  {hasEvent && !plain && (
-                    <span className="absolute bottom-0 flex gap-px justify-center">
+                  <span className="leading-none">{cell.day}</span>
+                  {/* The dot row keeps its height with or without dots, so a
+                      day with functions sits at the same height as one without. */}
+                  {!plain && (
+                    <span className="h-[5px] flex gap-[2px] justify-center">
                       {venues.slice(0, 3).map(function (v, vi) {
-                        return <span key={vi} className="w-1.5 h-1.5 rounded-full" style={{ background: isSelected ? '#fff' : venueColor(v) }} />
+                        return <span key={vi} className="w-[5px] h-[5px] rounded-full" style={{ background: isSelected ? 'rgba(255,255,255,0.95)' : venueColor(v) }} />
                       })}
                     </span>
                   )}
@@ -240,22 +250,22 @@ function EventDatePicker({ value, onChange, label, collapsible, includePast, tri
         {/* Legend + clear. In plain mode there are no dots to explain, so the
             footer is only worth drawing when there is a date to clear. */}
         {(!plain || value) && (
-        <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-100">
-          <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center justify-between mt-2.5 pt-2.5 border-t border-slate-100">
+          <div className="flex items-center gap-3 flex-wrap">
             {!plain && <>
             {VENUE_LEGEND.map(function (l) {
               return (
-                <span key={l.code} title={l.name} className="inline-flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full" style={{ background: venueColor(l.name) }} />
-                  <span className="text-[10px] text-gray-400">{l.code}</span>
+                <span key={l.code} title={l.name} className="inline-flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full" style={{ background: venueColor(l.name) }} />
+                  <span className="text-[11px] font-semibold text-slate-600">{l.code}</span>
                 </span>
               )
             })}
-            {loading && <span className="text-[10px] text-gray-300 ml-1">...</span>}</>}
+            {loading && <span className="text-[11px] text-slate-400 ml-1">...</span>}</>}
           </div>
           {value && (
             <button type="button" onClick={function () { onChange('') }}
-              className="text-[11px] text-red-500 font-medium hover:text-red-700 transition-colors">Clear</button>
+              className="h-7 px-2 -mr-2 rounded-lg text-[12px] font-semibold text-slate-600 hover:text-red-600 hover:bg-red-50 transition-colors">Clear</button>
           )}
         </div>
         )}

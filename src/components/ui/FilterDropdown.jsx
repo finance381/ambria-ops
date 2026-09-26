@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect } from 'react'
 
-function FilterDropdown({ value, onChange, options, placeholder }) {
+// compact: 13px, for a row it shares with the date pickers (13px too). The
+// default keeps the 16px the expense filters were built around.
+function FilterDropdown({ value, onChange, options, placeholder, compact }) {
   var [open, setOpen] = useState(false)
   var [q, setQ] = useState('')
   var wrapRef = useRef(null)
@@ -31,7 +33,7 @@ function FilterDropdown({ value, onChange, options, placeholder }) {
           something you glance past. */}
       <button type="button" onClick={function () { setOpen(!open); setQ('') }}
         className={"h-10 px-3 border rounded-xl text-left w-full truncate transition-shadow focus:outline-none focus:ring-2 focus:ring-indigo-500/20 " + (hasValue ? "border-indigo-400 bg-indigo-50 text-indigo-700 font-semibold" : "border-slate-300 text-slate-600 bg-white focus:border-indigo-500")}
-        style={{ fontSize: '16px' }}>
+        style={{ fontSize: compact ? '13px' : '16px' }}>
         {displayLabel}
       </button>
       {open && (
