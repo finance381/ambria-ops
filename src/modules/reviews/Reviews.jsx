@@ -16,6 +16,17 @@ var TAB_PERM = {
   category: 'review.masters', sub_category: 'review.masters',
 }
 var AUDIT_DOMAINS = ['expense', 'vendor_payment']
+// Inventory has no admin tier any more — the tab is dept-head-only, gated on
+// role + permission + an actual category assignment rather than a flat
+// permission key (see 00058_inventory_single_stage_approval.sql). Admins keep
+// full visibility of inventory items elsewhere (Inventory > All Items), just
+// not in this review queue.
+function isInventoryDeptHead(profile) {
+  if (!profile || profile.role !== 'dept. head') return false
+  var perms = profile.permsNew || []
+  if (!hasPerm(perms, 'review.dept.approve')) return false
+  return (profile.category_ids || []).length > 0
+}
 // Short forms for the mobile bottom tab bar — with 7 domains crammed into one row,
 // DOMAIN_META's full label (or its first word) is too wide for domains that are
 // either a single hyphenated word ("Sub-categories" won't split on a space) or
@@ -43,7 +54,10 @@ function Reviews({ profile, inAdmin }) {
     if (!inAdmin) pushBack(function () { setView('inbox') })
     setView('history')
   }
-  var visibleTabs = TAB_ORDER.filter(function (d) { return hasPerm(permsNew, TAB_PERM[d]) })
+  var visibleTabs = TAB_ORDER.filter(function (d) {
+    if (d === 'inventory') return isInventoryDeptHead(profile)
+    return hasPerm(permsNew, TAB_PERM[d])
+  })
   var canBulk = hasPerm(permsNew, 'review.bulk')
   var canSeeHistory = hasPerm(permsNew, 'review.history')
   var [view, setView] = useState('inbox') // 'inbox' | 'history'

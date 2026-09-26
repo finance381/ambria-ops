@@ -52,9 +52,9 @@ export var PERM_GROUPS = [
   ]},
   { group: 'Review', icon: '✅', scope: 'both', children: [
     { key: 'review.inventory',       label: 'Inventory Review',       scope: 'both',
-      note: 'Row visibility is scoped via the Review Scopes editor on the user, not a data-scope chip' },
+      note: 'No longer used for Inventory (that\'s dept-head-only now — see review.dept.approve) — still gates the Reviews tab for admins/auditors on domains that keep an admin tier, and Inventory Review comment history visibility.' },
     { key: 'review.dept.approve',    label: 'Department Head (Dept-tier Approve)', scope: 'both',
-      note: 'Cross-module: in Inventory, clears new-item submissions in their Assigned Categories (below) before the Admin queue — a category with no dept head assigned skips straight to Admin. In Expenses, unlocks the "Dept" tab to review their department\'s submissions. Which categories/departments apply comes from Assigned Categories / Event Departments below, not this toggle.' },
+      note: 'Cross-module: in Inventory, this IS the approval — there is no admin tier any more. Requires role = "dept. head" AND the item\'s category in Assigned Categories (below); a category with no dept head assigned auto-approves (no fallback approver). In Expenses, unlocks the "Dept" tab to review their department\'s submissions. Which categories/departments apply comes from Assigned Categories / Event Departments below, not this toggle.' },
     { key: 'review.item_receipts',   label: 'Item Receipts Review',   scope: 'both' },
     { key: 'review.expenses',        label: 'Expenses Review',        scope: 'both',
       note: 'Read-only audit — anyone with Finance → Expenses can also raise a concern on their own view' },

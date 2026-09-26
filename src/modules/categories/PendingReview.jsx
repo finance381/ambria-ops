@@ -30,13 +30,12 @@ function PendingReview({ profile }) {
   useEffect(function () { logActivity('legacy_review_open', 'PendingReview.jsx').catch(function () {}) }, [])
 
   async function loadPending() {
-    var [pendCat, pendSub, pendItem, pendCsItem, deptRes, catRes, subCatRes, subDeptRes] = await Promise.all([
+    var [pendCat, pendSub, pendCsItem, deptRes, catRes, subCatRes, subDeptRes] = await Promise.all([
       supabase.from('categories').select('*, profiles:added_by(name, email)').eq('status', 'pending'),
       supabase.from('sub_categories').select('*, categories(name), profiles:added_by(name, email)').eq('status', 'pending'),
-      fetchAll(supabase.from('inventory_items')
-        .select('*, categories(name, code), sub_categories(name), profiles:submitted_by(name, email), dept_approver:dept_approved_by(name, email), venue_allocations(qty, venues(code, name))')
-        .eq('status', 'pending')
-        .order('created_at', { ascending: false })),
+      // Inventory items are dept-head-only now (no admin tier) — see
+      // 00058_inventory_single_stage_approval.sql. Only catering (item_receipt)
+      // still has an admin stage, so only it stays in this legacy queue.
       fetchAll(supabase.from('catering_store_items')
         .select('*, categories(name, code), sub_categories(name), profiles:submitted_by(name, email), dept_approver:dept_approved_by(name, email), cs_venue_allocations(qty, venues(code, name))')
         .eq('status', 'pending')
@@ -55,11 +54,10 @@ function PendingReview({ profile }) {
     })
 
     setPendingMasters(masters)
-    var invItems = (pendItem || []).map(function (i) { return Object.assign({}, i, { _source: 'inventory' }) })
     var csItems = (pendCsItem || []).map(function (i) {
       return Object.assign({}, i, { _source: 'catering_store', venue_allocations: i.cs_venue_allocations || [] })
     })
-    setPendingItems(invItems.concat(csItems).sort(function (a, b) {
+    setPendingItems(csItems.sort(function (a, b) {
       return new Date(b.created_at || 0) - new Date(a.created_at || 0)
     }))
     setDepartments(deptRes.data || [])
@@ -72,8 +70,8 @@ function PendingReview({ profile }) {
     if (saving) return
     setSaving(true)
     try {
-      if (table === 'inventory_items' || table === 'catering_store_items') {
-        var allocTable = table === 'catering_store_items' ? 'cs_venue_allocations' : 'venue_allocations'
+      if (table === 'catering_store_items') {
+        var allocTable = 'cs_venue_allocations'
         // Fetch the pending item
         var { data: pending } = await supabase.from(table).select('*').eq('id', id).maybeSingle()
         if (pending) {
@@ -137,7 +135,7 @@ function PendingReview({ profile }) {
   async function confirmReject() {
     if (!rejectTarget || !rejectReason.trim()) return
     setSaving(true)
-    if (rejectTarget.table === 'inventory_items' || rejectTarget.table === 'catering_store_items') {
+    if (rejectTarget.table === 'catering_store_items') {
       await supabase.from(rejectTarget.table).update({
         status: 'rejected',
         rejection_reason: rejectReason.trim()
@@ -411,11 +409,11 @@ function PendingReview({ profile }) {
 
                     {/* Actions */}
                     <div className="flex flex-col gap-2 p-4 border-l border-gray-100 justify-center flex-shrink-0">
-                      <button onClick={function () { approveItem(item._source === 'catering_store' ? 'catering_store_items' : 'inventory_items', item.id, item.name, 'Item') }} disabled={saving}
+                      <button onClick={function () { approveItem('catering_store_items', item.id, item.name, 'Item') }} disabled={saving}
                         className="px-4 py-2 text-xs font-bold bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors whitespace-nowrap">✓ Approve</button>
                       <button onClick={function () { setEditingItem(item) }} disabled={saving}
                         className="px-4 py-2 text-xs font-bold text-indigo-600 border border-indigo-200 rounded-lg hover:bg-indigo-50 disabled:opacity-50 transition-colors whitespace-nowrap">✎ Edit</button>
-                      <button onClick={function () { openReject(item._source === 'catering_store' ? 'catering_store_items' : 'inventory_items', item.id, item.name, 'Item') }} disabled={saving}
+                      <button onClick={function () { openReject('catering_store_items', item.id, item.name, 'Item') }} disabled={saving}
                         className="px-4 py-2 text-xs font-bold text-red-600 border border-red-200 rounded-lg hover:bg-red-50 disabled:opacity-50 transition-colors whitespace-nowrap">✗ Reject</button>
                     </div>
                   </div>

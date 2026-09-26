@@ -49,7 +49,7 @@ function renderDetailBody(row) {
         </div>
       )}
       {row.dept_approver && (
-        <p className="text-xs text-gray-500">Dept-cleared by {row.dept_approver.name} on {formatDate(row.dept_approved_at)}</p>
+        <p className="text-xs text-gray-500">Approved by {row.dept_approver.name} on {formatDate(row.dept_approved_at)}</p>
       )}
       {row.rejection_reason && (
         <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{row.rejection_reason}</p>
