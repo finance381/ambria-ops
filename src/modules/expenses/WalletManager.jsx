@@ -813,7 +813,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
           ? supabase.from('extra_plate_collections').select(EPC_COLS).in('cancel_wallet_tx_id', txnIds)
           : none,
         collRefIds.length > 0
-          ? supabase.from('events').select('id, client_name, session, function_date, event_name').in('id', collRefIds)
+          ? supabase.from('events').select('id, client_name, session, function_date, event_name, venue_name').in('id', collRefIds)
           : none,
       ])
       if (!current()) return
@@ -3709,7 +3709,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             {/* Enrichment: collection → guest · session · event date, same facts the detail modal shows on click */}
             {t.reference_type === 'collection' && t.reference_id && collectionEventRefs[t.reference_id] && (function () {
               var ce = collectionEventRefs[t.reference_id]
-              var bits = [ce.client_name, ce.session, ce.function_date ? formatDate(ce.function_date) : null].filter(Boolean)
+              var bits = [ce.function_date ? formatDate(ce.function_date) : null, ce.client_name, ce.venue_name, ce.session].filter(Boolean)
               if (bits.length === 0) return null
               return <p className="text-[11.5px] text-slate-500 mt-0.5">{bits.join(' · ')}</p>
             })()}

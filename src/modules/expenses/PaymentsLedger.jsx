@@ -249,14 +249,15 @@ function PaymentsLedger({ profile }) {
       vendorIds.length > 0 ? supabase.from('vendors').select('id, name').in('id', vendorIds) : Promise.resolve({ data: [] }),
       walletIdsForOwners.length > 0 ? supabase.from('wallets').select('id, user_id, profiles(id, name)').in('id', walletIdsForOwners) : Promise.resolve({ data: [] }),
       // EPC back-links so collections can be split from plain event collections
-      collectIds.length > 0 ? supabase.from('extra_plate_collections').select('id, event_id, wallet_tx_id, extras_charged, plates_returned, discount_paise, events(id, event_name)').in('wallet_tx_id', collectIds) : Promise.resolve({ data: [] }),
+      collectIds.length > 0 ? supabase.from('extra_plate_collections').select('id, event_id, wallet_tx_id, extras_charged, plates_returned, discount_paise, events(id, event_name, client_name, function_date, venue_name, session)').in('wallet_tx_id', collectIds) : Promise.resolve({ data: [] }),
       profileIds.length > 0 ? supabase.from('profiles').select('id, name').in('id', profileIds) : Promise.resolve({ data: [] }),
-      candidateEventIds.length > 0 ? supabase.from('events').select('id, event_name').in('id', candidateEventIds) : Promise.resolve({ data: [] }),
+      candidateEventIds.length > 0 ? supabase.from('events').select('id, event_name, client_name, function_date, venue_name, session').in('id', candidateEventIds) : Promise.resolve({ data: [] }),
     ])
 
     var vendorNames = {}; (vRes.data || []).forEach(function (v) { vendorNames[v.id] = v.name })
     var profileNames = {}; (pRes.data || []).forEach(function (p) { profileNames[p.id] = p.name })
-    var eventNames = {}; (evRes.data || []).forEach(function (e) { eventNames[e.id] = e.event_name })
+    var eventNames = {}; var eventInfo = {}
+    ;(evRes.data || []).forEach(function (e) { eventNames[e.id] = e.event_name; eventInfo[e.id] = e })
 
     var walletOwnerMap = {}
     ;(walletOwnersRes.data || []).forEach(function (w) {
@@ -268,6 +269,7 @@ function PaymentsLedger({ profile }) {
     var epcByWalletTx = {}
     ;(epcRes.data || []).forEach(function (e) {
       if (e.wallet_tx_id) epcByWalletTx[e.wallet_tx_id] = e
+      if (e.events && e.events.id && eventInfo[e.events.id] == null) eventInfo[e.events.id] = e.events
       if (e.events && e.events.id && eventNames[e.events.id] == null) eventNames[e.events.id] = e.events.event_name
     })
 
@@ -316,6 +318,7 @@ function PaymentsLedger({ profile }) {
         _eventId: evId,
         _isEpc: isEpc,
         _epc: epc || null,
+        _eventInfo: (evId && eventInfo[evId]) || null,
         _receiptNo: w.receipt_no,
         _performedBy: w.performed_by,
         _imgUrl: getReceiptUrl(w.received_image_path),
@@ -734,6 +737,32 @@ function PaymentsLedger({ profile }) {
                           <p className="font-display text-[13px] font-bold text-slate-900 leading-snug break-words">{r.party_name}</p>
                           {r.description && (
                             <p className="mt-0.5 text-[12px] text-slate-500 leading-snug break-words">{r.description}</p>
+                          )}
+                          {/* Event Collection / Extra Plate Collection rows: the
+                              event name alone (already the row's headline) doesn't
+                              say who the guest was, when the function actually
+                              ran, or where — a reader had to open the row to find
+                              any of that. */}
+                          {r.source === 'collection' && r._eventInfo && (function () {
+                            var ei = r._eventInfo
+                            var bits = [
+                              ei.function_date ? formatDate(ei.function_date) : null,
+                              ei.client_name,
+                              ei.venue_name,
+                              ei.session,
+                            ].filter(Boolean)
+                            if (bits.length === 0) return null
+                            return <p className="mt-0.5 text-[11.5px] text-indigo-600 leading-snug break-words">{bits.join(' · ')}</p>
+                          })()}
+                          {r.source === 'collection' && r._imgUrl && (
+                            r._imgIsVoice ? (
+                              <audio src={r._imgUrl} controls onClick={function (ev) { ev.stopPropagation() }}
+                                className="mt-1.5 h-8 w-full max-w-[220px]" />
+                            ) : (
+                              <img src={r._imgUrl} alt="Receipt"
+                                onClick={function (ev) { ev.stopPropagation(); setEnlargedImg(r._imgUrl) }}
+                                className="mt-1.5 w-10 h-10 rounded border border-slate-200 object-cover cursor-zoom-in hover:border-indigo-400 transition-colors" />
+                            )
                           )}
                           {/* A ledger without a date on the row is a list of
                               amounts. With the column gone it says it here,
