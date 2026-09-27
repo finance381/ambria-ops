@@ -83,6 +83,62 @@ function timeOf(ts) {
   return d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true })
 }
 
+// Rolling windows ending today, matching this screen's own default
+// (last-30-days) rather than switching to calendar-aligned periods.
+var DATE_PRESETS = [
+  { k: 'today', label: 'Today' },
+  { k: 'yesterday', label: 'Yesterday' },
+  { k: 'lastWeek', label: 'Last Week' },
+  { k: 'lastMonth', label: 'Last Month' },
+  { k: 'lastYear', label: 'Last Year' },
+  { k: 'custom', label: 'Custom' },
+]
+function isoDate(d) { return d.toISOString().split('T')[0] }
+function getQuickDateRange(preset) {
+  var today = new Date()
+  var todayIso = isoDate(today)
+  if (preset === 'today') return { from: todayIso, to: todayIso }
+  if (preset === 'yesterday') { var y = isoDate(new Date(today.getTime() - 86400000)); return { from: y, to: y } }
+  if (preset === 'lastWeek') return { from: isoDate(new Date(today.getTime() - 6 * 86400000)), to: todayIso }
+  if (preset === 'lastMonth') return { from: isoDate(new Date(today.getTime() - 29 * 86400000)), to: todayIso }
+  if (preset === 'lastYear') return { from: isoDate(new Date(today.getTime() - 364 * 86400000)), to: todayIso }
+  return null
+}
+
+function DateRangeDropdown({ preset, onChange }) {
+  var [open, setOpen] = useState(false)
+  var wrapRef = useRef(null)
+  useEffect(function () {
+    function onDocClick(e) { if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false) }
+    document.addEventListener('click', onDocClick)
+    return function () { document.removeEventListener('click', onDocClick) }
+  }, [])
+  var current = DATE_PRESETS.find(function (p) { return p.k === preset }) || DATE_PRESETS[0]
+  return (
+    <div className="relative shrink-0" ref={wrapRef}>
+      <button type="button" onClick={function () { setOpen(!open) }} aria-pressed={open}
+        className="h-9 px-3 inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white text-[12.5px] font-bold text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors">
+        <Icon name="calendar" size={14} />
+        {current.label}
+        <Icon name={open ? 'chevronUp' : 'chevronDown'} size={13} />
+      </button>
+      {open && (
+        <div className="absolute z-50 mt-1 min-w-[150px] bg-white border border-slate-200 rounded-lg shadow-lg overflow-hidden">
+          {DATE_PRESETS.map(function (p) {
+            var isOn = p.k === preset
+            return (
+              <button key={p.k} type="button" onClick={function () { onChange(p.k); setOpen(false) }}
+                className={'w-full text-left px-3 py-2 text-[12.5px] hover:bg-slate-50 transition-colors ' + (isOn ? 'font-bold text-indigo-700 bg-indigo-50' : 'text-slate-700')}>
+                {p.label}
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function PaymentsLedger({ profile }) {
   var permsNew = (profile && profile.permsNew) || []
   var canView = hasPerm(permsNew, 'finance.payments')
@@ -90,8 +146,15 @@ function PaymentsLedger({ profile }) {
 
   var [rows, setRows] = useState([])
   var [loading, setLoading] = useState(true)
+  var [datePreset, setDatePreset] = useState('lastMonth')
   var [dateFrom, setDateFrom] = useState(function () { return new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0] })
   var [dateTo, setDateTo] = useState(function () { return new Date().toISOString().split('T')[0] })
+  function applyDatePreset(k) {
+    setDatePreset(k)
+    if (k === 'custom') return
+    var r = getQuickDateRange(k)
+    if (r) { setDateFrom(r.from); setDateTo(r.to) }
+  }
   var [modeFilter, setModeFilter] = useState('all') // 'all' | 'cash' | 'bank'
   var [dirFilter, setDirFilter] = useState('all') // 'all' | 'in' | 'out'
   var [search, setSearch] = useState('')
@@ -457,19 +520,27 @@ function PaymentsLedger({ profile }) {
             overflow-x-auto turns that into a scroll instead of a dead end. */}
         <div className="flex flex-wrap @3xl:flex-nowrap @3xl:overflow-x-auto @3xl:ambria-thin-scroll items-center gap-x-4 gap-y-3">
           <div className="flex items-center gap-2 shrink-0">
-            <span className="text-[12px] font-bold text-slate-500 whitespace-nowrap">Date Range</span>
-            {/* The app's own picker. <input type="date"> renders mm/dd/yyyy in
-                US order whatever the locale, which next to "08 Dec 2025"
+            <DateRangeDropdown preset={datePreset} onChange={applyDatePreset} />
+            {/* Only Custom needs the actual pickers — every other preset
+                already carries its own dates, and showing two more controls
+                for them was what pushed More Filters/Export off the row in
+                the first place.
+                The app's own picker: <input type="date"> renders mm/dd/yyyy
+                in US order whatever the locale, which next to "08 Dec 2025"
                 everywhere else on the screen is the one that looks wrong. */}
-            <div className="w-[136px]">
-              <EventDatePicker value={dateFrom} onChange={function (v) { if (v) setDateFrom(v) }}
-                collapsible includePast plain neutral placeholder="From" />
-            </div>
-            <Icon name="arrowRight" size={14} className="shrink-0 text-slate-400" />
-            <div className="w-[136px]">
-              <EventDatePicker value={dateTo} onChange={function (v) { if (v) setDateTo(v) }}
-                collapsible includePast plain neutral placeholder="To" />
-            </div>
+            {datePreset === 'custom' && (
+              <>
+                <div className="w-[136px]">
+                  <EventDatePicker value={dateFrom} onChange={function (v) { if (v) setDateFrom(v) }}
+                    collapsible includePast plain neutral placeholder="From" />
+                </div>
+                <Icon name="arrowRight" size={14} className="shrink-0 text-slate-400" />
+                <div className="w-[136px]">
+                  <EventDatePicker value={dateTo} onChange={function (v) { if (v) setDateTo(v) }}
+                    collapsible includePast plain neutral placeholder="To" />
+                </div>
+              </>
+            )}
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
