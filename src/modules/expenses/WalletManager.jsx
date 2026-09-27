@@ -4565,12 +4565,19 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
           <div className="space-y-2">
             <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Outgoing Transfers (Pending)</p>
             {pendingOutgoing.map(function (t) {
+              var imgUrl = getReceiptUrl(t.sender_image_path)
               return (
                 <div key={t.id} className="bg-white border border-gray-200 rounded-lg p-3">
                   <div className="flex items-start justify-between">
                     <div className="flex-1 min-w-0">
                       <p className="text-[14px] font-bold text-slate-900 leading-snug">Sent {formatPoints(t.amount_paise)} to {t._toName}</p>
                       <p className="text-xs text-gray-400 mt-0.5">{t.description || '—'} · {formatDate(t.created_at)}</p>
+                      {imgUrl && (
+                        <span className="block mt-1.5">
+                          <ProofThumb url={imgUrl} label="Sent" tone="bg-blue-600"
+                            onOpen={function () { setEnlargedWalletImg(imgUrl) }} />
+                        </span>
+                      )}
                     </div>
                     <button onClick={function () { cancelTransfer(t) }}
                       className="px-3 py-1.5 text-[10px] font-bold text-red-500 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 transition-colors flex-shrink-0 ml-2">
