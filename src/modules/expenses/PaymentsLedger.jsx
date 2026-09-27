@@ -445,8 +445,17 @@ function PaymentsLedger({ profile }) {
       <div className={CARD + ' px-4 py-3 overflow-hidden'}>
         {/* One row on anything wide enough to hold it. It still wraps on a
             phone, where three controls side by side would each be too narrow
-            to use. */}
-        <div className="flex flex-wrap @3xl:flex-nowrap items-center gap-x-4 gap-y-3">
+            to use.
+
+            @3xl is a rough "is there room" guess, not a guarantee — the
+            Quick Filters group's width varies with how many buttons are
+            configured, and browser zoom shrinks the effective CSS-pixel
+            width of the container without changing which container-query
+            breakpoint matches. When the guess is wrong, every group here is
+            shrink-0 and the card clips overflow, so More Filters and Export
+            were silently pushed past the edge with no way to reach them.
+            overflow-x-auto turns that into a scroll instead of a dead end. */}
+        <div className="flex flex-wrap @3xl:flex-nowrap @3xl:overflow-x-auto @3xl:ambria-thin-scroll items-center gap-x-4 gap-y-3">
           <div className="flex items-center gap-2 shrink-0">
             <span className="text-[12px] font-bold text-slate-500 whitespace-nowrap">Date Range</span>
             {/* The app's own picker. <input type="date"> renders mm/dd/yyyy in
@@ -464,7 +473,6 @@ function PaymentsLedger({ profile }) {
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
-            <span className="text-[12px] font-bold text-slate-500 whitespace-nowrap">Quick Filters</span>
             <div className="flex flex-wrap @3xl:flex-nowrap items-center gap-2.5">
               {QUICK_GROUPS.map(function (group, gi) {
                 return (
