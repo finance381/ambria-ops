@@ -10,6 +10,7 @@ import Icon from '../../components/ui/Icon'
 import EventDatePicker from '../../components/ui/EventDatePicker'
 import { CARD } from '../../lib/ui'
 import { useExpenseDetailModal } from '../../hooks/useExpenseDetailModal.jsx'
+import { useReferenceData } from '../../lib/referenceData.jsx'
 import PaymentProofThumbs from '../../components/ledger/PaymentProofThumbs'
 import { getReceiptUrl, isVoiceNotePath } from '../../lib/uploadHelper'
 
@@ -143,6 +144,18 @@ function PaymentsLedger({ profile }) {
   var permsNew = (profile && profile.permsNew) || []
   var canView = hasPerm(permsNew, 'finance.payments')
   var isAdmin = hasPerm(permsNew, 'admin.dashboard')
+
+  // events.venue_name is a plain LMS-synced text field with no venue_id —
+  // matching it against this app's own venues master by name is the only way
+  // to attach the venue's short code, and only works when the two actually
+  // agree on the name.
+  var venueCodeByName = {}
+  useReferenceData().venues.forEach(function (v) { if (v.name && v.code) venueCodeByName[v.name.toLowerCase()] = v.code })
+  function venueLabelWithCode(venueName) {
+    if (!venueName) return venueName
+    var code = venueCodeByName[venueName.toLowerCase()]
+    return code ? code + ' — ' + venueName : venueName
+  }
 
   var [rows, setRows] = useState([])
   var [loading, setLoading] = useState(true)
@@ -748,7 +761,7 @@ function PaymentsLedger({ profile }) {
                             var bits = [
                               ei.function_date ? formatDate(ei.function_date) : null,
                               ei.client_name,
-                              ei.venue_name,
+                              venueLabelWithCode(ei.venue_name),
                               ei.session,
                             ].filter(Boolean)
                             if (bits.length === 0) return null

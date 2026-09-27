@@ -329,6 +329,17 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   // (the debit already happened), but clutters the everyday view.
   var [showDeletedTxns, setShowDeletedTxns] = useState(false)
   var activeVenues = useReferenceData().venues.filter(function (v) { return v.active }).slice().sort(function (a, b) { return (a.code || '').localeCompare(b.code || '') })
+  // events.venue_name is a plain LMS-synced text field with no venue_id —
+  // matching it against this app's own venues master by name is the only way
+  // to attach the venue's short code, and only works when the two actually
+  // agree on the name.
+  var venueCodeByName = {}
+  useReferenceData().venues.forEach(function (v) { if (v.name && v.code) venueCodeByName[v.name.toLowerCase()] = v.code })
+  function venueLabelWithCode(venueName) {
+    if (!venueName) return venueName
+    var code = venueCodeByName[venueName.toLowerCase()]
+    return code ? code + ' — ' + venueName : venueName
+  }
   var [walletView, setWalletView] = useState(null)
   var [allWallets, setAllWallets] = useState([])
   var [walletProfiles, setWalletProfiles] = useState({})
@@ -3709,7 +3720,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             {/* Enrichment: collection → guest · session · event date, same facts the detail modal shows on click */}
             {t.reference_type === 'collection' && t.reference_id && collectionEventRefs[t.reference_id] && (function () {
               var ce = collectionEventRefs[t.reference_id]
-              var bits = [ce.function_date ? formatDate(ce.function_date) : null, ce.client_name, ce.venue_name, ce.session].filter(Boolean)
+              var bits = [ce.function_date ? formatDate(ce.function_date) : null, ce.client_name, venueLabelWithCode(ce.venue_name), ce.session].filter(Boolean)
               if (bits.length === 0) return null
               return <p className="text-[11.5px] text-slate-500 mt-0.5">{bits.join(' · ')}</p>
             })()}
