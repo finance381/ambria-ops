@@ -329,6 +329,17 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   // (the debit already happened), but clutters the everyday view.
   var [showDeletedTxns, setShowDeletedTxns] = useState(false)
   var activeVenues = useReferenceData().venues.filter(function (v) { return v.active }).slice().sort(function (a, b) { return (a.code || '').localeCompare(b.code || '') })
+  // events.venue_name is a plain LMS-synced text field with no venue_id —
+  // matching it against this app's own venues master by name is the only way
+  // to attach the venue's short code, and only works when the two actually
+  // agree on the name.
+  var venueCodeByName = {}
+  useReferenceData().venues.forEach(function (v) { if (v.name && v.code) venueCodeByName[v.name.toLowerCase()] = v.code })
+  function venueLabelWithCode(venueName) {
+    if (!venueName) return venueName
+    var code = venueCodeByName[venueName.toLowerCase()]
+    return code ? code + ' — ' + venueName : venueName
+  }
   var [walletView, setWalletView] = useState(null)
   var [allWallets, setAllWallets] = useState([])
   var [walletProfiles, setWalletProfiles] = useState({})
@@ -813,7 +824,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
           ? supabase.from('extra_plate_collections').select(EPC_COLS).in('cancel_wallet_tx_id', txnIds)
           : none,
         collRefIds.length > 0
-          ? supabase.from('events').select('id, client_name, session, function_date, event_name').in('id', collRefIds)
+          ? supabase.from('events').select('id, client_name, session, function_date, event_name, venue_name').in('id', collRefIds)
           : none,
       ])
       if (!current()) return
@@ -3709,7 +3720,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             {/* Enrichment: collection → guest · session · event date, same facts the detail modal shows on click */}
             {t.reference_type === 'collection' && t.reference_id && collectionEventRefs[t.reference_id] && (function () {
               var ce = collectionEventRefs[t.reference_id]
-              var bits = [ce.client_name, ce.session, ce.function_date ? formatDate(ce.function_date) : null].filter(Boolean)
+              var bits = [ce.function_date ? formatDate(ce.function_date) : null, ce.client_name, venueLabelWithCode(ce.venue_name), ce.session].filter(Boolean)
               if (bits.length === 0) return null
               return <p className="text-[11.5px] text-slate-500 mt-0.5">{bits.join(' · ')}</p>
             })()}
@@ -4565,12 +4576,19 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
           <div className="space-y-2">
             <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Outgoing Transfers (Pending)</p>
             {pendingOutgoing.map(function (t) {
+              var imgUrl = getReceiptUrl(t.sender_image_path)
               return (
                 <div key={t.id} className="bg-white border border-gray-200 rounded-lg p-3">
                   <div className="flex items-start justify-between">
                     <div className="flex-1 min-w-0">
                       <p className="text-[14px] font-bold text-slate-900 leading-snug">Sent {formatPoints(t.amount_paise)} to {t._toName}</p>
                       <p className="text-xs text-gray-400 mt-0.5">{t.description || '—'} · {formatDate(t.created_at)}</p>
+                      {imgUrl && (
+                        <span className="block mt-1.5">
+                          <ProofThumb url={imgUrl} label="Sent" tone="bg-blue-600"
+                            onOpen={function () { setEnlargedWalletImg(imgUrl) }} />
+                        </span>
+                      )}
                     </div>
                     <button onClick={function () { cancelTransfer(t) }}
                       className="px-3 py-1.5 text-[10px] font-bold text-red-500 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 transition-colors flex-shrink-0 ml-2">

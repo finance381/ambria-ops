@@ -10,6 +10,7 @@ import Icon from '../../components/ui/Icon'
 import EventDatePicker from '../../components/ui/EventDatePicker'
 import { CARD } from '../../lib/ui'
 import { useExpenseDetailModal } from '../../hooks/useExpenseDetailModal.jsx'
+import { useReferenceData } from '../../lib/referenceData.jsx'
 import PaymentProofThumbs from '../../components/ledger/PaymentProofThumbs'
 import { getReceiptUrl, isVoiceNotePath } from '../../lib/uploadHelper'
 
@@ -83,15 +84,90 @@ function timeOf(ts) {
   return d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true })
 }
 
+// Rolling windows ending today, matching this screen's own default
+// (last-30-days) rather than switching to calendar-aligned periods.
+var DATE_PRESETS = [
+  { k: 'today', label: 'Today' },
+  { k: 'yesterday', label: 'Yesterday' },
+  { k: 'lastWeek', label: 'Last Week' },
+  { k: 'lastMonth', label: 'Last Month' },
+  { k: 'lastYear', label: 'Last Year' },
+  { k: 'custom', label: 'Custom' },
+]
+function isoDate(d) { return d.toISOString().split('T')[0] }
+function getQuickDateRange(preset) {
+  var today = new Date()
+  var todayIso = isoDate(today)
+  if (preset === 'today') return { from: todayIso, to: todayIso }
+  if (preset === 'yesterday') { var y = isoDate(new Date(today.getTime() - 86400000)); return { from: y, to: y } }
+  if (preset === 'lastWeek') return { from: isoDate(new Date(today.getTime() - 6 * 86400000)), to: todayIso }
+  if (preset === 'lastMonth') return { from: isoDate(new Date(today.getTime() - 29 * 86400000)), to: todayIso }
+  if (preset === 'lastYear') return { from: isoDate(new Date(today.getTime() - 364 * 86400000)), to: todayIso }
+  return null
+}
+
+function DateRangeDropdown({ preset, onChange }) {
+  var [open, setOpen] = useState(false)
+  var wrapRef = useRef(null)
+  useEffect(function () {
+    function onDocClick(e) { if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false) }
+    document.addEventListener('click', onDocClick)
+    return function () { document.removeEventListener('click', onDocClick) }
+  }, [])
+  var current = DATE_PRESETS.find(function (p) { return p.k === preset }) || DATE_PRESETS[0]
+  return (
+    <div className="relative shrink-0" ref={wrapRef}>
+      <button type="button" onClick={function () { setOpen(!open) }} aria-pressed={open}
+        className="h-9 px-3 inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white text-[12.5px] font-bold text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors">
+        <Icon name="calendar" size={14} />
+        {current.label}
+        <Icon name={open ? 'chevronUp' : 'chevronDown'} size={13} />
+      </button>
+      {open && (
+        <div className="absolute z-50 mt-1 min-w-[150px] bg-white border border-slate-200 rounded-lg shadow-lg overflow-hidden">
+          {DATE_PRESETS.map(function (p) {
+            var isOn = p.k === preset
+            return (
+              <button key={p.k} type="button" onClick={function () { onChange(p.k); setOpen(false) }}
+                className={'w-full text-left px-3 py-2 text-[12.5px] hover:bg-slate-50 transition-colors ' + (isOn ? 'font-bold text-indigo-700 bg-indigo-50' : 'text-slate-700')}>
+                {p.label}
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function PaymentsLedger({ profile }) {
   var permsNew = (profile && profile.permsNew) || []
   var canView = hasPerm(permsNew, 'finance.payments')
   var isAdmin = hasPerm(permsNew, 'admin.dashboard')
 
+  // events.venue_name is a plain LMS-synced text field with no venue_id —
+  // matching it against this app's own venues master by name is the only way
+  // to attach the venue's short code, and only works when the two actually
+  // agree on the name.
+  var venueCodeByName = {}
+  useReferenceData().venues.forEach(function (v) { if (v.name && v.code) venueCodeByName[v.name.toLowerCase()] = v.code })
+  function venueLabelWithCode(venueName) {
+    if (!venueName) return venueName
+    var code = venueCodeByName[venueName.toLowerCase()]
+    return code ? code + ' — ' + venueName : venueName
+  }
+
   var [rows, setRows] = useState([])
   var [loading, setLoading] = useState(true)
+  var [datePreset, setDatePreset] = useState('lastMonth')
   var [dateFrom, setDateFrom] = useState(function () { return new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0] })
   var [dateTo, setDateTo] = useState(function () { return new Date().toISOString().split('T')[0] })
+  function applyDatePreset(k) {
+    setDatePreset(k)
+    if (k === 'custom') return
+    var r = getQuickDateRange(k)
+    if (r) { setDateFrom(r.from); setDateTo(r.to) }
+  }
   var [modeFilter, setModeFilter] = useState('all') // 'all' | 'cash' | 'bank'
   var [dirFilter, setDirFilter] = useState('all') // 'all' | 'in' | 'out'
   var [search, setSearch] = useState('')
@@ -186,14 +262,15 @@ function PaymentsLedger({ profile }) {
       vendorIds.length > 0 ? supabase.from('vendors').select('id, name').in('id', vendorIds) : Promise.resolve({ data: [] }),
       walletIdsForOwners.length > 0 ? supabase.from('wallets').select('id, user_id, profiles(id, name)').in('id', walletIdsForOwners) : Promise.resolve({ data: [] }),
       // EPC back-links so collections can be split from plain event collections
-      collectIds.length > 0 ? supabase.from('extra_plate_collections').select('id, event_id, wallet_tx_id, extras_charged, plates_returned, discount_paise, events(id, event_name)').in('wallet_tx_id', collectIds) : Promise.resolve({ data: [] }),
+      collectIds.length > 0 ? supabase.from('extra_plate_collections').select('id, event_id, wallet_tx_id, extras_charged, plates_returned, discount_paise, events(id, event_name, client_name, function_date, venue_name, session)').in('wallet_tx_id', collectIds) : Promise.resolve({ data: [] }),
       profileIds.length > 0 ? supabase.from('profiles').select('id, name').in('id', profileIds) : Promise.resolve({ data: [] }),
-      candidateEventIds.length > 0 ? supabase.from('events').select('id, event_name').in('id', candidateEventIds) : Promise.resolve({ data: [] }),
+      candidateEventIds.length > 0 ? supabase.from('events').select('id, event_name, client_name, function_date, venue_name, session').in('id', candidateEventIds) : Promise.resolve({ data: [] }),
     ])
 
     var vendorNames = {}; (vRes.data || []).forEach(function (v) { vendorNames[v.id] = v.name })
     var profileNames = {}; (pRes.data || []).forEach(function (p) { profileNames[p.id] = p.name })
-    var eventNames = {}; (evRes.data || []).forEach(function (e) { eventNames[e.id] = e.event_name })
+    var eventNames = {}; var eventInfo = {}
+    ;(evRes.data || []).forEach(function (e) { eventNames[e.id] = e.event_name; eventInfo[e.id] = e })
 
     var walletOwnerMap = {}
     ;(walletOwnersRes.data || []).forEach(function (w) {
@@ -205,6 +282,7 @@ function PaymentsLedger({ profile }) {
     var epcByWalletTx = {}
     ;(epcRes.data || []).forEach(function (e) {
       if (e.wallet_tx_id) epcByWalletTx[e.wallet_tx_id] = e
+      if (e.events && e.events.id && eventInfo[e.events.id] == null) eventInfo[e.events.id] = e.events
       if (e.events && e.events.id && eventNames[e.events.id] == null) eventNames[e.events.id] = e.events.event_name
     })
 
@@ -253,6 +331,7 @@ function PaymentsLedger({ profile }) {
         _eventId: evId,
         _isEpc: isEpc,
         _epc: epc || null,
+        _eventInfo: (evId && eventInfo[evId]) || null,
         _receiptNo: w.receipt_no,
         _performedBy: w.performed_by,
         _imgUrl: getReceiptUrl(w.received_image_path),
@@ -445,26 +524,42 @@ function PaymentsLedger({ profile }) {
       <div className={CARD + ' px-4 py-3 overflow-hidden'}>
         {/* One row on anything wide enough to hold it. It still wraps on a
             phone, where three controls side by side would each be too narrow
-            to use. */}
-        <div className="flex flex-wrap @3xl:flex-nowrap items-center gap-x-4 gap-y-3">
+            to use.
+
+            @3xl is a rough "is there room" guess, not a guarantee — the
+            Quick Filters group's width varies with how many buttons are
+            configured, and browser zoom shrinks the effective CSS-pixel
+            width of the container without changing which container-query
+            breakpoint matches. When the guess is wrong, every group here is
+            shrink-0 and the card clips overflow, so More Filters and Export
+            were silently pushed past the edge with no way to reach them.
+            overflow-x-auto turns that into a scroll instead of a dead end. */}
+        <div className="flex flex-wrap @3xl:flex-nowrap @3xl:overflow-x-auto @3xl:ambria-thin-scroll items-center gap-x-4 gap-y-3">
           <div className="flex items-center gap-2 shrink-0">
-            <span className="text-[12px] font-bold text-slate-500 whitespace-nowrap">Date Range</span>
-            {/* The app's own picker. <input type="date"> renders mm/dd/yyyy in
-                US order whatever the locale, which next to "08 Dec 2025"
+            <DateRangeDropdown preset={datePreset} onChange={applyDatePreset} />
+            {/* Only Custom needs the actual pickers — every other preset
+                already carries its own dates, and showing two more controls
+                for them was what pushed More Filters/Export off the row in
+                the first place.
+                The app's own picker: <input type="date"> renders mm/dd/yyyy
+                in US order whatever the locale, which next to "08 Dec 2025"
                 everywhere else on the screen is the one that looks wrong. */}
-            <div className="w-[136px]">
-              <EventDatePicker value={dateFrom} onChange={function (v) { if (v) setDateFrom(v) }}
-                collapsible includePast plain neutral placeholder="From" />
-            </div>
-            <Icon name="arrowRight" size={14} className="shrink-0 text-slate-400" />
-            <div className="w-[136px]">
-              <EventDatePicker value={dateTo} onChange={function (v) { if (v) setDateTo(v) }}
-                collapsible includePast plain neutral placeholder="To" />
-            </div>
+            {datePreset === 'custom' && (
+              <>
+                <div className="w-[136px]">
+                  <EventDatePicker value={dateFrom} onChange={function (v) { if (v) setDateFrom(v) }}
+                    collapsible includePast plain neutral placeholder="From" />
+                </div>
+                <Icon name="arrowRight" size={14} className="shrink-0 text-slate-400" />
+                <div className="w-[136px]">
+                  <EventDatePicker value={dateTo} onChange={function (v) { if (v) setDateTo(v) }}
+                    collapsible includePast plain neutral placeholder="To" />
+                </div>
+              </>
+            )}
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
-            <span className="text-[12px] font-bold text-slate-500 whitespace-nowrap">Quick Filters</span>
             <div className="flex flex-wrap @3xl:flex-nowrap items-center gap-2.5">
               {QUICK_GROUPS.map(function (group, gi) {
                 return (
@@ -655,6 +750,32 @@ function PaymentsLedger({ profile }) {
                           <p className="font-display text-[13px] font-bold text-slate-900 leading-snug break-words">{r.party_name}</p>
                           {r.description && (
                             <p className="mt-0.5 text-[12px] text-slate-500 leading-snug break-words">{r.description}</p>
+                          )}
+                          {/* Event Collection / Extra Plate Collection rows: the
+                              event name alone (already the row's headline) doesn't
+                              say who the guest was, when the function actually
+                              ran, or where — a reader had to open the row to find
+                              any of that. */}
+                          {r.source === 'collection' && r._eventInfo && (function () {
+                            var ei = r._eventInfo
+                            var bits = [
+                              ei.function_date ? formatDate(ei.function_date) : null,
+                              ei.client_name,
+                              venueLabelWithCode(ei.venue_name),
+                              ei.session,
+                            ].filter(Boolean)
+                            if (bits.length === 0) return null
+                            return <p className="mt-0.5 text-[11.5px] text-indigo-600 leading-snug break-words">{bits.join(' · ')}</p>
+                          })()}
+                          {r.source === 'collection' && r._imgUrl && (
+                            r._imgIsVoice ? (
+                              <audio src={r._imgUrl} controls onClick={function (ev) { ev.stopPropagation() }}
+                                className="mt-1.5 h-8 w-full max-w-[220px]" />
+                            ) : (
+                              <img src={r._imgUrl} alt="Receipt"
+                                onClick={function (ev) { ev.stopPropagation(); setEnlargedImg(r._imgUrl) }}
+                                className="mt-1.5 w-10 h-10 rounded border border-slate-200 object-cover cursor-zoom-in hover:border-indigo-400 transition-colors" />
+                            )
                           )}
                           {/* A ledger without a date on the row is a list of
                               amounts. With the column gone it says it here,
