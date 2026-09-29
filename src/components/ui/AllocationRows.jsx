@@ -16,6 +16,9 @@ import Icon from './Icon'
 //   headerWarning     JSX. Optional banner above rows (e.g. dept mismatch).
 //   title             string, default 'Allocations'.
 //   accent            'amber' | 'indigo' | 'gray', default 'amber'.
+//   bare              bool. For a list that already sits in a titled card:
+//                     no box of its own and no title, so it is not a card in
+//                     a card in a card — just the row buttons, then the rows.
 //   onRemove          fn(idx) → void. Called for the last row too; the caller
 //                     is expected to reset that row rather than drop it, so the
 //                     list never goes empty.
@@ -83,9 +86,11 @@ function AllocationRows(props) {
   }
 
   return (
-    <div className="border border-slate-200 rounded-xl bg-slate-50 overflow-hidden">
-      <div className="flex items-center justify-between gap-2 px-3 py-2 bg-white border-b border-slate-200">
-        <span className="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-500">{props.title || 'Allocations'}</span>
+    <div className={props.bare ? "" : "border border-slate-200 rounded-xl bg-slate-50 overflow-hidden"}>
+      <div className={props.bare ? "flex items-center justify-between gap-2 mb-2.5" : "flex items-center justify-between gap-2 px-3 py-2 bg-white border-b border-slate-200"}>
+        {props.bare
+          ? <span className="text-[12.5px] font-medium text-slate-500"><span data-notranslate>{allocations.length}</span>{allocations.length === 1 ? ' row' : ' rows'}</span>
+          : <span className="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-500">{props.title || 'Allocations'}</span>}
         <div className="flex items-center gap-1.5">
           {props.onDuplicate && allocations.length > 0 && (
             <button type="button" onClick={handleDuplicate}
@@ -105,14 +110,14 @@ function AllocationRows(props) {
 
       {props.headerWarning && <div className="px-2.5 pt-2">{props.headerWarning}</div>}
 
-      <div className="p-2 space-y-1.5">
+      <div className={props.bare ? "space-y-2" : "p-2 space-y-1.5"}>
         {allocations.map(function (alloc, aIdx) {
           var expanded = isExpanded(aIdx)
           var complete = props.isComplete(alloc)
 
           if (expanded) {
             return (
-              <div key={aIdx} className={"ambria-rise border rounded-xl bg-white p-2.5 " + t.edit}
+              <div key={aIdx} className={props.bare ? "ambria-rise border border-slate-200 rounded-xl bg-slate-50/70 p-3.5" : "ambria-rise border rounded-xl bg-white p-2.5 " + t.edit}
                 onFocusCapture={function () { claim(aIdx) }}>
                 <div className="flex items-center justify-between gap-2 mb-2">
                   {/* Number kept out of the translated node: "Row 3" can never

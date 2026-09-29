@@ -653,3 +653,27 @@
    so it beats the placeholder: utilities on those inputs. */
 .ambria-ct-form input::placeholder,
 .ambria-ct-form textarea::placeholder { color: #475569; opacity: 1; }
+
+/* The inventory card's hover preview grows out of the photo it enlarges and
+   shrinks back into it. --pop-from is the scale at which the panel is the
+   photo's size, set inline; the origin is the photo's centre. */
+@keyframes ambria-pop-in {
+  from { opacity: 0; transform: scale(var(--pop-from, 0.6)); }
+  to   { opacity: 1; transform: scale(1); }
+}
+@keyframes ambria-pop-out {
+  from { opacity: 1; transform: scale(1); }
+  to   { opacity: 0; transform: scale(var(--pop-from, 0.6)); }
+}
+.ambria-pop-in  { animation: ambria-pop-in 300ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+.ambria-pop-out { animation: ambria-pop-out 180ms cubic-bezier(0.4, 0, 1, 1) both; }
+@media (prefers-reduced-motion: reduce) {
+  .ambria-pop-in, .ambria-pop-out { animation-name: none; }
+  .ambria-pop-out { opacity: 0; }
+}
+
+/* The admin breadcrumb over Inventory's dark shade: every part of the trail
+   goes white, the separators a softer white. */
+.ambria-crumbs-light, .ambria-crumbs-light button, .ambria-crumbs-light span { color: rgba(255, 255, 255, 0.92); }
+.ambria-crumbs-light > span[aria-hidden="true"] { color: rgba(255, 255, 255, 0.45); }
+.ambria-crumbs-light button:hover { color: #FFFFFF; }
