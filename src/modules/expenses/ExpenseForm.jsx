@@ -3319,11 +3319,10 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
                         <input type="file" accept="image/*,.pdf" multiple className="hidden"
                           onChange={function (e) { addReceipts(idx, e.target.files); e.target.value = '' }} />
                       </label>
-                      <label className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border border-slate-200 bg-white text-[12px] font-semibold text-slate-600 hover:border-indigo-400 hover:text-indigo-600 cursor-pointer transition-colors">
+                      <button type="button" onClick={function () { setCameraTarget(idx) }}
+                        className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border border-slate-200 bg-white text-[12px] font-semibold text-slate-600 hover:border-indigo-400 hover:text-indigo-600 transition-colors">
                         <Icon name="camera" className="w-[18px] h-[18px]" /><span>Camera</span>
-                        <input type="file" accept="image/*" capture="environment" className="hidden"
-                          onChange={function (e) { addReceipts(idx, e.target.files); e.target.value = '' }} />
-                      </label>
+                      </button>
                       <button type="button" onClick={function () { startRecording(idx) }}
                         className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border border-slate-200 bg-white text-[12px] font-semibold text-slate-600 hover:border-indigo-400 hover:text-indigo-600 transition-colors">
                         <Icon name="mic" className="w-[18px] h-[18px]" /><span>Voice</span>
