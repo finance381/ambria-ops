@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { supabase, getImageUrl } from '../../lib/supabase'
 import { prepUpload } from '../../lib/uploadHelper'
 import SearchDropdown from '../../components/ui/SearchDropdown'
+import Icon from '../../components/ui/Icon'
 import AllocationRows from '../../components/ui/AllocationRows'
 import ImageCrop from '../../components/ImageCrop'
 import { translateToHindi } from '../../lib/translate'
@@ -23,7 +24,46 @@ var UNITS = [
   'Trips', 'Hours', 'Days', 'Loads',
 ]
 
-function InventoryForm({ item, prefill, profile, onClose, onSaved }) {
+// Pieces for the admin layout (variant="admin" — the Edit popup on the
+// admin Inventory page). Everywhere else — the phone app, Purchase, the
+// reviews — keeps the original single-column form below.
+function FormSection({ icon, title, hint, right, children }) {
+  return (
+    <section className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-[0_1px_3px_rgba(15,23,42,0.05)]">
+      <div className="flex items-center gap-2.5 mb-4 pb-3 border-b border-slate-100">
+        <span className="shrink-0 w-8 h-8 rounded-lg bg-[#EDEFF5] text-[#3B4668] inline-flex items-center justify-center"><Icon name={icon} size={15} /></span>
+        <div className="min-w-0 flex-1">
+          <h3 className="text-[13px] font-bold uppercase tracking-[0.07em] text-slate-900">{title}</h3>
+          {hint && <p className="text-[12px] text-slate-500">{hint}</p>}
+        </div>
+        {right}
+      </div>
+      {children}
+    </section>
+  )
+}
+var F_LBL = "block text-[13px] font-semibold text-slate-700 mb-1.5"
+var F_INP = "w-full h-11 px-3 bg-white border border-slate-300 rounded-xl text-base text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-[#A9B1CB] focus:ring-4 focus:ring-[#3B4668]/10"
+// A row of options as one segmented control: the picked one lifts white out
+// of the grey track.
+function Segmented({ options, value, onChange }) {
+  return (
+    <div className={"grid gap-1 p-1 bg-slate-100 rounded-xl " + (options.length === 3 ? "grid-cols-3" : "grid-cols-2")}>
+      {options.map(function (o) {
+        var on = value === o.value
+        return (
+          <button key={o.value} type="button" onClick={function () { onChange(o.value) }} aria-pressed={on}
+            className={"h-9 inline-flex items-center justify-center gap-1.5 rounded-lg text-[13.5px] font-semibold transition-colors " +
+              (on ? (o.on || "bg-white text-slate-900") + " shadow-[0_2px_6px_-2px_rgba(15,23,42,0.35)]" : "text-slate-500 hover:text-slate-800 hover:bg-white/60")}>
+            {o.icon && <Icon name={o.icon} size={14} />}{o.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+function InventoryForm({ item, prefill, profile, onClose, onSaved, variant }) {
   var { t } = useLang()
   var seed = item || prefill || null
   var [categories, setCategories] = useState([])
@@ -642,156 +682,457 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved }) {
     )
   }
 
-  return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      {/* ═══ PHOTO CARD ═══ */}
-      <div className="bg-gray-50 rounded-lg border border-gray-200 p-4">
-        <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">{t('Photo')}</h3>
-        {!imagePreview ? (
-          <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
-            <div className="text-3xl mb-2">📷</div>
-            <div className="flex gap-2 justify-center mb-2">
-              <label className="px-3 py-1.5 text-sm bg-white border border-gray-300 rounded-md hover:bg-gray-50 cursor-pointer transition-colors font-medium">
-                {"📸 " + t('Camera')}<input type="file" accept="image/*" capture="environment" onChange={handleImageChange} className="hidden" />
-              </label>
-              <label className="px-3 py-1.5 text-sm bg-white border border-gray-300 rounded-md hover:bg-gray-50 cursor-pointer transition-colors font-medium">
-                {"🖼️ " + t('Gallery')}<input type="file" accept="image/*" onChange={handleImageChange} className="hidden" />
-              </label>
-            </div>
-            <p className="text-xs text-gray-400">{t('Photo Hint')}</p>
-          </div>
-        ) : (
-          <div className="relative inline-block">
-            <img src={imagePreview} alt="Preview" className="max-h-48 rounded-lg border border-gray-200" />
-            <button type="button" onClick={removeImage} className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full text-sm leading-none hover:bg-red-600 transition-colors">×</button>
-          </div>
-        )}
-        {errors.img && <p className="text-xs text-red-500 mt-1">{errors.img}</p>}
-      </div>
-
-      {/* ═══ ITEM DETAILS CARD ═══ */}
-      <div className="bg-gray-50 rounded-lg border border-gray-200 p-4 space-y-3">
-        <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">{t('Item Details')}</h3>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">{t('Type')}</label>
-          <div className="flex gap-0 bg-white border border-gray-300 rounded-md overflow-hidden">
-            <button type="button" onClick={function () { setType('Indoor') }} className={"flex-1 py-2 text-sm font-medium transition-colors " + (type === 'Indoor' ? "bg-blue-600 text-white" : "text-gray-500 hover:bg-gray-50")}>🏠 Indoor</button>
-            <button type="button" onClick={function () { setType('Outdoor') }} className={"flex-1 py-2 text-sm font-medium transition-colors " + (type === 'Outdoor' ? "bg-green-600 text-white" : "text-gray-500 hover:bg-gray-50")}>🌳 Outdoor</button>
-            <button type="button" onClick={function () { setType('Premium') }} className={"flex-1 py-2 text-sm font-medium transition-colors " + (type === 'Premium' ? "bg-purple-600 text-white" : "text-gray-500 hover:bg-gray-50")}>★ Premium</button>
-          </div>
-        </div>
-        <SearchDropdown label={t('Existing Item Name')} required items={itemNameItems} value={name} onChange={handleItemNameSelect} allowAdd onAdd={function (val) { setName(val); nameManual.current = true }} placeholder={t('Search Existing Item Name...')} error={errors.item} onInputChange={searchItems} />
-        <SearchDropdown label={t('Category')} required items={catItems} value={categoryId} onChange={setCategoryId} placeholder={t('Search Category...')} error={errors.cat} />
-        <SearchDropdown label={t('Sub-Category')} items={subCatItems} value={subCategoryId} onChange={setSubCategoryId} placeholder={t('Search Sub-Category...')} />
-        
-        {showPackSize && (
-          <div className="bg-amber-50 rounded-lg border border-amber-200 p-3 space-y-2">
-            <h4 className="text-[11px] font-bold text-amber-700 uppercase tracking-wider">Pack Size</h4>
+  // The admin Edit popup: photo beside what the item is, then stock and
+  // pricing, allocations and dimensions, each in a card of its own, two
+  // columns where the popup is wide enough (a container query on the form).
+  if (variant === 'admin') {
+    return (
+      <form onSubmit={handleSubmit} className="@container space-y-4">
+        {/* ═══ THE ITEM: photo beside what it is ═══ */}
+        <FormSection icon="box" title={t('Item Details')}>
+          <div className="grid gap-5 @2xl:grid-cols-[210px_minmax(0,1fr)]">
+            {/* Photo */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Brand Name</label>
-              {brandList.length > 0 && (
-                <div className="flex flex-wrap gap-1.5 mb-2">
-                  {brandList.map(function (b) {
-                    var isActive = (packSizeBrand || '').toLowerCase() === b.toLowerCase()
-                    return (
-                      <button key={b} type="button"
-                        onClick={function () { handleBrandSelect(b) }}
-                        className={"text-[12px] font-medium px-3 py-1.5 rounded-lg border transition-colors " +
-                          (isActive ? "border-amber-600 bg-amber-600 text-white" : "border-amber-200 text-amber-700 bg-white hover:bg-amber-50")}>
-                        {b}
-                      </button>
-                    )
-                  })}
+              <label className={F_LBL}>{t('Photo')}</label>
+              {!imagePreview ? (
+                <div className="h-52 flex flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 px-3 text-center">
+                  <span className="w-11 h-11 rounded-xl bg-white border border-slate-200 text-slate-400 inline-flex items-center justify-center"><Icon name="camera" size={20} /></span>
+                  <div className="flex gap-2">
+                    <label className="inline-flex items-center gap-1.5 h-9 px-3 text-[13px] font-semibold text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 cursor-pointer transition-colors">
+                      <Icon name="camera" size={14} />{t('Camera')}<input type="file" accept="image/*" capture="environment" onChange={handleImageChange} className="hidden" />
+                    </label>
+                    <label className="inline-flex items-center gap-1.5 h-9 px-3 text-[13px] font-semibold text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 cursor-pointer transition-colors">
+                      <Icon name="gallery" size={14} />{t('Gallery')}<input type="file" accept="image/*" onChange={handleImageChange} className="hidden" />
+                    </label>
+                  </div>
+                  <p className="text-[11.5px] text-slate-500">{t('Photo Hint')}</p>
+                </div>
+              ) : (
+                <div>
+                  <div className="h-52 flex items-center justify-center p-2 rounded-xl border border-slate-200 bg-slate-50">
+                    <img src={imagePreview} alt="Preview" className="max-w-full max-h-full rounded-lg object-contain shadow-[0_6px_16px_-8px_rgba(15,23,42,0.4)]" />
+                  </div>
+                  <div className="mt-2 grid grid-cols-2 gap-2">
+                    <label className="inline-flex items-center justify-center gap-1.5 h-9 text-[13px] font-semibold text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 cursor-pointer transition-colors">
+                      <Icon name="refresh" size={13} />Replace<input type="file" accept="image/*" onChange={handleImageChange} className="hidden" />
+                    </label>
+                    <button type="button" onClick={removeImage}
+                      className="inline-flex items-center justify-center gap-1.5 h-9 text-[13px] font-semibold text-red-600 bg-red-50 border border-red-100 rounded-lg hover:bg-red-100 transition-colors">
+                      <Icon name="trash" size={13} />Remove
+                    </button>
+                  </div>
                 </div>
               )}
-              <input type="text" value={packSizeBrand}
-                onChange={function (e) { setPackSizeBrand(e.target.value) }}
-                maxLength="100" placeholder={brandList.length > 0 ? "Or type new brand..." : "e.g. MDH, Haldiram"}
-                className="w-full px-3 py-2 border border-amber-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
-                style={{ fontSize: '16px' }} />
+              {errors.img && <p className="text-xs text-red-500 mt-1">{errors.img}</p>}
             </div>
-            <div className="grid grid-cols-2 gap-3">
+
+            {/* What it is */}
+            <div className="min-w-0 space-y-3.5">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Quantity</label>
-                <input type="number" min="0" step="any" inputMode="decimal" value={packSizeQty}
-                  onChange={function (e) { setPackSizeQty(e.target.value) }}
-                  placeholder="e.g. 500"
-                  className="w-full px-3 py-2 border border-amber-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
-                  style={{ fontSize: '16px' }} />
+                <label className={F_LBL}>{t('Type')}</label>
+                <Segmented value={type} onChange={setType} options={[
+                  { value: 'Indoor', label: 'Indoor', icon: 'home', on: 'bg-[#3B4668] text-white' },
+                  { value: 'Outdoor', label: 'Outdoor', icon: 'leaf', on: 'bg-emerald-600 text-white' },
+                  { value: 'Premium', label: 'Premium', icon: 'star', on: 'bg-amber-500 text-white' },
+                ]} />
+              </div>
+              <SearchDropdown label={t('Existing Item Name')} required items={itemNameItems} value={name} onChange={handleItemNameSelect} allowAdd onAdd={function (val) { setName(val); nameManual.current = true }} placeholder={t('Search Existing Item Name...')} error={errors.item} onInputChange={searchItems} />
+              <div className="grid gap-3.5 @2xl:grid-cols-2">
+                <SearchDropdown label={t('Category')} required items={catItems} value={categoryId} onChange={setCategoryId} placeholder={t('Search Category...')} error={errors.cat} />
+                <SearchDropdown label={t('Sub-Category')} items={subCatItems} value={subCategoryId} onChange={setSubCategoryId} placeholder={t('Search Sub-Category...')} />
               </div>
               <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Unit</label>
-              <select value={packSizeUnit} onChange={function (e) { setPackSizeUnit(e.target.value) }}
-                className="w-full px-3 py-2 border border-amber-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white">
+                <label className={F_LBL}>{t('Item Name (Hindi)')}</label>
+                <div className="flex gap-2">
+                  <input type="text" value={nameHindi} onChange={function (e) { setNameHindi(e.target.value); setHiEdited(true) }} maxLength="200" placeholder="हिंदी नाम" className={F_INP + " flex-1 min-w-0"} />
+                  <button type="button" onClick={function () { startSpeech('nameHindi') }} aria-label="Speak" title="Speak"
+                    className={"shrink-0 w-11 h-11 inline-flex items-center justify-center rounded-xl border transition-colors " + (listeningField === 'nameHindi' ? "bg-red-500 border-red-500 text-white animate-pulse" : "bg-white border-slate-300 text-slate-600 hover:bg-slate-50")}><Icon name="mic" size={16} /></button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {showPackSize && (
+            <div className="mt-5 rounded-xl border border-amber-200 bg-amber-50/60 p-4 space-y-3">
+              <h4 className="text-[12px] font-bold text-amber-800 uppercase tracking-[0.07em]">Pack Size</h4>
+              <div>
+                <label className={F_LBL}>Brand Name</label>
+                {brandList.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    {brandList.map(function (b) {
+                      var isActive = (packSizeBrand || '').toLowerCase() === b.toLowerCase()
+                      return (
+                        <button key={b} type="button"
+                          onClick={function () { handleBrandSelect(b) }}
+                          className={"h-8 px-3 text-[12.5px] font-semibold rounded-lg border transition-colors " +
+                            (isActive ? "border-amber-600 bg-amber-600 text-white" : "border-amber-200 text-amber-800 bg-white hover:bg-amber-50")}>
+                          {b}
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+                <input type="text" value={packSizeBrand}
+                  onChange={function (e) { setPackSizeBrand(e.target.value) }}
+                  maxLength="100" placeholder={brandList.length > 0 ? "Or type new brand..." : "e.g. MDH, Haldiram"}
+                  className={F_INP} />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className={F_LBL}>Quantity</label>
+                  <input type="number" min="0" step="any" inputMode="decimal" value={packSizeQty}
+                    onChange={function (e) { setPackSizeQty(e.target.value) }}
+                    placeholder="e.g. 500" className={F_INP} />
+                </div>
+                <div>
+                  <label className={F_LBL}>Unit</label>
+                  <select value={packSizeUnit} onChange={function (e) { setPackSizeUnit(e.target.value) }} className={F_INP}>
+                    {UNITS.map(function (u) { return <option key={u} value={u}>{u}</option> })}
+                  </select>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="mt-4">
+            <label className={F_LBL}>{t('Description')}</label>
+            <div className="flex gap-2">
+              <textarea value={description} onChange={function (e) { setDescription(e.target.value) }} rows="2" maxLength="1000" placeholder={t('Optional notes...')}
+                className="flex-1 min-w-0 px-3 py-2.5 bg-white border border-slate-300 rounded-xl text-base text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-slate-500 focus:ring-2 focus:ring-slate-900/10 resize-none" />
+              <button type="button" onClick={function () { startSpeech('description') }} aria-label="Speak" title="Speak"
+                className={"shrink-0 self-start w-11 h-11 inline-flex items-center justify-center rounded-xl border transition-colors " + (listeningField === 'description' ? "bg-red-500 border-red-500 text-white animate-pulse" : "bg-white border-slate-300 text-slate-600 hover:bg-slate-50")}><Icon name="mic" size={16} /></button>
+            </div>
+          </div>
+        </FormSection>
+
+        {/* ═══ STOCK & PRICING ═══ */}
+        <FormSection icon="rupee" title="Stock & pricing">
+          <div className="grid grid-cols-2 gap-3 @2xl:grid-cols-5">
+            <div>
+              <label className={F_LBL}>{t('Quantity')}<span className="text-red-500 ml-0.5">*</span></label>
+              <input type="number" min="0" max="999999" step="any" inputMode="numeric" value={qty} onChange={function (e) { setQty(e.target.value) }} placeholder="0"
+                className={F_INP + (errors.qty ? " border-red-300" : "")} />
+              {errors.qty && <p className="text-xs text-red-500 mt-1">{errors.qty}</p>}
+            </div>
+            <div>
+              <label className={F_LBL}>{t('Unit')}</label>
+              <select value={unit} onChange={function (e) { setUnit(e.target.value) }} className={F_INP}>
                 {UNITS.map(function (u) { return <option key={u} value={u}>{u}</option> })}
               </select>
             </div>
+            <div>
+              <label className={F_LBL + " truncate"}>{showPackSize ? 'Season Reorder Qty' : t('Min Order Qty')}</label>
+              <input type="number" min="0" step="any" inputMode="numeric" value={minOrderQty} onChange={function (e) { setMinOrderQty(e.target.value) }} placeholder="—" className={F_INP} />
+            </div>
+            <div>
+              <label className={F_LBL + " truncate"}>{showPackSize ? 'Off Season Reorder Qty' : t('Reorder Qty')}</label>
+              <input type="number" min="0" step="any" inputMode="numeric" value={reorderQty} onChange={function (e) { setReorderQty(e.target.value) }} placeholder="—" className={F_INP} />
+            </div>
+            <div className="col-span-2 @2xl:col-span-1">
+              <label className={F_LBL}>{t('Rate') + ' (₹)'}</label>
+              <input type="number" min="0" step="any" inputMode="decimal" value={ratePaise} onChange={function (e) { setRatePaise(e.target.value) }} placeholder="—" className={F_INP} />
+            </div>
+          </div>
+          <div className="mt-4 @2xl:max-w-md">
+            <label className={F_LBL}>{t('Is Asset?')}</label>
+            <Segmented value={isAsset} onChange={setIsAsset} options={[
+              { value: 'yes', label: t('Yes'), on: 'bg-emerald-600 text-white' },
+              { value: 'no', label: t('No'), on: 'bg-red-500 text-white' },
+              { value: 'unknown', label: t('Dont Know'), on: 'bg-slate-600 text-white' },
+            ]} />
+          </div>
+        </FormSection>
+
+        {/* ═══ ALLOCATIONS — behind a switch ═══ */}
+        <FormSection icon="mapPin" title={t('Allocations') || 'Allocations'} hint="Distribute qty across depts / venues"
+          right={
+            <button type="button" role="switch" aria-checked={showAllocations} aria-label="Show allocations"
+              onClick={function () { setShowAllocations(function (v) { return !v }) }}
+              className={"relative shrink-0 w-11 h-6 rounded-full transition-colors " + (showAllocations ? "bg-[#3B4668]" : "bg-slate-300")}>
+              <span className={"absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-[translate] duration-200 " + (showAllocations ? "translate-x-5" : "translate-x-0")} />
+            </button>
+          }>
+          {showAllocations && <div className="space-y-2">
+          {errors.dept && <p className="text-xs text-red-500">{errors.dept}</p>}
+          <AllocationRows
+            allocations={allocations}
+            accent="gray"
+            bare
+            title={t('Allocations') || 'Allocations'}
+            onAdd={addAllocationRow}
+            onRemove={removeAllocationRow}
+            onDuplicate={duplicateAllocationRow}
+            isComplete={function (a) { return !!a.department && !!a.venue_id && !!a.qty && Number(a.qty) > 0 }}
+            renderChip={function (a) {
+              var v = a.venue_id ? venues.find(function (x) { return String(x.id) === String(a.venue_id) }) : null
+              var sv = a.sub_venue_id && v ? subVenues.find(function (x) { return String(x.id) === String(a.sub_venue_id) }) : null
+              var sd = a.sub_department_id ? subDepartments.find(function (x) { return String(x.id) === String(a.sub_department_id) }) : null
+              return {
+                left: (
+                  <>
+                    {v && <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-[#EDEFF5] text-[10px] font-bold text-[#333D5E] shrink-0">{v.code}</span>}
+                    {a.department && <span className="text-gray-700 font-medium truncate">{a.department}</span>}
+                    {sd && <span className="text-gray-400 shrink-0">›</span>}
+                    {sd && <span className="text-gray-500 truncate">{sd.name}</span>}
+                    {sv && <span className="text-gray-400 shrink-0">·</span>}
+                    {sv && <span className="text-gray-500 truncate">{sv.name}</span>}
+                  </>
+                ),
+                right: (Number(a.qty) || 0).toString(),
+              }
+            }}
+            renderExpanded={function (row, index) {
+              var parentDept = row.department ? departments.find(function (d) { return d.name === row.department }) : null
+              var filteredSubDepts = parentDept ? subDepartments.filter(function (sd) { return sd.department_id === parentDept.id && sd.active !== false }) : []
+              var filteredSubVenues = row.venue_id ? subVenues.filter(function (sv) { return String(sv.venue_id) === row.venue_id }) : []
+              return (
+                <div className="grid gap-2.5 @2xl:grid-cols-2">
+                  <SearchDropdown label={t('Department')} required items={deptItems} value={row.department} onChange={function (val) { updateAllocation(index, 'department', val) }} placeholder={t('Search Department...')} />
+                  {parentDept && filteredSubDepts.length > 0 && (
+                    <SearchDropdown label={t('Sub-department') || 'Sub-department'} items={filteredSubDepts.map(function (sd) { return { label: sd.name, value: String(sd.id) } })} value={row.sub_department_id} onChange={function (val) { updateAllocation(index, 'sub_department_id', val) }} placeholder="Select sub-department..." />
+                  )}
+                  <SearchDropdown label={t('Venue') || 'Venue'} items={venues.map(function (v) { return { label: v.code + ' — ' + v.name, value: String(v.id) } })} value={row.venue_id} onChange={function (val) { updateAllocation(index, 'venue_id', val) }} placeholder="Select venue..." />
+                  {row.venue_id && filteredSubVenues.length > 0 && (
+                    <SearchDropdown label="Sub-venue" items={filteredSubVenues.map(function (sv) { return { label: sv.name, value: String(sv.id) } })} value={row.sub_venue_id} onChange={function (val) { updateAllocation(index, 'sub_venue_id', val) }} placeholder="Select sub-venue..." />
+                  )}
+                  <div>
+                    <label className={F_LBL}>{t('Quantity')}</label>
+                    <input type="number" min="0" step="any" inputMode="numeric" value={row.qty} onChange={function (e) { updateAllocation(index, 'qty', e.target.value) }} placeholder="0" className={F_INP} />
+                  </div>
+                </div>
+              )
+            }}
+          />
+          </div>}
+        </FormSection>
+
+        {/* ═══ DYNAMIC DIMENSIONS — label over field, two to a row ═══ */}
+        {categoryDimFields.length > 0 && (
+          <FormSection icon="list" title="Dimensions">
+            <div className="grid gap-3.5 @2xl:grid-cols-2">
+            {dimensionValues.map(function (dim, index) {
+              var dimType = dim.type || 'number'
+              function setDim(patch) { setDimensionValues(function (prev) { return prev.map(function (d, i) { if (i !== index) return d; return Object.assign({}, d, patch) }) }) }
+              if (dimType === 'text') {
+                return (
+                  <div key={dim.name}>
+                    <label className={F_LBL}>{dim.name}</label>
+                    <input type="text" value={dim.value || ''} onChange={function (e) { setDim({ value: e.target.value }) }} placeholder={'Enter ' + dim.name + '...'} maxLength="500" className={F_INP} />
+                  </div>
+                )
+              }
+              if (dimType === 'select') {
+                var dimOptItems = (dim.options || []).map(function (opt) { return { label: opt, value: opt } })
+                return (
+                  <div key={dim.name}>
+                    <label className={F_LBL}>{dim.name}</label>
+                    <SearchDropdown items={dimOptItems} value={dim.value || ''}
+                      onChange={function (val) { setDim({ value: val }) }}
+                      placeholder={'Search ' + dim.name + '...'} />
+                  </div>
+                )
+              }
+              return (
+                <div key={dim.name}>
+                  <label className={F_LBL}>{dim.name}</label>
+                  <div className="flex gap-2">
+                    <input type="number" min="0" step="any" inputMode="decimal" value={dim.qty} onChange={function (e) { setDim({ qty: e.target.value }) }} placeholder="0" aria-label={dim.name + ' quantity'} className={F_INP + " flex-1 min-w-0"} />
+                    <select value={dim.unit} onChange={function (e) { setDim({ unit: e.target.value }) }} aria-label={dim.name + ' unit'} className={F_INP + " !w-32 shrink-0"}>
+                      {UNITS.map(function (u) { return <option key={u} value={u}>{u}</option> })}
+                    </select>
+                  </div>
+                </div>
+              )
+            })}
+            </div>
+          </FormSection>
+        )}
+
+        {/* ═══ SUBMIT AREA ═══ */}
+        {errors.submit && (
+          <div className="flex items-start gap-2 text-sm font-medium text-red-700 bg-red-50 border border-red-200 rounded-xl px-3.5 py-2.5">
+            <Icon name="alert" size={16} className="shrink-0 mt-0.5" />{errors.submit}
+          </div>
+        )}
+        <div className="flex flex-wrap gap-2 justify-end pt-4 border-t border-slate-200">
+          {!isEdit && <button type="button" onClick={resetForm} className="mr-auto inline-flex items-center gap-1.5 h-11 px-4 text-sm font-semibold text-slate-600 rounded-xl hover:bg-slate-100 transition-colors"><Icon name="undo" size={14} />{t('Reset')}</button>}
+          <button type="button" onClick={onClose} className="h-11 px-5 text-sm font-semibold text-slate-700 bg-white border border-slate-300 rounded-xl hover:bg-slate-50 transition-colors">{t('Cancel')}</button>
+          <button type="submit" disabled={saving} className="inline-flex items-center gap-2 h-11 px-6 text-sm font-semibold text-white bg-[#3B4668] rounded-xl shadow-[0_4px_12px_-4px_rgba(59,70,104,0.55)] hover:bg-[#2F3854] disabled:opacity-50 transition-colors"><Icon name="check" size={15} />{saving ? t('Saving...') : (isEdit ? t('Update Item') : t('Submit Item'))}</button>
+        </div>
+      </form>
+    )
+  }
+
+  // The phone app, and every other place this form opens (Purchase
+  // receiving, Item Receipts, Reviews): one column, built from the same
+  // pieces as the admin layout above — icon buttons instead of emoji, filled
+  // segmented controls, a photo you can Replace or Remove once it is taken.
+  return (
+    <form onSubmit={handleSubmit} className="space-y-3.5">
+      <FormSection icon="camera" title={t('Photo')}>
+        {!imagePreview ? (
+          <div className="rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 py-7 px-4 text-center">
+            <span className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-white border border-slate-200 text-slate-400 mb-3"><Icon name="camera" size={22} /></span>
+            <div className="flex gap-2 justify-center mb-2.5">
+              <label className="inline-flex items-center gap-1.5 h-10 px-3.5 text-[13.5px] font-semibold text-slate-700 bg-white border border-slate-300 rounded-xl hover:bg-slate-50 cursor-pointer transition-colors">
+                <Icon name="camera" size={15} />{t('Camera')}<input type="file" accept="image/*" capture="environment" onChange={handleImageChange} className="hidden" />
+              </label>
+              <label className="inline-flex items-center gap-1.5 h-10 px-3.5 text-[13.5px] font-semibold text-slate-700 bg-white border border-slate-300 rounded-xl hover:bg-slate-50 cursor-pointer transition-colors">
+                <Icon name="gallery" size={15} />{t('Gallery')}<input type="file" accept="image/*" onChange={handleImageChange} className="hidden" />
+              </label>
+            </div>
+            <p className="text-[12px] text-slate-500">{t('Photo Hint')}</p>
+          </div>
+        ) : (
+          <div>
+            <div className="flex items-center justify-center p-2 rounded-xl border border-slate-200 bg-slate-50" style={{ height: 200 }}>
+              <img src={imagePreview} alt="Preview" className="max-w-full max-h-full rounded-lg object-contain shadow-[0_6px_16px_-8px_rgba(15,23,42,0.4)]" />
+            </div>
+            <div className="mt-2.5 grid grid-cols-2 gap-2">
+              <label className="inline-flex items-center justify-center gap-1.5 h-10 text-[13.5px] font-semibold text-slate-700 bg-white border border-slate-300 rounded-xl hover:bg-slate-50 cursor-pointer transition-colors">
+                <Icon name="refresh" size={14} />{t('Replace') || 'Replace'}<input type="file" accept="image/*" onChange={handleImageChange} className="hidden" />
+              </label>
+              <button type="button" onClick={removeImage}
+                className="inline-flex items-center justify-center gap-1.5 h-10 text-[13.5px] font-semibold text-red-600 bg-red-50 border border-red-100 rounded-xl hover:bg-red-100 transition-colors">
+                <Icon name="trash" size={14} />{t('Remove') || 'Remove'}
+              </button>
             </div>
           </div>
         )}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">{t('Description')}</label>
-          <div className="flex gap-1">
-            <textarea value={description} onChange={function (e) { setDescription(e.target.value) }} rows="2" maxLength="1000" placeholder={t('Optional notes...')} className="flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none" />
-            <button type="button" onClick={function () { startSpeech('description') }} className={"px-2.5 py-2 rounded-md text-sm transition-colors flex-shrink-0 self-start " + (listeningField === 'description' ? "bg-red-500 text-white animate-pulse" : "bg-gray-100 text-gray-600 hover:bg-gray-200")}>🎙️</button>
-          </div>
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">{t('Item Name (Hindi)')}</label>
-          <div className="flex gap-1">
-            <input type="text" value={nameHindi} onChange={function (e) { setNameHindi(e.target.value); setHiEdited(true) }} maxLength="200" placeholder="हिंदी नाम" className="flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-            <button type="button" onClick={function () { startSpeech('nameHindi') }} className={"px-2.5 py-2 rounded-md text-sm transition-colors flex-shrink-0 " + (listeningField === 'nameHindi' ? "bg-red-500 text-white animate-pulse" : "bg-gray-100 text-gray-600 hover:bg-gray-200")}>🎙️</button>
-          </div>
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">{t('Quantity')}<span className="text-red-500 ml-0.5">*</span></label>
-            <input type="number" min="0" max="999999" step="any" inputMode="numeric" value={qty} onChange={function (e) { setQty(e.target.value) }} placeholder="0" className={"w-full px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 " + (errors.qty ? "border-red-300" : "border-gray-300")} />
-            {errors.qty && <p className="text-xs text-red-500 mt-1">{errors.qty}</p>}
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">{t('Unit')}</label>
-            <select value={unit} onChange={function (e) { setUnit(e.target.value) }}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white">
-              {UNITS.map(function (u) { return <option key={u} value={u}>{u}</option> })}
-            </select>
-          </div>
-        </div>
-        <div className="grid grid-cols-3 gap-3">
-          <div><label className="block text-sm font-medium text-gray-700 mb-1">{showPackSize ? 'Season Reorder Qty' : t('Min Order Qty')}</label><input type="number" min="0" step="any" inputMode="numeric" value={minOrderQty} onChange={function (e) { setMinOrderQty(e.target.value) }} placeholder="—" className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" /></div>
-          <div><label className="block text-sm font-medium text-gray-700 mb-1">{showPackSize ? 'Off Season Reorder Qty' : t('Reorder Qty')}</label><input type="number" min="0" step="any" inputMode="numeric" value={reorderQty} onChange={function (e) { setReorderQty(e.target.value) }} placeholder="—" className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" /></div>
-          <div><label className="block text-sm font-medium text-gray-700 mb-1">{t('Rate') + ' (₹)'}</label><input type="number" min="0" step="any" inputMode="decimal" value={ratePaise} onChange={function (e) { setRatePaise(e.target.value) }} placeholder="—" className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" /></div>
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">{t('Is Asset?')}</label>
-          <div className="flex gap-0 bg-white border border-gray-300 rounded-md overflow-hidden">
-            {['yes', 'no', 'unknown'].map(function (val) {
-              var labels = { yes: t('Yes'), no: t('No'), unknown: t('Dont Know') }; var active = isAsset === val
-              var colors = { yes: active ? 'bg-green-600 text-white' : 'text-gray-500 hover:bg-gray-50', no: active ? 'bg-red-600 text-white' : 'text-gray-500 hover:bg-gray-50', unknown: active ? 'bg-gray-600 text-white' : 'text-gray-500 hover:bg-gray-50' }
-              return <button key={val} type="button" onClick={function () { setIsAsset(val) }} className={"flex-1 py-2 text-sm font-medium transition-colors " + colors[val]}>{labels[val]}</button>
-            })}
-          </div>
-        </div>
-      </div>
+        {errors.img && <p className="text-xs text-red-500 mt-1.5">{errors.img}</p>}
+      </FormSection>
 
-      {/* ═══ ALLOCATION CARD — behind toggle ═══ */}
-      <div className={"border rounded-lg p-3 transition-colors " + (showAllocations ? "border-indigo-200 bg-indigo-50/40" : "border-gray-100 bg-gray-50")}>
-        <div className="flex items-center justify-between">
+      <FormSection icon="box" title={t('Item Details')}>
+        <div className="space-y-3.5">
           <div>
-            <label className="text-xs font-semibold text-gray-700">📍 {t('Allocations') || 'Allocations'}</label>
-            <p className="text-[10px] text-gray-400 mt-0.5">Distribute qty across depts / venues</p>
+            <label className={F_LBL}>{t('Type')}</label>
+            <Segmented value={type} onChange={setType} options={[
+              { value: 'Indoor', label: 'Indoor', icon: 'home', on: 'bg-[#3B4668] text-white' },
+              { value: 'Outdoor', label: 'Outdoor', icon: 'leaf', on: 'bg-emerald-600 text-white' },
+              { value: 'Premium', label: 'Premium', icon: 'star', on: 'bg-amber-500 text-white' },
+            ]} />
           </div>
-          <button type="button" onClick={function () { setShowAllocations(function (v) { return !v }) }} className="flex items-center">
-            <div className={"relative w-9 h-5 rounded-full transition-colors " + (showAllocations ? "bg-indigo-500" : "bg-gray-300")}>
-              <div className={"absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform " + (showAllocations ? "translate-x-4" : "translate-x-0.5")} />
+          <SearchDropdown label={t('Existing Item Name')} required items={itemNameItems} value={name} onChange={handleItemNameSelect} allowAdd onAdd={function (val) { setName(val); nameManual.current = true }} placeholder={t('Search Existing Item Name...')} error={errors.item} onInputChange={searchItems} />
+          <SearchDropdown label={t('Category')} required items={catItems} value={categoryId} onChange={setCategoryId} placeholder={t('Search Category...')} error={errors.cat} />
+          <SearchDropdown label={t('Sub-Category')} items={subCatItems} value={subCategoryId} onChange={setSubCategoryId} placeholder={t('Search Sub-Category...')} />
+
+          {showPackSize && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-3.5 space-y-3">
+              <h4 className="text-[12px] font-bold text-amber-800 uppercase tracking-[0.07em]">Pack Size</h4>
+              <div>
+                <label className={F_LBL}>Brand Name</label>
+                {brandList.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    {brandList.map(function (b) {
+                      var isActive = (packSizeBrand || '').toLowerCase() === b.toLowerCase()
+                      return (
+                        <button key={b} type="button"
+                          onClick={function () { handleBrandSelect(b) }}
+                          className={"h-8 px-3 text-[12.5px] font-semibold rounded-lg border transition-colors " +
+                            (isActive ? "border-amber-600 bg-amber-600 text-white" : "border-amber-200 text-amber-800 bg-white hover:bg-amber-50")}>
+                          {b}
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+                <input type="text" value={packSizeBrand}
+                  onChange={function (e) { setPackSizeBrand(e.target.value) }}
+                  maxLength="100" placeholder={brandList.length > 0 ? "Or type new brand..." : "e.g. MDH, Haldiram"}
+                  style={{ fontSize: '16px' }} className={F_INP} />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className={F_LBL}>Quantity</label>
+                  <input type="number" min="0" step="any" inputMode="decimal" value={packSizeQty}
+                    onChange={function (e) { setPackSizeQty(e.target.value) }}
+                    placeholder="e.g. 500" style={{ fontSize: '16px' }} className={F_INP} />
+                </div>
+                <div>
+                  <label className={F_LBL}>Unit</label>
+                  <select value={packSizeUnit} onChange={function (e) { setPackSizeUnit(e.target.value) }} className={F_INP}>
+                    {UNITS.map(function (u) { return <option key={u} value={u}>{u}</option> })}
+                  </select>
+                </div>
+              </div>
             </div>
-          </button>
+          )}
+
+          <div>
+            <label className={F_LBL}>{t('Description')}</label>
+            <div className="flex gap-2">
+              <textarea value={description} onChange={function (e) { setDescription(e.target.value) }} rows="2" maxLength="1000" placeholder={t('Optional notes...')}
+                style={{ fontSize: '16px' }} className="flex-1 min-w-0 px-3 py-2.5 bg-white border border-slate-300 rounded-xl text-base text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-[#A9B1CB] focus:ring-4 focus:ring-[#3B4668]/10 resize-none" />
+              <button type="button" onClick={function () { startSpeech('description') }} aria-label="Speak" title="Speak"
+                className={"shrink-0 self-start w-11 h-11 inline-flex items-center justify-center rounded-xl border transition-colors " + (listeningField === 'description' ? "bg-red-500 border-red-500 text-white animate-pulse" : "bg-white border-slate-300 text-slate-600 hover:bg-slate-50")}><Icon name="mic" size={16} /></button>
+            </div>
+          </div>
+          <div>
+            <label className={F_LBL}>{t('Item Name (Hindi)')}</label>
+            <div className="flex gap-2">
+              <input type="text" value={nameHindi} onChange={function (e) { setNameHindi(e.target.value); setHiEdited(true) }} maxLength="200" placeholder="हिंदी नाम" style={{ fontSize: '16px' }} className={F_INP + " flex-1 min-w-0"} />
+              <button type="button" onClick={function () { startSpeech('nameHindi') }} aria-label="Speak" title="Speak"
+                className={"shrink-0 w-11 h-11 inline-flex items-center justify-center rounded-xl border transition-colors " + (listeningField === 'nameHindi' ? "bg-red-500 border-red-500 text-white animate-pulse" : "bg-white border-slate-300 text-slate-600 hover:bg-slate-50")}><Icon name="mic" size={16} /></button>
+            </div>
+          </div>
         </div>
-        {showAllocations && <div className="mt-3 space-y-2">
+      </FormSection>
+
+      <FormSection icon="rupee" title="Stock & pricing">
+        <div className="space-y-3.5">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className={F_LBL}>{t('Quantity')}<span className="text-red-500 ml-0.5">*</span></label>
+              <input type="number" min="0" max="999999" step="any" inputMode="numeric" value={qty} onChange={function (e) { setQty(e.target.value) }} placeholder="0"
+                style={{ fontSize: '16px' }} className={F_INP + (errors.qty ? " border-red-300" : "")} />
+              {errors.qty && <p className="text-xs text-red-500 mt-1">{errors.qty}</p>}
+            </div>
+            <div>
+              <label className={F_LBL}>{t('Unit')}</label>
+              <select value={unit} onChange={function (e) { setUnit(e.target.value) }} className={F_INP}>
+                {UNITS.map(function (u) { return <option key={u} value={u}>{u}</option> })}
+              </select>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className={F_LBL + " truncate"}>{showPackSize ? 'Season Reorder Qty' : t('Min Order Qty')}</label>
+              <input type="number" min="0" step="any" inputMode="numeric" value={minOrderQty} onChange={function (e) { setMinOrderQty(e.target.value) }} placeholder="—" style={{ fontSize: '16px' }} className={F_INP} />
+            </div>
+            <div>
+              <label className={F_LBL + " truncate"}>{showPackSize ? 'Off Season Reorder Qty' : t('Reorder Qty')}</label>
+              <input type="number" min="0" step="any" inputMode="numeric" value={reorderQty} onChange={function (e) { setReorderQty(e.target.value) }} placeholder="—" style={{ fontSize: '16px' }} className={F_INP} />
+            </div>
+          </div>
+          <div>
+            <label className={F_LBL}>{t('Rate') + ' (₹)'}</label>
+            <input type="number" min="0" step="any" inputMode="decimal" value={ratePaise} onChange={function (e) { setRatePaise(e.target.value) }} placeholder="—" style={{ fontSize: '16px' }} className={F_INP} />
+          </div>
+          <div>
+            <label className={F_LBL}>{t('Is Asset?')}</label>
+            <Segmented value={isAsset} onChange={setIsAsset} options={[
+              { value: 'yes', label: t('Yes'), on: 'bg-emerald-600 text-white' },
+              { value: 'no', label: t('No'), on: 'bg-red-500 text-white' },
+              { value: 'unknown', label: t('Dont Know'), on: 'bg-slate-600 text-white' },
+            ]} />
+          </div>
+        </div>
+      </FormSection>
+
+      <FormSection icon="mapPin" title={t('Allocations') || 'Allocations'} hint="Distribute qty across depts / venues"
+        right={
+          <button type="button" role="switch" aria-checked={showAllocations} aria-label="Show allocations"
+            onClick={function () { setShowAllocations(function (v) { return !v }) }}
+            className={"relative shrink-0 w-11 h-6 rounded-full transition-colors " + (showAllocations ? "bg-[#3B4668]" : "bg-slate-300")}>
+            <span className={"absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-[translate] duration-200 " + (showAllocations ? "translate-x-5" : "translate-x-0")} />
+          </button>
+        }>
+        {showAllocations && <div className="space-y-2">
         {errors.dept && <p className="text-xs text-red-500">{errors.dept}</p>}
         <AllocationRows
           allocations={allocations}
           accent="gray"
+          bare
           title={t('Allocations') || 'Allocations'}
           onAdd={addAllocationRow}
           onRemove={removeAllocationRow}
@@ -804,7 +1145,7 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved }) {
             return {
               left: (
                 <>
-                  {v && <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-indigo-50 text-[10px] font-semibold text-indigo-700 shrink-0">{v.code}</span>}
+                  {v && <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-[#EDEFF5] text-[10px] font-bold text-[#333D5E] shrink-0">{v.code}</span>}
                   {a.department && <span className="text-gray-700 font-medium truncate">{a.department}</span>}
                   {sd && <span className="text-gray-400 shrink-0">›</span>}
                   {sd && <span className="text-gray-500 truncate">{sd.name}</span>}
@@ -820,7 +1161,7 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved }) {
             var filteredSubDepts = parentDept ? subDepartments.filter(function (sd) { return sd.department_id === parentDept.id && sd.active !== false }) : []
             var filteredSubVenues = row.venue_id ? subVenues.filter(function (sv) { return String(sv.venue_id) === row.venue_id }) : []
             return (
-              <div className="space-y-2">
+              <div className="space-y-2.5">
                 <SearchDropdown label={t('Department')} required items={deptItems} value={row.department} onChange={function (val) { updateAllocation(index, 'department', val) }} placeholder={t('Search Department...')} />
                 {parentDept && filteredSubDepts.length > 0 && (
                   <SearchDropdown label={t('Sub-department') || 'Sub-department'} items={filteredSubDepts.map(function (sd) { return { label: sd.name, value: String(sd.id) } })} value={row.sub_department_id} onChange={function (val) { updateAllocation(index, 'sub_department_id', val) }} placeholder="Select sub-department..." />
@@ -830,70 +1171,66 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved }) {
                   <SearchDropdown label="Sub-venue" items={filteredSubVenues.map(function (sv) { return { label: sv.name, value: String(sv.id) } })} value={row.sub_venue_id} onChange={function (val) { updateAllocation(index, 'sub_venue_id', val) }} placeholder="Select sub-venue..." />
                 )}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('Quantity')}</label>
-                  <input type="number" min="0" step="any" inputMode="numeric" value={row.qty} onChange={function (e) { updateAllocation(index, 'qty', e.target.value) }} placeholder="0" className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" style={{ fontSize: '16px' }} />
+                  <label className={F_LBL}>{t('Quantity')}</label>
+                  <input type="number" min="0" step="any" inputMode="numeric" value={row.qty} onChange={function (e) { updateAllocation(index, 'qty', e.target.value) }} placeholder="0" style={{ fontSize: '16px' }} className={F_INP} />
                 </div>
               </div>
             )
           }}
         />
         </div>}
-      </div>
+      </FormSection>
 
-      {/* ═══ DYNAMIC DIMENSIONS ═══ */}
       {categoryDimFields.length > 0 && (
-        <div className="bg-gray-50 rounded-lg border border-gray-200 p-4 space-y-3">
-          <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Dimensions</h3>
+        <FormSection icon="list" title="Dimensions">
+          <div className="space-y-3.5">
           {dimensionValues.map(function (dim, index) {
             var dimType = dim.type || 'number'
+            function setDim(patch) { setDimensionValues(function (prev) { return prev.map(function (d, i) { if (i !== index) return d; return Object.assign({}, d, patch) }) }) }
             if (dimType === 'text') {
               return (
-                <div key={dim.name} className="grid grid-cols-12 gap-2 items-end">
-                  <div className="col-span-4"><label className="block text-sm font-medium text-gray-700 mb-1">{dim.name}</label></div>
-                  <div className="col-span-8">
-                    <input type="text" value={dim.value || ''} onChange={function (e) { setDimensionValues(function (prev) { return prev.map(function (d, i) { if (i !== index) return d; return Object.assign({}, d, { value: e.target.value }) }) }) }} placeholder={'Enter ' + dim.name + '...'} maxLength="500" className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" style={{ fontSize: '16px' }} />
-                  </div>
+                <div key={dim.name}>
+                  <label className={F_LBL}>{dim.name}</label>
+                  <input type="text" value={dim.value || ''} onChange={function (e) { setDim({ value: e.target.value }) }} placeholder={'Enter ' + dim.name + '...'} maxLength="500" style={{ fontSize: '16px' }} className={F_INP} />
                 </div>
               )
             }
             if (dimType === 'select') {
               var dimOptItems = (dim.options || []).map(function (opt) { return { label: opt, value: opt } })
               return (
-                <div key={dim.name} className="grid grid-cols-12 gap-2 items-end">
-                  <div className="col-span-4"><label className="block text-sm font-medium text-gray-700 mb-1">{dim.name}</label></div>
-                  <div className="col-span-8">
-                    <SearchDropdown items={dimOptItems} value={dim.value || ''}
-                      onChange={function (val) { setDimensionValues(function (prev) { return prev.map(function (d, i) { if (i !== index) return d; return Object.assign({}, d, { value: val }) }) }) }}
-                      placeholder={'Search ' + dim.name + '...'} />
-                  </div>
+                <div key={dim.name}>
+                  <label className={F_LBL}>{dim.name}</label>
+                  <SearchDropdown items={dimOptItems} value={dim.value || ''}
+                    onChange={function (val) { setDim({ value: val }) }}
+                    placeholder={'Search ' + dim.name + '...'} />
                 </div>
               )
             }
             return (
-              <div key={dim.name} className="grid grid-cols-12 gap-2 items-end">
-                <div className="col-span-4"><label className="block text-sm font-medium text-gray-700 mb-1">{dim.name}</label></div>
-                <div className="col-span-4">
-                  <label className="block text-[11px] text-gray-400 mb-1">Quantity</label>
-                  <input type="number" min="0" step="any" inputMode="decimal" value={dim.qty} onChange={function (e) { setDimensionValues(function (prev) { return prev.map(function (d, i) { if (i !== index) return d; return Object.assign({}, d, { qty: e.target.value }) }) }) }} placeholder="0" className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-                </div>
-                <div className="col-span-4">
-                  <label className="block text-[11px] text-gray-400 mb-1">Unit</label>
-                  <select value={dim.unit} onChange={function (e) { setDimensionValues(function (prev) { return prev.map(function (d, i) { if (i !== index) return d; return Object.assign({}, d, { unit: e.target.value }) }) }) }} className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+              <div key={dim.name}>
+                <label className={F_LBL}>{dim.name}</label>
+                <div className="flex gap-2">
+                  <input type="number" min="0" step="any" inputMode="decimal" value={dim.qty} onChange={function (e) { setDim({ qty: e.target.value }) }} placeholder="0" aria-label={dim.name + ' quantity'} style={{ fontSize: '16px' }} className={F_INP + " flex-1 min-w-0"} />
+                  <select value={dim.unit} onChange={function (e) { setDim({ unit: e.target.value }) }} aria-label={dim.name + ' unit'} className={F_INP + " !w-28 shrink-0"}>
                     {UNITS.map(function (u) { return <option key={u} value={u}>{u}</option> })}
                   </select>
                 </div>
               </div>
             )
           })}
-        </div>
+          </div>
+        </FormSection>
       )}
 
-      {/* ═══ SUBMIT AREA ═══ */}
-      {errors.submit && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">{errors.submit}</div>}
-      <div className="flex gap-3 justify-end pt-1">
-        {!isEdit && <button type="button" onClick={resetForm} className="px-4 py-2 text-sm text-gray-600 bg-gray-100 border border-gray-300 rounded-md hover:bg-gray-200 transition-colors font-medium">{t('Reset')}</button>}
-        <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-gray-600 bg-gray-100 border border-gray-300 rounded-md hover:bg-gray-200 transition-colors font-medium">{t('Cancel')}</button>
-        <button type="submit" disabled={saving} className="px-6 py-2 text-sm text-white bg-indigo-600 rounded-md hover:bg-indigo-700 disabled:opacity-50 transition-colors font-medium">{saving ? t('Saving...') : (isEdit ? t('Update Item') : t('Submit Item'))}</button>
+      {errors.submit && (
+        <div className="flex items-start gap-2 text-sm font-medium text-red-700 bg-red-50 border border-red-200 rounded-xl px-3.5 py-2.5">
+          <Icon name="alert" size={16} className="shrink-0 mt-0.5" />{errors.submit}
+        </div>
+      )}
+      <div className="flex flex-wrap gap-2 justify-end pt-1">
+        {!isEdit && <button type="button" onClick={resetForm} className="mr-auto inline-flex items-center gap-1.5 h-11 px-4 text-sm font-semibold text-slate-600 rounded-xl hover:bg-slate-100 transition-colors"><Icon name="undo" size={14} />{t('Reset')}</button>}
+        <button type="button" onClick={onClose} className="h-11 px-5 text-sm font-semibold text-slate-700 bg-white border border-slate-300 rounded-xl hover:bg-slate-50 transition-colors">{t('Cancel')}</button>
+        <button type="submit" disabled={saving} className="inline-flex items-center gap-2 h-11 px-6 text-sm font-semibold text-white bg-[#3B4668] rounded-xl shadow-[0_4px_12px_-4px_rgba(59,70,104,0.55)] hover:bg-[#2F3854] disabled:opacity-50 transition-colors"><Icon name="check" size={15} />{saving ? t('Saving...') : (isEdit ? t('Update Item') : t('Submit Item'))}</button>
       </div>
     </form>
   )

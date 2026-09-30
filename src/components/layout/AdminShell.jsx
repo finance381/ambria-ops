@@ -1,9 +1,13 @@
 import { useState, useEffect, lazy, Suspense } from 'react'
 import { ROLE_COLORS } from '../../lib/constants'
 import { hasPerm } from '../../lib/permissions'
+import { supabase } from '../../lib/supabase'
 import PageWave from '../ui/PageWave'
 import Logo from '../ui/Logo'
 import Icon from '../ui/Icon'
+// Inventory's photograph: warm light through leaves across a pale wall,
+// vases and a bowl — the ground behind the top of the Inventory section.
+import inventoryBg from '../../assets/inventory-bg.webp'
 
 // lazy(), but the importer stays reachable on the component it produced.
 //
@@ -26,7 +30,6 @@ function prefetchTab(cfg) {
 }
 
 var RateCardEditor = lazyTab(function () { return import('../../modules/quote/RateCardEditor') })
-var PendingReview = lazyTab(function () { return import('../../modules/categories/PendingReview') })
 var Events = lazyTab(function () { return import('../../modules/events/Events') })
 var ExtraPlateCollect = lazyTab(function () { return import('../../modules/events/ExtraPlateCollect') })
 var AdminItems = lazyTab(function () { return import('../../modules/inventory/AdminItems') })
@@ -79,12 +82,15 @@ function ExpenseTypesMaster(props) {
 }
 
 // ── Sub-tab switcher ──
-function SubTabs({ tabs, active, onChange }) {
+// large: Inventory's tabs, which sit on a photograph — a size up, darker, with
+// bigger glyphs, so they read clearly over the picture. Everywhere else the
+// row keeps its ordinary size.
+function SubTabs({ tabs, active, onChange, large }) {
   return (
     // overflow-y-hidden is deliberate: overflow-x-auto makes the other axis
     // compute to auto as well, and -mb-px then gives it 1px to scroll, which
     // renders as a pair of stray scrollbar arrows down the side.
-    <div className="flex gap-1 mb-4 sm:mb-5 border-b border-slate-200 overflow-x-auto overflow-y-hidden sm:overflow-x-visible sm:overflow-y-visible">
+    <div className={"flex mb-4 sm:mb-5 border-b overflow-x-auto overflow-y-hidden sm:overflow-x-visible sm:overflow-y-visible " + (large ? "gap-2 sm:gap-4 border-transparent" : "gap-1 border-slate-200")}>
       {tabs.map(function (t) {
         return (
           <button key={t.key} onClick={function () { onChange(t.key) }}
@@ -93,9 +99,17 @@ function SubTabs({ tabs, active, onChange }) {
             // just before pointerdown, so a touch still gets a head start.
             onPointerEnter={function () { prefetchTab(t) }}
             onFocus={function () { prefetchTab(t) }}
-            className={"shrink-0 sm:flex-1 sm:shrink sm:justify-center inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-2.5 text-[12.5px] sm:text-[13px] font-semibold border-b-2 -mb-px whitespace-nowrap origin-bottom transform-gpu transition-all duration-150 " +
+            className={"shrink-0 inline-flex items-center border-b-2 -mb-px whitespace-nowrap origin-bottom transform-gpu transition-all duration-150 " +
+              (large
+                // Inventory: packed to the left, not spread across the row.
+                // Spread, the right-hand tabs sat over the vases in the
+                // photograph and on its light, sunlit side where white text
+                // disappeared; packed, they stay on the dark shade and leave
+                // the vases clear. Bold, with a soft shadow, to read on it.
+                ? "gap-2 px-3 sm:px-4 py-3 text-[14px] sm:text-[15px] font-bold [text-shadow:0_1px_3px_rgba(0,0,0,0.35)] "
+                : "sm:flex-1 sm:shrink sm:justify-center gap-1.5 px-2.5 sm:px-3 py-2.5 text-[12.5px] sm:text-[13px] font-semibold ") +
               (active === t.key
-                ? "border-indigo-600 text-indigo-700"
+                ? (large ? "border-indigo-300 text-indigo-200 " : "border-indigo-600 text-indigo-700 ")
                 // The tint has rounded top corners only: the bottom edge is
                 // where the underline lives, and a fully rounded pill would
                 // lift the label off the rule the whole row is aligned to.
@@ -104,8 +118,10 @@ function SubTabs({ tabs, active, onChange }) {
                 // One step darker than it was. At 13px semibold on white,
                 // slate-500 is a weight you glance past, and these are the
                 // labels you read to find out where you are.
-                : "text-slate-600 border-transparent rounded-t-lg hover:text-slate-900 hover:border-slate-300 hover:bg-slate-900/[0.04] hover:scale-[1.05]")}>
-            {t.icon && <Icon name={t.icon} size={14} />}
+                : (large
+                  ? "text-white border-transparent rounded-t-lg hover:text-white hover:border-white/50 hover:bg-white/10 hover:scale-[1.05]"
+                  : "text-slate-600 border-transparent rounded-t-lg hover:text-slate-900 hover:border-slate-300 hover:bg-slate-900/[0.04] hover:scale-[1.05]"))}>
+            {t.icon && <Icon name={t.icon} size={large ? 18 : 14} strokeWidth={large ? 2.3 : undefined} />}
             {t.label}
           </button>
         )
@@ -120,7 +136,7 @@ var SUB_TAB_CONFIG = {
     { key: 'extra_plates', label: 'Extra Plates',  icon: 'utensils', component: ExtraPlateCollect, perm: 'events.extra_plate_collect' },
   ],
   inventory: [
-    { key: 'pending',    label: 'Pending Review', icon: 'clock',    component: PendingReview,    perm: 'review.pending' },
+    // No Pending Review pill: pending inventory is reviewed under Reviews.
     { key: 'items',      label: 'All Items',      icon: 'box',      component: AdminItems,       perm: 'inventory.items' },
     { key: 'production', label: 'Production',     icon: 'wrench',   component: ProductionOrders, perm: 'inventory.production' },
     { key: 'boxes',      label: 'Boxes',          icon: 'tag',      component: Boxes,            perm: 'inventory.boxes' },
@@ -175,7 +191,7 @@ function subTabAllowed(cfg, permsNew) {
   return true
 }
 
-function TabbedSection({ config, profile, onNavigate, activeSubTab, deepLinkExpense, onDeepLinkHandled, onSubTabMeta }) {
+function TabbedSection({ config, profile, onNavigate, activeSubTab, deepLinkExpense, onDeepLinkHandled, onSubTabMeta, navNonce, invSubDept, onInvSubDeptChange, largeTabs }) {
   var permsNew = profile.permsNew || []
   var visibleConfig = config.filter(function (c) { return subTabAllowed(c, permsNew) })
 
@@ -210,7 +226,7 @@ function TabbedSection({ config, profile, onNavigate, activeSubTab, deepLinkExpe
       setSub(activeSubTab)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeSubTab, deepLinkExpense])
+  }, [activeSubTab, deepLinkExpense, navNonce])
 
   var _isAllowed = visibleConfig.find(function (c) { return c.key === sub }) != null
   var Active = _isAllowed ? config.find(function (c) { return c.key === sub })?.component : null
@@ -221,11 +237,12 @@ function TabbedSection({ config, profile, onNavigate, activeSubTab, deepLinkExpe
 
   return (
     <div>
-      <SubTabs tabs={visibleConfig} active={sub} onChange={setSub} />
+      <SubTabs tabs={visibleConfig} active={sub} onChange={setSub} large={largeTabs} />
       <Suspense fallback={<div className="text-center py-8 text-sm text-gray-400">Loading...</div>}>
         {Active && <Active profile={profile} onNavigate={onNavigate} inAdmin
           onNavigateToExpenses={function (expenseId, mode) { onNavigate('expenses', 'expenses', expenseId ? { id: expenseId, mode: mode } : null) }}
-          deepLinkExpense={deepLinkExpense} onDeepLinkHandled={onDeepLinkHandled} />}
+          deepLinkExpense={deepLinkExpense} onDeepLinkHandled={onDeepLinkHandled}
+          invSubDept={invSubDept} navNonce={navNonce} onInvSubDeptChange={onInvSubDeptChange} />}
       </Suspense>
     </div>
   )
@@ -239,7 +256,7 @@ var ADMIN_TABS = [
     blurb: 'The numbers behind the operation.' },
   { key: 'inventory',   label: 'Inventory',   icon: 'box',
     blurb: 'Items, production runs, boxes and challans.',
-    anyPerm: ['inventory.add','inventory.items','inventory.production','inventory.boxes','inventory.challans','inventory.receive','review.pending'] },
+    anyPerm: ['inventory.add','inventory.items','inventory.production','inventory.boxes','inventory.challans','inventory.receive'] },
   { key: 'events',      label: 'Events',      icon: 'calendar',
     blurb: 'Every booked event and its extra-plate collection.',
     // Gated on exactly the perms that unlock a sub-tab inside this section
@@ -337,7 +354,9 @@ function tabAllowed(tab, permsNew) {
 function makeTabbedModule(configKey) {
   return function (props) {
     return <TabbedSection config={SUB_TAB_CONFIG[configKey]} profile={props.profile} onNavigate={props.onNavigate} activeSubTab={props.activeSubTab}
-      deepLinkExpense={props.deepLinkExpense} onDeepLinkHandled={props.onDeepLinkHandled} onSubTabMeta={props.onSubTabMeta} />
+      deepLinkExpense={props.deepLinkExpense} onDeepLinkHandled={props.onDeepLinkHandled} onSubTabMeta={props.onSubTabMeta}
+      navNonce={props.navNonce} invSubDept={props.invSubDept} onInvSubDeptChange={props.onInvSubDeptChange}
+      largeTabs={configKey === 'inventory'} />
   }
 }
 
@@ -379,6 +398,48 @@ function AdminShell({ profile, onSignOut }) {
   // specific expense's edit/Raise JV view instead of just the Expenses tab.
   var [deepLinkExpense, setDeepLinkExpense] = useState(null)
 
+  // Inventory's master sub-departments, listed under Inventory in the rail so
+  // a sub-department is one click from the sidebar rather than a dropdown
+  // inside All Items. invSubDept is the one picked ('' for all); navNonce
+  // bumps on every pick so TabbedSection moves to All Items even when the
+  // shell already thinks it is there (the pills change only the section's
+  // own state). The list loads the first time Inventory is opened.
+  var canSeeInvItems = hasPerm(permsNew, 'inventory.items')
+  var [invSubDepts, setInvSubDepts] = useState(null)
+  var [invSubDept, setInvSubDept] = useState('')
+  var [navNonce, setNavNonce] = useState(0)
+  // Whether the list under Inventory is showing. Opening Inventory opens it;
+  // pressing Inventory again while it is open folds the list away and a
+  // further press brings it back — the chevron on the row says which.
+  var [invListOpen, setInvListOpen] = useState(true)
+  // Only the sub-departments of the department marked ★ Inventory Default in
+  // Masters (is_inventory_default) — the inventory master's own — not every
+  // sub-department in the company. Switched-off sub-departments stay out.
+  useEffect(function () {
+    if (active !== 'inventory' || !canSeeInvItems || invSubDepts) return
+    ;(async function () {
+      var depRes = await supabase.from('departments').select('id')
+        .eq('is_inventory_default', true).eq('active', true)
+      var ids = (depRes.data || []).map(function (d) { return d.id })
+      if (ids.length === 0) { setInvSubDepts([]); return }
+      var sdRes = await supabase.from('sub_departments').select('id, name')
+        .in('department_id', ids).eq('active', true).order('name')
+      setInvSubDepts(sdRes.data || [])
+    })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active])
+  function pickInvSubDept(id, closeOnClick) {
+    setActive('inventory')
+    setSubTab('items')
+    setInvSubDept(id)
+    setNavNonce(function (n) { return n + 1 })
+    if (closeOnClick) setNavOpen(false)
+    // A new sub-department is a new list: start it from the top rather than
+    // wherever the last one was scrolled to. The window is the scroller.
+    var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    window.scrollTo({ top: 0, behavior: reduce ? 'auto' : 'smooth' })
+  }
+
   var _isVisible = visibleTabs.find(function (t) { return t.key === active }) != null
   var ActiveModule = _isVisible ? (MODULES[active] || null) : null
   var activeTab = ADMIN_TABS.find(function (t) { return t.key === active })
@@ -408,10 +469,17 @@ function AdminShell({ profile, onSignOut }) {
   function renderNavItems(closeOnClick) {
     return visibleTabs.map(function (tab) {
       var isActive = active === tab.key
-      return (
+      var btn = (
         <button
           key={tab.key}
-          onClick={function () { setActive(tab.key); setSubTab(null); setSubTabMeta(null); if (closeOnClick) setNavOpen(false) }}
+          onClick={function () {
+            if (tab.key === 'inventory' && canSeeInvItems) {
+              if (isActive) { setInvListOpen(!invListOpen); return }
+              setInvListOpen(true)
+            }
+            setActive(tab.key); setSubTab(null); setSubTabMeta(null); if (closeOnClick) setNavOpen(false)
+          }}
+          aria-expanded={tab.key === 'inventory' && canSeeInvItems ? (isActive && invListOpen) : undefined}
           aria-current={isActive ? 'page' : undefined}
           className={"group relative overflow-hidden w-full flex items-center gap-3 px-3 h-[38px] rounded-xl text-[13px] text-left transition-all duration-150 " +
             (isActive
@@ -431,7 +499,38 @@ function AdminShell({ profile, onSignOut }) {
             <Icon name={tab.icon} size={17} strokeWidth={isActive ? 2.05 : 1.8} />
           </span>
           <span className="relative truncate">{tab.label}</span>
+          {tab.key === 'inventory' && canSeeInvItems && (
+            <span aria-hidden="true" className="relative ml-auto shrink-0 opacity-80">
+              <Icon name={isActive && invListOpen ? 'chevronUp' : 'chevronDown'} size={15} strokeWidth={2.2} />
+            </span>
+          )}
         </button>
+      )
+      if (tab.key !== 'inventory' || !isActive || !canSeeInvItems || !invListOpen) return btn
+      return (
+        <div key={tab.key}>
+          {btn}
+          {/* A thin rule down the left joins the list to Inventory above it.
+              "All items" clears the filter; each sub-department sets it. */}
+          <div className="mt-1 mb-1.5 ml-[21px] pl-2.5 border-l border-white/10 space-y-0.5">
+            {[{ id: '', name: 'All Items' }].concat(invSubDepts || []).map(function (sd) {
+              var on = String(invSubDept) === String(sd.id)
+              return (
+                <button key={sd.id || 'all'} type="button" onClick={function () { pickInvSubDept(String(sd.id), closeOnClick) }}
+                  aria-current={on ? 'true' : undefined}
+                  className={"group/sd w-full flex items-center gap-2 px-2.5 h-8 rounded-lg text-[12.5px] text-left transition-all duration-150 " +
+                    (on ? "bg-white/10 text-white font-semibold" : "text-slate-400 hover:text-white hover:bg-white/[0.06] hover:translate-x-0.5")}>
+                  {/* Same hover as the sections above — a lift of colour and a
+                      half-step to the right — and the dot brightens and grows
+                      with it. */}
+                  <span aria-hidden="true" className={"shrink-0 w-1.5 h-1.5 rounded-full transition-all duration-150 " + (on ? "bg-indigo-300" : "bg-slate-600 group-hover/sd:bg-indigo-300 group-hover/sd:scale-125")} />
+                  <span className="truncate">{sd.name}</span>
+                </button>
+              )
+            })}
+            {!invSubDepts && <p className="px-2.5 py-1.5 text-[12px] text-slate-500">Loading…</p>}
+          </div>
+        </div>
       )
     })
   }
@@ -477,7 +576,11 @@ function AdminShell({ profile, onSignOut }) {
           <Logo size={32} />
           <span className="font-display text-white text-[15px] font-extrabold tracking-[-0.02em] truncate">Ambria Ops</span>
         </div>
-        <nav className="relative z-10 flex-1 min-h-0 px-2.5 py-3 space-y-1 overflow-y-auto ambria-thin-scroll">
+        {/* overflow-x-hidden: with overflow-y auto, the other axis computes to
+            auto too, so the 2px hover nudge on a row overflowed sideways and
+            the rail scrolled under a resting mouse. overscroll-contain keeps
+            a wheel at the rail's end from scrolling the page behind it. */}
+        <nav className="relative z-10 flex-1 min-h-0 px-2.5 py-3 space-y-1 overflow-y-auto overflow-x-hidden overscroll-contain ambria-thin-scroll">
           {renderNavItems(false)}
         </nav>
         {renderUserCard()}
@@ -509,7 +612,7 @@ function AdminShell({ profile, onSignOut }) {
                 <Icon name="close" size={17} />
               </button>
             </div>
-            <nav className="relative z-10 flex-1 min-h-0 px-2.5 py-3 space-y-1 overflow-y-auto ambria-thin-scroll">
+            <nav className="relative z-10 flex-1 min-h-0 px-2.5 py-3 space-y-1 overflow-y-auto overflow-x-hidden overscroll-contain ambria-thin-scroll">
               {renderNavItems(true)}
             </nav>
             {renderUserCard()}
@@ -537,6 +640,42 @@ function AdminShell({ profile, onSignOut }) {
             sitting behind dense tables where a calm ground matters more. */}
         {(active === 'expenses' || active === 'broadcast') && <PageWave offset="var(--app-header-h, 0px)" />}
 
+        {/* Inventory's ground: the photograph behind the whole section — a
+            pale wall, leaf shadows, vases on a ledge at the top right — drawn
+            at the column's full width and continued below its foot in the
+            picture's own last colour, so a long page never shows an edge. The
+            picture is light enough by itself that nothing needs washing out. */}
+        {active === 'inventory' && (
+          <div aria-hidden="true" className="pointer-events-none absolute inset-0 -z-10 overflow-hidden" style={{ backgroundColor: '#F2EAE5' }}>
+            {/* The photograph pinned to the top-right corner at a fixed height,
+                not stretched across the column: at full width it grew so tall
+                that the vases ran down behind the tabs and the toolbar. At
+                500px they finish above the toolbar, clear. Its left and
+                bottom edges fade into the wall colour behind it, so it has no
+                edge of its own. */}
+            <div className="absolute right-0 top-0 h-[500px] aspect-[2000/1127]"
+              style={{
+                backgroundImage: 'url(' + inventoryBg + ')',
+                backgroundSize: 'cover',
+                backgroundPosition: 'right top',
+                WebkitMaskImage: 'linear-gradient(90deg, transparent 0%, #000 38%), linear-gradient(180deg, #000 62%, transparent 100%)',
+                WebkitMaskComposite: 'source-in',
+                maskImage: 'linear-gradient(90deg, transparent 0%, #000 38%), linear-gradient(180deg, #000 62%, transparent 100%)',
+                maskComposite: 'intersect',
+              }} />
+            {/* A slate-indigo shade over the top left, easing off toward the
+                sunlit right (where the vases are) and down toward the cards.
+                The heading, breadcrumb and tabs sit on it in white; the
+                toolbar and cards below it stay on the light picture. */}
+            <div className="absolute inset-x-0 top-0 h-[360px]"
+              style={{
+                background: 'linear-gradient(100deg, rgba(34,41,70,0.86) 0%, rgba(52,60,94,0.74) 34%, rgba(78,84,116,0.3) 55%, rgba(78,84,116,0) 70%)',
+                WebkitMaskImage: 'linear-gradient(180deg, #000 0%, #000 58%, transparent 100%)',
+                maskImage: 'linear-gradient(180deg, #000 0%, #000 58%, transparent 100%)',
+              }} />
+          </div>
+        )}
+
         {/* Desktop only — the phone gets the fixed bar further down, which
             carries the drawer trigger this one has no need for.
 
@@ -559,7 +698,9 @@ function AdminShell({ profile, onSignOut }) {
               which pill within it is lit (see TabbedSection's onSubTabMeta) —
               sections with no sub-tabs (Overview, Analytics, Projects, ...)
               never set it, so the trail stops at the section for those. */}
-          <nav aria-label="Breadcrumb" className="flex items-center gap-2 min-w-0 text-[13px]">
+          {/* On Inventory's shade the trail is white; once the page scrolls
+              and the bar frosts white, it goes back to ink. */}
+          <nav aria-label="Breadcrumb" className={"flex items-center gap-2 min-w-0 text-[13px] " + (active === 'inventory' && !pageScrolled ? "ambria-crumbs-light" : "")}>
             <button
               onClick={function () {
                 var home = visibleTabs.find(function (t) { return t.key === 'overview' }) || visibleTabs[0]
@@ -598,16 +739,28 @@ function AdminShell({ profile, onSignOut }) {
         {active !== 'overview' && active !== 'broadcast' && activeTab && (
           <div className="flex items-start justify-between gap-3 sm:gap-4 mb-4 sm:mb-5">
             <div className="flex items-center sm:items-start gap-2.5 sm:gap-3 min-w-0">
-              <span aria-hidden="true" className="shrink-0 w-10 h-10 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl bg-indigo-100 text-indigo-600 inline-flex items-center justify-center">
+              <span aria-hidden="true" className={"shrink-0 inline-flex items-center justify-center text-indigo-600 " +
+                (active === 'inventory'
+                  ? "w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-white shadow-[0_6px_18px_-4px_rgba(15,23,42,0.35)]"
+                  : "w-10 h-10 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl bg-indigo-100")}>
                 <Icon name={activeTab.icon} className="w-[22px] h-[22px] sm:w-[30px] sm:h-[30px]" strokeWidth={2.1} />
               </span>
               <div className="min-w-0">
-                <h2 className="font-display text-[20px] sm:text-[23px] font-extrabold text-slate-900 tracking-[-0.025em] leading-tight">{activeLabel}</h2>
+                {/* Inventory's title is set in a serif, larger — the section
+                    has a photograph behind it and the heading reads as its
+                    masthead. Every other section keeps the display face. */}
+                <h2 className={active === 'inventory'
+                  ? "font-serif text-[26px] sm:text-[36px] font-bold text-white tracking-[-0.01em] leading-none drop-shadow-[0_1px_2px_rgba(0,0,0,0.25)]"
+                  : "font-display text-[20px] sm:text-[23px] font-extrabold text-slate-900 tracking-[-0.025em] leading-tight"}>{activeLabel}</h2>
                 {activeTab.blurb && (
-                  <p className="hidden sm:block text-[12.5px] text-slate-500 leading-snug mt-0.5 line-clamp-2">{activeTab.blurb}</p>
+                  <p className={"hidden sm:block leading-snug line-clamp-2 " + (active === 'inventory' ? "text-[14px] text-white/85 mt-2" : "text-[12.5px] text-slate-500 mt-0.5")}>{activeTab.blurb}</p>
                 )}
               </div>
             </div>
+            {/* A slot for the section's own header controls. A module that
+                wants something up here (Inventory's search and Add Item)
+                portals it in; the rest leave it empty. */}
+            <div id="admin-page-header-slot" className="flex items-center gap-3 min-w-0" />
           </div>
         )}
         {ActiveModule && (
@@ -617,7 +770,8 @@ function AdminShell({ profile, onSignOut }) {
               activeSubTab={subTab} inAdmin
               deepLinkExpense={deepLinkExpense}
               onDeepLinkHandled={function () { setDeepLinkExpense(null) }}
-              onSubTabMeta={setSubTabMeta} />
+              onSubTabMeta={setSubTabMeta}
+              navNonce={navNonce} invSubDept={invSubDept} onInvSubDeptChange={setInvSubDept} />
           </Suspense>
         )}
         {!ActiveModule && (

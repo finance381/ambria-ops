@@ -1,9 +1,12 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { prepUpload } from '../../lib/uploadHelper'
-import { supabase, getImageUrl, fetchAll } from '../../lib/supabase'
-import { formatDate, titleCase } from '../../lib/format'
+import { supabase, getImageUrl } from '../../lib/supabase'
+import { formatDate, titleCase, formatPaise } from '../../lib/format'
 import { logActivity } from '../../lib/logger'
 import Modal from '../../components/ui/Modal'
+import Icon from '../../components/ui/Icon'
+import EventDatePicker from '../../components/ui/EventDatePicker'
 import InventoryForm from './InventoryForm'
 import { hasPerm } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
@@ -11,6 +14,24 @@ import { useReferenceData } from '../../lib/referenceData.jsx'
 function FilterDropdown({ value, onChange, options, placeholder, multi }) {
   var [open, setOpen] = useState(false)
   var [q, setQ] = useState('')
+  // Closes on a press anywhere outside it, or on Escape. It used a fixed
+  // full-screen overlay for this, but inside the toolbar's backdrop-blur panel
+  // a fixed element is sized to that panel, not the window — so a click
+  // anywhere else on the page never reached it and the list stayed open.
+  var wrapRef = useRef(null)
+  useEffect(function () {
+    if (!open) return
+    function onDown(e) { if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false) }
+    function onKey(e) { if (e.key === 'Escape') setOpen(false) }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('touchstart', onDown)
+    document.addEventListener('keydown', onKey)
+    return function () {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('touchstart', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [open])
   var qLower = q.toLowerCase()
   var filtered = q ? options.filter(function (o) { return o.label.toLowerCase().indexOf(qLower) !== -1 }) : options
   var vals = multi ? (value || []) : []
@@ -36,42 +57,98 @@ function FilterDropdown({ value, onChange, options, placeholder, multi }) {
   }
   function clearAll() { onChange(multi ? [] : ''); setOpen(false) }
   return (
-    <div className="relative" style={{ minWidth: 140 }}>
-      <button type="button" onClick={function () { setOpen(!open); setQ('') }}
-        className={"px-3 py-2.5 border rounded-lg text-sm text-left w-full truncate focus:outline-none focus:ring-2 focus:ring-indigo-500 " + (hasValue ? "border-indigo-400 bg-indigo-50 text-indigo-700 font-medium" : "border-gray-300 text-gray-500")}>
-        {displayLabel}
+    <div ref={wrapRef} className="relative" style={{ minWidth: 140 }}>
+      <button type="button" onClick={function () { setOpen(!open); setQ('') }} aria-expanded={open}
+        className={"w-full h-11 flex items-center gap-2 pl-3.5 pr-3 rounded-xl border text-[14px] text-left transition-colors focus:outline-none focus:ring-4 focus:ring-[#3B4668]/10 " +
+          (hasValue
+            ? "border-[#8A93B0] bg-[#E3E6F0] text-[#2B3452] font-semibold"
+            : "border-slate-300 bg-white text-slate-800 font-medium shadow-[0_1px_2px_rgba(15,23,42,0.06)] hover:border-slate-400") +
+          (open ? " border-[#A9B1CB]" : "")}>
+        <span className="flex-1 min-w-0 truncate">{displayLabel}</span>
+        <Icon name="chevronDown" size={15} className={"shrink-0 transition-[rotate] duration-200 " + (open ? "rotate-180 " : "") + (hasValue ? "text-[#3B4668]" : "text-slate-600")} />
       </button>
       {open && (
-        <div className="absolute z-50 mt-1 w-full min-w-[220px] bg-white border border-gray-200 rounded-lg shadow-lg" style={{ maxHeight: 300, display: 'flex', flexDirection: 'column' }}>
-          <div className="p-1.5 border-b border-gray-100">
-            <input type="text" value={q} onChange={function (e) { setQ(e.target.value) }} placeholder="Type to filter..."
-              autoFocus className="w-full px-2.5 py-1.5 text-sm border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-indigo-400" />
+        <div className="absolute z-50 mt-1.5 w-full min-w-[240px] bg-white border border-slate-200 rounded-xl shadow-[0_16px_40px_-12px_rgba(30,35,60,0.35)] overflow-hidden" style={{ maxHeight: 320, display: 'flex', flexDirection: 'column' }}>
+          <div className="p-2 border-b border-slate-100">
+            <div className="relative">
+              <Icon name="search" size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+              <input type="text" value={q} onChange={function (e) { setQ(e.target.value) }} placeholder="Type to filter..."
+                autoFocus className="w-full h-9 pl-8 pr-2.5 text-sm bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:bg-white focus:border-[#A9B1CB]" />
+            </div>
           </div>
-          <div className="overflow-y-auto" style={{ maxHeight: 240 }}>
+          <div className="overflow-y-auto p-1" style={{ maxHeight: 256 }}>
             <button type="button" onClick={clearAll}
-              className={"w-full text-left px-3 py-2 text-sm hover:bg-gray-50 " + (!hasValue ? "font-bold text-indigo-600" : "text-gray-400")}>
+              className={"w-full text-left px-3 py-2 rounded-lg text-sm hover:bg-slate-50 " + (!hasValue ? "font-semibold text-[#333D5E]" : "text-slate-500")}>
               {placeholder}
             </button>
             {filtered.map(function (o) {
               var isOn = multi ? vals.indexOf(o.value) !== -1 : o.value === value
               return (
                 <button key={o.value} type="button" onClick={function () { toggle(o.value) }}
-                  className={"w-full text-left px-3 py-2 text-sm hover:bg-indigo-50 truncate flex items-center gap-2 " + (isOn ? "bg-indigo-50 text-indigo-700 font-semibold" : "text-gray-700")}>
-                  {multi && <span className={"inline-block w-4 h-4 rounded border text-center text-[10px] leading-4 flex-shrink-0 " + (isOn ? "bg-indigo-600 border-indigo-600 text-white" : "border-gray-300")}>{isOn ? '✓' : ''}</span>}
-                  {o.label}
+                  className={"w-full text-left px-3 py-2 rounded-lg text-sm truncate flex items-center gap-2.5 transition-colors " + (isOn ? "bg-[#EDEFF5] text-[#333D5E] font-semibold" : "text-slate-700 hover:bg-slate-50")}>
+                  {multi && (
+                    <span className={"shrink-0 w-4 h-4 rounded-[5px] border inline-flex items-center justify-center " + (isOn ? "bg-[#3B4668] border-[#3B4668] text-white" : "border-slate-300 bg-white")}>
+                      {isOn && <Icon name="check" size={10} strokeWidth={3} />}
+                    </span>
+                  )}
+                  <span className="truncate">{o.label}</span>
                 </button>
               )
             })}
-            {filtered.length === 0 && <p className="px-3 py-2 text-xs text-gray-400">No matches</p>}
+            {filtered.length === 0 && <p className="px-3 py-2 text-xs text-slate-400">No matches</p>}
           </div>
         </div>
       )}
-      {open && <div className="fixed inset-0 z-40" onClick={function () { setOpen(false) }} />}
     </div>
   )
 }
 
-function AdminItems({ profile }) {
+// Every page of a table at once. fetchAll asks for 1,000 rows, waits, asks
+// for the next 1,000, and so on — three items tables' worth of round trips in
+// a row. This asks for the first page with a row count, then for all the rest
+// together. makeQuery builds a fresh query each time: a Supabase query is
+// mutated by .range(), so one builder cannot serve several pages at once.
+async function fetchAllParallel(makeQuery, pageSize) {
+  pageSize = pageSize || 1000
+  var first = await makeQuery({ count: 'exact' }).range(0, pageSize - 1)
+  if (first.error) throw first.error
+  var rows = first.data || []
+  var total = first.count == null ? rows.length : first.count
+  if (rows.length < pageSize || total <= pageSize) return rows
+  var pages = []
+  for (var from = pageSize; from < total; from += pageSize) pages.push(from)
+  var rest = await Promise.all(pages.map(function (f) { return makeQuery().range(f, f + pageSize - 1) }))
+  rest.forEach(function (r) { if (r.error) throw r.error; rows = rows.concat(r.data || []) })
+  return rows
+}
+
+// One of an item's dimension fields, by a pattern on its name — "Material"
+// or "Materials", "Menu zone" or "Menu Zones" — as the Material and Menu zone
+// filters read them. "Pieces" is the form's placeholder unit, never part of a
+// value, so it is dropped.
+function dimValueOf(item, re) {
+  var dims = Array.isArray(item.dimensions) ? item.dimensions : []
+  for (var i = 0; i < dims.length; i++) {
+    var d = dims[i]
+    if (!d || !d.name || !re.test(d.name)) continue
+    var unit = d.unit && String(d.unit).toLowerCase() !== 'pieces' ? d.unit : ''
+    var v = d.value != null && String(d.value).trim() !== ''
+      ? String(d.value).trim()
+      : (d.qty != null && String(d.qty).trim() !== '' ? (d.qty + ' ' + unit).trim() : '')
+    v = v.replace(/\s+pieces$/i, '').trim()
+    if (v && v.toLowerCase() !== 'pieces') return v
+  }
+  return ''
+}
+var MATERIAL_RE = /materi/i
+var MENU_ZONE_RE = /menu\s*zone/i
+
+// The last load, kept for the life of the page. Coming back to All Items —
+// from Production, Boxes, another section — shows it at once and refreshes
+// behind it, instead of a blank "Loading" every time.
+var adminItemsCache = null
+
+function AdminItems({ profile, invSubDept, navNonce, onInvSubDeptChange }) {
   var canViewCosts = hasPerm(profile?.permsNew, 'finance.view_costs')
   var [items, setItems] = useState([])
   var [loading, setLoading] = useState(true)
@@ -85,20 +162,126 @@ function AdminItems({ profile }) {
   var [categories, setCategories] = useState([])
   var [subCategoriesAll, setSubCategoriesAll] = useState([])
   var [subDepartments, setSubDepartments] = useState([])
-  var [subDeptFilter, setSubDeptFilter] = useState([])
+  var [subDeptFilter, setSubDeptFilter] = useState(invSubDept ? [String(invSubDept)] : [])
   var [masterDeptFilter, setMasterDeptFilter] = useState([])
+
+  // The sidebar lists the master sub-departments under Inventory. A pick
+  // there lands here as invSubDept (navNonce makes a second pick of the same
+  // one count too) and replaces this filter, clearing the category filters
+  // that hang off it the way the dropdown does. The other way, the sidebar is
+  // told what is picked here.
+  useEffect(function () {
+    if (navNonce == null) return
+    setSubDeptFilter(invSubDept ? [String(invSubDept)] : [])
+    setCatFilter([]); setSubCatFilter([]); setPage(1)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [navNonce])
+  useEffect(function () {
+    if (!onInvSubDeptChange) return
+    // One picked → that one; none → "All items"; several → neither, since no
+    // single line in the sidebar says what is on screen.
+    onInvSubDeptChange(subDeptFilter.length === 1 ? subDeptFilter[0] : (subDeptFilter.length === 0 ? '' : null))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [subDeptFilter])
   var [defaultApplied, setDefaultApplied] = useState(false)
   var [subVenues, setSubVenues] = useState([])
   var [subVenueFilter, setSubVenueFilter] = useState([])
+  var [materialFilter, setMaterialFilter] = useState([])
+  var [menuZoneFilter, setMenuZoneFilter] = useState([])
   var [enlargedImg, setEnlargedImg] = useState(null)
+  // Hover preview: the whole photograph, large, in a panel beside the card —
+  // outside it, so nothing of the card is covered and nothing of the picture
+  // is cut. { url, rect } of the photo under the pointer; any scroll clears
+  // it, since the rect it was placed from is stale the moment the page moves.
+  var [hoverPreview, setHoverPreview] = useState(null)
+  // Leaving the photo marks the panel closing and removes it once its exit
+  // animation has run; coming back onto a photo in that window cancels it.
+  var previewTimerRef = useRef(null)
+  function openPreview(url, name, rect) {
+    clearTimeout(previewTimerRef.current)
+    setHoverPreview({ url: url, name: name, rect: rect, closing: false })
+  }
+  function closePreview(immediate) {
+    clearTimeout(previewTimerRef.current)
+    if (immediate) { setHoverPreview(null); return }
+    setHoverPreview(function (p) { return p ? Object.assign({}, p, { closing: true }) : p })
+    previewTimerRef.current = setTimeout(function () { setHoverPreview(null) }, 180)
+  }
+  useEffect(function () { return function () { clearTimeout(previewTimerRef.current) } }, [])
+
+  // Hover intent. Scrolling slides photos under a pointer that never moved,
+  // and the browser counts each one as the pointer entering it — so the
+  // preview opened on photo after photo down the page. Two guards:
+  //   · the pointer has to rest on a photo for a moment before it opens;
+  //   · nothing opens while the page is scrolling, or for a beat after.
+  // After a scroll, moving the pointer on the photo it stopped over is what
+  // brings the preview back (mousemove re-arms it; mouseenter alone is not
+  // trusted).
+  var HOVER_DELAY = 320
+  var SCROLL_QUIET = 250
+  var intentTimerRef = useRef(null)
+  var scrollingRef = useRef(false)
+  var scrollQuietRef = useRef(null)
+  useEffect(function () {
+    function onScroll() {
+      scrollingRef.current = true
+      clearTimeout(intentTimerRef.current)
+      intentTimerRef.current = null
+      closePreview(true)
+      clearTimeout(scrollQuietRef.current)
+      scrollQuietRef.current = setTimeout(function () { scrollingRef.current = false }, SCROLL_QUIET)
+    }
+    window.addEventListener('scroll', onScroll, true)
+    return function () {
+      window.removeEventListener('scroll', onScroll, true)
+      clearTimeout(scrollQuietRef.current)
+      clearTimeout(intentTimerRef.current)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  function armPreview(el, url, name) {
+    if (scrollingRef.current || intentTimerRef.current) return
+    intentTimerRef.current = setTimeout(function () {
+      intentTimerRef.current = null
+      if (scrollingRef.current || !el.isConnected || !el.matches(':hover')) return
+      openPreview(url, name, el.getBoundingClientRect())
+    }, HOVER_DELAY)
+  }
+  function disarmPreview() {
+    clearTimeout(intentTimerRef.current)
+    intentTimerRef.current = null
+    closePreview(false)
+  }
   var [editItem, setEditItem] = useState(null)
+  // The item a delete is being confirmed for (the whole row, so the dialog
+  // can show what it is), and whether the delete is running.
   var [deleteConfirm, setDeleteConfirm] = useState(null)
+  var [deleting, setDeleting] = useState(false)
   var [holdItem, setHoldItem] = useState(null)
   var [holds, setHolds] = useState([])
   var [holdForm, setHoldForm] = useState({ hold_from: '', hold_to: '', qty: 1, reason: '' })
   var [holdSaving, setHoldSaving] = useState(false)
   var [page, setPage] = useState(1)
-  var [perPage, setPerPage] = useState(50)
+  var [perPage, setPerPage] = useState(48)
+  // The Filters panel holds the finer filters — sub-category and sub-venue —
+  // that used to appear in the toolbar row once a category or venue was set.
+  var [moreFiltersOpen, setMoreFiltersOpen] = useState(false)
+  var searchRef = useRef(null)
+  // "/" jumps to the search from anywhere on the page, unless you are already
+  // typing in a field.
+  useEffect(function () {
+    function onKey(e) {
+      if (e.key !== '/' || e.ctrlKey || e.metaKey || e.altKey) return
+      var el = document.activeElement
+      var tag = el && el.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (el && el.isContentEditable)) return
+      if (!searchRef.current) return
+      e.preventDefault()
+      searchRef.current.focus()
+    }
+    window.addEventListener('keydown', onKey)
+    return function () { window.removeEventListener('keydown', onKey) }
+  }, [])
   var [sortKey, setSortKey] = useState(null)
   var [sortDir, setSortDir] = useState('asc')
   var [importModal, setImportModal] = useState(null) // { rows, header, file }
@@ -112,21 +295,41 @@ function AdminItems({ profile }) {
   var [bulkImgProcessing, setBulkImgProcessing] = useState(false)
 
   useEffect(function () {
+    if (adminItemsCache) applyData(adminItemsCache)
     loadData()
   }, [])
 
+  function applyData(d) {
+    setItems(d.items)
+    setDepartments(d.departments)
+    if (!defaultApplied) {
+      var defDept = d.departments.find(function (x) { return x.is_inventory_default })
+      if (defDept) setMasterDeptFilter([String(defDept.id)])
+      setDefaultApplied(true)
+    }
+    setCategories(d.categories)
+    setSubCategoriesAll(d.subCategories)
+    setSubDepartments(d.subDepartments)
+    setSubVenues(d.subVenues)
+    setLoading(false)
+  }
+
   async function loadData() {
     try {
+      var INV_COLS = 'id, name, name_hindi, inventory_id, qty, blocked, unit, type, status, department, category_id, sub_category_id, rate_paise, min_order_qty, reorder_qty, is_asset, image_path, submitted_by, entry_date, description, dimensions, categories(name, sub_department_id), sub_categories(name), venue_allocations(qty, venues(code, name), sub_venue_id, sub_department_id)'
+      var CS_COLS = 'id, name, name_hindi, inventory_id, qty, unit, type, status, department, category_id, sub_category_id, rate_paise, is_asset, image_path, submitted_by, entry_date, description, dimensions, brand, pack_size_qty, pack_size_unit, season_reorder_qty, off_season_reorder_qty, categories(name, sub_department_id), sub_categories(name), cs_venue_allocations(qty, venues(code, name), sub_venue_id, sub_department_id)'
+      // Ordered by id as well as created_at, so rows sharing a timestamp
+      // cannot shift between pages fetched side by side.
       var [invAll, csAll, deptRes, profilesRes, catRes, subCatRes, subDeptRes, subVenueRes] = await Promise.all([
-        fetchAll(supabase.from('inventory_items')
-          .select('id, name, name_hindi, inventory_id, qty, blocked, unit, type, status, department, category_id, sub_category_id, rate_paise, min_order_qty, reorder_qty, is_asset, image_path, submitted_by, entry_date, description, dimensions, categories(name, sub_department_id), sub_categories(name), venue_allocations(qty, venues(code, name), sub_venue_id, sub_department_id)')
-          .order('created_at', { ascending: false })),
-        fetchAll(supabase.from('catering_store_items')
-          .select('id, name, name_hindi, inventory_id, qty, unit, type, status, department, category_id, sub_category_id, rate_paise, is_asset, image_path, submitted_by, entry_date, description, dimensions, brand, pack_size_qty, pack_size_unit, season_reorder_qty, off_season_reorder_qty, categories(name, sub_department_id), sub_categories(name), cs_venue_allocations(qty, venues(code, name), sub_venue_id, sub_department_id)')
-          .order('created_at', { ascending: false })),
+        fetchAllParallel(function (opts) {
+          return supabase.from('inventory_items').select(INV_COLS, opts).order('created_at', { ascending: false }).order('id', { ascending: false })
+        }),
+        fetchAllParallel(function (opts) {
+          return supabase.from('catering_store_items').select(CS_COLS, opts).order('created_at', { ascending: false }).order('id', { ascending: false })
+        }),
         supabase.from('departments').select('id, name, category_ids, is_inventory_default').eq('active', true).order('name'),
         supabase.from('profiles').select('id, name, email'),
-        supabase.from('categories').select('id, name, sub_department_id').order('name'),
+        supabase.from('categories').select('id, name, sub_department_id, dimension_fields').order('name'),
         supabase.from('sub_categories').select('id, name, category_id').order('name'),
         supabase.from('sub_departments').select('id, name, department_id').eq('active', true).order('name'),
         supabase.from('sub_venues').select('id, name, venue_id').eq('active', true).order('name'),
@@ -144,21 +347,18 @@ function AdminItems({ profile }) {
           profiles: profileMap[item.submitted_by] || null,
         })
       })
-      setItems(invItems.concat(csItems).sort(function (a, b) {
-        return new Date(b.entry_date || 0) - new Date(a.entry_date || 0)
-      }))
-      var loadedDepts = deptRes.data || []
-      setDepartments(loadedDepts)
-      if (!defaultApplied) {
-        var defDept = loadedDepts.find(function (d) { return d.is_inventory_default })
-        if (defDept) setMasterDeptFilter([String(defDept.id)])
-        setDefaultApplied(true)
+      var data = {
+        items: invItems.concat(csItems).sort(function (a, b) {
+          return new Date(b.entry_date || 0) - new Date(a.entry_date || 0)
+        }),
+        departments: deptRes.data || [],
+        categories: catRes.data || [],
+        subCategories: subCatRes.data || [],
+        subDepartments: subDeptRes.data || [],
+        subVenues: subVenueRes.data || [],
       }
-      setCategories(catRes.data || [])
-      setSubCategoriesAll(subCatRes.data || [])
-      setSubDepartments(subDeptRes.data || [])
-      setSubVenues(subVenueRes.data || [])
-      setLoading(false)
+      adminItemsCache = data
+      applyData(data)
     } catch (err) {
       alert('Failed to load items: ' + (err.message || 'Unknown error'))
       setLoading(false)
@@ -170,6 +370,7 @@ function AdminItems({ profile }) {
     // filter, just the locked inventory-default department scope for this screen.
     setSearch(''); setStatusFilter([]); setSubDeptFilter([])
     setCatFilter([]); setSubCatFilter([]); setVenueFilter([]); setSubVenueFilter([])
+    setMaterialFilter([]); setMenuZoneFilter([])
     setPage(1)
   }
 
@@ -350,6 +551,8 @@ function AdminItems({ profile }) {
     var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'ambria_import_template.csv'; a.click()
   } 
   async function deleteItem(item) {
+    if (deleting) return
+    setDeleting(true)
     var allocTable = item._source === 'catering_store' ? 'cs_venue_allocations' : 'venue_allocations'
     var itemTable = item._source === 'catering_store' ? 'catering_store_items' : 'inventory_items'
     await supabase.from(allocTable).delete().eq('item_id', item.id)
@@ -357,8 +560,9 @@ function AdminItems({ profile }) {
       await supabase.storage.from('images').remove([item.image_path])
     }
     var { error: delErr } = await supabase.from(itemTable).delete().eq('id', item.id)
-    if (delErr) { alert('Delete failed: ' + delErr.message); return }
+    if (delErr) { setDeleting(false); alert('Delete failed: ' + delErr.message); return }
     try { await logActivity('ITEM_DELETE', item.name + ' | ID: ' + (item.inventory_id || item.id)) } catch (_) {}
+    setDeleting(false)
     setDeleteConfirm(null)
     loadData()
   }
@@ -813,14 +1017,49 @@ function AdminItems({ profile }) {
       var matchSubVenue = subVenueFilter.length === 0 || (item.venue_allocations || []).some(function (va) { return subVenueFilter.indexOf(String(va.sub_venue_id)) !== -1 })
       var matchCat = catFilter.length === 0 || catFilter.indexOf(String(item.category_id)) !== -1
       var matchSubCat = subCatFilter.length === 0 || subCatFilter.indexOf(String(item.sub_category_id)) !== -1
-      return matchSearch && matchMasterDept && matchSubDept && matchStatus && matchVenue && matchCat && matchSubCat && matchSubVenue
+      var matchMaterial = materialFilter.length === 0 || materialFilter.indexOf(dimValueOf(item, MATERIAL_RE).toLowerCase()) !== -1
+      var matchMenuZone = menuZoneFilter.length === 0 || menuZoneFilter.indexOf(dimValueOf(item, MENU_ZONE_RE).toLowerCase()) !== -1
+      return matchSearch && matchMasterDept && matchSubDept && matchStatus && matchVenue && matchCat && matchSubCat && matchSubVenue && matchMaterial && matchMenuZone
     })
-  }, [items, search, statusFilter, masterDeptFilter, subDepartments, subDeptFilter, categories, venueFilter, subVenueFilter, catFilter, subCatFilter])
+  }, [items, search, statusFilter, masterDeptFilter, subDepartments, subDeptFilter, categories, venueFilter, subVenueFilter, catFilter, subCatFilter, materialFilter, menuZoneFilter])
 
   function handleSort(key) {
     if (sortKey === key) { setSortDir(sortDir === 'asc' ? 'desc' : 'asc') }
     else { setSortKey(key); setSortDir('asc') }
     setPage(1)
+  }
+
+  // The card's product details: the few of an item's dimension fields people
+  // look an item up by — Material, Menu zone and Vendor name. (Colour, shape
+  // and the vendor number are left off the card; they are still on the item.)
+  // Dimensions are per-category fields set in Masters, stored on the item as
+  // [{ name, value }] (or { qty, unit } for a measured one), so they are
+  // matched by name, forgiving of plural and spelling, rather than by a fixed
+  // key. Only fields with something in them are shown.
+  var PRODUCT_DETAILS = [
+    { label: 'Material', test: /materi/i },
+    { label: 'Menu zone', test: /menu\s*zone/i },
+    { label: 'Vendor name', test: /vendor\s*name/i },
+  ]
+  var DETAIL_ORDER = ['Material', 'Menu zone', 'Vendor name']
+  function productDetails(item) {
+    var dims = Array.isArray(item.dimensions) ? item.dimensions : []
+    var found = {}
+    dims.forEach(function (d) {
+      if (!d || !d.name) return
+      var spec = PRODUCT_DETAILS.find(function (p) { return p.test.test(d.name) })
+      if (!spec || found[spec.label]) return
+      // "Pieces" is the form's placeholder unit, not part of a value: older
+      // rows saved a colour or a shape as qty + unit and came out as
+      // "Silver Pieces". It is dropped wherever it trails a value.
+      var unit = d.unit && String(d.unit).toLowerCase() !== 'pieces' ? d.unit : ''
+      var v = d.value != null && String(d.value).trim() !== ''
+        ? String(d.value).trim()
+        : (d.qty != null && String(d.qty).trim() !== '' ? (d.qty + ' ' + unit).trim() : '')
+      v = v.replace(/\s+pieces$/i, '').trim()
+      if (v && v.toLowerCase() !== 'pieces') found[spec.label] = v
+    })
+    return DETAIL_ORDER.filter(function (l) { return found[l] }).map(function (l) { return { label: l, value: found[l] } })
   }
 
   function sortValue(item, key) {
@@ -853,254 +1092,593 @@ function AdminItems({ profile }) {
 
   function sortArrow(key) { return sortKey === key ? (sortDir === 'asc' ? ' ↑' : ' ↓') : '' }
 
+  // While the first load is out: the toolbar's shape and a grid of card
+  // outlines where the cards will be, so the page is laid out at once.
   if (loading) {
-    return <p className="text-gray-400 text-sm">Loading items...</p>
+    return (
+      <div className="space-y-4" aria-busy="true" aria-label="Loading items">
+        <div className="h-16 rounded-[20px] bg-white/70 border border-white/80 animate-pulse" />
+        <div className="h-5 w-40 rounded-md bg-white/60 animate-pulse" />
+        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+          {[0, 1, 2, 3, 4, 5].map(function (i) {
+            return (
+              <div key={i} className="rounded-2xl bg-white border border-slate-200/80 overflow-hidden">
+                <div className="h-56 bg-slate-100 animate-pulse" />
+                <div className="p-4 space-y-3">
+                  <div className="h-5 w-2/3 rounded bg-slate-100 animate-pulse" />
+                  <div className="h-4 w-1/3 rounded bg-slate-100 animate-pulse" />
+                  <div className="h-14 rounded-xl bg-slate-50 animate-pulse" />
+                  <div className="h-7 w-1/2 rounded-lg bg-slate-100 animate-pulse" />
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    )
+  }
+
+  // ── Pieces of the item card ──
+  function allocChips(item, extraCls) {
+    // One chip per place, with the total there. An item can carry several
+    // allocation rows for the same venue and sub-venue (one per department,
+    // say), and they printed as separate chips — "AE 2" beside "AE 20" —
+    // when what anyone wants to know is that 22 are at AE.
+    var byPlace = {}
+    var venueAllocs = []
+    ;(item.venue_allocations || []).forEach(function (va) {
+      var key = (va.venues?.code || '') + '|' + (va.sub_venue_id || '')
+      if (!byPlace[key]) {
+        byPlace[key] = { venues: va.venues, sub_venue_id: va.sub_venue_id, qty: 0 }
+        venueAllocs.push(byPlace[key])
+      }
+      byPlace[key].qty += Number(va.qty) || 0
+    })
+    if (venueAllocs.length === 0) return null
+    return (
+      <div className={"flex flex-wrap gap-1.5 " + (extraCls || '')}>
+        {/* Three parts, read left to right: the venue in a soft slate-navy
+            block, the place inside it on white, and how many there in a
+            tinted end — so where and how many are each one glance. */}
+        {venueAllocs.map(function (va, vi) {
+          var svName = va.sub_venue_id ? (subVenues.find(function (sv) { return sv.id === va.sub_venue_id }) || {}).name : null
+          return (
+            <span key={(va.venues?.code || '') + '-' + vi} title={(va.venues?.name || va.venues?.code || '') + (svName ? ' · ' + svName : '') + ' · ' + va.qty}
+              className="inline-flex items-stretch h-7 rounded-lg overflow-hidden border border-[#D8DCE8] bg-white shadow-[0_1px_2px_rgba(59,70,104,0.08)]">
+              <span className="inline-flex items-center gap-1 px-2 bg-[#EDEFF5] text-[#333D5E] text-[12px] font-extrabold tracking-[0.02em]">
+                <Icon name="mapPin" size={12} className="shrink-0 text-[#8A93B0]" />
+                {va.venues?.code}
+              </span>
+              {svName && (
+                <span className="inline-flex items-center px-2.5 text-[12.5px] font-bold text-slate-700 whitespace-nowrap">{svName}</span>
+              )}
+              <span className="inline-flex items-center px-2.5 border-l border-[#E4E7F0] bg-white text-[13px] font-extrabold text-slate-800 tabular-nums">{va.qty}</span>
+            </span>
+          )
+        })}
+      </div>
+    )
+  }
+  function submitterOf(item) {
+    var name = item.profiles?.name || ''
+    return (
+      <div className="min-w-0 flex items-center gap-2">
+        <span aria-hidden="true" className="shrink-0 w-8 h-8 rounded-full bg-[#EDEFF5] text-[#333D5E] text-[13px] font-bold inline-flex items-center justify-center">
+          {(name.trim()[0] || '?').toUpperCase()}
+        </span>
+        <span className="min-w-0">
+          <span className="block text-[14px] font-bold text-gray-900 truncate">{name || '—'}</span>
+          <span className="block text-[12.5px] font-medium text-gray-600">{formatDate(item.entry_date || item.created_at)}</span>
+        </span>
+      </div>
+    )
+  }
+  // Edit is what a card is opened for, so it is the one filled button;
+  // Holds (neutral, darker on hover) and Delete (soft red) are square icon
+  // buttons beside it — the
+  // same height and corners, so the three read as one set. Delete turns solid
+  // red on hover and still asks Yes / No before it does anything.
+  function actionsOf(item) {
+    return (
+      <div className="shrink-0 flex items-center gap-1.5">
+        <button type="button" onClick={function () { setEditItem(item) }}
+          className="inline-flex items-center gap-1.5 h-9 px-3.5 rounded-lg bg-[#3B4668] text-white text-[13px] font-semibold shadow-[0_2px_8px_-2px_rgba(59,70,104,0.45)] hover:bg-[#2F3854] transition-colors">
+          <Icon name="edit" size={14} />Edit
+        </button>
+        {item._source !== 'catering_store' && (
+          <button type="button" onClick={function () { openHolds(item) }} aria-label="Holds" title="Holds"
+            className="w-9 h-9 inline-flex items-center justify-center rounded-lg bg-white border border-slate-200 text-slate-600 shadow-[0_1px_2px_rgba(15,23,42,0.06)] hover:border-slate-400 hover:text-slate-900 hover:bg-slate-50 transition-colors">
+            <Icon name="lock" size={15} />
+          </button>
+        )}
+        <button type="button" onClick={function () { setDeleteConfirm(item) }} aria-label="Delete" title="Delete"
+          className="w-9 h-9 inline-flex items-center justify-center rounded-lg bg-red-50 border border-red-100 text-red-600 hover:bg-red-600 hover:border-red-600 hover:text-white transition-colors">
+          <Icon name="trash" size={15} />
+        </button>
+      </div>
+    )
+  }
+  // The product details the card is for — Material, Price, Menu
+  // zone, Vendor name — as tiles of label over value in one tinted
+  // box, two to a row, ruled apart by the box showing through a 1px gap. Only
+  // the ones with something in them; an odd last tile takes the full width.
+  // Nothing else goes in the box.
+  function detailsBox(item) {
+    var details = productDetails(item)
+    // The price per unit, beside Material — only for those allowed to see
+    // costs (the same permission the export's Rate column answers to).
+    if (canViewCosts && item.rate_paise) {
+      var price = { label: 'Price', value: formatPaise(item.rate_paise) + (item.unit ? ' / ' + item.unit : '') }
+      var at = details.findIndex(function (d) { return d.label === 'Material' })
+      details.splice(at === -1 ? 0 : at + 1, 0, price)
+    }
+    if (details.length === 0) return null
+    return (
+      <div className="grid grid-cols-2 gap-px rounded-xl overflow-hidden bg-slate-200">
+        {details.map(function (d, i) {
+          var wide = details.length % 2 === 1 && i === details.length - 1
+          var glyph = { Material: 'box', Price: 'rupee', 'Menu zone': 'utensils', 'Vendor name': 'user' }[d.label] || 'info'
+          return (
+            <div key={d.label} className={"flex items-center gap-2.5 bg-slate-50 px-3 py-2.5 min-w-0 " + (wide ? "col-span-2" : "")}>
+              <span aria-hidden="true" className="shrink-0 w-8 h-8 rounded-lg bg-white border border-slate-200 text-indigo-500 inline-flex items-center justify-center">
+                <Icon name={glyph} size={16} />
+              </span>
+              <span className="min-w-0">
+                <span className="block text-[12px] font-semibold text-slate-600 leading-tight">{d.label}</span>
+                <span className="block text-[15px] font-extrabold text-slate-900 truncate" title={d.value}>{d.value}</span>
+              </span>
+            </div>
+          )
+        })}
+      </div>
+    )
   }
 
   return (
     <div className="space-y-4">
-      {/* Toolbar — filters row */}
-      <div className="flex gap-2 flex-wrap items-center">
-        <input
-          type="text"
-          value={search}
-          onChange={function (e) { setSearch(e.target.value); setPage(1) }}
-          placeholder="Search name, ID, description, submitter..."
-          className="flex-1 min-w-[220px] px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-        />
-        <FilterDropdown value={subDeptFilter} placeholder="Master Sub-dept" multi
-          onChange={function (v) { setSubDeptFilter(v); setCatFilter([]); setSubCatFilter([]); setPage(1) }}
-          options={subDepartments.filter(function (sd) {
-            if (masterDeptFilter.length > 0) return masterDeptFilter.indexOf(String(sd.department_id)) !== -1
-            return true
-          }).map(function (sd) { return { label: sd.name, value: String(sd.id) } })} />
-        <FilterDropdown value={statusFilter} placeholder="All Statuses" multi
-          onChange={function (v) { setStatusFilter(v); setPage(1) }}
-          options={[{ label: 'Approved', value: 'approved' }, { label: 'Pending (Admin)', value: 'pending' }, { label: 'Pending (Dept)', value: 'pending_dept' }]} />
-        <FilterDropdown value={catFilter} placeholder="All Categories" multi
-          onChange={function (v) { setCatFilter(v); setSubCatFilter([]); setPage(1) }}
-          options={categories.filter(function (c) {
-            if (subDeptFilter.length > 0) return subDeptFilter.indexOf(String(c.sub_department_id)) !== -1
-            return true
-          }).map(function (c) { return { label: c.name, value: String(c.id) } })} />
-        {catFilter.length > 0 && (
-          <FilterDropdown value={subCatFilter} placeholder="All Sub-categories" multi
-            onChange={function (v) { setSubCatFilter(v); setPage(1) }}
-            options={subCategoriesAll.filter(function (sc) {
-              return catFilter.indexOf(String(sc.category_id)) !== -1
-            }).map(function (sc) { return { label: sc.name, value: String(sc.id) } })} />
-        )}
-        <FilterDropdown value={venueFilter} placeholder="All Venues" multi
-          onChange={function (v) { setVenueFilter(v); setSubVenueFilter([]); setPage(1) }}
-          options={venues.map(function (v) { return { label: v.code + ' \u2014 ' + v.name, value: v.code } })} />
-        {venueFilter.length > 0 && (
-          <FilterDropdown value={subVenueFilter} placeholder="All Sub-venues" multi
-            onChange={function (v) { setSubVenueFilter(v); setPage(1) }}
-            options={subVenues.filter(function (sv) {
-              var vIds = venues.filter(function (v2) { return venueFilter.indexOf(v2.code) !== -1 }).map(function (v2) { return v2.id })
-              return vIds.indexOf(sv.venue_id) !== -1
-            }).map(function (sv) { return { label: sv.name, value: String(sv.id) } })} />
-        )}
-      </div>
-      {/* Toolbar — actions row */}
-      <div className="flex gap-2 flex-wrap items-center">
-        <select
-          value={perPage}
-          onChange={function (e) { setPerPage(Number(e.target.value)); setPage(1) }}
-          className="px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-        >
-          <option value={25}>25 / page</option>
-          <option value={50}>50 / page</option>
-          <option value={100}>100 / page</option>
-          <option value={250}>250 / page</option>
-        </select>
-        <div className="text-sm text-gray-400 self-center">
-          {filtered.length} item{filtered.length !== 1 ? 's' : ''}
+      {/* The toolbar: search, a Filters button holding every filter —
+          category, sub-category, venue, sub-venue, material, menu zone — and Tools — on one white panel so the
+          controls stand on something rather than float over the photograph. */}
+      {/* relative z-30: backdrop-blur makes this panel a stacking context,
+          which traps the dropdowns' z-50 inside it — the Show / Sort pills
+          below painted over an open list. Lifting the panel itself puts its
+          lists above everything under it. */}
+      <div className="relative z-30 flex gap-2 flex-wrap items-center p-2 rounded-[20px] bg-white/80 backdrop-blur-md border border-white/90 shadow-[0_10px_30px_-12px_rgba(40,30,25,0.35)]">
+        <div className="group/search relative flex-1 min-w-[240px]">
+          <Icon name="search" size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within/search:text-[#3B4668] transition-colors pointer-events-none" />
+          <input
+            ref={searchRef}
+            type="text"
+            value={search}
+            onChange={function (e) { setSearch(e.target.value); setPage(1) }}
+            onKeyDown={function (e) { if (e.key === 'Escape') { if (search) { setSearch(''); setPage(1) } else e.currentTarget.blur() } }}
+            placeholder="Search name, ID, description, submitter..."
+            className="w-full h-12 pl-11 pr-12 bg-white border border-[#ECE4DC] rounded-2xl text-[15px] text-slate-900 placeholder:text-slate-400 shadow-[inset_0_1px_2px_rgba(40,30,25,0.04)] focus:outline-none focus:border-[#A9B1CB] focus:ring-4 focus:ring-[#3B4668]/10 transition-[border-color,box-shadow]"
+          />
+          {/* Clear, while there is something to clear. */}
+          {search && (
+            <button type="button" onClick={function () { setSearch(''); setPage(1); if (searchRef.current) searchRef.current.focus() }} aria-label="Clear search" title="Clear"
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 w-7 h-7 inline-flex items-center justify-center rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-slate-800 transition-colors">
+              <Icon name="close" size={13} />
+            </button>
+          )}
         </div>
-        {(search || statusFilter.length || subDeptFilter.length || catFilter.length || subCatFilter.length || venueFilter.length || subVenueFilter.length) && (
-          <button onClick={resetFilters}
-            className="px-3 py-2.5 text-sm text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-colors font-medium">✕ Reset</button>
-        )}
-        <button onClick={function () { setToolsModal(true) }}
-          className="px-3 py-2.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-medium">🧰 Tools</button>
+        {/* No Master Sub-dept dropdown here: the sub-departments are listed
+            under Inventory in the sidebar, and a pick there sets this filter.
+            Only the admin shell mounts this screen, so the sidebar is always
+            beside it. */}
+        {(function () {
+          var n = catFilter.length + subCatFilter.length + venueFilter.length + subVenueFilter.length + materialFilter.length + menuZoneFilter.length
+          var lit = moreFiltersOpen || n > 0
+          return (
+            <button type="button" onClick={function () { setMoreFiltersOpen(!moreFiltersOpen) }} aria-expanded={moreFiltersOpen}
+              className={"inline-flex items-center gap-2 h-12 px-4 text-[14px] font-semibold rounded-2xl border transition-colors " +
+                (lit ? "bg-[#EDEFF5] border-[#D8DCE8] text-[#333D5E]" : "bg-white border-[#ECE4DC] text-slate-800 hover:bg-[#FAF6F2] hover:border-[#E0D4C8]")}>
+              <Icon name="filter" size={16} />
+              Filters
+              {n > 0 && <span className="min-w-[20px] h-5 px-1.5 inline-flex items-center justify-center rounded-full bg-[#3B4668] text-white text-[11.5px] font-bold tabular-nums">{n}</span>}
+              <Icon name="chevronDown" size={15} className={"transition-[rotate] duration-200 " + (moreFiltersOpen ? "rotate-180 " : "") + (lit ? "text-[#8A93B0]" : "text-slate-400")} />
+            </button>
+          )
+        })()}
+        <button type="button" onClick={function () { setToolsModal(true) }} title="Tools — export, import, bulk images"
+          className="inline-flex items-center gap-2 h-12 px-4 text-[14px] font-semibold bg-white border border-[#ECE4DC] rounded-2xl text-slate-800 hover:bg-[#FAF6F2] hover:border-[#E0D4C8] transition-colors">
+          <Icon name="wrench" size={16} />Tools
+        </button>
       </div>
 
-      {/* Table */}
-      <div className="bg-white border border-gray-200 rounded-lg overflow-x-auto shadow-sm">
-        <table className="w-full text-sm" style={{ minWidth: 1080 }}>
-          <thead>
-            <tr className="bg-gray-50 border-b border-gray-200">
-              <th className="px-2 py-2.5 text-[11px] font-bold text-gray-500 uppercase tracking-wider" style={{ width: 70 }}></th>
-              <th onClick={function () { handleSort('name') }} className="cursor-pointer select-none text-left px-3 py-2.5 text-[11px] font-bold text-gray-500 uppercase tracking-wider hover:text-gray-900">Item / Hindi{sortArrow('name')}</th>
-              <th onClick={function () { handleSort('category') }} className="cursor-pointer select-none text-left px-3 py-2.5 text-[11px] font-bold text-gray-500 uppercase tracking-wider hover:text-gray-900">Category / Sub{sortArrow('category')}</th>
-              <th onClick={function () { handleSort('masterDept') }} className="cursor-pointer select-none text-left px-3 py-2.5 text-[11px] font-bold text-gray-500 uppercase tracking-wider hover:text-gray-900">Master Dept{sortArrow('masterDept')}</th>
-              <th onClick={function () { handleSort('stock') }} className="cursor-pointer select-none text-right px-3 py-2.5 text-[11px] font-bold text-gray-500 uppercase tracking-wider hover:text-gray-900">Stock{sortArrow('stock')}</th>
-              <th onClick={function () { handleSort('allocDept') }} className="cursor-pointer select-none text-left px-3 py-2.5 text-[11px] font-bold text-gray-500 uppercase tracking-wider hover:text-gray-900">Allocation{sortArrow('allocDept')}</th>
-              <th onClick={function () { handleSort('date') }} className="cursor-pointer select-none text-left px-3 py-2.5 text-[11px] font-bold text-gray-500 uppercase tracking-wider hover:text-gray-900">Submitted{sortArrow('date')}</th>
-              <th onClick={function () { handleSort('status') }} className="cursor-pointer select-none text-left px-3 py-2.5 text-[11px] font-bold text-gray-500 uppercase tracking-wider hover:text-gray-900">Status{sortArrow('status')}</th>
-              <th className="px-2 py-2.5 text-right text-[11px] font-bold text-gray-500 uppercase tracking-wider" style={{ width: 150 }}>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {sorted.slice((page - 1) * perPage, page * perPage).map(function (item) {
-              var venueAllocs = item.venue_allocations || []
-              var imgUrl = getImageUrl(item.image_path)
-              var statusColors = {
-                approved: 'bg-green-100 text-green-700',
-                pending: 'bg-amber-100 text-amber-700',
-                pending_dept: 'bg-blue-100 text-blue-700',
-              }
-              return (
-                <tr key={(item._source || 'i') + ':' + item.id} className="border-b border-gray-100 hover:bg-gray-50">
-                  <td className="px-3 py-2" style={{ minWidth: 100, width: 100 }}>
-                        {imgUrl ? (
-                          <img src={imgUrl} alt="" onClick={function () { setEnlargedImg(imgUrl) }}
-                            className="w-14 h-14 rounded object-cover border border-gray-200 cursor-pointer hover:opacity-80 transition-opacity"/>
-                    ) : (
-                      <div className="w-14 h-14 rounded bg-gray-100 flex items-center justify-center text-gray-300 text-xs">📷</div>
-                    )}
-                  </td>
-                  <td className="px-3 py-2">
-                    <div className="font-medium text-gray-900">{item.name}</div>
-                    {item.name_hindi && <div className="text-[11px] text-gray-500">{item.name_hindi}</div>}
-                    {item.brand && <div className="text-[11px] text-amber-600 font-medium">{item.brand}{item.pack_size_qty ? ' · ' + item.pack_size_qty + ' ' + (item.pack_size_unit || '') : ''}</div>}
-                    <div className="text-[11px] text-gray-400 font-mono">{item.inventory_id || '—'}</div>
-                  </td>
-                  <td className="px-3 py-2">
-                    <div className="text-gray-600">{item.categories?.name || '—'}</div>
-                    {item.sub_categories?.name && (
-                      <div className="text-[11px] text-gray-400">{item.sub_categories.name}</div>
-                    )}
-                    {item.description && (
-                      <div className="text-[11px] text-gray-400 truncate max-w-[150px]" title={item.description}>{item.description}</div>
-                    )}
-                  </td>
-                  <td className="px-3 py-2">
-                    {(function () {
-                      var sdId = item.categories?.sub_department_id
-                      if (!sdId) return <span className="text-gray-400">—</span>
-                      var sd = subDepartments.find(function (x) { return x.id === sdId })
-                      var d = sd ? departments.find(function (x) { return x.id === sd.department_id }) : null
-                      return (
-                        <div>
-                          <div className="text-gray-600 text-[12px]">{d?.name || '—'}</div>
-                          {sd && <div className="text-[11px] text-gray-400">{sd.name}</div>}
-                        </div>
-                      )
-                    })()}
-                  </td>
-                  <td className="px-3 py-2 text-right whitespace-nowrap">
-                    <div className="font-medium text-gray-900">{item.qty} <span className="text-[11px] font-normal text-gray-400">{item.unit || ''}</span></div>
-                    {item.rate_paise && canViewCosts ? <div className="text-[11px] text-gray-400">₹{(item.rate_paise / 100).toFixed(item.rate_paise % 100 ? 2 : 0)}</div> : null}
-                  </td>
-                  
-                  <td className="px-3 py-2">
-                    <div className="text-gray-700 text-[12px] font-medium">{item.department || '—'}</div>
-                    {(function () {
-                      var allocs = item.venue_allocations || []
-                      var sdIds = []
-                      allocs.forEach(function (va) { if (va.sub_department_id && sdIds.indexOf(va.sub_department_id) === -1) sdIds.push(va.sub_department_id) })
-                      if (sdIds.length === 0) return null
-                      var names = sdIds.map(function (id) { var sd = subDepartments.find(function (x) { return x.id === id }); return sd?.name }).filter(Boolean)
-                      if (names.length === 0) return null
-                      return <div className="text-[11px] text-gray-400">{names.join(', ')}</div>
-                    })()}
-                    {venueAllocs.length > 0 && (
-                      <div className="flex flex-wrap gap-1 mt-1">
-                        {venueAllocs.map(function (va, vi) {
-                          var svName = va.sub_venue_id ? (subVenues.find(function (sv) { return sv.id === va.sub_venue_id }) || {}).name : null
-                          return (
-                            <span key={(va.venues?.code || '') + '-' + vi} className="text-[11px] bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded font-medium">
-                              {va.venues?.code}{svName ? ':' + svName : ''}: {va.qty}
-                            </span>
-                          )
-                        })}
-                      </div>
-                    )}
-                  </td>
-                  <td className="px-3 py-2">
-                    <div className="text-gray-700 text-[12px] font-medium">{item.profiles?.name || '—'}</div>
-                    <div className="text-[11px] text-gray-400 whitespace-nowrap">{formatDate(item.entry_date || item.created_at)}</div>
-                    {item.profiles?.email && <div className="text-[10px] text-gray-400 truncate max-w-[140px]">{item.profiles.email}</div>}
-                  </td>
-                  <td className="px-3 py-2">
-                    <span className={"text-[11px] font-bold uppercase px-2 py-0.5 rounded-full " + (statusColors[item.status] || 'bg-gray-100 text-gray-600')}>
-                      {item.status}
-                    </span>
-                  </td>
-                  <td className="px-2 py-2 whitespace-nowrap" style={{ width: 150 }}>
-                    <div className="flex gap-1 justify-end">
-                      <button
-                        onClick={function () { setEditItem(item) }}
-                        className="px-2 py-1 text-[11px] font-semibold border border-gray-300 rounded text-gray-600 hover:border-gray-900 hover:text-gray-900 transition-colors"
-                      >Edit</button>
-                      {item._source !== 'catering_store' && (
-                        <button
-                          onClick={function () { openHolds(item) }}
-                          className="px-2.5 py-1 text-[11px] font-semibold border border-orange-200 rounded text-orange-500 hover:bg-orange-50 transition-colors"
-                        >🔧</button>
-                      )}
-                      {deleteConfirm === item.id ? (
-                        <>
-                          <button onClick={function () { deleteItem(item) }}
-                            className="px-2.5 py-1 text-[11px] font-bold bg-red-600 text-white rounded hover:bg-red-700 transition-colors">Yes</button>
-                          <button onClick={function () { setDeleteConfirm(null) }}
-                            className="px-2.5 py-1 text-[11px] font-semibold border border-gray-300 rounded text-gray-600 hover:bg-gray-50 transition-colors">No</button>
-                        </>
-                      ) : (
-                        <button onClick={function () { setDeleteConfirm(item.id) }}
-                          className="px-2.5 py-1 text-[11px] font-semibold border border-red-200 rounded text-red-500 hover:bg-red-50 transition-colors">Delete</button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              )
-            })}
-            {filtered.length === 0 && (
-              <tr>
-                <td colSpan="9" className="px-4 py-8 text-center text-gray-400">No items found</td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-      {/* Pagination */}
-      {(function () {
-        var totalPages = Math.ceil(filtered.length / perPage)
-        if (totalPages <= 1) return null
+      {/* The finer filters, in three groups — Category, Location, Details —
+          side by side, every field the same height. */}
+      {moreFiltersOpen && (function () {
+        var cats = categories.filter(function (c) {
+          if (subDeptFilter.length > 0) return subDeptFilter.indexOf(String(c.sub_department_id)) !== -1
+          return true
+        }).map(function (c) { return { label: c.name, value: String(c.id) } })
+        var subCats = subCategoriesAll.filter(function (sc) { return catFilter.indexOf(String(sc.category_id)) !== -1 })
+          .map(function (sc) { return { label: sc.name, value: String(sc.id) } })
+        var vIds = venues.filter(function (v2) { return venueFilter.indexOf(v2.code) !== -1 }).map(function (v2) { return v2.id })
+        var subVens = subVenues.filter(function (sv) { return vIds.indexOf(sv.venue_id) !== -1 })
+          .map(function (sv) { return { label: sv.name, value: String(sv.id) } })
+        // Every option set up in Masters for the field (a category's
+        // dimension fields, e.g. its Materials dropdown), plus any value an
+        // item carries that is not in those lists — once each whatever its
+        // case, A to Z, with how many items have it where any do. With
+        // categories picked, only their options; otherwise every category's.
+        function valuesOf(re) {
+          var count = {}, label = {}
+          var scopeCats = catFilter.length > 0
+            ? categories.filter(function (c) { return catFilter.indexOf(String(c.id)) !== -1 })
+            : categories
+          scopeCats.forEach(function (c) {
+            ;(Array.isArray(c.dimension_fields) ? c.dimension_fields : []).forEach(function (f) {
+              if (!f || !f.name || !re.test(f.name)) return
+              ;(f.options || []).forEach(function (o) {
+                var v = String(o || '').trim(); if (!v) return
+                var k = v.toLowerCase()
+                if (!(k in count)) count[k] = 0
+                if (!label[k]) label[k] = v
+              })
+            })
+          })
+          items.forEach(function (it) {
+            var m = dimValueOf(it, re); if (!m) return
+            var k = m.toLowerCase()
+            count[k] = (count[k] || 0) + 1
+            if (!label[k]) label[k] = titleCase(m)
+          })
+          return Object.keys(count).sort(function (a, b) { return label[a].localeCompare(label[b], 'en', { sensitivity: 'base', numeric: true }) })
+            .map(function (k) { return { label: label[k] + (count[k] > 0 ? ' (' + count[k] + ')' : ''), value: k } })
+        }
+        var mats = valuesOf(MATERIAL_RE)
+        var zones = valuesOf(MENU_ZONE_RE)
+        var anyFilter = !!(search || statusFilter.length > 0 || subDeptFilter.length > 0 || catFilter.length > 0 || subCatFilter.length > 0 || venueFilter.length > 0 || subVenueFilter.length > 0 || materialFilter.length > 0 || menuZoneFilter.length > 0)
+        function disabledBox(text) {
+          return (
+            <div className="h-11 flex items-center gap-2 px-3.5 rounded-xl border border-dashed border-slate-300 bg-slate-100 text-[13px] font-medium text-slate-500 select-none">
+              <Icon name="lock" size={13} className="shrink-0 text-slate-400" />
+              {text}
+            </div>
+          )
+        }
+        var FL = "block text-[12.5px] font-bold text-slate-800 mb-1.5"
+        // One group: an icon and a name over its fields, stacked.
+        function group(icon, title, body) {
+          return (
+            <div className="rounded-2xl bg-slate-50 border border-slate-200 p-3.5 shadow-[0_1px_3px_rgba(15,23,42,0.05)]">
+              <p className="flex items-center gap-2 mb-3 pb-2.5 border-b border-slate-200 text-[12.5px] font-extrabold uppercase tracking-[0.08em] text-slate-900">
+                <span className="w-7 h-7 rounded-lg bg-[#3B4668] text-white inline-flex items-center justify-center shadow-[0_2px_6px_-2px_rgba(59,70,104,0.6)]"><Icon name={icon} size={14} /></span>
+                {title}
+              </p>
+              <div className="space-y-3">{body}</div>
+            </div>
+          )
+        }
         return (
-          <div className="flex items-center justify-center gap-2 pt-2">
-            <button onClick={function () { setPage(1) }} disabled={page === 1}
-              className="px-2.5 py-1.5 text-xs border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed">«</button>
-            <button onClick={function () { setPage(page - 1) }} disabled={page === 1}
-              className="px-2.5 py-1.5 text-xs border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed">‹</button>
-            {Array.from({ length: totalPages }, function (_, i) { return i + 1 }).filter(function (p) {
-              return p === 1 || p === totalPages || (p >= page - 2 && p <= page + 2)
-            }).map(function (p, i, arr) {
-              var showGap = i > 0 && p - arr[i - 1] > 1
-              return (
-                <span key={p}>
-                  {showGap && <span className="px-1 text-gray-300">…</span>}
-                  <button onClick={function () { setPage(p) }}
-                    className={"px-3 py-1.5 text-xs rounded font-medium transition-colors " +
-                      (p === page ? "bg-indigo-600 text-white" : "border border-gray-300 hover:bg-gray-50")}>{p}</button>
-                </span>
-              )
-            })}
-            <button onClick={function () { setPage(page + 1) }} disabled={page === totalPages}
-              className="px-2.5 py-1.5 text-xs border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed">›</button>
-            <button onClick={function () { setPage(totalPages) }} disabled={page === totalPages}
-              className="px-2.5 py-1.5 text-xs border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed">»</button>
-            <span className="text-xs text-gray-400 ml-2">Page {page} of {totalPages}</span>
+          <div className="relative z-20 p-4 rounded-[20px] bg-white/90 backdrop-blur-md border border-white shadow-[0_10px_30px_-12px_rgba(30,35,60,0.3)]">
+            <div className="flex items-center justify-between gap-3 mb-3.5">
+              <p className="text-[16px] font-extrabold text-slate-900">Filter items</p>
+              <button type="button" onClick={resetFilters} disabled={!anyFilter}
+                className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-[13px] font-semibold text-red-600 hover:bg-red-50 disabled:text-slate-500 disabled:hover:bg-transparent disabled:cursor-default transition-colors">
+                <Icon name="refresh" size={13} />Reset all
+              </button>
+            </div>
+            {/* What it is, where it is, what it is made of — each a group of
+                its own. A child field waits, greyed, until its parent has a
+                pick. */}
+            <div className="grid gap-3 md:grid-cols-3">
+              {group('tag', 'Category', (
+                <>
+                  <div>
+                    <label className={FL}>Category</label>
+                    <FilterDropdown value={catFilter} placeholder="All Categories" multi
+                      onChange={function (v) { setCatFilter(v); setSubCatFilter([]); setPage(1) }} options={cats} />
+                  </div>
+                  <div>
+                    <label className={FL}>Sub-category</label>
+                    {catFilter.length > 0
+                      ? <FilterDropdown value={subCatFilter} placeholder="All Sub-categories" multi
+                          onChange={function (v) { setSubCatFilter(v); setPage(1) }} options={subCats} />
+                      : disabledBox('Pick a category first')}
+                  </div>
+                </>
+              ))}
+              {group('mapPin', 'Location', (
+                <>
+                  <div>
+                    <label className={FL}>Venue</label>
+                    <FilterDropdown value={venueFilter} placeholder="All Venues" multi
+                      onChange={function (v) { setVenueFilter(v); setSubVenueFilter([]); setPage(1) }}
+                      options={venues.map(function (v) { return { label: v.code + ' — ' + v.name, value: v.code } })} />
+                  </div>
+                  <div>
+                    <label className={FL}>Sub-venue</label>
+                    {venueFilter.length > 0
+                      ? <FilterDropdown value={subVenueFilter} placeholder="All Sub-venues" multi
+                          onChange={function (v) { setSubVenueFilter(v); setPage(1) }} options={subVens} />
+                      : disabledBox('Pick a venue first')}
+                  </div>
+                </>
+              ))}
+              {group('box', 'Details', (
+                <>
+                  <div>
+                    <label className={FL}>Material</label>
+                    {mats.length > 0
+                      ? <FilterDropdown value={materialFilter} placeholder="All Materials" multi
+                          onChange={function (v) { setMaterialFilter(v); setPage(1) }} options={mats} />
+                      : disabledBox('No materials recorded')}
+                  </div>
+                  <div>
+                    <label className={FL}>Menu zone</label>
+                    {zones.length > 0
+                      ? <FilterDropdown value={menuZoneFilter} placeholder="All Menu zones" multi
+                          onChange={function (v) { setMenuZoneFilter(v); setPage(1) }} options={zones} />
+                      : disabledBox('No menu zones recorded')}
+                  </div>
+                </>
+              ))}
+            </div>
           </div>
         )
       })()}
+
+      {/* The count and Reset on the left, page size and order on the right.
+          The Reset test is boolean: written as length || length, an empty
+          set evaluated to 0 and React printed the 0 beside the count. */}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-3">
+          <p className="text-[14px] text-slate-600">
+            <span className="font-bold text-slate-900 tabular-nums">{filtered.length}</span> Item{filtered.length !== 1 ? 's' : ''}
+          </p>
+          {/* Only while the Filters panel is shut: open, it carries its own
+              Reset all, and two buttons doing one thing sat a line apart. */}
+          {!moreFiltersOpen && (search || statusFilter.length > 0 || subDeptFilter.length > 0 || catFilter.length > 0 || subCatFilter.length > 0 || venueFilter.length > 0 || subVenueFilter.length > 0 || materialFilter.length > 0 || menuZoneFilter.length > 0) && (
+            <button type="button" onClick={resetFilters}
+              className="inline-flex items-center gap-1.5 h-8 pl-2.5 pr-3 rounded-full bg-white border border-slate-200 text-[12.5px] font-semibold text-slate-700 shadow-[0_2px_6px_-2px_rgba(30,35,60,0.18)] hover:border-red-200 hover:bg-red-50 hover:text-red-600 transition-colors">
+              <Icon name="refresh" size={13} />Clear filters
+            </button>
+          )}
+        </div>
+          <div className="flex items-center gap-2">
+            <label className="relative inline-flex items-center gap-1.5 h-9 pl-3 pr-2.5 rounded-xl bg-white border border-slate-200 shadow-[0_2px_8px_-2px_rgba(30,35,60,0.18)] text-[13px] text-slate-500 cursor-pointer hover:border-indigo-300 hover:text-slate-700 transition-colors">
+              <Icon name="list" size={14} className="text-indigo-500" />
+            <span>Show</span>
+              <span className="font-bold text-slate-900">{perPage} / page</span>
+              <Icon name="chevronDown" size={14} className="text-slate-500" />
+              <select value={perPage} aria-label="Items per page"
+                onChange={function (e) { setPerPage(Number(e.target.value)); setPage(1) }}
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer">
+                <option value={24}>24 / page</option>
+                <option value={48}>48 / page</option>
+                <option value={96}>96 / page</option>
+                <option value={240}>240 / page</option>
+              </select>
+            </label>
+            <label className="relative inline-flex items-center gap-1.5 h-9 pl-3 pr-2.5 rounded-xl bg-white border border-slate-200 shadow-[0_2px_8px_-2px_rgba(30,35,60,0.18)] text-[13px] text-slate-500 cursor-pointer hover:border-indigo-300 hover:text-slate-700 transition-colors">
+              <Icon name="filter" size={14} className="text-indigo-500" />
+            <span>Sort</span>
+              <span className="font-bold text-slate-900">
+                {({ '': 'Newest added', 'name:asc': 'Name A–Z', 'name:desc': 'Name Z–A', 'category:asc': 'Category', 'date:desc': 'Submitted, newest', 'date:asc': 'Submitted, oldest' })[sortKey ? sortKey + ':' + sortDir : ''] || 'Newest added'}
+              </span>
+              <Icon name="chevronDown" size={14} className="text-slate-500" />
+              <select value={sortKey ? sortKey + ':' + sortDir : ''} aria-label="Sort items"
+                onChange={function (e) {
+                  var v = e.target.value
+                  if (!v) { setSortKey(null); setSortDir('asc') }
+                  else { var parts = v.split(':'); setSortKey(parts[0]); setSortDir(parts[1]) }
+                  setPage(1)
+                }}
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer">
+                <option value="">Newest added</option>
+                <option value="name:asc">Name A–Z</option>
+                <option value="name:desc">Name Z–A</option>
+                <option value="category:asc">Category</option>
+                <option value="date:desc">Submitted, newest</option>
+                <option value="date:asc">Submitted, oldest</option>
+              </select>
+            </label>
+          </div>
+      </div>
+
+      {/* Three cards to a row, a wide photograph across the top of each
+          fitted whole (object-contain — covering cropped the item's edges). */}
+      {filtered.length === 0 ? (
+        <div className="bg-white border border-gray-200 rounded-xl px-4 py-12 text-center text-gray-400">No items found</div>
+      ) : (
+        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+          {sorted.slice((page - 1) * perPage, page * perPage).map(function (item) {
+            var imgUrl = getImageUrl(item.image_path)
+            return (
+              <div key={(item._source || 'i') + ':' + item.id}
+                className="group flex flex-col bg-white border border-slate-200/80 rounded-2xl overflow-hidden shadow-[0_1px_3px_rgba(15,23,42,0.06)] will-change-[translate] transition-[translate,box-shadow] duration-[400ms] ease-[cubic-bezier(0.22,1,0.36,1)] hover:-translate-y-1.5 hover:shadow-[0_14px_30px_-10px_rgba(15,23,42,0.22)] motion-reduce:transition-none motion-reduce:hover:translate-y-0">
+                {/* The photograph as a framed print: whole (nothing of the item
+                    cropped), rounded, lifted by a shadow, centred on a plain
+                    white mat — no blurred copy of the photo at the sides. Sized to
+                    its own content (max-w/max-h, not w-full h-full), so the
+                    corners and shadow land on the picture itself rather than on
+                    an empty box — which is what left a hard strip before.
+
+                    The lift eases on translate, not transform: Tailwind 4's
+                    translate-y utilities set the CSS translate property, so a
+                    transition on transform never touched it and the card
+                    jumped up while only its shadow eased. */}
+                {imgUrl ? (
+                  // Hovering the photograph opens the whole of it, large, in a
+                  // panel beside the card (see hoverPreview). A click still
+                  // opens it full screen.
+                  <button type="button" onClick={function () { closePreview(true); setEnlargedImg(imgUrl) }} aria-label={'Enlarge photo of ' + item.name}
+                    onMouseEnter={function (e) { armPreview(e.currentTarget, imgUrl, item.name) }}
+                    onMouseMove={function (e) { if (!hoverPreview) armPreview(e.currentTarget, imgUrl, item.name) }}
+                    onMouseLeave={disarmPreview}
+                    className="relative flex items-center justify-center h-56 p-3.5 overflow-hidden bg-white border-b border-slate-100 cursor-zoom-in">
+                    <img src={imgUrl} alt="" loading="lazy"
+                      className="relative max-w-full max-h-full rounded-xl object-contain ring-1 ring-slate-200/70 shadow-[0_10px_24px_-10px_rgba(15,23,42,0.35)]" />
+                  </button>
+                ) : (
+                  <div className="h-56 bg-[#F6F1EA] flex items-center justify-center text-[#D8CBBB]">
+                    <Icon name="gallery" size={40} />
+                  </div>
+                )}
+
+                <div className="flex-1 flex flex-col gap-3 p-4">
+                  <div>
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="min-w-0 text-[18px] font-semibold text-slate-900 leading-snug">{item.name}</p>
+                      <span className="shrink-0 mt-1 px-1.5 py-0.5 rounded-md bg-slate-100 text-[12px] font-semibold text-slate-600 font-mono">{item.inventory_id || '—'}</span>
+                    </div>
+                    {item.name_hindi && <p className="text-[14px] font-normal text-slate-500">{item.name_hindi}</p>}
+                    <div className="mt-1.5 flex flex-wrap items-center gap-1 text-[13px] font-normal text-slate-500">
+                      <span className="inline-flex items-center gap-1">
+                        <Icon name="tag" size={12} className="text-slate-400" />{item.categories?.name || '—'}
+                      </span>
+                      {item.sub_categories?.name && (
+                        <>
+                          <Icon name="chevronRight" size={13} className="text-slate-400" />
+                          <span>{item.sub_categories.name}</span>
+                        </>
+                      )}
+                    </div>
+                    {item.brand && <p className="text-[13px] text-amber-600 font-semibold">{item.brand}{item.pack_size_qty ? ' · ' + item.pack_size_qty + ' ' + (item.pack_size_unit || '') : ''}</p>}
+                  </div>
+                  {detailsBox(item)}
+                  {(item.venue_allocations || []).length > 0 && (
+                    <div>
+                      <p className="mb-1.5 text-[11px] font-extrabold uppercase tracking-[0.08em] text-slate-500">Stored at</p>
+                      {allocChips(item)}
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex items-center justify-between gap-2 px-4 py-3 border-t border-slate-100 bg-slate-50/40">
+                  {submitterOf(item)}
+                  {actionsOf(item)}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+      {hoverPreview && (function () {
+        // Over the photo itself, centred on it and larger than it, so it
+        // pops out of its own card rather than landing on the next one. Kept
+        // inside the window on every side. pointer-events-none, so it never
+        // takes the hover from the photo underneath.
+        var SIZE = 440
+        var r = hoverPreview.rect
+        var vw = window.innerWidth, vh = window.innerHeight
+        var left = Math.min(Math.max(8, r.left + r.width / 2 - SIZE / 2), vw - SIZE - 8)
+        var top = Math.min(Math.max(8, r.top + r.height / 2 - SIZE / 2), vh - SIZE - 8)
+        // It grows out of the photo: the animation starts at the scale that
+        // makes the panel the photo's size and from the photo's centre, and
+        // shrinks back the same way on the way out.
+        var fromScale = Math.min(1, Math.max(0.35, Math.min(r.width, r.height) / SIZE))
+        var originX = (r.left + r.width / 2) - left
+        var originY = (r.top + r.height / 2) - top
+        return createPortal((
+          <div aria-hidden="true"
+            className={"pointer-events-none fixed z-[9990] rounded-2xl bg-white p-2 shadow-[0_24px_60px_-12px_rgba(15,23,42,0.35)] ring-1 ring-slate-200 " +
+              (hoverPreview.closing ? "ambria-pop-out" : "ambria-pop-in")}
+            style={{ left: left, top: top, width: SIZE, height: SIZE, '--pop-from': fromScale, transformOrigin: originX + 'px ' + originY + 'px' }}>
+            <img src={hoverPreview.url} alt="" className="w-full h-full object-contain rounded-xl bg-slate-50" />
+          </div>
+        ), document.body)
+      })()}
+      {/* Pagination, on one white bar. A new page starts from the top of
+          the list — the window is the scroller — rather than leaving you at
+          the bottom of cards you have not seen yet. Only the page buttons
+          scroll; a filter change resets the page without moving you. */}
+      {(function () {
+        var totalPages = Math.ceil(filtered.length / perPage)
+        if (totalPages <= 1) return null
+        function goPage(p) {
+          if (p < 1 || p > totalPages || p === page) return
+          setPage(p)
+          var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+          window.scrollTo({ top: 0, behavior: reduce ? 'auto' : 'smooth' })
+        }
+        var NAV = "w-9 h-9 inline-flex items-center justify-center rounded-xl text-slate-600 hover:bg-[#EDEFF5] hover:text-[#333D5E] disabled:opacity-30 disabled:pointer-events-none transition-colors"
+        return (
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-3">
+            <div className="inline-flex items-center gap-1 p-1.5 rounded-2xl bg-white/90 backdrop-blur-sm border border-white shadow-[0_6px_20px_-10px_rgba(40,30,25,0.3)]">
+              <button type="button" onClick={function () { goPage(1) }} disabled={page === 1} aria-label="First page" title="First page" className={NAV}>
+                <Icon name="chevronRight" size={15} className="rotate-180 -mr-2" /><Icon name="chevronRight" size={15} className="rotate-180" />
+              </button>
+              <button type="button" onClick={function () { goPage(page - 1) }} disabled={page === 1} aria-label="Previous page" title="Previous" className={NAV}>
+                <Icon name="chevronRight" size={16} className="rotate-180" />
+              </button>
+              {Array.from({ length: totalPages }, function (_, i) { return i + 1 }).filter(function (p) {
+                return p === 1 || p === totalPages || (p >= page - 2 && p <= page + 2)
+              }).map(function (p, i, arr) {
+                var showGap = i > 0 && p - arr[i - 1] > 1
+                return (
+                  <span key={p} className="inline-flex items-center gap-1">
+                    {showGap && <span aria-hidden="true" className="w-6 text-center text-slate-400">…</span>}
+                    <button type="button" onClick={function () { goPage(p) }} aria-current={p === page ? 'page' : undefined}
+                      className={"min-w-9 h-9 px-2 inline-flex items-center justify-center rounded-xl text-[14px] font-semibold tabular-nums transition-colors " +
+                        (p === page ? "bg-[#3B4668] text-white shadow-[0_4px_10px_-4px_rgba(59,70,104,0.6)]" : "text-slate-700 hover:bg-[#EDEFF5] hover:text-[#333D5E]")}>{p}</button>
+                  </span>
+                )
+              })}
+              <button type="button" onClick={function () { goPage(page + 1) }} disabled={page === totalPages} aria-label="Next page" title="Next" className={NAV}>
+                <Icon name="chevronRight" size={16} />
+              </button>
+              <button type="button" onClick={function () { goPage(totalPages) }} disabled={page === totalPages} aria-label="Last page" title="Last page" className={NAV}>
+                <Icon name="chevronRight" size={15} className="-mr-2" /><Icon name="chevronRight" size={15} />
+              </button>
+            </div>
+            <span className="text-[13px] font-medium text-slate-600">Page <b className="text-slate-900 tabular-nums">{page}</b> of <span className="tabular-nums">{totalPages}</span></span>
+          </div>
+        )
+      })()}
+      {/* Delete confirmation: what is about to go, and that it cannot be
+          undone, before anything is removed. */}
+      <Modal open={!!deleteConfirm} onClose={function () { if (!deleting) setDeleteConfirm(null) }} title="Delete item">
+        {deleteConfirm && (function () {
+          var it = deleteConfirm
+          var img = getImageUrl(it.image_path)
+          return (
+            <div className="space-y-5">
+              <div className="flex items-start gap-3.5">
+                <span className="shrink-0 w-11 h-11 rounded-full bg-red-50 text-red-600 inline-flex items-center justify-center ring-4 ring-red-50/60">
+                  <Icon name="alert" size={20} />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-[16px] font-bold text-slate-900">Delete this item?</p>
+                  <p className="mt-1 text-[13.5px] text-slate-600 leading-relaxed">
+                    It is removed for good, along with its photo and every venue allocation. This cannot be undone.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 border border-slate-200">
+                {img
+                  ? <img src={img} alt="" className="shrink-0 w-12 h-12 rounded-lg object-cover bg-white border border-slate-200" />
+                  : <span className="shrink-0 w-12 h-12 rounded-lg bg-white border border-slate-200 inline-flex items-center justify-center text-slate-300"><Icon name="gallery" size={18} /></span>}
+                <div className="min-w-0">
+                  <p className="text-[14.5px] font-bold text-slate-900 truncate">{it.name}</p>
+                  <p className="text-[12px] text-slate-500 font-mono">{it.inventory_id || '—'}</p>
+                </div>
+              </div>
+              <div className="flex justify-end gap-2.5">
+                <button type="button" onClick={function () { setDeleteConfirm(null) }} disabled={deleting}
+                  className="h-10 px-4 rounded-lg border border-slate-300 bg-white text-[13.5px] font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50 transition-colors">
+                  Cancel
+                </button>
+                <button type="button" onClick={function () { deleteItem(it) }} disabled={deleting}
+                  className="inline-flex items-center gap-2 h-10 px-4 rounded-lg bg-red-600 text-white text-[13.5px] font-bold shadow-[0_4px_14px_-4px_rgba(220,38,38,0.55)] hover:bg-red-700 disabled:opacity-60 transition-colors">
+                  <Icon name="trash" size={15} />{deleting ? 'Deleting…' : 'Delete'}
+                </button>
+              </div>
+            </div>
+          )
+        })()}
+      </Modal>
       {/* Edit modal */}
       <Modal open={!!editItem} onClose={function () { setEditItem(null) }} title="Edit Item" wide>
         {editItem && (
           <InventoryForm
             item={editItem}
             profile={profile}
+            variant="admin"
             onClose={function () { setEditItem(null) }}
             onSaved={function () { setEditItem(null); loadData() }}
           />
@@ -1115,80 +1693,168 @@ function AdminItems({ profile }) {
           </div>
         )}
       </Modal>
-      {/* Maintenance hold modal */}
-     <Modal open={!!holdItem} onClose={function () { setHoldItem(null) }} title={'Maintenance — ' + (holdItem?.name || '')}>
-       {holdItem && (
-         <div className="space-y-4">
-           {/* Add new hold */}
-           <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 space-y-2">
-             <h4 className="text-xs font-bold text-orange-700 uppercase tracking-wider">New Hold</h4>
-             <div className="grid grid-cols-2 gap-2">
-               <div>
-                 <label className="block text-[11px] text-gray-500 mb-0.5">From</label>
-                 <input type="date" value={holdForm.hold_from} onChange={function (e) { setHoldForm(function (p) { return Object.assign({}, p, { hold_from: e.target.value }) }) }}
-                   className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-orange-400" />
-               </div>
-               <div>
-                 <label className="block text-[11px] text-gray-500 mb-0.5">To</label>
-                 <input type="date" value={holdForm.hold_to} onChange={function (e) { setHoldForm(function (p) { return Object.assign({}, p, { hold_to: e.target.value }) }) }}
-                   className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-orange-400" />
-               </div>
-             </div>
-             <div className="grid grid-cols-3 gap-2">
-               <div>
-                 <label className="block text-[11px] text-gray-500 mb-0.5">Qty</label>
-                 <input type="number" min="1" value={holdForm.qty} onChange={function (e) { setHoldForm(function (p) { return Object.assign({}, p, { qty: e.target.value }) }) }}
-                   className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-orange-400" />
-               </div>
-               <div className="col-span-2">
-                 <label className="block text-[11px] text-gray-500 mb-0.5">Reason</label>
-                 <input type="text" value={holdForm.reason} onChange={function (e) { setHoldForm(function (p) { return Object.assign({}, p, { reason: e.target.value }) }) }}
-                   placeholder="e.g. Repair, painting..." maxLength="200"
-                   className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-orange-400" />
-               </div>
-             </div>
-             <button onClick={addHold} disabled={holdSaving || !holdForm.hold_from || !holdForm.hold_to}
-               className="w-full py-2 text-sm font-semibold text-white bg-orange-500 rounded hover:bg-orange-600 disabled:opacity-50 transition-colors">
-               {holdSaving ? 'Saving...' : 'Add Hold'}</button>
-           </div>
-           {/* Existing holds */}
-           {holds.length > 0 ? (
-             <div className="space-y-2">
-               <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Active Holds</h4>
-               {holds.map(function (h) {
-                 return (
-                   <div key={h.id} className="flex items-center justify-between bg-white border border-gray-200 rounded-lg px-3 py-2">
-                     <div>
-                       <p className="text-sm font-medium text-gray-800">{h.qty}× — {h.reason || 'No reason'}</p>
-                       <p className="text-[11px] text-gray-400">
-                         {new Date(h.hold_from).toLocaleDateString('en-IN', {day:'numeric',month:'short'})} → {new Date(h.hold_to).toLocaleDateString('en-IN', {day:'numeric',month:'short',year:'numeric'})}
-                       </p>
-                     </div>
-                     <button onClick={function () { removeHold(h.id) }}
-                       className="px-2 py-1 text-[11px] font-bold text-red-600 bg-red-50 border border-red-200 rounded hover:bg-red-100 transition-colors">Remove</button>
-                   </div>
-                 )
-               })}
-             </div>
-           ) : (
-             <p className="text-sm text-gray-400 text-center py-2">No active holds</p>
-           )}
-         </div>
-       )}
-     </Modal>
+      {/* Maintenance hold modal.
+          What the item is and how much of it is free, then the form for a new
+          hold — the app's date picker for the range (not mm/dd/yyyy), a
+          stepper for how many, a reason picked or typed — then the holds on
+          it, each marked Active, Upcoming or Ended by today's date. */}
+      <Modal open={!!holdItem} onClose={function () { setHoldItem(null) }} title="Maintenance holds">
+        {holdItem && (function () {
+          var today = new Date(); today.setHours(0, 0, 0, 0)
+          function dayOf(d) { var x = new Date(String(d).slice(0, 10) + 'T00:00:00'); return x }
+          function fmt(d) { return dayOf(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) }
+          var stock = Number(holdItem.qty) || 0
+          var heldNow = holds.reduce(function (sum, h) {
+            return (dayOf(h.hold_from) <= today && dayOf(h.hold_to) >= today) ? sum + (Number(h.qty) || 0) : sum
+          }, 0)
+          var imgUrl = getImageUrl(holdItem.image_path)
+          var qtyNum = Number(holdForm.qty) || 0
+          var rangeBad = holdForm.hold_from && holdForm.hold_to && holdForm.hold_to < holdForm.hold_from
+          var canSave = !holdSaving && holdForm.hold_from && holdForm.hold_to && !rangeBad && qtyNum > 0
+          function setF(patch) { setHoldForm(function (p) { return Object.assign({}, p, patch) }) }
+          var REASONS = ['Repair', 'Painting', 'Polishing', 'Cleaning']
+          var LBL = "block text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500 mb-1.5"
+          return (
+            <div className="space-y-4">
+              {/* The item */}
+              <div className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 border border-slate-200">
+                {imgUrl
+                  ? <img src={imgUrl} alt="" className="shrink-0 w-14 h-14 rounded-lg object-cover bg-white border border-slate-200" />
+                  : <span className="shrink-0 w-14 h-14 rounded-lg bg-white border border-slate-200 inline-flex items-center justify-center text-slate-300"><Icon name="gallery" size={20} /></span>}
+                <div className="min-w-0 flex-1">
+                  <p className="text-[15px] font-bold text-slate-900 truncate">{holdItem.name}</p>
+                  <p className="text-[12px] text-slate-500 font-mono">{holdItem.inventory_id || '—'}</p>
+                </div>
+                <div className="shrink-0 text-right">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-slate-500">In stock</p>
+                  <p className="text-[15px] font-extrabold text-slate-900 tabular-nums">{stock} <span className="text-[12px] font-semibold text-slate-500">{holdItem.unit || ''}</span></p>
+                  {heldNow > 0 && <p className="text-[11.5px] font-semibold text-amber-700 tabular-nums">{heldNow} on hold today</p>}
+                </div>
+              </div>
+
+              {/* New hold */}
+              <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3.5 shadow-[0_4px_16px_-6px_rgba(30,35,60,0.14)]">
+                <p className="inline-flex items-center gap-2 text-[12px] font-extrabold uppercase tracking-[0.08em] text-indigo-700">
+                  <span className="w-6 h-6 rounded-md bg-indigo-50 text-indigo-600 inline-flex items-center justify-center"><Icon name="lock" size={13} /></span>
+                  New hold
+                </p>
+                <div>
+                  <label className={LBL}>Hold period</label>
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 min-w-0">
+                      <EventDatePicker value={holdForm.hold_from} onChange={function (v) { setF({ hold_from: v || '' }) }}
+                        collapsible includePast plain neutral placeholder="From" />
+                    </div>
+                    <Icon name="arrowRight" size={16} strokeWidth={2.6} className="shrink-0 text-slate-500" />
+                    <div className="flex-1 min-w-0">
+                      <EventDatePicker value={holdForm.hold_to} onChange={function (v) { setF({ hold_to: v || '' }) }}
+                        collapsible includePast plain neutral placeholder="To" />
+                    </div>
+                  </div>
+                  {rangeBad && <p className="mt-1.5 text-[12px] font-semibold text-red-600">The end date is before the start date.</p>}
+                </div>
+                <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-3">
+                  <div>
+                    <label className={LBL}>Quantity</label>
+                    <div className="inline-flex items-center h-[42px] rounded-lg border border-slate-300 bg-white overflow-hidden">
+                      <button type="button" aria-label="Fewer" onClick={function () { setF({ qty: Math.max(1, qtyNum - 1) }) }}
+                        className="w-10 h-full inline-flex items-center justify-center text-slate-600 hover:bg-slate-100 transition-colors"><Icon name="minus" size={14} /></button>
+                      <input type="number" min="1" value={holdForm.qty} onChange={function (e) { setF({ qty: e.target.value }) }}
+                        style={{ fontSize: '16px' }}
+                        className="w-14 h-full text-center font-bold text-slate-900 tabular-nums border-x border-slate-200 focus:outline-none" />
+                      <button type="button" aria-label="More" onClick={function () { setF({ qty: qtyNum + 1 }) }}
+                        className="w-10 h-full inline-flex items-center justify-center text-slate-600 hover:bg-slate-100 transition-colors"><Icon name="plus" size={14} /></button>
+                    </div>
+                  </div>
+                  <div className="min-w-0">
+                    <label className={LBL}>Reason</label>
+                    <input type="text" value={holdForm.reason} onChange={function (e) { setF({ reason: e.target.value }) }}
+                      placeholder="e.g. Repair, painting..." maxLength="200"
+                      style={{ fontSize: '16px' }}
+                      className="w-full h-[42px] px-3 rounded-lg border border-slate-300 bg-white text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20" />
+                  </div>
+                </div>
+                {/* The common reasons, one tap each, across the full width in
+                    four equal parts — in the Reason column alone they wrapped
+                    and left one stranded on a second line. */}
+                <div className="grid grid-cols-4 gap-2">
+                  {REASONS.map(function (r) {
+                    var on = holdForm.reason.trim().toLowerCase() === r.toLowerCase()
+                    return (
+                      <button key={r} type="button" onClick={function () { setF({ reason: r }) }} aria-pressed={on}
+                        className={"h-9 rounded-lg border text-[13px] font-semibold transition-colors " +
+                          (on ? "bg-indigo-600 border-indigo-600 text-white" : "bg-white border-slate-200 text-slate-600 hover:border-indigo-300 hover:text-indigo-700")}>
+                        {r}
+                      </button>
+                    )
+                  })}
+                </div>
+                <button type="button" onClick={addHold} disabled={!canSave}
+                  className="w-full h-11 inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 text-white text-[14px] font-bold shadow-[0_4px_14px_-4px_rgba(79,70,229,0.55)] hover:bg-indigo-700 disabled:bg-slate-200 disabled:text-slate-400 disabled:shadow-none disabled:cursor-not-allowed transition-colors">
+                  <Icon name="lock" size={15} />{holdSaving ? 'Saving…' : 'Add hold'}
+                </button>
+              </div>
+
+              {/* Holds on this item */}
+              <div>
+                <p className="mb-2 text-[12px] font-extrabold uppercase tracking-[0.08em] text-slate-500">
+                  Holds{holds.length > 0 ? ' · ' + holds.length : ''}
+                </p>
+                {holds.length === 0 ? (
+                  <div className="flex flex-col items-center gap-1.5 py-6 rounded-xl border border-dashed border-slate-300 text-center">
+                    <Icon name="checkCircle" size={22} className="text-emerald-500" />
+                    <p className="text-[13.5px] font-semibold text-slate-700">No holds on this item</p>
+                    <p className="text-[12px] text-slate-500">All of its stock is free to use.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {holds.map(function (h) {
+                      var from = dayOf(h.hold_from), to = dayOf(h.hold_to)
+                      var status = to < today ? 'Ended' : (from > today ? 'Upcoming' : 'Active')
+                      var days = Math.round((to - from) / 86400000) + 1
+                      var tone = status === 'Active' ? 'bg-amber-100 text-amber-800' : status === 'Upcoming' ? 'bg-sky-100 text-sky-800' : 'bg-slate-100 text-slate-500'
+                      return (
+                        <div key={h.id} className={"flex items-center gap-3 p-3 rounded-xl border bg-white " + (status === 'Ended' ? "border-slate-200 opacity-70" : "border-slate-200")}>
+                          <span className="shrink-0 w-11 h-11 rounded-lg bg-amber-50 border border-amber-200 inline-flex flex-col items-center justify-center leading-none">
+                            <span className="text-[15px] font-extrabold text-amber-800 tabular-nums">{h.qty}</span>
+                            <span className="text-[9.5px] font-bold uppercase text-amber-600">qty</span>
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              <p className="text-[14px] font-bold text-slate-900 truncate">{h.reason || 'No reason given'}</p>
+                              <span className={"shrink-0 px-1.5 py-0.5 rounded text-[10.5px] font-bold uppercase " + tone}>{status}</span>
+                            </div>
+                            <p className="text-[12.5px] text-slate-500">
+                              {fmt(h.hold_from)} <span className="text-slate-400">→</span> {fmt(h.hold_to)} <span className="text-slate-400">·</span> {days} day{days !== 1 ? 's' : ''}
+                            </p>
+                          </div>
+                          <button type="button" onClick={function () { removeHold(h.id) }}
+                            className="shrink-0 inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-slate-200 bg-white text-[12.5px] font-semibold text-slate-700 hover:border-red-300 hover:text-red-600 hover:bg-red-50 transition-colors">
+                            <Icon name="undo" size={13} />Release
+                          </button>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          )
+        })()}
+      </Modal>
      {/* Tools modal — groups Export/Import/Bulk Images/Template behind one button */}
       <Modal open={toolsModal} onClose={function () { setToolsModal(false) }} title="Inventory Tools">
         <div className="space-y-2">
           <button onClick={function () { setToolsModal(false); setExportModal(true) }}
             className="w-full flex items-center gap-3 p-3 text-left border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
-            <span className="text-xl">📥</span>
+            <span className="shrink-0 w-9 h-9 rounded-lg bg-slate-100 text-slate-600 inline-flex items-center justify-center"><Icon name="download" size={18} /></span>
             <span>
               <span className="block text-sm font-semibold text-gray-800">Export</span>
               <span className="block text-xs text-gray-500">Download the current filtered list as CSV or PDF</span>
             </span>
           </button>
           <label className="w-full flex items-center gap-3 p-3 text-left border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer">
-            <span className="text-xl">📤</span>
+            <span className="shrink-0 w-9 h-9 rounded-lg bg-slate-100 text-slate-600 inline-flex items-center justify-center"><Icon name="download" size={18} className="rotate-180" /></span>
             <span>
               <span className="block text-sm font-semibold text-gray-800">Import</span>
               <span className="block text-xs text-gray-500">Upload a CSV to bulk add/update items</span>
@@ -1197,7 +1863,7 @@ function AdminItems({ profile }) {
               onChange={function (e) { setToolsModal(false); parseImportFile(e) }} />
           </label>
           <label className="w-full flex items-center gap-3 p-3 text-left border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer">
-            <span className="text-xl">🖼️</span>
+            <span className="shrink-0 w-9 h-9 rounded-lg bg-slate-100 text-slate-600 inline-flex items-center justify-center"><Icon name="gallery" size={18} /></span>
             <span>
               <span className="block text-sm font-semibold text-gray-800">Bulk Images</span>
               <span className="block text-xs text-gray-500">Upload a .zip of photos matched by inventory ID</span>
@@ -1207,7 +1873,7 @@ function AdminItems({ profile }) {
           </label>
           <button onClick={function () { downloadTemplate(); setToolsModal(false) }}
             className="w-full flex items-center gap-3 p-3 text-left border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
-            <span className="text-xl">📋</span>
+            <span className="shrink-0 w-9 h-9 rounded-lg bg-slate-100 text-slate-600 inline-flex items-center justify-center"><Icon name="fileText" size={18} /></span>
             <span>
               <span className="block text-sm font-semibold text-gray-800">Template</span>
               <span className="block text-xs text-gray-500">Download a blank CSV with the expected columns</span>
@@ -1222,11 +1888,11 @@ function AdminItems({ profile }) {
           <div className="flex gap-3">
             <button onClick={function () { exportItems(); setExportModal(false) }}
               className="flex-1 py-3 text-sm font-semibold border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
-              📊 Export CSV
+              <span className="inline-flex items-center justify-center gap-2"><Icon name="chart" size={16} />Export CSV</span>
             </button>
             <button onClick={function () { exportPdf(); setExportModal(false) }}
               className="flex-1 py-3 text-sm font-semibold border border-indigo-300 bg-indigo-50 text-indigo-700 rounded-lg hover:bg-indigo-100 transition-colors">
-              📄 Export PDF
+              <span className="inline-flex items-center justify-center gap-2"><Icon name="fileText" size={16} />Export PDF</span>
             </button>
           </div>
           <p className="text-[11px] text-gray-400">CSV includes all columns. PDF excludes By, Date, Status for compact layout.</p>
@@ -1252,11 +1918,11 @@ function AdminItems({ profile }) {
               <div className="flex gap-0 bg-white border border-gray-300 rounded-lg overflow-hidden">
                 <button type="button" onClick={function () { setImportMode('add') }}
                   className={"flex-1 py-3 text-sm font-medium transition-colors " + (importMode === 'add' ? "bg-green-600 text-white" : "text-gray-500 hover:bg-gray-50")}>
-                  ➕ Add Items
+                  <span className="inline-flex items-center justify-center gap-1.5"><Icon name="plus" size={15} />Add Items</span>
                 </button>
                 <button type="button" onClick={function () { setImportMode('update') }}
                   className={"flex-1 py-3 text-sm font-medium transition-colors " + (importMode === 'update' ? "bg-blue-600 text-white" : "text-gray-500 hover:bg-gray-50")}>
-                  ✏️ Update Info
+                  <span className="inline-flex items-center justify-center gap-1.5"><Icon name="edit" size={15} />Update Info</span>
                 </button>
               </div>
               <p className="text-[11px] text-gray-400 mt-2">
@@ -1317,7 +1983,7 @@ function AdminItems({ profile }) {
                         var csv = '\uFEFF' + hdr.join(',') + '\n' + csvRows.join('\n')
                         var blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
                         var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'skipped_rows_' + new Date().toISOString().split('T')[0] + '.csv'; a.click()
-                      }} className="text-[10px] text-indigo-600 font-medium hover:underline">📥 Download CSV</button>
+                      }} className="inline-flex items-center gap-1 text-[10px] text-indigo-600 font-medium hover:underline"><Icon name="download" size={11} />Download CSV</button>
                     </div>
                     <table className="w-full text-[11px]">
                       <thead><tr className="text-left text-gray-500"><th className="pr-2 py-0.5">Row</th><th className="pr-2 py-0.5">ID</th><th className="pr-2 py-0.5">Name</th><th className="py-0.5">Reason</th></tr></thead>
