@@ -87,9 +87,18 @@ var GROUPS = [
   {
     key: 'events', label: 'Events', icon: 'calendar', items: [
       { key: 'events.list', label: 'Events', icon: 'calendar', tab: 'events' },
+      { key: 'events.extra_plate_collect', label: 'Extra Plates', icon: 'utensils', tab: 'extra_plates' },
+    ]
+  },
+  {
+    // Split out of the Events group so Quote Calc/Rate Card sit under a
+    // sales-specific tab rather than mixed in with day-of event operations.
+    // Sales Quick Send (broadcast.quicksend) belongs here too once it has a
+    // standalone screen of its own — deferred, still inline-only for now
+    // (see the broadcast group's comment below for why).
+    key: 'sales', label: 'Sales', icon: 'calculator', items: [
       { key: 'events.quote', label: 'Quote Calc', icon: 'calculator', tab: 'quote' },
       { key: 'events.ratecard', label: 'Rate Card', icon: 'tag', tab: 'ratecard' },
-      { key: 'events.extra_plate_collect', label: 'Extra Plates', icon: 'utensils', tab: 'extra_plates' },
     ]
   },
   {
