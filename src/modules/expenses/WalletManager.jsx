@@ -1831,8 +1831,10 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   function exportWalletCSV() {
     if (!walletTxns.length || !selectedWallet) return
     var userName = walletProfiles[selectedWallet.user_id]?.name || 'user'
-    var headers = ['Date', 'Type', 'Amount (pts)', 'Balance After (pts)', 'Description', 'Performed By']
+    var headers = ['Date', 'Type', 'Amount (pts)', 'Balance After (pts)', 'Description', 'Performed By', 'Deleted']
     var rows = getExportRows().map(function (t) {
+      var isExpRow = (t.reference_type === 'expense' || t.reference_type === 'expense_refund') && t.reference_id
+      var isDeletedExp = isExpRow && !!expenseRefs[t.reference_id] && !!expenseRefs[t.reference_id].deleted_at
       return [
         t.created_at ? t.created_at.split('T')[0] : '',
         t.type || '',
@@ -1840,6 +1842,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
         t.balance_after_paise ? (t.balance_after_paise / 100) : 0,
         (t.description || '').replace(/,/g, ';'),
         walletProfiles[t.performed_by]?.name || '—',
+        isDeletedExp ? 'Yes' : '',
       ].join(',')
     })
     var csv = '\uFEFF' + headers.join(',') + '\n' + rows.join('\n')
@@ -1915,6 +1918,10 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
         var stn = (e && e.expense_sub_types?.name) || ''
 
         var lines = [{ kind: 'header', text: tn ? (tn + (stn ? ' > ' + stn : '')) : (refLabel + (refNo ? ' #' + refNo : '')) }]
+        // The debit already happened and stays in this statement for audit even
+        // after the expense is deleted (see getExportRows/showDeletedTxns) —
+        // without this line it prints identically to a live expense.
+        if (e && e.deleted_at) lines.push({ kind: 'status', text: 'DELETED EXPENSE' })
         lines.push({ kind: 'desc', text: t.description || '—' })
 
         if (e) {
@@ -3655,6 +3662,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     var epcCancellable = isEpc && epcHit.epc.status !== 'cancelled' && (isAdmin || epcHit.epc.collected_by === profile.id)
     var collCancellable = t.reference_type === 'collection' && !isCancelled && (isAdmin || t.performed_by === profile.id)
     var isExpRow = (t.reference_type === 'expense' || t.reference_type === 'expense_refund') && t.reference_id
+    var isDeletedExp = isExpRow && !!expenseRefs[t.reference_id] && !!expenseRefs[t.reference_id].deleted_at
     var isPayRow = PAYMENT_REF_TYPES.indexOf(t.reference_type) !== -1
     var rowIsClickable = isExpRow || t.reference_type === 'collection' || isEpc || isPayRow
     function handleRowClick() {
@@ -3728,6 +3736,12 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
               )}
               {isCancelled && (
                 <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 bg-rose-100 text-rose-700 rounded">Cancelled</span>
+              )}
+              {/* The debit already happened and stays in the ledger for audit even
+                  after the expense itself is deleted (see the showDeletedTxns filter
+                  above) — without this it's indistinguishable from a live expense. */}
+              {isDeletedExp && (
+                <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 bg-slate-700 text-white rounded">Deleted</span>
               )}
               {(t.reference_type === 'expense' || t.reference_type === 'expense_refund') && t.reference_id && expenseRefs[t.reference_id] && expenseRefs[t.reference_id].status && (
                 <span className={"text-[10px] font-bold uppercase px-1.5 py-0.5 rounded " + (EXP_STATUS_COLORS[expenseRefs[t.reference_id].status] || 'bg-gray-100 text-gray-600')}>
