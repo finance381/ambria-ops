@@ -5,6 +5,7 @@ import { logActivity } from '../../lib/logger'
 import { formatPoints } from '../../lib/format'
 import { compressImage } from '../../lib/imageCompress'
 import VoiceInput from '../../components/ui/VoiceInput'
+import CameraCapture from '../../components/ui/CameraCapture'
 
 
 var REASON_PRESETS = [
@@ -41,6 +42,7 @@ function PaySalaryModal(props) {
   // Payment proof images
   var [payImages, setPayImages] = useState([])
   var [payImgBusy, setPayImgBusy] = useState(false)
+  var [cameraOpen, setCameraOpen] = useState(false)
 
   useEffect(function () {
     if (!profile || !profile.id) return
@@ -301,13 +303,19 @@ function PaySalaryModal(props) {
             Payment Proof <span className="text-red-500">*</span>
             <span className="text-[10px] font-normal text-gray-400 ml-1">(auto-compressed to &lt;100KB)</span>
           </label>
-          <label className={"flex items-center justify-center gap-2 py-2.5 px-3 border-2 border-dashed rounded-lg text-sm font-medium cursor-pointer transition-colors " + (saving || payImgBusy ? "border-gray-200 text-gray-400 cursor-not-allowed" : "border-indigo-300 text-indigo-700 hover:bg-indigo-50")}>
-            <input type="file" accept="image/*" capture="environment" multiple
-              disabled={saving || payImgBusy}
-              onChange={handleImgAdd}
-              className="hidden" />
-            {payImgBusy ? 'Compressing...' : ('📷 ' + (payImages.length === 0 ? 'Capture / choose images' : 'Add more'))}
-          </label>
+          <div className="flex gap-2">
+            <label className={"flex-1 flex items-center justify-center gap-2 py-2.5 px-3 border-2 border-dashed rounded-lg text-sm font-medium cursor-pointer transition-colors " + (saving || payImgBusy ? "border-gray-200 text-gray-400 cursor-not-allowed" : "border-indigo-300 text-indigo-700 hover:bg-indigo-50")}>
+              <input type="file" accept="image/*" multiple
+                disabled={saving || payImgBusy}
+                onChange={handleImgAdd}
+                className="hidden" />
+              {payImgBusy ? 'Compressing...' : ('🖼 ' + (payImages.length === 0 ? 'Choose images' : 'Add more'))}
+            </label>
+            <button type="button" onClick={function () { setCameraOpen(true) }} disabled={saving || payImgBusy}
+              className={"flex-1 flex items-center justify-center gap-2 py-2.5 px-3 border-2 border-dashed rounded-lg text-sm font-medium transition-colors " + (saving || payImgBusy ? "border-gray-200 text-gray-400 cursor-not-allowed" : "border-indigo-300 text-indigo-700 hover:bg-indigo-50")}>
+              📷 Camera
+            </button>
+          </div>
           {payImages.length > 0 && (
             <div className="grid grid-cols-3 gap-2 mt-2">
               {payImages.map(function (f, i) {
@@ -360,6 +368,13 @@ function PaySalaryModal(props) {
           </button>
         </div>
       </div>
+
+      {cameraOpen && (
+        <CameraCapture
+          onCapture={function (file) { setCameraOpen(false); handleImgAdd({ target: { files: [file], value: '' } }) }}
+          onClose={function () { setCameraOpen(false) }}
+        />
+      )}
     </div>
   ), document.body)
 }

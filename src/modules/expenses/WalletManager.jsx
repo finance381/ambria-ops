@@ -165,6 +165,7 @@ import CheckedStamp from '../../components/ui/CheckedStamp'
 import { hasPerm } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
 import { avatarTint } from '../../lib/avatarTint'
+import CameraCapture from '../../components/ui/CameraCapture'
 
 // Local (not UTC) y-m-d, same as the expense date picker — a straight
 // toISOString() would roll a late-night transfer back to the wrong day
@@ -405,6 +406,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   var [bulkDesc, setBulkDesc] = useState('')
   var [bulkSaving, setBulkSaving] = useState(false)
   var [issueImage, setIssueImage] = useState(null)
+  var [cameraFor, setCameraFor] = useState(null) // which photo slot the in-page camera is capturing for, or null
   var [receiveModal, setReceiveModal] = useState(null)
   var [receiveImage, setReceiveImage] = useState(null)
   var [receiveSaving, setReceiveSaving] = useState(false)
@@ -2166,13 +2168,12 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                 </button>
               </div>
             ) : (
-              <label className="flex flex-col items-center justify-center gap-1 w-full py-5 rounded-xl border-2 border-dashed border-slate-300 bg-white text-center cursor-pointer hover:border-indigo-400 hover:bg-indigo-50/40 transition-colors">
+              <button type="button" onClick={function () { setCameraFor('issue') }}
+                className="flex flex-col items-center justify-center gap-1 w-full py-5 rounded-xl border-2 border-dashed border-slate-300 bg-white text-center hover:border-indigo-400 hover:bg-indigo-50/40 transition-colors">
                 <span className="text-indigo-500"><Icon name="camera" size={20} /></span>
                 <span className="text-[13px] font-semibold text-indigo-600">Tap to attach photo</span>
                 <span className="text-[11px] text-slate-400">Proof of the cash handed over</span>
-                <input type="file" accept="image/*" capture="environment" className="sr-only"
-                  onChange={function (e) { if (e.target.files?.[0]) setIssueImage(e.target.files[0]); e.target.value = '' }} />
-              </label>
+              </button>
             )}
           </div>
 
@@ -2207,6 +2208,9 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             })()}
           </div>
         </div>
+        {cameraFor === 'issue' && (
+          <CameraCapture onCapture={function (file) { setIssueImage(file); setCameraFor(null) }} onClose={function () { setCameraFor(null) }} />
+        )}
       </BottomSheet>
     )
   }
@@ -2227,11 +2231,10 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                   className="text-xs text-red-500 font-bold hover:text-red-700">✕</button>
               </div>
             ) : (
-              <label className="block w-full py-3 text-center text-sm text-amber-700 border-2 border-dashed border-amber-300 rounded-lg cursor-pointer hover:bg-amber-50 transition-colors font-medium">
+              <button type="button" onClick={function () { setCameraFor('receive') }}
+                className="block w-full py-3 text-center text-sm text-amber-700 border-2 border-dashed border-amber-300 rounded-lg hover:bg-amber-50 transition-colors font-medium">
                 📷 Take photo of cash received
-                <input type="file" accept="image/*" capture="environment" className="sr-only"
-                  onChange={function (e) { if (e.target.files?.[0]) setReceiveImage(e.target.files[0]); e.target.value = '' }} />
-              </label>
+              </button>
             )}
           </div>
           <div className="flex gap-3 pt-2">
@@ -2243,6 +2246,9 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             </button>
           </div>
         </div>
+        {cameraFor === 'receive' && (
+          <CameraCapture onCapture={function (file) { setReceiveImage(file); setCameraFor(null) }} onClose={function () { setCameraFor(null) }} />
+        )}
       </BottomSheet>
     )
   }
@@ -2451,12 +2457,11 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                 </div>
               ) : (
                 <div className="grid grid-cols-2 gap-2">
-                  <label className="h-12 inline-flex items-center justify-center gap-2 text-[13px] font-bold text-slate-700 border border-slate-200 bg-white rounded-xl cursor-pointer hover:border-indigo-400 hover:text-indigo-600 transition-colors">
+                  <button type="button" onClick={function () { setCameraFor('collect') }}
+                    className="h-12 inline-flex items-center justify-center gap-2 text-[13px] font-bold text-slate-700 border border-slate-200 bg-white rounded-xl hover:border-indigo-400 hover:text-indigo-600 transition-colors">
                     <Icon name="camera" size={16} />
                     Camera
-                    <input type="file" accept="image/*" capture="environment" className="sr-only"
-                      onChange={function (e) { if (e.target.files?.[0]) setCollectImage(e.target.files[0]); e.target.value = '' }} />
-                  </label>
+                  </button>
                   <label className="h-12 inline-flex items-center justify-center gap-2 text-[13px] font-bold text-slate-700 border border-slate-200 bg-white rounded-xl cursor-pointer hover:border-indigo-400 hover:text-indigo-600 transition-colors">
                     <Icon name="gallery" size={16} />
                     Gallery
@@ -2491,6 +2496,9 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             </button>
           </div>
         </div>
+        {cameraFor === 'collect' && (
+          <CameraCapture onCapture={function (file) { setCollectImage(file); setCameraFor(null) }} onClose={function () { setCameraFor(null) }} />
+        )}
       </BottomSheet>
     )
   }
@@ -2675,12 +2683,11 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
               </button>
             ) : (
               <div className="grid grid-cols-2 gap-2">
-                <label className="h-12 inline-flex items-center justify-center gap-2 text-[13px] font-bold text-slate-700 border border-slate-200 bg-white rounded-xl cursor-pointer hover:border-indigo-400 hover:text-indigo-600 transition-colors">
+                <button type="button" onClick={function () { setCameraFor('transfer') }}
+                  className="h-12 inline-flex items-center justify-center gap-2 text-[13px] font-bold text-slate-700 border border-slate-200 bg-white rounded-xl hover:border-indigo-400 hover:text-indigo-600 transition-colors">
                   <Icon name="camera" size={16} />
                   Photo
-                  <input type="file" accept="image/*" capture="environment" className="sr-only"
-                    onChange={function (e) { if (e.target.files?.[0]) setTransferImage(e.target.files[0]); e.target.value = '' }} />
-                </label>
+                </button>
                 <button type="button" onClick={transferRec.start}
                   className="h-12 inline-flex items-center justify-center gap-2 text-[13px] font-bold text-slate-700 border border-slate-200 bg-white rounded-xl hover:border-indigo-400 hover:text-indigo-600 transition-colors">
                   <Icon name="mic" size={16} />
@@ -2718,6 +2725,9 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             })()}
           </div>
         </div>
+        {cameraFor === 'transfer' && (
+          <CameraCapture onCapture={function (file) { setTransferImage(file); setCameraFor(null) }} onClose={function () { setCameraFor(null) }} />
+        )}
       </BottomSheet>
     )
   }
@@ -2750,11 +2760,10 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
               </button>
             ) : (
               <div className="grid grid-cols-2 gap-2">
-                <label className="py-3 text-center text-sm text-amber-700 border-2 border-dashed border-amber-300 rounded-lg cursor-pointer hover:bg-amber-50 transition-colors font-medium">
+                <button type="button" onClick={function () { setCameraFor('transferConfirm') }}
+                  className="py-3 text-center text-sm text-amber-700 border-2 border-dashed border-amber-300 rounded-lg hover:bg-amber-50 transition-colors font-medium">
                   📷 Photo
-                  <input type="file" accept="image/*" capture="environment" className="sr-only"
-                    onChange={function (e) { if (e.target.files?.[0]) setTransferConfirmImage(e.target.files[0]); e.target.value = '' }} />
-                </label>
+                </button>
                 <button type="button" onClick={transferConfirmRec.start}
                   className="py-3 text-center text-sm text-amber-700 border-2 border-dashed border-amber-300 rounded-lg hover:bg-amber-50 transition-colors font-medium">
                   🎤 Voice note
@@ -2771,6 +2780,9 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             </button>
           </div>
         </div>
+        {cameraFor === 'transferConfirm' && (
+          <CameraCapture onCapture={function (file) { setTransferConfirmImage(file); setCameraFor(null) }} onClose={function () { setCameraFor(null) }} />
+        )}
       </BottomSheet>
     )
   }

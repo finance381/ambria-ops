@@ -16,6 +16,7 @@ import { filterUserCategories } from '../../lib/categories'
 import { pushBack, goBack as navBack } from '../../lib/backNav'
 import { hasPerm } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
+import CameraCapture from '../../components/ui/CameraCapture'
 
 function byName(a, b) { return (a.name || '').localeCompare(b.name || '') }
 
@@ -659,6 +660,7 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
   var [expAmount, setExpAmount] = useState(editReq?.expense_amount_paise ? String(editReq.expense_amount_paise / 100) : '')
   var [expDate, setExpDate] = useState(editReq?.expense_date || new Date().toISOString().slice(0, 10))
   var [expReceipt, setExpReceipt] = useState(null)
+  var [cameraOpen, setCameraOpen] = useState(false)
   var [expReceiptZoom, setExpReceiptZoom] = useState('')
   var [expSubTypeId, setExpSubTypeId] = useState(editReq?.expense_sub_type_id ? String(editReq.expense_sub_type_id) : '')
   var [expSubTypeFields, setExpSubTypeFields] = useState([])
@@ -1781,11 +1783,10 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
                   <input type="file" accept="image/*" className="hidden"
                     onChange={function (e) { var f = e.target.files?.[0]; if (f) { f._preview = URL.createObjectURL(f); setExpReceipt(f) } e.target.value = '' }} />
                 </label>
-                <label className="flex-1 py-2.5 text-center text-sm text-amber-700 border border-dashed border-amber-300 rounded-lg cursor-pointer hover:bg-amber-100 transition-colors">
+                <button type="button" onClick={function () { setCameraOpen(true) }}
+                  className="flex-1 py-2.5 text-center text-sm text-amber-700 border border-dashed border-amber-300 rounded-lg hover:bg-amber-100 transition-colors">
                   📷 Camera
-                  <input type="file" accept="image/*" capture="environment" className="hidden"
-                    onChange={function (e) { var f = e.target.files?.[0]; if (f) { f._preview = URL.createObjectURL(f); setExpReceipt(f) } e.target.value = '' }} />
-                </label>
+                </button>
               </div>
             )}
           </div>
@@ -2525,6 +2526,13 @@ function RequisitionDetail({ req, items, profile, isAdmin, isAuditor, isReqDeptA
           <img src={zoomImg} alt="Receipt" className="max-w-full max-h-full object-contain rounded-lg" />
         </div>
       ), document.body)}
+
+      {cameraOpen && (
+        <CameraCapture
+          onCapture={function (f) { f._preview = URL.createObjectURL(f); setExpReceipt(f); setCameraOpen(false) }}
+          onClose={function () { setCameraOpen(false) }}
+        />
+      )}
     </div>
   )
 }
