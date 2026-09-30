@@ -1813,11 +1813,26 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     loadAllWallets()
   }
 
+  // Same filter + merge the on-screen list applies (sortedTxns, further down)
+  // — without it, a deleted expense's debit that the admin has hidden via
+  // "Show deleted expenses" (or the cash/credit legs of a single expense that
+  // the screen nets into one row) would show up as extra/different rows in
+  // the export than what was actually on screen when Download was clicked.
+  function getExportRows() {
+    var visible = walletTxns.filter(function (t) {
+      if (showDeletedTxns) return true
+      var isExpRow = (t.reference_type === 'expense' || t.reference_type === 'expense_refund') && t.reference_id
+      var xp = isExpRow ? expenseRefs[t.reference_id] : null
+      return !(xp && xp.deleted_at)
+    })
+    return mergeExpenseWalletRows(visible)
+  }
+
   function exportWalletCSV() {
     if (!walletTxns.length || !selectedWallet) return
     var userName = walletProfiles[selectedWallet.user_id]?.name || 'user'
     var headers = ['Date', 'Type', 'Amount (pts)', 'Balance After (pts)', 'Description', 'Performed By']
-    var rows = walletTxns.map(function (t) {
+    var rows = getExportRows().map(function (t) {
       return [
         t.created_at ? t.created_at.split('T')[0] : '',
         t.type || '',
@@ -1847,20 +1862,33 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
       var pageW = doc.internal.pageSize.getWidth()
       var pageH = doc.internal.pageSize.getHeight()
 
-      // Chronological (oldest → newest) for bank-statement feel
-      var chrono = walletTxns.slice().sort(function (a, b) {
+      // Chronological (oldest → newest) for bank-statement feel. Opening/
+      // Closing/Total Credits/Total Debits are computed off the raw,
+      // unfiltered history (same as the on-screen stat tiles) — a hidden
+      // deleted expense's debit already happened and moved the real balance,
+      // so it has to stay in these totals even though it's left out of the
+      // row-by-row breakdown below.
+      var rawChrono = walletTxns.slice().sort(function (a, b) {
         return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
       })
 
       var totalCr = 0, totalDb = 0
-      chrono.forEach(function (t) {
+      rawChrono.forEach(function (t) {
         if (t.type === 'credit') totalCr += (t.amount_paise || 0)
         else totalDb += (t.amount_paise || 0)
       })
-      var oldest = chrono[0]
-      var newest = chrono[chrono.length - 1]
+      var oldest = rawChrono[0]
+      var newest = rawChrono[rawChrono.length - 1]
       var opening = oldest ? ((oldest.balance_after_paise || 0) - (oldest.type === 'credit' ? (oldest.amount_paise || 0) : -(oldest.amount_paise || 0))) : 0
       var closing = newest ? (newest.balance_after_paise || 0) : 0
+
+      // The row-by-row breakdown, on the other hand, mirrors exactly what's
+      // on screen: same "Show deleted expenses" filter, same same-expense
+      // cash/credit-leg merge — so what's printed here matches what the admin
+      // was looking at when they clicked Download, not a superset of it.
+      var chrono = getExportRows().sort(function (a, b) {
+        return new Date(a._sortAt || a.created_at).getTime() - new Date(b._sortAt || b.created_at).getTime()
+      })
 
       var userName = walletProfiles[selectedWallet.user_id]?.name || 'User'
       var userEmail = walletProfiles[selectedWallet.user_id]?.email || selectedWallet.email || ''
