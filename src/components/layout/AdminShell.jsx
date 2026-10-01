@@ -45,6 +45,14 @@ var Boxes = lazyTab(function () { return import('../../modules/boxes/Boxes') })
 var ProductionOrders = lazyTab(function () { return import('../../modules/production/ProductionOrders') })
 var Challans = lazyTab(function () { return import('../../modules/challans/Challans') })
 var Purchase = lazyTab(function () { return import('../../modules/purchase/Purchase') })
+// Shell.jsx (mobile) has its own "Receive Items" tile that renders the same
+// Purchase.jsx in mode="receive" — TabbedSection only ever passes the fixed
+// profile/onNavigate/inAdmin props to a sub-tab's component, so this exists
+// purely to pin that one extra prop. Desktop had no entry point into this at
+// all: the Inventory top-level tab already gated on inventory.receive (see
+// anyPerm below) but nothing was ever wired to it.
+function PurchaseReceive(props) { return <Purchase {...props} mode="receive" /> }
+PurchaseReceive.load = Purchase.load
 var Calendar = lazyTab(function () { return import('../../modules/calendar/Calendar') })
 var Vendors = lazyTab(function () { return import('../../modules/vendors/Vendors') })
 var Requisitions = lazyTab(function () { return import('../../modules/requisitions/Requisitions') })
@@ -141,6 +149,7 @@ var SUB_TAB_CONFIG = {
     { key: 'production', label: 'Production',     icon: 'wrench',   component: ProductionOrders, perm: 'inventory.production' },
     { key: 'boxes',      label: 'Boxes',          icon: 'tag',      component: Boxes,            perm: 'inventory.boxes' },
     { key: 'challans',   label: 'Challans',       icon: 'truck',    component: Challans,         perm: 'inventory.challans' },
+    { key: 'receive',    label: 'Receive Items',  icon: 'download', component: PurchaseReceive,  perm: 'inventory.receive' },
   ],
   masters: [
     { key: 'categories',         label: 'Categories',      icon: 'tag',        component: Categories,         perm: 'admin.masters' },
