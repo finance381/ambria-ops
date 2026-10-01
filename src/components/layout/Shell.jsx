@@ -286,6 +286,10 @@ function Shell({ profile, onSignOut }) {
       setActiveGroup('expenses'); setTab('wallet'); setSubTab(null)
     } else if (link && link.indexOf('expense:') === 0) {
       navigateToExpenses(link.slice('expense:'.length), null)
+    } else if (link === 'events') {
+      var fromGroup3 = activeGroup, fromTab3 = tab, fromSub3 = subTab
+      pushBack(function () { setActiveGroup(fromGroup3); setTab(fromTab3); setSubTab(fromSub3) })
+      setActiveGroup('events'); setTab('events'); setSubTab(null)
     }
   }
 

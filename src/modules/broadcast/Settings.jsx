@@ -18,6 +18,96 @@ var EDITABLE = [
 // than being guessed at.
 var QUALITY_TONE = { green: CHIP_GOOD, yellow: CHIP_WARN, red: CHIP_BAD }
 
+// A searchable checkbox list of profiles + its own Save/Discard, writing to
+// a dedicated subscribers table via `rpcName`. Used for both "who gets
+// pushed on a WhatsApp message" and "who gets pushed on a new LMS contract"
+// — same shape, different table/RPC, so this is the one place that shape
+// lives rather than two near-identical card bodies.
+function SubscriberCard({ icon, title, description, allProfiles, ids, setIds, baseline, setBaseline, rpcName }) {
+  var [search, setSearch] = useState('')
+  var [saving, setSaving] = useState(false)
+  var [notice, setNotice] = useState('')
+  var [error, setError] = useState('')
+
+  function toggle(id) {
+    setNotice(''); setError('')
+    setIds(function (prev) { return prev.indexOf(id) !== -1 ? prev.filter(function (x) { return x !== id }) : prev.concat([id]) })
+  }
+
+  async function save() {
+    if (saving) return
+    setSaving(true); setNotice(''); setError('')
+    var res = await supabase.rpc(rpcName, { p_user_ids: ids })
+    setSaving(false)
+    if (res.error) { setError(res.error.message); return }
+    setBaseline(ids)
+    setNotice('Saved.')
+  }
+
+  var dirty = ids.length !== baseline.length || ids.some(function (id) { return baseline.indexOf(id) === -1 })
+  var qLower = search.trim().toLowerCase()
+  var visible = qLower
+    ? allProfiles.filter(function (p) {
+        return (p.name || '').toLowerCase().indexOf(qLower) !== -1 || (p.email || '').toLowerCase().indexOf(qLower) !== -1
+      })
+    : allProfiles
+
+  return (
+    <div className={CARD + ' p-4 space-y-3'}>
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <p className="flex items-center gap-2 text-[14px] font-bold text-slate-900">
+            <span className="text-slate-900"><Icon name={icon} size={14} /></span>
+            {title}
+          </p>
+          <p className="text-[11.5px] text-slate-500 mt-0.5">{description}</p>
+        </div>
+        {dirty && <Chip tone={CHIP_WARN}>Unsaved</Chip>}
+      </div>
+
+      <input type="text" value={search} onChange={function (ev) { setSearch(ev.target.value) }}
+        placeholder="Search people…" className={CTRL} />
+
+      <div className="max-h-64 overflow-y-auto ambria-thin-scroll border border-slate-200 rounded-xl divide-y divide-slate-100">
+        {visible.length === 0 ? (
+          <p className="px-3 py-4 text-[12.5px] text-slate-400 text-center">No matches</p>
+        ) : visible.map(function (p) {
+          var on = ids.indexOf(p.id) !== -1
+          return (
+            <label key={p.id}
+              className={'flex items-center gap-2.5 px-3 py-2 text-[13px] cursor-pointer transition-colors ' + (on ? 'bg-indigo-50/60' : 'hover:bg-slate-50')}>
+              <input type="checkbox" checked={on} onChange={function () { toggle(p.id) }}
+                className="w-4 h-4 accent-indigo-600 shrink-0" />
+              <span className="min-w-0 flex-1">
+                <span className={'block font-semibold truncate ' + (on ? 'text-indigo-900' : 'text-slate-800')}>{p.name || '—'}</span>
+                {p.email && <span className="block text-[11px] text-slate-400 truncate">{p.email}</span>}
+              </span>
+            </label>
+          )
+        })}
+      </div>
+
+      {error && <Notice tone="error">{error}</Notice>}
+      {notice && <Notice tone="ok">{notice}</Notice>}
+
+      <div className="flex items-center gap-2 pt-1">
+        <button onClick={save} disabled={saving || !dirty}
+          title={dirty ? 'Save these subscribers' : 'Nothing has changed yet'}
+          className={BTN_PRIMARY}>
+          <Icon name="save" size={14} />
+          {saving ? 'Saving…' : 'Save Subscribers'}
+        </button>
+        {dirty && (
+          <button onClick={function () { setIds(baseline); setNotice(''); setError('') }}
+            disabled={saving} className={BTN_GHOST}>
+            Discard changes
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function StatTile({ label, value, children }) {
   return (
     <div className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2">
@@ -44,9 +134,12 @@ function Settings() {
   var [allProfiles, setAllProfiles] = useState([])
   var [subscriberIds, setSubscriberIds] = useState([])
   var [subscriberBaseline, setSubscriberBaseline] = useState([])
-  var [subscriberSearch, setSubscriberSearch] = useState('')
-  var [savingSubscribers, setSavingSubscribers] = useState(false)
-  var [subscriberNotice, setSubscriberNotice] = useState('')
+
+  // Who gets a push when sync-events pulls in a new LMS contract (any of the
+  // 4 departments). Same shape as the WA-inbox subscriber list above, own
+  // independent baseline/save.
+  var [syncSubscriberIds, setSyncSubscriberIds] = useState([])
+  var [syncSubscriberBaseline, setSyncSubscriberBaseline] = useState([])
 
   function load() {
     supabase.from('wa_settings').select('*').eq('id', 1).maybeSingle().then(function (res) {
@@ -60,26 +153,14 @@ function Settings() {
       setSubscriberIds(ids)
       setSubscriberBaseline(ids)
     })
-  }
-
-  useEffect(function () { load() }, [])
-
-  function toggleSubscriber(id) {
-    setSubscriberNotice('')
-    setSubscriberIds(function (prev) {
-      return prev.indexOf(id) !== -1 ? prev.filter(function (x) { return x !== id }) : prev.concat([id])
+    supabase.from('lms_sync_notification_subscribers').select('user_id').then(function (res) {
+      var ids = (res.data || []).map(function (r) { return r.user_id })
+      setSyncSubscriberIds(ids)
+      setSyncSubscriberBaseline(ids)
     })
   }
 
-  async function saveSubscribers() {
-    if (savingSubscribers) return
-    setSavingSubscribers(true); setError(''); setSubscriberNotice('')
-    var res = await supabase.rpc('rpc_set_wa_inbox_subscribers', { p_user_ids: subscriberIds })
-    setSavingSubscribers(false)
-    if (res.error) { setError(res.error.message); return }
-    setSubscriberBaseline(subscriberIds)
-    setSubscriberNotice('Saved.')
-  }
+  useEffect(function () { load() }, [])
 
   function patch(key, value) {
     setNotice('')
@@ -123,15 +204,6 @@ function Settings() {
 
   var dirty = !baseline || EDITABLE.some(function (k) { return String(settings[k]) !== String(baseline[k]) })
   var quality = (account && account.quality_rating ? String(account.quality_rating) : '').toLowerCase()
-
-  var subscriberDirty = subscriberIds.length !== subscriberBaseline.length ||
-    subscriberIds.some(function (id) { return subscriberBaseline.indexOf(id) === -1 })
-  var qLower = subscriberSearch.trim().toLowerCase()
-  var visibleProfiles = qLower
-    ? allProfiles.filter(function (p) {
-        return (p.name || '').toLowerCase().indexOf(qLower) !== -1 || (p.email || '').toLowerCase().indexOf(qLower) !== -1
-      })
-    : allProfiles
 
   return (
     <div className="max-w-2xl mx-auto space-y-3 pb-1">
@@ -251,60 +323,25 @@ function Settings() {
         </div>
       </div>
 
-      {/* ── who gets pushed when a new WhatsApp message arrives ── */}
-      <div className={CARD + ' p-4 space-y-3'}>
-        <div className="flex items-start justify-between gap-2">
-          <div>
-            <p className="flex items-center gap-2 text-[14px] font-bold text-slate-900">
-              <span className="text-slate-900"><Icon name="bell" size={14} /></span>
-              Inbox notifications
-            </p>
-            <p className="text-[11.5px] text-slate-500 mt-0.5">
-              These people get a push the moment someone messages the WhatsApp number — not gated by who can see the Inbox, so it can reach whoever should know even if they don't work in API Marketing day to day.
-            </p>
-          </div>
-          {subscriberDirty && <Chip tone={CHIP_WARN}>Unsaved</Chip>}
-        </div>
+      <SubscriberCard
+        icon="bell"
+        title="Inbox notifications"
+        description="These people get a push the moment someone messages the WhatsApp number — not gated by who can see the Inbox, so it can reach whoever should know even if they don't work in API Marketing day to day."
+        allProfiles={allProfiles}
+        ids={subscriberIds} setIds={setSubscriberIds}
+        baseline={subscriberBaseline} setBaseline={setSubscriberBaseline}
+        rpcName="rpc_set_wa_inbox_subscribers"
+      />
 
-        <input type="text" value={subscriberSearch} onChange={function (ev) { setSubscriberSearch(ev.target.value) }}
-          placeholder="Search people…" className={CTRL} />
-
-        <div className="max-h-64 overflow-y-auto ambria-thin-scroll border border-slate-200 rounded-xl divide-y divide-slate-100">
-          {visibleProfiles.length === 0 ? (
-            <p className="px-3 py-4 text-[12.5px] text-slate-400 text-center">No matches</p>
-          ) : visibleProfiles.map(function (p) {
-            var on = subscriberIds.indexOf(p.id) !== -1
-            return (
-              <label key={p.id}
-                className={'flex items-center gap-2.5 px-3 py-2 text-[13px] cursor-pointer transition-colors ' + (on ? 'bg-indigo-50/60' : 'hover:bg-slate-50')}>
-                <input type="checkbox" checked={on} onChange={function () { toggleSubscriber(p.id) }}
-                  className="w-4 h-4 accent-indigo-600 shrink-0" />
-                <span className="min-w-0 flex-1">
-                  <span className={'block font-semibold truncate ' + (on ? 'text-indigo-900' : 'text-slate-800')}>{p.name || '—'}</span>
-                  {p.email && <span className="block text-[11px] text-slate-400 truncate">{p.email}</span>}
-                </span>
-              </label>
-            )
-          })}
-        </div>
-
-        {subscriberNotice && <Notice tone="ok">{subscriberNotice}</Notice>}
-
-        <div className="flex items-center gap-2 pt-1">
-          <button onClick={saveSubscribers} disabled={savingSubscribers || !subscriberDirty}
-            title={subscriberDirty ? 'Save these subscribers' : 'Nothing has changed yet'}
-            className={BTN_PRIMARY}>
-            <Icon name="save" size={14} />
-            {savingSubscribers ? 'Saving…' : 'Save Subscribers'}
-          </button>
-          {subscriberDirty && (
-            <button onClick={function () { setSubscriberIds(subscriberBaseline); setSubscriberNotice('') }}
-              disabled={savingSubscribers} className={BTN_GHOST}>
-              Discard changes
-            </button>
-          )}
-        </div>
-      </div>
+      <SubscriberCard
+        icon="calendar"
+        title="Contract sync notifications"
+        description="These people get a push whenever a new contract (Venue, Catering, Decor or Entertainment) is synced in from the LMS — useful even for people who don't have Events access."
+        allProfiles={allProfiles}
+        ids={syncSubscriberIds} setIds={setSyncSubscriberIds}
+        baseline={syncSubscriberBaseline} setBaseline={setSyncSubscriberBaseline}
+        rpcName="rpc_set_lms_sync_subscribers"
+      />
     </div>
   )
 }

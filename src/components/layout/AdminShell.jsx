@@ -418,6 +418,8 @@ function AdminShell({ profile, onSignOut }) {
     } else if (link && link.indexOf('expense:') === 0) {
       setActive('expenses'); setSubTab('expenses')
       setDeepLinkExpense({ id: link.slice('expense:'.length), mode: null })
+    } else if (link === 'events') {
+      setActive('events'); setSubTab(null); setDeepLinkExpense(null)
     }
   }
 

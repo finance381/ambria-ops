@@ -178,6 +178,44 @@ function mapRow(e: any, dep: typeof DEPARTMENTS[0], lmsUserMap: Record<string, s
   }
 }
 
+// Notifies admin-configured subscribers (lms_sync_notification_subscribers)
+// that new contracts were just synced in. Mirrors wa-webhook/index.ts's
+// notifyInboxSubscribers: insert a reliable notifications row per
+// subscriber, then a best-effort server-to-server call to send-push on top.
+// One notification per sync run (not per contract) — a quiet period
+// followed by a backlog of genuinely new contracts shouldn't flood anyone.
+async function notifyNewContractsSynced(supa: any, SUPABASE_URL: string, SERVICE_ROLE: string, newRows: any[]) {
+  var subsRes = await supa.from("lms_sync_notification_subscribers").select("user_id")
+  var userIds = (subsRes.data || []).map(function (r: any) { return r.user_id })
+  if (userIds.length === 0) return
+
+  var byDept: Record<string, number> = {}
+  newRows.forEach(function (r: any) { byDept[r.department] = (byDept[r.department] || 0) + 1 })
+  var deptSummary = Object.keys(byDept).map(function (d) { return byDept[d] + " " + d }).join(", ")
+
+  var title = newRows.length === 1 ? "New contract synced" : newRows.length + " new contracts synced"
+  var body = newRows.length === 1
+    ? (newRows[0].event_name || newRows[0].client_name || newRows[0].contract_no || "A new contract") + " (" + newRows[0].department + ")"
+    : deptSummary
+
+  for (var i = 0; i < userIds.length; i++) {
+    var uid = userIds[i]
+    var insRes = await supa.from("notifications").insert({
+      user_id: uid, type: "lms_sync", title: title, body: body, link: "events",
+    })
+    if (insRes.error) { console.log("sync-events: notification insert failed: " + insRes.error.message); continue }
+    try {
+      await fetch(SUPABASE_URL + "/functions/v1/send-push", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": "Bearer " + SERVICE_ROLE },
+        body: JSON.stringify({ user_id: uid, title: title, body: body, link: "events" }),
+      })
+    } catch (pushErr) {
+      console.log("sync-events: send-push call failed")
+    }
+  }
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders })
@@ -238,7 +276,7 @@ serve(async (req) => {
     var syncStartedAt = new Date().toISOString()
 
     async function syncDept(dep: typeof DEPARTMENTS[0]) {
-      var result = { synced: 0, fetched: 0, stale: 0, errors: [] as string[] }
+      var result = { synced: 0, fetched: 0, stale: 0, errors: [] as string[], newRows: [] as any[] }
       var allRows: any[] = []
       var page = 1
 
@@ -291,9 +329,19 @@ serve(async (req) => {
 
       console.log(dep.name + ": " + allRows.length + " raw, " + uniqueRows.length + " unique (" + page + " pages)")
 
-      // Batch upsert
+      // Batch upsert — a pre-upsert existence check per chunk is what lets us
+      // tell a genuinely new contract apart from an update to one we already
+      // have (upsert's own response only reports a combined affected count).
       for (var i = 0; i < uniqueRows.length; i += 200) {
         var chunk = uniqueRows.slice(i, i + 200)
+        var chunkIds = chunk.map(function (r: any) { return r.lms_event_id })
+
+        var { data: existingRows } = await supabase
+          .from("events")
+          .select("lms_event_id")
+          .in("lms_event_id", chunkIds)
+        var existingSet = new Set((existingRows || []).map(function (r: any) { return r.lms_event_id }))
+
         var { error, count } = await supabase
           .from("events")
           .upsert(chunk, { onConflict: "lms_event_id", count: "exact" })
@@ -303,6 +351,9 @@ serve(async (req) => {
           result.errors.push(dep.name + ": upsert - " + error.message)
         } else {
           result.synced += count || chunk.length
+          for (var ci2 = 0; ci2 < chunk.length; ci2++) {
+            if (!existingSet.has(chunk[ci2].lms_event_id)) result.newRows.push(chunk[ci2])
+          }
         }
       }
 
@@ -323,12 +374,14 @@ serve(async (req) => {
 
     var deptResults = await Promise.allSettled(DEPARTMENTS.map(function(dep) { return syncDept(dep) }))
 
+    var allNewRows: any[] = []
     for (var di = 0; di < deptResults.length; di++) {
       var r = deptResults[di]
       if (r.status === "fulfilled") {
         totalSynced += r.value.synced
         totalFetched += r.value.fetched
         errors.push.apply(errors, r.value.errors)
+        allNewRows.push.apply(allNewRows, r.value.newRows)
       } else {
         errors.push(DEPARTMENTS[di].name + ": " + r.reason)
       }
@@ -336,6 +389,14 @@ serve(async (req) => {
 
     var staleTotal = deptResults.reduce(function(sum, r) { return sum + (r.status === "fulfilled" ? r.value.stale : 0) }, 0)
     console.log("Synced " + totalSynced + " of " + totalFetched + ", stale: " + staleTotal)
+
+    if (allNewRows.length > 0) {
+      try {
+        await notifyNewContractsSynced(supabase, supabaseUrl, supabaseKey, allNewRows)
+      } catch (notifyErr) {
+        console.log("notifyNewContractsSynced failed:", (notifyErr as Error).message)
+      }
+    }
     return new Response(JSON.stringify({
       synced: totalSynced,
       total: totalFetched,
