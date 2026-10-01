@@ -89,17 +89,19 @@ function timeOf(ts) {
 // clicking through to the full modal or squinting, and for just glancing to
 // confirm "yes, that's the right bill" a hover is faster than either.
 function HoverZoomThumb({ url, onClick, className }) {
-  var [hoverPos, setHoverPos] = useState(null) // {x, y} (viewport coords) or null
-  var PREVIEW = 320
+  var [hoverPos, setHoverPos] = useState(null) // {x, y, size} (viewport coords) or null
   var MARGIN = 16
 
   function place(ev) {
     var x = ev.clientX, y = ev.clientY
+    // Capped to the viewport itself (minus margins) — 960 doesn't fit a
+    // short laptop window, and this still beats squinting at a 40px thumb.
+    var size = Math.min(960, window.innerWidth - MARGIN * 2, window.innerHeight - MARGIN * 2)
     // Flip to the cursor's left once the preview would run off the right
     // edge, and clamp vertically so it never opens above/below the viewport.
-    var left = (x + MARGIN + PREVIEW > window.innerWidth) ? (x - MARGIN - PREVIEW) : (x + MARGIN)
-    var top = Math.min(Math.max(y - PREVIEW / 2, MARGIN), window.innerHeight - PREVIEW - MARGIN)
-    setHoverPos({ x: left, y: top })
+    var left = (x + MARGIN + size > window.innerWidth) ? (x - MARGIN - size) : (x + MARGIN)
+    var top = Math.min(Math.max(y - size / 2, MARGIN), window.innerHeight - size - MARGIN)
+    setHoverPos({ x: left, y: top, size: size })
   }
 
   return (
@@ -109,7 +111,7 @@ function HoverZoomThumb({ url, onClick, className }) {
         className={className} />
       {hoverPos && createPortal((
         <div className="fixed z-[9999] pointer-events-none" style={{ top: hoverPos.y, left: hoverPos.x }}>
-          <img src={url} alt="" style={{ width: PREVIEW, height: PREVIEW }}
+          <img src={url} alt="" style={{ width: hoverPos.size, height: hoverPos.size }}
             className="object-contain rounded-xl border-2 border-white shadow-2xl bg-white" />
         </div>
       ), document.body)}
