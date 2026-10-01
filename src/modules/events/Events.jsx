@@ -7,6 +7,8 @@ import EventLedger from '../expenses/EventLedger'
 import { hasPerm } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
 import QuickSendDrawer from '../../components/broadcast/QuickSendDrawer'
+import SubscriberCard from '../../components/ui/SubscriberCard'
+import Icon from '../../components/ui/Icon'
 
 var lastSyncTime = 0
 var SYNC_COOLDOWN = 5 * 60 * 1000
@@ -102,6 +104,13 @@ function Events({ profile }) {
 
   var isAdmin = hasPerm(profile?.permsNew, 'events.list')
   var permsNew = profile?.permsNew || []
+  // Who can trigger a sync (role, enforced server-side by sync-events itself)
+  // is also who controls who gets pushed when that sync finds a new contract.
+  var canManageSync = profile?.role === 'admin' || profile?.role === 'auditor'
+  var [showSyncSettings, setShowSyncSettings] = useState(false)
+  var [syncAllProfiles, setSyncAllProfiles] = useState([])
+  var [syncSubscriberIds, setSyncSubscriberIds] = useState([])
+  var [syncSubscriberBaseline, setSyncSubscriberBaseline] = useState([])
   var canQuickSend = hasPerm(permsNew, 'broadcast.quicksend')
   var canMergeEvents = hasPerm(permsNew, 'events.list.merge')
   var [quickSendGroup, setQuickSendGroup] = useState(null)
@@ -231,6 +240,16 @@ function Events({ profile }) {
       })
   }
 
+  useEffect(function () {
+    if (!showSyncSettings) return
+    supabase.from('profiles').select('id, name, email').order('name').then(function (res) { setSyncAllProfiles(res.data || []) })
+    supabase.from('lms_sync_notification_subscribers').select('user_id').then(function (res) {
+      var ids = (res.data || []).map(function (r) { return r.user_id })
+      setSyncSubscriberIds(ids)
+      setSyncSubscriberBaseline(ids)
+    })
+  }, [showSyncSettings])
+
   async function submitMerge() {
     if (mergeSaving || !selectedFunction || !mergeTargetId) return
     if (!confirm('Merge this tentative event into the selected event? This moves all its collections/ledger history and cannot be undone.')) return
@@ -298,6 +317,13 @@ function Events({ profile }) {
             className="px-3 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-medium disabled:opacity-50 whitespace-nowrap">
             {syncing ? '🔄 Syncing...' : '🔄 Sync LMS'}
           </button>
+          {canManageSync && (
+            <button onClick={function () { setShowSyncSettings(true) }}
+              title="Who gets notified when a new contract is synced in"
+              className="inline-flex items-center gap-1 px-3 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-medium whitespace-nowrap">
+              <Icon name="bell" size={14} /> Notify on sync
+            </button>
+          )}
           <select value={perPage}
             onChange={function (e) { setPerPage(Number(e.target.value)); setPage(1) }}
             className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
@@ -423,6 +449,21 @@ function Events({ profile }) {
             className="px-2.5 py-1.5 text-xs border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed">»</button>
           <span className="text-xs text-gray-400 ml-2">Page {page} / {totalPages}</span>
         </div>
+      )}
+
+      {/* ═══ SYNC NOTIFICATION SUBSCRIBERS MODAL ═══ */}
+      {canManageSync && (
+        <Modal open={showSyncSettings} onClose={function () { setShowSyncSettings(false) }} title="Notify on sync">
+          <SubscriberCard
+            icon="bell"
+            title="Contract sync notifications"
+            description="These people get a push whenever sync-events pulls in a genuinely new contract — Venue, Catering, Decor or Entertainment — not just an update to one already in the system."
+            allProfiles={syncAllProfiles}
+            ids={syncSubscriberIds} setIds={setSyncSubscriberIds}
+            baseline={syncSubscriberBaseline} setBaseline={setSyncSubscriberBaseline}
+            rpcName="rpc_set_lms_sync_subscribers"
+          />
+        </Modal>
       )}
 
       {/* ═══ GROUP DETAIL MODAL ═══ */}
