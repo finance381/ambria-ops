@@ -108,23 +108,44 @@ function getQuickDateRange(preset) {
 
 function DateRangeDropdown({ preset, onChange }) {
   var [open, setOpen] = useState(false)
-  var wrapRef = useRef(null)
+  // Where to paint the portaled menu — read from the button itself, since it
+  // no longer has a positioned ancestor to anchor an absolute child to.
+  var [menuPos, setMenuPos] = useState(null)
+  var btnRef = useRef(null)
+  var menuRef = useRef(null)
   useEffect(function () {
-    function onDocClick(e) { if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false) }
+    function onDocClick(e) {
+      if (btnRef.current && btnRef.current.contains(e.target)) return
+      if (menuRef.current && menuRef.current.contains(e.target)) return
+      setOpen(false)
+    }
     document.addEventListener('click', onDocClick)
     return function () { document.removeEventListener('click', onDocClick) }
   }, [])
+  function toggleOpen() {
+    if (!open && btnRef.current) {
+      var r = btnRef.current.getBoundingClientRect()
+      setMenuPos({ top: r.bottom + 4, left: r.left })
+    }
+    setOpen(!open)
+  }
   var current = DATE_PRESETS.find(function (p) { return p.k === preset }) || DATE_PRESETS[0]
   return (
-    <div className="relative shrink-0" ref={wrapRef}>
-      <button type="button" onClick={function () { setOpen(!open) }} aria-pressed={open}
+    <div className="relative shrink-0">
+      <button type="button" ref={btnRef} onClick={toggleOpen} aria-pressed={open}
         className="h-9 px-3 inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white text-[12.5px] font-bold text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors">
         <Icon name="calendar" size={14} />
         {current.label}
         <Icon name={open ? 'chevronUp' : 'chevronDown'} size={13} />
       </button>
-      {open && (
-        <div className="absolute z-50 mt-1 min-w-[150px] bg-white border border-slate-200 rounded-lg shadow-lg overflow-hidden">
+      {/* Portaled rather than an absolute child of this button: the toolbar row
+          this sits in needs @3xl:overflow-x-auto so More Filters/Export stay
+          reachable at high browser zoom, but overflow-x:auto forces
+          overflow-y to clip too — an absolute dropdown here would get cut off
+          by that same row instead of floating over the page. */}
+      {open && menuPos && createPortal((
+        <div ref={menuRef} style={{ position: 'fixed', top: menuPos.top, left: menuPos.left }}
+          className="z-50 min-w-[150px] bg-white border border-slate-200 rounded-lg shadow-lg overflow-hidden">
           {DATE_PRESETS.map(function (p) {
             var isOn = p.k === preset
             return (
@@ -135,7 +156,7 @@ function DateRangeDropdown({ preset, onChange }) {
             )
           })}
         </div>
-      )}
+      ), document.body)}
     </div>
   )
 }
