@@ -117,11 +117,14 @@ function NotificationBell({ profile, onNavigate }) {
 
       {open && createPortal((
         <div ref={panelRef}
-          style={btnRef.current ? (function () {
-            var r = btnRef.current.getBoundingClientRect()
-            return { position: 'fixed', top: r.bottom + 6, right: Math.max(8, window.innerWidth - r.right) }
-          })() : { position: 'fixed', top: 48, right: 8 }}
-          className="z-[9999] w-[340px] max-h-[70vh] overflow-y-auto ambria-thin-scroll bg-white border border-slate-200 rounded-xl shadow-2xl">
+          style={(function () {
+            var panelWidth = Math.min(340, window.innerWidth - 16)
+            var r = btnRef.current ? btnRef.current.getBoundingClientRect() : null
+            var left = r ? Math.min(Math.max(8, r.right - panelWidth), window.innerWidth - panelWidth - 8) : 8
+            var top = r ? r.bottom + 6 : 48
+            return { position: 'fixed', top: top, left: left, width: panelWidth }
+          })()}
+          className="z-[9999] max-h-[70vh] overflow-y-auto ambria-thin-scroll bg-white border border-slate-200 rounded-xl shadow-2xl">
           <div className="sticky top-0 bg-white flex items-center justify-between px-3.5 py-2.5 border-b border-slate-100">
             <p className="text-[13px] font-bold text-slate-900">Notifications</p>
             {unreadCount > 0 && (
