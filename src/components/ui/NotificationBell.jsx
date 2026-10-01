@@ -48,6 +48,34 @@ function NotificationBell({ profile, onNavigate }) {
     setPushState(Notification.permission === 'granted' ? 'granted' : (Notification.permission === 'denied' ? 'denied' : 'default'))
   }, [])
 
+  // Permission can already be 'granted' without a push_subscriptions row ever
+  // having been created for this device — e.g. Chrome remembered a
+  // site-wide grant from before this feature existed. The "Enable push
+  // notifications" banner (the only other path that calls subscribe()) only
+  // renders when pushState === 'default', so without this, an
+  // already-granted device would silently never subscribe.
+  useEffect(function () {
+    if (pushState !== 'granted' || !profile || !profile.id) return
+    ensureSubscription()
+  }, [pushState, profile && profile.id])
+
+  async function ensureSubscription() {
+    try {
+      var reg = await navigator.serviceWorker.ready
+      var existing = await reg.pushManager.getSubscription()
+      var sub = existing || await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(import.meta.env.VITE_VAPID_PUBLIC_KEY),
+      })
+      var json = sub.toJSON()
+      await supabase.from('push_subscriptions').upsert({
+        user_id: profile.id, endpoint: json.endpoint, p256dh: json.keys.p256dh, auth: json.keys.auth,
+      }, { onConflict: 'endpoint' })
+    } catch (e) {
+      console.error('push auto-subscribe failed', e)
+    }
+  }
+
   useEffect(function () {
     function onDocClick(e) {
       if (btnRef.current && btnRef.current.contains(e.target)) return
@@ -64,16 +92,7 @@ function NotificationBell({ profile, onNavigate }) {
     try {
       var perm = await Notification.requestPermission()
       if (perm !== 'granted') { setPushState(perm === 'denied' ? 'denied' : 'default'); return }
-      var reg = await navigator.serviceWorker.ready
-      var existing = await reg.pushManager.getSubscription()
-      var sub = existing || await reg.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(import.meta.env.VITE_VAPID_PUBLIC_KEY),
-      })
-      var json = sub.toJSON()
-      await supabase.from('push_subscriptions').upsert({
-        user_id: profile.id, endpoint: json.endpoint, p256dh: json.keys.p256dh, auth: json.keys.auth,
-      }, { onConflict: 'endpoint' })
+      await ensureSubscription()
       setPushState('granted')
     } catch (e) {
       console.error('push subscribe failed', e)
