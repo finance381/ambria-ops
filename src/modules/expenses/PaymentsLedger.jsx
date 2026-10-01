@@ -84,6 +84,39 @@ function timeOf(ts) {
   return d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true })
 }
 
+// The small receipt thumbnail in a ledger row, with a large preview that
+// follows the cursor on hover — reading a receipt at 40px means either
+// clicking through to the full modal or squinting, and for just glancing to
+// confirm "yes, that's the right bill" a hover is faster than either.
+function HoverZoomThumb({ url, onClick, className }) {
+  var [hoverPos, setHoverPos] = useState(null) // {x, y} (viewport coords) or null
+  var PREVIEW = 320
+  var MARGIN = 16
+
+  function place(ev) {
+    var x = ev.clientX, y = ev.clientY
+    // Flip to the cursor's left once the preview would run off the right
+    // edge, and clamp vertically so it never opens above/below the viewport.
+    var left = (x + MARGIN + PREVIEW > window.innerWidth) ? (x - MARGIN - PREVIEW) : (x + MARGIN)
+    var top = Math.min(Math.max(y - PREVIEW / 2, MARGIN), window.innerHeight - PREVIEW - MARGIN)
+    setHoverPos({ x: left, y: top })
+  }
+
+  return (
+    <>
+      <img src={url} alt="Receipt" onClick={onClick}
+        onMouseEnter={place} onMouseMove={place} onMouseLeave={function () { setHoverPos(null) }}
+        className={className} />
+      {hoverPos && createPortal((
+        <div className="fixed z-[9999] pointer-events-none" style={{ top: hoverPos.y, left: hoverPos.x }}>
+          <img src={url} alt="" style={{ width: PREVIEW, height: PREVIEW }}
+            className="object-contain rounded-xl border-2 border-white shadow-2xl bg-white" />
+        </div>
+      ), document.body)}
+    </>
+  )
+}
+
 // Rolling windows ending today, matching this screen's own default
 // (last-30-days) rather than switching to calendar-aligned periods.
 var DATE_PRESETS = [
@@ -793,9 +826,11 @@ function PaymentsLedger({ profile }) {
                               <audio src={r._imgUrl} controls onClick={function (ev) { ev.stopPropagation() }}
                                 className="mt-1.5 h-8 w-full max-w-[220px]" />
                             ) : (
-                              <img src={r._imgUrl} alt="Receipt"
-                                onClick={function (ev) { ev.stopPropagation(); setEnlargedImg(r._imgUrl) }}
-                                className="mt-1.5 w-10 h-10 rounded border border-slate-200 object-cover cursor-zoom-in hover:border-indigo-400 transition-colors" />
+                              <span className="block mt-1.5 w-10">
+                                <HoverZoomThumb url={r._imgUrl}
+                                  onClick={function (ev) { ev.stopPropagation(); setEnlargedImg(r._imgUrl) }}
+                                  className="w-10 h-10 rounded border border-slate-200 object-cover cursor-zoom-in hover:border-indigo-400 transition-colors" />
+                              </span>
                             )
                           )}
                           {/* A ledger without a date on the row is a list of
