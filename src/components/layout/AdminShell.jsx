@@ -5,6 +5,7 @@ import { supabase } from '../../lib/supabase'
 import PageWave from '../ui/PageWave'
 import Logo from '../ui/Logo'
 import Icon from '../ui/Icon'
+import NotificationBell from '../ui/NotificationBell'
 // Inventory's photograph: warm light through leaves across a pale wall,
 // vases and a bowl — the ground behind the top of the Inventory section.
 import inventoryBg from '../../assets/inventory-bg.webp'
@@ -407,6 +408,19 @@ function AdminShell({ profile, onSignOut }) {
   // specific expense's edit/Raise JV view instead of just the Expenses tab.
   var [deepLinkExpense, setDeepLinkExpense] = useState(null)
 
+  // Resolves a notification's `link` string — same simple string formats
+  // Shell.jsx's mobile equivalent uses, since there's no URL router here either.
+  function navigateFromNotification(link) {
+    if (link === 'broadcast:inbox') {
+      setActive('broadcast'); setSubTab('inbox'); setDeepLinkExpense(null)
+    } else if (link === 'wallet') {
+      setActive('expenses'); setSubTab('wallet'); setDeepLinkExpense(null)
+    } else if (link && link.indexOf('expense:') === 0) {
+      setActive('expenses'); setSubTab('expenses')
+      setDeepLinkExpense({ id: link.slice('expense:'.length), mode: null })
+    }
+  }
+
   // Inventory's master sub-departments, listed under Inventory in the rail so
   // a sub-department is one click from the sidebar rather than a dropdown
   // inside All Items. invSubDept is the one picked ('' for all); navNonce
@@ -736,6 +750,7 @@ function AdminShell({ profile, onSignOut }) {
               </>
             )}
           </nav>
+          <NotificationBell profile={profile} onNavigate={navigateFromNotification} />
         </div>
 
       {/* Content. relative isolate + a full-height flex item is what

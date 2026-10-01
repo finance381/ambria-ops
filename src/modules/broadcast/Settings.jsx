@@ -38,15 +38,48 @@ function Settings() {
   var [account, setAccount] = useState(null)
   var [fetchingAccount, setFetchingAccount] = useState(false)
 
+  // Who gets a push when a new WhatsApp message comes in. Its own baseline/
+  // dirty/save cycle, separate from the sending-rules card above — the two
+  // save independently rather than forcing one Save button to cover both.
+  var [allProfiles, setAllProfiles] = useState([])
+  var [subscriberIds, setSubscriberIds] = useState([])
+  var [subscriberBaseline, setSubscriberBaseline] = useState([])
+  var [subscriberSearch, setSubscriberSearch] = useState('')
+  var [savingSubscribers, setSavingSubscribers] = useState(false)
+  var [subscriberNotice, setSubscriberNotice] = useState('')
+
   function load() {
     supabase.from('wa_settings').select('*').eq('id', 1).maybeSingle().then(function (res) {
       setSettings(res.data)
       setBaseline(res.data)
     })
     supabase.from('wa_accounts').select('*').maybeSingle().then(function (res) { setAccount(res.data) })
+    supabase.from('profiles').select('id, name, email').order('name').then(function (res) { setAllProfiles(res.data || []) })
+    supabase.from('wa_inbox_notification_subscribers').select('user_id').then(function (res) {
+      var ids = (res.data || []).map(function (r) { return r.user_id })
+      setSubscriberIds(ids)
+      setSubscriberBaseline(ids)
+    })
   }
 
   useEffect(function () { load() }, [])
+
+  function toggleSubscriber(id) {
+    setSubscriberNotice('')
+    setSubscriberIds(function (prev) {
+      return prev.indexOf(id) !== -1 ? prev.filter(function (x) { return x !== id }) : prev.concat([id])
+    })
+  }
+
+  async function saveSubscribers() {
+    if (savingSubscribers) return
+    setSavingSubscribers(true); setError(''); setSubscriberNotice('')
+    var res = await supabase.rpc('rpc_set_wa_inbox_subscribers', { p_user_ids: subscriberIds })
+    setSavingSubscribers(false)
+    if (res.error) { setError(res.error.message); return }
+    setSubscriberBaseline(subscriberIds)
+    setSubscriberNotice('Saved.')
+  }
 
   function patch(key, value) {
     setNotice('')
@@ -90,6 +123,15 @@ function Settings() {
 
   var dirty = !baseline || EDITABLE.some(function (k) { return String(settings[k]) !== String(baseline[k]) })
   var quality = (account && account.quality_rating ? String(account.quality_rating) : '').toLowerCase()
+
+  var subscriberDirty = subscriberIds.length !== subscriberBaseline.length ||
+    subscriberIds.some(function (id) { return subscriberBaseline.indexOf(id) === -1 })
+  var qLower = subscriberSearch.trim().toLowerCase()
+  var visibleProfiles = qLower
+    ? allProfiles.filter(function (p) {
+        return (p.name || '').toLowerCase().indexOf(qLower) !== -1 || (p.email || '').toLowerCase().indexOf(qLower) !== -1
+      })
+    : allProfiles
 
   return (
     <div className="max-w-2xl mx-auto space-y-3 pb-1">
@@ -203,6 +245,61 @@ function Settings() {
           {dirty && (
             <button onClick={function () { setSettings(baseline); setNotice(''); setError('') }}
               disabled={saving} className={BTN_GHOST}>
+              Discard changes
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* ── who gets pushed when a new WhatsApp message arrives ── */}
+      <div className={CARD + ' p-4 space-y-3'}>
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <p className="flex items-center gap-2 text-[14px] font-bold text-slate-900">
+              <span className="text-slate-900"><Icon name="bell" size={14} /></span>
+              Inbox notifications
+            </p>
+            <p className="text-[11.5px] text-slate-500 mt-0.5">
+              These people get a push the moment someone messages the WhatsApp number — not gated by who can see the Inbox, so it can reach whoever should know even if they don't work in API Marketing day to day.
+            </p>
+          </div>
+          {subscriberDirty && <Chip tone={CHIP_WARN}>Unsaved</Chip>}
+        </div>
+
+        <input type="text" value={subscriberSearch} onChange={function (ev) { setSubscriberSearch(ev.target.value) }}
+          placeholder="Search people…" className={CTRL} />
+
+        <div className="max-h-64 overflow-y-auto ambria-thin-scroll border border-slate-200 rounded-xl divide-y divide-slate-100">
+          {visibleProfiles.length === 0 ? (
+            <p className="px-3 py-4 text-[12.5px] text-slate-400 text-center">No matches</p>
+          ) : visibleProfiles.map(function (p) {
+            var on = subscriberIds.indexOf(p.id) !== -1
+            return (
+              <label key={p.id}
+                className={'flex items-center gap-2.5 px-3 py-2 text-[13px] cursor-pointer transition-colors ' + (on ? 'bg-indigo-50/60' : 'hover:bg-slate-50')}>
+                <input type="checkbox" checked={on} onChange={function () { toggleSubscriber(p.id) }}
+                  className="w-4 h-4 accent-indigo-600 shrink-0" />
+                <span className="min-w-0 flex-1">
+                  <span className={'block font-semibold truncate ' + (on ? 'text-indigo-900' : 'text-slate-800')}>{p.name || '—'}</span>
+                  {p.email && <span className="block text-[11px] text-slate-400 truncate">{p.email}</span>}
+                </span>
+              </label>
+            )
+          })}
+        </div>
+
+        {subscriberNotice && <Notice tone="ok">{subscriberNotice}</Notice>}
+
+        <div className="flex items-center gap-2 pt-1">
+          <button onClick={saveSubscribers} disabled={savingSubscribers || !subscriberDirty}
+            title={subscriberDirty ? 'Save these subscribers' : 'Nothing has changed yet'}
+            className={BTN_PRIMARY}>
+            <Icon name="save" size={14} />
+            {savingSubscribers ? 'Saving…' : 'Save Subscribers'}
+          </button>
+          {subscriberDirty && (
+            <button onClick={function () { setSubscriberIds(subscriberBaseline); setSubscriberNotice('') }}
+              disabled={savingSubscribers} className={BTN_GHOST}>
               Discard changes
             </button>
           )}

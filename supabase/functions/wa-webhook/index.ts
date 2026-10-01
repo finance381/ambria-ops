@@ -68,6 +68,39 @@ async function maybeAutoReply(supa, SUPABASE_URL, SERVICE_ROLE, contactId, bodyT
   }
 }
 
+// Notifies whoever's opted into "Inbox notifications" (Settings.jsx,
+// wa_inbox_notification_subscribers) that a message arrived. Writes the
+// notifications row first (reliable, drives the in-app bell even if the
+// push below fails), then best-effort pushes to send-push — same
+// server-to-server call shape maybeAutoReply already uses for wa-send.
+async function notifyInboxSubscribers(supa, SUPABASE_URL, SERVICE_ROLE, displayName, fromPhone, bodyText) {
+  var subsRes = await supa.from("wa_inbox_notification_subscribers").select("user_id")
+  var userIds = (subsRes.data || []).map(function (r) { return r.user_id })
+  if (userIds.length === 0) return
+
+  var who = displayName || fromPhone
+  var title = "New WhatsApp message"
+  var preview = bodyText ? (bodyText.length > 120 ? bodyText.slice(0, 120) + "…" : bodyText) : "(no text)"
+
+  for (var i = 0; i < userIds.length; i++) {
+    var uid = userIds[i]
+    var insRes = await supa.from("notifications").insert({
+      user_id: uid, type: "wa_inbox", title: title,
+      body: who + ": " + preview, link: "broadcast:inbox",
+    })
+    if (insRes.error) { console.error("wa-webhook: notification insert failed: " + insRes.error.message); continue }
+    try {
+      await fetch(SUPABASE_URL + "/functions/v1/send-push", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": "Bearer " + SERVICE_ROLE },
+        body: JSON.stringify({ user_id: uid, title: title, body: who + ": " + preview, link: "broadcast:inbox" }),
+      })
+    } catch (pushErr) {
+      console.error("wa-webhook: send-push call failed")
+    }
+  }
+}
+
 async function handleInboundMessage(supa, value, msg, SUPABASE_URL, SERVICE_ROLE) {
   var fromPhone = "+" + String(msg.from || "").replace(/^\+/, "")
   if (fromPhone === "+") return
@@ -106,6 +139,7 @@ async function handleInboundMessage(supa, value, msg, SUPABASE_URL, SERVICE_ROLE
   })
   if (insMsg.error) { console.error("wa-webhook: inbound message insert failed: " + insMsg.error.message); return }
 
+  await notifyInboxSubscribers(supa, SUPABASE_URL, SERVICE_ROLE, displayName, fromPhone, bodyText)
   await maybeAutoReply(supa, SUPABASE_URL, SERVICE_ROLE, contactId, bodyText)
 }
 
