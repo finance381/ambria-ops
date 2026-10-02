@@ -4331,6 +4331,75 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             )}
           </div>
 
+          {/* Confirm/Reject/Cancel on a transfer — this desktop view used to
+              have no way to do any of these at all. renderTxnsDesktop() is a
+              separate render path from the mobile branch below (inAdmin
+              short-circuits straight to it, line ~4492), so this section only
+              ever existed there — a desktop user could see a pending transfer
+              exists (the Receive tile's badge) but never act on it. */}
+          {selectedWallet && selectedWallet.user_id === profile.id && pendingIncoming.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-[10px] font-bold text-amber-600 uppercase tracking-wider">Incoming Transfers</p>
+              {pendingIncoming.map(function (t) {
+                var imgUrl = getReceiptUrl(t.sender_image_path)
+                return (
+                  <div key={t.id} className="bg-amber-50/50 border border-amber-300 rounded-lg p-3">
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-gray-900">{t._fromName} sent you {formatPoints(t.amount_paise)}</p>
+                        <p className="text-xs text-gray-500 mt-0.5">{t.description || '—'} · {formatDate(t.created_at)}</p>
+                        {imgUrl && (
+                          <span className="block mt-1.5">
+                            <ProofThumb url={imgUrl} label="Sent" tone="bg-blue-600"
+                              onOpen={function () { setEnlargedWalletImg(imgUrl) }} />
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex flex-col gap-1.5 flex-shrink-0 ml-2">
+                        <button onClick={function () { setTransferConfirmModal(t); setTransferConfirmImage(null); transferConfirmRec.cancel() }}
+                          className="px-3 py-1.5 text-[10px] font-bold text-amber-700 bg-amber-100 border border-amber-300 rounded-lg hover:bg-amber-200 transition-colors">
+                          📷 Confirm
+                        </button>
+                        <button onClick={function () { openCancel({ reference_id: t.id, amount_paise: t.amount_paise, description: t.description, _cpName: t._fromName }, 'transfer') }}
+                          className="px-3 py-1.5 text-[10px] font-bold text-red-700 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 transition-colors">
+                          🚫 Reject
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+          {selectedWallet && selectedWallet.user_id === profile.id && pendingOutgoing.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Outgoing Transfers (Pending)</p>
+              {pendingOutgoing.map(function (t) {
+                var imgUrl = getReceiptUrl(t.sender_image_path)
+                return (
+                  <div key={t.id} className="bg-white border border-gray-200 rounded-lg p-3">
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[14px] font-bold text-slate-900 leading-snug">Sent {formatPoints(t.amount_paise)} to {t._toName}</p>
+                        <p className="text-xs text-gray-400 mt-0.5">{t.description || '—'} · {formatDate(t.created_at)}</p>
+                        {imgUrl && (
+                          <span className="block mt-1.5">
+                            <ProofThumb url={imgUrl} label="Sent" tone="bg-blue-600"
+                              onOpen={function () { setEnlargedWalletImg(imgUrl) }} />
+                          </span>
+                        )}
+                      </div>
+                      <button onClick={function () { cancelTransfer(t) }}
+                        className="px-3 py-1.5 text-[10px] font-bold text-red-500 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 transition-colors flex-shrink-0 ml-2">
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
           {/* What it came to. */}
           {walletTxns.length > 0 && (
             <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
