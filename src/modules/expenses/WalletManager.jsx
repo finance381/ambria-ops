@@ -317,6 +317,10 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   var permsNew = (profile && profile.permsNew) || []
   var canCreateTentativeEvent = hasPerm(permsNew, 'events.list.create_tentative')
   var canMarkChecked = hasPerm(permsNew, 'finance.wallet.mark_checked')
+  // Cancelling/rejecting a transfer used to be open to either party to it;
+  // now admin/auditor or an explicit grant only — being the sender or
+  // recipient no longer qualifies on its own.
+  var canCancelTransfer = isAdmin || isAuditor || hasPerm(permsNew, 'finance.wallet.cancel_transfer')
   var [checkingTxnId, setCheckingTxnId] = useState(null)
   var [checkingExpId, setCheckingExpId] = useState(null)
   // Which transaction rows have their allocation breakdown expanded —
@@ -2990,8 +2994,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                 }
                 var epcCancellable = isEpc && epcHit.epc.status !== 'cancelled' && (isAdmin || epcHit.epc.collected_by === profile.id)
                 var collCancellable = t.reference_type === 'collection' && !isCancelled && (isAdmin || t.performed_by === profile.id)
-                var transferCancellable = t.reference_type === 'transfer' && !isCancelled &&
-                  (isAdmin || (tr && (tr.from_user_id === profile.id || tr.to_user_id === profile.id)))
+                var transferCancellable = t.reference_type === 'transfer' && !isCancelled && canCancelTransfer
                 var isExpRow = (t.reference_type === 'expense' || t.reference_type === 'expense_refund') && t.reference_id
                 var isPayRow = PAYMENT_REF_TYPES.indexOf(t.reference_type) !== -1
                 var rowIsClickable = isExpRow || t.reference_type === 'collection' || isEpc || isPayRow
@@ -3702,8 +3705,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     var collCancellable = t.reference_type === 'collection' && !isCancelled && (isAdmin || t.performed_by === profile.id)
     var fullListTr = t.reference_type === 'transfer' && t.reference_id ? transferParties[t.reference_id] : null
     var fullListCpName = fullListTr ? walletProfiles[t.type === 'debit' ? fullListTr.to_user_id : fullListTr.from_user_id]?.name : null
-    var transferCancellable = t.reference_type === 'transfer' && !isCancelled &&
-      (isAdmin || (fullListTr && (fullListTr.from_user_id === profile.id || fullListTr.to_user_id === profile.id)))
+    var transferCancellable = t.reference_type === 'transfer' && !isCancelled && canCancelTransfer
     var isExpRow = (t.reference_type === 'expense' || t.reference_type === 'expense_refund') && t.reference_id
     var isDeletedExp = isExpRow && !!expenseRefs[t.reference_id] && !!expenseRefs[t.reference_id].deleted_at
     var isPayRow = PAYMENT_REF_TYPES.indexOf(t.reference_type) !== -1
@@ -4360,10 +4362,12 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                           className="px-3 py-1.5 text-[10px] font-bold text-amber-700 bg-amber-100 border border-amber-300 rounded-lg hover:bg-amber-200 transition-colors">
                           📷 Confirm
                         </button>
-                        <button onClick={function () { openCancel({ reference_id: t.id, amount_paise: t.amount_paise, description: t.description, _cpName: t._fromName }, 'transfer') }}
-                          className="px-3 py-1.5 text-[10px] font-bold text-red-700 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 transition-colors">
-                          🚫 Reject
-                        </button>
+                        {canCancelTransfer && (
+                          <button onClick={function () { openCancel({ reference_id: t.id, amount_paise: t.amount_paise, description: t.description, _cpName: t._fromName }, 'transfer') }}
+                            className="px-3 py-1.5 text-[10px] font-bold text-red-700 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 transition-colors">
+                            🚫 Reject
+                          </button>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -4727,10 +4731,12 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                         className="px-3 py-1.5 text-[10px] font-bold text-amber-700 bg-amber-100 border border-amber-300 rounded-lg hover:bg-amber-200 transition-colors">
                         📷 Confirm
                       </button>
-                      <button onClick={function () { openCancel({ reference_id: t.id, amount_paise: t.amount_paise, description: t.description, _cpName: t._fromName }, 'transfer') }}
-                        className="px-3 py-1.5 text-[10px] font-bold text-red-700 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 transition-colors">
-                        🚫 Reject
-                      </button>
+                      {canCancelTransfer && (
+                        <button onClick={function () { openCancel({ reference_id: t.id, amount_paise: t.amount_paise, description: t.description, _cpName: t._fromName }, 'transfer') }}
+                          className="px-3 py-1.5 text-[10px] font-bold text-red-700 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 transition-colors">
+                          🚫 Reject
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
