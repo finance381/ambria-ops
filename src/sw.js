@@ -3,9 +3,21 @@
 // worker did — this line is the entire offline-caching behavior, unchanged.
 // Everything below it is new: push notifications, which generateSW had no
 // hook to add.
-import { precacheAndRoute } from 'workbox-precaching'
+import { precacheAndRoute, cleanupOutdatedCaches } from 'workbox-precaching'
 
+// Drops the precache of earlier builds once this one is active — generateSW
+// did this by default; a custom worker has to ask for it.
+cleanupOutdatedCaches()
 precacheAndRoute(self.__WB_MANIFEST)
+
+// "Update now" (UpdateBanner -> updateServiceWorker) posts SKIP_WAITING to
+// the new worker waiting behind the old one. generateSW's worker listened
+// for it; this custom one did not, so the new version sat waiting and the
+// button did nothing — it only "worked" once every tab of the app had been
+// closed and the waiting worker took over on its own.
+self.addEventListener('message', function (event) {
+  if (event.data && event.data.type === 'SKIP_WAITING') self.skipWaiting()
+})
 
 self.addEventListener('push', function (event) {
   var data = {}
