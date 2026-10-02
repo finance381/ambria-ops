@@ -57,7 +57,7 @@ PurchaseReceive.load = Purchase.load
 var Calendar = lazyTab(function () { return import('../../modules/calendar/Calendar') })
 var Vendors = lazyTab(function () { return import('../../modules/vendors/Vendors') })
 var Requisitions = lazyTab(function () { return import('../../modules/requisitions/Requisitions') })
-var StaffRoles = lazyTab(function () { return import('../../modules/manpower/StaffRoles') })
+var CasualRoster = lazyTab(function () { return import('../../modules/manpower/CasualRoster') })
 var Analytics = lazyTab(function () { return import('../../modules/analytics/Analytics') })
 var Overview = lazyTab(function () { return import('../../modules/overview/Overview') })
 var JobDepartments = lazyTab(function () { return import('../../modules/employees/JobDepartments') })
@@ -156,7 +156,7 @@ var SUB_TAB_CONFIG = {
     { key: 'categories',         label: 'Categories',      icon: 'tag',        component: Categories,         perm: 'admin.masters' },
     { key: 'job_departments',    label: 'Job Departments', icon: 'users',      component: JobDepartments,     perm: 'admin.masters' },
     { key: 'ratecard',           label: 'Rate Card',       icon: 'calculator', component: RateCardEditor,     anyPerm: ['admin.masters','events.ratecard'] },
-    { key: 'staff_roles',        label: 'Staff Roles',     icon: 'idCard',     component: StaffRoles,         perm: 'admin.masters' },
+    { key: 'staff_roles',        label: 'Casual Roster',   icon: 'idCard',     component: CasualRoster,       perm: 'admin.masters' },
     { key: 'expense_types',      label: 'Expense Types',   icon: 'receipt',    component: ExpenseTypesMaster, perm: 'admin.masters' },
     { key: 'employee_doc_types', label: 'Employee Docs',   icon: 'fileText',   component: EmployeeDocTypes,   perm: 'admin.masters' },
   ],
