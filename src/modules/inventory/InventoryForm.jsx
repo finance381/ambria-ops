@@ -6,12 +6,13 @@ import Icon from '../../components/ui/Icon'
 import AllocationRows from '../../components/ui/AllocationRows'
 import ImageCrop from '../../components/ImageCrop'
 import { translateToHindi } from '../../lib/translate'
-import { titleCase } from '../../lib/format'
+import { titleCase, formatPaise } from '../../lib/format'
 import { useLang } from '../../lib/i18n'
 import { logActivity } from '../../lib/logger'
 import { filterUserCategories } from '../../lib/categories'
 import { hasPerm } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
+import { reconcileStockBatches, stockValuePaise, placeRates } from '../../lib/stockBatches'
 
 var UNITS = [
   'Inches','Pieces', 'Nos', 'Sets', 'Pairs', 'Dozens',
@@ -111,6 +112,25 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved, variant }) {
   var [packSizeBrand, setPackSizeBrand] = useState(seed?.brand || '')
   var [brandList, setBrandList] = useState([])
   var isEdit = !!item
+  // Admin Edit: stock arriving now, kept as a batch of its own (stock_batches).
+  // On save its qty goes on top of what is on hand and its venue split into
+  // the allocations.
+  var [showAddStock, setShowAddStock] = useState(false)
+  // The item's stock batches (oldest first, with their venue splits), so
+  // what is shown as its worth uses each batch's own rate.
+  var [itemBatches, setItemBatches] = useState([])
+  // Rates typed in for the item's batches (batch id → rupees as typed),
+  // written to the batches on save. A batch saved before rates were kept
+  // shows ₹0 until it is given one here.
+  var [batchRateEdits, setBatchRateEdits] = useState({})
+  var effBatches = itemBatches.map(function (b) {
+    if (!Object.prototype.hasOwnProperty.call(batchRateEdits, b.id)) return b
+    var v = batchRateEdits[b.id]
+    return Object.assign({}, b, { rate_paise: v === '' || v == null ? null : Math.round(Number(v) * 100) })
+  })
+  var [newStockQty, setNewStockQty] = useState('')
+  var [newStockRate, setNewStockRate] = useState('')
+  var [newStockAllocs, setNewStockAllocs] = useState([{ venue_id: '', sub_venue_id: '', qty: '' }])
 
   function deriveSource(itm, cats, csSubDeptId) {
     if (itm?._source) return itm._source
@@ -126,6 +146,11 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved, variant }) {
       if (isEdit && item?.id) {
         var source = deriveSource(item, lookups.cats, lookups.csId)
         var allocTbl = source === 'catering_store' ? 'cs_venue_allocations' : 'venue_allocations'
+        supabase.from('stock_batches')
+          .select('id, qty, rate_paise, is_opening, created_at, stock_batch_allocations(venue_id, sub_venue_id, qty)')
+          .eq('item_id', item.id).eq('item_source', source)
+          .order('created_at', { ascending: true })
+          .then(function (res) { setItemBatches(res.data || []) })
         supabase.from(allocTbl).select('venue_id, sub_venue_id, sub_department_id, qty').eq('item_id', item.id)
           .then(function (res) {
             var data = res.data || []
@@ -419,7 +444,21 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved, variant }) {
       }
     }
     if (!effectiveName) errs.item = 'Item name is required'
-    if (!qty && qty !== 0) errs.qty = 'Quantity is required'
+    // Optional in the admin Edit form (an empty quantity saves as 0).
+    if (variant !== 'admin' && !qty && qty !== 0) errs.qty = 'Quantity is required'
+    if (variant === 'admin') {
+      var placedBase = allocations.reduce(function (sum, a) { return sum + (a.venue_id ? (Number(a.qty) || 0) : 0) }, 0)
+      if (allocations.some(function (a) { return Number(a.qty) > 0 && !a.venue_id })) errs.alloc = 'Pick a venue for every row that has a quantity'
+      else if (Math.round(placedBase * 1000) > Math.round((Number(qty) || 0) * 1000)) errs.alloc = 'Allocated ' + (Math.round(placedBase * 1000) / 1000) + ' is more than the quantity ' + (Number(qty) || 0)
+    }
+    if (isEdit) {
+      var addQ = Number(newStockQty) || 0
+      var nsAllocated = newStockAllocs.reduce(function (sum, a) { return sum + (Number(a.qty) || 0) }, 0)
+      if (addQ < 0) errs.newStock = 'New quantity cannot be negative'
+      else if (addQ === 0 && nsAllocated > 0) errs.newStock = 'Enter the new quantity first'
+      else if (newStockAllocs.some(function (a) { return Number(a.qty) > 0 && !a.venue_id })) errs.newStock = 'Pick a venue for every row that has a quantity'
+      else if (addQ > 0 && Math.round(nsAllocated * 1000) > Math.round(addQ * 1000)) errs.newStock = 'Allocated ' + (Math.round(nsAllocated * 1000) / 1000) + ' is more than the new quantity ' + addQ
+    }
     resolvedNameRef.current = effectiveName
     setErrors(errs); return Object.keys(errs).length === 0
   }
@@ -449,6 +488,53 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved, variant }) {
     var isCatStore = showPackSize
     var tableName = isCatStore ? 'catering_store_items' : 'inventory_items'
     var allocTable = isCatStore ? 'cs_venue_allocations' : 'venue_allocations'
+    var itemRatePaise = ratePaise ? Math.round(Number(ratePaise) * 100) : null
+    // New stock from the admin Edit form: added on top of what is on hand,
+    // and its venue split added into the allocations saved below. Without a
+    // rate of its own it takes the item's rate.
+    var addQty = isEdit ? Math.round((Number(newStockQty) || 0) * 1000) / 1000 : 0
+    var addAllocs = addQty > 0 ? newStockAllocs.filter(function (a) { return a.venue_id && Number(a.qty) > 0 }) : []
+    // With batches, the item's own rate follows the newest stock: new stock
+    // added now, else the latest batch. It is also what new stock without a
+    // rate of its own is priced at.
+    var latestBatchRate = effBatches.length > 0 ? effBatches[effBatches.length - 1].rate_paise : null
+    // Batch rates typed in the form, in paise, for reconcile to write.
+    var rateOverrides = {}
+    Object.keys(batchRateEdits).forEach(function (id) {
+      var v = batchRateEdits[id]
+      rateOverrides[id] = v === '' || v == null ? null : Math.round(Number(v) * 100)
+    })
+    var addRatePaise = newStockRate ? Math.round(Number(newStockRate) * 100) : (latestBatchRate || itemRatePaise)
+    var savedRatePaise = itemBatches.length > 0 ? ((addQty > 0 && addRatePaise) ? addRatePaise : (latestBatchRate || itemRatePaise)) : itemRatePaise
+    var totalQty = Math.round(((Number(qty) || 0) + addQty) * 1000) / 1000
+    var allocsForSave = allocations.map(function (a) { return Object.assign({}, a) })
+    addAllocs.forEach(function (na) {
+      var row = allocsForSave.find(function (a) { return String(a.venue_id) === String(na.venue_id) && String(a.sub_venue_id || '') === String(na.sub_venue_id || '') && !a.sub_department_id })
+      if (row) row.qty = String(Math.round(((Number(row.qty) || 0) + Number(na.qty)) * 1000) / 1000)
+      else allocsForSave.push({ department: '', sub_department_id: '', venue_id: String(na.venue_id), sub_venue_id: na.sub_venue_id ? String(na.sub_venue_id) : '', qty: String(na.qty) })
+    })
+    // Records a batch of stock arriving — qty, unit rate, when, who — and how
+    // it was split across venues. Never blocks the save: a failed write, or
+    // the tables not existing yet (migration 00059), is ignored.
+    async function saveStockBatch(itemId, bQty, bRatePaise, bAllocs, isOpening) {
+      var q = Math.round((Number(bQty) || 0) * 1000) / 1000
+      if (!itemId || q <= 0) return
+      try {
+        var res = await supabase.from('stock_batches').insert({
+          item_id: itemId,
+          item_source: isCatStore ? 'catering_store' : 'inventory',
+          qty: q,
+          rate_paise: bRatePaise || null,
+          is_opening: !!isOpening,
+          added_by: profile?.id || null,
+        }).select('id').single()
+        if (res.error || !res.data) return
+        var rows = (bAllocs || []).filter(function (a) { return a.venue_id && Number(a.qty) > 0 }).map(function (a) {
+          return { batch_id: res.data.id, venue_id: Number(a.venue_id), sub_venue_id: a.sub_venue_id ? Number(a.sub_venue_id) : null, qty: Math.round(Number(a.qty) * 1000) / 1000 }
+        })
+        if (rows.length > 0) await supabase.from('stock_batch_allocations').insert(rows)
+      } catch (_) {}
+    }
     var cleanDims = dimensionValues.length > 0 ? dimensionValues.map(function (d) {
       var dt = d.type || 'number'
       if (dt === 'select' || dt === 'text') {
@@ -465,9 +551,9 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved, variant }) {
     if (cleanDims.length === 0) cleanDims = null
     var payload
     if (isCatStore) {
-      payload = { name: effectiveName, category_id: Number(categoryId), sub_category_id: subCategoryId ? Number(subCategoryId) : null, type: type, qty: Number(qty) || 0, unit: unit, description: description.trim() || null, name_hindi: hindiName || null, brand: packSizeBrand.trim() || null, pack_size_qty: packSizeQty ? Number(packSizeQty) : null, pack_size_unit: packSizeUnit, season_reorder_qty: minOrderQty ? Number(minOrderQty) : null, off_season_reorder_qty: reorderQty ? Number(reorderQty) : null, rate_paise: ratePaise ? Math.round(Number(ratePaise) * 100) : null, is_asset: isAsset, department: allocations[0]?.department || null, dimensions: cleanDims }
+      payload = { name: effectiveName, category_id: Number(categoryId), sub_category_id: subCategoryId ? Number(subCategoryId) : null, type: type, qty: totalQty, unit: unit, description: description.trim() || null, name_hindi: hindiName || null, brand: packSizeBrand.trim() || null, pack_size_qty: packSizeQty ? Number(packSizeQty) : null, pack_size_unit: packSizeUnit, season_reorder_qty: minOrderQty ? Number(minOrderQty) : null, off_season_reorder_qty: reorderQty ? Number(reorderQty) : null, rate_paise: savedRatePaise, is_asset: isAsset, department: allocations[0]?.department || null, dimensions: cleanDims }
     } else {
-      payload = { name: effectiveName, category_id: Number(categoryId), sub_category_id: subCategoryId ? Number(subCategoryId) : null, type: type, qty: Number(qty) || 0, unit: unit, description: description.trim() || null, name_hindi: hindiName || null, min_order_qty: minOrderQty ? Number(minOrderQty) : null, reorder_qty: reorderQty ? Number(reorderQty) : null, rate_paise: ratePaise ? Math.round(Number(ratePaise) * 100) : null, is_asset: isAsset, department: allocations[0]?.department || null, dimensions: cleanDims }
+      payload = { name: effectiveName, category_id: Number(categoryId), sub_category_id: subCategoryId ? Number(subCategoryId) : null, type: type, qty: totalQty, unit: unit, description: description.trim() || null, name_hindi: hindiName || null, min_order_qty: minOrderQty ? Number(minOrderQty) : null, reorder_qty: reorderQty ? Number(reorderQty) : null, rate_paise: savedRatePaise, is_asset: isAsset, department: allocations[0]?.department || null, dimensions: cleanDims }
     }
     if (!isEdit && profile?.id) { payload.submitted_by = profile.id }
     if (!isEdit) {
@@ -543,7 +629,7 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved, variant }) {
           // couldn't cover the incoming allocations, even though the merge
           // itself was legitimate. Mirrors the equivalent NEW-ITEM merge path
           // below (existing.qty + qty).
-          var mergedQty = Math.round(((mergeTarget.qty || 0) + (Number(qty) || 0)) * 1000) / 1000
+          var mergedQty = Math.round(((mergeTarget.qty || 0) + totalQty) * 1000) / 1000
           var { error: qtyBumpErr } = await supabase.from(tableName).update({ qty: mergedQty }).eq('id', mergeTarget.id)
           if (qtyBumpErr) throw new Error('Merge qty update failed: ' + qtyBumpErr.message)
           mergeTarget.qty = mergedQty
@@ -551,7 +637,7 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved, variant }) {
           // Gather all allocations to merge: form entries + any DB entries not in form
           var { data: dbAllocs } = await supabase.from(allocTable).select('*').eq('item_id', item.id)
           var { data: targetAllocs } = await supabase.from(allocTable).select('*').eq('item_id', mergeTarget.id)
-          var formRows = allocations.filter(function (a) { return a.venue_id && Number(a.qty) > 0 })
+          var formRows = allocsForSave.filter(function (a) { return a.venue_id && Number(a.qty) > 0 })
           // Build combined allocation list: start with form entries
           var allAllocsToMerge = formRows.map(function (a) { return { venue_id: Number(a.venue_id), sub_venue_id: a.sub_venue_id ? Number(a.sub_venue_id) : null, sub_department_id: a.sub_department_id ? Number(a.sub_department_id) : null, qty: Number(a.qty) } })
           // Add any DB allocations not covered by form (in case form didn't load them)
@@ -580,14 +666,20 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved, variant }) {
           // Delete the edited item + its old allocations
           await supabase.from(allocTable).delete().eq('item_id', item.id)
           await supabase.from(tableName).delete().eq('id', item.id)
+          // Its stock arrives on the target as a batch, then any new stock.
+          try { await supabase.from('stock_batches').delete().eq('item_id', item.id).eq('item_source', isCatStore ? 'catering_store' : 'inventory') } catch (_) {}
+          await saveStockBatch(mergeTarget.id, Number(qty) || 0, itemRatePaise, allocations, false)
+          await saveStockBatch(mergeTarget.id, addQty, addRatePaise, addAllocs, false)
           try { await logActivity('ITEM_EDIT_MERGE', payload.name + ' → merged into existing (qty +' + (Number(qty) || 0) + ')') } catch (_) {}
         } else {
           // No merge needed — standard update (qty first so allocation trigger passes)
           var { error: updateError } = await supabase.from(tableName).update(payload).eq('id', item.id)
           if (updateError) throw updateError
           await supabase.from(allocTable).delete().eq('item_id', item.id)
-          var venueRows = allocations.filter(function (a) { return a.venue_id && Number(a.qty) > 0 }).map(function (a) { return { item_id: item.id, venue_id: Number(a.venue_id), sub_venue_id: a.sub_venue_id ? Number(a.sub_venue_id) : null, sub_department_id: a.sub_department_id ? Number(a.sub_department_id) : null, qty: Number(a.qty) } })
+          var venueRows = allocsForSave.filter(function (a) { return a.venue_id && Number(a.qty) > 0 }).map(function (a) { return { item_id: item.id, venue_id: Number(a.venue_id), sub_venue_id: a.sub_venue_id ? Number(a.sub_venue_id) : null, sub_department_id: a.sub_department_id ? Number(a.sub_department_id) : null, qty: Number(a.qty) } })
           if (venueRows.length > 0) { var { error: vaErr } = await supabase.from(allocTable).insert(venueRows); if (vaErr) throw new Error('Allocation save failed: ' + vaErr.message) }
+          await saveStockBatch(item.id, addQty, addRatePaise, addAllocs, false)
+          await reconcileStockBatches(supabase, { itemId: item.id, itemSource: isCatStore ? 'catering_store' : 'inventory', finalQty: totalQty, finalAllocs: venueRows, ratePaise: itemRatePaise, userId: profile?.id, rateOverrides: rateOverrides })
           if (imageFile) { var path = await uploadImage(item.id, imgPrefix); if (path) await supabase.from(tableName).update({ image_path: path }).eq('id', item.id) }
         }
       }
@@ -639,6 +731,7 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved, variant }) {
               if (insErr) throw new Error('Allocation insert failed: ' + insErr.message)
             }
           }
+          await saveStockBatch(existing.id, Number(qty) || 0, itemRatePaise, newVenueRows, false)
         } else {
           // Fresh insert — pending or approved depending on role
           var { data: newItem, error: insertError } = await supabase.from(tableName).insert(payload).select().single()
@@ -650,6 +743,7 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved, variant }) {
           if (targetItem) {
             var venueRows = allocations.filter(function (a) { return a.venue_id && Number(a.qty) > 0 }).map(function (a) { return { item_id: targetItem.id, venue_id: Number(a.venue_id), sub_venue_id: a.sub_venue_id ? Number(a.sub_venue_id) : null, sub_department_id: a.sub_department_id ? Number(a.sub_department_id) : null, qty: Number(a.qty) } })
             if (venueRows.length > 0) { var { error: allocInsErr } = await supabase.from(allocTable).insert(venueRows); if (allocInsErr) throw new Error('Allocation save failed: ' + allocInsErr.message) }
+            await saveStockBatch(targetItem.id, Number(qty) || 0, itemRatePaise, venueRows, true)
           }
         }
       }
@@ -661,10 +755,63 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved, variant }) {
     setSaving(false)
   }
 
+  // Rate × Quantity, in paise, the moment both are filled in.
+  // What the quantity is worth: batch by batch at each batch's rate when the
+  // item has batches, otherwise quantity × the rate field.
+  var itemRateP = Number(ratePaise) > 0 ? Math.round(Number(ratePaise) * 100) : 0
+  var rateTotalPaise = (function () {
+    if (!(Number(qty) > 0)) return null
+    var v = effBatches.length > 0 ? stockValuePaise(effBatches, Number(qty), itemRateP) : Math.round(Number(qty) * itemRateP)
+    return v > 0 ? v : null
+  })()
+  // A venue's share priced at the rate of the batches it came from (the
+  // item's rate where no batch has stock there yet).
+  var rateAtPlace = placeRates(effBatches, itemRateP)
+  // Which batches each venue's stock came from, at what rate.
+  var partsAtPlace = {}
+  effBatches.forEach(function (b, bi) {
+    ;(b.stock_batch_allocations || []).forEach(function (x) {
+      var q = Number(x.qty) || 0
+      if (!x.venue_id || q <= 0) return
+      var k = x.venue_id + '|' + (x.sub_venue_id || '')
+      if (!partsAtPlace[k]) partsAtPlace[k] = []
+      partsAtPlace[k].push({ n: bi + 1, q: q, rate: b.rate_paise || itemRateP })
+    })
+  })
+  var latestRatePaise = effBatches.length > 0 ? (effBatches[effBatches.length - 1].rate_paise || itemRateP) : itemRateP
+  function placeRateOf(row) {
+    var k = (row.venue_id || '') + '|' + (row.sub_venue_id || '')
+    return rateAtPlace[k] != null ? rateAtPlace[k] : itemRateP
+  }
+  // A place's value written out batch by batch: "₹36.00 + ₹40.00", or in
+  // full "6 × ₹6.00 + 20 × ₹2.00".
+  function placeParts(row) { return partsAtPlace[(row.venue_id || '') + '|' + (row.sub_venue_id || '')] || [] }
+  function placeCalc(row) {
+    return placeParts(row).map(function (pt) { return formatPaise(Math.round(pt.q * pt.rate)) }).join(' + ')
+  }
+  function placeCalcFull(row) {
+    return placeParts(row).map(function (pt) { return pt.q + ' × ' + formatPaise(pt.rate) }).join(' + ')
+  }
+  function placeRateVaries(row) {
+    var parts = partsAtPlace[(row.venue_id || '') + '|' + (row.sub_venue_id || '')] || []
+    return parts.map(function (pt) { return pt.rate }).filter(function (r, i, arr) { return arr.indexOf(r) === i }).length > 1
+  }
+  function placeValuePaise(row) {
+    var k = (row.venue_id || '') + '|' + (row.sub_venue_id || '')
+    var rate = rateAtPlace[k] != null ? rateAtPlace[k] : itemRateP
+    return Math.round((Number(row.qty) || 0) * rate)
+  }
+  // How much of the quantity is placed at a venue, said in the Allocations
+  // header — 58 in stock with one row of 8 read as a mismatch when the
+  // other 50 simply are not assigned anywhere.
+  var allocPlaced = Math.round(allocations.reduce(function (sum, a) { return sum + (a.venue_id ? (Number(a.qty) || 0) : 0) }, 0) * 1000) / 1000
+  var allocRest = Math.round(((Number(qty) || 0) - allocPlaced) * 1000) / 1000
+  var allocHint = 'Where the stock is kept · ' + allocPlaced + ' of ' + (Number(qty) || 0) + ' ' + unit + ' placed'
+    + (allocRest > 0 ? ', ' + allocRest + ' not assigned to a venue' : allocRest < 0 ? ', ' + (-allocRest) + ' more than in stock' : '')
+
   var catItems = categories.map(function (c) { return { label: c.name, value: String(c.id), pending: c.status === 'pending' } })
   var subCatItems = subCategories.map(function (s) { return { label: s.name, value: String(s.id), pending: s.status === 'pending' } })
   var itemNameItems = [...new Set(existingItems.map(function (i) { return i.name }))].map(function (n) { return { label: titleCase(n), value: n } })
-  var deptItems = departments.map(function (d) { return { label: d.name, value: d.name } })
   
 
   var showPackSize = (function () {
@@ -805,110 +952,9 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved, variant }) {
           </div>
         </FormSection>
 
-        {/* ═══ STOCK & PRICING ═══ */}
-        <FormSection icon="rupee" title="Stock & pricing">
-          <div className="grid grid-cols-2 gap-3 @2xl:grid-cols-5">
-            <div>
-              <label className={F_LBL}>{t('Quantity')}<span className="text-red-500 ml-0.5">*</span></label>
-              <input type="number" min="0" max="999999" step="any" inputMode="numeric" value={qty} onChange={function (e) { setQty(e.target.value) }} placeholder="0"
-                className={F_INP + (errors.qty ? " border-red-300" : "")} />
-              {errors.qty && <p className="text-xs text-red-500 mt-1">{errors.qty}</p>}
-            </div>
-            <div>
-              <label className={F_LBL}>{t('Unit')}</label>
-              <select value={unit} onChange={function (e) { setUnit(e.target.value) }} className={F_INP}>
-                {UNITS.map(function (u) { return <option key={u} value={u}>{u}</option> })}
-              </select>
-            </div>
-            <div>
-              <label className={F_LBL + " truncate"}>{showPackSize ? 'Season Reorder Qty' : t('Min Order Qty')}</label>
-              <input type="number" min="0" step="any" inputMode="numeric" value={minOrderQty} onChange={function (e) { setMinOrderQty(e.target.value) }} placeholder="—" className={F_INP} />
-            </div>
-            <div>
-              <label className={F_LBL + " truncate"}>{showPackSize ? 'Off Season Reorder Qty' : t('Reorder Qty')}</label>
-              <input type="number" min="0" step="any" inputMode="numeric" value={reorderQty} onChange={function (e) { setReorderQty(e.target.value) }} placeholder="—" className={F_INP} />
-            </div>
-            <div className="col-span-2 @2xl:col-span-1">
-              <label className={F_LBL}>{t('Rate') + ' (₹)'}</label>
-              <input type="number" min="0" step="any" inputMode="decimal" value={ratePaise} onChange={function (e) { setRatePaise(e.target.value) }} placeholder="—" className={F_INP} />
-            </div>
-          </div>
-          <div className="mt-4 @2xl:max-w-md">
-            <label className={F_LBL}>{t('Is Asset?')}</label>
-            <Segmented value={isAsset} onChange={setIsAsset} options={[
-              { value: 'yes', label: t('Yes'), on: 'bg-emerald-600 text-white' },
-              { value: 'no', label: t('No'), on: 'bg-red-500 text-white' },
-              { value: 'unknown', label: t('Dont Know'), on: 'bg-slate-600 text-white' },
-            ]} />
-          </div>
-        </FormSection>
-
-        {/* ═══ ALLOCATIONS — behind a switch ═══ */}
-        <FormSection icon="mapPin" title={t('Allocations') || 'Allocations'} hint="Distribute qty across depts / venues"
-          right={
-            <button type="button" role="switch" aria-checked={showAllocations} aria-label="Show allocations"
-              onClick={function () { setShowAllocations(function (v) { return !v }) }}
-              className={"relative shrink-0 w-11 h-6 rounded-full transition-colors " + (showAllocations ? "bg-[#3B4668]" : "bg-slate-300")}>
-              <span className={"absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-[translate] duration-200 " + (showAllocations ? "translate-x-5" : "translate-x-0")} />
-            </button>
-          }>
-          {showAllocations && <div className="space-y-2">
-          {errors.dept && <p className="text-xs text-red-500">{errors.dept}</p>}
-          <AllocationRows
-            allocations={allocations}
-            accent="gray"
-            bare
-            title={t('Allocations') || 'Allocations'}
-            onAdd={addAllocationRow}
-            onRemove={removeAllocationRow}
-            onDuplicate={duplicateAllocationRow}
-            isComplete={function (a) { return !!a.department && !!a.venue_id && !!a.qty && Number(a.qty) > 0 }}
-            renderChip={function (a) {
-              var v = a.venue_id ? venues.find(function (x) { return String(x.id) === String(a.venue_id) }) : null
-              var sv = a.sub_venue_id && v ? subVenues.find(function (x) { return String(x.id) === String(a.sub_venue_id) }) : null
-              var sd = a.sub_department_id ? subDepartments.find(function (x) { return String(x.id) === String(a.sub_department_id) }) : null
-              return {
-                left: (
-                  <>
-                    {v && <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-[#EDEFF5] text-[10px] font-bold text-[#333D5E] shrink-0">{v.code}</span>}
-                    {a.department && <span className="text-gray-700 font-medium truncate">{a.department}</span>}
-                    {sd && <span className="text-gray-400 shrink-0">›</span>}
-                    {sd && <span className="text-gray-500 truncate">{sd.name}</span>}
-                    {sv && <span className="text-gray-400 shrink-0">·</span>}
-                    {sv && <span className="text-gray-500 truncate">{sv.name}</span>}
-                  </>
-                ),
-                right: (Number(a.qty) || 0).toString(),
-              }
-            }}
-            renderExpanded={function (row, index) {
-              var parentDept = row.department ? departments.find(function (d) { return d.name === row.department }) : null
-              var filteredSubDepts = parentDept ? subDepartments.filter(function (sd) { return sd.department_id === parentDept.id && sd.active !== false }) : []
-              var filteredSubVenues = row.venue_id ? subVenues.filter(function (sv) { return String(sv.venue_id) === row.venue_id }) : []
-              return (
-                <div className="grid gap-2.5 @2xl:grid-cols-2">
-                  <SearchDropdown label={t('Department')} required items={deptItems} value={row.department} onChange={function (val) { updateAllocation(index, 'department', val) }} placeholder={t('Search Department...')} />
-                  {parentDept && filteredSubDepts.length > 0 && (
-                    <SearchDropdown label={t('Sub-department') || 'Sub-department'} items={filteredSubDepts.map(function (sd) { return { label: sd.name, value: String(sd.id) } })} value={row.sub_department_id} onChange={function (val) { updateAllocation(index, 'sub_department_id', val) }} placeholder="Select sub-department..." />
-                  )}
-                  <SearchDropdown label={t('Venue') || 'Venue'} items={venues.map(function (v) { return { label: v.code + ' — ' + v.name, value: String(v.id) } })} value={row.venue_id} onChange={function (val) { updateAllocation(index, 'venue_id', val) }} placeholder="Select venue..." />
-                  {row.venue_id && filteredSubVenues.length > 0 && (
-                    <SearchDropdown label="Sub-venue" items={filteredSubVenues.map(function (sv) { return { label: sv.name, value: String(sv.id) } })} value={row.sub_venue_id} onChange={function (val) { updateAllocation(index, 'sub_venue_id', val) }} placeholder="Select sub-venue..." />
-                  )}
-                  <div>
-                    <label className={F_LBL}>{t('Quantity')}</label>
-                    <input type="number" min="0" step="any" inputMode="numeric" value={row.qty} onChange={function (e) { updateAllocation(index, 'qty', e.target.value) }} placeholder="0" className={F_INP} />
-                  </div>
-                </div>
-              )
-            }}
-          />
-          </div>}
-        </FormSection>
-
-        {/* ═══ DYNAMIC DIMENSIONS — label over field, two to a row ═══ */}
+        {/* ═══ PROPERTIES — label over field, two to a row ═══ */}
         {categoryDimFields.length > 0 && (
-          <FormSection icon="list" title="Dimensions">
+          <FormSection icon="list" title="Properties">
             <div className="grid gap-3.5 @2xl:grid-cols-2">
             {dimensionValues.map(function (dim, index) {
               var dimType = dim.type || 'number'
@@ -947,6 +993,363 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved, variant }) {
             </div>
           </FormSection>
         )}
+
+        {/* ═══ STOCK & PRICING ═══ */}
+        <FormSection icon="rupee" title="Stock & pricing">
+          <div className={"grid grid-cols-2 gap-3 " + (itemBatches.length > 0 ? "@2xl:grid-cols-3" : "@2xl:grid-cols-4")}>
+            <div>
+              <label className={F_LBL}>{t('Quantity')}</label>
+              {/* Editable for corrections. A change typed here is not a batch
+                  — new stock arriving goes through Add new stock below, which
+                  keeps its rate and venue split; the breakdown notes any gap. */}
+              <input type="number" min="0" max="999999" step="any" inputMode="numeric" value={qty} onChange={function (e) { setQty(e.target.value) }} placeholder="0"
+                className={F_INP + (errors.qty ? " border-red-300" : "")} />
+              {errors.qty && <p className="text-xs text-red-500 mt-1">{errors.qty}</p>}
+            </div>
+            <div>
+              <label className={F_LBL}>{t('Unit')}</label>
+              <select value={unit} onChange={function (e) { setUnit(e.target.value) }} className={F_INP}>
+                {UNITS.map(function (u) { return <option key={u} value={u}>{u}</option> })}
+              </select>
+            </div>
+            {/* With batches the rate is theirs, not one number — each batch's
+                rate is shown in the allocation list below — so the field only
+                appears for an item with no batches yet. The rate of new stock
+                is entered in Add new stock. */}
+            {itemBatches.length === 0 && (
+              <div>
+                <label className={F_LBL}>{t('Rate') + ' (₹)'}</label>
+                <input type="number" min="0" step="any" inputMode="decimal" value={ratePaise} onChange={function (e) { setRatePaise(e.target.value) }} placeholder="—" className={F_INP} />
+              </div>
+            )}
+            <div>
+              <label className={F_LBL}>Total (₹)</label>
+              <div className={F_INP + " flex items-center bg-slate-50 font-semibold tabular-nums " + (rateTotalPaise != null ? "text-slate-900" : "text-slate-400")}>
+                {rateTotalPaise != null ? formatPaise(rateTotalPaise) : '—'}
+              </div>
+            </div>
+          </div>
+          {/* Batch rates: each batch's unit rate, editable — a batch saved
+              before rates were kept has none (₹0) until it is given one. */}
+          {itemBatches.length > 0 && (
+            <div className="mt-4">
+              <p className="mb-2 text-[12px] font-bold uppercase tracking-[0.07em] text-slate-500">Batch rates</p>
+              <div className="rounded-xl border border-slate-200 overflow-hidden divide-y divide-slate-100">
+                {effBatches.map(function (b, bi) {
+                  var bq = Number(b.qty) || 0
+                  var missing = !b.rate_paise
+                  var typed = Object.prototype.hasOwnProperty.call(batchRateEdits, b.id) ? batchRateEdits[b.id] : (itemBatches[bi].rate_paise ? String(itemBatches[bi].rate_paise / 100) : '')
+                  return (
+                    <div key={b.id} className={"flex flex-wrap items-center gap-x-3 gap-y-2 px-3.5 py-2.5 " + (missing ? "bg-amber-50/60" : "")}>
+                      <span className="flex-1 min-w-[160px]">
+                        <span className="block text-[13px] font-semibold text-slate-800">Batch {bi + 1} · {b.is_opening ? 'Opening stock' : 'New stock'}</span>
+                        <span className="block text-[11.5px] text-slate-500 tabular-nums">{bq} {unit} · {new Date(b.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                      </span>
+                      <label className="flex items-center gap-1.5">
+                        <span className="text-[12px] font-semibold text-slate-500">Rate ₹</span>
+                        <input type="number" min="0" step="any" inputMode="decimal" value={typed} placeholder="0"
+                          onChange={function (e) { var v = e.target.value; setBatchRateEdits(function (prev) { var n = Object.assign({}, prev); n[b.id] = v; return n }) }}
+                          className={"w-24 h-9 px-2.5 bg-white border rounded-lg text-[14px] font-semibold text-slate-900 tabular-nums focus:outline-none focus:ring-4 focus:ring-[#3B4668]/10 " + (missing ? "border-amber-300" : "border-slate-300 focus:border-[#A9B1CB]")} />
+                      </label>
+                      <span className={"w-[104px] text-right text-[14px] font-bold tabular-nums " + (missing ? "text-amber-700" : "text-slate-900")}>
+                        {missing ? 'Rate missing' : formatPaise(Math.round(bq * b.rate_paise))}
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+          {/* Where the quantity above is kept: the item's venue allocations,
+              filled in from what is saved, edited the same way as a new stock
+              split — venue, sub-venue, qty and its value at the item's rate. */}
+          {(function () {
+            var onHandQ = Number(qty) || 0
+            var placedQ = Math.round(allocations.reduce(function (sum, a) { return sum + (a.venue_id ? (Number(a.qty) || 0) : 0) }, 0) * 1000) / 1000
+            var restQ = Math.round((onHandQ - placedQ) * 1000) / 1000
+            function removeAt(i) {
+              if (allocations.length <= 1) setAllocations([{ department: '', sub_department_id: '', venue_id: '', sub_venue_id: '', qty: '' }])
+              else removeAllocationRow(i)
+            }
+            // Shown once there is a quantity to place: open rows like the Add
+            // new stock split for first-time stock (no batches yet), the
+            // numbered list with each place's batches for stock that has them.
+            if (onHandQ <= 0 && !errors.alloc) return null
+            // First-time stock (no batches yet): the same open rows as the Add
+            // new stock split — venue, sub-venue, qty and total — rather than
+            // a folded list that opens on an empty "Incomplete" line.
+            if (itemBatches.length === 0) {
+              return (
+                <div className="mt-4">
+                  <div className="flex items-center justify-between gap-3 mb-2">
+                    <p className="text-[12px] font-bold uppercase tracking-[0.07em] text-slate-500">Allocate to venues</p>
+                    <span className={"text-[12.5px] font-semibold tabular-nums " + (restQ < 0 ? "text-red-600" : restQ === 0 ? "text-emerald-700" : "text-slate-500")}>
+                      {placedQ} of {onHandQ} allocated{restQ > 0 ? ' · ' + restQ + ' left' : restQ < 0 ? ' · ' + (-restQ) + ' too many' : ''}
+                    </span>
+                  </div>
+                  <div className="space-y-2">
+                    {allocations.map(function (r, i) {
+                      var svs = r.venue_id ? subVenues.filter(function (sv) { return String(sv.venue_id) === String(r.venue_id) }) : []
+                      return (
+                        <div key={i} className="grid gap-2.5 items-end rounded-xl border border-slate-200 bg-slate-50/70 p-3 @2xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_100px_130px_44px]">
+                          <div className={svs.length > 0 ? "" : "@2xl:col-span-2"}>
+                            <SearchDropdown label="Venue" items={venues.map(function (v) { return { label: v.code + ' — ' + v.name, value: String(v.id) } })} value={r.venue_id} onChange={function (val) { updateAllocation(i, 'venue_id', val) }} placeholder="Select venue..." />
+                          </div>
+                          {svs.length > 0 && <SearchDropdown label="Sub-venue" items={svs.map(function (sv) { return { label: sv.name, value: String(sv.id) } })} value={r.sub_venue_id} onChange={function (val) { updateAllocation(i, 'sub_venue_id', val) }} placeholder="Select sub-venue..." />}
+                          <div>
+                            <label className={F_LBL}>Qty</label>
+                            <input type="number" min="0" step="any" inputMode="decimal" value={r.qty} onChange={function (e) { updateAllocation(i, 'qty', e.target.value) }} placeholder="0" className={F_INP} />
+                          </div>
+                          <div>
+                            <label className={F_LBL}>Total</label>
+                            <div className={F_INP + " flex items-center bg-white font-semibold tabular-nums " + (placeValuePaise(r) > 0 ? "text-slate-900" : "text-slate-400")}>
+                              {placeValuePaise(r) > 0 ? formatPaise(placeValuePaise(r)) : '—'}
+                            </div>
+                          </div>
+                          <button type="button" onClick={function () { removeAt(i) }} aria-label="Remove row" title="Remove"
+                            className="h-11 w-11 inline-flex items-center justify-center rounded-xl text-red-500 hover:bg-red-50 transition-colors">
+                            <Icon name="trash" size={15} />
+                          </button>
+                        </div>
+                      )
+                    })}
+                  </div>
+                  <button type="button" onClick={addAllocationRow}
+                    className="mt-2 inline-flex items-center gap-1.5 h-9 px-3 rounded-lg text-[13px] font-semibold text-[#333D5E] bg-[#EDEFF5] hover:bg-[#E3E6F0] transition-colors">
+                    <Icon name="plus" size={14} />Add venue
+                  </button>
+                  {errors.alloc && <p className="mt-2 text-xs font-medium text-red-600">{errors.alloc}</p>}
+                </div>
+              )
+            }
+            return (
+              <div className="mt-5 pt-4 border-t border-slate-100">
+                {/* The list view: one numbered line per place with its qty and
+                    value; the line being edited opens in place. */}
+                <AllocationRows
+                  allocations={allocations}
+                  accent="gray"
+                  bare
+                  startCollapsed
+                  title="Allocations"
+                  heading={
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-[12px] font-bold uppercase tracking-[0.07em] text-slate-600">Allocate to venues</span>
+                      <span className={"inline-flex items-center gap-1 h-6 px-2.5 rounded-full text-[12px] font-semibold tabular-nums " +
+                        (restQ < 0 ? "bg-red-50 text-red-700 ring-1 ring-red-200" : restQ === 0 ? "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200" : "bg-amber-50 text-amber-800 ring-1 ring-amber-200")}>
+                        {restQ === 0 && <Icon name="check" size={12} />}
+                        {placedQ} of {onHandQ} allocated{restQ > 0 ? ' \u00b7 ' + restQ + ' left' : restQ < 0 ? ' \u00b7 ' + (-restQ) + ' too many' : ''}
+                      </span>
+                    </div>
+                  }
+                  onAdd={addAllocationRow}
+                  onRemove={removeAt}
+                  onDuplicate={duplicateAllocationRow}
+                  isComplete={function (a) { return !!a.venue_id && !!a.qty && Number(a.qty) > 0 }}
+                  renderChip={function (a) {
+                    var v = a.venue_id ? venues.find(function (x) { return String(x.id) === String(a.venue_id) }) : null
+                    var sv = a.sub_venue_id && v ? subVenues.find(function (x) { return String(x.id) === String(a.sub_venue_id) }) : null
+                    var rq = Number(a.qty) || 0
+                    return {
+                      left: (
+                        <span className="flex flex-col min-w-0 gap-1">
+                          <span className="flex items-center gap-2 min-w-0">
+                            {v && <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-[#EDEFF5] text-[10px] font-bold text-[#333D5E] shrink-0">{v.code}</span>}
+                            {sv
+                              ? <span className="font-medium text-slate-800 truncate">{sv.name}</span>
+                              : v && <span className="text-slate-500 truncate">{v.name}</span>}
+                          </span>
+                          {/* The batches this place holds, each at its rate. */}
+                          {(partsAtPlace[(a.venue_id || '') + '|' + (a.sub_venue_id || '')] || []).length > 0 && (
+                            <span className="flex flex-wrap gap-1">
+                              {partsAtPlace[(a.venue_id || '') + '|' + (a.sub_venue_id || '')].map(function (pt, pi) {
+                                // The newest batch is marked, once there is more than one.
+                                var isNewest = itemBatches.length > 1 && pt.n === itemBatches.length
+                                return (
+                                  <span key={pi} className={"inline-flex items-center h-5 px-1.5 rounded text-[11px] tabular-nums " + (isNewest ? "bg-emerald-50 text-emerald-800 ring-1 ring-emerald-200" : "bg-slate-100 text-slate-600")}>
+                                    {isNewest && <span className="mr-1 px-1 rounded-sm bg-emerald-600 text-white text-[9.5px] font-extrabold uppercase tracking-[0.06em] leading-[14px]">New</span>}
+                                    <b className="font-semibold text-slate-700 mr-1">Batch {pt.n}</b>{pt.q} × {formatPaise(pt.rate)} = <b className="font-semibold text-slate-800 ml-1">{formatPaise(Math.round(pt.q * pt.rate))}</b>
+                                  </span>
+                                )
+                              })}
+                            </span>
+                          )}
+                        </span>
+                      ),
+                      right: (
+                        <span className="inline-flex items-center gap-2">
+                          <span className="inline-flex items-center gap-1 h-7 px-2.5 rounded-lg bg-slate-100 text-[13px] font-bold text-slate-900 tabular-nums">{rq} <span className="text-[11px] font-semibold text-slate-500">{unit}</span></span>
+                          <span className="hidden sm:inline text-[12px] font-semibold text-slate-500 tabular-nums">{placeRateVaries(a) ? placeCalc(a) : '× ' + formatPaise(Math.round(placeRateOf(a)))}</span>
+                          <span className="inline-block w-[96px] text-right text-[13.5px] font-bold text-slate-900 tabular-nums">{placeValuePaise(a) > 0 ? formatPaise(placeValuePaise(a)) : '\u2014'}</span>
+                        </span>
+                      ),
+                    }
+                  }}
+                  renderExpanded={function (r, i) {
+                    var svs = r.venue_id ? subVenues.filter(function (sv) { return String(sv.venue_id) === String(r.venue_id) }) : []
+                    var rq = Number(r.qty) || 0
+                    return (
+                      <div className="grid gap-2.5 items-end @2xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_100px_130px]">
+                        {/* With no sub-venues to pick, the venue takes both
+                            columns rather than leaving a gap before the qty. */}
+                        <div className={svs.length > 0 ? "" : "@2xl:col-span-2"}>
+                          <SearchDropdown label="Venue" required items={venues.map(function (v) { return { label: v.code + ' — ' + v.name, value: String(v.id) } })} value={r.venue_id} onChange={function (val) { updateAllocation(i, 'venue_id', val) }} placeholder="Select venue..." />
+                        </div>
+                        {svs.length > 0 && <SearchDropdown label="Sub-venue" items={svs.map(function (sv) { return { label: sv.name, value: String(sv.id) } })} value={r.sub_venue_id} onChange={function (val) { updateAllocation(i, 'sub_venue_id', val) }} placeholder="Select sub-venue..." />}
+                        <div>
+                          <label className={F_LBL}>Qty</label>
+                          <input type="number" min="0" step="any" inputMode="decimal" value={r.qty} onChange={function (e) { updateAllocation(i, 'qty', e.target.value) }} placeholder="0" className={F_INP} />
+                        </div>
+                        <div>
+                          <label className={F_LBL}>Total</label>
+                          <div className={F_INP + " flex items-center bg-white font-semibold tabular-nums " + (placeValuePaise(r) > 0 ? "text-slate-900" : "text-slate-400")}>
+                            {placeValuePaise(r) > 0 ? formatPaise(placeValuePaise(r)) : '—'}
+                          </div>
+                          {placeRateOf(r) > 0 && <p className="mt-1 text-[11.5px] text-slate-500 tabular-nums">{placeRateVaries(r) ? placeCalcFull(r) : 'at ' + formatPaise(Math.round(placeRateOf(r))) + ' each'}</p>}
+                        </div>
+                      </div>
+                    )
+                  }}
+                />
+                {errors.alloc && <p className="mt-2 text-xs font-medium text-red-600">{errors.alloc}</p>}
+              </div>
+            )
+          })()}
+          {/* Add new stock: a button under the quantity; it opens the new
+              qty, its unit rate and total, and its split across venues. */}
+        {isEdit && !showAddStock && (
+          <button type="button" onClick={function () { setShowAddStock(true) }}
+            className="mt-4 inline-flex items-center gap-1.5 h-10 px-4 rounded-xl text-[13.5px] font-semibold text-white bg-[#3B4668] shadow-[0_4px_12px_-4px_rgba(59,70,104,0.55)] hover:bg-[#2F3854] transition-colors">
+            <Icon name="plus" size={15} />Add new stock
+          </button>
+        )}
+        {isEdit && showAddStock && (function () {
+          var onHand = Number(qty) || 0
+          var addQ = Number(newStockQty) || 0
+          var rateN = Number(newStockRate) || (latestRatePaise ? latestRatePaise / 100 : 0)
+          var allocated = Math.round(newStockAllocs.reduce(function (sum, a) { return sum + (Number(a.qty) || 0) }, 0) * 1000) / 1000
+          var remaining = Math.round((addQ - allocated) * 1000) / 1000
+          function setRow(i, patch) {
+            setNewStockAllocs(function (prev) {
+              return prev.map(function (r, j) {
+                if (j !== i) return r
+                var u = Object.assign({}, r, patch)
+                if (patch.venue_id !== undefined) u.sub_venue_id = ''
+                return u
+              })
+            })
+          }
+          function cancelAdd() {
+            setNewStockQty(''); setNewStockRate(''); setNewStockAllocs([{ venue_id: '', sub_venue_id: '', qty: '' }])
+            setErrors(function (prev) { var n = Object.assign({}, prev); delete n.newStock; return n })
+            setShowAddStock(false)
+          }
+          function removeRow(i) {
+            setNewStockAllocs(function (prev) {
+              if (prev.length <= 1) return [{ venue_id: '', sub_venue_id: '', qty: '' }]
+              return prev.filter(function (_, j) { return j !== i })
+            })
+          }
+          return (
+            <div className="mt-4 rounded-xl border border-[#D8DCE8] bg-[#F6F7FB] p-4">
+              <div className="flex items-start justify-between gap-3 mb-3">
+                <div className="min-w-0">
+                  <p className="text-[13px] font-bold uppercase tracking-[0.07em] text-slate-900">Add new stock</p>
+                  <p className="text-[12px] text-slate-500">{'Now ' + onHand + ' ' + unit + (addQ > 0 ? ' \u00b7 after save ' + (Math.round((onHand + addQ) * 1000) / 1000) + ' ' + unit : '')}</p>
+                </div>
+                <button type="button" onClick={cancelAdd}
+                  className="shrink-0 inline-flex items-center gap-1 h-8 px-2.5 rounded-lg text-[12.5px] font-semibold text-slate-600 hover:bg-white hover:text-slate-900 transition-colors">
+                  <Icon name="close" size={13} />Cancel
+                </button>
+              </div>
+              <div className="grid grid-cols-2 gap-3 @2xl:grid-cols-3">
+                <div>
+                  <label className={F_LBL}>New quantity</label>
+                  <input type="number" min="0" step="any" inputMode="decimal" value={newStockQty} onChange={function (e) { setNewStockQty(e.target.value) }} placeholder="0" className={F_INP} />
+                </div>
+                <div>
+                  <label className={F_LBL}>Unit rate (₹)</label>
+                  <input type="number" min="0" step="any" inputMode="decimal" value={newStockRate} onChange={function (e) { setNewStockRate(e.target.value) }} placeholder={latestRatePaise ? String(latestRatePaise / 100) : '—'} className={F_INP} />
+                </div>
+                <div className="col-span-2 @2xl:col-span-1">
+                  <label className={F_LBL}>Total (₹)</label>
+                  <div className={F_INP + " flex items-center bg-slate-50 font-semibold tabular-nums " + (addQ > 0 && rateN > 0 ? "text-slate-900" : "text-slate-400")}>
+                    {addQ > 0 && rateN > 0 ? formatPaise(Math.round(addQ * rateN * 100)) : '—'}
+                  </div>
+                </div>
+              </div>
+
+              {addQ > 0 && (
+                <div className="mt-4">
+                  <div className="flex items-center justify-between gap-3 mb-2">
+                    <p className="text-[12px] font-bold uppercase tracking-[0.07em] text-slate-500">Allocate to venues</p>
+                    <span className={"text-[12.5px] font-semibold tabular-nums " + (remaining < 0 ? "text-red-600" : remaining === 0 ? "text-emerald-700" : "text-slate-500")}>
+                      {allocated} of {addQ} allocated{remaining > 0 ? ' \u00b7 ' + remaining + ' left' : remaining < 0 ? ' \u00b7 ' + (-remaining) + ' too many' : ''}
+                    </span>
+                  </div>
+                  <div className="space-y-2">
+                    {newStockAllocs.map(function (r, i) {
+                      var svs = r.venue_id ? subVenues.filter(function (sv) { return String(sv.venue_id) === String(r.venue_id) }) : []
+                      var rq = Number(r.qty) || 0
+                      return (
+                        <div key={i} className="grid gap-2.5 items-end rounded-xl border border-slate-200 bg-white p-3 @2xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_100px_130px_44px]">
+                          <SearchDropdown label="Venue" items={venues.map(function (v) { return { label: v.code + ' \u2014 ' + v.name, value: String(v.id) } })} value={r.venue_id} onChange={function (val) { setRow(i, { venue_id: val }) }} placeholder="Select venue..." />
+                          {svs.length > 0
+                            ? <SearchDropdown label="Sub-venue" items={svs.map(function (sv) { return { label: sv.name, value: String(sv.id) } })} value={r.sub_venue_id} onChange={function (val) { setRow(i, { sub_venue_id: val }) }} placeholder="Select sub-venue..." />
+                            : <div className="hidden @2xl:block" />}
+                          <div>
+                            <label className={F_LBL}>Qty</label>
+                            <input type="number" min="0" step="any" inputMode="decimal" value={r.qty} onChange={function (e) { setRow(i, { qty: e.target.value }) }} placeholder="0" className={F_INP} />
+                          </div>
+                          <div>
+                            <label className={F_LBL}>Total</label>
+                            <div className={F_INP + " flex items-center bg-slate-50 font-semibold tabular-nums " + (rq > 0 && rateN > 0 ? "text-slate-900" : "text-slate-400")}>
+                              {rq > 0 && rateN > 0 ? formatPaise(Math.round(rq * rateN * 100)) : '—'}
+                            </div>
+                          </div>
+                          <button type="button" onClick={function () { removeRow(i) }} aria-label="Remove row" title="Remove"
+                            className="h-11 w-11 inline-flex items-center justify-center rounded-xl text-red-500 hover:bg-red-50 transition-colors">
+                            <Icon name="trash" size={15} />
+                          </button>
+                        </div>
+                      )
+                    })}
+                  </div>
+                  <button type="button" onClick={function () { setNewStockAllocs(function (prev) { return prev.concat([{ venue_id: '', sub_venue_id: '', qty: '' }]) }) }}
+                    className="mt-2 inline-flex items-center gap-1.5 h-9 px-3 rounded-lg text-[13px] font-semibold text-[#333D5E] bg-[#EDEFF5] hover:bg-[#E3E6F0] transition-colors">
+                    <Icon name="plus" size={14} />Add venue
+                  </button>
+                </div>
+              )}
+              {errors.newStock && <p className="mt-2 text-xs font-medium text-red-600">{errors.newStock}</p>}
+            </div>
+          )
+        })()}
+        </FormSection>
+
+
+        {/* ═══ ADDITIONAL DETAILS — the least-checked settings, at the
+            very bottom of the form rather than crowding Stock & pricing */}
+        <FormSection icon="settings" title="Additional Details">
+          <div className="grid grid-cols-2 gap-3 @2xl:grid-cols-3">
+            <div>
+              <label className={F_LBL + " truncate"}>{showPackSize ? 'Season Reorder Qty' : t('Min Order Qty')}</label>
+              <input type="number" min="0" step="any" inputMode="numeric" value={minOrderQty} onChange={function (e) { setMinOrderQty(e.target.value) }} placeholder="—" className={F_INP} />
+            </div>
+            <div>
+              <label className={F_LBL + " truncate"}>{showPackSize ? 'Off Season Reorder Qty' : t('Reorder Qty')}</label>
+              <input type="number" min="0" step="any" inputMode="numeric" value={reorderQty} onChange={function (e) { setReorderQty(e.target.value) }} placeholder="—" className={F_INP} />
+            </div>
+            <div className="col-span-2 @2xl:col-span-1">
+              <label className={F_LBL}>{t('Is Asset?')}</label>
+              <Segmented value={isAsset} onChange={setIsAsset} options={[
+                { value: 'yes', label: t('Yes'), on: 'bg-emerald-600 text-white' },
+                { value: 'no', label: t('No'), on: 'bg-red-500 text-white' },
+                { value: 'unknown', label: t('Dont Know'), on: 'bg-slate-600 text-white' },
+              ]} />
+            </div>
+          </div>
+        </FormSection>
 
         {/* ═══ SUBMIT AREA ═══ */}
         {errors.submit && (
@@ -1078,111 +1481,8 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved, variant }) {
         </div>
       </FormSection>
 
-      <FormSection icon="rupee" title="Stock & pricing">
-        <div className="space-y-3.5">
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className={F_LBL}>{t('Quantity')}<span className="text-red-500 ml-0.5">*</span></label>
-              <input type="number" min="0" max="999999" step="any" inputMode="numeric" value={qty} onChange={function (e) { setQty(e.target.value) }} placeholder="0"
-                style={{ fontSize: '16px' }} className={F_INP + (errors.qty ? " border-red-300" : "")} />
-              {errors.qty && <p className="text-xs text-red-500 mt-1">{errors.qty}</p>}
-            </div>
-            <div>
-              <label className={F_LBL}>{t('Unit')}</label>
-              <select value={unit} onChange={function (e) { setUnit(e.target.value) }} className={F_INP}>
-                {UNITS.map(function (u) { return <option key={u} value={u}>{u}</option> })}
-              </select>
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className={F_LBL + " truncate"}>{showPackSize ? 'Season Reorder Qty' : t('Min Order Qty')}</label>
-              <input type="number" min="0" step="any" inputMode="numeric" value={minOrderQty} onChange={function (e) { setMinOrderQty(e.target.value) }} placeholder="—" style={{ fontSize: '16px' }} className={F_INP} />
-            </div>
-            <div>
-              <label className={F_LBL + " truncate"}>{showPackSize ? 'Off Season Reorder Qty' : t('Reorder Qty')}</label>
-              <input type="number" min="0" step="any" inputMode="numeric" value={reorderQty} onChange={function (e) { setReorderQty(e.target.value) }} placeholder="—" style={{ fontSize: '16px' }} className={F_INP} />
-            </div>
-          </div>
-          <div>
-            <label className={F_LBL}>{t('Rate') + ' (₹)'}</label>
-            <input type="number" min="0" step="any" inputMode="decimal" value={ratePaise} onChange={function (e) { setRatePaise(e.target.value) }} placeholder="—" style={{ fontSize: '16px' }} className={F_INP} />
-          </div>
-          <div>
-            <label className={F_LBL}>{t('Is Asset?')}</label>
-            <Segmented value={isAsset} onChange={setIsAsset} options={[
-              { value: 'yes', label: t('Yes'), on: 'bg-emerald-600 text-white' },
-              { value: 'no', label: t('No'), on: 'bg-red-500 text-white' },
-              { value: 'unknown', label: t('Dont Know'), on: 'bg-slate-600 text-white' },
-            ]} />
-          </div>
-        </div>
-      </FormSection>
-
-      <FormSection icon="mapPin" title={t('Allocations') || 'Allocations'} hint="Distribute qty across depts / venues"
-        right={
-          <button type="button" role="switch" aria-checked={showAllocations} aria-label="Show allocations"
-            onClick={function () { setShowAllocations(function (v) { return !v }) }}
-            className={"relative shrink-0 w-11 h-6 rounded-full transition-colors " + (showAllocations ? "bg-[#3B4668]" : "bg-slate-300")}>
-            <span className={"absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-[translate] duration-200 " + (showAllocations ? "translate-x-5" : "translate-x-0")} />
-          </button>
-        }>
-        {showAllocations && <div className="space-y-2">
-        {errors.dept && <p className="text-xs text-red-500">{errors.dept}</p>}
-        <AllocationRows
-          allocations={allocations}
-          accent="gray"
-          bare
-          title={t('Allocations') || 'Allocations'}
-          onAdd={addAllocationRow}
-          onRemove={removeAllocationRow}
-          onDuplicate={duplicateAllocationRow}
-          isComplete={function (a) { return !!a.department && !!a.venue_id && !!a.qty && Number(a.qty) > 0 }}
-          renderChip={function (a) {
-            var v = a.venue_id ? venues.find(function (x) { return String(x.id) === String(a.venue_id) }) : null
-            var sv = a.sub_venue_id && v ? subVenues.find(function (x) { return String(x.id) === String(a.sub_venue_id) }) : null
-            var sd = a.sub_department_id ? subDepartments.find(function (x) { return String(x.id) === String(a.sub_department_id) }) : null
-            return {
-              left: (
-                <>
-                  {v && <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-[#EDEFF5] text-[10px] font-bold text-[#333D5E] shrink-0">{v.code}</span>}
-                  {a.department && <span className="text-gray-700 font-medium truncate">{a.department}</span>}
-                  {sd && <span className="text-gray-400 shrink-0">›</span>}
-                  {sd && <span className="text-gray-500 truncate">{sd.name}</span>}
-                  {sv && <span className="text-gray-400 shrink-0">·</span>}
-                  {sv && <span className="text-gray-500 truncate">{sv.name}</span>}
-                </>
-              ),
-              right: (Number(a.qty) || 0).toString(),
-            }
-          }}
-          renderExpanded={function (row, index) {
-            var parentDept = row.department ? departments.find(function (d) { return d.name === row.department }) : null
-            var filteredSubDepts = parentDept ? subDepartments.filter(function (sd) { return sd.department_id === parentDept.id && sd.active !== false }) : []
-            var filteredSubVenues = row.venue_id ? subVenues.filter(function (sv) { return String(sv.venue_id) === row.venue_id }) : []
-            return (
-              <div className="space-y-2.5">
-                <SearchDropdown label={t('Department')} required items={deptItems} value={row.department} onChange={function (val) { updateAllocation(index, 'department', val) }} placeholder={t('Search Department...')} />
-                {parentDept && filteredSubDepts.length > 0 && (
-                  <SearchDropdown label={t('Sub-department') || 'Sub-department'} items={filteredSubDepts.map(function (sd) { return { label: sd.name, value: String(sd.id) } })} value={row.sub_department_id} onChange={function (val) { updateAllocation(index, 'sub_department_id', val) }} placeholder="Select sub-department..." />
-                )}
-                <SearchDropdown label={t('Venue') || 'Venue'} items={venues.map(function (v) { return { label: v.code + ' — ' + v.name, value: String(v.id) } })} value={row.venue_id} onChange={function (val) { updateAllocation(index, 'venue_id', val) }} placeholder="Select venue..." />
-                {row.venue_id && filteredSubVenues.length > 0 && (
-                  <SearchDropdown label="Sub-venue" items={filteredSubVenues.map(function (sv) { return { label: sv.name, value: String(sv.id) } })} value={row.sub_venue_id} onChange={function (val) { updateAllocation(index, 'sub_venue_id', val) }} placeholder="Select sub-venue..." />
-                )}
-                <div>
-                  <label className={F_LBL}>{t('Quantity')}</label>
-                  <input type="number" min="0" step="any" inputMode="numeric" value={row.qty} onChange={function (e) { updateAllocation(index, 'qty', e.target.value) }} placeholder="0" style={{ fontSize: '16px' }} className={F_INP} />
-                </div>
-              </div>
-            )
-          }}
-        />
-        </div>}
-      </FormSection>
-
       {categoryDimFields.length > 0 && (
-        <FormSection icon="list" title="Dimensions">
+        <FormSection icon="list" title="Properties">
           <div className="space-y-3.5">
           {dimensionValues.map(function (dim, index) {
             var dimType = dim.type || 'number'
@@ -1221,6 +1521,115 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved, variant }) {
           </div>
         </FormSection>
       )}
+
+      <FormSection icon="rupee" title="Stock & pricing">
+        <div className="space-y-3.5">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className={F_LBL}>{t('Quantity')}<span className="text-red-500 ml-0.5">*</span></label>
+              <input type="number" min="0" max="999999" step="any" inputMode="numeric" value={qty} onChange={function (e) { setQty(e.target.value) }} placeholder="0"
+                style={{ fontSize: '16px' }} className={F_INP + (errors.qty ? " border-red-300" : "")} />
+              {errors.qty && <p className="text-xs text-red-500 mt-1">{errors.qty}</p>}
+            </div>
+            <div>
+              <label className={F_LBL}>{t('Unit')}</label>
+              <select value={unit} onChange={function (e) { setUnit(e.target.value) }} className={F_INP}>
+                {UNITS.map(function (u) { return <option key={u} value={u}>{u}</option> })}
+              </select>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className={F_LBL}>{t('Rate') + ' (₹)'}</label>
+              <input type="number" min="0" step="any" inputMode="decimal" value={ratePaise} onChange={function (e) { setRatePaise(e.target.value) }} placeholder="—" style={{ fontSize: '16px' }} className={F_INP} />
+            </div>
+            <div>
+              <label className={F_LBL}>Total (₹)</label>
+              <div className={F_INP + " flex items-center bg-slate-50 font-semibold tabular-nums " + (rateTotalPaise != null ? "text-slate-900" : "text-slate-400")}>
+                {rateTotalPaise != null ? formatPaise(rateTotalPaise) : '—'}
+              </div>
+            </div>
+          </div>
+        </div>
+      </FormSection>
+
+      <FormSection icon="mapPin" title={t('Allocations') || 'Allocations'} hint={allocHint}
+        right={
+          <button type="button" role="switch" aria-checked={showAllocations} aria-label="Show allocations"
+            onClick={function () { setShowAllocations(function (v) { return !v }) }}
+            className={"relative shrink-0 w-11 h-6 rounded-full transition-colors " + (showAllocations ? "bg-[#3B4668]" : "bg-slate-300")}>
+            <span className={"absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-[translate] duration-200 " + (showAllocations ? "translate-x-5" : "translate-x-0")} />
+          </button>
+        }>
+        {showAllocations && <div className="space-y-2">
+        {errors.dept && <p className="text-xs text-red-500">{errors.dept}</p>}
+        <AllocationRows
+          allocations={allocations}
+          accent="gray"
+          bare
+          title={t('Allocations') || 'Allocations'}
+          onAdd={addAllocationRow}
+          onRemove={removeAllocationRow}
+          onDuplicate={duplicateAllocationRow}
+          isComplete={function (a) { return !!a.venue_id && !!a.qty && Number(a.qty) > 0 }}
+          renderChip={function (a) {
+            var v = a.venue_id ? venues.find(function (x) { return String(x.id) === String(a.venue_id) }) : null
+            var sv = a.sub_venue_id && v ? subVenues.find(function (x) { return String(x.id) === String(a.sub_venue_id) }) : null
+            return {
+              left: (
+                <>
+                  {v && <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-[#EDEFF5] text-[10px] font-bold text-[#333D5E] shrink-0">{v.code}</span>}
+                  {sv
+                    ? <span className="font-medium text-slate-800 truncate">{sv.name}</span>
+                    : v && <span className="text-slate-500 truncate">{v.name}</span>}
+                </>
+              ),
+              right: (Number(a.qty) || 0).toString(),
+            }
+          }}
+          renderExpanded={function (row, index) {
+            var filteredSubVenues = row.venue_id ? subVenues.filter(function (sv) { return String(sv.venue_id) === row.venue_id }) : []
+            return (
+              <div className="space-y-2.5">
+                <SearchDropdown label={t('Venue') || 'Venue'} required items={venues.map(function (v) { return { label: v.code + ' — ' + v.name, value: String(v.id) } })} value={row.venue_id} onChange={function (val) { updateAllocation(index, 'venue_id', val) }} placeholder="Select venue..." />
+                {row.venue_id && filteredSubVenues.length > 0 && (
+                  <SearchDropdown label="Sub-venue" items={filteredSubVenues.map(function (sv) { return { label: sv.name, value: String(sv.id) } })} value={row.sub_venue_id} onChange={function (val) { updateAllocation(index, 'sub_venue_id', val) }} placeholder="Select sub-venue..." />
+                )}
+                <div>
+                  <label className={F_LBL}>{t('Quantity')}</label>
+                  <input type="number" min="0" step="any" inputMode="numeric" value={row.qty} onChange={function (e) { updateAllocation(index, 'qty', e.target.value) }} placeholder="0" style={{ fontSize: '16px' }} className={F_INP} />
+                </div>
+              </div>
+            )
+          }}
+        />
+        </div>}
+      </FormSection>
+
+      {/* The least-checked settings, at the very bottom of the form rather
+          than crowding Stock & pricing. */}
+      <FormSection icon="settings" title="Additional Details">
+        <div className="space-y-3.5">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className={F_LBL + " truncate"}>{showPackSize ? 'Season Reorder Qty' : t('Min Order Qty')}</label>
+              <input type="number" min="0" step="any" inputMode="numeric" value={minOrderQty} onChange={function (e) { setMinOrderQty(e.target.value) }} placeholder="—" style={{ fontSize: '16px' }} className={F_INP} />
+            </div>
+            <div>
+              <label className={F_LBL + " truncate"}>{showPackSize ? 'Off Season Reorder Qty' : t('Reorder Qty')}</label>
+              <input type="number" min="0" step="any" inputMode="numeric" value={reorderQty} onChange={function (e) { setReorderQty(e.target.value) }} placeholder="—" style={{ fontSize: '16px' }} className={F_INP} />
+            </div>
+          </div>
+          <div>
+            <label className={F_LBL}>{t('Is Asset?')}</label>
+            <Segmented value={isAsset} onChange={setIsAsset} options={[
+              { value: 'yes', label: t('Yes'), on: 'bg-emerald-600 text-white' },
+              { value: 'no', label: t('No'), on: 'bg-red-500 text-white' },
+              { value: 'unknown', label: t('Dont Know'), on: 'bg-slate-600 text-white' },
+            ]} />
+          </div>
+        </div>
+      </FormSection>
 
       {errors.submit && (
         <div className="flex items-start gap-2 text-sm font-medium text-red-700 bg-red-50 border border-red-200 rounded-xl px-3.5 py-2.5">

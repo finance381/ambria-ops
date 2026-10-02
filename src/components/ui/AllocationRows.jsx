@@ -16,6 +16,9 @@ import Icon from './Icon'
 //   headerWarning     JSX. Optional banner above rows (e.g. dept mismatch).
 //   title             string, default 'Allocations'.
 //   accent            'amber' | 'indigo' | 'gray', default 'amber'.
+//   startCollapsed    bool. Every row starts folded instead of the first open.
+//   heading           JSX. Bare only: shown at the left of the top bar in
+//                     place of the "N places" count.
 //   bare              bool. For a list that already sits in a titled card:
 //                     no box of its own and no title, so it is not a card in
 //                     a card in a card — just the row buttons, then the rows.
@@ -36,8 +39,9 @@ function AllocationRows(props) {
   var t = THEMES[props.accent || 'amber'] || THEMES.amber
   var allocations = props.allocations || []
   // -1 means every row is collapsed. Row 0 starts open so a fresh list does not
-  // greet you with a collapsed chip that has nothing in it yet.
-  var [manualExpandedIdx, setManualExpandedIdx] = useState(0)
+  // greet you with a collapsed chip that has nothing in it yet — unless
+  // startCollapsed, for a list of saved rows read before anything is edited.
+  var [manualExpandedIdx, setManualExpandedIdx] = useState(props.startCollapsed ? -1 : 0)
 
   useEffect(function () {
     if (manualExpandedIdx >= allocations.length) setManualExpandedIdx(-1)
@@ -83,6 +87,83 @@ function AllocationRows(props) {
 
   function handleDone(idx) {
     setManualExpandedIdx(-1)
+  }
+
+  // Bare (inside a titled card): one list, rows ruled apart, instead of a
+  // card per row — a numbered line per place with its quantity, and the row
+  // being edited opening in place, tinted.
+  if (props.bare) {
+    var n = allocations.length
+    return (
+      <div>
+        <div className="flex items-center justify-between gap-2 mb-2.5">
+          {props.heading || <span className="text-[12.5px] font-semibold text-slate-600"><span data-notranslate>{n}</span>{n === 1 ? ' place' : ' places'}</span>}
+          <div className="flex items-center gap-1.5">
+            {props.onDuplicate && n > 0 && (
+              <button type="button" onClick={handleDuplicate} title="Duplicate the open row"
+                className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-slate-200 bg-white text-[12.5px] font-semibold text-slate-700 hover:bg-slate-50 transition-colors">
+                <Icon name="copy" size={13} />Duplicate
+              </button>
+            )}
+            <button type="button" onClick={handleAdd}
+              className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg bg-[#3B4668] text-white text-[12.5px] font-semibold hover:bg-[#2F3854] transition-colors">
+              <Icon name="plus" size={13} />Add place
+            </button>
+          </div>
+        </div>
+
+        {props.headerWarning && <div className="mb-2">{props.headerWarning}</div>}
+
+        <div className="rounded-xl border border-slate-200 bg-white overflow-hidden divide-y divide-slate-100">
+          {allocations.map(function (alloc, aIdx) {
+            var complete = props.isComplete(alloc)
+            if (isExpanded(aIdx)) {
+              return (
+                <div key={aIdx} className="ambria-rise bg-[#F6F7FB] px-3.5 py-3" onFocusCapture={function () { claim(aIdx) }}>
+                  <div className="flex items-center justify-between gap-2 mb-2.5">
+                    <span className="inline-flex items-center gap-2 text-[12px] font-bold text-slate-700">
+                      <span className="w-6 h-6 rounded-md bg-[#3B4668] text-white inline-flex items-center justify-center text-[11px] tabular-nums" data-notranslate>{aIdx + 1}</span>
+                      Editing place
+                    </span>
+                    <div className="flex items-center gap-1">
+                      <button type="button" onClick={function () { handleDone(aIdx) }}
+                        className={"inline-flex items-center gap-1 h-8 px-3 rounded-lg text-[12.5px] font-semibold transition-colors " +
+                          (complete ? "bg-emerald-600 text-white hover:bg-emerald-700" : "bg-white border border-slate-300 text-slate-700 hover:bg-slate-50")}>
+                        <Icon name={complete ? 'check' : 'chevronUp'} size={13} />{complete ? 'Done' : 'Collapse'}
+                      </button>
+                      <button type="button" onClick={function () { handleRemove(aIdx) }} title="Delete row" aria-label="Delete row"
+                        className="w-8 h-8 inline-flex items-center justify-center rounded-lg text-red-500 hover:bg-red-50 transition-colors">
+                        <Icon name="trash" size={15} />
+                      </button>
+                    </div>
+                  </div>
+                  {props.renderExpanded(alloc, aIdx)}
+                </div>
+              )
+            }
+            var chip = props.renderChip(alloc, aIdx)
+            return (
+              <div key={aIdx} className={"group flex items-center gap-3 px-3.5 py-2.5 transition-colors " + (complete ? "hover:bg-slate-50" : "bg-amber-50/50")}>
+                <span className="shrink-0 w-6 text-[11.5px] font-bold text-slate-400 tabular-nums" data-notranslate>{aIdx + 1}</span>
+                <button type="button" onClick={function () { setManualExpandedIdx(aIdx) }}
+                  className="flex-1 min-w-0 flex items-center gap-3 text-left">
+                  <span className="flex-1 min-w-0 flex items-center gap-2 text-[13px] text-slate-700">{chip.left}</span>
+                  {complete
+                    ? <span className="shrink-0 text-[14px] font-bold text-slate-900 tabular-nums">{chip.right}</span>
+                    : <span className="shrink-0 text-[10.5px] font-bold uppercase tracking-[0.08em] px-1.5 py-0.5 rounded bg-amber-100 text-amber-800">Incomplete</span>}
+                  <span className="shrink-0 w-7 h-7 inline-flex items-center justify-center rounded-lg text-slate-400 group-hover:text-[#3B4668] group-hover:bg-white transition-colors"><Icon name="edit" size={14} /></span>
+                </button>
+                <button type="button" onClick={function () { handleRemove(aIdx) }} title="Delete row" aria-label="Delete row"
+                  className="shrink-0 w-7 h-7 inline-flex items-center justify-center rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors">
+                  <Icon name="trash" size={14} />
+                </button>
+              </div>
+            )
+          })}
+        </div>
+        {props.footer}
+      </div>
+    )
   }
 
   return (
