@@ -165,6 +165,7 @@ import CheckedStamp from '../../components/ui/CheckedStamp'
 import { hasPerm } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
 import { avatarTint } from '../../lib/avatarTint'
+import CameraCapture from '../../components/ui/CameraCapture'
 
 // Local (not UTC) y-m-d, same as the expense date picker — a straight
 // toISOString() would roll a late-night transfer back to the wrong day
@@ -405,6 +406,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   var [bulkDesc, setBulkDesc] = useState('')
   var [bulkSaving, setBulkSaving] = useState(false)
   var [issueImage, setIssueImage] = useState(null)
+  var [cameraFor, setCameraFor] = useState(null) // which photo slot the in-page camera is capturing for, or null
   var [receiveModal, setReceiveModal] = useState(null)
   var [receiveImage, setReceiveImage] = useState(null)
   var [receiveSaving, setReceiveSaving] = useState(false)
@@ -1813,11 +1815,28 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     loadAllWallets()
   }
 
+  // Same filter + merge the on-screen list applies (sortedTxns, further down)
+  // — without it, a deleted expense's debit that the admin has hidden via
+  // "Show deleted expenses" (or the cash/credit legs of a single expense that
+  // the screen nets into one row) would show up as extra/different rows in
+  // the export than what was actually on screen when Download was clicked.
+  function getExportRows() {
+    var visible = walletTxns.filter(function (t) {
+      if (showDeletedTxns) return true
+      var isExpRow = (t.reference_type === 'expense' || t.reference_type === 'expense_refund') && t.reference_id
+      var xp = isExpRow ? expenseRefs[t.reference_id] : null
+      return !(xp && xp.deleted_at)
+    })
+    return mergeExpenseWalletRows(visible)
+  }
+
   function exportWalletCSV() {
     if (!walletTxns.length || !selectedWallet) return
     var userName = walletProfiles[selectedWallet.user_id]?.name || 'user'
-    var headers = ['Date', 'Type', 'Amount (pts)', 'Balance After (pts)', 'Description', 'Performed By']
-    var rows = walletTxns.map(function (t) {
+    var headers = ['Date', 'Type', 'Amount (pts)', 'Balance After (pts)', 'Description', 'Performed By', 'Deleted']
+    var rows = getExportRows().map(function (t) {
+      var isExpRow = (t.reference_type === 'expense' || t.reference_type === 'expense_refund') && t.reference_id
+      var isDeletedExp = isExpRow && !!expenseRefs[t.reference_id] && !!expenseRefs[t.reference_id].deleted_at
       return [
         t.created_at ? t.created_at.split('T')[0] : '',
         t.type || '',
@@ -1825,6 +1844,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
         t.balance_after_paise ? (t.balance_after_paise / 100) : 0,
         (t.description || '').replace(/,/g, ';'),
         walletProfiles[t.performed_by]?.name || '—',
+        isDeletedExp ? 'Yes' : '',
       ].join(',')
     })
     var csv = '\uFEFF' + headers.join(',') + '\n' + rows.join('\n')
@@ -1847,20 +1867,33 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
       var pageW = doc.internal.pageSize.getWidth()
       var pageH = doc.internal.pageSize.getHeight()
 
-      // Chronological (oldest → newest) for bank-statement feel
-      var chrono = walletTxns.slice().sort(function (a, b) {
+      // Chronological (oldest → newest) for bank-statement feel. Opening/
+      // Closing/Total Credits/Total Debits are computed off the raw,
+      // unfiltered history (same as the on-screen stat tiles) — a hidden
+      // deleted expense's debit already happened and moved the real balance,
+      // so it has to stay in these totals even though it's left out of the
+      // row-by-row breakdown below.
+      var rawChrono = walletTxns.slice().sort(function (a, b) {
         return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
       })
 
       var totalCr = 0, totalDb = 0
-      chrono.forEach(function (t) {
+      rawChrono.forEach(function (t) {
         if (t.type === 'credit') totalCr += (t.amount_paise || 0)
         else totalDb += (t.amount_paise || 0)
       })
-      var oldest = chrono[0]
-      var newest = chrono[chrono.length - 1]
+      var oldest = rawChrono[0]
+      var newest = rawChrono[rawChrono.length - 1]
       var opening = oldest ? ((oldest.balance_after_paise || 0) - (oldest.type === 'credit' ? (oldest.amount_paise || 0) : -(oldest.amount_paise || 0))) : 0
       var closing = newest ? (newest.balance_after_paise || 0) : 0
+
+      // The row-by-row breakdown, on the other hand, mirrors exactly what's
+      // on screen: same "Show deleted expenses" filter, same same-expense
+      // cash/credit-leg merge — so what's printed here matches what the admin
+      // was looking at when they clicked Download, not a superset of it.
+      var chrono = getExportRows().sort(function (a, b) {
+        return new Date(a._sortAt || a.created_at).getTime() - new Date(b._sortAt || b.created_at).getTime()
+      })
 
       var userName = walletProfiles[selectedWallet.user_id]?.name || 'User'
       var userEmail = walletProfiles[selectedWallet.user_id]?.email || selectedWallet.email || ''
@@ -1887,6 +1920,10 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
         var stn = (e && e.expense_sub_types?.name) || ''
 
         var lines = [{ kind: 'header', text: tn ? (tn + (stn ? ' > ' + stn : '')) : (refLabel + (refNo ? ' #' + refNo : '')) }]
+        // The debit already happened and stays in this statement for audit even
+        // after the expense is deleted (see getExportRows/showDeletedTxns) —
+        // without this line it prints identically to a live expense.
+        if (e && e.deleted_at) lines.push({ kind: 'status', text: 'DELETED EXPENSE' })
         lines.push({ kind: 'desc', text: t.description || '—' })
 
         if (e) {
@@ -2131,13 +2168,12 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                 </button>
               </div>
             ) : (
-              <label className="flex flex-col items-center justify-center gap-1 w-full py-5 rounded-xl border-2 border-dashed border-slate-300 bg-white text-center cursor-pointer hover:border-indigo-400 hover:bg-indigo-50/40 transition-colors">
+              <button type="button" onClick={function () { setCameraFor('issue') }}
+                className="flex flex-col items-center justify-center gap-1 w-full py-5 rounded-xl border-2 border-dashed border-slate-300 bg-white text-center hover:border-indigo-400 hover:bg-indigo-50/40 transition-colors">
                 <span className="text-indigo-500"><Icon name="camera" size={20} /></span>
                 <span className="text-[13px] font-semibold text-indigo-600">Tap to attach photo</span>
                 <span className="text-[11px] text-slate-400">Proof of the cash handed over</span>
-                <input type="file" accept="image/*" capture="environment" className="sr-only"
-                  onChange={function (e) { if (e.target.files?.[0]) setIssueImage(e.target.files[0]); e.target.value = '' }} />
-              </label>
+              </button>
             )}
           </div>
 
@@ -2172,6 +2208,9 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             })()}
           </div>
         </div>
+        {cameraFor === 'issue' && (
+          <CameraCapture onCapture={function (file) { setIssueImage(file); setCameraFor(null) }} onClose={function () { setCameraFor(null) }} />
+        )}
       </BottomSheet>
     )
   }
@@ -2192,11 +2231,10 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                   className="text-xs text-red-500 font-bold hover:text-red-700">✕</button>
               </div>
             ) : (
-              <label className="block w-full py-3 text-center text-sm text-amber-700 border-2 border-dashed border-amber-300 rounded-lg cursor-pointer hover:bg-amber-50 transition-colors font-medium">
+              <button type="button" onClick={function () { setCameraFor('receive') }}
+                className="block w-full py-3 text-center text-sm text-amber-700 border-2 border-dashed border-amber-300 rounded-lg hover:bg-amber-50 transition-colors font-medium">
                 📷 Take photo of cash received
-                <input type="file" accept="image/*" capture="environment" className="sr-only"
-                  onChange={function (e) { if (e.target.files?.[0]) setReceiveImage(e.target.files[0]); e.target.value = '' }} />
-              </label>
+              </button>
             )}
           </div>
           <div className="flex gap-3 pt-2">
@@ -2208,6 +2246,9 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             </button>
           </div>
         </div>
+        {cameraFor === 'receive' && (
+          <CameraCapture onCapture={function (file) { setReceiveImage(file); setCameraFor(null) }} onClose={function () { setCameraFor(null) }} />
+        )}
       </BottomSheet>
     )
   }
@@ -2416,12 +2457,11 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                 </div>
               ) : (
                 <div className="grid grid-cols-2 gap-2">
-                  <label className="h-12 inline-flex items-center justify-center gap-2 text-[13px] font-bold text-slate-700 border border-slate-200 bg-white rounded-xl cursor-pointer hover:border-indigo-400 hover:text-indigo-600 transition-colors">
+                  <button type="button" onClick={function () { setCameraFor('collect') }}
+                    className="h-12 inline-flex items-center justify-center gap-2 text-[13px] font-bold text-slate-700 border border-slate-200 bg-white rounded-xl hover:border-indigo-400 hover:text-indigo-600 transition-colors">
                     <Icon name="camera" size={16} />
                     Camera
-                    <input type="file" accept="image/*" capture="environment" className="sr-only"
-                      onChange={function (e) { if (e.target.files?.[0]) setCollectImage(e.target.files[0]); e.target.value = '' }} />
-                  </label>
+                  </button>
                   <label className="h-12 inline-flex items-center justify-center gap-2 text-[13px] font-bold text-slate-700 border border-slate-200 bg-white rounded-xl cursor-pointer hover:border-indigo-400 hover:text-indigo-600 transition-colors">
                     <Icon name="gallery" size={16} />
                     Gallery
@@ -2456,6 +2496,9 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             </button>
           </div>
         </div>
+        {cameraFor === 'collect' && (
+          <CameraCapture onCapture={function (file) { setCollectImage(file); setCameraFor(null) }} onClose={function () { setCameraFor(null) }} />
+        )}
       </BottomSheet>
     )
   }
@@ -2640,12 +2683,11 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
               </button>
             ) : (
               <div className="grid grid-cols-2 gap-2">
-                <label className="h-12 inline-flex items-center justify-center gap-2 text-[13px] font-bold text-slate-700 border border-slate-200 bg-white rounded-xl cursor-pointer hover:border-indigo-400 hover:text-indigo-600 transition-colors">
+                <button type="button" onClick={function () { setCameraFor('transfer') }}
+                  className="h-12 inline-flex items-center justify-center gap-2 text-[13px] font-bold text-slate-700 border border-slate-200 bg-white rounded-xl hover:border-indigo-400 hover:text-indigo-600 transition-colors">
                   <Icon name="camera" size={16} />
                   Photo
-                  <input type="file" accept="image/*" capture="environment" className="sr-only"
-                    onChange={function (e) { if (e.target.files?.[0]) setTransferImage(e.target.files[0]); e.target.value = '' }} />
-                </label>
+                </button>
                 <button type="button" onClick={transferRec.start}
                   className="h-12 inline-flex items-center justify-center gap-2 text-[13px] font-bold text-slate-700 border border-slate-200 bg-white rounded-xl hover:border-indigo-400 hover:text-indigo-600 transition-colors">
                   <Icon name="mic" size={16} />
@@ -2683,6 +2725,9 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             })()}
           </div>
         </div>
+        {cameraFor === 'transfer' && (
+          <CameraCapture onCapture={function (file) { setTransferImage(file); setCameraFor(null) }} onClose={function () { setCameraFor(null) }} />
+        )}
       </BottomSheet>
     )
   }
@@ -2715,11 +2760,10 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
               </button>
             ) : (
               <div className="grid grid-cols-2 gap-2">
-                <label className="py-3 text-center text-sm text-amber-700 border-2 border-dashed border-amber-300 rounded-lg cursor-pointer hover:bg-amber-50 transition-colors font-medium">
+                <button type="button" onClick={function () { setCameraFor('transferConfirm') }}
+                  className="py-3 text-center text-sm text-amber-700 border-2 border-dashed border-amber-300 rounded-lg hover:bg-amber-50 transition-colors font-medium">
                   📷 Photo
-                  <input type="file" accept="image/*" capture="environment" className="sr-only"
-                    onChange={function (e) { if (e.target.files?.[0]) setTransferConfirmImage(e.target.files[0]); e.target.value = '' }} />
-                </label>
+                </button>
                 <button type="button" onClick={transferConfirmRec.start}
                   className="py-3 text-center text-sm text-amber-700 border-2 border-dashed border-amber-300 rounded-lg hover:bg-amber-50 transition-colors font-medium">
                   🎤 Voice note
@@ -2736,6 +2780,9 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             </button>
           </div>
         </div>
+        {cameraFor === 'transferConfirm' && (
+          <CameraCapture onCapture={function (file) { setTransferConfirmImage(file); setCameraFor(null) }} onClose={function () { setCameraFor(null) }} />
+        )}
       </BottomSheet>
     )
   }
@@ -3627,6 +3674,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     var epcCancellable = isEpc && epcHit.epc.status !== 'cancelled' && (isAdmin || epcHit.epc.collected_by === profile.id)
     var collCancellable = t.reference_type === 'collection' && !isCancelled && (isAdmin || t.performed_by === profile.id)
     var isExpRow = (t.reference_type === 'expense' || t.reference_type === 'expense_refund') && t.reference_id
+    var isDeletedExp = isExpRow && !!expenseRefs[t.reference_id] && !!expenseRefs[t.reference_id].deleted_at
     var isPayRow = PAYMENT_REF_TYPES.indexOf(t.reference_type) !== -1
     var rowIsClickable = isExpRow || t.reference_type === 'collection' || isEpc || isPayRow
     function handleRowClick() {
@@ -3700,6 +3748,12 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
               )}
               {isCancelled && (
                 <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 bg-rose-100 text-rose-700 rounded">Cancelled</span>
+              )}
+              {/* The debit already happened and stays in the ledger for audit even
+                  after the expense itself is deleted (see the showDeletedTxns filter
+                  above) — without this it's indistinguishable from a live expense. */}
+              {isDeletedExp && (
+                <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 bg-slate-700 text-white rounded">Deleted</span>
               )}
               {(t.reference_type === 'expense' || t.reference_type === 'expense_refund') && t.reference_id && expenseRefs[t.reference_id] && expenseRefs[t.reference_id].status && (
                 <span className={"text-[10px] font-bold uppercase px-1.5 py-0.5 rounded " + (EXP_STATUS_COLORS[expenseRefs[t.reference_id].status] || 'bg-gray-100 text-gray-600')}>

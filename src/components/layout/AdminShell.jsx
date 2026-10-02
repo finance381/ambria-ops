@@ -5,6 +5,7 @@ import { supabase } from '../../lib/supabase'
 import PageWave from '../ui/PageWave'
 import Logo from '../ui/Logo'
 import Icon from '../ui/Icon'
+import NotificationBell from '../ui/NotificationBell'
 // Inventory's photograph: warm light through leaves across a pale wall,
 // vases and a bowl — the ground behind the top of the Inventory section.
 import inventoryBg from '../../assets/inventory-bg.webp'
@@ -45,6 +46,14 @@ var Boxes = lazyTab(function () { return import('../../modules/boxes/Boxes') })
 var ProductionOrders = lazyTab(function () { return import('../../modules/production/ProductionOrders') })
 var Challans = lazyTab(function () { return import('../../modules/challans/Challans') })
 var Purchase = lazyTab(function () { return import('../../modules/purchase/Purchase') })
+// Shell.jsx (mobile) has its own "Receive Items" tile that renders the same
+// Purchase.jsx in mode="receive" — TabbedSection only ever passes the fixed
+// profile/onNavigate/inAdmin props to a sub-tab's component, so this exists
+// purely to pin that one extra prop. Desktop had no entry point into this at
+// all: the Inventory top-level tab already gated on inventory.receive (see
+// anyPerm below) but nothing was ever wired to it.
+function PurchaseReceive(props) { return <Purchase {...props} mode="receive" /> }
+PurchaseReceive.load = Purchase.load
 var Calendar = lazyTab(function () { return import('../../modules/calendar/Calendar') })
 var Vendors = lazyTab(function () { return import('../../modules/vendors/Vendors') })
 var Requisitions = lazyTab(function () { return import('../../modules/requisitions/Requisitions') })
@@ -141,6 +150,7 @@ var SUB_TAB_CONFIG = {
     { key: 'production', label: 'Production',     icon: 'wrench',   component: ProductionOrders, perm: 'inventory.production' },
     { key: 'boxes',      label: 'Boxes',          icon: 'tag',      component: Boxes,            perm: 'inventory.boxes' },
     { key: 'challans',   label: 'Challans',       icon: 'truck',    component: Challans,         perm: 'inventory.challans' },
+    { key: 'receive',    label: 'Receive Items',  icon: 'download', component: PurchaseReceive,  perm: 'inventory.receive' },
   ],
   masters: [
     { key: 'categories',         label: 'Categories',      icon: 'tag',        component: Categories,         perm: 'admin.masters' },
@@ -397,6 +407,21 @@ function AdminShell({ profile, onSignOut }) {
   // Set by onNavigate's 3rd arg when a ledger screen sends the user to a
   // specific expense's edit/Raise JV view instead of just the Expenses tab.
   var [deepLinkExpense, setDeepLinkExpense] = useState(null)
+
+  // Resolves a notification's `link` string — same simple string formats
+  // Shell.jsx's mobile equivalent uses, since there's no URL router here either.
+  function navigateFromNotification(link) {
+    if (link === 'broadcast:inbox') {
+      setActive('broadcast'); setSubTab('inbox'); setDeepLinkExpense(null)
+    } else if (link === 'wallet') {
+      setActive('expenses'); setSubTab('wallet'); setDeepLinkExpense(null)
+    } else if (link && link.indexOf('expense:') === 0) {
+      setActive('expenses'); setSubTab('expenses')
+      setDeepLinkExpense({ id: link.slice('expense:'.length), mode: null })
+    } else if (link === 'events') {
+      setActive('events'); setSubTab(null); setDeepLinkExpense(null)
+    }
+  }
 
   // Inventory's master sub-departments, listed under Inventory in the rail so
   // a sub-department is one click from the sidebar rather than a dropdown
@@ -727,6 +752,7 @@ function AdminShell({ profile, onSignOut }) {
               </>
             )}
           </nav>
+          <NotificationBell profile={profile} onNavigate={navigateFromNotification} />
         </div>
 
       {/* Content. relative isolate + a full-height flex item is what

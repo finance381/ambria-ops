@@ -8,6 +8,7 @@ import EventDatePicker from '../../components/ui/EventDatePicker'
 import VoiceInput from '../../components/ui/VoiceInput'
 import { hasPerm } from '../../lib/permissions'
 import { openOrSharePdf } from '../../lib/pdfOutput'
+import CameraCapture from '../../components/ui/CameraCapture'
 
 var BANK_SUB_MODES = [
   { value: 'upi', label: 'UPI' },
@@ -55,6 +56,7 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
   var [collectDiscount, setCollectDiscount] = useState('')
   var [collectSaving, setCollectSaving] = useState(false)
   var [collectMsg, setCollectMsg] = useState('')
+  var [cameraFor, setCameraFor] = useState(null) // 'issue' | 'collect' | null
 
   // Recent
   var [recentGroups, setRecentGroups] = useState([])
@@ -503,11 +505,10 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
                       className="text-xs text-red-500 font-bold">✕</button>
                   </div>
                 ) : (
-                  <label className="block w-full py-2 text-center text-sm text-blue-700 border-2 border-dashed border-blue-300 rounded-lg cursor-pointer font-medium">
+                  <button type="button" onClick={function () { setCameraFor('issue') }}
+                    className="block w-full py-2 text-center text-sm text-blue-700 border-2 border-dashed border-blue-300 rounded-lg font-medium">
                     📷 Take photo of plates
-                    <input type="file" accept="image/*" capture="environment" className="sr-only"
-                      onChange={function (e) { if (e.target.files?.[0]) setIssueImage(e.target.files[0]); e.target.value = '' }} />
-                  </label>
+                  </button>
                 )}
               </div>
               <div>
@@ -625,11 +626,10 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
                           className="text-xs text-red-500 font-bold">✕</button>
                       </div>
                     ) : (
-                      <label className="block w-full py-2 text-center text-sm text-red-700 border-2 border-dashed border-red-300 rounded-lg cursor-pointer font-medium bg-white">
+                      <button type="button" onClick={function () { setCameraFor('collect') }}
+                        className="block w-full py-2 text-center text-sm text-red-700 border-2 border-dashed border-red-300 rounded-lg font-medium bg-white">
                         📷 Photo of money received
-                        <input type="file" accept="image/*" capture="environment" className="sr-only"
-                          onChange={function (e) { if (e.target.files?.[0]) setCollectImage(e.target.files[0]); e.target.value = '' }} />
-                      </label>
+                      </button>
                     )}
                   </div>
                 </>
@@ -956,6 +956,16 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
           </div>
         </div>
       ), document.body)}
+
+      {cameraFor && (
+        <CameraCapture
+          onCapture={function (file) {
+            if (cameraFor === 'issue') setIssueImage(file); else setCollectImage(file)
+            setCameraFor(null)
+          }}
+          onClose={function () { setCameraFor(null) }}
+        />
+      )}
     </div>
   )
 }

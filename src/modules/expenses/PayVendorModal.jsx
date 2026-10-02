@@ -8,6 +8,7 @@ import VoiceInput from '../../components/ui/VoiceInput'
 import Icon from '../../components/ui/Icon'
 import EventDatePicker from '../../components/ui/EventDatePicker'
 import { useBodyScrollLock } from '../../lib/useBodyScrollLock'
+import CameraCapture from '../../components/ui/CameraCapture'
 
 // One label and one field for the whole form, so a row cannot drift out of
 // line with the row above it — every field was writing its own px-3 py-2 and
@@ -33,6 +34,7 @@ function PayVendorModal({ vendor, profile, onClose, onSuccess }) {
   var [dedImgBusy, setDedImgBusy] = useState(false)
   var [paySaving, setPaySaving] = useState(false)
   var [payError, setPayError] = useState('')
+  var [cameraFor, setCameraFor] = useState(null) // 'ded' | 'pay' | null
 
   // Bills this vendor has been billed against — so a deduction/discount can be
   // credited back to whichever expense-type/department it actually belongs to,
@@ -475,14 +477,11 @@ function PayVendorModal({ vendor, profile, onClose, onSuccess }) {
                   </div>
                 ) : (
                   <div className="grid grid-cols-2 gap-2">
-                    <label className={PICK + ' ' + (paySaving || dedImgBusy ? "border-slate-200 text-slate-400 cursor-not-allowed" : "border-slate-300 text-slate-700 hover:border-indigo-400 hover:text-indigo-700 hover:bg-indigo-50")}>
-                      <input type="file" accept="image/*" capture="environment"
-                        disabled={paySaving || dedImgBusy}
-                        onChange={handleDedImgAdd}
-                        className="hidden" />
+                    <button type="button" disabled={paySaving || dedImgBusy} onClick={function () { setCameraFor('ded') }}
+                      className={PICK + ' ' + (paySaving || dedImgBusy ? "border-slate-200 text-slate-400 cursor-not-allowed" : "border-slate-300 text-slate-700 hover:border-indigo-400 hover:text-indigo-700 hover:bg-indigo-50")}>
                       <Icon name={dedImgBusy ? 'refresh' : 'camera'} size={15} />
                       {dedImgBusy ? 'Compressing…' : 'Take photo'}
-                    </label>
+                    </button>
                     <label className={PICK + ' ' + (paySaving || dedImgBusy ? "border-slate-200 text-slate-400 cursor-not-allowed" : "border-slate-300 text-slate-700 hover:border-indigo-400 hover:text-indigo-700 hover:bg-indigo-50")}>
                       <input type="file" accept="image/*,.pdf"
                         disabled={paySaving || dedImgBusy}
@@ -504,14 +503,11 @@ function PayVendorModal({ vendor, profile, onClose, onSuccess }) {
             <span className="ml-1 font-normal text-slate-400">(auto-compressed to &lt;100KB)</span>
           </label>
           <div className="grid grid-cols-2 gap-2">
-            <label className={PICK + ' ' + (paySaving || payImgBusy ? "border-slate-200 text-slate-400 cursor-not-allowed" : "border-slate-300 text-slate-700 hover:border-indigo-400 hover:text-indigo-700 hover:bg-indigo-50")}>
-              <input type="file" accept="image/*" capture="environment" multiple
-                disabled={paySaving || payImgBusy}
-                onChange={handlePayImgAdd}
-                className="hidden" />
+            <button type="button" disabled={paySaving || payImgBusy} onClick={function () { setCameraFor('pay') }}
+              className={PICK + ' ' + (paySaving || payImgBusy ? "border-slate-200 text-slate-400 cursor-not-allowed" : "border-slate-300 text-slate-700 hover:border-indigo-400 hover:text-indigo-700 hover:bg-indigo-50")}>
               <Icon name={payImgBusy ? 'refresh' : 'camera'} size={15} />
               {payImgBusy ? 'Compressing…' : 'Take photo'}
-            </label>
+            </button>
             <label className={PICK + ' ' + (paySaving || payImgBusy ? "border-slate-200 text-slate-400 cursor-not-allowed" : "border-slate-300 text-slate-700 hover:border-indigo-400 hover:text-indigo-700 hover:bg-indigo-50")}>
               <input type="file" accept="image/*,.pdf" multiple
                 disabled={paySaving || payImgBusy}
@@ -570,6 +566,18 @@ function PayVendorModal({ vendor, profile, onClose, onSuccess }) {
           </button>
         </div>
       </div>
+
+      {cameraFor && (
+        <CameraCapture
+          onCapture={function (file) {
+            var target = cameraFor
+            setCameraFor(null)
+            if (target === 'ded') handleDedImgAdd({ target: { files: [file], value: '' } })
+            else handlePayImgAdd({ target: { files: [file], value: '' } })
+          }}
+          onClose={function () { setCameraFor(null) }}
+        />
+      )}
     </div>
   ), document.body)
 }

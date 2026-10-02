@@ -6,6 +6,7 @@ import { isPrivilegedRole } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
 import { generateChallanPdf } from '../../lib/pdf'
 import EventDatePicker from '../../components/ui/EventDatePicker'
+import CameraCapture from '../../components/ui/CameraCapture'
 
 var TYPE_LABELS = {
   event_dispatch: 'Event Dispatch',
@@ -140,6 +141,7 @@ function Challans({ profile }) {
   var [photos, setPhotos] = useState([])
   var [photosLoading, setPhotosLoading] = useState(false)
   var [uploading, setUploading] = useState(false)
+  var [cameraStage, setCameraStage] = useState(null) // stage string to tag the next capture with, or null
 
   // Repair tracking
   var [repairDetail, setRepairDetail] = useState(null)
@@ -1197,17 +1199,11 @@ function Challans({ profile }) {
             {/* Repair photos */}
             {!isClosed && (
               <div className="flex gap-2 pt-1">
-                <label className={"text-xs px-3 py-1.5 rounded-lg font-semibold cursor-pointer transition-colors " +
+                <button type="button" disabled={uploading} onClick={function () { setCameraStage(repairPhotoStage()) }}
+                  className={"text-xs px-3 py-1.5 rounded-lg font-semibold transition-colors " +
                   (uploading ? 'bg-gray-100 text-gray-400' : 'bg-orange-100 text-orange-700 hover:bg-orange-200')}>
                   {uploading ? '...' : '📷 ' + (repairPhotoStage() === 'before_repair' ? 'Before Repair' : 'After Repair')}
-                  <input type="file" accept="image/*" capture="environment" className="hidden"
-                    disabled={uploading}
-                    onChange={function (e) {
-                      var file = e.target.files?.[0]
-                      if (file) uploadPhoto(file, repairPhotoStage())
-                      e.target.value = ''
-                    }} />
-                </label>
+                </button>
               </div>
             )}
 
@@ -1420,30 +1416,18 @@ function Challans({ profile }) {
               Photos ({photos.length})
             </p>
             {!isClosed && (
-              <label className={"text-xs px-3 py-1 rounded-lg font-medium cursor-pointer transition-colors " +
+              <button type="button" disabled={uploading} onClick={function () { setCameraStage(stageForStatus(activeChallan.status)) }}
+                className={"text-xs px-3 py-1 rounded-lg font-medium transition-colors " +
                 (uploading ? 'bg-gray-100 text-gray-400' : 'bg-indigo-600 text-white hover:bg-indigo-700')}>
                 {uploading ? 'Uploading...' : '📷 Add Photo (' + stageForStatus(activeChallan.status) + ')'}
-                <input type="file" accept="image/*" capture="environment" className="hidden"
-                  disabled={uploading}
-                  onChange={function (e) {
-                    var file = e.target.files?.[0]
-                    if (file) uploadPhoto(file, stageForStatus(activeChallan.status))
-                    e.target.value = ''
-                  }} />
-              </label>
+              </button>
             )}
             {!isClosed && (
-              <label className={"text-xs px-3 py-1 rounded-lg font-medium cursor-pointer transition-colors ml-2 " +
+              <button type="button" disabled={uploading} onClick={function () { setCameraStage('damage') }}
+                className={"text-xs px-3 py-1 rounded-lg font-medium transition-colors ml-2 " +
                 (uploading ? 'bg-gray-100 text-gray-400' : 'border border-red-300 text-red-600 hover:bg-red-50')}>
                 {uploading ? '...' : '📷 Damage'}
-                <input type="file" accept="image/*" capture="environment" className="hidden"
-                  disabled={uploading}
-                  onChange={function (e) {
-                    var file = e.target.files?.[0]
-                    if (file) uploadPhoto(file, 'damage')
-                    e.target.value = ''
-                  }} />
-              </label>
+              </button>
             )}
           </div>
 
@@ -1542,6 +1526,13 @@ function Challans({ profile }) {
           )
         })}
       </div>
+
+      {cameraStage && (
+        <CameraCapture
+          onCapture={function (file) { var stage = cameraStage; setCameraStage(null); uploadPhoto(file, stage) }}
+          onClose={function () { setCameraStage(null) }}
+        />
+      )}
     </div>
   )
 }

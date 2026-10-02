@@ -5,6 +5,7 @@ import SearchDropdown from '../../components/ui/SearchDropdown'
 import Icon from '../../components/ui/Icon'
 import AllocationRows from '../../components/ui/AllocationRows'
 import ImageCrop from '../../components/ImageCrop'
+import CameraCapture from '../../components/ui/CameraCapture'
 import { translateToHindi } from '../../lib/translate'
 import { titleCase, formatPaise } from '../../lib/format'
 import { useLang } from '../../lib/i18n'
@@ -93,6 +94,7 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved, variant }) {
   var [imageFile, setImageFile] = useState(null)
   var [imagePreview, setImagePreview] = useState(seed?.image_path ? getImageUrl(seed.image_path) : '')
   var [cropSrc, setCropSrc] = useState(null)
+  var [cameraOpen, setCameraOpen] = useState(false)
   var [listeningField, setListeningField] = useState(null)
   var recognitionRef = useRef(null)
   var [saving, setSaving] = useState(false)
@@ -845,9 +847,10 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved, variant }) {
                 <div className="h-52 flex flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 px-3 text-center">
                   <span className="w-11 h-11 rounded-xl bg-white border border-slate-200 text-slate-400 inline-flex items-center justify-center"><Icon name="camera" size={20} /></span>
                   <div className="flex gap-2">
-                    <label className="inline-flex items-center gap-1.5 h-9 px-3 text-[13px] font-semibold text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 cursor-pointer transition-colors">
-                      <Icon name="camera" size={14} />{t('Camera')}<input type="file" accept="image/*" capture="environment" onChange={handleImageChange} className="hidden" />
-                    </label>
+                    <button type="button" onClick={function () { setCameraOpen(true) }}
+                      className="inline-flex items-center gap-1.5 h-9 px-3 text-[13px] font-semibold text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors">
+                      <Icon name="camera" size={14} />{t('Camera')}
+                    </button>
                     <label className="inline-flex items-center gap-1.5 h-9 px-3 text-[13px] font-semibold text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 cursor-pointer transition-colors">
                       <Icon name="gallery" size={14} />{t('Gallery')}<input type="file" accept="image/*" onChange={handleImageChange} className="hidden" />
                     </label>
@@ -1362,6 +1365,13 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved, variant }) {
           <button type="button" onClick={onClose} className="h-11 px-5 text-sm font-semibold text-slate-700 bg-white border border-slate-300 rounded-xl hover:bg-slate-50 transition-colors">{t('Cancel')}</button>
           <button type="submit" disabled={saving} className="inline-flex items-center gap-2 h-11 px-6 text-sm font-semibold text-white bg-[#3B4668] rounded-xl shadow-[0_4px_12px_-4px_rgba(59,70,104,0.55)] hover:bg-[#2F3854] disabled:opacity-50 transition-colors"><Icon name="check" size={15} />{saving ? t('Saving...') : (isEdit ? t('Update Item') : t('Submit Item'))}</button>
         </div>
+
+        {cameraOpen && (
+          <CameraCapture
+            onCapture={function (file) { setCameraOpen(false); handleImageChange({ target: { files: [file], value: '' } }) }}
+            onClose={function () { setCameraOpen(false) }}
+          />
+        )}
       </form>
     )
   }
@@ -1377,9 +1387,10 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved, variant }) {
           <div className="rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 py-7 px-4 text-center">
             <span className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-white border border-slate-200 text-slate-400 mb-3"><Icon name="camera" size={22} /></span>
             <div className="flex gap-2 justify-center mb-2.5">
-              <label className="inline-flex items-center gap-1.5 h-10 px-3.5 text-[13.5px] font-semibold text-slate-700 bg-white border border-slate-300 rounded-xl hover:bg-slate-50 cursor-pointer transition-colors">
-                <Icon name="camera" size={15} />{t('Camera')}<input type="file" accept="image/*" capture="environment" onChange={handleImageChange} className="hidden" />
-              </label>
+              <button type="button" onClick={function () { setCameraOpen(true) }}
+                className="inline-flex items-center gap-1.5 h-10 px-3.5 text-[13.5px] font-semibold text-slate-700 bg-white border border-slate-300 rounded-xl hover:bg-slate-50 transition-colors">
+                <Icon name="camera" size={15} />{t('Camera')}
+              </button>
               <label className="inline-flex items-center gap-1.5 h-10 px-3.5 text-[13.5px] font-semibold text-slate-700 bg-white border border-slate-300 rounded-xl hover:bg-slate-50 cursor-pointer transition-colors">
                 <Icon name="gallery" size={15} />{t('Gallery')}<input type="file" accept="image/*" onChange={handleImageChange} className="hidden" />
               </label>
@@ -1641,6 +1652,13 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved, variant }) {
         <button type="button" onClick={onClose} className="h-11 px-5 text-sm font-semibold text-slate-700 bg-white border border-slate-300 rounded-xl hover:bg-slate-50 transition-colors">{t('Cancel')}</button>
         <button type="submit" disabled={saving} className="inline-flex items-center gap-2 h-11 px-6 text-sm font-semibold text-white bg-[#3B4668] rounded-xl shadow-[0_4px_12px_-4px_rgba(59,70,104,0.55)] hover:bg-[#2F3854] disabled:opacity-50 transition-colors"><Icon name="check" size={15} />{saving ? t('Saving...') : (isEdit ? t('Update Item') : t('Submit Item'))}</button>
       </div>
+
+      {cameraOpen && (
+        <CameraCapture
+          onCapture={function (file) { setCameraOpen(false); handleImageChange({ target: { files: [file], value: '' } }) }}
+          onClose={function () { setCameraOpen(false) }}
+        />
+      )}
     </form>
   )
 }

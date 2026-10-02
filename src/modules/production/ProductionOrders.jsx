@@ -5,6 +5,7 @@ import { logActivity } from '../../lib/logger'
 import { isPrivilegedRole } from '../../lib/permissions'
 import EventDatePicker from '../../components/ui/EventDatePicker'
 import Icon from '../../components/ui/Icon'
+import CameraCapture from '../../components/ui/CameraCapture'
 
 var STATUS_LABELS = {
   pending: 'Pending',
@@ -78,6 +79,7 @@ function ProductionOrders({ profile }) {
   var [fCat, setFCat] = useState('')
   var [fSubCat, setFSubCat] = useState('')
   var [fRefImage, setFRefImage] = useState(null) // File object
+  var [cameraOpen, setCameraOpen] = useState(false)
   var [fRefPreview, setFRefPreview] = useState('') // preview URL or existing signed URL
   var [refUploading, setRefUploading] = useState(false)
 
@@ -588,19 +590,24 @@ function ProductionOrders({ profile }) {
               </div>
             )}
             {!fRefPreview && (
-              <label className={"inline-block text-xs px-4 py-2 rounded-lg font-semibold cursor-pointer transition-colors " +
-                "border border-gray-300 text-gray-600 hover:bg-gray-50"}>
-                📷 Choose Image
-                <input type="file" accept="image/*" capture="environment" className="hidden"
-                  onChange={function (e) {
-                    var file = e.target.files?.[0]
-                    if (file) {
-                      setFRefImage(file)
-                      setFRefPreview(URL.createObjectURL(file))
-                    }
-                    e.target.value = ''
-                  }} />
-              </label>
+              <div className="flex gap-2">
+                <button type="button" onClick={function () { setCameraOpen(true) }}
+                  className="inline-block text-xs px-4 py-2 rounded-lg font-semibold transition-colors border border-gray-300 text-gray-600 hover:bg-gray-50">
+                  📷 Camera
+                </button>
+                <label className="inline-block text-xs px-4 py-2 rounded-lg font-semibold cursor-pointer transition-colors border border-gray-300 text-gray-600 hover:bg-gray-50">
+                  🖼 Gallery
+                  <input type="file" accept="image/*" className="hidden"
+                    onChange={function (e) {
+                      var file = e.target.files?.[0]
+                      if (file) {
+                        setFRefImage(file)
+                        setFRefPreview(URL.createObjectURL(file))
+                      }
+                      e.target.value = ''
+                    }} />
+                </label>
+              </div>
             )}
           </div>
 
@@ -817,6 +824,13 @@ function ProductionOrders({ profile }) {
           )
         })}
       </div>
+
+      {cameraOpen && (
+        <CameraCapture
+          onCapture={function (file) { setCameraOpen(false); setFRefImage(file); setFRefPreview(URL.createObjectURL(file)) }}
+          onClose={function () { setCameraOpen(false) }}
+        />
+      )}
     </div>
   )
 }

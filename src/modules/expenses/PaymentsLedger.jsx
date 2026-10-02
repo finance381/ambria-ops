@@ -84,6 +84,41 @@ function timeOf(ts) {
   return d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true })
 }
 
+// The small receipt thumbnail in a ledger row, with a large preview that
+// follows the cursor on hover — reading a receipt at 40px means either
+// clicking through to the full modal or squinting, and for just glancing to
+// confirm "yes, that's the right bill" a hover is faster than either.
+function HoverZoomThumb({ url, onClick, className }) {
+  var [hoverPos, setHoverPos] = useState(null) // {x, y, size} (viewport coords) or null
+  var MARGIN = 16
+
+  function place(ev) {
+    var x = ev.clientX, y = ev.clientY
+    // Capped to the viewport itself (minus margins) — 960 doesn't fit a
+    // short laptop window, and this still beats squinting at a 40px thumb.
+    var size = Math.min(960, window.innerWidth - MARGIN * 2, window.innerHeight - MARGIN * 2)
+    // Flip to the cursor's left once the preview would run off the right
+    // edge, and clamp vertically so it never opens above/below the viewport.
+    var left = (x + MARGIN + size > window.innerWidth) ? (x - MARGIN - size) : (x + MARGIN)
+    var top = Math.min(Math.max(y - size / 2, MARGIN), window.innerHeight - size - MARGIN)
+    setHoverPos({ x: left, y: top, size: size })
+  }
+
+  return (
+    <>
+      <img src={url} alt="Receipt" onClick={onClick}
+        onMouseEnter={place} onMouseMove={place} onMouseLeave={function () { setHoverPos(null) }}
+        className={className} />
+      {hoverPos && createPortal((
+        <div className="fixed z-[9999] pointer-events-none" style={{ top: hoverPos.y, left: hoverPos.x }}>
+          <img src={url} alt="" style={{ width: hoverPos.size, height: hoverPos.size }}
+            className="object-contain rounded-xl border-2 border-white shadow-2xl bg-white" />
+        </div>
+      ), document.body)}
+    </>
+  )
+}
+
 // Rolling windows ending today, matching this screen's own default
 // (last-30-days) rather than switching to calendar-aligned periods.
 var DATE_PRESETS = [
@@ -108,23 +143,44 @@ function getQuickDateRange(preset) {
 
 function DateRangeDropdown({ preset, onChange }) {
   var [open, setOpen] = useState(false)
-  var wrapRef = useRef(null)
+  // Where to paint the portaled menu — read from the button itself, since it
+  // no longer has a positioned ancestor to anchor an absolute child to.
+  var [menuPos, setMenuPos] = useState(null)
+  var btnRef = useRef(null)
+  var menuRef = useRef(null)
   useEffect(function () {
-    function onDocClick(e) { if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false) }
+    function onDocClick(e) {
+      if (btnRef.current && btnRef.current.contains(e.target)) return
+      if (menuRef.current && menuRef.current.contains(e.target)) return
+      setOpen(false)
+    }
     document.addEventListener('click', onDocClick)
     return function () { document.removeEventListener('click', onDocClick) }
   }, [])
+  function toggleOpen() {
+    if (!open && btnRef.current) {
+      var r = btnRef.current.getBoundingClientRect()
+      setMenuPos({ top: r.bottom + 4, left: r.left })
+    }
+    setOpen(!open)
+  }
   var current = DATE_PRESETS.find(function (p) { return p.k === preset }) || DATE_PRESETS[0]
   return (
-    <div className="relative shrink-0" ref={wrapRef}>
-      <button type="button" onClick={function () { setOpen(!open) }} aria-pressed={open}
+    <div className="relative shrink-0">
+      <button type="button" ref={btnRef} onClick={toggleOpen} aria-pressed={open}
         className="h-9 px-3 inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white text-[12.5px] font-bold text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors">
         <Icon name="calendar" size={14} />
         {current.label}
         <Icon name={open ? 'chevronUp' : 'chevronDown'} size={13} />
       </button>
-      {open && (
-        <div className="absolute z-50 mt-1 min-w-[150px] bg-white border border-slate-200 rounded-lg shadow-lg overflow-hidden">
+      {/* Portaled rather than an absolute child of this button: the toolbar row
+          this sits in needs @3xl:overflow-x-auto so More Filters/Export stay
+          reachable at high browser zoom, but overflow-x:auto forces
+          overflow-y to clip too — an absolute dropdown here would get cut off
+          by that same row instead of floating over the page. */}
+      {open && menuPos && createPortal((
+        <div ref={menuRef} style={{ position: 'fixed', top: menuPos.top, left: menuPos.left }}
+          className="z-50 min-w-[150px] bg-white border border-slate-200 rounded-lg shadow-lg overflow-hidden">
           {DATE_PRESETS.map(function (p) {
             var isOn = p.k === preset
             return (
@@ -135,7 +191,7 @@ function DateRangeDropdown({ preset, onChange }) {
             )
           })}
         </div>
-      )}
+      ), document.body)}
     </div>
   )
 }
@@ -772,9 +828,11 @@ function PaymentsLedger({ profile }) {
                               <audio src={r._imgUrl} controls onClick={function (ev) { ev.stopPropagation() }}
                                 className="mt-1.5 h-8 w-full max-w-[220px]" />
                             ) : (
-                              <img src={r._imgUrl} alt="Receipt"
-                                onClick={function (ev) { ev.stopPropagation(); setEnlargedImg(r._imgUrl) }}
-                                className="mt-1.5 w-10 h-10 rounded border border-slate-200 object-cover cursor-zoom-in hover:border-indigo-400 transition-colors" />
+                              <span className="block mt-1.5 w-10">
+                                <HoverZoomThumb url={r._imgUrl}
+                                  onClick={function (ev) { ev.stopPropagation(); setEnlargedImg(r._imgUrl) }}
+                                  className="w-10 h-10 rounded border border-slate-200 object-cover cursor-zoom-in hover:border-indigo-400 transition-colors" />
+                              </span>
                             )
                           )}
                           {/* A ledger without a date on the row is a list of

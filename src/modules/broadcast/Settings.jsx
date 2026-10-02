@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase, edgeFnErrorMessage } from '../../lib/supabase'
 import Icon from '../../components/ui/Icon'
+import SubscriberCard from '../../components/ui/SubscriberCard'
 import { CTRL, BTN_GHOST, BTN_PRIMARY, CARD, Chip, Labeled, Notice, CHIP_GOOD, CHIP_WARN, CHIP_BAD, CHIP_NEUTRAL } from './ui'
 
 // The five fields this page owns. Kept as a list so the dirty check and the
@@ -38,12 +39,25 @@ function Settings() {
   var [account, setAccount] = useState(null)
   var [fetchingAccount, setFetchingAccount] = useState(false)
 
+  // Who gets a push when a new WhatsApp message comes in. Its own baseline/
+  // dirty/save cycle, separate from the sending-rules card above — the two
+  // save independently rather than forcing one Save button to cover both.
+  var [allProfiles, setAllProfiles] = useState([])
+  var [subscriberIds, setSubscriberIds] = useState([])
+  var [subscriberBaseline, setSubscriberBaseline] = useState([])
+
   function load() {
     supabase.from('wa_settings').select('*').eq('id', 1).maybeSingle().then(function (res) {
       setSettings(res.data)
       setBaseline(res.data)
     })
     supabase.from('wa_accounts').select('*').maybeSingle().then(function (res) { setAccount(res.data) })
+    supabase.from('profiles').select('id, name, email').order('name').then(function (res) { setAllProfiles(res.data || []) })
+    supabase.from('wa_inbox_notification_subscribers').select('user_id').then(function (res) {
+      var ids = (res.data || []).map(function (r) { return r.user_id })
+      setSubscriberIds(ids)
+      setSubscriberBaseline(ids)
+    })
   }
 
   useEffect(function () { load() }, [])
@@ -208,6 +222,16 @@ function Settings() {
           )}
         </div>
       </div>
+
+      <SubscriberCard
+        icon="bell"
+        title="Inbox notifications"
+        description="These people get a push the moment someone messages the WhatsApp number — not gated by who can see the Inbox, so it can reach whoever should know even if they don't work in API Marketing day to day."
+        allProfiles={allProfiles}
+        ids={subscriberIds} setIds={setSubscriberIds}
+        baseline={subscriberBaseline} setBaseline={setSubscriberBaseline}
+        rpcName="rpc_set_wa_inbox_subscribers"
+      />
     </div>
   )
 }

@@ -5,6 +5,7 @@ import { compressImage } from '../../lib/imageCompress'
 import SearchDropdown from '../../components/ui/SearchDropdown'
 import EventDatePicker from '../../components/ui/EventDatePicker'
 import VoiceInput from '../../components/ui/VoiceInput'
+import CameraCapture from '../../components/ui/CameraCapture'
 
 // Each section takes { formApi, readOnly, refs } — formApi is the full return value of
 // useProjectForm.js, refs bundles the shared lookup lists (venues/employees/vendors)
@@ -33,6 +34,7 @@ function fieldCls() {
 export function BasicsSection({ formApi, readOnly }) {
   var p = formApi.project
   var photoQueue = formApi.attachmentsQueue.filter(function (a) { return a.kind === 'photo' })
+  var [cameraOpen, setCameraOpen] = useState(false)
 
   async function handlePhotoAdd(ev) {
     var files = Array.from(ev.target.files || [])
@@ -43,6 +45,14 @@ export function BasicsSection({ formApi, readOnly }) {
         formApi.addAttachment(compressed, 'photo', '')
       } catch (_) { /* skip corrupted */ }
     }
+  }
+
+  async function handleCameraPhoto(file) {
+    setCameraOpen(false)
+    try {
+      var compressed = await compressImage(file, 300)
+      formApi.addAttachment(compressed, 'photo', '')
+    } catch (_) { /* skip corrupted */ }
   }
 
   return (
@@ -92,10 +102,17 @@ export function BasicsSection({ formApi, readOnly }) {
       {!readOnly && (
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1">Reference Photos</label>
-          <label className="flex items-center justify-center gap-2 py-2.5 px-3 border-2 border-dashed border-indigo-300 rounded-lg text-sm font-medium text-indigo-700 hover:bg-indigo-50 cursor-pointer transition-colors">
-            <input type="file" accept="image/*" capture="environment" multiple className="hidden" onChange={handlePhotoAdd} />
-            📷 Capture / choose photos
-          </label>
+          <div className="flex gap-2">
+            <button type="button" onClick={function () { setCameraOpen(true) }}
+              className="flex-1 flex items-center justify-center gap-2 py-2.5 px-3 border-2 border-dashed border-indigo-300 rounded-lg text-sm font-medium text-indigo-700 hover:bg-indigo-50 transition-colors">
+              📷 Camera
+            </button>
+            <label className="flex-1 flex items-center justify-center gap-2 py-2.5 px-3 border-2 border-dashed border-indigo-300 rounded-lg text-sm font-medium text-indigo-700 hover:bg-indigo-50 cursor-pointer transition-colors">
+              <input type="file" accept="image/*" multiple className="hidden" onChange={handlePhotoAdd} />
+              🖼 Gallery
+            </label>
+          </div>
+          {cameraOpen && <CameraCapture onCapture={handleCameraPhoto} onClose={function () { setCameraOpen(false) }} />}
           {photoQueue.length > 0 && (
             <div className="grid grid-cols-4 gap-2 mt-2">
               {photoQueue.map(function (a) {

@@ -87,9 +87,18 @@ var GROUPS = [
   {
     key: 'events', label: 'Events', icon: 'calendar', items: [
       { key: 'events.list', label: 'Events', icon: 'calendar', tab: 'events' },
+      { key: 'events.extra_plate_collect', label: 'Extra Plates', icon: 'utensils', tab: 'extra_plates' },
+    ]
+  },
+  {
+    // Split out of the Events group so Quote Calc/Rate Card sit under a
+    // sales-specific tab rather than mixed in with day-of event operations.
+    // Sales Quick Send (broadcast.quicksend) belongs here too once it has a
+    // standalone screen of its own — deferred, still inline-only for now
+    // (see the broadcast group's comment below for why).
+    key: 'sales', label: 'Sales', icon: 'calculator', items: [
       { key: 'events.quote', label: 'Quote Calc', icon: 'calculator', tab: 'quote' },
       { key: 'events.ratecard', label: 'Rate Card', icon: 'tag', tab: 'ratecard' },
-      { key: 'events.extra_plate_collect', label: 'Extra Plates', icon: 'utensils', tab: 'extra_plates' },
     ]
   },
   {
@@ -151,6 +160,7 @@ var GROUPS = [
 import { pushBack, goBack as navBack } from '../../lib/backNav'
 import { formatPoints } from '../../lib/format'
 import Icon from '../ui/Icon'
+import NotificationBell from '../ui/NotificationBell'
 import PageBackdrop from '../ui/PageBackdrop'
 import PageWave from '../ui/PageWave'
 
@@ -260,6 +270,27 @@ function Shell({ profile, onSignOut }) {
     pushBack(function () { setActiveGroup(fromGroup); setTab(fromTab); setSubTab(fromSub) })
     setActiveGroup('expenses'); setTab('expenses'); setSubTab(null)
     setDeepLinkExpense(expenseId ? { id: expenseId, mode: mode } : null)
+  }
+
+  // Resolves a notification's `link` string to wherever it actually points.
+  // Deliberately simple string formats rather than real routes — this app
+  // has no URL router, every screen is just activeGroup/tab/subTab state.
+  function navigateFromNotification(link) {
+    if (link === 'broadcast:inbox') {
+      var fromGroup = activeGroup, fromTab = tab, fromSub = subTab
+      pushBack(function () { setActiveGroup(fromGroup); setTab(fromTab); setSubTab(fromSub) })
+      setActiveGroup('broadcast'); setTab('broadcast'); setSubTab('inbox')
+    } else if (link === 'wallet') {
+      var fromGroup2 = activeGroup, fromTab2 = tab, fromSub2 = subTab
+      pushBack(function () { setActiveGroup(fromGroup2); setTab(fromTab2); setSubTab(fromSub2) })
+      setActiveGroup('expenses'); setTab('wallet'); setSubTab(null)
+    } else if (link && link.indexOf('expense:') === 0) {
+      navigateToExpenses(link.slice('expense:'.length), null)
+    } else if (link === 'events') {
+      var fromGroup3 = activeGroup, fromTab3 = tab, fromSub3 = subTab
+      pushBack(function () { setActiveGroup(fromGroup3); setTab(fromTab3); setSubTab(fromSub3) })
+      setActiveGroup('events'); setTab('events'); setSubTab(null)
+    }
   }
 
   // Current group object
@@ -531,6 +562,8 @@ function Shell({ profile, onSignOut }) {
               )}
             </button>
           )}
+
+          <NotificationBell profile={profile} onNavigate={navigateFromNotification} />
 
           {/* Language stays on the bar — it is toggled often enough to earn the width */}
           <div className="flex h-8 shrink-0 bg-slate-100 rounded-lg p-0.5">

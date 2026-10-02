@@ -11,11 +11,19 @@ export default defineConfig({
     VitePWA({
       registerType: 'prompt',
       includeAssets: ['favicon.svg'],
-      // The default glob is js,css,html,ico,png,svg — which quietly left every
-      // .webp out, and the wallet backdrop is webp. It was fetched over the
-      // network on a cold load while everything around it came from the cache,
-      // which is the one thing a backdrop must not do.
-      workbox: {
+      // injectManifest instead of the default generateSW: push notifications
+      // need a 'push'/'notificationclick' listener, which generateSW's fully
+      // auto-generated worker has no hook for. src/sw.js is our own source;
+      // precacheAndRoute(self.__WB_MANIFEST) inside it reproduces exactly what
+      // generateSW did automatically, so offline caching is unchanged.
+      strategies: 'injectManifest',
+      srcDir: 'src',
+      filename: 'sw.js',
+      injectManifest: {
+        // The default glob is js,css,html,ico,png,svg — which quietly left every
+        // .webp out, and the wallet backdrop is webp. It was fetched over the
+        // network on a cold load while everything around it came from the cache,
+        // which is the one thing a backdrop must not do.
         globPatterns: ['**/*.{js,css,html,ico,png,svg,webp}'],
       },
       manifest: {
