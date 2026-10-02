@@ -1,5 +1,5 @@
 // Keeps an item's stock batches (stock_batches / stock_batch_allocations,
-// migration 00059) in line with its stock on hand: the batches add up to the
+// migration 00066) in line with its stock on hand: the batches add up to the
 // item's quantity, and their venue splits to its venue allocations.
 //
 // Quantity and allocations are changed in more places than the batches are

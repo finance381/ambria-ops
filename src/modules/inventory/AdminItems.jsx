@@ -317,7 +317,7 @@ function AdminItems({ profile, invSubDept, navNonce, onInvSubDeptChange }) {
   }, [])
 
   // The batches behind each card's Stock value. Loaded after the items so a
-  // missing table (migration 00059 not applied) cannot hold the list up.
+  // missing table (migration 00066 not applied) cannot hold the list up.
   async function loadBatchValues() {
     try {
       var rows = await fetchAllParallel(function (opts) {
@@ -993,7 +993,7 @@ function AdminItems({ profile, invSubDept, navNonce, onInvSubDeptChange }) {
   }
 
   // Every batch of stock the item received, oldest first, each with its
-  // venue split (stock_batches / stock_batch_allocations, migration 00059).
+  // venue split (stock_batches / stock_batch_allocations, migration 00066).
   async function openStock(item) {
     setStockItem(item); setStockBatches(null); setStockMissing(false); setBatchAlloc(null); setBatchAllocErr('')
     // First settle the batches against the item as it is now — its quantity
@@ -1774,7 +1774,7 @@ function AdminItems({ profile, invSubDept, navNonce, onInvSubDeptChange }) {
               <div className="flex flex-col items-center gap-2 py-10 text-center">
                 <span className="w-11 h-11 rounded-xl bg-amber-50 text-amber-600 inline-flex items-center justify-center"><Icon name="alert" size={20} /></span>
                 <p className="text-[14px] font-semibold text-slate-800">Stock breakdown is not set up yet</p>
-                <p className="text-[12.5px] text-slate-500 max-w-sm">The database update for stock batches (migration 00059) has to be applied first.</p>
+                <p className="text-[12.5px] text-slate-500 max-w-sm">The database update for stock batches (migration 00066) has to be applied first.</p>
               </div>
             )
           }

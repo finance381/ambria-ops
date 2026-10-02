@@ -517,7 +517,7 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved, variant }) {
     })
     // Records a batch of stock arriving — qty, unit rate, when, who — and how
     // it was split across venues. Never blocks the save: a failed write, or
-    // the tables not existing yet (migration 00059), is ignored.
+    // the tables not existing yet (migration 00066), is ignored.
     async function saveStockBatch(itemId, bQty, bRatePaise, bAllocs, isOpening) {
       var q = Math.round((Number(bQty) || 0) * 1000) / 1000
       if (!itemId || q <= 0) return
