@@ -15,12 +15,21 @@ import { useEffect } from 'react'
 //
 // The previous value is restored rather than cleared, so a dialog opened from
 // inside another one does not unlock the page when only it closes.
+//
+// The lock goes on <html>, not <body>. index.css gives html an overflow of
+// its own (overflow-x: clip), so body's overflow no longer passes up to the
+// window: overflow:hidden on body turned body itself into a scroll box, every
+// `sticky top-0` inside it (the admin sidebar) began sticking to that box —
+// never scrolled — instead of the window, and with the page scrolled down the
+// sidebar jumped up out of view behind the dialog. On html the window keeps
+// its scroll position and sticky elements stay put.
 export function useBodyScrollLock(locked) {
   useEffect(function () {
     if (!locked) return
-    var previous = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-    return function () { document.body.style.overflow = previous }
+    var root = document.documentElement
+    var previous = root.style.overflow
+    root.style.overflow = 'hidden'
+    return function () { root.style.overflow = previous }
   }, [locked])
 }
 
