@@ -52,8 +52,15 @@ async function maybeAutoReply(supa, SUPABASE_URL, SERVICE_ROLE, contactId, bodyT
   })
   if (!match) return
 
+  // Once this contact has already received this rule, never fire it again
+  // for them — otherwise an 'always' rule (e.g. the welcome message) resends
+  // itself on every single message the contact sends.
+  var alreadySentRes = await supa.from("wa_messages").select("id")
+    .eq("contact_id", contactId).eq("auto_reply_id", match.id).limit(1)
+  if (alreadySentRes.data && alreadySentRes.data.length > 0) return
+
   var insRes = await supa.from("wa_messages").insert({
-    contact_id: contactId, direction: "out", rendered_body: match.reply_text, status: "queued",
+    contact_id: contactId, direction: "out", rendered_body: match.reply_text, status: "queued", auto_reply_id: match.id,
   }).select("id").single()
   if (insRes.error) { console.error("wa-webhook: auto-reply queue insert failed"); return }
 
