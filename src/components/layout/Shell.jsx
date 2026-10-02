@@ -492,7 +492,8 @@ function Shell({ profile, onSignOut }) {
   // The vendor ledger draws its own ground on the phone, the way the wallet
   // does, so the bar over it is frosted rather than a solid white strip.
   // Cost Transfers draws its own patterned ground on the phone too.
-  var artHeader = pageArt || waveArt || tab === 'wallet' || tab === 'vendor_ledger' || tab === 'ledgers' || tab === 'cost_transfers'
+  // The Item List draws the inventory photograph behind it on the phone.
+  var artHeader = pageArt || waveArt || tab === 'wallet' || tab === 'vendor_ledger' || tab === 'ledgers' || tab === 'cost_transfers' || tab === 'my'
 
 
   return (
@@ -520,7 +521,8 @@ function Shell({ profile, onSignOut }) {
             <button
               onClick={goBack}
               aria-label="Back"
-              className="ambria-head-back -ml-1 w-9 h-9 shrink-0 flex items-center justify-center rounded-xl text-slate-600 hover:bg-slate-100 hover:text-slate-900 active:scale-95 transition-all"
+              className={"ambria-head-back -ml-1 w-9 h-9 shrink-0 flex items-center justify-center rounded-xl text-slate-600 hover:bg-slate-100 hover:text-slate-900 active:scale-95 transition-all " +
+                (tab === 'my' ? "bg-white/80 border border-white shadow-[0_2px_8px_-4px_rgba(90,60,30,0.35)]" : "")}
             >
               <Icon name="arrowLeft" className="w-[18px] h-[18px]" />
             </button>
@@ -539,6 +541,9 @@ function Shell({ profile, onSignOut }) {
             </h1>
             {!activeGroup && !tab && (
               <p className="text-[11px] font-medium text-slate-500 leading-tight">Ambria</p>
+            )}
+            {tab === 'my' && (
+              <p className="text-[11px] font-medium text-slate-500 leading-tight truncate">Manage and track all items</p>
             )}
           </div>
 

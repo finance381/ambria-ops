@@ -29,7 +29,35 @@ var UNITS = [
 // Pieces for the admin layout (variant="admin" — the Edit popup on the
 // admin Inventory page). Everywhere else — the phone app, Purchase, the
 // reviews — keeps the original single-column form below.
-function FormSection({ icon, title, hint, right, children }) {
+// flat: for the phone layout — no card of its own, sections ruled apart
+// by a line, tighter spacing — so a form inside a phone-width popup is not a
+// box in a box with its fields squeezed in the middle.
+function FormSection({ icon, title, hint, right, children, flat }) {
+  if (flat) {
+    // Each section its own colour (by its icon) and a broad band between
+    // sections, so Properties, Stock & pricing and the rest read as separate
+    // parts of the form rather than one run of fields.
+    var tone = {
+      camera: 'bg-sky-100 text-sky-700',
+      box: 'bg-indigo-100 text-indigo-700',
+      list: 'bg-violet-100 text-violet-700',
+      rupee: 'bg-emerald-100 text-emerald-700',
+      settings: 'bg-slate-200 text-slate-700',
+    }[icon] || 'bg-[#EDEFF5] text-[#3B4668]'
+    return (
+      <section className="py-4 border-b-[6px] border-slate-100 -mx-4 px-4 last:border-b-0 first:pt-0">
+        <div className="flex items-center gap-2.5 mb-3.5">
+          <span className={"shrink-0 w-8 h-8 rounded-lg inline-flex items-center justify-center " + tone}><Icon name={icon} size={15} /></span>
+          <div className="min-w-0 flex-1">
+            <h3 className="text-[13.5px] font-extrabold uppercase tracking-[0.06em] text-slate-900">{title}</h3>
+            {hint && <p className="text-[11.5px] text-slate-500 leading-snug">{hint}</p>}
+          </div>
+          {right}
+        </div>
+        {children}
+      </section>
+    )
+  }
   return (
     <section className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-[0_1px_3px_rgba(15,23,42,0.05)]">
       <div className="flex items-center gap-2.5 mb-4 pb-3 border-b border-slate-100">
@@ -45,6 +73,9 @@ function FormSection({ icon, title, hint, right, children }) {
   )
 }
 var F_LBL = "block text-[13px] font-semibold text-slate-700 mb-1.5"
+// Phone layout: the same field, a step shorter.
+var F_INPS = "w-full h-10 px-3 bg-white border border-slate-300 rounded-xl text-base text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-[#A9B1CB] focus:ring-4 focus:ring-[#3B4668]/10"
+var F_LBLS = "block text-[12.5px] font-semibold text-slate-700 mb-1"
 var F_INP = "w-full h-11 px-3 bg-white border border-slate-300 rounded-xl text-base text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-[#A9B1CB] focus:ring-4 focus:ring-[#3B4668]/10"
 // A row of options as one segmented control: the picked one lifts white out
 // of the grey track.
@@ -89,7 +120,6 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved, variant }) {
   var [subVenues, setSubVenues] = useState([])
   var [subDepartments, setSubDepartments] = useState([])
   var [allocations, setAllocations] = useState([{ department: '', sub_department_id: '', venue_id: '', sub_venue_id: '', qty: '' }])
-  var [showAllocations, setShowAllocations] = useState(false)
   var [type, setType] = useState(seed?.type || 'Indoor')
   var [imageFile, setImageFile] = useState(null)
   var [imagePreview, setImagePreview] = useState(seed?.image_path ? getImageUrl(seed.image_path) : '')
@@ -291,10 +321,6 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved, variant }) {
   function updateAllocation(index, field, value) {
     setAllocations(function (prev) { return prev.map(function (row, i) { if (i !== index) return row; var updated = { ...row, [field]: value }; if (field === 'venue_id') updated.sub_venue_id = ''; if (field === 'department') updated.sub_department_id = ''; return updated }) })
   }
-  useEffect(function () {
-    if (showAllocations) return
-    if (allocations.some(function (a) { return a.department || a.venue_id || a.qty })) setShowAllocations(true)
-  }, [allocations])
   function addAllocationRow() {
     setAllocations(function (prev) { return prev.concat([{ department: '', sub_department_id: '', venue_id: '', sub_venue_id: '', qty: '' }]) })
   }
@@ -448,7 +474,7 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved, variant }) {
     if (!effectiveName) errs.item = 'Item name is required'
     // Optional in the admin Edit form (an empty quantity saves as 0).
     if (variant !== 'admin' && !qty && qty !== 0) errs.qty = 'Quantity is required'
-    if (variant === 'admin') {
+    {
       var placedBase = allocations.reduce(function (sum, a) { return sum + (a.venue_id ? (Number(a.qty) || 0) : 0) }, 0)
       if (allocations.some(function (a) { return Number(a.qty) > 0 && !a.venue_id })) errs.alloc = 'Pick a venue for every row that has a quantity'
       else if (Math.round(placedBase * 1000) > Math.round((Number(qty) || 0) * 1000)) errs.alloc = 'Allocated ' + (Math.round(placedBase * 1000) / 1000) + ' is more than the quantity ' + (Number(qty) || 0)
@@ -803,13 +829,6 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved, variant }) {
     var rate = rateAtPlace[k] != null ? rateAtPlace[k] : itemRateP
     return Math.round((Number(row.qty) || 0) * rate)
   }
-  // How much of the quantity is placed at a venue, said in the Allocations
-  // header — 58 in stock with one row of 8 read as a mismatch when the
-  // other 50 simply are not assigned anywhere.
-  var allocPlaced = Math.round(allocations.reduce(function (sum, a) { return sum + (a.venue_id ? (Number(a.qty) || 0) : 0) }, 0) * 1000) / 1000
-  var allocRest = Math.round(((Number(qty) || 0) - allocPlaced) * 1000) / 1000
-  var allocHint = 'Where the stock is kept · ' + allocPlaced + ' of ' + (Number(qty) || 0) + ' ' + unit + ' placed'
-    + (allocRest > 0 ? ', ' + allocRest + ' not assigned to a venue' : allocRest < 0 ? ', ' + (-allocRest) + ' more than in stock' : '')
 
   var catItems = categories.map(function (c) { return { label: c.name, value: String(c.id), pending: c.status === 'pending' } })
   var subCatItems = subCategories.map(function (s) { return { label: s.name, value: String(s.id), pending: s.status === 'pending' } })
@@ -828,6 +847,434 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved, variant }) {
         <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">{t('Crop Image')}</h3>
         <ImageCrop imageSrc={cropSrc} onCrop={handleCropped} onUseFull={handleUseFull} onCancel={handleCropCancel} />
       </div>
+    )
+  }
+
+  // Stock & pricing — quantity, unit, rate and total, the batch rates, the
+  // venue allocation and Add new stock — shared by both layouts, so the
+  // phone form allocates exactly as the admin one does. flat: the phone
+  // layout's ruled section instead of a card.
+  function renderStockSection(flat) {
+    return (
+    <FormSection flat={flat} icon="rupee" title="Stock & pricing"
+      right={isEdit && !showAddStock ? (
+        // Add new stock sits in the section's own header, beside its title.
+        <button type="button" onClick={function () { setShowAddStock(true) }}
+          className="shrink-0 inline-flex items-center gap-1.5 h-9 px-3.5 rounded-xl bg-emerald-600 text-white text-[13px] font-semibold shadow-[0_3px_10px_-4px_rgba(5,150,105,0.6)] hover:bg-emerald-700 transition-colors whitespace-nowrap">
+          <Icon name="plus" size={14} />Add new stock
+        </button>
+      ) : null}>
+      {/* Quantity and unit as one field, the total beside it; the rate
+          (only before the item has batches) after them. */}
+      <div className="grid grid-cols-2 gap-3 @2xl:grid-cols-3">
+        <div className="min-w-0">
+          <label className={F_LBL}>{t('Quantity')}</label>
+          {/* Editable for corrections. A change typed here is not a batch
+              — new stock arriving goes through Add new stock below, which
+              keeps its rate and venue split; the breakdown notes any gap. */}
+          <div className={"flex h-11 rounded-xl border bg-white overflow-hidden focus-within:border-[#A9B1CB] focus-within:ring-4 focus-within:ring-[#3B4668]/10 " + (errors.qty ? "border-red-300" : "border-slate-300")}>
+            <input type="number" min="0" max="999999" step="any" inputMode="numeric" value={qty} onChange={function (e) { setQty(e.target.value) }} placeholder="0" aria-label={t('Quantity')}
+              style={{ fontSize: '16px' }} className="flex-1 min-w-0 px-3 bg-transparent text-slate-900 placeholder:text-slate-400 focus:outline-none" />
+            <select value={unit} onChange={function (e) { setUnit(e.target.value) }} aria-label={t('Unit')}
+              className="shrink-0 w-[84px] pl-2 pr-1 bg-slate-50 border-l border-slate-200 text-[13px] font-medium text-slate-700 focus:outline-none">
+              {UNITS.map(function (u) { return <option key={u} value={u}>{u}</option> })}
+            </select>
+          </div>
+          {errors.qty && <p className="text-xs text-red-500 mt-1">{errors.qty}</p>}
+        </div>
+        <div className="min-w-0">
+          <label className={F_LBL}>Total (₹)</label>
+          <div className={F_INP + " flex items-center bg-slate-50 font-semibold tabular-nums " + (rateTotalPaise != null ? "text-slate-900" : "text-slate-400")}>
+            {rateTotalPaise != null ? formatPaise(rateTotalPaise) : '—'}
+          </div>
+        </div>
+        {/* With batches the rate is theirs, not one number — each batch's
+            rate is in Batch rates below — so the field only appears for an
+            item with no batches yet. New stock's rate is in Add new stock. */}
+        {itemBatches.length === 0 && (
+          <div className="min-w-0">
+            <label className={F_LBL}>{t('Rate') + ' (₹)'}</label>
+            <input type="number" min="0" step="any" inputMode="decimal" value={ratePaise} onChange={function (e) { setRatePaise(e.target.value) }} placeholder="—" className={F_INP} />
+          </div>
+        )}
+      </div>
+      {/* Add new stock opens here, at the top of the section, wherever
+          its button was pressed. */}
+    {isEdit && showAddStock && (function () {
+      var onHand = Number(qty) || 0
+      var addQ = Number(newStockQty) || 0
+      var rateN = Number(newStockRate) || (latestRatePaise ? latestRatePaise / 100 : 0)
+      var allocated = Math.round(newStockAllocs.reduce(function (sum, a) { return sum + (Number(a.qty) || 0) }, 0) * 1000) / 1000
+      var remaining = Math.round((addQ - allocated) * 1000) / 1000
+      function setRow(i, patch) {
+        setNewStockAllocs(function (prev) {
+          return prev.map(function (r, j) {
+            if (j !== i) return r
+            var u = Object.assign({}, r, patch)
+            if (patch.venue_id !== undefined) u.sub_venue_id = ''
+            return u
+          })
+        })
+      }
+      function cancelAdd() {
+        setNewStockQty(''); setNewStockRate(''); setNewStockAllocs([{ venue_id: '', sub_venue_id: '', qty: '' }])
+        setErrors(function (prev) { var n = Object.assign({}, prev); delete n.newStock; return n })
+        setShowAddStock(false)
+      }
+      function removeRow(i) {
+        setNewStockAllocs(function (prev) {
+          if (prev.length <= 1) return [{ venue_id: '', sub_venue_id: '', qty: '' }]
+          return prev.filter(function (_, j) { return j !== i })
+        })
+      }
+      return (
+        <div className="mt-4 rounded-xl border border-[#D8DCE8] bg-[#F6F7FB] p-4">
+          <div className="flex items-start justify-between gap-3 mb-3">
+            <div className="min-w-0">
+              <p className="text-[13px] font-bold uppercase tracking-[0.07em] text-slate-900">Add new stock</p>
+              <p className="text-[12px] text-slate-500">{'Now ' + onHand + ' ' + unit + (addQ > 0 ? ' \u00b7 after save ' + (Math.round((onHand + addQ) * 1000) / 1000) + ' ' + unit : '')}</p>
+            </div>
+            <button type="button" onClick={cancelAdd}
+              className="shrink-0 inline-flex items-center gap-1 h-8 px-2.5 rounded-lg text-[12.5px] font-semibold text-slate-600 hover:bg-white hover:text-slate-900 transition-colors">
+              <Icon name="close" size={13} />Cancel
+            </button>
+          </div>
+          <div className="grid grid-cols-2 gap-3 @2xl:grid-cols-3">
+            <div>
+              <label className={F_LBL}>New quantity</label>
+              <input type="number" min="0" step="any" inputMode="decimal" value={newStockQty} onChange={function (e) { setNewStockQty(e.target.value) }} placeholder="0" className={F_INP} />
+            </div>
+            <div>
+              <label className={F_LBL}>Unit rate (₹)</label>
+              <input type="number" min="0" step="any" inputMode="decimal" value={newStockRate} onChange={function (e) { setNewStockRate(e.target.value) }} placeholder={latestRatePaise ? String(latestRatePaise / 100) : '—'} className={F_INP} />
+            </div>
+            <div className="col-span-2 @2xl:col-span-1">
+              <label className={F_LBL}>Total (₹)</label>
+              <div className={F_INP + " flex items-center bg-slate-50 font-semibold tabular-nums " + (addQ > 0 && rateN > 0 ? "text-slate-900" : "text-slate-400")}>
+                {addQ > 0 && rateN > 0 ? formatPaise(Math.round(addQ * rateN * 100)) : '—'}
+              </div>
+            </div>
+          </div>
+
+          {addQ > 0 && (
+            <div className="mt-4">
+              <div className="flex items-center justify-between gap-3 mb-2">
+                <p className="text-[12px] font-bold uppercase tracking-[0.07em] text-slate-500">Allocate to venues</p>
+                <span className={"text-[12.5px] font-semibold tabular-nums " + (remaining < 0 ? "text-red-600" : remaining === 0 ? "text-emerald-700" : "text-slate-500")}>
+                  {allocated} of {addQ} allocated{remaining > 0 ? ' \u00b7 ' + remaining + ' left' : remaining < 0 ? ' \u00b7 ' + (-remaining) + ' too many' : ''}
+                </span>
+              </div>
+              <div className="space-y-2">
+                {newStockAllocs.map(function (r, i) {
+                  var svs = r.venue_id ? subVenues.filter(function (sv) { return String(sv.venue_id) === String(r.venue_id) }) : []
+                  var rq = Number(r.qty) || 0
+                  return (
+                    <div key={i} className="grid gap-2.5 items-end rounded-xl border border-slate-200 bg-white p-3 @2xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_100px_130px_44px]">
+                      <SearchDropdown label="Venue" items={venues.map(function (v) { return { label: v.code + ' \u2014 ' + v.name, value: String(v.id) } })} value={r.venue_id} onChange={function (val) { setRow(i, { venue_id: val }) }} placeholder="Select venue..." />
+                      {svs.length > 0
+                        ? <SearchDropdown label="Sub-venue" items={svs.map(function (sv) { return { label: sv.name, value: String(sv.id) } })} value={r.sub_venue_id} onChange={function (val) { setRow(i, { sub_venue_id: val }) }} placeholder="Select sub-venue..." />
+                        : <div className="hidden @2xl:block" />}
+                      <div>
+                        <label className={F_LBL}>Qty</label>
+                        <input type="number" min="0" step="any" inputMode="decimal" value={r.qty} onChange={function (e) { setRow(i, { qty: e.target.value }) }} placeholder="0" className={F_INP} />
+                      </div>
+                      <div>
+                        <label className={F_LBL}>Total</label>
+                        <div className={F_INP + " flex items-center bg-slate-50 font-semibold tabular-nums " + (rq > 0 && rateN > 0 ? "text-slate-900" : "text-slate-400")}>
+                          {rq > 0 && rateN > 0 ? formatPaise(Math.round(rq * rateN * 100)) : '—'}
+                        </div>
+                      </div>
+                      <button type="button" onClick={function () { removeRow(i) }} aria-label="Remove row" title="Remove"
+                        className="h-11 w-11 inline-flex items-center justify-center rounded-xl text-red-500 hover:bg-red-50 transition-colors">
+                        <Icon name="trash" size={15} />
+                      </button>
+                      {/* Where it lands on save: added to a place the item is
+                          already kept at, or a new place at the end. */}
+                      {r.venue_id && (function () {
+                        var same = allocations.find(function (x) { return String(x.venue_id) === String(r.venue_id) && String(x.sub_venue_id || '') === String(r.sub_venue_id || '') && !x.sub_department_id })
+                        var v = venues.find(function (x) { return String(x.id) === String(r.venue_id) })
+                        var sv = r.sub_venue_id ? subVenues.find(function (x) { return String(x.id) === String(r.sub_venue_id) }) : null
+                        var label = (v ? v.code + ' ' : '') + (sv ? sv.name : (v ? v.name : ''))
+                        var had = same ? (Number(same.qty) || 0) : 0
+                        return (
+                          <p className={"@2xl:col-span-5 inline-flex items-center gap-1.5 text-[12px] font-medium " + (same ? "text-[#333D5E]" : "text-emerald-700")}>
+                            <Icon name={same ? 'arrowRight' : 'plus'} size={12} />
+                            {same
+                              ? 'Adds to ' + label + ' · ' + had + ' → ' + (Math.round((had + rq) * 1000) / 1000) + ' ' + unit
+                              : 'New place — ' + label + ' is added at the end of the list'}
+                          </p>
+                        )
+                      })()}
+                    </div>
+                  )
+                })}
+              </div>
+              <button type="button" onClick={function () { setNewStockAllocs(function (prev) { return prev.concat([{ venue_id: '', sub_venue_id: '', qty: '' }]) }) }}
+                className="mt-2 inline-flex items-center gap-1.5 h-9 px-3 rounded-lg text-[13px] font-semibold text-[#333D5E] bg-[#EDEFF5] hover:bg-[#E3E6F0] transition-colors">
+                <Icon name="plus" size={14} />Add venue
+              </button>
+            </div>
+          )}
+          {errors.newStock && <p className="mt-2 text-xs font-medium text-red-600">{errors.newStock}</p>}
+        </div>
+      )
+    })()}
+      {/* Batch rates: each batch's unit rate, editable — a batch saved
+          before rates were kept has none (₹0) until it is given one. */}
+      {itemBatches.length > 0 && (
+        <div className="mt-4">
+          <p className="mb-2 text-[12px] font-bold uppercase tracking-[0.07em] text-slate-500">Batch rates</p>
+          <div className="rounded-xl border border-slate-200 overflow-hidden divide-y divide-slate-100">
+            {effBatches.map(function (b, bi) {
+              var bq = Number(b.qty) || 0
+              var missing = !b.rate_paise
+              var typed = Object.prototype.hasOwnProperty.call(batchRateEdits, b.id) ? batchRateEdits[b.id] : (itemBatches[bi].rate_paise ? String(itemBatches[bi].rate_paise / 100) : '')
+              return (
+                <div key={b.id} className={"flex flex-wrap items-center gap-x-3 gap-y-2 px-3.5 py-2.5 " + (missing ? "bg-amber-50/60" : "")}>
+                  <span className="flex-1 min-w-[160px]">
+                    <span className="block text-[13px] font-semibold text-slate-800">Batch {bi + 1} · {b.is_opening ? 'Opening stock' : 'New stock'}</span>
+                    <span className="block text-[11.5px] text-slate-500 tabular-nums">{bq} {unit} · {new Date(b.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                  </span>
+                  <label className="flex items-center gap-1.5">
+                    <span className="text-[12px] font-semibold text-slate-500">Rate ₹</span>
+                    <input type="number" min="0" step="any" inputMode="decimal" value={typed} placeholder="0"
+                      onChange={function (e) { var v = e.target.value; setBatchRateEdits(function (prev) { var n = Object.assign({}, prev); n[b.id] = v; return n }) }}
+                      className={"w-24 h-9 px-2.5 bg-white border rounded-lg text-[14px] font-semibold text-slate-900 tabular-nums focus:outline-none focus:ring-4 focus:ring-[#3B4668]/10 " + (missing ? "border-amber-300" : "border-slate-300 focus:border-[#A9B1CB]")} />
+                  </label>
+                  <span className={"w-[104px] text-right text-[14px] font-bold tabular-nums " + (missing ? "text-amber-700" : "text-slate-900")}>
+                    {missing ? 'Rate missing' : formatPaise(Math.round(bq * b.rate_paise))}
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+      {/* Where the quantity above is kept: the item's venue allocations,
+          filled in from what is saved, edited the same way as a new stock
+          split — venue, sub-venue, qty and its value at the item's rate. */}
+      {(function () {
+        var onHandQ = Number(qty) || 0
+        var placedQ = Math.round(allocations.reduce(function (sum, a) { return sum + (a.venue_id ? (Number(a.qty) || 0) : 0) }, 0) * 1000) / 1000
+        var restQ = Math.round((onHandQ - placedQ) * 1000) / 1000
+        function removeAt(i) {
+          if (allocations.length <= 1) setAllocations([{ department: '', sub_department_id: '', venue_id: '', sub_venue_id: '', qty: '' }])
+          else removeAllocationRow(i)
+        }
+        // Shown once there is a quantity to place: open rows like the Add
+        // new stock split for first-time stock (no batches yet), the
+        // numbered list with each place's batches for stock that has them.
+        if (onHandQ <= 0 && !errors.alloc) return null
+        // First-time stock (no batches yet): the same open rows as the Add
+        // new stock split — venue, sub-venue, qty and total — rather than
+        // a folded list that opens on an empty "Incomplete" line.
+        if (itemBatches.length === 0) {
+          return (
+            <div className="mt-4">
+              <div className="flex items-center justify-between gap-3 mb-2">
+                <p className="text-[12px] font-bold uppercase tracking-[0.07em] text-slate-500">Allocate to venues</p>
+                <span className={"text-[12.5px] font-semibold tabular-nums " + (restQ < 0 ? "text-red-600" : restQ === 0 ? "text-emerald-700" : "text-slate-500")}>
+                  {placedQ} of {onHandQ} allocated{restQ > 0 ? ' · ' + restQ + ' left' : restQ < 0 ? ' · ' + (-restQ) + ' too many' : ''}
+                </span>
+              </div>
+              <div className="space-y-2">
+                {allocations.map(function (r, i) {
+                  var svs = r.venue_id ? subVenues.filter(function (sv) { return String(sv.venue_id) === String(r.venue_id) }) : []
+                  return (
+                    <div key={i} className="grid gap-2.5 items-end rounded-xl border border-slate-200 bg-slate-50/70 p-3 @2xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_100px_130px_44px]">
+                      <div className={svs.length > 0 ? "" : "@2xl:col-span-2"}>
+                        <SearchDropdown label="Venue" items={venues.map(function (v) { return { label: v.code + ' — ' + v.name, value: String(v.id) } })} value={r.venue_id} onChange={function (val) { updateAllocation(i, 'venue_id', val) }} placeholder="Select venue..." />
+                      </div>
+                      {svs.length > 0 && <SearchDropdown label="Sub-venue" items={svs.map(function (sv) { return { label: sv.name, value: String(sv.id) } })} value={r.sub_venue_id} onChange={function (val) { updateAllocation(i, 'sub_venue_id', val) }} placeholder="Select sub-venue..." />}
+                      <div>
+                        <label className={F_LBL}>Qty</label>
+                        <input type="number" min="0" step="any" inputMode="decimal" value={r.qty} onChange={function (e) { updateAllocation(i, 'qty', e.target.value) }} placeholder="0" className={F_INP} />
+                      </div>
+                      <div>
+                        <label className={F_LBL}>Total</label>
+                        <div className={F_INP + " flex items-center bg-white font-semibold tabular-nums " + (placeValuePaise(r) > 0 ? "text-slate-900" : "text-slate-400")}>
+                          {placeValuePaise(r) > 0 ? formatPaise(placeValuePaise(r)) : '—'}
+                        </div>
+                      </div>
+                      <button type="button" onClick={function () { removeAt(i) }} aria-label="Remove row" title="Remove"
+                        className="h-11 w-11 inline-flex items-center justify-center rounded-xl text-red-500 hover:bg-red-50 transition-colors">
+                        <Icon name="trash" size={15} />
+                      </button>
+                    </div>
+                  )
+                })}
+              </div>
+              <button type="button" onClick={addAllocationRow}
+                className="mt-2 inline-flex items-center gap-1.5 h-9 px-3 rounded-lg text-[13px] font-semibold text-[#333D5E] bg-[#EDEFF5] hover:bg-[#E3E6F0] transition-colors">
+                <Icon name="plus" size={14} />Add venue
+              </button>
+              {errors.alloc && <p className="mt-2 text-xs font-medium text-red-600">{errors.alloc}</p>}
+            </div>
+          )
+        }
+        return (
+          <div className="mt-5 pt-4 border-t border-slate-100">
+            {/* The list view: one numbered line per place with its qty and
+                value; the line being edited opens in place. */}
+            <AllocationRows
+              allocations={allocations}
+              accent="gray"
+              bare
+              startCollapsed
+              title="Allocations"
+              heading={
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                  <div>
+                    <p className="text-[14px] font-bold text-slate-900">Allocate to venues</p>
+                    <p className="text-[12px] text-slate-500">Where this stock is kept</p>
+                  </div>
+                  {/* Status with a bar showing how much is placed. */}
+                  <div className={"inline-flex items-center gap-2 pl-2 pr-3 py-1.5 rounded-xl ring-1 " +
+                    (restQ < 0 ? "bg-red-50 ring-red-200 text-red-700" : restQ === 0 ? "bg-emerald-50 ring-emerald-200 text-emerald-700" : "bg-amber-50 ring-amber-200 text-amber-800")}>
+                    <span className={"shrink-0 w-5 h-5 rounded-full inline-flex items-center justify-center text-white " + (restQ < 0 ? "bg-red-500" : restQ === 0 ? "bg-emerald-500" : "bg-amber-500")}>
+                      <Icon name={restQ === 0 ? 'check' : 'alert'} size={11} />
+                    </span>
+                    <span className="flex flex-col gap-1">
+                      <span className="text-[12px] font-bold tabular-nums whitespace-nowrap">
+                        {placedQ} of {onHandQ} allocated{restQ > 0 ? ' \u00b7 ' + restQ + ' left' : restQ < 0 ? ' \u00b7 ' + (-restQ) + ' too many' : ''}
+                      </span>
+                      <span className="block h-1.5 w-full min-w-[110px] rounded-full bg-white/80 overflow-hidden">
+                        <span className={"block h-full rounded-full " + (restQ < 0 ? "bg-red-500" : restQ === 0 ? "bg-emerald-500" : "bg-amber-500")}
+                          style={{ width: Math.min(100, onHandQ > 0 ? (placedQ / onHandQ) * 100 : 0) + '%' }} />
+                      </span>
+                    </span>
+                  </div>
+                </div>
+              }
+              onAdd={addAllocationRow}
+              onRemove={removeAt}
+              onDuplicate={duplicateAllocationRow}
+              isComplete={function (a) { return !!a.venue_id && !!a.qty && Number(a.qty) > 0 }}
+              renderCard={function (a, i, act) {
+                // A card per place, kept plain: where it is and its totals on
+                // one line, the batches behind it as a short list, then Edit
+                // and Delete.
+                var v = a.venue_id ? venues.find(function (x) { return String(x.id) === String(a.venue_id) }) : null
+                var sv = a.sub_venue_id && v ? subVenues.find(function (x) { return String(x.id) === String(a.sub_venue_id) }) : null
+                var parts = partsAtPlace[(a.venue_id || '') + '|' + (a.sub_venue_id || '')] || []
+                var rq = Number(a.qty) || 0
+                var val = placeValuePaise(a)
+                return (
+                  <div className={"rounded-2xl border bg-white p-3.5 " + (act.complete ? "border-slate-200" : "border-amber-300 bg-amber-50/30")}>
+                    {/* Two aligned lines: the place's name with its quantity,
+                        then the venue with the amount; the code sits beside
+                        both as a tile. */}
+                    <button type="button" onClick={act.edit} className="w-full flex items-center gap-3 text-left">
+                      <span className="shrink-0 w-10 h-10 rounded-xl bg-[#EDEFF5] text-[#333D5E] text-[12px] font-extrabold inline-flex items-center justify-center">{v ? v.code : '—'}</span>
+                      <span className="flex-1 min-w-0">
+                        <span className="flex items-baseline justify-between gap-3">
+                          <span className="text-[15px] font-bold text-slate-900 truncate">{sv ? sv.name : (v ? v.name : 'Pick a venue')}</span>
+                          <span className="shrink-0 text-[15px] font-extrabold text-slate-900 tabular-nums">{rq} <span className="text-[11.5px] font-semibold text-slate-500">{unit}</span></span>
+                        </span>
+                        <span className="flex items-baseline justify-between gap-3 mt-0.5">
+                          <span className={"text-[12px] truncate " + (act.complete ? "text-slate-500" : "text-amber-700 font-medium")}>{act.complete ? (sv && v ? v.name : '') : 'Incomplete — tap Edit'}</span>
+                          <span className="shrink-0 text-[12.5px] font-semibold text-slate-600 tabular-nums">{val > 0 ? formatPaise(val) : '—'}</span>
+                        </span>
+                      </span>
+                    </button>
+                    {parts.length > 0 && (
+                      <div className="mt-2.5 rounded-xl border border-slate-100 divide-y divide-slate-100">
+                        {parts.map(function (pt, pi) {
+                          var isNewest = itemBatches.length > 1 && pt.n === itemBatches.length
+                          return (
+                            <div key={pi} className="flex items-center gap-2 px-3 py-1.5 text-[12.5px] tabular-nums">
+                              <span className="font-semibold text-slate-700">Batch {pt.n}</span>
+                              {isNewest && <span className="px-1 rounded bg-emerald-100 text-emerald-700 text-[9.5px] font-extrabold uppercase tracking-[0.06em] leading-[16px]">New</span>}
+                              <span className="flex-1 text-slate-500 truncate">{pt.q} × {formatPaise(pt.rate)}</span>
+                              <span className="font-semibold text-slate-900">{formatPaise(Math.round(pt.q * pt.rate))}</span>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                    <div className="mt-2.5 flex justify-end gap-1.5">
+                      <button type="button" onClick={act.edit}
+                        className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-slate-200 bg-white text-[12.5px] font-semibold text-slate-700 hover:border-[#A9B1CB] hover:text-[#3B4668] transition-colors">
+                        <Icon name="edit" size={13} />Edit
+                      </button>
+                      <button type="button" onClick={act.remove} aria-label="Delete place" title="Delete"
+                        className="w-8 h-8 inline-flex items-center justify-center rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors">
+                        <Icon name="trash" size={14} />
+                      </button>
+                    </div>
+                  </div>
+                )
+              }}
+              renderChip={function (a) {
+                var v = a.venue_id ? venues.find(function (x) { return String(x.id) === String(a.venue_id) }) : null
+                var sv = a.sub_venue_id && v ? subVenues.find(function (x) { return String(x.id) === String(a.sub_venue_id) }) : null
+                var rq = Number(a.qty) || 0
+                return {
+                  left: (
+                    <span className="flex flex-col min-w-0 gap-1">
+                      <span className="flex items-center gap-2 min-w-0">
+                        {v && <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-[#EDEFF5] text-[10px] font-bold text-[#333D5E] shrink-0">{v.code}</span>}
+                        {sv
+                          ? <span className="font-medium text-slate-800 truncate">{sv.name}</span>
+                          : v && <span className="text-slate-500 truncate">{v.name}</span>}
+                      </span>
+                      {/* The batches this place holds, each at its rate. */}
+                      {(partsAtPlace[(a.venue_id || '') + '|' + (a.sub_venue_id || '')] || []).length > 0 && (
+                        <span className="flex flex-wrap gap-1">
+                          {partsAtPlace[(a.venue_id || '') + '|' + (a.sub_venue_id || '')].map(function (pt, pi) {
+                            // The newest batch is marked, once there is more than one.
+                            var isNewest = itemBatches.length > 1 && pt.n === itemBatches.length
+                            return (
+                              <span key={pi} className={"inline-flex items-center h-5 px-1.5 rounded text-[11px] tabular-nums " + (isNewest ? "bg-emerald-50 text-emerald-800 ring-1 ring-emerald-200" : "bg-slate-100 text-slate-600")}>
+                                {isNewest && <span className="mr-1 px-1 rounded-sm bg-emerald-600 text-white text-[9.5px] font-extrabold uppercase tracking-[0.06em] leading-[14px]">New</span>}
+                                <b className="font-semibold text-slate-700 mr-1">Batch {pt.n}</b>{pt.q} × {formatPaise(pt.rate)} = <b className="font-semibold text-slate-800 ml-1">{formatPaise(Math.round(pt.q * pt.rate))}</b>
+                              </span>
+                            )
+                          })}
+                        </span>
+                      )}
+                    </span>
+                  ),
+                  right: (
+                    <span className="inline-flex items-center gap-2">
+                      <span className="inline-flex items-center gap-1 h-7 px-2.5 rounded-lg bg-slate-100 text-[13px] font-bold text-slate-900 tabular-nums">{rq} <span className="text-[11px] font-semibold text-slate-500">{unit}</span></span>
+                      <span className="hidden sm:inline text-[12px] font-semibold text-slate-500 tabular-nums">{placeRateVaries(a) ? placeCalc(a) : '× ' + formatPaise(Math.round(placeRateOf(a)))}</span>
+                      <span className="inline-block w-[96px] text-right text-[13.5px] font-bold text-slate-900 tabular-nums">{placeValuePaise(a) > 0 ? formatPaise(placeValuePaise(a)) : '\u2014'}</span>
+                    </span>
+                  ),
+                }
+              }}
+              renderExpanded={function (r, i) {
+                var svs = r.venue_id ? subVenues.filter(function (sv) { return String(sv.venue_id) === String(r.venue_id) }) : []
+                var rq = Number(r.qty) || 0
+                return (
+                  <div className="grid gap-2.5 items-end @2xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_100px_130px]">
+                    {/* With no sub-venues to pick, the venue takes both
+                        columns rather than leaving a gap before the qty. */}
+                    <div className={svs.length > 0 ? "" : "@2xl:col-span-2"}>
+                      <SearchDropdown label="Venue" required items={venues.map(function (v) { return { label: v.code + ' — ' + v.name, value: String(v.id) } })} value={r.venue_id} onChange={function (val) { updateAllocation(i, 'venue_id', val) }} placeholder="Select venue..." />
+                    </div>
+                    {svs.length > 0 && <SearchDropdown label="Sub-venue" items={svs.map(function (sv) { return { label: sv.name, value: String(sv.id) } })} value={r.sub_venue_id} onChange={function (val) { updateAllocation(i, 'sub_venue_id', val) }} placeholder="Select sub-venue..." />}
+                    <div>
+                      <label className={F_LBL}>Qty</label>
+                      <input type="number" min="0" step="any" inputMode="decimal" value={r.qty} onChange={function (e) { updateAllocation(i, 'qty', e.target.value) }} placeholder="0" className={F_INP} />
+                    </div>
+                    <div>
+                      <label className={F_LBL}>Total</label>
+                      <div className={F_INP + " flex items-center bg-white font-semibold tabular-nums " + (placeValuePaise(r) > 0 ? "text-slate-900" : "text-slate-400")}>
+                        {placeValuePaise(r) > 0 ? formatPaise(placeValuePaise(r)) : '—'}
+                      </div>
+                      {placeRateOf(r) > 0 && <p className="mt-1 text-[11.5px] text-slate-500 tabular-nums">{placeRateVaries(r) ? placeCalcFull(r) : 'at ' + formatPaise(Math.round(placeRateOf(r))) + ' each'}</p>}
+                    </div>
+                  </div>
+                )
+              }}
+            />
+            {errors.alloc && <p className="mt-2 text-xs font-medium text-red-600">{errors.alloc}</p>}
+          </div>
+        )
+      })()}
+    </FormSection>
     )
   }
 
@@ -997,338 +1444,7 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved, variant }) {
           </FormSection>
         )}
 
-        {/* ═══ STOCK & PRICING ═══ */}
-        <FormSection icon="rupee" title="Stock & pricing">
-          <div className={"grid grid-cols-2 gap-3 " + (itemBatches.length > 0 ? "@2xl:grid-cols-3" : "@2xl:grid-cols-4")}>
-            <div>
-              <label className={F_LBL}>{t('Quantity')}</label>
-              {/* Editable for corrections. A change typed here is not a batch
-                  — new stock arriving goes through Add new stock below, which
-                  keeps its rate and venue split; the breakdown notes any gap. */}
-              <input type="number" min="0" max="999999" step="any" inputMode="numeric" value={qty} onChange={function (e) { setQty(e.target.value) }} placeholder="0"
-                className={F_INP + (errors.qty ? " border-red-300" : "")} />
-              {errors.qty && <p className="text-xs text-red-500 mt-1">{errors.qty}</p>}
-            </div>
-            <div>
-              <label className={F_LBL}>{t('Unit')}</label>
-              <select value={unit} onChange={function (e) { setUnit(e.target.value) }} className={F_INP}>
-                {UNITS.map(function (u) { return <option key={u} value={u}>{u}</option> })}
-              </select>
-            </div>
-            {/* With batches the rate is theirs, not one number — each batch's
-                rate is shown in the allocation list below — so the field only
-                appears for an item with no batches yet. The rate of new stock
-                is entered in Add new stock. */}
-            {itemBatches.length === 0 && (
-              <div>
-                <label className={F_LBL}>{t('Rate') + ' (₹)'}</label>
-                <input type="number" min="0" step="any" inputMode="decimal" value={ratePaise} onChange={function (e) { setRatePaise(e.target.value) }} placeholder="—" className={F_INP} />
-              </div>
-            )}
-            <div>
-              <label className={F_LBL}>Total (₹)</label>
-              <div className={F_INP + " flex items-center bg-slate-50 font-semibold tabular-nums " + (rateTotalPaise != null ? "text-slate-900" : "text-slate-400")}>
-                {rateTotalPaise != null ? formatPaise(rateTotalPaise) : '—'}
-              </div>
-            </div>
-          </div>
-          {/* Batch rates: each batch's unit rate, editable — a batch saved
-              before rates were kept has none (₹0) until it is given one. */}
-          {itemBatches.length > 0 && (
-            <div className="mt-4">
-              <p className="mb-2 text-[12px] font-bold uppercase tracking-[0.07em] text-slate-500">Batch rates</p>
-              <div className="rounded-xl border border-slate-200 overflow-hidden divide-y divide-slate-100">
-                {effBatches.map(function (b, bi) {
-                  var bq = Number(b.qty) || 0
-                  var missing = !b.rate_paise
-                  var typed = Object.prototype.hasOwnProperty.call(batchRateEdits, b.id) ? batchRateEdits[b.id] : (itemBatches[bi].rate_paise ? String(itemBatches[bi].rate_paise / 100) : '')
-                  return (
-                    <div key={b.id} className={"flex flex-wrap items-center gap-x-3 gap-y-2 px-3.5 py-2.5 " + (missing ? "bg-amber-50/60" : "")}>
-                      <span className="flex-1 min-w-[160px]">
-                        <span className="block text-[13px] font-semibold text-slate-800">Batch {bi + 1} · {b.is_opening ? 'Opening stock' : 'New stock'}</span>
-                        <span className="block text-[11.5px] text-slate-500 tabular-nums">{bq} {unit} · {new Date(b.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
-                      </span>
-                      <label className="flex items-center gap-1.5">
-                        <span className="text-[12px] font-semibold text-slate-500">Rate ₹</span>
-                        <input type="number" min="0" step="any" inputMode="decimal" value={typed} placeholder="0"
-                          onChange={function (e) { var v = e.target.value; setBatchRateEdits(function (prev) { var n = Object.assign({}, prev); n[b.id] = v; return n }) }}
-                          className={"w-24 h-9 px-2.5 bg-white border rounded-lg text-[14px] font-semibold text-slate-900 tabular-nums focus:outline-none focus:ring-4 focus:ring-[#3B4668]/10 " + (missing ? "border-amber-300" : "border-slate-300 focus:border-[#A9B1CB]")} />
-                      </label>
-                      <span className={"w-[104px] text-right text-[14px] font-bold tabular-nums " + (missing ? "text-amber-700" : "text-slate-900")}>
-                        {missing ? 'Rate missing' : formatPaise(Math.round(bq * b.rate_paise))}
-                      </span>
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-          )}
-          {/* Where the quantity above is kept: the item's venue allocations,
-              filled in from what is saved, edited the same way as a new stock
-              split — venue, sub-venue, qty and its value at the item's rate. */}
-          {(function () {
-            var onHandQ = Number(qty) || 0
-            var placedQ = Math.round(allocations.reduce(function (sum, a) { return sum + (a.venue_id ? (Number(a.qty) || 0) : 0) }, 0) * 1000) / 1000
-            var restQ = Math.round((onHandQ - placedQ) * 1000) / 1000
-            function removeAt(i) {
-              if (allocations.length <= 1) setAllocations([{ department: '', sub_department_id: '', venue_id: '', sub_venue_id: '', qty: '' }])
-              else removeAllocationRow(i)
-            }
-            // Shown once there is a quantity to place: open rows like the Add
-            // new stock split for first-time stock (no batches yet), the
-            // numbered list with each place's batches for stock that has them.
-            if (onHandQ <= 0 && !errors.alloc) return null
-            // First-time stock (no batches yet): the same open rows as the Add
-            // new stock split — venue, sub-venue, qty and total — rather than
-            // a folded list that opens on an empty "Incomplete" line.
-            if (itemBatches.length === 0) {
-              return (
-                <div className="mt-4">
-                  <div className="flex items-center justify-between gap-3 mb-2">
-                    <p className="text-[12px] font-bold uppercase tracking-[0.07em] text-slate-500">Allocate to venues</p>
-                    <span className={"text-[12.5px] font-semibold tabular-nums " + (restQ < 0 ? "text-red-600" : restQ === 0 ? "text-emerald-700" : "text-slate-500")}>
-                      {placedQ} of {onHandQ} allocated{restQ > 0 ? ' · ' + restQ + ' left' : restQ < 0 ? ' · ' + (-restQ) + ' too many' : ''}
-                    </span>
-                  </div>
-                  <div className="space-y-2">
-                    {allocations.map(function (r, i) {
-                      var svs = r.venue_id ? subVenues.filter(function (sv) { return String(sv.venue_id) === String(r.venue_id) }) : []
-                      return (
-                        <div key={i} className="grid gap-2.5 items-end rounded-xl border border-slate-200 bg-slate-50/70 p-3 @2xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_100px_130px_44px]">
-                          <div className={svs.length > 0 ? "" : "@2xl:col-span-2"}>
-                            <SearchDropdown label="Venue" items={venues.map(function (v) { return { label: v.code + ' — ' + v.name, value: String(v.id) } })} value={r.venue_id} onChange={function (val) { updateAllocation(i, 'venue_id', val) }} placeholder="Select venue..." />
-                          </div>
-                          {svs.length > 0 && <SearchDropdown label="Sub-venue" items={svs.map(function (sv) { return { label: sv.name, value: String(sv.id) } })} value={r.sub_venue_id} onChange={function (val) { updateAllocation(i, 'sub_venue_id', val) }} placeholder="Select sub-venue..." />}
-                          <div>
-                            <label className={F_LBL}>Qty</label>
-                            <input type="number" min="0" step="any" inputMode="decimal" value={r.qty} onChange={function (e) { updateAllocation(i, 'qty', e.target.value) }} placeholder="0" className={F_INP} />
-                          </div>
-                          <div>
-                            <label className={F_LBL}>Total</label>
-                            <div className={F_INP + " flex items-center bg-white font-semibold tabular-nums " + (placeValuePaise(r) > 0 ? "text-slate-900" : "text-slate-400")}>
-                              {placeValuePaise(r) > 0 ? formatPaise(placeValuePaise(r)) : '—'}
-                            </div>
-                          </div>
-                          <button type="button" onClick={function () { removeAt(i) }} aria-label="Remove row" title="Remove"
-                            className="h-11 w-11 inline-flex items-center justify-center rounded-xl text-red-500 hover:bg-red-50 transition-colors">
-                            <Icon name="trash" size={15} />
-                          </button>
-                        </div>
-                      )
-                    })}
-                  </div>
-                  <button type="button" onClick={addAllocationRow}
-                    className="mt-2 inline-flex items-center gap-1.5 h-9 px-3 rounded-lg text-[13px] font-semibold text-[#333D5E] bg-[#EDEFF5] hover:bg-[#E3E6F0] transition-colors">
-                    <Icon name="plus" size={14} />Add venue
-                  </button>
-                  {errors.alloc && <p className="mt-2 text-xs font-medium text-red-600">{errors.alloc}</p>}
-                </div>
-              )
-            }
-            return (
-              <div className="mt-5 pt-4 border-t border-slate-100">
-                {/* The list view: one numbered line per place with its qty and
-                    value; the line being edited opens in place. */}
-                <AllocationRows
-                  allocations={allocations}
-                  accent="gray"
-                  bare
-                  startCollapsed
-                  title="Allocations"
-                  heading={
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-[12px] font-bold uppercase tracking-[0.07em] text-slate-600">Allocate to venues</span>
-                      <span className={"inline-flex items-center gap-1 h-6 px-2.5 rounded-full text-[12px] font-semibold tabular-nums " +
-                        (restQ < 0 ? "bg-red-50 text-red-700 ring-1 ring-red-200" : restQ === 0 ? "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200" : "bg-amber-50 text-amber-800 ring-1 ring-amber-200")}>
-                        {restQ === 0 && <Icon name="check" size={12} />}
-                        {placedQ} of {onHandQ} allocated{restQ > 0 ? ' \u00b7 ' + restQ + ' left' : restQ < 0 ? ' \u00b7 ' + (-restQ) + ' too many' : ''}
-                      </span>
-                    </div>
-                  }
-                  onAdd={addAllocationRow}
-                  onRemove={removeAt}
-                  onDuplicate={duplicateAllocationRow}
-                  isComplete={function (a) { return !!a.venue_id && !!a.qty && Number(a.qty) > 0 }}
-                  renderChip={function (a) {
-                    var v = a.venue_id ? venues.find(function (x) { return String(x.id) === String(a.venue_id) }) : null
-                    var sv = a.sub_venue_id && v ? subVenues.find(function (x) { return String(x.id) === String(a.sub_venue_id) }) : null
-                    var rq = Number(a.qty) || 0
-                    return {
-                      left: (
-                        <span className="flex flex-col min-w-0 gap-1">
-                          <span className="flex items-center gap-2 min-w-0">
-                            {v && <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-[#EDEFF5] text-[10px] font-bold text-[#333D5E] shrink-0">{v.code}</span>}
-                            {sv
-                              ? <span className="font-medium text-slate-800 truncate">{sv.name}</span>
-                              : v && <span className="text-slate-500 truncate">{v.name}</span>}
-                          </span>
-                          {/* The batches this place holds, each at its rate. */}
-                          {(partsAtPlace[(a.venue_id || '') + '|' + (a.sub_venue_id || '')] || []).length > 0 && (
-                            <span className="flex flex-wrap gap-1">
-                              {partsAtPlace[(a.venue_id || '') + '|' + (a.sub_venue_id || '')].map(function (pt, pi) {
-                                // The newest batch is marked, once there is more than one.
-                                var isNewest = itemBatches.length > 1 && pt.n === itemBatches.length
-                                return (
-                                  <span key={pi} className={"inline-flex items-center h-5 px-1.5 rounded text-[11px] tabular-nums " + (isNewest ? "bg-emerald-50 text-emerald-800 ring-1 ring-emerald-200" : "bg-slate-100 text-slate-600")}>
-                                    {isNewest && <span className="mr-1 px-1 rounded-sm bg-emerald-600 text-white text-[9.5px] font-extrabold uppercase tracking-[0.06em] leading-[14px]">New</span>}
-                                    <b className="font-semibold text-slate-700 mr-1">Batch {pt.n}</b>{pt.q} × {formatPaise(pt.rate)} = <b className="font-semibold text-slate-800 ml-1">{formatPaise(Math.round(pt.q * pt.rate))}</b>
-                                  </span>
-                                )
-                              })}
-                            </span>
-                          )}
-                        </span>
-                      ),
-                      right: (
-                        <span className="inline-flex items-center gap-2">
-                          <span className="inline-flex items-center gap-1 h-7 px-2.5 rounded-lg bg-slate-100 text-[13px] font-bold text-slate-900 tabular-nums">{rq} <span className="text-[11px] font-semibold text-slate-500">{unit}</span></span>
-                          <span className="hidden sm:inline text-[12px] font-semibold text-slate-500 tabular-nums">{placeRateVaries(a) ? placeCalc(a) : '× ' + formatPaise(Math.round(placeRateOf(a)))}</span>
-                          <span className="inline-block w-[96px] text-right text-[13.5px] font-bold text-slate-900 tabular-nums">{placeValuePaise(a) > 0 ? formatPaise(placeValuePaise(a)) : '\u2014'}</span>
-                        </span>
-                      ),
-                    }
-                  }}
-                  renderExpanded={function (r, i) {
-                    var svs = r.venue_id ? subVenues.filter(function (sv) { return String(sv.venue_id) === String(r.venue_id) }) : []
-                    var rq = Number(r.qty) || 0
-                    return (
-                      <div className="grid gap-2.5 items-end @2xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_100px_130px]">
-                        {/* With no sub-venues to pick, the venue takes both
-                            columns rather than leaving a gap before the qty. */}
-                        <div className={svs.length > 0 ? "" : "@2xl:col-span-2"}>
-                          <SearchDropdown label="Venue" required items={venues.map(function (v) { return { label: v.code + ' — ' + v.name, value: String(v.id) } })} value={r.venue_id} onChange={function (val) { updateAllocation(i, 'venue_id', val) }} placeholder="Select venue..." />
-                        </div>
-                        {svs.length > 0 && <SearchDropdown label="Sub-venue" items={svs.map(function (sv) { return { label: sv.name, value: String(sv.id) } })} value={r.sub_venue_id} onChange={function (val) { updateAllocation(i, 'sub_venue_id', val) }} placeholder="Select sub-venue..." />}
-                        <div>
-                          <label className={F_LBL}>Qty</label>
-                          <input type="number" min="0" step="any" inputMode="decimal" value={r.qty} onChange={function (e) { updateAllocation(i, 'qty', e.target.value) }} placeholder="0" className={F_INP} />
-                        </div>
-                        <div>
-                          <label className={F_LBL}>Total</label>
-                          <div className={F_INP + " flex items-center bg-white font-semibold tabular-nums " + (placeValuePaise(r) > 0 ? "text-slate-900" : "text-slate-400")}>
-                            {placeValuePaise(r) > 0 ? formatPaise(placeValuePaise(r)) : '—'}
-                          </div>
-                          {placeRateOf(r) > 0 && <p className="mt-1 text-[11.5px] text-slate-500 tabular-nums">{placeRateVaries(r) ? placeCalcFull(r) : 'at ' + formatPaise(Math.round(placeRateOf(r))) + ' each'}</p>}
-                        </div>
-                      </div>
-                    )
-                  }}
-                />
-                {errors.alloc && <p className="mt-2 text-xs font-medium text-red-600">{errors.alloc}</p>}
-              </div>
-            )
-          })()}
-          {/* Add new stock: a button under the quantity; it opens the new
-              qty, its unit rate and total, and its split across venues. */}
-        {isEdit && !showAddStock && (
-          <button type="button" onClick={function () { setShowAddStock(true) }}
-            className="mt-4 inline-flex items-center gap-1.5 h-10 px-4 rounded-xl text-[13.5px] font-semibold text-white bg-[#3B4668] shadow-[0_4px_12px_-4px_rgba(59,70,104,0.55)] hover:bg-[#2F3854] transition-colors">
-            <Icon name="plus" size={15} />Add new stock
-          </button>
-        )}
-        {isEdit && showAddStock && (function () {
-          var onHand = Number(qty) || 0
-          var addQ = Number(newStockQty) || 0
-          var rateN = Number(newStockRate) || (latestRatePaise ? latestRatePaise / 100 : 0)
-          var allocated = Math.round(newStockAllocs.reduce(function (sum, a) { return sum + (Number(a.qty) || 0) }, 0) * 1000) / 1000
-          var remaining = Math.round((addQ - allocated) * 1000) / 1000
-          function setRow(i, patch) {
-            setNewStockAllocs(function (prev) {
-              return prev.map(function (r, j) {
-                if (j !== i) return r
-                var u = Object.assign({}, r, patch)
-                if (patch.venue_id !== undefined) u.sub_venue_id = ''
-                return u
-              })
-            })
-          }
-          function cancelAdd() {
-            setNewStockQty(''); setNewStockRate(''); setNewStockAllocs([{ venue_id: '', sub_venue_id: '', qty: '' }])
-            setErrors(function (prev) { var n = Object.assign({}, prev); delete n.newStock; return n })
-            setShowAddStock(false)
-          }
-          function removeRow(i) {
-            setNewStockAllocs(function (prev) {
-              if (prev.length <= 1) return [{ venue_id: '', sub_venue_id: '', qty: '' }]
-              return prev.filter(function (_, j) { return j !== i })
-            })
-          }
-          return (
-            <div className="mt-4 rounded-xl border border-[#D8DCE8] bg-[#F6F7FB] p-4">
-              <div className="flex items-start justify-between gap-3 mb-3">
-                <div className="min-w-0">
-                  <p className="text-[13px] font-bold uppercase tracking-[0.07em] text-slate-900">Add new stock</p>
-                  <p className="text-[12px] text-slate-500">{'Now ' + onHand + ' ' + unit + (addQ > 0 ? ' \u00b7 after save ' + (Math.round((onHand + addQ) * 1000) / 1000) + ' ' + unit : '')}</p>
-                </div>
-                <button type="button" onClick={cancelAdd}
-                  className="shrink-0 inline-flex items-center gap-1 h-8 px-2.5 rounded-lg text-[12.5px] font-semibold text-slate-600 hover:bg-white hover:text-slate-900 transition-colors">
-                  <Icon name="close" size={13} />Cancel
-                </button>
-              </div>
-              <div className="grid grid-cols-2 gap-3 @2xl:grid-cols-3">
-                <div>
-                  <label className={F_LBL}>New quantity</label>
-                  <input type="number" min="0" step="any" inputMode="decimal" value={newStockQty} onChange={function (e) { setNewStockQty(e.target.value) }} placeholder="0" className={F_INP} />
-                </div>
-                <div>
-                  <label className={F_LBL}>Unit rate (₹)</label>
-                  <input type="number" min="0" step="any" inputMode="decimal" value={newStockRate} onChange={function (e) { setNewStockRate(e.target.value) }} placeholder={latestRatePaise ? String(latestRatePaise / 100) : '—'} className={F_INP} />
-                </div>
-                <div className="col-span-2 @2xl:col-span-1">
-                  <label className={F_LBL}>Total (₹)</label>
-                  <div className={F_INP + " flex items-center bg-slate-50 font-semibold tabular-nums " + (addQ > 0 && rateN > 0 ? "text-slate-900" : "text-slate-400")}>
-                    {addQ > 0 && rateN > 0 ? formatPaise(Math.round(addQ * rateN * 100)) : '—'}
-                  </div>
-                </div>
-              </div>
-
-              {addQ > 0 && (
-                <div className="mt-4">
-                  <div className="flex items-center justify-between gap-3 mb-2">
-                    <p className="text-[12px] font-bold uppercase tracking-[0.07em] text-slate-500">Allocate to venues</p>
-                    <span className={"text-[12.5px] font-semibold tabular-nums " + (remaining < 0 ? "text-red-600" : remaining === 0 ? "text-emerald-700" : "text-slate-500")}>
-                      {allocated} of {addQ} allocated{remaining > 0 ? ' \u00b7 ' + remaining + ' left' : remaining < 0 ? ' \u00b7 ' + (-remaining) + ' too many' : ''}
-                    </span>
-                  </div>
-                  <div className="space-y-2">
-                    {newStockAllocs.map(function (r, i) {
-                      var svs = r.venue_id ? subVenues.filter(function (sv) { return String(sv.venue_id) === String(r.venue_id) }) : []
-                      var rq = Number(r.qty) || 0
-                      return (
-                        <div key={i} className="grid gap-2.5 items-end rounded-xl border border-slate-200 bg-white p-3 @2xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_100px_130px_44px]">
-                          <SearchDropdown label="Venue" items={venues.map(function (v) { return { label: v.code + ' \u2014 ' + v.name, value: String(v.id) } })} value={r.venue_id} onChange={function (val) { setRow(i, { venue_id: val }) }} placeholder="Select venue..." />
-                          {svs.length > 0
-                            ? <SearchDropdown label="Sub-venue" items={svs.map(function (sv) { return { label: sv.name, value: String(sv.id) } })} value={r.sub_venue_id} onChange={function (val) { setRow(i, { sub_venue_id: val }) }} placeholder="Select sub-venue..." />
-                            : <div className="hidden @2xl:block" />}
-                          <div>
-                            <label className={F_LBL}>Qty</label>
-                            <input type="number" min="0" step="any" inputMode="decimal" value={r.qty} onChange={function (e) { setRow(i, { qty: e.target.value }) }} placeholder="0" className={F_INP} />
-                          </div>
-                          <div>
-                            <label className={F_LBL}>Total</label>
-                            <div className={F_INP + " flex items-center bg-slate-50 font-semibold tabular-nums " + (rq > 0 && rateN > 0 ? "text-slate-900" : "text-slate-400")}>
-                              {rq > 0 && rateN > 0 ? formatPaise(Math.round(rq * rateN * 100)) : '—'}
-                            </div>
-                          </div>
-                          <button type="button" onClick={function () { removeRow(i) }} aria-label="Remove row" title="Remove"
-                            className="h-11 w-11 inline-flex items-center justify-center rounded-xl text-red-500 hover:bg-red-50 transition-colors">
-                            <Icon name="trash" size={15} />
-                          </button>
-                        </div>
-                      )
-                    })}
-                  </div>
-                  <button type="button" onClick={function () { setNewStockAllocs(function (prev) { return prev.concat([{ venue_id: '', sub_venue_id: '', qty: '' }]) }) }}
-                    className="mt-2 inline-flex items-center gap-1.5 h-9 px-3 rounded-lg text-[13px] font-semibold text-[#333D5E] bg-[#EDEFF5] hover:bg-[#E3E6F0] transition-colors">
-                    <Icon name="plus" size={14} />Add venue
-                  </button>
-                </div>
-              )}
-              {errors.newStock && <p className="mt-2 text-xs font-medium text-red-600">{errors.newStock}</p>}
-            </div>
-          )
-        })()}
-        </FormSection>
+        {renderStockSection(false)}
 
 
         {/* ═══ ADDITIONAL DETAILS — the least-checked settings, at the
@@ -1381,8 +1497,8 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved, variant }) {
   // pieces as the admin layout above — icon buttons instead of emoji, filled
   // segmented controls, a photo you can Replace or Remove once it is taken.
   return (
-    <form onSubmit={handleSubmit} className="space-y-3.5">
-      <FormSection icon="camera" title={t('Photo')}>
+    <form onSubmit={handleSubmit} className="space-y-0">
+      <FormSection flat icon="camera" title={t('Photo')}>
         {!imagePreview ? (
           <div className="rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 py-7 px-4 text-center">
             <span className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-white border border-slate-200 text-slate-400 mb-3"><Icon name="camera" size={22} /></span>
@@ -1416,113 +1532,124 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved, variant }) {
         {errors.img && <p className="text-xs text-red-500 mt-1.5">{errors.img}</p>}
       </FormSection>
 
-      <FormSection icon="box" title={t('Item Details')}>
-        <div className="space-y-3.5">
+      <FormSection flat icon="box" title={t('Item Details')}>
+        <div className="space-y-3">
           <div>
-            <label className={F_LBL}>{t('Type')}</label>
+            <label className={F_LBLS}>{t('Type')}</label>
             <Segmented value={type} onChange={setType} options={[
               { value: 'Indoor', label: 'Indoor', icon: 'home', on: 'bg-[#3B4668] text-white' },
               { value: 'Outdoor', label: 'Outdoor', icon: 'leaf', on: 'bg-emerald-600 text-white' },
               { value: 'Premium', label: 'Premium', icon: 'star', on: 'bg-amber-500 text-white' },
             ]} />
           </div>
-          <SearchDropdown label={t('Existing Item Name')} required items={itemNameItems} value={name} onChange={handleItemNameSelect} allowAdd onAdd={function (val) { setName(val); nameManual.current = true }} placeholder={t('Search Existing Item Name...')} error={errors.item} onInputChange={searchItems} />
-          <SearchDropdown label={t('Category')} required items={catItems} value={categoryId} onChange={setCategoryId} placeholder={t('Search Category...')} error={errors.cat} />
-          <SearchDropdown label={t('Sub-Category')} items={subCatItems} value={subCategoryId} onChange={setSubCategoryId} placeholder={t('Search Sub-Category...')} />
+          {/* Two to a row, the microphone inside each field rather than a
+              button beside it, so the form is half as tall on a phone. */}
+          <div className="grid grid-cols-2 gap-2.5">
+            <SearchDropdown label={t('Existing Item Name')} required inlineVoice items={itemNameItems} value={name} onChange={handleItemNameSelect} allowAdd onAdd={function (val) { setName(val); nameManual.current = true }} placeholder={t('Item name...')} error={errors.item} onInputChange={searchItems} />
+            <SearchDropdown label={t('Category')} required inlineVoice items={catItems} value={categoryId} onChange={setCategoryId} placeholder={t('Category...')} error={errors.cat} />
+            <SearchDropdown label={t('Sub-Category')} inlineVoice items={subCatItems} value={subCategoryId} onChange={setSubCategoryId} placeholder={t('Sub-category...')} />
+            <div className="min-w-0">
+              <label className={F_LBLS}>{t('Item Name (Hindi)')}</label>
+              <div className="relative">
+                <input type="text" value={nameHindi} onChange={function (e) { setNameHindi(e.target.value); setHiEdited(true) }} maxLength="200" placeholder="हिंदी नाम" style={{ fontSize: '16px' }} className={F_INPS + " pr-10"} />
+                <button type="button" onClick={function () { startSpeech('nameHindi') }} aria-label="Speak" title="Speak"
+                  className={"absolute right-1.5 top-1/2 -translate-y-1/2 w-7 h-7 inline-flex items-center justify-center rounded-lg transition-colors " + (listeningField === 'nameHindi' ? "bg-red-500 text-white animate-pulse" : "text-slate-400 hover:bg-slate-100 hover:text-slate-700")}><Icon name="mic" size={16} /></button>
+              </div>
+            </div>
+          </div>
 
+          {/* Catering Store items carry a brand and a pack size. Laid out
+              like the fields around them — two to a row, the pack's quantity
+              and unit in one field — rather than in a box of their own. */}
           {showPackSize && (
-            <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-3.5 space-y-3">
-              <h4 className="text-[12px] font-bold text-amber-800 uppercase tracking-[0.07em]">Pack Size</h4>
-              <div>
-                <label className={F_LBL}>Brand Name</label>
-                {brandList.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 mb-2">
-                    {brandList.map(function (b) {
-                      var isActive = (packSizeBrand || '').toLowerCase() === b.toLowerCase()
-                      return (
-                        <button key={b} type="button"
-                          onClick={function () { handleBrandSelect(b) }}
-                          className={"h-8 px-3 text-[12.5px] font-semibold rounded-lg border transition-colors " +
-                            (isActive ? "border-amber-600 bg-amber-600 text-white" : "border-amber-200 text-amber-800 bg-white hover:bg-amber-50")}>
-                          {b}
-                        </button>
-                      )
-                    })}
+            <div className="space-y-2">
+              <div className="grid grid-cols-2 gap-2.5">
+                <div className="min-w-0">
+                  <label className={F_LBLS}>Brand</label>
+                  <input type="text" value={packSizeBrand}
+                    onChange={function (e) { setPackSizeBrand(e.target.value) }}
+                    maxLength="100" placeholder={brandList.length > 0 ? "Pick or type..." : "e.g. MDH"}
+                    style={{ fontSize: '16px' }} className={F_INPS} />
+                </div>
+                <div className="min-w-0">
+                  <label className={F_LBLS}>Pack size</label>
+                  <div className="flex h-10 rounded-xl border border-slate-300 bg-white overflow-hidden focus-within:border-[#A9B1CB] focus-within:ring-4 focus-within:ring-[#3B4668]/10">
+                    <input type="number" min="0" step="any" inputMode="decimal" value={packSizeQty}
+                      onChange={function (e) { setPackSizeQty(e.target.value) }} placeholder="500" aria-label="Pack quantity"
+                      style={{ fontSize: '16px' }} className="flex-1 min-w-0 px-3 bg-transparent text-slate-900 placeholder:text-slate-400 focus:outline-none" />
+                    <select value={packSizeUnit} onChange={function (e) { setPackSizeUnit(e.target.value) }} aria-label="Pack unit"
+                      className="shrink-0 w-[74px] pl-2 pr-1 bg-slate-50 border-l border-slate-200 text-[13px] font-medium text-slate-700 focus:outline-none">
+                      {UNITS.map(function (u) { return <option key={u} value={u}>{u}</option> })}
+                    </select>
                   </div>
-                )}
-                <input type="text" value={packSizeBrand}
-                  onChange={function (e) { setPackSizeBrand(e.target.value) }}
-                  maxLength="100" placeholder={brandList.length > 0 ? "Or type new brand..." : "e.g. MDH, Haldiram"}
-                  style={{ fontSize: '16px' }} className={F_INP} />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className={F_LBL}>Quantity</label>
-                  <input type="number" min="0" step="any" inputMode="decimal" value={packSizeQty}
-                    onChange={function (e) { setPackSizeQty(e.target.value) }}
-                    placeholder="e.g. 500" style={{ fontSize: '16px' }} className={F_INP} />
-                </div>
-                <div>
-                  <label className={F_LBL}>Unit</label>
-                  <select value={packSizeUnit} onChange={function (e) { setPackSizeUnit(e.target.value) }} className={F_INP}>
-                    {UNITS.map(function (u) { return <option key={u} value={u}>{u}</option> })}
-                  </select>
                 </div>
               </div>
+              {brandList.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {brandList.map(function (b) {
+                    var isActive = (packSizeBrand || '').toLowerCase() === b.toLowerCase()
+                    return (
+                      <button key={b} type="button"
+                        onClick={function () { handleBrandSelect(b) }}
+                        className={"h-7 px-2.5 text-[12px] font-semibold rounded-lg border transition-colors " +
+                          (isActive ? "border-[#3B4668] bg-[#3B4668] text-white" : "border-slate-200 text-slate-700 bg-white hover:bg-slate-50")}>
+                        {b}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
             </div>
           )}
 
           <div>
-            <label className={F_LBL}>{t('Description')}</label>
-            <div className="flex gap-2">
+            <label className={F_LBLS}>{t('Description')}</label>
+            <div className="relative">
               <textarea value={description} onChange={function (e) { setDescription(e.target.value) }} rows="2" maxLength="1000" placeholder={t('Optional notes...')}
-                style={{ fontSize: '16px' }} className="flex-1 min-w-0 px-3 py-2.5 bg-white border border-slate-300 rounded-xl text-base text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-[#A9B1CB] focus:ring-4 focus:ring-[#3B4668]/10 resize-none" />
+                style={{ fontSize: '16px' }} className="w-full pl-3 pr-10 py-2 bg-white border border-slate-300 rounded-xl text-base text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-[#A9B1CB] focus:ring-4 focus:ring-[#3B4668]/10 resize-none" />
               <button type="button" onClick={function () { startSpeech('description') }} aria-label="Speak" title="Speak"
-                className={"shrink-0 self-start w-11 h-11 inline-flex items-center justify-center rounded-xl border transition-colors " + (listeningField === 'description' ? "bg-red-500 border-red-500 text-white animate-pulse" : "bg-white border-slate-300 text-slate-600 hover:bg-slate-50")}><Icon name="mic" size={16} /></button>
-            </div>
-          </div>
-          <div>
-            <label className={F_LBL}>{t('Item Name (Hindi)')}</label>
-            <div className="flex gap-2">
-              <input type="text" value={nameHindi} onChange={function (e) { setNameHindi(e.target.value); setHiEdited(true) }} maxLength="200" placeholder="हिंदी नाम" style={{ fontSize: '16px' }} className={F_INP + " flex-1 min-w-0"} />
-              <button type="button" onClick={function () { startSpeech('nameHindi') }} aria-label="Speak" title="Speak"
-                className={"shrink-0 w-11 h-11 inline-flex items-center justify-center rounded-xl border transition-colors " + (listeningField === 'nameHindi' ? "bg-red-500 border-red-500 text-white animate-pulse" : "bg-white border-slate-300 text-slate-600 hover:bg-slate-50")}><Icon name="mic" size={16} /></button>
+                className={"absolute right-1.5 top-1.5 w-7 h-7 inline-flex items-center justify-center rounded-lg transition-colors " + (listeningField === 'description' ? "bg-red-500 text-white animate-pulse" : "text-slate-400 hover:bg-slate-100 hover:text-slate-700")}><Icon name="mic" size={16} /></button>
             </div>
           </div>
         </div>
       </FormSection>
 
       {categoryDimFields.length > 0 && (
-        <FormSection icon="list" title="Properties">
-          <div className="space-y-3.5">
+        <FormSection flat icon="list" title="Properties">
+          {/* Two to a row, like Item Details above. */}
+          <div className="grid grid-cols-2 gap-x-2.5 gap-y-3">
           {dimensionValues.map(function (dim, index) {
             var dimType = dim.type || 'number'
             function setDim(patch) { setDimensionValues(function (prev) { return prev.map(function (d, i) { if (i !== index) return d; return Object.assign({}, d, patch) }) }) }
             if (dimType === 'text') {
               return (
-                <div key={dim.name}>
-                  <label className={F_LBL}>{dim.name}</label>
-                  <input type="text" value={dim.value || ''} onChange={function (e) { setDim({ value: e.target.value }) }} placeholder={'Enter ' + dim.name + '...'} maxLength="500" style={{ fontSize: '16px' }} className={F_INP} />
+                <div key={dim.name} className="min-w-0">
+                  <label className={F_LBLS + " truncate"}>{dim.name}</label>
+                  <input type="text" value={dim.value || ''} onChange={function (e) { setDim({ value: e.target.value }) }} placeholder={dim.name + '...'} maxLength="500" style={{ fontSize: '16px' }} className={F_INPS} />
                 </div>
               )
             }
             if (dimType === 'select') {
               var dimOptItems = (dim.options || []).map(function (opt) { return { label: opt, value: opt } })
               return (
-                <div key={dim.name}>
-                  <label className={F_LBL}>{dim.name}</label>
-                  <SearchDropdown items={dimOptItems} value={dim.value || ''}
+                <div key={dim.name} className="min-w-0">
+                  <label className={F_LBLS + " truncate"}>{dim.name}</label>
+                  <SearchDropdown items={dimOptItems} inlineVoice value={dim.value || ''}
                     onChange={function (val) { setDim({ value: val }) }}
-                    placeholder={'Search ' + dim.name + '...'} />
+                    placeholder={dim.name + '...'} />
                 </div>
               )
             }
             return (
-              <div key={dim.name}>
-                <label className={F_LBL}>{dim.name}</label>
-                <div className="flex gap-2">
-                  <input type="number" min="0" step="any" inputMode="decimal" value={dim.qty} onChange={function (e) { setDim({ qty: e.target.value }) }} placeholder="0" aria-label={dim.name + ' quantity'} style={{ fontSize: '16px' }} className={F_INP + " flex-1 min-w-0"} />
-                  <select value={dim.unit} onChange={function (e) { setDim({ unit: e.target.value }) }} aria-label={dim.name + ' unit'} className={F_INP + " !w-28 shrink-0"}>
+              <div key={dim.name} className="min-w-0">
+                <label className={F_LBLS + " truncate"}>{dim.name}</label>
+                {/* Quantity and unit as one field: the unit sits inside it,
+                    at the right, behind a divider. */}
+                <div className="flex h-10 rounded-xl border border-slate-300 bg-white overflow-hidden focus-within:border-[#A9B1CB] focus-within:ring-4 focus-within:ring-[#3B4668]/10">
+                  <input type="number" min="0" step="any" inputMode="decimal" value={dim.qty} onChange={function (e) { setDim({ qty: e.target.value }) }} placeholder="0" aria-label={dim.name + ' quantity'} style={{ fontSize: '16px' }}
+                    className="flex-1 min-w-0 px-3 bg-transparent text-slate-900 placeholder:text-slate-400 focus:outline-none" />
+                  <select value={dim.unit} onChange={function (e) { setDim({ unit: e.target.value }) }} aria-label={dim.name + ' unit'}
+                    className="shrink-0 w-[74px] pl-2 pr-1 bg-slate-50 border-l border-slate-200 text-[13px] font-medium text-slate-700 focus:outline-none">
                     {UNITS.map(function (u) { return <option key={u} value={u}>{u}</option> })}
                   </select>
                 </div>
@@ -1533,106 +1660,24 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved, variant }) {
         </FormSection>
       )}
 
-      <FormSection icon="rupee" title="Stock & pricing">
-        <div className="space-y-3.5">
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className={F_LBL}>{t('Quantity')}<span className="text-red-500 ml-0.5">*</span></label>
-              <input type="number" min="0" max="999999" step="any" inputMode="numeric" value={qty} onChange={function (e) { setQty(e.target.value) }} placeholder="0"
-                style={{ fontSize: '16px' }} className={F_INP + (errors.qty ? " border-red-300" : "")} />
-              {errors.qty && <p className="text-xs text-red-500 mt-1">{errors.qty}</p>}
-            </div>
-            <div>
-              <label className={F_LBL}>{t('Unit')}</label>
-              <select value={unit} onChange={function (e) { setUnit(e.target.value) }} className={F_INP}>
-                {UNITS.map(function (u) { return <option key={u} value={u}>{u}</option> })}
-              </select>
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className={F_LBL}>{t('Rate') + ' (₹)'}</label>
-              <input type="number" min="0" step="any" inputMode="decimal" value={ratePaise} onChange={function (e) { setRatePaise(e.target.value) }} placeholder="—" style={{ fontSize: '16px' }} className={F_INP} />
-            </div>
-            <div>
-              <label className={F_LBL}>Total (₹)</label>
-              <div className={F_INP + " flex items-center bg-slate-50 font-semibold tabular-nums " + (rateTotalPaise != null ? "text-slate-900" : "text-slate-400")}>
-                {rateTotalPaise != null ? formatPaise(rateTotalPaise) : '—'}
-              </div>
-            </div>
-          </div>
-        </div>
-      </FormSection>
-
-      <FormSection icon="mapPin" title={t('Allocations') || 'Allocations'} hint={allocHint}
-        right={
-          <button type="button" role="switch" aria-checked={showAllocations} aria-label="Show allocations"
-            onClick={function () { setShowAllocations(function (v) { return !v }) }}
-            className={"relative shrink-0 w-11 h-6 rounded-full transition-colors " + (showAllocations ? "bg-[#3B4668]" : "bg-slate-300")}>
-            <span className={"absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-[translate] duration-200 " + (showAllocations ? "translate-x-5" : "translate-x-0")} />
-          </button>
-        }>
-        {showAllocations && <div className="space-y-2">
-        {errors.dept && <p className="text-xs text-red-500">{errors.dept}</p>}
-        <AllocationRows
-          allocations={allocations}
-          accent="gray"
-          bare
-          title={t('Allocations') || 'Allocations'}
-          onAdd={addAllocationRow}
-          onRemove={removeAllocationRow}
-          onDuplicate={duplicateAllocationRow}
-          isComplete={function (a) { return !!a.venue_id && !!a.qty && Number(a.qty) > 0 }}
-          renderChip={function (a) {
-            var v = a.venue_id ? venues.find(function (x) { return String(x.id) === String(a.venue_id) }) : null
-            var sv = a.sub_venue_id && v ? subVenues.find(function (x) { return String(x.id) === String(a.sub_venue_id) }) : null
-            return {
-              left: (
-                <>
-                  {v && <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-[#EDEFF5] text-[10px] font-bold text-[#333D5E] shrink-0">{v.code}</span>}
-                  {sv
-                    ? <span className="font-medium text-slate-800 truncate">{sv.name}</span>
-                    : v && <span className="text-slate-500 truncate">{v.name}</span>}
-                </>
-              ),
-              right: (Number(a.qty) || 0).toString(),
-            }
-          }}
-          renderExpanded={function (row, index) {
-            var filteredSubVenues = row.venue_id ? subVenues.filter(function (sv) { return String(sv.venue_id) === row.venue_id }) : []
-            return (
-              <div className="space-y-2.5">
-                <SearchDropdown label={t('Venue') || 'Venue'} required items={venues.map(function (v) { return { label: v.code + ' — ' + v.name, value: String(v.id) } })} value={row.venue_id} onChange={function (val) { updateAllocation(index, 'venue_id', val) }} placeholder="Select venue..." />
-                {row.venue_id && filteredSubVenues.length > 0 && (
-                  <SearchDropdown label="Sub-venue" items={filteredSubVenues.map(function (sv) { return { label: sv.name, value: String(sv.id) } })} value={row.sub_venue_id} onChange={function (val) { updateAllocation(index, 'sub_venue_id', val) }} placeholder="Select sub-venue..." />
-                )}
-                <div>
-                  <label className={F_LBL}>{t('Quantity')}</label>
-                  <input type="number" min="0" step="any" inputMode="numeric" value={row.qty} onChange={function (e) { updateAllocation(index, 'qty', e.target.value) }} placeholder="0" style={{ fontSize: '16px' }} className={F_INP} />
-                </div>
-              </div>
-            )
-          }}
-        />
-        </div>}
-      </FormSection>
+      {renderStockSection(true)}
 
       {/* The least-checked settings, at the very bottom of the form rather
           than crowding Stock & pricing. */}
-      <FormSection icon="settings" title="Additional Details">
-        <div className="space-y-3.5">
+      <FormSection flat icon="settings" title="Additional Details">
+        <div className="space-y-3">
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className={F_LBL + " truncate"}>{showPackSize ? 'Season Reorder Qty' : t('Min Order Qty')}</label>
-              <input type="number" min="0" step="any" inputMode="numeric" value={minOrderQty} onChange={function (e) { setMinOrderQty(e.target.value) }} placeholder="—" style={{ fontSize: '16px' }} className={F_INP} />
+              <label className={F_LBLS + " truncate"}>{showPackSize ? 'Season Reorder Qty' : t('Min Order Qty')}</label>
+              <input type="number" min="0" step="any" inputMode="numeric" value={minOrderQty} onChange={function (e) { setMinOrderQty(e.target.value) }} placeholder="—" style={{ fontSize: '16px' }} className={F_INPS} />
             </div>
             <div>
-              <label className={F_LBL + " truncate"}>{showPackSize ? 'Off Season Reorder Qty' : t('Reorder Qty')}</label>
-              <input type="number" min="0" step="any" inputMode="numeric" value={reorderQty} onChange={function (e) { setReorderQty(e.target.value) }} placeholder="—" style={{ fontSize: '16px' }} className={F_INP} />
+              <label className={F_LBLS + " truncate"}>{showPackSize ? 'Off Season Reorder Qty' : t('Reorder Qty')}</label>
+              <input type="number" min="0" step="any" inputMode="numeric" value={reorderQty} onChange={function (e) { setReorderQty(e.target.value) }} placeholder="—" style={{ fontSize: '16px' }} className={F_INPS} />
             </div>
           </div>
           <div>
-            <label className={F_LBL}>{t('Is Asset?')}</label>
+            <label className={F_LBLS}>{t('Is Asset?')}</label>
             <Segmented value={isAsset} onChange={setIsAsset} options={[
               { value: 'yes', label: t('Yes'), on: 'bg-emerald-600 text-white' },
               { value: 'no', label: t('No'), on: 'bg-red-500 text-white' },

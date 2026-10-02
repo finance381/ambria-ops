@@ -17,6 +17,11 @@ import Icon from './Icon'
 //   title             string, default 'Allocations'.
 //   accent            'amber' | 'indigo' | 'gray', default 'amber'.
 //   startCollapsed    bool. Every row starts folded instead of the first open.
+//   extraAction       JSX. Bare only: an action of the caller's own, at the
+//                     left of the row of buttons (e.g. Add new stock).
+//   renderCard        fn(alloc, idx, { edit, remove, complete }) -> JSX. Bare
+//                     only: draws each folded row as a card of its own (the
+//                     list becomes a stack of cards instead of ruled lines).
 //   heading           JSX. Bare only: shown at the left of the top bar in
 //                     place of the "N places" count.
 //   bare              bool. For a list that already sits in a titled card:
@@ -96,17 +101,24 @@ function AllocationRows(props) {
     var n = allocations.length
     return (
       <div>
-        <div className="flex items-center justify-between gap-2 mb-2.5">
+        {/* Wraps on a narrow screen: the heading on one line, the buttons
+            under it, rather than squeezing both until the text breaks. */}
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5">
           {props.heading || <span className="text-[12.5px] font-semibold text-slate-600"><span data-notranslate>{n}</span>{n === 1 ? ' place' : ' places'}</span>}
-          <div className="flex items-center gap-1.5">
+          {/* With an action of the caller's own, the buttons take a row of
+              their own: it at the left, Duplicate and Add place at the right. */}
+          <div className={props.extraAction ? "w-full flex items-center gap-1.5" : "ml-auto flex items-center gap-1.5"}>
+            {props.extraAction && <div className="mr-auto">{props.extraAction}</div>}
             {props.onDuplicate && n > 0 && (
               <button type="button" onClick={handleDuplicate} title="Duplicate the open row"
-                className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-slate-200 bg-white text-[12.5px] font-semibold text-slate-700 hover:bg-slate-50 transition-colors">
-                <Icon name="copy" size={13} />Duplicate
+                aria-label="Duplicate"
+                className="inline-flex items-center gap-1.5 h-8 px-2.5 sm:px-3 rounded-lg border border-slate-200 bg-white text-[12.5px] font-semibold text-slate-700 hover:bg-slate-50 transition-colors whitespace-nowrap">
+                {/* Icon only on a phone, so all three buttons fit one line. */}
+                <Icon name="copy" size={13} /><span className="hidden sm:inline">Duplicate</span>
               </button>
             )}
             <button type="button" onClick={handleAdd}
-              className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg bg-[#3B4668] text-white text-[12.5px] font-semibold hover:bg-[#2F3854] transition-colors">
+              className="inline-flex items-center gap-1.5 h-8 px-2.5 sm:px-3 rounded-lg bg-[#3B4668] text-white text-[12.5px] font-semibold hover:bg-[#2F3854] transition-colors whitespace-nowrap">
               <Icon name="plus" size={13} />Add place
             </button>
           </div>
@@ -114,12 +126,12 @@ function AllocationRows(props) {
 
         {props.headerWarning && <div className="mb-2">{props.headerWarning}</div>}
 
-        <div className="rounded-xl border border-slate-200 bg-white overflow-hidden divide-y divide-slate-100">
+        <div className={props.renderCard ? "space-y-3" : "rounded-xl border border-slate-200 bg-white overflow-hidden divide-y divide-slate-100"}>
           {allocations.map(function (alloc, aIdx) {
             var complete = props.isComplete(alloc)
             if (isExpanded(aIdx)) {
               return (
-                <div key={aIdx} className="ambria-rise bg-[#F6F7FB] px-3.5 py-3" onFocusCapture={function () { claim(aIdx) }}>
+                <div key={aIdx} className={"ambria-rise bg-[#F6F7FB] px-3.5 py-3 " + (props.renderCard ? "rounded-2xl border border-[#C9CEDF]" : "")} onFocusCapture={function () { claim(aIdx) }}>
                   <div className="flex items-center justify-between gap-2 mb-2.5">
                     <span className="inline-flex items-center gap-2 text-[12px] font-bold text-slate-700">
                       <span className="w-6 h-6 rounded-md bg-[#3B4668] text-white inline-flex items-center justify-center text-[11px] tabular-nums" data-notranslate>{aIdx + 1}</span>
@@ -141,22 +153,41 @@ function AllocationRows(props) {
                 </div>
               )
             }
+            if (props.renderCard) {
+              return (
+                <div key={aIdx}>
+                  {props.renderCard(alloc, aIdx, {
+                    edit: function () { setManualExpandedIdx(aIdx) },
+                    remove: function () { handleRemove(aIdx) },
+                    complete: complete,
+                  })}
+                </div>
+              )
+            }
             var chip = props.renderChip(alloc, aIdx)
             return (
-              <div key={aIdx} className={"group flex items-center gap-3 px-3.5 py-2.5 transition-colors " + (complete ? "hover:bg-slate-50" : "bg-amber-50/50")}>
-                <span className="shrink-0 w-6 text-[11.5px] font-bold text-slate-400 tabular-nums" data-notranslate>{aIdx + 1}</span>
+              <div key={aIdx} className={"group flex items-start gap-2.5 px-3.5 py-2.5 transition-colors " + (complete ? "hover:bg-slate-50" : "bg-amber-50/50")}>
+                <span className="shrink-0 w-5 pt-1 text-[11.5px] font-bold text-slate-400 tabular-nums" data-notranslate>{aIdx + 1}</span>
+                {/* The place and its figures wrap: side by side when there
+                    is room, the figures on their own line under the place on
+                    a phone — never squeezed over each other. */}
                 <button type="button" onClick={function () { setManualExpandedIdx(aIdx) }}
-                  className="flex-1 min-w-0 flex items-center gap-3 text-left">
-                  <span className="flex-1 min-w-0 flex items-center gap-2 text-[13px] text-slate-700">{chip.left}</span>
+                  className="flex-1 min-w-0 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-left">
+                  <span className="flex-1 min-w-[160px] flex items-center gap-2 text-[13px] text-slate-700">{chip.left}</span>
                   {complete
-                    ? <span className="shrink-0 text-[14px] font-bold text-slate-900 tabular-nums">{chip.right}</span>
-                    : <span className="shrink-0 text-[10.5px] font-bold uppercase tracking-[0.08em] px-1.5 py-0.5 rounded bg-amber-100 text-amber-800">Incomplete</span>}
-                  <span className="shrink-0 w-7 h-7 inline-flex items-center justify-center rounded-lg text-slate-400 group-hover:text-[#3B4668] group-hover:bg-white transition-colors"><Icon name="edit" size={14} /></span>
+                    ? <span className="ml-auto shrink-0 text-[14px] font-bold text-slate-900 tabular-nums">{chip.right}</span>
+                    : <span className="ml-auto shrink-0 text-[10.5px] font-bold uppercase tracking-[0.08em] px-1.5 py-0.5 rounded bg-amber-100 text-amber-800">Incomplete</span>}
                 </button>
-                <button type="button" onClick={function () { handleRemove(aIdx) }} title="Delete row" aria-label="Delete row"
-                  className="shrink-0 w-7 h-7 inline-flex items-center justify-center rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors">
-                  <Icon name="trash" size={14} />
-                </button>
+                <div className="shrink-0 flex items-center">
+                  <button type="button" onClick={function () { setManualExpandedIdx(aIdx) }} title="Edit row" aria-label="Edit row"
+                    className="w-7 h-7 inline-flex items-center justify-center rounded-lg text-slate-400 group-hover:text-[#3B4668] hover:bg-white transition-colors">
+                    <Icon name="edit" size={14} />
+                  </button>
+                  <button type="button" onClick={function () { handleRemove(aIdx) }} title="Delete row" aria-label="Delete row"
+                    className="w-7 h-7 inline-flex items-center justify-center rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors">
+                    <Icon name="trash" size={14} />
+                  </button>
+                </div>
               </div>
             )
           })}
