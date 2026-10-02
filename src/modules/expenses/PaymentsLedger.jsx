@@ -598,6 +598,14 @@ function PaymentsLedger({ profile }) {
   }
 
   var quickActive = modeFilter === 'all' && dirFilter === 'all' && !typeFilter
+  // Anything narrowing the list beyond the default view — a quick filter, a
+  // type, a search, or a date range other than Last Month.
+  var anyFilterOn = !quickActive || !!search || datePreset !== 'lastMonth'
+  // Back to the default: All, no type, no search, Last Month.
+  function resetAllFilters() {
+    setModeFilter('all'); setDirFilter('all'); setTypeFilter(''); setSearch('')
+    if (datePreset !== 'lastMonth') applyDatePreset('lastMonth')
+  }
 
 
   var totals = useMemo(function () {
@@ -699,6 +707,18 @@ function PaymentsLedger({ profile }) {
                   </div>
                 )
               })}
+              {/* Reset: everything back to All in one press — the quick
+                  filters, the type, the search and the date range. Shown
+                  only while something is narrowing the list. */}
+              {anyFilterOn && (
+                <div className="flex items-center gap-2.5">
+                  <span aria-hidden="true" className="w-px h-5 bg-slate-200" />
+                  <button type="button" onClick={resetAllFilters} title="Clear every filter and show all"
+                    className="h-8 px-3 inline-flex items-center gap-1.5 rounded-full border border-rose-200 bg-rose-50 text-[12px] font-bold text-rose-600 hover:bg-rose-100 transition-colors">
+                    <Icon name="refresh" size={13} />Reset
+                  </button>
+                </div>
+              )}
             </div>
           </div>
 
