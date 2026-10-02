@@ -220,6 +220,7 @@ var REF_TYPE_LABELS = {
   deducted: 'Deducted',
   collection: 'Collection',
   collection_cancel: 'Cancel',
+  transfer_cancel: 'Transfer Cancel',
   opening: 'Opening',
   vendor_payment: 'Vendor Payment',
   vendor_deduction: 'Vendor Deduction',
@@ -241,6 +242,7 @@ var REF_TYPE_TONES = {
   deducted: 'text-orange-700 border-orange-300',
   collection: 'text-emerald-700 border-emerald-300',
   collection_cancel: 'text-rose-700 border-rose-300',
+  transfer_cancel: 'text-rose-700 border-rose-300',
   opening: 'text-gray-700 border-gray-300',
   vendor_payment: 'text-red-700 border-red-300',
   vendor_deduction: 'text-amber-700 border-amber-300',
@@ -259,6 +261,7 @@ var REF_TYPE_MARKS = {
   deducted:          { icon: 'minus',      tone: 'bg-orange-50 text-orange-600' },
   collection:        { icon: 'banknote',   tone: 'bg-emerald-50 text-emerald-600' },
   collection_cancel: { icon: 'close',      tone: 'bg-rose-50 text-rose-600' },
+  transfer_cancel:   { icon: 'close',      tone: 'bg-rose-50 text-rose-600' },
   opening:           { icon: 'wallet',     tone: 'bg-slate-100 text-slate-500' },
   vendor_payment:    { icon: 'creditCard', tone: 'bg-red-50 text-red-600' },
   vendor_deduction:  { icon: 'creditCard', tone: 'bg-amber-50 text-amber-600' },
@@ -314,6 +317,10 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   var permsNew = (profile && profile.permsNew) || []
   var canCreateTentativeEvent = hasPerm(permsNew, 'events.list.create_tentative')
   var canMarkChecked = hasPerm(permsNew, 'finance.wallet.mark_checked')
+  // Cancelling/rejecting a transfer used to be open to either party to it;
+  // now admin/auditor or an explicit grant only — being the sender or
+  // recipient no longer qualifies on its own.
+  var canCancelTransfer = isAdmin || isAuditor || hasPerm(permsNew, 'finance.wallet.cancel_transfer')
   var [checkingTxnId, setCheckingTxnId] = useState(null)
   var [checkingExpId, setCheckingExpId] = useState(null)
   // Which transaction rows have their allocation breakdown expanded —
@@ -1304,6 +1311,12 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
       params = { p_collection_id: epcRow.id, p_reason: reason }
       actName = 'EXTRA_PLATE_CANCEL_FROM_WALLET'
       lbl = epcRow.extras_charged + ' extras · ' + formatPoints(t.amount_paise)
+    } else if (kind === 'transfer') {
+      if (!t.reference_id) { alert('Transfer id not found'); setCancelSaving(false); return }
+      rpc = 'cancel_transfer'
+      params = { p_transfer_id: t.reference_id, p_reason: reason }
+      actName = 'WALLET_TRANSFER_CANCEL'
+      lbl = formatPoints(t.amount_paise) + (t._cpName ? ' · ' + t._cpName : '')
     } else {
       rpc = 'fn_wallet_collect_cancel'
       params = { p_txn_id: t.id, p_reason: reason }
@@ -1317,6 +1330,10 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     setCancelReason('')
     setCancelSaving(false)
     refreshBalance()
+    // A rejected-while-pending transfer only ever showed up via loadTransfers
+    // (Incoming/Outgoing Transfers), not the regular txn list — nothing else
+    // refreshes that list.
+    if (kind === 'transfer') loadTransfers()
     if (walletView === 'transactions') { openWalletTxns(null) }
     else if (walletView === 'dashboard') { loadRecentTxns(selectedWallet) }
   }
@@ -1326,23 +1343,29 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     var t = cancelTarget.txn
     var kind = cancelTarget.kind
     var isEpc = kind === 'epc'
+    var isTransfer = kind === 'transfer'
     var epcRow = isEpc ? (epcRefs[t.id] || {}).epc : null
+    var transferCpName = isTransfer ? (t._cpName || null) : null
     return createPortal((
       <div className="fixed inset-0 z-[9998] bg-black/60 flex items-end sm:items-center justify-center p-0 sm:p-4"
         onClick={function () { if (!cancelSaving) { setCancelTarget(null); setCancelReason('') } }}>
         <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md p-5 space-y-3 max-h-[90vh] overflow-y-auto"
           onClick={function (ev) { ev.stopPropagation() }}>
           <h3 className="text-base font-bold text-gray-900">
-            Cancel {isEpc ? 'Extra Plate Collection' : 'Event Collection'}
+            Cancel {isTransfer ? 'Transfer' : (isEpc ? 'Extra Plate Collection' : 'Event Collection')}
           </h3>
           <div className="text-sm text-gray-600">
-            {isEpc && epcRow
-              ? epcRow.extras_charged + ' extras · ' + formatPoints(t.amount_paise) + (t.payment_mode ? ' · ' + t.payment_mode.toUpperCase() : '')
-              : (t.receipt_no ? '#' + t.receipt_no + ' · ' : '') + formatPoints(t.amount_paise) + (t.payment_mode ? ' · ' + t.payment_mode.toUpperCase() : '')}
+            {isTransfer
+              ? formatPoints(t.amount_paise) + (transferCpName ? ' → ' + transferCpName : '')
+              : isEpc && epcRow
+                ? epcRow.extras_charged + ' extras · ' + formatPoints(t.amount_paise) + (t.payment_mode ? ' · ' + t.payment_mode.toUpperCase() : '')
+                : (t.receipt_no ? '#' + t.receipt_no + ' · ' : '') + formatPoints(t.amount_paise) + (t.payment_mode ? ' · ' + t.payment_mode.toUpperCase() : '')}
             {t.description ? ' — ' + t.description : ''}
           </div>
           <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded p-2">
-            Wallet will be debited {formatPoints(t.amount_paise)} and the event ledger reversed. This cannot be undone.
+            {isTransfer
+              ? 'The sender is refunded ' + formatPoints(t.amount_paise) + '. If the recipient already confirmed receiving it, it is clawed back out of their wallet too. This cannot be undone.'
+              : 'Wallet will be debited ' + formatPoints(t.amount_paise) + ' and the event ledger reversed. This cannot be undone.'}
           </div>
           <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide">Reason</label>
           <VoiceInput type="text" value={cancelReason} onChange={function (e) { setCancelReason(e.target.value) }}
@@ -2971,6 +2994,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                 }
                 var epcCancellable = isEpc && epcHit.epc.status !== 'cancelled' && (isAdmin || epcHit.epc.collected_by === profile.id)
                 var collCancellable = t.reference_type === 'collection' && !isCancelled && (isAdmin || t.performed_by === profile.id)
+                var transferCancellable = t.reference_type === 'transfer' && !isCancelled && canCancelTransfer
                 var isExpRow = (t.reference_type === 'expense' || t.reference_type === 'expense_refund') && t.reference_id
                 var isPayRow = PAYMENT_REF_TYPES.indexOf(t.reference_type) !== -1
                 var rowIsClickable = isExpRow || t.reference_type === 'collection' || isEpc || isPayRow
@@ -3029,6 +3053,12 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                         )}
                         {epcCancellable && (
                           <button onClick={function (ev) { ev.stopPropagation(); openCancel(t, 'epc') }}
+                            className="px-2 py-1 text-[10px] font-bold text-red-700 bg-red-50 border border-red-200 rounded hover:bg-red-100 transition-colors">
+                            🚫 Cancel
+                          </button>
+                        )}
+                        {transferCancellable && (
+                          <button onClick={function (ev) { ev.stopPropagation(); openCancel(Object.assign({}, t, { _cpName: cpName }), 'transfer') }}
                             className="px-2 py-1 text-[10px] font-bold text-red-700 bg-red-50 border border-red-200 rounded hover:bg-red-100 transition-colors">
                             🚫 Cancel
                           </button>
@@ -3673,6 +3703,9 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     var isCancelled = t.status === 'cancelled'
     var epcCancellable = isEpc && epcHit.epc.status !== 'cancelled' && (isAdmin || epcHit.epc.collected_by === profile.id)
     var collCancellable = t.reference_type === 'collection' && !isCancelled && (isAdmin || t.performed_by === profile.id)
+    var fullListTr = t.reference_type === 'transfer' && t.reference_id ? transferParties[t.reference_id] : null
+    var fullListCpName = fullListTr ? walletProfiles[t.type === 'debit' ? fullListTr.to_user_id : fullListTr.from_user_id]?.name : null
+    var transferCancellable = t.reference_type === 'transfer' && !isCancelled && canCancelTransfer
     var isExpRow = (t.reference_type === 'expense' || t.reference_type === 'expense_refund') && t.reference_id
     var isDeletedExp = isExpRow && !!expenseRefs[t.reference_id] && !!expenseRefs[t.reference_id].deleted_at
     var isPayRow = PAYMENT_REF_TYPES.indexOf(t.reference_type) !== -1
@@ -4123,6 +4156,12 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                 🚫 Cancel
               </button>
             )}
+            {transferCancellable && (
+              <button onClick={function (ev) { ev.stopPropagation(); openCancel(Object.assign({}, t, { _cpName: fullListCpName }), 'transfer') }}
+                className="mt-1.5 ml-1 px-2 py-1 text-[10px] font-bold text-red-700 bg-red-50 border border-red-200 rounded hover:bg-red-100 transition-colors">
+                🚫 Cancel
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -4293,6 +4332,77 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
               </div>
             )}
           </div>
+
+          {/* Confirm/Reject/Cancel on a transfer — this desktop view used to
+              have no way to do any of these at all. renderTxnsDesktop() is a
+              separate render path from the mobile branch below (inAdmin
+              short-circuits straight to it, line ~4492), so this section only
+              ever existed there — a desktop user could see a pending transfer
+              exists (the Receive tile's badge) but never act on it. */}
+          {selectedWallet && selectedWallet.user_id === profile.id && pendingIncoming.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-[10px] font-bold text-amber-600 uppercase tracking-wider">Incoming Transfers</p>
+              {pendingIncoming.map(function (t) {
+                var imgUrl = getReceiptUrl(t.sender_image_path)
+                return (
+                  <div key={t.id} className="bg-amber-50/50 border border-amber-300 rounded-lg p-3">
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-gray-900">{t._fromName} sent you {formatPoints(t.amount_paise)}</p>
+                        <p className="text-xs text-gray-500 mt-0.5">{t.description || '—'} · {formatDate(t.created_at)}</p>
+                        {imgUrl && (
+                          <span className="block mt-1.5">
+                            <ProofThumb url={imgUrl} label="Sent" tone="bg-blue-600"
+                              onOpen={function () { setEnlargedWalletImg(imgUrl) }} />
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex flex-col gap-1.5 flex-shrink-0 ml-2">
+                        <button onClick={function () { setTransferConfirmModal(t); setTransferConfirmImage(null); transferConfirmRec.cancel() }}
+                          className="px-3 py-1.5 text-[10px] font-bold text-amber-700 bg-amber-100 border border-amber-300 rounded-lg hover:bg-amber-200 transition-colors">
+                          📷 Confirm
+                        </button>
+                        {canCancelTransfer && (
+                          <button onClick={function () { openCancel({ reference_id: t.id, amount_paise: t.amount_paise, description: t.description, _cpName: t._fromName }, 'transfer') }}
+                            className="px-3 py-1.5 text-[10px] font-bold text-red-700 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 transition-colors">
+                            🚫 Reject
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+          {selectedWallet && selectedWallet.user_id === profile.id && pendingOutgoing.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Outgoing Transfers (Pending)</p>
+              {pendingOutgoing.map(function (t) {
+                var imgUrl = getReceiptUrl(t.sender_image_path)
+                return (
+                  <div key={t.id} className="bg-white border border-gray-200 rounded-lg p-3">
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[14px] font-bold text-slate-900 leading-snug">Sent {formatPoints(t.amount_paise)} to {t._toName}</p>
+                        <p className="text-xs text-gray-400 mt-0.5">{t.description || '—'} · {formatDate(t.created_at)}</p>
+                        {imgUrl && (
+                          <span className="block mt-1.5">
+                            <ProofThumb url={imgUrl} label="Sent" tone="bg-blue-600"
+                              onOpen={function () { setEnlargedWalletImg(imgUrl) }} />
+                          </span>
+                        )}
+                      </div>
+                      <button onClick={function () { cancelTransfer(t) }}
+                        className="px-3 py-1.5 text-[10px] font-bold text-red-500 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 transition-colors flex-shrink-0 ml-2">
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
 
           {/* What it came to. */}
           {walletTxns.length > 0 && (
@@ -4616,10 +4726,18 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                         </span>
                       )}
                     </div>
-                    <button onClick={function () { setTransferConfirmModal(t); setTransferConfirmImage(null); transferConfirmRec.cancel() }}
-                      className="px-3 py-1.5 text-[10px] font-bold text-amber-700 bg-amber-100 border border-amber-300 rounded-lg hover:bg-amber-200 transition-colors flex-shrink-0 ml-2">
-                      📷 Confirm
-                    </button>
+                    <div className="flex flex-col gap-1.5 flex-shrink-0 ml-2">
+                      <button onClick={function () { setTransferConfirmModal(t); setTransferConfirmImage(null); transferConfirmRec.cancel() }}
+                        className="px-3 py-1.5 text-[10px] font-bold text-amber-700 bg-amber-100 border border-amber-300 rounded-lg hover:bg-amber-200 transition-colors">
+                        📷 Confirm
+                      </button>
+                      {canCancelTransfer && (
+                        <button onClick={function () { openCancel({ reference_id: t.id, amount_paise: t.amount_paise, description: t.description, _cpName: t._fromName }, 'transfer') }}
+                          className="px-3 py-1.5 text-[10px] font-bold text-red-700 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 transition-colors">
+                          🚫 Reject
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
               )
