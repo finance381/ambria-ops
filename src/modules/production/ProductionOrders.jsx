@@ -4,6 +4,7 @@ import { formatDate, formatPaise, titleCase } from '../../lib/format'
 import { logActivity } from '../../lib/logger'
 import { isPrivilegedRole } from '../../lib/permissions'
 import EventDatePicker from '../../components/ui/EventDatePicker'
+import Icon from '../../components/ui/Icon'
 
 var STATUS_LABELS = {
   pending: 'Pending',
@@ -729,34 +730,49 @@ function ProductionOrders({ profile }) {
   // ── LIST ──
   return (
     <div className="space-y-4">
-      <div className="space-y-2">
-        <input type="text" value={search}
-          onChange={function (e) { setSearch(e.target.value) }}
-          placeholder="Search item, description..."
-          className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-          style={{ fontSize: '16px' }} />
-        <div className="flex gap-2 flex-wrap items-center">
-          <select value={statusFilter} onChange={function (e) { setStatusFilter(e.target.value) }}
-            className="flex-1 min-w-[100px] px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+      {/* One white glass panel — search, status, department, New Order —
+          so the controls stand on something instead of floating, unfilled,
+          over the section's photograph. The fields had no background of their
+          own and the shade behind them showed straight through. */}
+      <div className="relative z-10 flex gap-2 flex-wrap items-center p-2 rounded-2xl bg-white/85 backdrop-blur-md border border-white shadow-[0_6px_24px_-8px_rgba(30,35,60,0.25)]">
+        <div className="relative flex-1 min-w-[240px]">
+          <Icon name="search" size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+          <input type="text" value={search}
+            onChange={function (e) { setSearch(e.target.value) }}
+            placeholder="Search item, description..."
+            className="w-full h-10 pl-10 pr-3 bg-white border border-slate-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+            style={{ fontSize: '16px' }} />
+        </div>
+        <div className="relative w-[180px]">
+          <select value={statusFilter} onChange={function (e) { setStatusFilter(e.target.value) }} aria-label="Status"
+            className="w-full h-10 pl-3 pr-9 appearance-none bg-white border border-slate-200 rounded-xl text-sm font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/30">
             <option value="">All Status</option>
             {Object.keys(STATUS_LABELS).map(function (k) { return <option key={k} value={k}>{STATUS_LABELS[k]}</option> })}
           </select>
-          <select value={deptFilter} onChange={function (e) { setDeptFilter(e.target.value) }}
-            className="flex-1 min-w-[100px] px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+          <Icon name="chevronDown" size={15} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+        </div>
+        <div className="relative w-[200px]">
+          <select value={deptFilter} onChange={function (e) { setDeptFilter(e.target.value) }} aria-label="Department"
+            className="w-full h-10 pl-3 pr-9 appearance-none bg-white border border-slate-200 rounded-xl text-sm font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/30">
             <option value="">All Depts</option>
             {departments.map(function (d) { return <option key={d.id} value={d.name}>{d.name}</option> })}
           </select>
-          <button onClick={function () { openForm(null) }}
-            className="px-4 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-lg hover:bg-indigo-700 transition-colors whitespace-nowrap">
-            + New Order
-          </button>
+          <Icon name="chevronDown" size={15} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
         </div>
+        <button type="button" onClick={function () { openForm(null) }}
+          className="inline-flex items-center gap-1.5 h-10 px-4 bg-indigo-600 text-white text-sm font-semibold rounded-xl shadow-[0_4px_14px_-4px_rgba(79,70,229,0.55)] hover:bg-indigo-700 transition-colors whitespace-nowrap">
+          <Icon name="plus" size={15} />New Order
+        </button>
       </div>
 
-      <p className="text-xs text-gray-400">{filtered.length} order{filtered.length !== 1 ? 's' : ''}</p>
+      <p className="text-[14px] text-slate-700"><span className="font-bold text-slate-900 tabular-nums">{filtered.length}</span> order{filtered.length !== 1 ? 's' : ''}</p>
 
       {filtered.length === 0 && (
-        <div className="text-center py-12 text-sm text-gray-400">No production orders found</div>
+        <div className="flex flex-col items-center gap-2 py-14 rounded-2xl bg-white/85 backdrop-blur-sm border border-white text-center shadow-[0_4px_16px_-6px_rgba(30,35,60,0.15)]">
+          <span className="w-12 h-12 rounded-xl bg-indigo-50 text-indigo-500 inline-flex items-center justify-center"><Icon name="wrench" size={22} /></span>
+          <p className="text-[14.5px] font-bold text-slate-800">No production orders found</p>
+          <p className="text-[13px] text-slate-500">Try another search or filter, or start a new order.</p>
+        </div>
       )}
 
       <div className="space-y-2">

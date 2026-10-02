@@ -2,6 +2,7 @@ import { supabase, getImageUrl, fetchAll } from '../../lib/supabase'
 import { useState, useEffect, useRef } from 'react'
 import { formatDate, titleCase, formatPaise } from '../../lib/format'
 import Modal from '../../components/ui/Modal'
+import Icon from '../../components/ui/Icon'
 import InventoryForm from './InventoryForm'
 import { useRealtime } from '../../lib/useRealtime'
 import { hasPerm } from '../../lib/permissions'
@@ -186,17 +187,20 @@ function Inventory({ profile }) {
     setSearch(''); setSearchDebounced(''); setCatFilter(''); setSubCatFilter(''); setVenueFilter(''); setSubVenueFilter('')
   }
 
+  var SEL = "w-full h-11 pl-3 pr-8 appearance-none bg-white border border-slate-200 rounded-xl text-[14px] text-slate-800 focus:outline-none focus:ring-4 focus:ring-[#3B4668]/10 focus:border-[#A9B1CB]"
+  var anyFilter = !!(search || catFilter || subCatFilter || venueFilter || subVenueFilter)
+
   return (
-    <div className="space-y-3">
+    <div className="space-y-3.5">
      {/* Tabs */}
      {showTabs && (
-       <div className="flex bg-gray-100 rounded-lg p-1">
+       <div className="flex gap-1 p-1 bg-slate-100 rounded-xl">
          <button onClick={function () { setTab('mine') }}
-           className={"flex-1 py-2 text-sm font-semibold rounded-md transition-colors " + (tab === 'mine' ? "bg-white text-gray-900 shadow-sm" : "text-gray-500")}>
+           className={"flex-1 h-10 text-[13.5px] font-semibold rounded-lg transition-colors " + (tab === 'mine' ? "bg-white text-slate-900 shadow-[0_1px_3px_rgba(15,23,42,0.12)]" : "text-slate-500")}>
            My Items
          </button>
          <button onClick={function () { setTab('all') }}
-           className={"flex-1 py-2 text-sm font-semibold rounded-md transition-colors " + (tab === 'all' ? "bg-white text-gray-900 shadow-sm" : "text-gray-500")}>
+           className={"flex-1 h-10 text-[13.5px] font-semibold rounded-lg transition-colors " + (tab === 'all' ? "bg-white text-slate-900 shadow-[0_1px_3px_rgba(15,23,42,0.12)]" : "text-slate-500")}>
            Full Inventory
          </button>
        </div>
@@ -204,53 +208,69 @@ function Inventory({ profile }) {
 
      {/* Filters */}
      <div className="space-y-2">
-       <input type="text" value={search}
-         onChange={function (e) { setSearch(e.target.value) }}
-         placeholder="Search item name, ID..."
-         className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-         style={{ fontSize: '16px' }} />
-       <div className="flex gap-2">
-         <select value={catFilter}
-           onChange={function (e) { setCatFilter(e.target.value); setSubCatFilter('') }}
-           className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
-           <option value="">All Categories</option>
-           {catOptions.map(function (c) { return <option key={c.id} value={String(c.id)}>{c.name}</option> })}
-         </select>
-         <select value={subCatFilter}
-           onChange={function (e) { setSubCatFilter(e.target.value) }}
-           className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
-           <option value="">All Sub-categories</option>
-           {subCatOptions.map(function (sc) { return <option key={sc.id} value={String(sc.id)}>{sc.name}</option> })}
-         </select>
+       <div className="relative">
+         <Icon name="search" size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+         <input type="text" value={search}
+           onChange={function (e) { setSearch(e.target.value) }}
+           placeholder="Search item name, ID..."
+           className="w-full h-11 pl-9 pr-3 bg-white border border-slate-200 rounded-xl text-[15px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-4 focus:ring-[#3B4668]/10 focus:border-[#A9B1CB]"
+           style={{ fontSize: '16px' }} />
        </div>
        <div className="flex gap-2">
-         <select value={venueFilter}
-           onChange={function (e) { setVenueFilter(e.target.value); setSubVenueFilter('') }}
-           className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-           style={{ fontSize: '16px' }}>
-           <option value="">All Venues</option>
-           {venueOptions.map(function (v) { return <option key={v.code} value={v.code}>{v.code + ' \u2014 ' + v.name}</option> })}
-         </select>
-         <select value={subVenueFilter}
-           onChange={function (e) { setSubVenueFilter(e.target.value) }}
-           className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-           style={{ fontSize: '16px' }}>
-           <option value="">All Sub-venues</option>
-           {subVenueOptions.map(function (sv) { return <option key={sv.id} value={String(sv.id)}>{sv.name}</option> })}
-         </select>
+         <div className="relative flex-1 min-w-0">
+           <select value={catFilter}
+             onChange={function (e) { setCatFilter(e.target.value); setSubCatFilter('') }}
+             className={SEL}>
+             <option value="">All Categories</option>
+             {catOptions.map(function (c) { return <option key={c.id} value={String(c.id)}>{c.name}</option> })}
+           </select>
+           <Icon name="chevronDown" size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+         </div>
+         <div className="relative flex-1 min-w-0">
+           <select value={subCatFilter}
+             onChange={function (e) { setSubCatFilter(e.target.value) }}
+             className={SEL}>
+             <option value="">All Sub-cat.</option>
+             {subCatOptions.map(function (sc) { return <option key={sc.id} value={String(sc.id)}>{sc.name}</option> })}
+           </select>
+           <Icon name="chevronDown" size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+         </div>
        </div>
-       <div className="flex items-center gap-2">
-         <div className="text-[11px] text-gray-400">{items.length + ' loaded' + (hasMore ? '+' : '')}</div>
-         {(search || catFilter || subCatFilter || venueFilter || subVenueFilter) && (
+       <div className="flex gap-2">
+         <div className="relative flex-1 min-w-0">
+           <select value={venueFilter}
+             onChange={function (e) { setVenueFilter(e.target.value); setSubVenueFilter('') }}
+             className={SEL}>
+             <option value="">All Venues</option>
+             {venueOptions.map(function (v) { return <option key={v.code} value={v.code}>{v.code + ' \u2014 ' + v.name}</option> })}
+           </select>
+           <Icon name="chevronDown" size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+         </div>
+         <div className="relative flex-1 min-w-0">
+           <select value={subVenueFilter}
+             onChange={function (e) { setSubVenueFilter(e.target.value) }}
+             className={SEL}>
+             <option value="">All Sub-venues</option>
+             {subVenueOptions.map(function (sv) { return <option key={sv.id} value={String(sv.id)}>{sv.name}</option> })}
+           </select>
+           <Icon name="chevronDown" size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+         </div>
+       </div>
+       <div className="flex items-center gap-2 px-0.5">
+         <span className="text-[12px] text-slate-500"><b className="text-slate-800 tabular-nums">{items.length}</b> loaded{hasMore ? '+' : ''}</span>
+         {anyFilter && (
            <button onClick={resetFilters}
-             className="px-2 py-1 text-[11px] text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-colors font-medium">✕ Reset</button>
+             className="inline-flex items-center gap-1 h-7 px-2.5 text-[12px] font-semibold text-red-600 rounded-full hover:bg-red-50 transition-colors">
+             <Icon name="refresh" size={12} />Reset
+           </button>
          )}
        </div>
      </div>
 
      {items.length === 0 && !loading && (
-       <div className="bg-white border border-gray-200 rounded-xl p-8 text-center">
-         <p className="text-sm text-gray-400">{tab === 'mine' ? 'No items submitted by you' : 'No items match filters'}</p>
+       <div className="flex flex-col items-center gap-2 py-12 bg-white border border-slate-200 rounded-2xl text-center">
+         <span className="w-11 h-11 rounded-xl bg-slate-100 text-slate-400 inline-flex items-center justify-center"><Icon name="box" size={20} /></span>
+         <p className="text-[13.5px] font-semibold text-slate-700">{tab === 'mine' ? 'No items submitted by you' : 'No items match filters'}</p>
        </div>
      )}
      {loading && metaReady && (
@@ -263,57 +283,66 @@ function Inventory({ profile }) {
         var venueAllocs = item.venue_allocations || []
 
         return (
-          <div key={item.id} className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
-            {/* Header: image + name + inventory ID */}
-            <div className="flex gap-3 mb-2">
+          <div key={item.id} className="bg-white border border-slate-200 rounded-2xl p-3.5 shadow-[0_1px_3px_rgba(15,23,42,0.06)]">
+            {/* Header: photo + name + inventory ID */}
+            <div className="flex gap-3">
               {item.image_path ? (
                 <img
                   src={getImageUrl(item.image_path)}
                   alt=""
                   onClick={function () { setEnlargedImg(getImageUrl(item.image_path)) }}
-                  className="w-14 h-14 rounded-lg object-cover border border-gray-200 flex-shrink-0 cursor-pointer active:opacity-70"
+                  className="w-14 h-14 rounded-xl object-cover border border-slate-200 shrink-0 cursor-pointer active:opacity-70"
                 />
               ) : (
-                <div className="w-14 h-14 rounded-lg bg-gray-100 flex items-center justify-center text-gray-300 text-xl flex-shrink-0">
-                  📷
+                <div className="w-14 h-14 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-300 shrink-0">
+                  <Icon name="gallery" size={20} />
                 </div>
               )}
               <div className="flex-1 min-w-0">
-                <h3 className="text-[15px] font-bold text-gray-900">{titleCase(item.name)}</h3>
-                <span className="text-[11px] text-gray-400 font-mono">
-                  {item.inventory_id || '—'}
-                </span>
+                <h3 className="text-[15px] font-semibold text-slate-900 leading-snug truncate">{titleCase(item.name)}</h3>
+                <span className="text-[11.5px] text-slate-500 font-mono">{item.inventory_id || '—'}</span>
+                {item.categories?.name && (
+                  <p className="text-[12px] text-slate-500">
+                    {item.categories.name}{item.sub_categories?.name ? ' \u203a ' + item.sub_categories.name : ''}
+                  </p>
+                )}
               </div>
+              {item.status && item.status !== 'approved' && (
+                <span className={"shrink-0 self-start text-[10.5px] font-bold uppercase px-2 py-0.5 rounded-full " +
+                  (item.status === 'pending_dept' ? "bg-sky-100 text-sky-700" :
+                   item.status === 'pending' ? "bg-amber-100 text-amber-700" :
+                   "bg-slate-100 text-slate-600")}>
+                  {item.status === 'pending_dept' || item.status === 'pending' ? 'Pending' : item.status}
+                </span>
+              )}
             </div>
 
-            {/* Meta row */}
-            <div className="flex flex-wrap gap-x-3 gap-y-1 text-[12px] text-gray-500">
-              {item.categories?.name && (
-                <span>📁 {item.categories.name}{item.sub_categories?.name ? ' > ' + item.sub_categories.name : ''}</span>
+            {/* Meta: quantity, price, place, and the rest, as small tagged rows */}
+            <div className="mt-2.5 pt-2.5 border-t border-slate-100 flex flex-wrap gap-x-3 gap-y-1.5 text-[12px] text-slate-600">
+              <span className="inline-flex items-center gap-1"><Icon name="box" size={12} className="text-slate-400" />{item.qty} {(item.unit || '').toLowerCase()}</span>
+              {item.rate_paise != null && item.rate_paise > 0 && (
+                <span className="inline-flex items-center gap-1 font-semibold text-slate-800"><Icon name="rupee" size={12} className="text-slate-400" />{formatPaise(item.rate_paise)}</span>
               )}
               {item.department && (
-                <span>🏢 {item.department}</span>
+                <span className="inline-flex items-center gap-1"><Icon name="building" size={12} className="text-slate-400" />{item.department}</span>
               )}
               {item.brand && (
-                <span>🏷️ {item.brand}</span>
+                <span className="inline-flex items-center gap-1"><Icon name="tag" size={12} className="text-slate-400" />{item.brand}</span>
               )}
               {item.pack_size_qty && (
-                <span>📦 Pack: {item.pack_size_qty} {item.pack_size_unit}</span>
+                <span className="inline-flex items-center gap-1"><Icon name="box" size={12} className="text-slate-400" />Pack: {item.pack_size_qty} {item.pack_size_unit}</span>
               )}
-              {venueAllocs.length > 0 && venueAllocs.map(function (va) {
+              {venueAllocs.map(function (va) {
                 return (
-                  <span key={va.venues?.code}>📍 {va.venues?.code} – {va.venues?.name}</span>
+                  <span key={va.venues?.code} className="inline-flex items-center gap-1"><Icon name="mapPin" size={12} className="text-slate-400" />{va.venues?.code} – {va.venues?.name}</span>
                 )
               })}
-              <span>📦 {item.qty} {item.unit?.toLowerCase()}</span>
-              <span>📅 {formatDate(item.entry_date || item.created_at)}</span>
+              <span className="inline-flex items-center gap-1"><Icon name="calendar" size={12} className="text-slate-400" />{formatDate(item.entry_date || item.created_at)}</span>
               {item.is_asset && item.is_asset !== 'unknown' && (
-                <span>🏷️ Asset: {item.is_asset === 'yes' ? 'Yes' : 'No'}</span>
-              )}
-              {item.rate_paise != null && item.rate_paise > 0 && (
-                <span>💰 {formatPaise(item.rate_paise)}</span>
+                <span className="inline-flex items-center gap-1"><Icon name="idCard" size={12} className="text-slate-400" />Asset: {item.is_asset === 'yes' ? 'Yes' : 'No'}</span>
               )}
             </div>
+
             {/* Last 3 purchases */}
             {(function () {
               var matches = history.filter(function (h) {
@@ -325,33 +354,22 @@ function Inventory({ profile }) {
               })
               var last3 = matches.slice(0, 3)
               return (
-                <div className="mt-2 pt-2 border-t border-gray-100">
-                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">📈 Last {last3.length} purchase{last3.length > 1 ? 's' : ''}</p>
+                <div className="mt-2.5 pt-2.5 border-t border-slate-100">
+                  <p className="flex items-center gap-1 text-[10.5px] font-bold text-slate-400 uppercase tracking-wider mb-1"><Icon name="chart" size={11} />Last {last3.length} purchase{last3.length > 1 ? 's' : ''}</p>
                   {last3.map(function (h, i) {
                     return (
-                      <div key={i} className="grid grid-cols-[1fr_auto_auto] gap-2 text-[11px] py-0.5 items-baseline">
-                        <span className="font-semibold text-gray-700 truncate">{h.vendor_name || '—'}</span>
-                        <span className="font-semibold text-gray-800">{formatPaise(h.rate_paise || 0)}</span>
-                        <span className="text-[10px] text-gray-400">{h.txn_date ? formatDate(h.txn_date) : ''}</span>
+                      <div key={i} className="grid grid-cols-[1fr_auto_auto] gap-2 text-[11.5px] py-0.5 items-baseline">
+                        <span className="font-semibold text-slate-700 truncate">{h.vendor_name || '—'}</span>
+                        <span className="font-semibold text-slate-900">{formatPaise(h.rate_paise || 0)}</span>
+                        <span className="text-[10.5px] text-slate-400">{h.txn_date ? formatDate(h.txn_date) : ''}</span>
                       </div>
                     )
                   })}
                 </div>
               )
             })()}
-            {/* Status badge */}
-            {item.status && item.status !== 'approved' && (
-              <div className="mt-2">
-                <span className={"text-[11px] font-bold uppercase px-2 py-0.5 rounded-full " +
-                  (item.status === 'pending_dept' ? "bg-blue-100 text-blue-700" :
-                   item.status === 'pending' ? "bg-amber-100 text-amber-700" :
-                   "bg-gray-100 text-gray-600")}>
-                  {item.status === 'pending_dept' ? 'Pending' : item.status === 'pending' ? 'Pending' : item.status}
-                </span>
-              </div>
-            )}
 
-            {/* Edit button */}
+            {/* Edit */}
             {(function () {
               var isAdmin = hasPerm(profile?.permsNew, 'inventory.items')
               var isOwner = item.submitted_by === profile.id
@@ -361,12 +379,12 @@ function Inventory({ profile }) {
               var canEdit = isAdmin || (isDeptHead && (item.status === 'pending_dept' || item.status === 'pending'))
               if (!canEdit) return null
               return (
-                <div className="mt-3">
+                <div className="mt-3 pt-3 border-t border-slate-100">
                   <button
                     onClick={function () { setEditItem(item) }}
-                    className="px-3 py-1.5 text-[12px] font-semibold border border-gray-200 rounded-lg text-gray-700 hover:border-gray-900 transition-colors"
+                    className="inline-flex items-center gap-1.5 h-8 px-3 text-[12.5px] font-semibold bg-[#EDEFF5] text-[#333D5E] rounded-lg hover:bg-[#E3E6F0] transition-colors"
                   >
-                    Edit
+                    <Icon name="edit" size={13} />Edit
                   </button>
                 </div>
               )
@@ -376,8 +394,8 @@ function Inventory({ profile }) {
       })}
       {hasMore && (
         <button onClick={function () { loadItems(true) }} disabled={loadingMore}
-          className="w-full py-3 text-sm font-medium text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 disabled:opacity-50 transition-colors">
-          {loadingMore ? 'Loading...' : 'Load More'}
+          className="w-full h-11 inline-flex items-center justify-center gap-1.5 text-[13.5px] font-semibold text-[#333D5E] bg-[#EDEFF5] border border-[#D8DCE8] rounded-xl hover:bg-[#E3E6F0] disabled:opacity-50 transition-colors">
+          {loadingMore ? 'Loading...' : (<><Icon name="chevronDown" size={15} />Load More</>)}
         </button>
       )}
       <Modal open={!!editItem} onClose={function () { setEditItem(null) }} title="Edit Entry">
