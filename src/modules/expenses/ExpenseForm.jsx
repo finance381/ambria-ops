@@ -2804,7 +2804,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
                                         {a.remarks && <span className="text-slate-500 truncate italic">· "{a.remarks}"</span>}
                                       </>
                                     ),
-                                    right: formatPoints(amt),
+                                    right: amt.toLocaleString('en-IN', { maximumFractionDigits: 2 }) + ' pts',
                                   }
                                 }}
                                 renderExpanded={function (alloc, aIdx) {
