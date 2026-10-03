@@ -1024,7 +1024,7 @@ function PaymentsLedger({ profile }) {
                     )
                   })}
                   <th className="px-3 py-2.5 text-right text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500 whitespace-nowrap">Amount (pts)</th>
-                  <th className="px-3 py-2.5 text-right text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500 whitespace-nowrap">Checked</th>
+                  <th className="sticky right-0 z-[1] px-3 py-2.5 text-right text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500 whitespace-nowrap bg-slate-50 border-l border-slate-200 shadow-[-4px_0_6px_-4px_rgba(15,23,42,0.1)]">Checked</th>
                 </tr>
               </thead>
               <tbody>
@@ -1034,7 +1034,7 @@ function PaymentsLedger({ profile }) {
                   var who = r.recorded_by || r.collector_name || ''
                   return (
                     <tr key={r.key} onClick={function () { openRow(r) }}
-                      className="border-b border-slate-100 last:border-b-0 cursor-pointer hover:bg-indigo-50/40 transition-colors">
+                      className="group border-b border-slate-100 last:border-b-0 cursor-pointer hover:bg-indigo-50/40 transition-colors">
 
                       {/* Which way the money went, before you have read a word
                           of the row. The sign on the amount says the same thing
@@ -1147,7 +1147,7 @@ function PaymentsLedger({ profile }) {
                         </span>
                       </td>
 
-                      <td className="px-3 py-2.5 align-top text-right whitespace-nowrap" onClick={function (ev) { ev.stopPropagation() }}>
+                      <td className="sticky right-0 z-[1] px-3 py-2.5 align-top text-right whitespace-nowrap bg-white group-hover:bg-indigo-50/40 border-l border-slate-100 shadow-[-4px_0_6px_-4px_rgba(15,23,42,0.1)] transition-colors" onClick={function (ev) { ev.stopPropagation() }}>
                         <span className="inline-flex items-center gap-2">
                           <EnteredMark
                             entered={!!r.tally_entered_by}

@@ -757,29 +757,29 @@ function CostTransfers({ profile, inAdmin }) {
             <span className="font-semibold text-slate-500">Rs</span>{' '}
             <span className={"font-bold " + (isReversed ? "" : "text-slate-900")}>{(r.amount_paise / 100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
           </span>
-          {(canMarkEntered || r.tally_entered_by) && (
-            <span className="mt-1.5 flex" onClick={function (ev) { ev.stopPropagation() }}>
-              <EnteredMark
-                entered={!!r.tally_entered_by}
-                enteredAt={r.tally_entered_at}
-                canToggle={canMarkEntered}
-                canUnenter={r.tally_entered_by === profile?.id || isAdmin}
-                busy={enteringTransferId === r.id}
-                onToggle={function () { toggleTransferEntered(r) }}
-              />
-            </span>
-          )}
-          {(canMarkChecked || r.checked_by) && (
-            <span className="mt-1.5 flex" onClick={function (ev) { ev.stopPropagation() }}>
-              <CheckedStamp
-                variant="stamp"
-                checked={!!r.checked_by}
-                checkedAt={r.checked_at}
-                canToggle={canMarkChecked}
-                canUncheck={r.checked_by === profile?.id || isAdmin}
-                busy={checkingTransferId === r.id}
-                onToggle={function () { toggleTransferCheck(r) }}
-              />
+          {((canMarkEntered || r.tally_entered_by) || (canMarkChecked || r.checked_by)) && (
+            <span className="mt-1.5 flex items-center gap-2" onClick={function (ev) { ev.stopPropagation() }}>
+              {(canMarkEntered || r.tally_entered_by) && (
+                <EnteredMark
+                  entered={!!r.tally_entered_by}
+                  enteredAt={r.tally_entered_at}
+                  canToggle={canMarkEntered}
+                  canUnenter={r.tally_entered_by === profile?.id || isAdmin}
+                  busy={enteringTransferId === r.id}
+                  onToggle={function () { toggleTransferEntered(r) }}
+                />
+              )}
+              {(canMarkChecked || r.checked_by) && (
+                <CheckedStamp
+                  variant="stamp"
+                  checked={!!r.checked_by}
+                  checkedAt={r.checked_at}
+                  canToggle={canMarkChecked}
+                  canUncheck={r.checked_by === profile?.id || isAdmin}
+                  busy={checkingTransferId === r.id}
+                  onToggle={function () { toggleTransferCheck(r) }}
+                />
+              )}
             </span>
           )}
         </td>
