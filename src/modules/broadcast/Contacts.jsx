@@ -168,6 +168,7 @@ function CsvImportModal({ open, onClose, onSaved }) {
 
 function ContactDetailDrawer({ contact, onClose, onChanged }) {
   var [phoneRevealed, setPhoneRevealed] = useState(false)
+  var [name, setName] = useState(contact.name || '')
   var [tagsText, setTagsText] = useState((contact.tags || []).join(', '))
   var [notes, setNotes] = useState(contact.notes || '')
   var [saving, setSaving] = useState(false)
@@ -188,11 +189,11 @@ function ContactDetailDrawer({ contact, onClose, onChanged }) {
       .catch(function () {})
   }
 
-  async function saveTagsNotes() {
+  async function saveDetails() {
     if (saving) return
     setSaving(true)
     var tags = tagsText.split(',').map(function (t) { return t.trim() }).filter(Boolean)
-    var res = await supabase.from('wa_contacts').update({ tags: tags, notes: notes || null }).eq('id', contact.id)
+    var res = await supabase.from('wa_contacts').update({ name: name.trim() || null, tags: tags, notes: notes || null }).eq('id', contact.id)
     setSaving(false)
     if (!res.error) onChanged()
   }
@@ -221,7 +222,7 @@ function ContactDetailDrawer({ contact, onClose, onChanged }) {
 
       <div className="flex-1 min-h-0 overflow-y-auto ambria-thin-scroll px-4 py-4 space-y-4">
         <div>
-          <p className="text-[17px] font-bold text-slate-900 leading-tight">{contact.name || 'Unnamed contact'}</p>
+          <p className="text-[17px] font-bold text-slate-900 leading-tight">{name.trim() || 'Unnamed contact'}</p>
           {/* A real button, not a <p onClick>: revealing a phone number is
               logged to the activity trail, so it has to be reachable from a
               keyboard and announce itself as an action. */}
@@ -240,6 +241,10 @@ function ContactDetailDrawer({ contact, onClose, onChanged }) {
         </div>
 
         <div className="space-y-3 border-t border-slate-100 pt-3.5">
+          <Labeled label="Name" hint="Imported blank, or wrong? Fix it here — a CSV re-import or the contact messaging in will never overwrite a name that's already set.">
+            <input type="text" value={name} onChange={function (ev) { setName(ev.target.value) }}
+              placeholder="Unnamed contact" className={CTRL} />
+          </Labeled>
           <Labeled label="Tags" hint="Comma-separated">
             <input type="text" value={tagsText} onChange={function (ev) { setTagsText(ev.target.value) }}
               placeholder="delhi, wedding" className={CTRL} />
@@ -248,9 +253,9 @@ function ContactDetailDrawer({ contact, onClose, onChanged }) {
             <textarea value={notes} onChange={function (ev) { setNotes(ev.target.value) }} rows={2}
               placeholder="Anything the next person should know" className={TEXTAREA} />
           </Labeled>
-          <button onClick={saveTagsNotes} disabled={saving} className={BTN_GHOST}>
+          <button onClick={saveDetails} disabled={saving} className={BTN_GHOST}>
             <Icon name="save" size={14} />
-            {saving ? 'Saving…' : 'Save tags & notes'}
+            {saving ? 'Saving…' : 'Save details'}
           </button>
         </div>
 

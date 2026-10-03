@@ -124,7 +124,7 @@ async function handleInboundMessage(supa, value, msg, SUPABASE_URL, SERVICE_ROLE
       || (msg.interactive.list_reply && msg.interactive.list_reply.title) || null
   }
 
-  var contactRes = await supa.from("wa_contacts").select("id").eq("phone_e164", fromPhone).maybeSingle()
+  var contactRes = await supa.from("wa_contacts").select("id, name").eq("phone_e164", fromPhone).maybeSingle()
   var contactId = contactRes.data ? contactRes.data.id : null
   if (!contactId) {
     var insContact = await supa.from("wa_contacts").insert({
@@ -132,6 +132,12 @@ async function handleInboundMessage(supa, value, msg, SUPABASE_URL, SERVICE_ROLE
     }).select("id").single()
     if (insContact.error) { console.error("wa-webhook: contact insert failed"); return }
     contactId = insContact.data.id
+  } else if (displayName && !(contactRes.data.name || "").trim()) {
+    // A contact imported with no name (CSV, LMS pull, manually added) gets
+    // backfilled the moment they message in — WhatsApp hands us their own
+    // self-set display name on every inbound message regardless. Never
+    // overwrites a name that's already set, so a manual correction sticks.
+    await supa.from("wa_contacts").update({ name: displayName }).eq("id", contactId)
   }
 
   // The wa_messages_after_insert + wa_stop_keyword_handler triggers (migration
