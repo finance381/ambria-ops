@@ -16,7 +16,7 @@ var TIERS = ['q', 't', 'f']
 var TIER_LABELS = ['Quote', 'Target', 'Floor']
 var TIER_COLORS = [C.maroon, C.blue, C.red]
 
-var DEFAULT_CATS = [{ label: "King's", color: '#D4872C' }, { label: 'Perfect', color: '#8B2D2D' }, { label: 'Filler', color: '#6B5B4E' }]
+var DEFAULT_CATS = [{ label: "King's", color: C.red }, { label: 'Perfect', color: C.blue }, { label: 'Filler', color: C.green }]
 var DEFAULT_SLOTS = ['Dinner', 'Sundowner', 'Lunch']
 var DECOR_OPTS = [
   { val: 'p', label: 'Pushpanjali' }, { val: 'eg', label: 'EG/Aura' },
