@@ -33,6 +33,12 @@ function CameraCapture({ onCapture, onClose }) {
         if (videoRef.current) {
           videoRef.current.srcObject = stream
           videoRef.current.onloadedmetadata = function () { setReady(true) }
+          // autoplay alone doesn't reliably start a stream assigned to
+          // srcObject after mount on every mobile browser — an explicit
+          // play() is the standard fix, and a rejected promise here (e.g.
+          // a stray autoplay policy) shouldn't surface as an uncaught error.
+          var playPromise = videoRef.current.play()
+          if (playPromise && playPromise.catch) playPromise.catch(function () {})
         }
       })
       .catch(function (err) {
