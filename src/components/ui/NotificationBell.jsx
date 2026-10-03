@@ -30,8 +30,10 @@ function NotificationBell({ profile, onNavigate }) {
 
   function load() {
     if (!profile || !profile.id) return
-    supabase.from('notifications').select('*').eq('user_id', profile.id)
-      .order('created_at', { ascending: false }).limit(30)
+    // Read notifications drop off the list entirely rather than piling up
+    // read-but-visible forever — the bell only ever shows what's still unread.
+    supabase.from('notifications').select('*').eq('user_id', profile.id).is('read_at', null)
+      .order('created_at', { ascending: false }).limit(50)
       .then(function (res) { setItems(res.data || []) })
   }
 
@@ -100,12 +102,12 @@ function NotificationBell({ profile, onNavigate }) {
     }
   }
 
-  var unreadCount = items.filter(function (n) { return !n.read_at }).length
+  var unreadCount = items.length
 
   function markRead(n) {
     if (!n.read_at) {
       var now = new Date().toISOString()
-      setItems(function (prev) { return prev.map(function (x) { return x.id === n.id ? Object.assign({}, x, { read_at: now }) : x }) })
+      setItems(function (prev) { return prev.filter(function (x) { return x.id !== n.id }) })
       supabase.from('notifications').update({ read_at: now }).eq('id', n.id).then(function () {})
     }
     setOpen(false)
@@ -113,10 +115,10 @@ function NotificationBell({ profile, onNavigate }) {
   }
 
   async function markAllRead() {
-    var ids = items.filter(function (n) { return !n.read_at }).map(function (n) { return n.id })
+    var ids = items.map(function (n) { return n.id })
     if (ids.length === 0) return
     var now = new Date().toISOString()
-    setItems(function (prev) { return prev.map(function (x) { return Object.assign({}, x, { read_at: x.read_at || now }) }) })
+    setItems([])
     await supabase.from('notifications').update({ read_at: now }).in('id', ids)
   }
 
@@ -175,7 +177,7 @@ function NotificationBell({ profile, onNavigate }) {
               {items.map(function (n) {
                 return (
                   <button key={n.id} type="button" onClick={function () { markRead(n) }}
-                    className={'w-full text-left px-3.5 py-2.5 transition-colors ' + (n.read_at ? 'hover:bg-slate-50' : 'bg-indigo-50/50 hover:bg-indigo-50')}>
+                    className="w-full text-left px-3.5 py-2.5 transition-colors bg-indigo-50/50 hover:bg-indigo-100">
                     <p className="text-[12.5px] font-bold text-slate-900 leading-snug">{n.title}</p>
                     {n.body && <p className="text-[12px] text-slate-500 leading-snug mt-0.5">{n.body}</p>}
                     <p className="text-[10.5px] text-slate-400 mt-1" data-notranslate>{formatDate(n.created_at)}</p>
