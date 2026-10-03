@@ -314,7 +314,7 @@ var EXP_STATUS_COLORS = {
   deducted: 'bg-indigo-100 text-indigo-700',
 }
 
-function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, onClose, onBalanceChange, onOpenExpense, onNavigateToExpenses, inAdmin }) {
+function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, onClose, onBalanceChange, onOpenExpense, onNavigateToExpenses, inAdmin, deepLinkTransferId }) {
   var permsNew = (profile && profile.permsNew) || []
   var canCreateTentativeEvent = hasPerm(permsNew, 'events.list.create_tentative')
   var canMarkChecked = hasPerm(permsNew, 'finance.wallet.mark_checked')
@@ -543,6 +543,17 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     setWalletView('dashboard')
     loadRecentTxns(myWallet)
   }, [myWallet, isAdmin, isAuditor])
+
+  // A transfer notification names a transfer, not a screen — it always means
+  // "my own wallet, the transactions list, scrolled to this one" regardless
+  // of role, so this doesn't branch on isAdmin the way the plain myWallet
+  // effect above does.
+  useEffect(function () {
+    if (!deepLinkTransferId || !myWallet) return
+    setWalletProfiles(function (prev) { var n = Object.assign({}, prev); n[profile.id] = profile; return n })
+    openWalletTxns(myWallet, null, null, 'transfer')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deepLinkTransferId, myWallet])
 
   function refreshBalance() {
     supabase.from('wallets').select('balance_paise').eq('user_id', profile.id).maybeSingle()
@@ -794,8 +805,9 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
       if (f) query = query.gte('created_at', f + 'T00:00:00')
       if (t) query = query.lte('created_at', t + 'T23:59:59')
       if (rt) query = query.eq('reference_type', rt)
-      var { data } = await query
+      var { data, error } = await query
       if (!current()) return
+      if (error) { alert('Failed to load transactions: ' + error.message); setTxnsLoading(false); return }
       var txns = data || []
       var cpIds = {}
       txns.forEach(function (t) { if (t.checked_by) cpIds[t.checked_by] = true; if (t.tally_entered_by) cpIds[t.tally_entered_by] = true })
@@ -3786,10 +3798,16 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     var rowBorderClass = isCancelled
       ? "border-gray-200 opacity-50"
       : (t.status === 'pending' ? "border-amber-300 bg-amber-50/30" : "border-gray-200")
+    // A notification's deep link names the transfer it's about, not this
+    // specific wallet_transactions row — the sender's debit and the
+    // recipient's credit are two different rows sharing one reference_id,
+    // so either side's own row matches and gets the same visual landing spot.
+    var isDeepLinkTarget = t.reference_type === 'transfer' && deepLinkTransferId && t.reference_id === deepLinkTransferId
     return (
       <div key={t.id}
+        ref={isDeepLinkTarget ? function (el) { if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' }) } : null}
         onClick={handleRowClick}
-        className={"bg-white border rounded-xl px-3.5 py-3 " + rowBorderClass + (rowIsClickable ? " cursor-pointer hover:border-indigo-300 hover:bg-indigo-50/30 transition-colors" : "")}>
+        className={"bg-white border rounded-xl px-3.5 py-3 " + (isDeepLinkTarget ? "border-indigo-400 ring-2 ring-indigo-200 bg-indigo-50/40" : rowBorderClass) + (rowIsClickable ? " cursor-pointer hover:border-indigo-300 hover:bg-indigo-50/30 transition-colors" : "")}>
         {/* justify-between was never doing the split — the left column is
             flex-1 and already pushes the figures right — so the row can simply
             gain a third child at the front. */}

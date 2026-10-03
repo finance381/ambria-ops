@@ -180,6 +180,7 @@ function Shell({ profile, onSignOut }) {
   // Set by navigateToExpenses when a ledger screen sends the user to a specific
   // expense's edit/Raise JV view instead of just the Expenses tab.
   var [deepLinkExpense, setDeepLinkExpense] = useState(null)
+  var [deepLinkTransferId, setDeepLinkTransferId] = useState(null)
   var [menuOpen, setMenuOpen] = useState(false)
   var [menuPos, setMenuPos] = useState(null)
   var menuBtnRef = useRef(null)
@@ -286,10 +287,11 @@ function Shell({ profile, onSignOut }) {
       var fromGroup = activeGroup, fromTab = tab, fromSub = subTab
       pushBack(function () { setActiveGroup(fromGroup); setTab(fromTab); setSubTab(fromSub) })
       setActiveGroup('broadcast'); setTab('broadcast'); setSubTab('inbox')
-    } else if (link === 'wallet') {
+    } else if (link === 'wallet' || (link && link.indexOf('wallet:') === 0)) {
       var fromGroup2 = activeGroup, fromTab2 = tab, fromSub2 = subTab
       pushBack(function () { setActiveGroup(fromGroup2); setTab(fromTab2); setSubTab(fromSub2) })
       setActiveGroup('expenses'); setTab('wallet'); setSubTab(null)
+      setDeepLinkTransferId(link.indexOf('wallet:') === 0 ? link.slice('wallet:'.length) : null)
     } else if (link && link.indexOf('expense:') === 0) {
       navigateToExpenses(link.slice('expense:'.length), null)
     } else if (link === 'events') {
@@ -835,7 +837,7 @@ function Shell({ profile, onSignOut }) {
           <StoreRequisitions profile={profile} />
         )}
         {tab === 'wallet' && (
-          <Wallet profile={profile} onNavigateToExpenses={navigateToExpenses} />
+          <Wallet profile={profile} onNavigateToExpenses={navigateToExpenses} deepLinkTransferId={deepLinkTransferId} />
         )}
         {tab === 'expenses' && (
           <Expenses profile={profile} deepLinkExpense={deepLinkExpense} onDeepLinkHandled={function () { setDeepLinkExpense(null) }} />
