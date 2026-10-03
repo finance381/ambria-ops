@@ -697,18 +697,24 @@ function PaymentsLedger({ profile }) {
             )}
           </div>
 
-          {/* Phone: the five pills as five equal columns, so they always fit
-              the row whatever the screen's width — a run of natural-width
-              pills still ran off the card on narrower Android phones. */}
-          <div className="@3xl:hidden w-full grid grid-cols-5 gap-1">
-            {QUICK_GROUPS.reduce(function (all, g) { return all.concat(g) }, []).map(function (q) {
-              return (
-                <button key={q.k} type="button" onClick={q.run} aria-pressed={q.on}
-                  className={'min-w-0 h-8 px-1 rounded-full border bg-white text-[11.5px] font-bold whitespace-nowrap overflow-hidden text-ellipsis transition-colors ' +
-                    (q.on ? QUICK_TONE[q.tone] : 'border-slate-300 text-slate-600')}>
-                  {q.label}
-                </button>
-              )
+          {/* Phone: the five pills share the row equally (flex-1), so they
+              always fit whatever the screen's width — natural-width pills ran
+              off the card on narrower Android phones. */}
+          <div className="@3xl:hidden w-full flex items-center gap-1">
+            {QUICK_GROUPS.map(function (group, gi) {
+              return [
+                // A rule after All and after Bank: the reset, where the money
+                // sat, which way it moved — three groups, told apart.
+                gi > 0 ? <span key={'sep' + gi} aria-hidden="true" className="shrink-0 w-px h-5 mx-0.5 bg-slate-300" /> : null,
+              ].concat(group.map(function (q) {
+                return (
+                  <button key={q.k} type="button" onClick={q.run} aria-pressed={q.on}
+                    className={'flex-1 min-w-0 h-8 px-1 rounded-full border bg-white text-[11.5px] font-bold whitespace-nowrap overflow-hidden text-ellipsis transition-colors ' +
+                      (q.on ? QUICK_TONE[q.tone] : 'border-slate-300 text-slate-600')}>
+                    {q.label}
+                  </button>
+                )
+              }))
             })}
           </div>
           {/* Wide: one row of pills grouped behind rules. */}
