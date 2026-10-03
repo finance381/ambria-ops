@@ -19,6 +19,7 @@ var AdminReview = lazy(function () { return import('../../modules/categories/Adm
 var DeptReview = lazy(function () { return import('../../modules/categories/DeptReview') })
 var QuoteCalculator = lazy(function () { return import('../../modules/quote/QuoteCalculator') })
 var Requisitions = lazy(function () { return import('../../modules/requisitions/Requisitions') })
+var StoreRequisitions = lazy(function () { return import('../../modules/requisitions/StoreRequisitions') })
 var Purchase = lazy(function () { return import('../../modules/purchase/Purchase') })
 var Expenses = lazy(function () { return import('../../modules/expenses/Expenses') })
 var Ledgers = lazy(function () { return import('../../modules/expenses/Ledgers') })
@@ -105,6 +106,7 @@ var GROUPS = [
   {
     key: 'procurement', label: 'Procurement', icon: 'cart', items: [
       { key: 'procurement.requisitions', label: 'Requisitions', icon: 'inbox', tab: 'requisitions' },
+      { key: 'procurement.requisitions', id: 'procurement.storereq', label: 'Store Requisition', icon: 'box', tab: 'storereq', noBadge: true },
       { key: 'procurement.purchase_orders', label: 'Purchase Orders', icon: 'cart', tab: 'purchase' },
       { key: 'procurement.vendors', label: 'Vendors', icon: 'building', tab: 'vendors' },
     ]
@@ -828,6 +830,9 @@ function Shell({ profile, onSignOut }) {
         )}
         {tab === 'requisitions' && (
           <Requisitions profile={profile} onBack={goBack} />
+        )}
+        {tab === 'storereq' && (
+          <StoreRequisitions profile={profile} />
         )}
         {tab === 'wallet' && (
           <Wallet profile={profile} onNavigateToExpenses={navigateToExpenses} />

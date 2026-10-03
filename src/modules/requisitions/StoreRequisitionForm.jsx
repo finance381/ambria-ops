@@ -154,6 +154,17 @@ function StoreRequisitionForm({ profile, onDone, onCancel }) {
   function removeInventoryRow(row, lineId) {
     patchRow(row.id, { inventoryRows: row.inventoryRows.filter(function (l) { return l.id !== lineId }) })
   }
+  // Rate is pre-filled from the most recent purchase, but a store
+  // requisition needs to accept whatever's actually happening on the
+  // ground — let someone override it by hand when the auto-fetched rate
+  // isn't right.
+  function changeInvRate(row, lineId, e) {
+    var rupeesVal = Number(e.target.value)
+    var paise = isNaN(rupeesVal) ? 0 : Math.round(rupeesVal * 100)
+    patchRow(row.id, {
+      inventoryRows: row.inventoryRows.map(function (l) { return l.id === lineId ? Object.assign({}, l, { ratePaise: paise }) : l })
+    })
+  }
 
   function addCasualRow(row) {
     var first = casualsFor(row.departmentId)[0]
@@ -235,11 +246,11 @@ function StoreRequisitionForm({ profile, onDone, onCancel }) {
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className={LABEL}>From date</label>
-            <EventDatePicker value={dateFrom} placeholder="From" includePast onChange={function (v) { setDateFrom(v) }} />
+            <EventDatePicker value={dateFrom} placeholder="From" collapsible plain includePast onChange={function (v) { setDateFrom(v) }} />
           </div>
           <div>
             <label className={LABEL}>To date</label>
-            <EventDatePicker value={dateTo} placeholder="To" includePast onChange={function (v) { setDateTo(v) }} />
+            <EventDatePicker value={dateTo} placeholder="To" collapsible plain includePast onChange={function (v) { setDateTo(v) }} />
           </div>
         </div>
       </div>
@@ -382,7 +393,9 @@ function StoreRequisitionForm({ profile, onDone, onCancel }) {
                             <td className="py-1.5 pr-2 text-right">
                               <input type="number" value={l.qty} onChange={function (e) { changeInvQty(row, l.id, e) }} className="w-16 h-8 px-2 text-right border border-gray-300 rounded" />
                             </td>
-                            <td className="py-1.5 pr-2 text-right text-gray-500">{rupees(l.ratePaise)}</td>
+                            <td className="py-1.5 pr-2 text-right">
+                              <input type="number" value={l.ratePaise / 100} onChange={function (e) { changeInvRate(row, l.id, e) }} className="w-20 h-8 px-2 text-right border border-gray-300 rounded text-gray-700" />
+                            </td>
                             <td className="py-1.5 text-right font-bold">{rupees(l.qty * l.ratePaise)}</td>
                             <td className="py-1.5 text-center">
                               <button onClick={function () { removeInventoryRow(row, l.id) }} aria-label="Remove item"><Icon name="trash" size={13} /></button>

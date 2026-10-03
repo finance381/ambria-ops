@@ -57,6 +57,7 @@ PurchaseReceive.load = Purchase.load
 var Calendar = lazyTab(function () { return import('../../modules/calendar/Calendar') })
 var Vendors = lazyTab(function () { return import('../../modules/vendors/Vendors') })
 var Requisitions = lazyTab(function () { return import('../../modules/requisitions/Requisitions') })
+var StoreRequisitions = lazyTab(function () { return import('../../modules/requisitions/StoreRequisitions') })
 var CasualRoster = lazyTab(function () { return import('../../modules/manpower/CasualRoster') })
 var Analytics = lazyTab(function () { return import('../../modules/analytics/Analytics') })
 var Overview = lazyTab(function () { return import('../../modules/overview/Overview') })
@@ -168,6 +169,7 @@ var SUB_TAB_CONFIG = {
   ],
   procurement: [
     { key: 'requisitions', label: 'Requisitions',    icon: 'fileText', component: Requisitions, perm: 'procurement.requisitions' },
+    { key: 'storereq',     label: 'Store Requisition', icon: 'box',    component: StoreRequisitions, perm: 'procurement.requisitions' },
     { key: 'purchase',     label: 'Purchase Orders', icon: 'cart',     component: Purchase,     perm: 'procurement.purchase_orders' },
     { key: 'vendors',      label: 'Vendors',         icon: 'truck',    component: Vendors,      perm: 'procurement.vendors' },
   ],
