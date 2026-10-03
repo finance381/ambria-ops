@@ -25,6 +25,7 @@ var Ledgers = lazy(function () { return import('../../modules/expenses/Ledgers')
 var VendorLedger = lazy(function () { return import('../../modules/expenses/VendorLedger') })
 var EventLedger = lazy(function () { return import('../../modules/expenses/EventLedger') })
 var Payments = lazy(function () { return import('../../modules/expenses/Payments') })
+var PaymentsLedger = lazy(function () { return import('../../modules/expenses/PaymentsLedger') })
 var CostTransfers = lazy(function () { return import('../../modules/expenses/CostTransfers') })
 var SalaryPayouts = lazy(function () { return import('../../modules/expenses/SalaryPayouts') })
 var SalaryLedger = lazy(function () { return import('../../modules/employees/SalaryLedger') })
@@ -127,6 +128,9 @@ var GROUPS = [
       { key: 'finance.ledgers.expense', label: 'Expense Ledger', icon: 'fileText', tab: 'ledgers' },
       { key: 'finance.ledgers.event', label: 'Event Ledger', icon: 'calendar', tab: 'event_ledger' },
       { key: 'finance.payments', label: 'Payments', icon: 'creditCard', tab: 'payments' },
+      // Same permission as Payments (as on the desktop), its own tile: id
+      // keeps the two apart, and the Payments badge stays on Payments.
+      { key: 'finance.payments', id: 'finance.cash_bank', label: 'Cash & Bank', icon: 'banknote', tab: 'cash_bank', noBadge: true },
       { key: 'finance.salary_payouts', label: 'Salary Payouts', icon: 'bank', tab: 'salary_payouts' },
       { key: 'finance.ledgers.vendor', label: 'Vendor Ledger', icon: 'building', tab: 'vendor_ledger' },
     ]
@@ -763,11 +767,11 @@ function Shell({ profile, onSignOut }) {
               // menu without being the most useful one on it.
               return (
                 <button
-                  key={f.key}
+                  key={f.id || f.key}
                   onClick={function () { openModule(f) }}
                   className="relative bg-white/85 backdrop-blur-xl border border-white/70 shadow-[0_2px_10px_rgba(15,23,42,0.07)] rounded-2xl p-3 flex flex-col items-center justify-center text-center hover:bg-white hover:shadow-[0_8px_22px_rgba(15,23,42,0.10)] active:scale-[0.98] transition-all"
                 >
-                  {badges[f.key] > 0 && (
+                  {!f.noBadge && badges[f.key] > 0 && (
                     <span className="absolute -top-1.5 -right-1.5 min-w-[22px] h-[22px] px-1.5 bg-red-500 text-white text-[10.5px] font-bold rounded-full flex items-center justify-center shadow-[0_2px_6px_rgba(239,68,68,0.45)]">
                       {badges[f.key] > 99 ? '99+' : badges[f.key]}
                     </span>
@@ -845,6 +849,9 @@ function Shell({ profile, onSignOut }) {
         )}
         {tab === 'payments' && (
           <Payments profile={profile} />
+        )}
+        {tab === 'cash_bank' && (
+          <PaymentsLedger profile={profile} />
         )}
         {tab === 'salary_payouts' && (
           <SalaryPayouts profile={profile} />

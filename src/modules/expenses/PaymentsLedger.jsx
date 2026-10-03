@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { supabase } from '../../lib/supabase'
-import { formatPoints, formatDate, formatDateTime } from '../../lib/format'
+import { formatPoints, formatPointsPlain, formatDate, formatDateTime } from '../../lib/format'
 import { useRealtime } from '../../lib/useRealtime'
 import { scrollToTopOf } from '../../lib/scrollToTop'
 import { hasPerm } from '../../lib/permissions'
@@ -663,7 +663,7 @@ function PaymentsLedger({ profile }) {
             were silently pushed past the edge with no way to reach them.
             overflow-x-auto turns that into a scroll instead of a dead end. */}
         <div className="flex flex-wrap @3xl:flex-nowrap @3xl:overflow-x-auto @3xl:ambria-thin-scroll items-center gap-x-4 gap-y-3">
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="w-full @3xl:w-auto flex flex-wrap items-center gap-2 @3xl:shrink-0">
             <DateRangeDropdown preset={datePreset} onChange={applyDatePreset} />
             {/* Only Custom needs the actual pickers — every other preset
                 already carries its own dates, and showing two more controls
@@ -685,10 +685,21 @@ function PaymentsLedger({ profile }) {
                 </div>
               </>
             )}
+            {/* Phone: Reset sits here, on the date's row where it is always
+                in sight — at the end of the pills it scrolled out of view. */}
+            {anyFilterOn && (
+              <button type="button" onClick={resetAllFilters} title="Clear every filter and show all"
+                className="@3xl:hidden ml-auto h-9 px-3.5 inline-flex items-center gap-1.5 rounded-full border border-rose-200 bg-rose-50 text-[12.5px] font-bold text-rose-600 active:bg-rose-100 transition-colors">
+                <Icon name="refresh" size={13} />Reset
+              </button>
+            )}
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
-            <div className="flex flex-wrap @3xl:flex-nowrap items-center gap-2.5">
+          {/* One row of pills, as on the desktop: on a phone it takes the full
+              width and scrolls sideways if it has to, rather than wrapping
+              Income and Expense onto a line of their own. */}
+          <div className="w-full @3xl:w-auto flex items-center gap-2 @3xl:shrink-0 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <div className="flex flex-nowrap items-center gap-2.5">
               {QUICK_GROUPS.map(function (group, gi) {
                 return (
                   <div key={gi} className="flex items-center gap-2.5">
@@ -697,7 +708,7 @@ function PaymentsLedger({ profile }) {
                       {group.map(function (q) {
                         return (
                           <button key={q.k} type="button" onClick={q.run} aria-pressed={q.on}
-                            className={'h-8 px-3 rounded-full border bg-white text-[12px] font-bold transition-colors hover:bg-slate-50 ' +
+                            className={'shrink-0 h-8 px-3 rounded-full border bg-white text-[12px] font-bold whitespace-nowrap transition-colors hover:bg-slate-50 ' +
                               (q.on ? QUICK_TONE[q.tone] : 'border-slate-300 text-slate-600 hover:text-slate-900')}>
                             {q.label}
                           </button>
@@ -711,7 +722,7 @@ function PaymentsLedger({ profile }) {
                   filters, the type, the search and the date range. Shown
                   only while something is narrowing the list. */}
               {anyFilterOn && (
-                <div className="flex items-center gap-2.5">
+                <div className="hidden @3xl:flex items-center gap-2.5">
                   <span aria-hidden="true" className="w-px h-5 bg-slate-200" />
                   <button type="button" onClick={resetAllFilters} title="Clear every filter and show all"
                     className="h-8 px-3 inline-flex items-center gap-1.5 rounded-full border border-rose-200 bg-rose-50 text-[12px] font-bold text-rose-600 hover:bg-rose-100 transition-colors">
@@ -722,25 +733,28 @@ function PaymentsLedger({ profile }) {
             </div>
           </div>
 
-          <div className="flex items-center gap-2 ml-auto shrink-0">
+          <div className="w-full @3xl:w-auto flex items-center gap-2 @3xl:ml-auto @3xl:shrink-0">
             {/* Search is the control people reach for most on this screen, so
-                it does not live one press deep behind More Filters. */}
+                it does not live one press deep behind More Filters. On a phone
+                it takes what the row has left. */}
             <SearchField value={search} onChange={function (v) { setSearch(v) }}
-              placeholder="Search transactions..." className="w-[180px] @3xl:w-[220px]" />
+              placeholder="Search transactions..." className="flex-1 min-w-0 @3xl:flex-none @3xl:w-[220px]" />
             <button type="button" onClick={function () { setShowMore(!showMore) }} aria-pressed={showMore}
-              className={'h-9 px-3 inline-flex items-center gap-1.5 rounded-xl border text-[12.5px] font-bold transition-colors ' +
+              className={'shrink-0 h-10 @3xl:h-9 px-3 inline-flex items-center gap-1.5 rounded-xl border text-[12.5px] font-bold transition-colors ' +
                 (showMore || typeFilter
                   ? 'border-indigo-300 bg-indigo-50 text-indigo-700'
                   : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900')}>
               <Icon name="filter" size={14} />
-              More Filters
+              <span className="hidden @md:inline">More Filters</span>
+              <span className="@md:hidden">Filters</span>
               <Icon name={showMore ? 'chevronUp' : 'chevronDown'} size={13} />
             </button>
             <button type="button" onClick={exportCsv} disabled={visible.length === 0}
               title="Export everything the filters have left, in the order it is shown"
-              className="h-9 px-3.5 inline-flex items-center gap-1.5 rounded-xl text-[12.5px] font-bold text-white bg-indigo-600 hover:bg-indigo-700 active:scale-[0.98] disabled:opacity-40 disabled:hover:bg-indigo-600 transition-all">
+              aria-label="Export"
+              className="shrink-0 h-10 w-10 @md:w-auto @3xl:h-9 justify-center @md:px-3.5 inline-flex items-center gap-1.5 rounded-xl text-[12.5px] font-bold text-white bg-indigo-600 hover:bg-indigo-700 active:scale-[0.98] disabled:opacity-40 disabled:hover:bg-indigo-600 transition-all">
               <Icon name="download" size={14} />
-              Export
+              <span className="hidden @md:inline">Export</span>
             </button>
           </div>
         </div>
@@ -759,9 +773,11 @@ function PaymentsLedger({ profile }) {
                 </button>
               )}
             </div>
-            <div className="flex flex-wrap gap-1.5">
+            {/* Phone: an even two-column grid, each type's name at the left and
+                its count at the right; the free-flowing row when wide. */}
+            <div className="grid grid-cols-2 gap-1.5 @2xl:flex @2xl:flex-wrap">
               <button type="button" onClick={function () { setTypeFilter('') }} aria-pressed={typeFilter === ''}
-                className={'h-8 px-3 rounded-lg border text-[12px] font-bold transition-colors ' +
+                className={'h-9 @2xl:h-8 px-3 rounded-lg border text-[12px] font-bold text-left @2xl:text-center transition-colors ' +
                   (typeFilter === '' ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50')}>
                 Any
               </button>
@@ -770,10 +786,10 @@ function PaymentsLedger({ profile }) {
                 return (
                   <button key={t.label} type="button" aria-pressed={on}
                     onClick={function () { setTypeFilter(on ? '' : t.label) }}
-                    className={'h-8 pl-3 pr-2 inline-flex items-center gap-2 rounded-lg border text-[12px] font-bold transition-colors ' +
+                    className={'min-w-0 h-9 @2xl:h-8 pl-3 pr-2 inline-flex items-center justify-between @2xl:justify-start gap-2 rounded-lg border text-[12px] font-bold transition-colors ' +
                       (on ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50')}>
-                    {t.label}
-                    <span data-notranslate className={'px-1.5 rounded-md text-[11px] tabular-nums ' +
+                    <span className="truncate">{t.label}</span>
+                    <span data-notranslate className={'shrink-0 px-1.5 rounded-md text-[11px] tabular-nums ' +
                       (on ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500')}>{t.count}</span>
                   </button>
                 )
@@ -793,14 +809,43 @@ function PaymentsLedger({ profile }) {
               from {formatDate(dateFrom)} to {formatDate(dateTo)}
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="w-full @2xl:w-auto flex flex-wrap items-center gap-2">
             {/* What the range came to, which is the reason anyone opens a
                 ledger over a date range in the first place. Three loose grey
                 chips read as three unrelated numbers; in and out are the two
                 halves of one sum and net is what they come to, so they are one
                 object divided by rules, each half tinted the way its column of
                 amounts already is. */}
-            <div className="inline-flex items-stretch rounded-xl border border-slate-200 overflow-hidden">
+            {/* Phone: In and Out side by side, Net across the full width under
+                them — room for each figure and its unit on one line. */}
+            <div className="@2xl:hidden w-full grid grid-cols-2 gap-2">
+              {[{ l: 'In', v: totals.in, icon: 'download', box: 'bg-emerald-50 border-emerald-100', ic: 'bg-emerald-100 text-emerald-600', lc: 'text-emerald-700', c: 'text-emerald-700' },
+                { l: 'Out', v: totals.out, icon: 'arrowRight', rot: '-rotate-90', box: 'bg-rose-50 border-rose-100', ic: 'bg-rose-100 text-rose-600', lc: 'text-rose-700', c: 'text-rose-700' }].map(function (t) {
+                return (
+                  <div key={t.l} className={'min-w-0 rounded-xl border px-3 py-2.5 ' + t.box}>
+                    <div className="flex items-center gap-1.5">
+                      <span className={'shrink-0 w-6 h-6 rounded-full inline-flex items-center justify-center ' + t.ic}>
+                        <Icon name={t.icon} size={12} className={t.rot || ''} />
+                      </span>
+                      <span className={'text-[11px] font-bold uppercase tracking-[0.08em] ' + t.lc}>{t.l}</span>
+                    </div>
+                    <p data-notranslate className={'mt-1.5 text-[15px] font-extrabold tabular-nums leading-tight ' + t.c}>
+                      {formatPointsPlain(t.v)} <span className="text-[11px] font-semibold opacity-80">pts</span>
+                    </p>
+                  </div>
+                )
+              })}
+              <div className="col-span-2 flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5">
+                <span className="flex items-center gap-1.5">
+                  <span className="shrink-0 w-6 h-6 rounded-full inline-flex items-center justify-center bg-slate-200 text-slate-600"><Icon name="chart" size={12} /></span>
+                  <span className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-600">Net</span>
+                </span>
+                <span data-notranslate className={'text-[16px] font-extrabold tabular-nums ' + (totals.net < 0 ? 'text-rose-700' : 'text-slate-900')}>
+                  {formatPointsPlain(totals.net)} <span className="text-[11px] font-semibold text-slate-500">pts</span>
+                </span>
+              </div>
+            </div>
+            <div className="hidden @2xl:inline-flex items-stretch rounded-xl border border-slate-200 overflow-hidden">
               {[{ l: 'In', v: totals.in, bg: 'bg-emerald-50/70', lc: 'text-emerald-600', c: 'text-emerald-700' },
                 { l: 'Out', v: totals.out, bg: 'bg-rose-50/70', lc: 'text-rose-600', c: 'text-rose-700' },
                 { l: 'Net', v: totals.net, bg: 'bg-slate-50', lc: 'text-slate-500', c: totals.net < 0 ? 'text-rose-700' : 'text-slate-900' }].map(function (t, ti) {
@@ -829,7 +874,70 @@ function PaymentsLedger({ profile }) {
             <p className="mt-0.5 text-[12px] font-medium text-slate-400">Widen the dates, or clear the quick filters.</p>
           </div>
         ) : (
-          <div className="overflow-x-auto ambria-thin-scroll">
+          <>
+          {/* Phone width: one card per transaction instead of a 960px table
+              scrolled sideways — who and what, the amount, the chips, when
+              and by whom, and Checked. The table takes over from @2xl. */}
+          <div className="@2xl:hidden bg-slate-50/80 p-2.5 space-y-2.5">
+            {pageRows.map(function (r) {
+              var isIn = r.direction === 'in'
+              var src = SOURCE_META[r.source] || { label: r.source, icon: 'wallet', tone: CHIP_NEUTRAL }
+              var m = MODE_META[r.mode] || { label: r.mode || '\u2014', icon: 'wallet', tone: CHIP_NEUTRAL }
+              var who = r.recorded_by || r.collector_name || ''
+              return (
+                <div key={r.key} onClick={function () { openRow(r) }}
+                  className="flex gap-3 p-3.5 rounded-2xl bg-white border border-slate-200/80 shadow-[0_1px_3px_rgba(15,23,42,0.05)] cursor-pointer active:bg-indigo-50/40 transition-colors">
+                  <span className={'shrink-0 mt-0.5 w-10 h-10 rounded-full inline-flex items-center justify-center ' +
+                    (isIn ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600')}
+                    title={isIn ? 'Money in' : 'Money out'}>
+                    <Icon name="arrowRight" size={16} className={isIn ? 'rotate-90' : '-rotate-90'} />
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-start justify-between gap-3">
+                      <p className="min-w-0 font-display text-[15px] font-bold text-slate-900 leading-snug break-words">{r.party_name}</p>
+                      <span data-notranslate className={'shrink-0 text-[17px] font-extrabold tabular-nums ' + (isIn ? 'text-emerald-700' : 'text-rose-700')}>
+                        {isIn ? '+ ' : '\u2212 '}{pts(r.amount_paise || 0)}
+                      </span>
+                    </div>
+                    {r.description && <p className="mt-0.5 text-[12.5px] font-medium text-slate-600 leading-snug break-words">{r.description}</p>}
+                    {r.source === 'collection' && r._eventInfo && (function () {
+                      var ei = r._eventInfo
+                      var bits = [ei.function_date ? formatDate(ei.function_date) : null, ei.client_name, venueLabelWithCode(ei.venue_name), ei.session].filter(Boolean)
+                      if (bits.length === 0) return null
+                      return <p className="mt-0.5 text-[11.5px] text-indigo-600 leading-snug break-words">{bits.join(' \u00b7 ')}</p>
+                    })()}
+                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                      <span className={CHIP + src.tone}><Icon name={src.icon} size={12} className="shrink-0" />{src.label}</span>
+                      <span className={CHIP + r.type_tone}>{r.type_icon && <Icon name={r.type_icon} size={12} className="shrink-0" />}{r.type_label}</span>
+                      <span className={CHIP + m.tone}><Icon name={m.icon} size={12} className="shrink-0" />{m.label}</span>
+                    </div>
+                    <div className="mt-2.5 flex items-center justify-between gap-2">
+                      {/* When and by whom, each with its icon. */}
+                      <p className="min-w-0 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[12px] font-semibold text-slate-600" data-notranslate>
+                        <span className="inline-flex items-center gap-1"><Icon name="calendar" size={12} className="text-slate-400" />{formatDate(r.date)}</span>
+                        {timeOf(r.logged_at) && <span className="inline-flex items-center gap-1"><Icon name="clock" size={12} className="text-slate-400" />{timeOf(r.logged_at)}</span>}
+                        {who && <span className="inline-flex items-center gap-1 min-w-0"><Icon name="user" size={12} className="text-slate-400" /><span className="truncate">{who}</span></span>}
+                      </p>
+                      <span className="shrink-0" onClick={function (ev) { ev.stopPropagation() }}>
+                        <CheckedStamp
+                          variant="stamp"
+                          compact
+                          checked={!!r.checked_by}
+                          checkerName={r._checkedByName}
+                          checkedAt={r.checked_at}
+                          canToggle={canMarkChecked}
+                          canUncheck={r.checked_by === profile.id || isAdmin}
+                          busy={checkingKey === r.key}
+                          onToggle={function () { toggleChecked(r) }}
+                        />
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+          <div className="hidden @2xl:block overflow-x-auto ambria-thin-scroll">
             {/* Pinning every column but one made that one the drain: on a
                 1600px panel the particulars held seven hundred pixels of
                 nothing after a six-word line, while the chips beside it sat
@@ -983,6 +1091,7 @@ function PaymentsLedger({ profile }) {
 
                       <td className="px-3 py-2.5 align-top text-right whitespace-nowrap" onClick={function (ev) { ev.stopPropagation() }}>
                         <CheckedStamp
+                          variant="stamp"
                           checked={!!r.checked_by}
                           checkerName={r._checkedByName}
                           checkedAt={r.checked_at}
@@ -998,6 +1107,7 @@ function PaymentsLedger({ profile }) {
               </tbody>
             </table>
           </div>
+          </>
         )}
 
         {!loading && visible.length > 0 && (
