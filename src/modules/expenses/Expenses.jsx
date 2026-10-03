@@ -14,6 +14,7 @@ import { hasPerm } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
 import Icon from '../../components/ui/Icon'
 import CheckedStamp from '../../components/ui/CheckedStamp'
+import EnteredMark from '../../components/ui/EnteredMark'
 import { T, CARD, FIELD_SEARCH, ON, OFF, BTN, STATUS_RAIL } from '../../lib/ui'
 import EventDatePicker from '../../components/ui/EventDatePicker'
 import { deptInk } from '../../lib/ui'
@@ -189,7 +190,9 @@ function Expenses({ profile, masterMode, inAdmin, deepLinkExpense, onDeepLinkHan
   var hasExpenseApprove = hasPerm(profile?.permsNew, 'finance.expenses.approve')
   var showApproveTab = isAdmin || isAuditor || hasExpenseApprove
   var canMarkChecked = hasPerm(profile?.permsNew, 'finance.wallet.mark_checked')
+  var canMarkEntered = hasPerm(profile?.permsNew, 'finance.wallet.mark_entered')
   var [checkingExpId, setCheckingExpId] = useState(null)
+  var [enteringExpId, setEnteringExpId] = useState(null)
 
   useEffect(function () {
     var timer = setTimeout(function () { setExpSearchDebounced(expSearch) }, 400)
@@ -248,7 +251,7 @@ function Expenses({ profile, masterMode, inAdmin, deepLinkExpense, onDeepLinkHan
     if (!deepLinkExpense || !deepLinkExpense.id) return
     var cancelled = false
     supabase.from('expenses')
-      .select('id, user_id, batch_id, expense_type_id, expense_sub_type_id, amount_paise, tax_paise, description, status, expense_date, receipt_path, receipt_paths, created_at, rejection_reason, flag_reason, penalty_paise, penalized_at, deduction_type, vendor_name, travel_from, travel_to, travel_mode, metadata, event_id, deleted_at, checked_by, checked_at, payment_cash_paise, payment_credit_paise, payment_credit_cash_paise, payment_credit_bank_paise, cash_due_date, bank_due_date, expense_types(name, extra_fields), expense_sub_types(name, extra_fields), events(event_name, venue_name, function_date, pax), expense_allocations(' + ALLOC_COLS + ')')
+      .select('id, user_id, batch_id, expense_type_id, expense_sub_type_id, amount_paise, tax_paise, description, status, expense_date, receipt_path, receipt_paths, created_at, rejection_reason, flag_reason, penalty_paise, penalized_at, deduction_type, vendor_name, travel_from, travel_to, travel_mode, metadata, event_id, deleted_at, checked_by, checked_at, tally_entered_by, tally_entered_at, payment_cash_paise, payment_credit_paise, payment_credit_cash_paise, payment_credit_bank_paise, cash_due_date, bank_due_date, expense_types(name, extra_fields), expense_sub_types(name, extra_fields), events(event_name, venue_name, function_date, pax), expense_allocations(' + ALLOC_COLS + ')')
       .eq('id', deepLinkExpense.id).maybeSingle()
       .then(function (res) {
         if (cancelled) return
@@ -271,7 +274,7 @@ function Expenses({ profile, masterMode, inAdmin, deepLinkExpense, onDeepLinkHan
       : 'expense_allocations(' + ALLOC_COLS + ')'
 
     var query = supabase.from('expenses')
-      .select('id, user_id, batch_id, expense_type_id, expense_sub_type_id, amount_paise, tax_paise, description, status, expense_date, receipt_path, receipt_paths, created_at, rejection_reason, flag_reason, penalty_paise, penalized_at, penalized_by, reviewed_at, reviewed_by, acknowledged_at, acknowledged_by, deduction_type, vendor_name, travel_from, travel_to, travel_mode, metadata, event_id, deleted_at, checked_by, checked_at, payment_cash_paise, payment_credit_paise, payment_credit_cash_paise, payment_credit_bank_paise, cash_due_date, bank_due_date, expense_types(name), expense_sub_types(name, extra_fields), events(event_name, venue_name, function_date, pax), ' + allocEmbed)
+      .select('id, user_id, batch_id, expense_type_id, expense_sub_type_id, amount_paise, tax_paise, description, status, expense_date, receipt_path, receipt_paths, created_at, rejection_reason, flag_reason, penalty_paise, penalized_at, penalized_by, reviewed_at, reviewed_by, acknowledged_at, acknowledged_by, deduction_type, vendor_name, travel_from, travel_to, travel_mode, metadata, event_id, deleted_at, checked_by, checked_at, tally_entered_by, tally_entered_at, payment_cash_paise, payment_credit_paise, payment_credit_cash_paise, payment_credit_bank_paise, cash_due_date, bank_due_date, expense_types(name), expense_sub_types(name, extra_fields), events(event_name, venue_name, function_date, pax), ' + allocEmbed)
       .eq('user_id', profile.id)
       .is('deleted_at', null)
       // id as a tiebreaker: batch-submitted expenses share one created_at (same
@@ -326,7 +329,7 @@ function Expenses({ profile, masterMode, inAdmin, deepLinkExpense, onDeepLinkHan
       : 'expense_allocations(' + ALLOC_COLS + ')'
 
     var query = supabase.from('expenses')
-      .select('id, user_id, batch_id, expense_type_id, expense_sub_type_id, amount_paise, tax_paise, description, status, expense_date, receipt_path, receipt_paths, created_at, rejection_reason, flag_reason, penalty_paise, penalized_at, penalized_by, reviewed_at, reviewed_by, deduction_type, vendor_name, travel_from, travel_to, travel_mode, metadata, event_id, deleted_at, checked_by, checked_at, payment_cash_paise, payment_credit_paise, payment_credit_cash_paise, payment_credit_bank_paise, cash_due_date, bank_due_date, expense_types(name), expense_sub_types(name, extra_fields), events(event_name, venue_name, function_date, pax), ' + allocEmbed2)
+      .select('id, user_id, batch_id, expense_type_id, expense_sub_type_id, amount_paise, tax_paise, description, status, expense_date, receipt_path, receipt_paths, created_at, rejection_reason, flag_reason, penalty_paise, penalized_at, penalized_by, reviewed_at, reviewed_by, deduction_type, vendor_name, travel_from, travel_to, travel_mode, metadata, event_id, deleted_at, checked_by, checked_at, tally_entered_by, tally_entered_at, payment_cash_paise, payment_credit_paise, payment_credit_cash_paise, payment_credit_bank_paise, cash_due_date, bank_due_date, expense_types(name), expense_sub_types(name, extra_fields), events(event_name, venue_name, function_date, pax), ' + allocEmbed2)
       .neq('user_id', profile.id)
       .in('status', statuses)
       .is('deleted_at', null)
@@ -392,6 +395,24 @@ function Expenses({ profile, masterMode, inAdmin, deepLinkExpense, onDeepLinkHan
     setApprovalExpenses(patch)
   }
 
+  async function toggleExpenseEntered(exp) {
+    if (enteringExpId) return
+    setEnteringExpId(exp.id)
+    var { data, error } = await supabase.rpc('fn_toggle_expense_tally_entered', { p_expense_id: exp.id })
+    setEnteringExpId(null)
+    if (error) { alert('Could not update: ' + error.message); return }
+    var nowEntered = !!data
+    var patch = function (list) { return list.map(function (x) {
+      if (x.id !== exp.id) return x
+      return Object.assign({}, x, {
+        tally_entered_by: nowEntered ? profile.id : null,
+        tally_entered_at: nowEntered ? new Date().toISOString() : null,
+      })
+    }) }
+    setMyExpenses(patch)
+    setApprovalExpenses(patch)
+  }
+
   function openDetail(exp) {
     var returnTo = exp._fromApprove ? 'approve' : exp._fromAll ? 'all' : 'list'
     pushBack(function () { setView(returnTo); setDetailExp(null); setEditExp(null) })
@@ -420,7 +441,7 @@ function Expenses({ profile, masterMode, inAdmin, deepLinkExpense, onDeepLinkHan
 
     if (wasEditing && wasEditing.id) {
       var editedP = supabase.from('expenses')
-        .select('id, user_id, batch_id, expense_type_id, expense_sub_type_id, amount_paise, tax_paise, description, status, expense_date, receipt_path, receipt_paths, created_at, rejection_reason, flag_reason, penalty_paise, penalized_at, deduction_type, vendor_name, travel_from, travel_to, travel_mode, metadata, event_id, deleted_at, checked_by, checked_at, payment_cash_paise, payment_credit_paise, payment_credit_cash_paise, payment_credit_bank_paise, cash_due_date, bank_due_date, expense_types(name, extra_fields), expense_sub_types(name, extra_fields), events(event_name, venue_name, function_date, pax), expense_allocations(' + ALLOC_COLS + ')')
+        .select('id, user_id, batch_id, expense_type_id, expense_sub_type_id, amount_paise, tax_paise, description, status, expense_date, receipt_path, receipt_paths, created_at, rejection_reason, flag_reason, penalty_paise, penalized_at, deduction_type, vendor_name, travel_from, travel_to, travel_mode, metadata, event_id, deleted_at, checked_by, checked_at, tally_entered_by, tally_entered_at, payment_cash_paise, payment_credit_paise, payment_credit_cash_paise, payment_credit_bank_paise, cash_due_date, bank_due_date, expense_types(name, extra_fields), expense_sub_types(name, extra_fields), events(event_name, venue_name, function_date, pax), expense_allocations(' + ALLOC_COLS + ')')
         .eq('id', wasEditing.id)
         .maybeSingle()
       var results = await Promise.all([loadMyExpenses(false), loadApprovalExpenses(false), walletP, editedP])
@@ -1091,6 +1112,18 @@ function Expenses({ profile, masterMode, inAdmin, deepLinkExpense, onDeepLinkHan
                   <span className="block text-[14px] font-bold text-slate-900 tabular-nums tracking-[-0.01em]">
                     {formatPoints(exp.amount_paise)}
                   </span>
+                  {(exp.tally_entered_by || canMarkEntered) && (
+                    <span className="mt-1.5 flex justify-end" onClick={function (ev) { ev.stopPropagation() }}>
+                      <EnteredMark
+                        entered={!!exp.tally_entered_by}
+                        enteredAt={exp.tally_entered_at}
+                        canToggle={canMarkEntered}
+                        canUnenter={exp.tally_entered_by === profile?.id || isAdmin}
+                        busy={enteringExpId === exp.id}
+                        onToggle={function () { toggleExpenseEntered(exp) }}
+                      />
+                    </span>
+                  )}
                   {(exp.checked_by || canMarkChecked) && (
                     <span className="mt-1.5 flex justify-end" onClick={function (ev) { ev.stopPropagation() }}>
                       <CheckedStamp

@@ -14,6 +14,7 @@ import { useReferenceData } from '../../lib/referenceData.jsx'
 import PaymentProofThumbs from '../../components/ledger/PaymentProofThumbs'
 import { getReceiptUrl, isVoiceNotePath } from '../../lib/uploadHelper'
 import CheckedStamp from '../../components/ui/CheckedStamp'
+import EnteredMark from '../../components/ui/EnteredMark'
 
 // Every real cash/bank movement in the system, from whichever source recorded it:
 // money paid out (vendor payments/deductions, salary payments/adjustments, wallet-funded
@@ -204,6 +205,7 @@ function PaymentsLedger({ profile }) {
   var canView = hasPerm(permsNew, 'finance.payments')
   var isAdmin = hasPerm(permsNew, 'admin.dashboard')
   var canMarkChecked = hasPerm(permsNew, 'finance.wallet.mark_checked')
+  var canMarkEntered = hasPerm(permsNew, 'finance.wallet.mark_entered')
 
   // events.venue_name is a plain LMS-synced text field with no venue_id —
   // matching it against this app's own venues master by name is the only way
@@ -238,6 +240,7 @@ function PaymentsLedger({ profile }) {
   var [detailTarget, setDetailTarget] = useState(null) // { row, event, collectorName, loading } — vendor/salary/collection rows
   var [enlargedImg, setEnlargedImg] = useState(null)
   var [checkingKey, setCheckingKey] = useState(null)
+  var [enteringKey, setEnteringKey] = useState(null)
   var { openExpenseDetail, expenseDetailModal } = useExpenseDetailModal(profile, isAdmin, function () { load() })
 
   async function load() {
@@ -247,7 +250,7 @@ function PaymentsLedger({ profile }) {
     var [ledgerRes, collectRes, expWalletRes] = await Promise.all([
       supabase
         .from('ledger_entries')
-        .select('id, ledger_type, party_id, entry_date, created_at, description, debit_paise, ref_id, ref_type, metadata, created_by, checked_by, checked_at')
+        .select('id, ledger_type, party_id, entry_date, created_at, description, debit_paise, ref_id, ref_type, metadata, created_by, checked_by, checked_at, tally_entered_by, tally_entered_at')
         .in('ledger_type', ['vendor', 'user_salary'])
         .in('ref_type', ['vendor_payment', 'vendor_deduction', 'salary_payment', 'salary_adjustment'])
         // Was a .filter() on the result: every row came over the wire and the
@@ -261,7 +264,7 @@ function PaymentsLedger({ profile }) {
         .limit(1000),
       supabase
         .from('wallet_transactions')
-        .select('id, created_at, amount_paise, description, payment_mode, receipt_no, reference_id, performed_by, status, received_image_path, checked_by, checked_at')
+        .select('id, created_at, amount_paise, description, payment_mode, receipt_no, reference_id, performed_by, status, received_image_path, checked_by, checked_at, tally_entered_by, tally_entered_at')
         .eq('reference_type', 'collection')
         .not('payment_mode', 'is', null)
         .neq('status', 'cancelled')
@@ -336,7 +339,7 @@ function PaymentsLedger({ profile }) {
       collectIds.length > 0 ? supabase.from('extra_plate_collections').select('id, event_id, wallet_tx_id, extras_charged, plates_returned, discount_paise, events(id, event_name, client_name, function_date, venue_name, session)').in('wallet_tx_id', collectIds) : Promise.resolve({ data: [] }),
       profileIds.length > 0 ? supabase.from('profiles').select('id, name').in('id', profileIds) : Promise.resolve({ data: [] }),
       candidateEventIds.length > 0 ? supabase.from('events').select('id, event_name, client_name, function_date, venue_name, session').in('id', candidateEventIds) : Promise.resolve({ data: [] }),
-      expenseIdsForCheck.length > 0 ? supabase.from('expenses').select('id, checked_by, checked_at').in('id', expenseIdsForCheck) : Promise.resolve({ data: [] }),
+      expenseIdsForCheck.length > 0 ? supabase.from('expenses').select('id, checked_by, checked_at, tally_entered_by, tally_entered_at').in('id', expenseIdsForCheck) : Promise.resolve({ data: [] }),
     ])
 
     var vendorNames = {}; (vRes.data || []).forEach(function (v) { vendorNames[v.id] = v.name })
@@ -351,9 +354,9 @@ function PaymentsLedger({ profile }) {
     // profiles fetch above.
     var checkedByIds = []
     function wantCheckerName(id) { if (id && profileNames[id] == null && checkedByIds.indexOf(id) === -1) checkedByIds.push(id) }
-    ledgerRows.forEach(function (r) { wantCheckerName(r.checked_by) })
-    collectRows.forEach(function (w) { wantCheckerName(w.checked_by) })
-    Object.keys(expCheckById).forEach(function (id) { wantCheckerName(expCheckById[id].checked_by) })
+    ledgerRows.forEach(function (r) { wantCheckerName(r.checked_by); wantCheckerName(r.tally_entered_by) })
+    collectRows.forEach(function (w) { wantCheckerName(w.checked_by); wantCheckerName(w.tally_entered_by) })
+    Object.keys(expCheckById).forEach(function (id) { wantCheckerName(expCheckById[id].checked_by); wantCheckerName(expCheckById[id].tally_entered_by) })
     if (checkedByIds.length > 0) {
       var checkerRes = await supabase.from('profiles').select('id, name').in('id', checkedByIds)
       ;(checkerRes.data || []).forEach(function (p) { profileNames[p.id] = p.name })
@@ -395,6 +398,9 @@ function PaymentsLedger({ profile }) {
         checked_by: r.checked_by,
         checked_at: r.checked_at,
         _checkedByName: (r.checked_by && profileNames[r.checked_by]) || null,
+        tally_entered_by: r.tally_entered_by,
+        tally_entered_at: r.tally_entered_at,
+        _enteredByName: (r.tally_entered_by && profileNames[r.tally_entered_by]) || null,
         _checkId: r.id,
       })
     })
@@ -430,6 +436,9 @@ function PaymentsLedger({ profile }) {
         checked_by: w.checked_by,
         checked_at: w.checked_at,
         _checkedByName: (w.checked_by && profileNames[w.checked_by]) || null,
+        tally_entered_by: w.tally_entered_by,
+        tally_entered_at: w.tally_entered_at,
+        _enteredByName: (w.tally_entered_by && profileNames[w.tally_entered_by]) || null,
         _checkId: w.id,
       })
     })
@@ -459,6 +468,9 @@ function PaymentsLedger({ profile }) {
         checked_by: expChecked ? expChecked.checked_by : null,
         checked_at: expChecked ? expChecked.checked_at : null,
         _checkedByName: (expChecked && expChecked.checked_by && profileNames[expChecked.checked_by]) || null,
+        tally_entered_by: expChecked ? expChecked.tally_entered_by : null,
+        tally_entered_at: expChecked ? expChecked.tally_entered_at : null,
+        _enteredByName: (expChecked && expChecked.tally_entered_by && profileNames[expChecked.tally_entered_by]) || null,
         _checkId: expId,
       })
     })
@@ -485,6 +497,22 @@ function PaymentsLedger({ profile }) {
     var params = {}; params[paramName] = row._checkId
     var { error } = await supabase.rpc(rpcName, params)
     setCheckingKey(null)
+    if (error) { alert('Could not update: ' + error.message); return }
+    load()
+  }
+
+  async function toggleEntered(row) {
+    if (enteringKey || !row._checkId) return
+    setEnteringKey(row.key)
+    var rpcName = row.source === 'collection' ? 'fn_toggle_wallet_tally_entered'
+      : row.source === 'expense' ? 'fn_toggle_expense_tally_entered'
+      : 'fn_toggle_ledger_tally_entered'
+    var paramName = row.source === 'collection' ? 'p_transaction_id'
+      : row.source === 'expense' ? 'p_expense_id'
+      : 'p_entry_id'
+    var params = {}; params[paramName] = row._checkId
+    var { error } = await supabase.rpc(rpcName, params)
+    setEnteringKey(null)
     if (error) { alert('Could not update: ' + error.message); return }
     load()
   }
@@ -939,7 +967,16 @@ function PaymentsLedger({ profile }) {
                         {timeOf(r.logged_at) && <span className="inline-flex items-center gap-1"><Icon name="clock" size={12} className="text-slate-400" />{timeOf(r.logged_at)}</span>}
                         {who && <span className="inline-flex items-center gap-1 min-w-0"><Icon name="user" size={12} className="text-slate-400" /><span className="truncate">{who}</span></span>}
                       </p>
-                      <span className="shrink-0" onClick={function (ev) { ev.stopPropagation() }}>
+                      <span className="shrink-0 flex items-center gap-1.5" onClick={function (ev) { ev.stopPropagation() }}>
+                        <EnteredMark
+                          entered={!!r.tally_entered_by}
+                          enteredByName={r._enteredByName}
+                          enteredAt={r.tally_entered_at}
+                          canToggle={canMarkEntered}
+                          canUnenter={r.tally_entered_by === profile.id || isAdmin}
+                          busy={enteringKey === r.key}
+                          onToggle={function () { toggleEntered(r) }}
+                        />
                         <CheckedStamp
                           variant="stamp"
                           compact
@@ -1111,16 +1148,27 @@ function PaymentsLedger({ profile }) {
                       </td>
 
                       <td className="px-3 py-2.5 align-top text-right whitespace-nowrap" onClick={function (ev) { ev.stopPropagation() }}>
-                        <CheckedStamp
-                          variant="stamp"
-                          checked={!!r.checked_by}
-                          checkerName={r._checkedByName}
-                          checkedAt={r.checked_at}
-                          canToggle={canMarkChecked}
-                          canUncheck={r.checked_by === profile.id || isAdmin}
-                          busy={checkingKey === r.key}
-                          onToggle={function () { toggleChecked(r) }}
-                        />
+                        <span className="inline-flex items-center gap-2">
+                          <EnteredMark
+                            entered={!!r.tally_entered_by}
+                            enteredByName={r._enteredByName}
+                            enteredAt={r.tally_entered_at}
+                            canToggle={canMarkEntered}
+                            canUnenter={r.tally_entered_by === profile.id || isAdmin}
+                            busy={enteringKey === r.key}
+                            onToggle={function () { toggleEntered(r) }}
+                          />
+                          <CheckedStamp
+                            variant="stamp"
+                            checked={!!r.checked_by}
+                            checkerName={r._checkedByName}
+                            checkedAt={r.checked_at}
+                            canToggle={canMarkChecked}
+                            canUncheck={r.checked_by === profile.id || isAdmin}
+                            busy={checkingKey === r.key}
+                            onToggle={function () { toggleChecked(r) }}
+                          />
+                        </span>
                       </td>
                     </tr>
                   )

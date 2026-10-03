@@ -106,6 +106,8 @@ export var PERM_GROUPS = [
         { key: 'finance.wallet.admin', label: 'Manage all wallets (cross-user)' },
         { key: 'finance.wallet.mark_checked', label: 'Mark entries as checked',
           note: 'Also applies to vendor/salary ledger entries (Vendor Ledger, Salary Ledger, Payments), not just Wallet' },
+        { key: 'finance.wallet.mark_entered', label: 'Mark entries as entered in Tally',
+          note: 'A separate mark from Checked, same surfaces — for bookkeeping entry into Tally rather than finance review' },
         { key: 'finance.wallet.cancel_transfer', label: 'Cancel/reject transfers',
           note: 'Admins can always do this regardless of this toggle; this grants it to a non-admin without full wallet admin access' },
       ] },

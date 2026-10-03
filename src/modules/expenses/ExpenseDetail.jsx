@@ -9,6 +9,7 @@ import { useReferenceData } from '../../lib/referenceData.jsx'
 import VoiceInput from '../../components/ui/VoiceInput'
 import Icon from '../../components/ui/Icon'
 import CheckedStamp from '../../components/ui/CheckedStamp'
+import EnteredMark from '../../components/ui/EnteredMark'
 import ReverseDialog from '../../components/ui/ReverseDialog'
 
 // Label left, value right, hairline between. A py-2 row plus a divider costs
@@ -94,6 +95,8 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
   // row they all read, not a copy tied to whichever ledger rendered it.
   var [checkedByName, setCheckedByName] = useState('')
   var [checkBusy, setCheckBusy] = useState(false)
+  var [enteredByName, setEnteredByName] = useState('')
+  var [enterBusy, setEnterBusy] = useState(false)
 
   useEffect(function () {
     setCheckedByName('')
@@ -105,11 +108,30 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
     return function () { cancelled = true }
   }, [exp.checked_by])
 
+  useEffect(function () {
+    setEnteredByName('')
+    if (!exp.tally_entered_by) return
+    var cancelled = false
+    supabase.from('profiles').select('name').eq('id', exp.tally_entered_by).maybeSingle().then(function (res) {
+      if (!cancelled) setEnteredByName((res.data && res.data.name) || '')
+    })
+    return function () { cancelled = true }
+  }, [exp.tally_entered_by])
+
   async function toggleChecked() {
     if (checkBusy) return
     setCheckBusy(true)
     var { error } = await supabase.rpc('fn_toggle_expense_check', { p_expense_id: exp.id })
     setCheckBusy(false)
+    if (error) { alert('Could not update: ' + error.message); return }
+    if (onUpdated) onUpdated()
+  }
+
+  async function toggleEntered() {
+    if (enterBusy) return
+    setEnterBusy(true)
+    var { error } = await supabase.rpc('fn_toggle_expense_tally_entered', { p_expense_id: exp.id })
+    setEnterBusy(false)
     if (error) { alert('Could not update: ' + error.message); return }
     if (onUpdated) onUpdated()
   }
@@ -218,6 +240,7 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
   var canEdit = !isDeleted && exp.user_id === profile?.id && (exp.status === 'recorded' || exp.status === 'flagged')
   var canResubmit = !isDeleted && exp.user_id === profile?.id && exp.status === 'flagged'
   var canMarkChecked = hasPerm(profile?.permsNew, 'finance.wallet.mark_checked')
+  var canMarkEntered = hasPerm(profile?.permsNew, 'finance.wallet.mark_entered')
   // GV rules:
   //  • recorded / flagged / deducted → admin OR anyone with finance_gv permission
   //  • acknowledged → admin OR auditor only (finance_gv perm not enough — locks stricter after ack)
@@ -598,18 +621,31 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
           decision buttons filled the other side — and the one thing that says
           this bill has already been through finance was a 22px chip at the far
           end of the column you were not looking at. */}
-      {exp.checked_by && (
-        <div className="hidden @3xl:flex justify-center pt-6">
-          <CheckedStamp
-            variant="stamp"
-            checked
-            checkerName={checkedByName}
-            checkedAt={exp.checked_at}
-            canToggle={canMarkChecked}
-            canUncheck={exp.checked_by === profile?.id || isAdmin || isAuditor}
-            busy={checkBusy}
-            onToggle={toggleChecked}
-          />
+      {(exp.checked_by || exp.tally_entered_by) && (
+        <div className="hidden @3xl:flex items-center justify-center gap-3 pt-6">
+          {exp.tally_entered_by && (
+            <EnteredMark
+              entered
+              enteredByName={enteredByName}
+              enteredAt={exp.tally_entered_at}
+              canToggle={canMarkEntered}
+              canUnenter={exp.tally_entered_by === profile?.id || isAdmin || isAuditor}
+              busy={enterBusy}
+              onToggle={toggleEntered}
+            />
+          )}
+          {exp.checked_by && (
+            <CheckedStamp
+              variant="stamp"
+              checked
+              checkerName={checkedByName}
+              checkedAt={exp.checked_at}
+              canToggle={canMarkChecked}
+              canUncheck={exp.checked_by === profile?.id || isAdmin || isAuditor}
+              busy={checkBusy}
+              onToggle={toggleChecked}
+            />
+          )}
         </div>
       )}
 
@@ -929,6 +965,21 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
       {/* Narrow, there is no blank column to put a stamp in, so the chip stays.
           Wide, the stamp is already drawn above and this row is just the
           prompt for a bill nobody has checked yet. */}
+      {(exp.tally_entered_by || canMarkEntered) && (
+        <div className={"items-center justify-between py-1 " + (exp.tally_entered_by ? "flex @3xl:hidden" : "flex")}>
+          <span className="text-[12px] font-medium text-slate-500">Entered in Tally</span>
+          <EnteredMark
+            entered={!!exp.tally_entered_by}
+            enteredByName={enteredByName}
+            enteredAt={exp.tally_entered_at}
+            canToggle={canMarkEntered}
+            canUnenter={exp.tally_entered_by === profile?.id || isAdmin || isAuditor}
+            busy={enterBusy}
+            onToggle={toggleEntered}
+          />
+        </div>
+      )}
+
       {(exp.checked_by || canMarkChecked) && (
         <div className={"items-center justify-between py-1 " + (exp.checked_by ? "flex @3xl:hidden" : "flex")}>
           <span className="text-[12px] font-medium text-slate-500">Finance check</span>

@@ -12,6 +12,7 @@ import SearchField from '../../components/ui/SearchField'
 import Icon, { glyphForLabel } from '../../components/ui/Icon'
 import ledgerBg from '../../assets/ledger-bg.webp'
 import CheckedStamp from '../../components/ui/CheckedStamp'
+import EnteredMark from '../../components/ui/EnteredMark'
 import BottomSheet from '../../components/ui/BottomSheet'
 
 var STATUS_LABELS = { recorded: 'Recorded', flagged: 'Resubmit', acknowledged: 'Acknowledged', deducted: 'Deducted' }
@@ -296,7 +297,9 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
   var isAdmin = hasPerm(profile?.permsNew, 'finance.ledgers.expense')
   var isSysAdmin = hasPerm(profile?.permsNew, 'admin.dashboard')
   var canMarkChecked = hasPerm(profile?.permsNew, 'finance.wallet.mark_checked')
+  var canMarkEntered = hasPerm(profile?.permsNew, 'finance.wallet.mark_entered')
   var [checkingExpId, setCheckingExpId] = useState(null)
+  var [enteringExpId, setEnteringExpId] = useState(null)
   // 'finance.ledgers.expense' is the one permission that both opens this
   // screen and (previously) stood in for "isAdmin" here, so every user who
   // could see the page at all also tripped the admin bypass and no scoping
@@ -719,7 +722,7 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
     var metaMap = {}
     if (rows.length > 0) {
       var eIds = Array.from(new Set(rows.map(function (r) { return r.expense_id }).filter(function (v) { return v != null })))
-      var cols = 'id, checked_by, checked_at' + (extraFields.length > 0 ? ', metadata' : '')
+      var cols = 'id, checked_by, checked_at, tally_entered_by, tally_entered_at' + (extraFields.length > 0 ? ', metadata' : '')
       var expRes = await supabase.from('expenses').select(cols).in('id', eIds)
       if (!current()) return
       var checkMap = {}
@@ -729,7 +732,10 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
       })
       rows = rows.map(function (r) {
         var c = checkMap[r.expense_id]
-        return Object.assign({}, r, { _checkedBy: c ? c.checked_by : null, _checkedAt: c ? c.checked_at : null })
+        return Object.assign({}, r, {
+          _checkedBy: c ? c.checked_by : null, _checkedAt: c ? c.checked_at : null,
+          _enteredBy: c ? c.tally_entered_by : null, _enteredAt: c ? c.tally_entered_at : null,
+        })
       })
     }
 
@@ -814,6 +820,22 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
       return Object.assign({}, r, {
         _checkedBy: nowChecked ? profile.id : null,
         _checkedAt: nowChecked ? new Date().toISOString() : null,
+      })
+    }) })
+  }
+
+  async function toggleExpenseEntered(expenseId) {
+    if (enteringExpId) return
+    setEnteringExpId(expenseId)
+    var { data, error } = await supabase.rpc('fn_toggle_expense_tally_entered', { p_expense_id: expenseId })
+    setEnteringExpId(null)
+    if (error) { alert('Could not update: ' + error.message); return }
+    var nowEntered = !!data
+    setDrillRows(function (prev) { return prev.map(function (r) {
+      if (r.expense_id !== expenseId) return r
+      return Object.assign({}, r, {
+        _enteredBy: nowEntered ? profile.id : null,
+        _enteredAt: nowEntered ? new Date().toISOString() : null,
       })
     }) })
   }
@@ -1265,6 +1287,7 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
   if (drillGroup) {
     // Whether this list needs a column for the stamp at all.
     var anyDrillChecked = drillRows.some(function (r) { return !!r._checkedBy })
+    var anyDrillEntered = drillRows.some(function (r) { return !!r._enteredBy })
     return (
       <div className="space-y-4">
         <LedgerBackdrop inAdmin={inAdmin} />
@@ -1516,6 +1539,19 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
                           stamp will occupy, rather than up among the status
                           chips where it read as one more label. Nothing is
                           drawn for someone who cannot mark a row. */}
+                      {(anyDrillEntered || canMarkEntered) && (
+                        <span className="flex items-center justify-center"
+                          onClick={function (ev) { ev.stopPropagation() }}>
+                          <EnteredMark
+                            entered={!!r._enteredBy}
+                            enteredAt={r._enteredAt}
+                            canToggle={canMarkEntered}
+                            canUnenter={r._enteredBy === profile?.id || isSysAdmin}
+                            busy={enteringExpId === r.expense_id}
+                            onToggle={function () { toggleExpenseEntered(r.expense_id) }}
+                          />
+                        </span>
+                      )}
                       {(anyDrillChecked || canMarkChecked) && (
                         <span className="flex items-center justify-center"
                           onClick={function (ev) { ev.stopPropagation() }}>

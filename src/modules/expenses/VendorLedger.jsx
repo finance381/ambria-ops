@@ -18,6 +18,7 @@ import { hasPerm } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
 import SearchField from '../../components/ui/SearchField'
 import CheckedStamp from '../../components/ui/CheckedStamp'
+import EnteredMark from '../../components/ui/EnteredMark'
 import Icon from '../../components/ui/Icon'
 import EventDatePicker from '../../components/ui/EventDatePicker'
 import vendorBg from '../../assets/vendor-bg.webp'
@@ -61,6 +62,11 @@ function isExpenseEntry(e) {
 function entryIsChecked(e) {
   if (e.deleted_at) return false
   return isExpenseEntry(e) && e._expChecked ? !!e._expChecked.checked_by : !!e.checked_by
+}
+
+function entryIsEntered(e) {
+  if (e.deleted_at) return false
+  return isExpenseEntry(e) && e._expChecked ? !!e._expChecked.tally_entered_by : !!e.tally_entered_by
 }
 
 function searchKey(s) {
@@ -598,7 +604,9 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
   var isAdmin = hasPerm(permsNew, 'admin.dashboard')
   var canView = isAdmin || hasPerm(permsNew, 'finance.ledgers.vendor')
   var canMarkChecked = hasPerm(permsNew, 'finance.wallet.mark_checked')
+  var canMarkEntered = hasPerm(permsNew, 'finance.wallet.mark_entered')
   var [checkingEntryId, setCheckingEntryId] = useState(null)
+  var [enteringEntryId, setEnteringEntryId] = useState(null)
   // Same permission that gates the whole Vendors module — merging is a
   // vendor-master-data operation, so it rides the same access rather than
   // introducing a separate key.
@@ -871,11 +879,12 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
     rows.forEach(function (r) {
       if (r.created_by && entryProfileIds.indexOf(r.created_by) === -1) entryProfileIds.push(r.created_by)
       if (r.checked_by && entryProfileIds.indexOf(r.checked_by) === -1) entryProfileIds.push(r.checked_by)
+      if (r.tally_entered_by && entryProfileIds.indexOf(r.tally_entered_by) === -1) entryProfileIds.push(r.tally_entered_by)
     })
 
     var expsP = expIds.length > 0
       ? supabase.from('expenses')
-        .select('id, receipt_paths, receipt_path, amount_paise, tax_paise, user_id, acknowledged_by, checked_by, checked_at, expense_allocations(department, department_id, venue_id, amount_paise, remarks, expense_type_id, expense_sub_type_id)')
+        .select('id, receipt_paths, receipt_path, amount_paise, tax_paise, user_id, acknowledged_by, checked_by, checked_at, tally_entered_by, tally_entered_at, expense_allocations(department, department_id, venue_id, amount_paise, remarks, expense_type_id, expense_sub_type_id)')
         .in('id', expIds)
       : Promise.resolve({ data: [] })
     var namesP = entryProfileIds.length > 0
@@ -903,7 +912,7 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
           tax_paise: ex.tax_paise || 0,
           allocations: ex.expense_allocations || []
         }
-        expCheckByExpId[ex.id] = { checked_by: ex.checked_by, checked_at: ex.checked_at }
+        expCheckByExpId[ex.id] = { checked_by: ex.checked_by, checked_at: ex.checked_at, tally_entered_by: ex.tally_entered_by, tally_entered_at: ex.tally_entered_at }
         if (ex.user_id) submitterIdByExpId[ex.id] = ex.user_id
         if (ex.acknowledged_by) acknowledgerIdByExpId[ex.id] = ex.acknowledged_by
       })
@@ -933,7 +942,7 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
     }
     Object.keys(submitterIdByExpId).forEach(function (eid) { wantName(submitterIdByExpId[eid]) })
     Object.keys(acknowledgerIdByExpId).forEach(function (eid) { wantName(acknowledgerIdByExpId[eid]) })
-    Object.keys(expCheckByExpId).forEach(function (eid) { wantName(expCheckByExpId[eid].checked_by) })
+    Object.keys(expCheckByExpId).forEach(function (eid) { wantName(expCheckByExpId[eid].checked_by); wantName(expCheckByExpId[eid].tally_entered_by) })
     if (extraIds.length > 0) {
       var { data: pRows } = await supabase.from('profiles').select('id, name').in('id', extraIds)
       ;(pRows || []).forEach(function (p) { profileNameById[p.id] = p.name || null })
@@ -943,6 +952,7 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
       var patch = {}
       if (r.created_by && profileNameById[r.created_by]) patch._creatorName = profileNameById[r.created_by]
       if (r.checked_by && profileNameById[r.checked_by]) patch._checkedByName = profileNameById[r.checked_by]
+      if (r.tally_entered_by && profileNameById[r.tally_entered_by]) patch._enteredByName = profileNameById[r.tally_entered_by]
       if (r.ref_type === 'expense' && r.ref_id) {
         var id = Number(r.ref_id)
         if (receiptsByExpId[id]) patch._sourceReceipts = receiptsByExpId[id]
@@ -957,6 +967,7 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
         if (expCheckByExpId[id]) {
           patch._expChecked = expCheckByExpId[id]
           patch._expCheckedByName = expCheckByExpId[id].checked_by ? (profileNameById[expCheckByExpId[id].checked_by] || null) : null
+          patch._expEnteredByName = expCheckByExpId[id].tally_entered_by ? (profileNameById[expCheckByExpId[id].tally_entered_by] || null) : null
         }
       }
       if (Object.keys(patch).length > 0) return Object.assign({}, r, patch)
@@ -1086,6 +1097,24 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
     setCheckingEntryId(expenseId)
     var { error } = await supabase.rpc('fn_toggle_expense_check', { p_expense_id: expenseId })
     setCheckingEntryId(null)
+    if (error) { alert('Could not update: ' + error.message); return }
+    if (selectedVendor) await loadEntries(selectedVendor, showDeleted)
+  }
+
+  async function toggleLedgerEntered(entryId) {
+    if (enteringEntryId) return
+    setEnteringEntryId(entryId)
+    var { error } = await supabase.rpc('fn_toggle_ledger_tally_entered', { p_entry_id: entryId })
+    setEnteringEntryId(null)
+    if (error) { alert('Could not update: ' + error.message); return }
+    if (selectedVendor) await loadEntries(selectedVendor, showDeleted)
+  }
+
+  async function toggleExpenseEntered(expenseId) {
+    if (enteringEntryId) return
+    setEnteringEntryId(expenseId)
+    var { error } = await supabase.rpc('fn_toggle_expense_tally_entered', { p_expense_id: expenseId })
+    setEnteringEntryId(null)
     if (error) { alert('Could not update: ' + error.message); return }
     if (selectedVendor) await loadEntries(selectedVendor, showDeleted)
   }
@@ -1887,6 +1916,7 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
   // its rule left, so down a list the rules and the figures beside them came
   // out ragged. The column is reserved on every row once any row has one.
   var anyEntryChecked = visibleEntries.some(entryIsChecked)
+  var anyEntryEntered = visibleEntries.some(entryIsEntered)
 
   var currentBalance = running
 
@@ -2165,6 +2195,37 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
                   canUncheck={checkedProps.canUncheck}
                   busy={checkedProps.busy}
                   onToggle={checkedProps.onToggle}
+                />
+              )
+            }
+
+            var enteredProps = isExpRow && e._expChecked
+              ? {
+                entered: !!e._expChecked.tally_entered_by,
+                enteredByName: e._expEnteredByName,
+                enteredAt: e._expChecked.tally_entered_at,
+                canUnenter: e._expChecked.tally_entered_by === profile.id || isAdmin,
+                busy: enteringEntryId === Number(e.ref_id),
+                onToggle: function (ev) { ev.stopPropagation(); toggleExpenseEntered(Number(e.ref_id)) },
+              }
+              : {
+                entered: !!e.tally_entered_by,
+                enteredByName: e._enteredByName,
+                enteredAt: e.tally_entered_at,
+                canUnenter: e.tally_entered_by === profile.id || isAdmin,
+                busy: enteringEntryId === e.id,
+                onToggle: function (ev) { ev.stopPropagation(); toggleLedgerEntered(e.id) },
+              }
+            function renderEntered() {
+              return (
+                <EnteredMark
+                  entered={enteredProps.entered}
+                  enteredByName={enteredProps.enteredByName}
+                  enteredAt={enteredProps.enteredAt}
+                  canToggle={canMarkEntered}
+                  canUnenter={enteredProps.canUnenter}
+                  busy={enteredProps.busy}
+                  onToggle={enteredProps.onToggle}
                 />
               )
             }
@@ -2452,6 +2513,12 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
                     is no rule and no column, and 128px of reserved width on a
                     298px card is a third of it held for something most rows
                     do not have. */}
+                {(anyEntryEntered || canMarkEntered) && !isDeleted && (
+                  <span className="shrink-0 self-center flex items-center justify-center"
+                    onClick={function (ev) { ev.stopPropagation() }}>
+                    {renderEntered()}
+                  </span>
+                )}
                 {(anyEntryChecked || canMarkChecked) && !isDeleted && (
                   <span className="shrink-0 sm:w-[128px] self-center flex items-center justify-center"
                     onClick={function (ev) { ev.stopPropagation() }}>

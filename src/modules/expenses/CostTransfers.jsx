@@ -12,6 +12,7 @@ import SearchField from '../../components/ui/SearchField'
 import EventDatePicker from '../../components/ui/EventDatePicker'
 import Icon from '../../components/ui/Icon'
 import CheckedStamp from '../../components/ui/CheckedStamp'
+import EnteredMark from '../../components/ui/EnteredMark'
 import CameraCapture from '../../components/ui/CameraCapture'
 import { useAudioRecorder } from '../../hooks/useAudioRecorder'
 import { getReceiptUrl, isVoiceNotePath } from '../../lib/uploadHelper'
@@ -95,7 +96,9 @@ function CostTransfers({ profile, inAdmin }) {
   var canCreate = hasPerm(profile?.permsNew, 'finance.cost_transfers')
   var isAdmin = hasPerm(profile?.permsNew, 'admin.dashboard')
   var canMarkChecked = hasPerm(profile?.permsNew, 'finance.wallet.mark_checked')
+  var canMarkEntered = hasPerm(profile?.permsNew, 'finance.wallet.mark_entered')
   var [checkingTransferId, setCheckingTransferId] = useState(null)
+  var [enteringTransferId, setEnteringTransferId] = useState(null)
   var [transfers, setTransfers] = useState([])
   var [loading, setLoading] = useState(true)
   // A refetch after the first keeps the rows on screen, dimmed, instead of
@@ -621,6 +624,22 @@ function CostTransfers({ profile, inAdmin }) {
     }) })
   }
 
+  async function toggleTransferEntered(t) {
+    if (enteringTransferId) return
+    setEnteringTransferId(t.id)
+    var { data, error } = await supabase.rpc('fn_toggle_cost_transfer_tally_entered', { p_id: t.id })
+    setEnteringTransferId(null)
+    if (error) { setError(error.message || 'Could not update'); return }
+    var nowEntered = !!data
+    setTransfers(function (prev) { return prev.map(function (x) {
+      if (x.id !== t.id) return x
+      return Object.assign({}, x, {
+        tally_entered_by: nowEntered ? profile.id : null,
+        tally_entered_at: nowEntered ? new Date().toISOString() : null,
+      })
+    }) })
+  }
+
   function toggleBatch(batchId) {
     setExpandedBatches(function (p) { return Object.assign({}, p, { [batchId]: !p[batchId] }) })
   }
@@ -738,6 +757,18 @@ function CostTransfers({ profile, inAdmin }) {
             <span className="font-semibold text-slate-500">Rs</span>{' '}
             <span className={"font-bold " + (isReversed ? "" : "text-slate-900")}>{(r.amount_paise / 100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
           </span>
+          {(canMarkEntered || r.tally_entered_by) && (
+            <span className="mt-1.5 flex" onClick={function (ev) { ev.stopPropagation() }}>
+              <EnteredMark
+                entered={!!r.tally_entered_by}
+                enteredAt={r.tally_entered_at}
+                canToggle={canMarkEntered}
+                canUnenter={r.tally_entered_by === profile?.id || isAdmin}
+                busy={enteringTransferId === r.id}
+                onToggle={function () { toggleTransferEntered(r) }}
+              />
+            </span>
+          )}
           {(canMarkChecked || r.checked_by) && (
             <span className="mt-1.5 flex" onClick={function (ev) { ev.stopPropagation() }}>
               <CheckedStamp
@@ -842,19 +873,29 @@ function CostTransfers({ profile, inAdmin }) {
                 <span className="font-semibold text-slate-500">Rs</span>{' '}
                 <span className="font-bold text-slate-900">{(r.amount_paise / 100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
               </p>
-              {(canMarkChecked || r.checked_by) && (
-                <span className="absolute right-0 top-full mt-2.5 w-[104px] h-[22px] z-10" onClick={function (ev) { ev.stopPropagation() }}>
-                  <span className="absolute right-0 top-0 z-10">
-                  <CheckedStamp
-                    variant="stamp" compact
-                    checked={!!r.checked_by}
-                    checkedAt={r.checked_at}
-                    canToggle={canMarkChecked}
-                    canUncheck={r.checked_by === profile?.id || isAdmin}
-                    busy={checkingTransferId === r.id}
-                    onToggle={function () { toggleTransferCheck(r) }}
-                  />
-                  </span>
+              {((canMarkChecked || r.checked_by) || (canMarkEntered || r.tally_entered_by)) && (
+                <span className="absolute right-0 top-full mt-2.5 flex items-center gap-1.5 z-10" onClick={function (ev) { ev.stopPropagation() }}>
+                  {(canMarkEntered || r.tally_entered_by) && (
+                    <EnteredMark
+                      entered={!!r.tally_entered_by}
+                      enteredAt={r.tally_entered_at}
+                      canToggle={canMarkEntered}
+                      canUnenter={r.tally_entered_by === profile?.id || isAdmin}
+                      busy={enteringTransferId === r.id}
+                      onToggle={function () { toggleTransferEntered(r) }}
+                    />
+                  )}
+                  {(canMarkChecked || r.checked_by) && (
+                    <CheckedStamp
+                      variant="stamp" compact
+                      checked={!!r.checked_by}
+                      checkedAt={r.checked_at}
+                      canToggle={canMarkChecked}
+                      canUncheck={r.checked_by === profile?.id || isAdmin}
+                      busy={checkingTransferId === r.id}
+                      onToggle={function () { toggleTransferCheck(r) }}
+                    />
+                  )}
                 </span>
               )}
             </div>
