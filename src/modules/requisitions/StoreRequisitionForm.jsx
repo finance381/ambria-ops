@@ -17,7 +17,7 @@ function emptyDeptRow(id) {
 
 function rupees(paise) { return '₹' + Math.round((paise || 0) / 100).toLocaleString('en-IN') }
 
-function StoreRequisitionForm({ profile, onDone, onCancel }) {
+function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
   var [dateFrom, setDateFrom] = useState('')
   var [dateTo, setDateTo] = useState('')
   var [contracts, setContracts] = useState([])
@@ -30,6 +30,7 @@ function StoreRequisitionForm({ profile, onDone, onCancel }) {
   var [deptRows, setDeptRows] = useState([emptyDeptRow(1)])
   var [nextRowId, setNextRowId] = useState(2)
   var [nextLineId, setNextLineId] = useState(1)
+  var [loadingExisting, setLoadingExisting] = useState(!!editId)
 
   var [saving, setSaving] = useState(false)
   var [error, setError] = useState('')
@@ -42,6 +43,54 @@ function StoreRequisitionForm({ profile, onDone, onCancel }) {
     supabase.from('casual_roster').select('id, department_id, sub_department_id, casual_type, rate_type, rate_paise').eq('is_active', true).order('casual_type')
       .then(function (res) { setCasualRoster(res.data || []) })
   }, [])
+
+  // Editing loads the saved dept rows/items/casuals back into the exact same
+  // shape handleSubmit already knows how to build a payload from, so edit
+  // and create share every line of submit logic below.
+  useEffect(function () {
+    if (!editId) return
+    setLoadingExisting(true)
+    Promise.all([
+      supabase.from('store_requisitions').select('date_from, date_to').eq('id', editId).single(),
+      supabase.from('store_requisition_dept_rows').select('id, department_id, sub_department_id, section, sort_order').eq('store_requisition_id', editId).order('sort_order'),
+    ]).then(function (res) {
+      var reqRow = res[0].data
+      var drRows = res[1].data || []
+      if (reqRow) { setDateFrom(reqRow.date_from); setDateTo(reqRow.date_to) }
+      var drIds = drRows.map(function (r) { return r.id })
+      if (drIds.length === 0) {
+        setDeptRows([emptyDeptRow(1)]); setNextRowId(2); setLoadingExisting(false); return
+      }
+      Promise.all([
+        supabase.from('store_requisition_items').select('*').in('dept_row_id', drIds),
+        supabase.from('store_requisition_casuals').select('*').in('dept_row_id', drIds),
+      ]).then(function (res2) {
+        var items = res2[0].data || []
+        var casuals = res2[1].data || []
+        var lineId = 1
+        var rowId = 1
+        var built = drRows.map(function (dr) {
+          var rowItems = items.filter(function (it) { return it.dept_row_id === dr.id }).map(function (it) {
+            return { id: lineId++, itemSource: it.item_source, itemId: it.item_id, name: it.item_name, unit: it.unit, qty: Number(it.qty), ratePaise: it.rate_paise }
+          })
+          var rowCasuals = casuals.filter(function (c) { return c.dept_row_id === dr.id }).map(function (c) {
+            return { id: lineId++, casualRosterId: c.casual_roster_id != null ? String(c.casual_roster_id) : '', qty: Number(c.qty) }
+          })
+          return {
+            id: rowId++,
+            departmentId: String(dr.department_id), subDepartmentId: String(dr.sub_department_id), section: dr.section || '',
+            showInventory: rowItems.length > 0, showCasual: rowCasuals.length > 0,
+            invSearch: '', invResults: [], invSearching: false,
+            inventoryRows: rowItems, casualRows: rowCasuals,
+          }
+        })
+        setDeptRows(built)
+        setNextRowId(rowId)
+        setNextLineId(lineId)
+        setLoadingExisting(false)
+      })
+    })
+  }, [editId])
 
   useEffect(function () {
     if (!dateFrom || !dateTo) { setContracts([]); return }
@@ -218,10 +267,12 @@ function StoreRequisitionForm({ profile, onDone, onCancel }) {
         }),
       }
     })
-    var res = await supabase.rpc('rpc_submit_store_requisition', { p_date_from: dateFrom, p_date_to: dateTo, p_dept_rows: payload })
+    var res = editId
+      ? await supabase.rpc('rpc_update_store_requisition', { p_id: editId, p_date_from: dateFrom, p_date_to: dateTo, p_dept_rows: payload })
+      : await supabase.rpc('rpc_submit_store_requisition', { p_date_from: dateFrom, p_date_to: dateTo, p_dept_rows: payload })
     setSaving(false)
     if (res.error) { setError(res.error.message); return }
-    try { await logActivity('STORE_REQUISITION_SUBMIT', dateFrom + ' to ' + dateTo + ' · ' + rupees(grandTotal)) } catch (_) {}
+    try { await logActivity(editId ? 'STORE_REQUISITION_EDIT' : 'STORE_REQUISITION_SUBMIT', dateFrom + ' to ' + dateTo + ' · ' + rupees(grandTotal)) } catch (_) {}
     if (onDone) onDone(res.data)
   }
 
@@ -233,13 +284,17 @@ function StoreRequisitionForm({ profile, onDone, onCancel }) {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-bold text-gray-900">New Store Requisition</h2>
+          <h2 className="text-lg font-bold text-gray-900">{editId ? 'Edit Store Requisition' : 'New Store Requisition'}</h2>
           <p className="text-xs text-gray-400">Record inventory and casual labour consumed between two dates.</p>
         </div>
         <button onClick={onCancel} className="px-3 py-2 text-sm font-semibold text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
       </div>
 
       {error && <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">{error}</div>}
+
+      {loadingExisting && <p className="text-gray-400 text-sm text-center py-8">Loading…</p>}
+
+      {!loadingExisting && <>
 
       <div className={CARD}>
         <p className="text-xs font-bold text-gray-400 uppercase tracking-wide">Period</p>
@@ -476,9 +531,11 @@ function StoreRequisitionForm({ profile, onDone, onCancel }) {
         </div>
         <button onClick={handleSubmit} disabled={!canSubmit || saving}
           className="px-5 py-2.5 text-sm font-bold text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 disabled:opacity-40 transition-colors">
-          {saving ? 'Submitting…' : 'Submit Requisition'}
+          {saving ? 'Saving…' : (editId ? 'Save Changes' : 'Submit Requisition')}
         </button>
       </div>
+
+      </>}
     </div>
   )
 }
