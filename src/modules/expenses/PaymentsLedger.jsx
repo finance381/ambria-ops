@@ -1002,15 +1002,14 @@ function PaymentsLedger({ profile }) {
                 jammed against their own edges. Proportions instead, so the
                 slack is shared out and every column's spare space reads as
                 padding rather than as a hole in one of them. */}
-            <table className="w-full min-w-[960px] table-fixed">
+            <table className="w-full min-w-[860px] table-fixed">
               <colgroup>
                 <col className="w-[3%]" />
                 <col className="w-[32%]" />
                 <col className="w-[18%]" />
                 <col className="w-[8%]" />
                 <col className="w-[14%]" />
-                <col className="w-[14%]" />
-                <col className="w-[11%]" />
+                <col className="w-[25%]" />
               </colgroup>
               <thead className="sticky top-0 z-10 bg-slate-50 border-y border-slate-200">
                 <tr>
@@ -1024,7 +1023,6 @@ function PaymentsLedger({ profile }) {
                     )
                   })}
                   <th className="px-3 py-2.5 text-right text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500 whitespace-nowrap">Amount (pts)</th>
-                  <th className="sticky right-0 z-[1] px-3 py-2.5 text-right text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500 whitespace-nowrap bg-slate-50 border-l border-slate-200 shadow-[-4px_0_6px_-4px_rgba(15,23,42,0.1)]">Checked</th>
                 </tr>
               </thead>
               <tbody>
@@ -1034,7 +1032,7 @@ function PaymentsLedger({ profile }) {
                   var who = r.recorded_by || r.collector_name || ''
                   return (
                     <tr key={r.key} onClick={function () { openRow(r) }}
-                      className="group border-b border-slate-100 last:border-b-0 cursor-pointer hover:bg-indigo-50/40 transition-colors">
+                      className="border-b border-slate-100 last:border-b-0 cursor-pointer hover:bg-indigo-50/40 transition-colors">
 
                       {/* Which way the money went, before you have read a word
                           of the row. The sign on the amount says the same thing
@@ -1142,33 +1140,36 @@ function PaymentsLedger({ profile }) {
                       </td>
 
                       <td className="px-3 py-2.5 align-top text-right whitespace-nowrap">
-                        <span data-notranslate className={'text-[14px] font-bold tabular-nums ' + (isIn ? 'text-emerald-700' : 'text-rose-700')}>
+                        <span data-notranslate className={'block text-[14px] font-bold tabular-nums ' + (isIn ? 'text-emerald-700' : 'text-rose-700')}>
                           {isIn ? '+ ' : '− '}{pts(r.amount_paise || 0)}
                         </span>
-                      </td>
-
-                      <td className="sticky right-0 z-[1] px-3 py-2.5 align-top text-right whitespace-nowrap bg-white group-hover:bg-indigo-50/40 border-l border-slate-100 shadow-[-4px_0_6px_-4px_rgba(15,23,42,0.1)] transition-colors" onClick={function (ev) { ev.stopPropagation() }}>
-                        <span className="inline-flex items-center gap-2">
-                          <EnteredMark
-                            entered={!!r.tally_entered_by}
-                            enteredByName={r._enteredByName}
-                            enteredAt={r.tally_entered_at}
-                            canToggle={canMarkEntered}
-                            canUnenter={r.tally_entered_by === profile.id || isAdmin}
-                            busy={enteringKey === r.key}
-                            onToggle={function () { toggleEntered(r) }}
-                          />
-                          <CheckedStamp
-                            variant="stamp"
-                            checked={!!r.checked_by}
-                            checkerName={r._checkedByName}
-                            checkedAt={r.checked_at}
-                            canToggle={canMarkChecked}
-                            canUncheck={r.checked_by === profile.id || isAdmin}
-                            busy={checkingKey === r.key}
-                            onToggle={function () { toggleChecked(r) }}
-                          />
-                        </span>
+                        {((canMarkEntered || r.tally_entered_by) || (canMarkChecked || r.checked_by)) && (
+                          <span className="mt-1.5 inline-flex items-center justify-end gap-2" onClick={function (ev) { ev.stopPropagation() }}>
+                            {(canMarkEntered || r.tally_entered_by) && (
+                              <EnteredMark
+                                entered={!!r.tally_entered_by}
+                                enteredByName={r._enteredByName}
+                                enteredAt={r.tally_entered_at}
+                                canToggle={canMarkEntered}
+                                canUnenter={r.tally_entered_by === profile.id || isAdmin}
+                                busy={enteringKey === r.key}
+                                onToggle={function () { toggleEntered(r) }}
+                              />
+                            )}
+                            {(canMarkChecked || r.checked_by) && (
+                              <CheckedStamp
+                                variant="stamp"
+                                checked={!!r.checked_by}
+                                checkerName={r._checkedByName}
+                                checkedAt={r.checked_at}
+                                canToggle={canMarkChecked}
+                                canUncheck={r.checked_by === profile.id || isAdmin}
+                                busy={checkingKey === r.key}
+                                onToggle={function () { toggleChecked(r) }}
+                              />
+                            )}
+                          </span>
+                        )}
                       </td>
                     </tr>
                   )
