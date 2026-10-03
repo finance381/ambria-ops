@@ -304,6 +304,10 @@ var TXN_SORTS = {
 // the ledger_entries row for that specific payment (proof images, deduction reason, etc.)
 var PAYMENT_REF_TYPES = ['vendor_payment', 'vendor_deduction', 'salary_payment', 'salary_adjustment']
 
+// A bank collection's specific receiving channel — distinct from the
+// cash/bank split, which is already its own field.
+var BANK_PAYMENT_TYPES = ['UPI', 'NEFT', 'HDFC Credit Card Machine', 'Paytm Credit Card Machine', 'Cheque']
+
 // expenses.status — mirrors Ledgers.jsx's drill-view badges so an expense's
 // acknowledgment state is visible here too, not just after drilling into the ledger.
 var EXP_STATUS_LABELS = { recorded: 'Recorded', flagged: 'Resubmit', acknowledged: 'Acknowledged', deducted: 'Deducted' }
@@ -469,6 +473,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     if (collectEventId) scrollToTopOf(collectBalanceRef.current)
   }, [collectEventId])
   var [collectMode, setCollectMode] = useState('')
+  var [collectBankPaymentType, setCollectBankPaymentType] = useState('')
   var [collectBalance, setCollectBalance] = useState(null)
   var [collectBalanceLoading, setCollectBalanceLoading] = useState(false)
   var [showActualCash, setShowActualCash] = useState(false)
@@ -795,7 +800,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
 
     try {
       var query = supabase.from('wallet_transactions')
-        .select('id, type, amount_paise, balance_after_paise, description, reference_type, reference_id, performed_by, created_at, issued_image_path, received_image_path, received_at, wallet_id, status, receipt_no, payment_mode, cancel_wallet_tx_id, cancelled_at, cancelled_by, cancelled_reason, checked_by, checked_at, tally_entered_by, tally_entered_at')
+        .select('id, type, amount_paise, balance_after_paise, description, reference_type, reference_id, performed_by, created_at, issued_image_path, received_image_path, received_at, wallet_id, status, receipt_no, payment_mode, bank_payment_type, cancel_wallet_tx_id, cancelled_at, cancelled_by, cancelled_reason, checked_by, checked_at, tally_entered_by, tally_entered_at')
         .eq('wallet_id', wid)
         .order('created_at', { ascending: false })
         .limit(500)
@@ -1246,6 +1251,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     setCollectEvents([])
     setCollectEventId('')
     setCollectMode('')
+    setCollectBankPaymentType('')
     setCollectBalance(null)
     setCollectAmount('')
     setCollectDesc('')
@@ -1631,7 +1637,10 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             </div>
             <div>
               <p className="text-[10px] uppercase text-gray-500">Payment</p>
-              <p className="font-medium text-gray-800">{t.payment_mode ? t.payment_mode.toUpperCase() : '—'}</p>
+              <p className="font-medium text-gray-800">
+                {t.payment_mode ? t.payment_mode.toUpperCase() : '—'}
+                {t.bank_payment_type ? ' · ' + t.bank_payment_type : ''}
+              </p>
             </div>
             {t.receipt_no && (
               <div>
@@ -1828,6 +1837,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     if (!collectMode) { alert('Select Cash or Bank'); return }
     if (!collectAmount || Number(collectAmount) <= 0) { alert('Enter amount'); return }
     if (collectMode === 'bank' && !collectImage) { alert('Receipt photo is required for bank collections'); return }
+    if (collectMode === 'bank' && !collectBankPaymentType) { alert('Select a payment type'); return }
     setCollectSaving(true)
     var amountRupees = Math.round(Number(collectAmount) * 100)
     var imagePath = null
@@ -1846,7 +1856,8 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
       p_payment_mode: collectMode,
       p_amount_paise: amountRupees,
       p_description: desc,
-      p_receipt_path: imagePath
+      p_receipt_path: imagePath,
+      p_bank_payment_type: collectMode === 'bank' ? collectBankPaymentType : null
     })
     if (error) { alert('Collection failed: ' + error.message); setCollectSaving(false); return }
     if (data && data.over_agreed) {
@@ -2349,7 +2360,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     var colCashP = collectBalance ? Number(collectBalance.collected_cash_paise || 0) : 0
     var colBankP = collectBalance ? Number(collectBalance.collected_bank_paise || 0) : 0
     var taxP = collectBalance ? Number(collectBalance.tax_amount_paise || 0) : 0
-    var canSubmit = collectEventId && collectMode && collectAmount && Number(collectAmount) > 0 && (collectMode === 'cash' || collectImage) && !collectSaving
+    var canSubmit = collectEventId && collectMode && collectAmount && Number(collectAmount) > 0 && (collectMode === 'cash' || collectImage) && (collectMode === 'cash' || collectBankPaymentType) && !collectSaving
     return (
       <BottomSheet open={true} onClose={function () { setCollectModal(false) }} title="Collect Payment">
         <div className="space-y-4">
@@ -2492,7 +2503,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             <div>
               <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] mb-2">3. Payment Mode</label>
               <div className="grid grid-cols-2 gap-2">
-                <button type="button" onClick={function () { setCollectMode('cash') }}
+                <button type="button" onClick={function () { setCollectMode('cash'); setCollectBankPaymentType('') }}
                   aria-pressed={collectMode === 'cash'}
                   className={"h-12 inline-flex items-center justify-center gap-2 rounded-xl border text-[14px] font-bold transition-colors " +
                     (collectMode === 'cash' ? "border-indigo-500 ring-1 ring-indigo-500 bg-indigo-50 text-indigo-900" : "border-slate-200 bg-white text-slate-600 hover:border-slate-300")}>
@@ -2510,9 +2521,21 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             </div>
           )}
 
+          {collectEventId && collectMode === 'bank' && (
+            <div>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] mb-2">4. Payment Type</label>
+              <select value={collectBankPaymentType} onChange={function (e) { setCollectBankPaymentType(e.target.value) }}
+                className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                style={{ fontSize: '16px' }}>
+                <option value="">Select…</option>
+                {BANK_PAYMENT_TYPES.map(function (t) { return <option key={t} value={t}>{t}</option> })}
+              </select>
+            </div>
+          )}
+
           {collectEventId && (
             <div>
-              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] mb-2">4. Amount Received</label>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] mb-2">{collectMode === 'bank' ? '5' : '4'}. Amount Received</label>
               <input type="number" min="1" step="any" inputMode="decimal" value={collectAmount}
                 onChange={function (e) { setCollectAmount(e.target.value) }}
                 placeholder="0" className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -2522,7 +2545,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
 
           {collectEventId && (
             <div>
-              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] mb-2">5. Description</label>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] mb-2">{collectMode === 'bank' ? '6' : '5'}. Description</label>
               <VoiceInput type="text" value={collectDesc} onChange={function (e) { setCollectDesc(e.target.value) }}
                 placeholder="e.g. Advance payment, Final settlement..."
                 maxLength="300" className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
@@ -2531,7 +2554,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
 
           {collectEventId && (
             <div>
-              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">6. Receipt Photo {collectMode === 'bank' && <span className="text-red-500">*</span>}{collectMode === 'cash' && <span className="text-gray-400 normal-case">(optional)</span>}</label>
+              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">{collectMode === 'bank' ? '7' : '6'}. Receipt Photo {collectMode === 'bank' && <span className="text-red-500">*</span>}{collectMode === 'cash' && <span className="text-gray-400 normal-case">(optional)</span>}</label>
               {collectImage ? (
                 <div className="flex items-center gap-2 px-3 py-2.5 border border-green-300 bg-green-50 rounded-lg">
                   <Icon name="checkCircle" size={16} className="shrink-0 text-emerald-600" />
@@ -3851,7 +3874,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
               </p>
               {t.reference_type === 'collection' && t.payment_mode && (
                 <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 border border-emerald-200">
-                  {t.payment_mode}
+                  {t.payment_mode}{t.bank_payment_type ? ' · ' + t.bank_payment_type : ''}
                 </span>
               )}
               {t.status === 'pending' && (
