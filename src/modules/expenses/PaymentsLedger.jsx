@@ -697,9 +697,10 @@ function PaymentsLedger({ profile }) {
             )}
           </div>
 
-          {/* Phone: the five pills share the row equally (flex-1), so they
-              always fit whatever the screen's width — natural-width pills ran
-              off the card on narrower Android phones. */}
+          {/* Phone: each pill starts from its own label's width and they all
+              grow or shrink together (flex-auto), so a long word like Expense
+              gets the room it needs while All stays small — equal columns cut
+              Expense short, natural widths alone ran off narrow phones. */}
           <div className="@3xl:hidden w-full flex items-center gap-1">
             {QUICK_GROUPS.map(function (group, gi) {
               return [
@@ -709,7 +710,7 @@ function PaymentsLedger({ profile }) {
               ].concat(group.map(function (q) {
                 return (
                   <button key={q.k} type="button" onClick={q.run} aria-pressed={q.on}
-                    className={'flex-1 min-w-0 h-8 px-1 rounded-full border bg-white text-[11.5px] font-bold whitespace-nowrap overflow-hidden text-ellipsis transition-colors ' +
+                    className={'flex-auto min-w-0 h-8 px-1.5 rounded-full border bg-white text-[11.5px] font-bold whitespace-nowrap overflow-hidden text-ellipsis transition-colors ' +
                       (q.on ? QUICK_TONE[q.tone] : 'border-slate-300 text-slate-600')}>
                     {q.label}
                   </button>
