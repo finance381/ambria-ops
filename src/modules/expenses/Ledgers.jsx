@@ -5,7 +5,7 @@ import { pushBack } from '../../lib/backNav'
 import { registerPdfFont } from '../../lib/pdfFont'
 import { openOrSharePdf } from '../../lib/pdfOutput'
 import { plainParticularsLines, plainDateLines, makeStatementCellHooks } from '../../lib/pdfStatementTable'
-import { hasPerm } from '../../lib/permissions'
+import { hasPerm, isPrivilegedRole } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
 import { useExpenseDetailModal } from '../../hooks/useExpenseDetailModal.jsx'
 import SearchField from '../../components/ui/SearchField'
@@ -297,8 +297,20 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
   var isSysAdmin = hasPerm(profile?.permsNew, 'admin.dashboard')
   var canMarkChecked = hasPerm(profile?.permsNew, 'finance.wallet.mark_checked')
   var [checkingExpId, setCheckingExpId] = useState(null)
-  var scopeDeptIds = isAdmin ? null : (profile?.event_dept_ids || [])
-  var hasScope = !isAdmin && scopeDeptIds && scopeDeptIds.length > 0
+  // 'finance.ledgers.expense' is the one permission that both opens this
+  // screen and (previously) stood in for "isAdmin" here, so every user who
+  // could see the page at all also tripped the admin bypass and no scoping
+  // ever applied. Row-level restriction has to key off the role plus the
+  // per-user data scope chosen in Users.jsx > Expense tab instead.
+  var isPrivileged = isPrivilegedRole(profile)
+  var ledgerScope = (profile?.dataScopes && profile.dataScopes['finance.ledgers.expense']) || 'all'
+  var scopeUserId = !isPrivileged && ledgerScope === 'own' ? profile?.id : null
+  var scopeExpenseTypeIds = !isPrivileged && ledgerScope === 'own_expense_type' ? (profile?.expense_type_ids || []) : null
+  function applyLedgerScope(q) {
+    if (scopeUserId) q = q.eq('user_id', scopeUserId)
+    if (scopeExpenseTypeIds) q = q.in('expense_type_id', scopeExpenseTypeIds)
+    return q
+  }
   var { openExpenseDetail, expenseDetailModal } = useExpenseDetailModal(profile, isAdmin, function () { loadDrill(false) }, onNavigateToExpenses)
 
   // Date state
@@ -401,7 +413,7 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
   // The scope as one string, so both effects can be compared on it. An array
   // in a dependency list is a new array every render; joined, it changes only
   // when the scope does.
-  var scopeKey = (scopeDeptIds || []).join(',')
+  var scopeKey = ledgerScope + ':' + (scopeUserId || '') + ':' + (scopeExpenseTypeIds || []).join(',')
 
   useEffect(function () {
     isFirstLoad.current = true
@@ -492,7 +504,7 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
         .gte('expense_date', dateFrom)
         .lte('expense_date', dateTo)
         .range(from, from + pageSize - 1)
-      if (hasScope) q = q.in('department_id', scopeDeptIds)
+      q = applyLedgerScope(q)
       if (userFilter) q = q.eq('user_id', userFilter)
       if (venueFilter) q = q.eq('venue_id', Number(venueFilter))
       var page = await q
@@ -592,7 +604,7 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
         .order('expense_date', { ascending: false })
         .order('created_at', { ascending: false })
         .range(from, from + pageSize - 1)
-      if (hasScope) q = q.in('department_id', scopeDeptIds)
+      q = applyLedgerScope(q)
       if (userFilter) q = q.eq('user_id', userFilter)
       if (venueFilter) q = q.eq('venue_id', Number(venueFilter))
       if (filter) {
@@ -670,7 +682,7 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
       .order('expense_date', { ascending: false })
       .order('created_at', { ascending: false })
       .range(offset, offset + DRILL_LIMIT)
-    if (hasScope) q = q.in('department_id', scopeDeptIds)
+    q = applyLedgerScope(q)
     if (userFilter) q = q.eq('user_id', userFilter)
     if (venueFilter) q = q.eq('venue_id', Number(venueFilter))
     if (drillGroup.deptId) q = q.eq('department_id', drillGroup.deptId)
