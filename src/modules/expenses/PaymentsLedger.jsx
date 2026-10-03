@@ -39,6 +39,8 @@ var TONE = {
 // One shape for every chip: a pill, its own ground, and an icon that belongs
 // to the word rather than sitting grey beside it.
 var CHIP = 'inline-flex items-center gap-1.5 h-[24px] px-2.5 rounded-full border text-[11px] font-bold '
+// The phone card's chips: a size down, so party, type and mode fit one line.
+var CHIP_SM = 'inline-flex items-center gap-1 h-[22px] px-2 rounded-full border text-[10.5px] font-bold whitespace-nowrap '
 var CHIP_NEUTRAL = TONE.slate
 
 // Where the money sat, said the same way in the filter that asks for it and
@@ -699,16 +701,16 @@ function PaymentsLedger({ profile }) {
               width and scrolls sideways if it has to, rather than wrapping
               Income and Expense onto a line of their own. */}
           <div className="w-full @3xl:w-auto flex items-center gap-2 @3xl:shrink-0 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            <div className="flex flex-nowrap items-center gap-2.5">
+            <div className="w-full @3xl:w-auto flex flex-nowrap items-center justify-between @3xl:justify-start gap-1.5 @3xl:gap-2.5">
               {QUICK_GROUPS.map(function (group, gi) {
                 return (
-                  <div key={gi} className="flex items-center gap-2.5">
+                  <div key={gi} className="flex items-center gap-1.5 @3xl:gap-2.5">
                     {gi > 0 && <span aria-hidden="true" className="w-px h-5 bg-slate-200" />}
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1 @3xl:gap-1.5">
                       {group.map(function (q) {
                         return (
                           <button key={q.k} type="button" onClick={q.run} aria-pressed={q.on}
-                            className={'shrink-0 h-8 px-3 rounded-full border bg-white text-[12px] font-bold whitespace-nowrap transition-colors hover:bg-slate-50 ' +
+                            className={'shrink-0 h-8 px-2.5 @3xl:px-3 rounded-full border bg-white text-[12px] font-bold whitespace-nowrap transition-colors hover:bg-slate-50 ' +
                               (q.on ? QUICK_TONE[q.tone] : 'border-slate-300 text-slate-600 hover:text-slate-900')}>
                             {q.label}
                           </button>
@@ -878,7 +880,7 @@ function PaymentsLedger({ profile }) {
           {/* Phone width: one card per transaction instead of a 960px table
               scrolled sideways — who and what, the amount, the chips, when
               and by whom, and Checked. The table takes over from @2xl. */}
-          <div className="@2xl:hidden bg-slate-50/80 p-2.5 space-y-2.5">
+          <div className="@2xl:hidden bg-slate-50/80 p-2 space-y-2">
             {pageRows.map(function (r) {
               var isIn = r.direction === 'in'
               var src = SOURCE_META[r.source] || { label: r.source, icon: 'wallet', tone: CHIP_NEUTRAL }
@@ -886,8 +888,8 @@ function PaymentsLedger({ profile }) {
               var who = r.recorded_by || r.collector_name || ''
               return (
                 <div key={r.key} onClick={function () { openRow(r) }}
-                  className="flex gap-3 p-3.5 rounded-2xl bg-white border border-slate-200/80 shadow-[0_1px_3px_rgba(15,23,42,0.05)] cursor-pointer active:bg-indigo-50/40 transition-colors">
-                  <span className={'shrink-0 mt-0.5 w-10 h-10 rounded-full inline-flex items-center justify-center ' +
+                  className="flex gap-2.5 p-3 rounded-2xl bg-white border border-slate-200/80 shadow-[0_1px_3px_rgba(15,23,42,0.05)] cursor-pointer active:bg-indigo-50/40 transition-colors">
+                  <span className={'shrink-0 mt-0.5 w-9 h-9 rounded-full inline-flex items-center justify-center ' +
                     (isIn ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600')}
                     title={isIn ? 'Money in' : 'Money out'}>
                     <Icon name="arrowRight" size={16} className={isIn ? 'rotate-90' : '-rotate-90'} />
@@ -906,10 +908,10 @@ function PaymentsLedger({ profile }) {
                       if (bits.length === 0) return null
                       return <p className="mt-0.5 text-[11.5px] text-indigo-600 leading-snug break-words">{bits.join(' \u00b7 ')}</p>
                     })()}
-                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                      <span className={CHIP + src.tone}><Icon name={src.icon} size={12} className="shrink-0" />{src.label}</span>
-                      <span className={CHIP + r.type_tone}>{r.type_icon && <Icon name={r.type_icon} size={12} className="shrink-0" />}{r.type_label}</span>
-                      <span className={CHIP + m.tone}><Icon name={m.icon} size={12} className="shrink-0" />{m.label}</span>
+                    <div className="mt-2 flex flex-wrap items-center gap-1">
+                      <span className={CHIP_SM + src.tone}><Icon name={src.icon} size={11} className="shrink-0" />{src.label}</span>
+                      <span className={CHIP_SM + r.type_tone}>{r.type_icon && <Icon name={r.type_icon} size={11} className="shrink-0" />}{r.type_label}</span>
+                      <span className={CHIP_SM + m.tone}><Icon name={m.icon} size={11} className="shrink-0" />{m.label}</span>
                     </div>
                     <div className="mt-2.5 flex items-center justify-between gap-2">
                       {/* When and by whom, each with its icon. */}
