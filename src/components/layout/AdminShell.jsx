@@ -157,7 +157,7 @@ var SUB_TAB_CONFIG = {
     { key: 'categories',         label: 'Categories',      icon: 'tag',        component: Categories,         perm: 'admin.masters' },
     { key: 'job_departments',    label: 'Job Departments', icon: 'users',      component: JobDepartments,     perm: 'admin.masters' },
     { key: 'ratecard',           label: 'Rate Card',       icon: 'calculator', component: RateCardEditor,     anyPerm: ['admin.masters','events.ratecard'] },
-    { key: 'staff_roles',        label: 'Casual Roster',   icon: 'idCard',     component: CasualRoster,       perm: 'admin.masters' },
+    { key: 'staff_roles',        label: 'Casual Roster',   icon: 'idCard',     component: CasualRoster,       anyPerm: ['admin.masters', 'hr.casual_roster'] },
     { key: 'expense_types',      label: 'Expense Types',   icon: 'receipt',    component: ExpenseTypesMaster, perm: 'admin.masters' },
     { key: 'employee_doc_types', label: 'Employee Docs',   icon: 'fileText',   component: EmployeeDocTypes,   perm: 'admin.masters' },
   ],
@@ -277,8 +277,9 @@ var ADMIN_TABS = [
     // Including it just showed this tab to quote-only users with nothing
     // behind it to open.
     anyPerm: ['events.list','events.extra_plate_collect'] },
-  { key: 'masters',     label: 'Masters',     icon: 'settings',   perm: 'admin.masters',
-    blurb: 'The lists every other screen picks from.' },
+  { key: 'masters',     label: 'Masters',     icon: 'settings',
+    blurb: 'The lists every other screen picks from.',
+    anyPerm: ['admin.masters', 'hr.casual_roster'] },
   { key: 'users',       label: 'Users',       icon: 'users',
     blurb: 'Accounts, roles, employees and the activity trail.',
     anyPerm: ['admin.users','hr.employees'] },

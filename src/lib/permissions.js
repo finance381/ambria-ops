@@ -163,6 +163,8 @@ export var PERM_GROUPS = [
   { group: 'HR', icon: '👔', scope: 'both', children: [
     { key: 'hr.employees', label: 'Employees', scope: 'both', dataScope: true,
       optional: [{ key: 'hr.employees.salary_view', label: 'See salaries' }] },
+    { key: 'hr.casual_roster', label: 'Casual Roster', scope: 'desktop',
+      note: 'Department/sub-department/rate master for casual labor — grantable without the rest of Manage Masters' },
   ]},
   { group: 'Admin', icon: '⚙️', scope: 'both', children: [
     { key: 'admin.dashboard', label: 'Admin Panel',        scope: 'both' },
