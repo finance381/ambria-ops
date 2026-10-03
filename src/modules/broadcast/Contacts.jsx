@@ -133,6 +133,15 @@ function CsvImportModal({ open, onClose, onSaved }) {
     onClose()
   }
 
+  async function handleFileChange(ev) {
+    var file = ev.target.files && ev.target.files[0]
+    ev.target.value = '' // lets the same file be picked again after fixing it and re-uploading
+    if (!file) return
+    setError('')
+    try { setRawText(await file.text()) }
+    catch (e) { setError('Could not read that file: ' + e.message) }
+  }
+
   return (
     <Modal open={open} onClose={handleClose} title="Import Contacts from CSV" wide>
       <div className="space-y-3">
@@ -142,7 +151,14 @@ function CsvImportModal({ open, onClose, onSaved }) {
             Inserted {result.inserted}, updated {result.updated}, skipped (invalid phone) {result.skipped_invalid_phone}.
           </Notice>
         )}
-        <Labeled label="CSV content" hint="The first row must be a header row with column names.">
+        <Labeled label="CSV file">
+          <label className={BTN_GHOST + ' w-full h-10 cursor-pointer'}>
+            <Icon name="download" size={14} strokeWidth={2.2} />
+            Choose file…
+            <input type="file" accept=".csv,text/csv" onChange={handleFileChange} className="hidden" />
+          </label>
+        </Labeled>
+        <Labeled label="CSV content" hint="Loaded from the file above — the first row must be a header row with column names. You can also paste content directly here instead of choosing a file.">
           <textarea value={rawText} onChange={function (ev) { setRawText(ev.target.value) }} rows={8}
             placeholder={'phone,name\n+919876543210,Riya Sharma'}
             className={TEXTAREA + ' font-mono text-[16px] sm:text-[12px]'} />
