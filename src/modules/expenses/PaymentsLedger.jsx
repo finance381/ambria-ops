@@ -697,10 +697,22 @@ function PaymentsLedger({ profile }) {
             )}
           </div>
 
-          {/* One row of pills, as on the desktop: on a phone it takes the full
-              width and scrolls sideways if it has to, rather than wrapping
-              Income and Expense onto a line of their own. */}
-          <div className="w-full @3xl:w-auto flex items-center gap-2 @3xl:shrink-0 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {/* Phone: the five pills as five equal columns, so they always fit
+              the row whatever the screen's width — a run of natural-width
+              pills still ran off the card on narrower Android phones. */}
+          <div className="@3xl:hidden w-full grid grid-cols-5 gap-1">
+            {QUICK_GROUPS.reduce(function (all, g) { return all.concat(g) }, []).map(function (q) {
+              return (
+                <button key={q.k} type="button" onClick={q.run} aria-pressed={q.on}
+                  className={'min-w-0 h-8 px-1 rounded-full border bg-white text-[11.5px] font-bold whitespace-nowrap overflow-hidden text-ellipsis transition-colors ' +
+                    (q.on ? QUICK_TONE[q.tone] : 'border-slate-300 text-slate-600')}>
+                  {q.label}
+                </button>
+              )
+            })}
+          </div>
+          {/* Wide: one row of pills grouped behind rules. */}
+          <div className="hidden @3xl:flex w-auto items-center gap-2 shrink-0">
             <div className="w-full @3xl:w-auto flex flex-nowrap items-center justify-between @3xl:justify-start gap-1.5 @3xl:gap-2.5">
               {QUICK_GROUPS.map(function (group, gi) {
                 return (
