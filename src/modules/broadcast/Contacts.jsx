@@ -430,30 +430,53 @@ function Contacts({ profile }) {
   var [selectedIds, setSelectedIds] = useState([])
   var [addToListOpen, setAddToListOpen] = useState(false)
 
-  function loadContacts() {
-    setLoading(true)
-    supabase.from('wa_contacts').select('*').order('created_at', { ascending: false }).limit(500)
-      .then(function (res) { setContacts(res.data || []); setLoading(false) })
-  }
+  // 4000+ contacts and growing — a flat limit(500) with client-side
+  // filtering silently never showed, or searched, anything past the first
+  // 500. Search/filters now run server-side, with a real page size and
+  // total count, so they actually cover every contact.
+  var PAGE_SIZE = 50
+  var [searchDebounced, setSearchDebounced] = useState('')
+  var [totalCount, setTotalCount] = useState(0)
+  var [hasMore, setHasMore] = useState(false)
+  var [loadingMore, setLoadingMore] = useState(false)
 
   useEffect(function () {
-    loadContacts()
+    var t = setTimeout(function () { setSearchDebounced(search) }, 400)
+    return function () { clearTimeout(t) }
+  }, [search])
+
+  function loadContacts(append) {
+    if (append) setLoadingMore(true); else setLoading(true)
+    var offset = append ? contacts.length : 0
+    var q = supabase.from('wa_contacts').select('*', { count: 'exact' })
+      .order('created_at', { ascending: false })
+      .range(offset, offset + PAGE_SIZE - 1)
+    if (sourceFilter) q = q.eq('source', sourceFilter)
+    if (optStatusFilter) q = q.eq('opt_status', optStatusFilter)
+    if (venueFilter) q = q.eq('venue_affinity', Number(venueFilter))
+    if (searchDebounced) {
+      var esc = searchDebounced.trim().replace(/[%_,]/g, '')
+      q = q.or('name.ilike.%' + esc + '%,phone_e164.ilike.%' + esc + '%')
+    }
+    q.then(function (res) {
+      var rows = res.data || []
+      if (append) setContacts(function (prev) { return prev.concat(rows) })
+      else setContacts(rows)
+      setTotalCount(res.count || 0)
+      setHasMore(offset + rows.length < (res.count || 0))
+      setLoading(false); setLoadingMore(false)
+    })
+  }
+
+  // Any filter change starts over from page one — stale rows from the
+  // previous filter would otherwise sit at the top of a "loaded so far" list.
+  useEffect(function () { loadContacts(false) }, [sourceFilter, optStatusFilter, venueFilter, searchDebounced])
+
+  useEffect(function () {
     supabase.from('venues').select('id, code, name').then(function (res) { setVenues(res.data || []) })
   }, [])
 
-  var filtered = contacts.filter(function (c) {
-    if (sourceFilter && c.source !== sourceFilter) return false
-    if (optStatusFilter && c.opt_status !== optStatusFilter) return false
-    if (venueFilter && String(c.venue_affinity) !== venueFilter) return false
-    if (search) {
-      var q = search.toLowerCase()
-      var matchesName = (c.name || '').toLowerCase().indexOf(q) !== -1
-      var matchesPhone = (c.phone_e164 || '').indexOf(search) !== -1
-      if (!matchesName && !matchesPhone) return false
-    }
-    return true
-  })
-
+  var filtered = contacts
   var filtersOn = !!(search || sourceFilter || optStatusFilter || venueFilter)
 
   function toggleSelected(id) {
@@ -502,8 +525,8 @@ function Contacts({ profile }) {
   // "0 of 0" said nothing when nothing was filtered. Say the plain count, and
   // only mention a subset when the filters are actually narrowing the list.
   var countLine = loading ? 'Loading…'
-    : filtersOn ? 'Showing ' + filtered.length + ' of ' + contacts.length
-    : contacts.length + (contacts.length === 1 ? ' contact' : ' contacts')
+    : filtersOn ? 'Showing ' + contacts.length + ' of ' + totalCount + ' matching'
+    : totalCount + (totalCount === 1 ? ' contact' : ' contacts') + (contacts.length < totalCount ? ' (' + contacts.length + ' loaded)' : '')
 
   return (
     <div className="space-y-3">
@@ -659,6 +682,13 @@ function Contacts({ profile }) {
           </table>
         </div>
       </div>
+
+      {!loading && hasMore && (
+        <button onClick={function () { loadContacts(true) }} disabled={loadingMore}
+          className="w-full py-2.5 text-[13px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-xl hover:bg-indigo-100 disabled:opacity-50 transition-colors">
+          {loadingMore ? 'Loading…' : 'Load ' + Math.min(PAGE_SIZE, totalCount - contacts.length) + ' more'}
+        </button>
+      )}
 
       <AddToListModal open={addToListOpen} contactIds={selectedIds}
         onClose={function () { setAddToListOpen(false) }}
