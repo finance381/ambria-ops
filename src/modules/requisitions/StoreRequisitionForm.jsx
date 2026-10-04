@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import { logActivity } from '../../lib/logger'
 import EventDatePicker from '../../components/ui/EventDatePicker'
@@ -29,6 +29,48 @@ function matchRank(name, term) {
 
 function rupees(paise) { return '₹' + Math.round((paise || 0) / 100).toLocaleString('en-IN') }
 
+// ── Auto-save draft (new-requisition only) — same pattern as ExpenseForm's:
+// debounced localStorage save, a restore banner on mount, a safety save on
+// tab close, and a discard that only fires once the user actually submits.
+// Nothing here is a File/Blob, so unlike ExpenseForm's draft there's no
+// metadata-only stand-in to serialize — the live row shape saves as-is,
+// just with the transient search box/results cleared out.
+var DRAFT_KEY_PREFIX = 'ambria_storereq_draft_'
+var DRAFT_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000
+var DRAFT_DEBOUNCE_MS = 800
+
+function serializeDraftRow(r) {
+  return Object.assign({}, r, { invSearch: '', invResults: [], invSearching: false })
+}
+
+function isEmptyDraftRow(r) {
+  if (!r) return true
+  if (r.departmentId || r.subDepartmentId || r.section) return false
+  if (r.remarks && r.remarks.trim()) return false
+  if ((r.inventoryRows || []).length > 0) return false
+  if ((r.casualRows || []).length > 0) return false
+  return true
+}
+
+function isEmptyDraftState(s) {
+  if (s.dateFrom || s.dateTo) return false
+  if ((s.selectedEventIds || []).length > 0) return false
+  if (!s.deptRows || s.deptRows.length === 0) return true
+  return s.deptRows.every(isEmptyDraftRow)
+}
+
+function formatDraftAge(ts) {
+  if (!ts) return ''
+  var s = Math.floor((Date.now() - ts) / 1000)
+  if (s < 5) return 'just now'
+  if (s < 60) return s + 's ago'
+  var m = Math.floor(s / 60)
+  if (m < 60) return m + 'm ago'
+  var h = Math.floor(m / 60)
+  if (h < 24) return h + 'h ago'
+  return Math.floor(h / 24) + 'd ago'
+}
+
 function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
   var [dateFrom, setDateFrom] = useState('')
   var [dateTo, setDateTo] = useState('')
@@ -47,6 +89,99 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
 
   var [saving, setSaving] = useState(false)
   var [error, setError] = useState('')
+
+  // Draft (new-requisition only) — restore banner + debounced save + save-indicator
+  var [draftRestorable, setDraftRestorable] = useState(null)
+  var [draftSavedAt, setDraftSavedAt] = useState(null)
+  var [draftTick, setDraftTick] = useState(0)  // forces "Xs ago" refresh
+  var draftSaveTimer = useRef(null)
+  var draftKey = profile ? DRAFT_KEY_PREFIX + profile.id : null
+
+  // ─── Draft: check localStorage on mount ───
+  useEffect(function () {
+    if (editId || !draftKey) return
+    try {
+      var raw = localStorage.getItem(draftKey)
+      if (!raw) return
+      var parsed = JSON.parse(raw)
+      if (!parsed || !parsed.savedAt) return
+      if (Date.now() - parsed.savedAt > DRAFT_EXPIRY_MS) { localStorage.removeItem(draftKey); return }
+      if (isEmptyDraftState(parsed)) { localStorage.removeItem(draftKey); return }
+      setDraftRestorable(parsed)
+    } catch (_) {}
+  }, [])
+
+  // ─── Draft: debounced auto-save on changes ───
+  useEffect(function () {
+    if (editId || !draftKey || saving || loadingExisting) return
+    if (draftRestorable) return  // don't clobber a pending restore with the blank default
+    var state = { dateFrom: dateFrom, dateTo: dateTo, selectedEventIds: selectedEventIds, deptRows: deptRows, nextRowId: nextRowId, nextLineId: nextLineId }
+    if (isEmptyDraftState(state)) return
+    if (draftSaveTimer.current) clearTimeout(draftSaveTimer.current)
+    draftSaveTimer.current = setTimeout(function () {
+      try {
+        var payload = Object.assign({ savedAt: Date.now() }, state, { deptRows: deptRows.map(serializeDraftRow) })
+        localStorage.setItem(draftKey, JSON.stringify(payload))
+        setDraftSavedAt(payload.savedAt)
+      } catch (_) {}
+    }, DRAFT_DEBOUNCE_MS)
+    return function () { if (draftSaveTimer.current) clearTimeout(draftSaveTimer.current) }
+  }, [dateFrom, dateTo, selectedEventIds, deptRows, nextRowId, nextLineId, editId, saving, draftRestorable, loadingExisting])
+
+  // ─── Draft: safety-save on tab close / navigate away ───
+  useEffect(function () {
+    if (editId || !draftKey) return
+    function handler() {
+      try {
+        var state = { dateFrom: dateFrom, dateTo: dateTo, selectedEventIds: selectedEventIds, deptRows: deptRows, nextRowId: nextRowId, nextLineId: nextLineId }
+        if (isEmptyDraftState(state)) return
+        var payload = Object.assign({ savedAt: Date.now() }, state, { deptRows: deptRows.map(serializeDraftRow) })
+        localStorage.setItem(draftKey, JSON.stringify(payload))
+      } catch (_) {}
+    }
+    window.addEventListener('beforeunload', handler)
+    return function () { window.removeEventListener('beforeunload', handler) }
+  }, [dateFrom, dateTo, selectedEventIds, deptRows, nextRowId, nextLineId, editId])
+
+  // ─── Draft: tick "Xs ago" indicator every 15s ───
+  useEffect(function () {
+    if (!draftSavedAt) return
+    var iv = setInterval(function () { setDraftTick(function (x) { return x + 1 }) }, 15000)
+    return function () { clearInterval(iv) }
+  }, [draftSavedAt])
+
+  function restoreDraft() {
+    if (!draftRestorable) return
+    try {
+      setDateFrom(draftRestorable.dateFrom || '')
+      setDateTo(draftRestorable.dateTo || '')
+      setSelectedEventIds(draftRestorable.selectedEventIds || [])
+      setDeptRows((draftRestorable.deptRows && draftRestorable.deptRows.length > 0) ? draftRestorable.deptRows : [emptyDeptRow(1)])
+      setNextRowId(draftRestorable.nextRowId || 2)
+      setNextLineId(draftRestorable.nextLineId || 1)
+      setDraftSavedAt(draftRestorable.savedAt)
+    } catch (_) {}
+    setDraftRestorable(null)
+  }
+
+  function discardDraft() {
+    try { if (draftKey) localStorage.removeItem(draftKey) } catch (_) {}
+    setDraftRestorable(null)
+    setDraftSavedAt(null)
+  }
+
+  // The "clear" link sits one tap away from destroying everything entered so
+  // far, with no undo. The restore banner's "Start fresh" is already a
+  // deliberate choice between two buttons, so only this one asks.
+  function confirmDiscardDraft() {
+    if (!window.confirm('Clear the saved draft? Anything entered but not submitted will be lost.')) return
+    discardDraft()
+  }
+
+  function clearDraftAfterSubmit() {
+    try { if (draftKey) localStorage.removeItem(draftKey) } catch (_) {}
+    setDraftSavedAt(null)
+  }
 
   useEffect(function () {
     supabase.from('departments').select('id, name').eq('active', true).eq('hide_from_lists', false).order('name')
@@ -313,6 +448,7 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
     setSaving(false)
     if (res.error) { setError(res.error.message); return }
     try { await logActivity(editId ? 'STORE_REQUISITION_EDIT' : 'STORE_REQUISITION_SUBMIT', dateFrom + ' to ' + dateTo + ' · ' + rupees(grandTotal)) } catch (_) {}
+    clearDraftAfterSubmit()
     if (onDone) onDone(res.data)
   }
 
@@ -329,6 +465,48 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
         </div>
         <button onClick={onCancel} className="px-3 py-2 text-sm font-semibold text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
       </div>
+
+      {!editId && draftRestorable && (
+        <div className="p-3 rounded-xl bg-indigo-50 border border-indigo-200 flex items-center justify-between gap-3 flex-wrap">
+          <div className="min-w-0">
+            <p className="text-[13px] font-bold text-indigo-900 leading-snug">Restore your previous data?</p>
+            <p className="text-[11px] font-medium text-indigo-500/90 tabular-nums">
+              Last saved {formatDraftAge(draftRestorable.savedAt)} · {(draftRestorable.deptRows || []).length} row{(draftRestorable.deptRows || []).length === 1 ? '' : 's'}
+            </p>
+          </div>
+          <div className="flex gap-2 shrink-0">
+            <button type="button" onClick={restoreDraft}
+              className="inline-flex items-center gap-1.5 h-9 px-4 rounded-lg text-[13px] font-bold text-white bg-indigo-600 hover:bg-indigo-700 transition-colors">
+              <Icon name="undo" size={14} /> Restore
+            </button>
+            <button type="button" onClick={discardDraft}
+              className="inline-flex items-center justify-center h-9 px-4 rounded-lg text-[13px] font-bold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 transition-colors">
+              Start fresh
+            </button>
+          </div>
+        </div>
+      )}
+
+      {!editId && !draftRestorable && draftSavedAt && (
+        <div className="flex justify-end">
+          <div className="inline-flex items-center h-7 rounded-full overflow-hidden text-[11px] bg-gray-100 border border-gray-200">
+            <span className="inline-flex items-center gap-1.5 pl-2.5 pr-2 font-semibold text-gray-700 whitespace-nowrap">
+              <span className="relative flex w-1.5 h-1.5">
+                <span key={draftSavedAt} style={{ animationIterationCount: 2 }}
+                  className="absolute inset-0 rounded-full bg-emerald-500 opacity-60 animate-ping motion-reduce:hidden" />
+                <span className="relative w-1.5 h-1.5 rounded-full bg-emerald-500" />
+              </span>
+              Draft saved
+              <span className="font-medium text-gray-400">{formatDraftAge(draftSavedAt + draftTick * 0)}</span>
+            </span>
+            <span aria-hidden="true" className="w-px h-3.5 bg-gray-300" />
+            <button type="button" onClick={confirmDiscardDraft} aria-label="Discard saved draft"
+              className="inline-flex items-center gap-1 h-full pl-2 pr-2.5 font-semibold text-gray-500 hover:bg-red-50 hover:text-red-600 transition-colors">
+              <Icon name="trash" size={11} /> Clear
+            </button>
+          </div>
+        </div>
+      )}
 
       {error && <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">{error}</div>}
 
