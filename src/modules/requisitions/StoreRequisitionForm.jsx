@@ -202,8 +202,8 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
       supabase.from('inventory_items').select('id, name, unit, rate_paise').ilike('name', '%' + term.trim() + '%').eq('status', 'approved').limit(20),
       supabase.from('catering_store_items').select('id, name, unit, rate_paise').ilike('name', '%' + term.trim() + '%').eq('status', 'approved').limit(20),
     ]).then(function (res) {
-      var inv = (res[0].data || []).map(function (it) { return { itemSource: 'inventory', itemId: it.id, name: it.name, unit: it.unit, ratePaise: it.rate_paise || 0 } })
-      var cs = (res[1].data || []).map(function (it) { return { itemSource: 'catering_store', itemId: it.id, name: it.name, unit: it.unit, ratePaise: it.rate_paise || 0 } })
+      var inv = (res[0].data || []).map(function (it) { return { itemSource: 'inventory', itemId: it.id, name: it.name, unit: it.unit, ratePaise: it.rate_paise != null ? it.rate_paise : null } })
+      var cs = (res[1].data || []).map(function (it) { return { itemSource: 'catering_store', itemId: it.id, name: it.name, unit: it.unit, ratePaise: it.rate_paise != null ? it.rate_paise : null } })
       // A name-anywhere ilike match returns rows in whatever order the table
       // happens to store them — "Golgappa Water Dispenser Glass" ahead of
       // "Water Glass" for a search of "water". Re-sorted so an exact/
@@ -223,7 +223,7 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
     if (!res.error && res.data != null) latestRate = res.data
     var lineId = nextLineId
     setNextLineId(function (n) { return n + 1 })
-    var newLine = { id: lineId, itemSource: pick.itemSource, itemId: pick.itemId, name: pick.name, unit: pick.unit, qty: '', ratePaise: latestRate }
+    var newLine = { id: lineId, itemSource: pick.itemSource, itemId: pick.itemId, name: pick.name, unit: pick.unit, qty: '', ratePaise: latestRate == null ? '' : latestRate }
     patchRow(row.id, { inventoryRows: row.inventoryRows.concat([newLine]), invSearch: '', invResults: [] })
   }
   // Kept as the raw typed string (not coerced to a number) so the field can
@@ -243,8 +243,8 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
   // ground — let someone override it by hand when the auto-fetched rate
   // isn't right.
   function changeInvRate(row, lineId, e) {
-    var rupeesVal = Number(e.target.value)
-    var paise = isNaN(rupeesVal) ? 0 : Math.round(rupeesVal * 100)
+    var raw = e.target.value
+    var paise = raw === '' ? '' : Math.round((Number(raw) || 0) * 100)
     patchRow(row.id, {
       inventoryRows: row.inventoryRows.map(function (l) { return l.id === lineId ? Object.assign({}, l, { ratePaise: paise }) : l })
     })
@@ -299,7 +299,7 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
         section: isKitchenRow(r) ? r.section : null,
         remarks: r.remarks ? r.remarks.trim() : null,
         items: r.inventoryRows.map(function (l) {
-          return { item_source: l.itemSource, item_id: l.itemId, item_name: l.name, unit: l.unit, qty: Number(l.qty) || 0, rate_paise: l.ratePaise }
+          return { item_source: l.itemSource, item_id: l.itemId, item_name: l.name, unit: l.unit, qty: Number(l.qty) || 0, rate_paise: Number(l.ratePaise) || 0 }
         }),
         casuals: r.casualRows.map(function (l) {
           var c = casualRoster.find(function (x) { return String(x.id) === String(l.casualRosterId) })
@@ -494,7 +494,7 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
                             </div>
                             <div className="flex-1">
                               <label className="block text-[10px] font-bold text-gray-400 uppercase mb-0.5">Rate</label>
-                              <input type="number" value={l.ratePaise / 100} onChange={function (e) { changeInvRate(row, l.id, e) }}
+                              <input type="number" value={l.ratePaise === '' ? '' : l.ratePaise / 100} onChange={function (e) { changeInvRate(row, l.id, e) }} placeholder="0"
                                 className="w-full h-9 px-2 text-right border border-gray-300 rounded-lg text-gray-700" style={{ fontSize: '16px' }} />
                             </div>
                             <div className="flex-1 text-right pb-1.5">
