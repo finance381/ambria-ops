@@ -363,41 +363,42 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
           ) : contracts.length === 0 ? (
             <p className="text-sm text-gray-400 py-4 text-center">No venue/catering contracts in this window.</p>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-left text-[11px] font-bold text-gray-400 uppercase">
-                    <th className="pb-2 pr-2 w-6"></th>
-                    <th className="pb-2 pr-3">Event</th>
-                    <th className="pb-2 pr-3">Venue · Date</th>
-                    <th className="pb-2 pr-3 text-right">Booking</th>
-                    <th className="pb-2 pr-3 text-right">Extra</th>
-                    <th className="pb-2 pr-3 text-right">Balance</th>
-                    <th className="pb-2 text-right">Actual</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {contracts.map(function (c) {
-                    var isSel = selectedEventIds.indexOf(c.id) !== -1
-                    return (
-                      <tr key={c.id} onClick={function () { toggleEvent(c.id) }}
-                        className={'border-t border-gray-100 cursor-pointer ' + (isSel ? 'bg-indigo-50' : 'hover:bg-gray-50')}>
-                        <td className="py-2 pr-2">
-                          <span className={'w-4 h-4 rounded border inline-flex items-center justify-center ' + (isSel ? 'bg-indigo-600 border-indigo-600' : 'border-gray-300')}>
-                            {isSel && <Icon name="check" size={11} className="text-white" />}
-                          </span>
-                        </td>
-                        <td className="py-2 pr-3 font-semibold text-gray-800">{c.event}</td>
-                        <td className="py-2 pr-3 text-gray-500">{c.venueDate}</td>
-                        <td className="py-2 pr-3 text-right font-semibold">{c.booking}</td>
-                        <td className="py-2 pr-3 text-right text-gray-500">{c.extra}</td>
-                        <td className="py-2 pr-3 text-right text-gray-500">{c.balance}</td>
-                        <td className="py-2 text-right font-bold text-indigo-600">{c.actual}</td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
+            <div className="space-y-2">
+              {contracts.map(function (c) {
+                var isSel = selectedEventIds.indexOf(c.id) !== -1
+                return (
+                  <button key={c.id} type="button" onClick={function () { toggleEvent(c.id) }}
+                    className={'w-full text-left rounded-xl border p-3 transition-colors ' + (isSel ? 'bg-indigo-50 border-indigo-300' : 'bg-white border-gray-200 active:bg-gray-50')}>
+                    <div className="flex items-start gap-3">
+                      <span className={'mt-0.5 shrink-0 w-5 h-5 rounded-full border-2 flex items-center justify-center ' + (isSel ? 'bg-indigo-600 border-indigo-600' : 'border-gray-300')}>
+                        {isSel && <Icon name="check" size={12} className="text-white" />}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="font-bold text-gray-900 text-sm truncate">{c.event}</p>
+                        <p className="text-xs text-gray-500 mt-0.5 truncate">{c.venueDate}</p>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-4 gap-1.5 mt-3 pl-8">
+                      <div>
+                        <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wide">Booking</p>
+                        <p className="text-sm font-semibold text-gray-700 tabular-nums">{c.booking}</p>
+                      </div>
+                      <div>
+                        <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wide">Extra</p>
+                        <p className="text-sm font-semibold text-gray-700 tabular-nums">{c.extra}</p>
+                      </div>
+                      <div>
+                        <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wide">Balance</p>
+                        <p className="text-sm font-semibold text-gray-700 tabular-nums">{c.balance}</p>
+                      </div>
+                      <div>
+                        <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wide">Actual</p>
+                        <p className="text-sm font-bold text-indigo-600 tabular-nums">{c.actual}</p>
+                      </div>
+                    </div>
+                  </button>
+                )
+              })}
             </div>
           )}
         </div>
@@ -487,38 +488,40 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
                   )}
                 </div>
                 {row.inventoryRows.length > 0 && (
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="text-left text-[10.5px] font-bold text-gray-400 uppercase">
-                        <th className="pb-1 pr-2">Item</th>
-                        <th className="pb-1 pr-2">Unit</th>
-                        <th className="pb-1 pr-2 text-right">Qty</th>
-                        <th className="pb-1 pr-2 text-right">Rate</th>
-                        <th className="pb-1 text-right">Total</th>
-                        <th className="pb-1 w-6"></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {row.inventoryRows.map(function (l) {
-                        return (
-                          <tr key={l.id} className="border-t border-gray-100">
-                            <td className="py-1.5 pr-2 font-semibold">{l.name}</td>
-                            <td className="py-1.5 pr-2 text-gray-400">{l.unit}</td>
-                            <td className="py-1.5 pr-2 text-right">
-                              <input type="number" value={l.qty} onChange={function (e) { changeInvQty(row, l.id, e) }} placeholder="0" className="w-16 h-8 px-2 text-right border border-gray-300 rounded" />
-                            </td>
-                            <td className="py-1.5 pr-2 text-right">
-                              <input type="number" value={l.ratePaise / 100} onChange={function (e) { changeInvRate(row, l.id, e) }} className="w-20 h-8 px-2 text-right border border-gray-300 rounded text-gray-700" />
-                            </td>
-                            <td className="py-1.5 text-right font-bold">{rupees((Number(l.qty) || 0) * l.ratePaise)}</td>
-                            <td className="py-1.5 text-center">
-                              <button onClick={function () { removeInventoryRow(row, l.id) }} aria-label="Remove item"><Icon name="trash" size={13} /></button>
-                            </td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
+                  <div className="space-y-2">
+                    {row.inventoryRows.map(function (l) {
+                      return (
+                        <div key={l.id} className="rounded-lg border border-gray-200 bg-white p-2.5">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className="font-semibold text-sm text-gray-800 truncate">{l.name}</p>
+                              <p className="text-xs text-gray-400">{l.unit}</p>
+                            </div>
+                            <button onClick={function () { removeInventoryRow(row, l.id) }} aria-label="Remove item"
+                              className="shrink-0 w-8 h-8 rounded-lg bg-red-50 text-red-600 flex items-center justify-center hover:bg-red-100">
+                              <Icon name="trash" size={13} />
+                            </button>
+                          </div>
+                          <div className="flex items-end gap-2 mt-2">
+                            <div className="flex-1">
+                              <label className="block text-[10px] font-bold text-gray-400 uppercase mb-0.5">Qty</label>
+                              <input type="number" value={l.qty} onChange={function (e) { changeInvQty(row, l.id, e) }} placeholder="0"
+                                className="w-full h-9 px-2 text-right border border-gray-300 rounded-lg" style={{ fontSize: '16px' }} />
+                            </div>
+                            <div className="flex-1">
+                              <label className="block text-[10px] font-bold text-gray-400 uppercase mb-0.5">Rate</label>
+                              <input type="number" value={l.ratePaise / 100} onChange={function (e) { changeInvRate(row, l.id, e) }}
+                                className="w-full h-9 px-2 text-right border border-gray-300 rounded-lg text-gray-700" style={{ fontSize: '16px' }} />
+                            </div>
+                            <div className="flex-1 text-right pb-1.5">
+                              <label className="block text-[10px] font-bold text-gray-400 uppercase mb-0.5">Total</label>
+                              <p className="text-sm font-bold text-gray-900">{rupees((Number(l.qty) || 0) * l.ratePaise)}</p>
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
                 )}
                 {row.inventoryRows.length > 0 && (
                   <p className="text-right text-xs text-gray-500">Inventory subtotal <span className="font-bold text-gray-900">{rupees(rowInvSubtotal(row))}</span></p>
@@ -536,39 +539,40 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
                   </button>
                 </div>
                 {row.casualRows.length > 0 && (
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="text-left text-[10.5px] font-bold text-gray-400 uppercase">
-                        <th className="pb-1 pr-2">Casual Type</th>
-                        <th className="pb-1 pr-2 text-right">Qty</th>
-                        <th className="pb-1 pr-2 text-right">Rate</th>
-                        <th className="pb-1 text-right">Total</th>
-                        <th className="pb-1 w-6"></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {row.casualRows.map(function (l) {
-                        var rate = casualRateFor(l.casualRosterId)
-                        return (
-                          <tr key={l.id} className="border-t border-gray-100">
-                            <td className="py-1.5 pr-2">
-                              <select value={l.casualRosterId} onChange={function (e) { changeCasualType(row, l.id, e) }} className="w-full h-8 px-2 border border-gray-300 rounded text-sm">
-                                {casualsFor(row.departmentId).map(function (c) { return <option key={c.id} value={c.id}>{c.casual_type}</option> })}
-                              </select>
-                            </td>
-                            <td className="py-1.5 pr-2 text-right">
-                              <input type="number" value={l.qty} onChange={function (e) { changeCasualQty(row, l.id, e) }} className="w-16 h-8 px-2 text-right border border-gray-300 rounded" />
-                            </td>
-                            <td className="py-1.5 pr-2 text-right text-gray-500">{rupees(rate)}</td>
-                            <td className="py-1.5 text-right font-bold">{rupees(l.qty * rate)}</td>
-                            <td className="py-1.5 text-center">
-                              <button onClick={function () { removeCasualRow(row, l.id) }} aria-label="Remove casual"><Icon name="trash" size={13} /></button>
-                            </td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
+                  <div className="space-y-2">
+                    {row.casualRows.map(function (l) {
+                      var rate = casualRateFor(l.casualRosterId)
+                      return (
+                        <div key={l.id} className="rounded-lg border border-gray-200 bg-white p-2.5">
+                          <div className="flex items-start gap-2">
+                            <select value={l.casualRosterId} onChange={function (e) { changeCasualType(row, l.id, e) }}
+                              className="flex-1 h-9 min-w-0 px-2 border border-gray-300 rounded-lg font-semibold text-sm" style={{ fontSize: '16px' }}>
+                              {casualsFor(row.departmentId).map(function (c) { return <option key={c.id} value={c.id}>{c.casual_type}</option> })}
+                            </select>
+                            <button onClick={function () { removeCasualRow(row, l.id) }} aria-label="Remove casual"
+                              className="shrink-0 w-9 h-9 rounded-lg bg-red-50 text-red-600 flex items-center justify-center hover:bg-red-100">
+                              <Icon name="trash" size={13} />
+                            </button>
+                          </div>
+                          <div className="flex items-end gap-2 mt-2">
+                            <div className="flex-1">
+                              <label className="block text-[10px] font-bold text-gray-400 uppercase mb-0.5">Qty</label>
+                              <input type="number" value={l.qty} onChange={function (e) { changeCasualQty(row, l.id, e) }}
+                                className="w-full h-9 px-2 text-right border border-gray-300 rounded-lg" style={{ fontSize: '16px' }} />
+                            </div>
+                            <div className="flex-1 text-right pb-1.5">
+                              <label className="block text-[10px] font-bold text-gray-400 uppercase mb-0.5">Rate</label>
+                              <p className="text-sm text-gray-500">{rupees(rate)}</p>
+                            </div>
+                            <div className="flex-1 text-right pb-1.5">
+                              <label className="block text-[10px] font-bold text-gray-400 uppercase mb-0.5">Total</label>
+                              <p className="text-sm font-bold text-gray-900">{rupees(l.qty * rate)}</p>
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
                 )}
                 {row.casualRows.length > 0 && (
                   <p className="text-right text-xs text-gray-500">Casual subtotal <span className="font-bold text-gray-900">{rupees(rowCasSubtotal(row))}</span></p>
