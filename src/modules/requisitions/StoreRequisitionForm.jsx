@@ -8,11 +8,23 @@ var KITCHEN_SECTIONS = ['Indian', 'Chinese', 'Chaat', 'Tandoor', 'Conti', 'Halwa
 
 function emptyDeptRow(id) {
   return {
-    id: id, departmentId: '', subDepartmentId: '', section: '',
+    id: id, departmentId: '', subDepartmentId: '', section: '', remarks: '',
     showInventory: false, showCasual: false,
     invSearch: '', invResults: [], invSearching: false,
     inventoryRows: [], casualRows: [],
   }
+}
+
+// Ranks a name match by how early/exact the hit is, so "Water Glass" beats
+// "Golgappa Water Dispenser Glass" for a search of "water" instead of
+// whichever order the database happened to return rows in.
+function matchRank(name, term) {
+  var n = name.toLowerCase()
+  if (n === term) return 0
+  if (n.indexOf(term) === 0) return 1
+  var wordStart = n.indexOf(' ' + term)
+  if (wordStart !== -1) return 2
+  return 3
 }
 
 function rupees(paise) { return '₹' + Math.round((paise || 0) / 100).toLocaleString('en-IN') }
@@ -22,6 +34,7 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
   var [dateTo, setDateTo] = useState('')
   var [contracts, setContracts] = useState([])
   var [contractsLoading, setContractsLoading] = useState(false)
+  var [selectedEventIds, setSelectedEventIds] = useState([])
 
   var [departments, setDepartments] = useState([])
   var [subDepartments, setSubDepartments] = useState([])
@@ -51,12 +64,12 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
     if (!editId) return
     setLoadingExisting(true)
     Promise.all([
-      supabase.from('store_requisitions').select('date_from, date_to').eq('id', editId).single(),
-      supabase.from('store_requisition_dept_rows').select('id, department_id, sub_department_id, section, sort_order').eq('store_requisition_id', editId).order('sort_order'),
+      supabase.from('store_requisitions').select('date_from, date_to, event_ids').eq('id', editId).single(),
+      supabase.from('store_requisition_dept_rows').select('id, department_id, sub_department_id, section, remarks, sort_order').eq('store_requisition_id', editId).order('sort_order'),
     ]).then(function (res) {
       var reqRow = res[0].data
       var drRows = res[1].data || []
-      if (reqRow) { setDateFrom(reqRow.date_from); setDateTo(reqRow.date_to) }
+      if (reqRow) { setDateFrom(reqRow.date_from); setDateTo(reqRow.date_to); setSelectedEventIds(reqRow.event_ids || []) }
       var drIds = drRows.map(function (r) { return r.id })
       if (drIds.length === 0) {
         setDeptRows([emptyDeptRow(1)]); setNextRowId(2); setLoadingExisting(false); return
@@ -78,7 +91,7 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
           })
           return {
             id: rowId++,
-            departmentId: String(dr.department_id), subDepartmentId: String(dr.sub_department_id), section: dr.section || '',
+            departmentId: String(dr.department_id), subDepartmentId: String(dr.sub_department_id), section: dr.section || '', remarks: dr.remarks || '',
             showInventory: rowItems.length > 0, showCasual: rowCasuals.length > 0,
             invSearch: '', invResults: [], invSearching: false,
             inventoryRows: rowItems, casualRows: rowCasuals,
@@ -169,19 +182,38 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
   function onChangeSection(rowId, e) {
     patchRow(rowId, { section: e.target.value })
   }
+  function onChangeRemarks(rowId, e) {
+    patchRow(rowId, { remarks: e.target.value })
+  }
+
+  function toggleEvent(eventId) {
+    setSelectedEventIds(function (prev) {
+      return prev.indexOf(eventId) !== -1 ? prev.filter(function (id) { return id !== eventId }) : prev.concat([eventId])
+    })
+  }
 
   function onInvSearchChange(rowId, e) {
     var term = e.target.value
     patchRow(rowId, { invSearch: term })
     if (term.trim().length < 2) { patchRow(rowId, { invResults: [] }); return }
+    var termLower = term.trim().toLowerCase()
     patchRow(rowId, { invSearching: true })
     Promise.all([
-      supabase.from('inventory_items').select('id, name, unit, rate_paise').ilike('name', '%' + term.trim() + '%').eq('status', 'approved').limit(6),
-      supabase.from('catering_store_items').select('id, name, unit, rate_paise').ilike('name', '%' + term.trim() + '%').eq('status', 'approved').limit(6),
+      supabase.from('inventory_items').select('id, name, unit, rate_paise').ilike('name', '%' + term.trim() + '%').eq('status', 'approved').limit(20),
+      supabase.from('catering_store_items').select('id, name, unit, rate_paise').ilike('name', '%' + term.trim() + '%').eq('status', 'approved').limit(20),
     ]).then(function (res) {
       var inv = (res[0].data || []).map(function (it) { return { itemSource: 'inventory', itemId: it.id, name: it.name, unit: it.unit, ratePaise: it.rate_paise || 0 } })
       var cs = (res[1].data || []).map(function (it) { return { itemSource: 'catering_store', itemId: it.id, name: it.name, unit: it.unit, ratePaise: it.rate_paise || 0 } })
-      patchRow(rowId, { invResults: inv.concat(cs), invSearching: false })
+      // A name-anywhere ilike match returns rows in whatever order the table
+      // happens to store them — "Golgappa Water Dispenser Glass" ahead of
+      // "Water Glass" for a search of "water". Re-sorted so an exact/
+      // starts-with/word-start hit always outranks a mid-word one.
+      var combined = inv.concat(cs).sort(function (a, b) {
+        var ra = matchRank(a.name, termLower), rb = matchRank(b.name, termLower)
+        if (ra !== rb) return ra - rb
+        return a.name.length - b.name.length
+      }).slice(0, 12)
+      patchRow(rowId, { invResults: combined, invSearching: false })
     })
   }
 
@@ -191,11 +223,14 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
     if (!res.error && res.data != null) latestRate = res.data
     var lineId = nextLineId
     setNextLineId(function (n) { return n + 1 })
-    var newLine = { id: lineId, itemSource: pick.itemSource, itemId: pick.itemId, name: pick.name, unit: pick.unit, qty: 1, ratePaise: latestRate }
+    var newLine = { id: lineId, itemSource: pick.itemSource, itemId: pick.itemId, name: pick.name, unit: pick.unit, qty: '', ratePaise: latestRate }
     patchRow(row.id, { inventoryRows: row.inventoryRows.concat([newLine]), invSearch: '', invResults: [] })
   }
+  // Kept as the raw typed string (not coerced to a number) so the field can
+  // actually be empty — a store requisition that starts every new line at
+  // "1" risked someone submitting a qty they never meant to confirm.
   function changeInvQty(row, lineId, e) {
-    var q = Number(e.target.value) || 0
+    var q = e.target.value
     patchRow(row.id, {
       inventoryRows: row.inventoryRows.map(function (l) { return l.id === lineId ? Object.assign({}, l, { qty: q }) : l })
     })
@@ -242,13 +277,17 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
     var c = casualRoster.find(function (x) { return String(x.id) === String(id) })
     return c ? c.rate_paise : 0
   }
-  function rowInvSubtotal(row) { return row.inventoryRows.reduce(function (s, l) { return s + l.qty * l.ratePaise }, 0) }
+  function rowInvSubtotal(row) { return row.inventoryRows.reduce(function (s, l) { return s + (Number(l.qty) || 0) * l.ratePaise }, 0) }
   function rowCasSubtotal(row) { return row.casualRows.reduce(function (s, l) { return s + l.qty * casualRateFor(l.casualRosterId) }, 0) }
   function rowTotal(row) { return rowInvSubtotal(row) + rowCasSubtotal(row) }
   var grandTotal = deptRows.reduce(function (s, r) { return s + rowTotal(r) }, 0)
 
   var canSubmit = dateFrom && dateTo && deptRows.length > 0 &&
-    deptRows.every(function (r) { return r.departmentId && r.subDepartmentId && (r.inventoryRows.length > 0 || r.casualRows.length > 0) })
+    deptRows.every(function (r) {
+      return r.departmentId && r.subDepartmentId && (r.inventoryRows.length > 0 || r.casualRows.length > 0) &&
+        r.inventoryRows.every(function (l) { return Number(l.qty) > 0 }) &&
+        r.casualRows.every(function (l) { return Number(l.qty) > 0 })
+    })
 
   async function handleSubmit() {
     if (!canSubmit || saving) return
@@ -258,18 +297,19 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
         department_id: Number(r.departmentId),
         sub_department_id: Number(r.subDepartmentId),
         section: isKitchenRow(r) ? r.section : null,
+        remarks: r.remarks ? r.remarks.trim() : null,
         items: r.inventoryRows.map(function (l) {
-          return { item_source: l.itemSource, item_id: l.itemId, item_name: l.name, unit: l.unit, qty: l.qty, rate_paise: l.ratePaise }
+          return { item_source: l.itemSource, item_id: l.itemId, item_name: l.name, unit: l.unit, qty: Number(l.qty) || 0, rate_paise: l.ratePaise }
         }),
         casuals: r.casualRows.map(function (l) {
           var c = casualRoster.find(function (x) { return String(x.id) === String(l.casualRosterId) })
-          return { casual_roster_id: l.casualRosterId || null, casual_type: c ? c.casual_type : '', qty: l.qty, rate_paise: c ? c.rate_paise : 0 }
+          return { casual_roster_id: l.casualRosterId || null, casual_type: c ? c.casual_type : '', qty: Number(l.qty) || 0, rate_paise: c ? c.rate_paise : 0 }
         }),
       }
     })
     var res = editId
-      ? await supabase.rpc('rpc_update_store_requisition', { p_id: editId, p_date_from: dateFrom, p_date_to: dateTo, p_dept_rows: payload })
-      : await supabase.rpc('rpc_submit_store_requisition', { p_date_from: dateFrom, p_date_to: dateTo, p_dept_rows: payload })
+      ? await supabase.rpc('rpc_update_store_requisition', { p_id: editId, p_date_from: dateFrom, p_date_to: dateTo, p_dept_rows: payload, p_event_ids: selectedEventIds })
+      : await supabase.rpc('rpc_submit_store_requisition', { p_date_from: dateFrom, p_date_to: dateTo, p_dept_rows: payload, p_event_ids: selectedEventIds })
     setSaving(false)
     if (res.error) { setError(res.error.message); return }
     try { await logActivity(editId ? 'STORE_REQUISITION_EDIT' : 'STORE_REQUISITION_SUBMIT', dateFrom + ' to ' + dateTo + ' · ' + rupees(grandTotal)) } catch (_) {}
@@ -312,7 +352,12 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
 
       {(dateFrom && dateTo) && (
         <div className={CARD}>
-          <p className="text-xs font-bold text-gray-400 uppercase tracking-wide">Contracts in this period</p>
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-bold text-gray-400 uppercase tracking-wide">Contracts in this period</p>
+            {selectedEventIds.length > 0 && (
+              <p className="text-xs font-semibold text-indigo-600">{selectedEventIds.length} selected</p>
+            )}
+          </div>
           {contractsLoading ? (
             <p className="text-sm text-gray-400 py-4 text-center">Loading contracts…</p>
           ) : contracts.length === 0 ? (
@@ -322,6 +367,7 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-left text-[11px] font-bold text-gray-400 uppercase">
+                    <th className="pb-2 pr-2 w-6"></th>
                     <th className="pb-2 pr-3">Event</th>
                     <th className="pb-2 pr-3">Venue · Date</th>
                     <th className="pb-2 pr-3 text-right">Booking</th>
@@ -332,8 +378,15 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
                 </thead>
                 <tbody>
                   {contracts.map(function (c) {
+                    var isSel = selectedEventIds.indexOf(c.id) !== -1
                     return (
-                      <tr key={c.id} className="border-t border-gray-100">
+                      <tr key={c.id} onClick={function () { toggleEvent(c.id) }}
+                        className={'border-t border-gray-100 cursor-pointer ' + (isSel ? 'bg-indigo-50' : 'hover:bg-gray-50')}>
+                        <td className="py-2 pr-2">
+                          <span className={'w-4 h-4 rounded border inline-flex items-center justify-center ' + (isSel ? 'bg-indigo-600 border-indigo-600' : 'border-gray-300')}>
+                            {isSel && <Icon name="check" size={11} className="text-white" />}
+                          </span>
+                        </td>
                         <td className="py-2 pr-3 font-semibold text-gray-800">{c.event}</td>
                         <td className="py-2 pr-3 text-gray-500">{c.venueDate}</td>
                         <td className="py-2 pr-3 text-right font-semibold">{c.booking}</td>
@@ -395,6 +448,12 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
               )}
             </div>
 
+            <div>
+              <label className={LABEL}>Remarks</label>
+              <input type="text" value={row.remarks} onChange={function (e) { onChangeRemarks(row.id, e) }}
+                placeholder="Optional note for this row…" className={CTRL} style={{ fontSize: '16px' }} />
+            </div>
+
             <div className="flex gap-2">
               <button onClick={function () { patchRow(row.id, { showInventory: !row.showInventory }) }}
                 className={'inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded-lg border ' + (row.showInventory ? 'bg-indigo-50 border-indigo-400 text-indigo-700' : 'bg-white border-gray-300 text-gray-600')}>
@@ -446,12 +505,12 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
                             <td className="py-1.5 pr-2 font-semibold">{l.name}</td>
                             <td className="py-1.5 pr-2 text-gray-400">{l.unit}</td>
                             <td className="py-1.5 pr-2 text-right">
-                              <input type="number" value={l.qty} onChange={function (e) { changeInvQty(row, l.id, e) }} className="w-16 h-8 px-2 text-right border border-gray-300 rounded" />
+                              <input type="number" value={l.qty} onChange={function (e) { changeInvQty(row, l.id, e) }} placeholder="0" className="w-16 h-8 px-2 text-right border border-gray-300 rounded" />
                             </td>
                             <td className="py-1.5 pr-2 text-right">
                               <input type="number" value={l.ratePaise / 100} onChange={function (e) { changeInvRate(row, l.id, e) }} className="w-20 h-8 px-2 text-right border border-gray-300 rounded text-gray-700" />
                             </td>
-                            <td className="py-1.5 text-right font-bold">{rupees(l.qty * l.ratePaise)}</td>
+                            <td className="py-1.5 text-right font-bold">{rupees((Number(l.qty) || 0) * l.ratePaise)}</td>
                             <td className="py-1.5 text-center">
                               <button onClick={function () { removeInventoryRow(row, l.id) }} aria-label="Remove item"><Icon name="trash" size={13} /></button>
                             </td>
