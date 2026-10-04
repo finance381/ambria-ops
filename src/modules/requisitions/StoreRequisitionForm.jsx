@@ -317,8 +317,8 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
   }
 
   var CARD = 'bg-white border border-gray-200 rounded-2xl p-4 space-y-3'
-  var CTRL = 'w-full h-10 px-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500'
-  var LABEL = 'block text-xs font-semibold text-gray-500 mb-1'
+  var CTRL = 'w-full h-9 px-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500'
+  var LABEL = 'block text-[11px] font-semibold text-gray-500 mb-0.5'
 
   return (
     <div className="space-y-4">
@@ -363,38 +363,22 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
           ) : contracts.length === 0 ? (
             <p className="text-sm text-gray-400 py-4 text-center">No venue/catering contracts in this window.</p>
           ) : (
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               {contracts.map(function (c) {
                 var isSel = selectedEventIds.indexOf(c.id) !== -1
                 return (
                   <button key={c.id} type="button" onClick={function () { toggleEvent(c.id) }}
-                    className={'w-full text-left rounded-xl border p-3 transition-colors ' + (isSel ? 'bg-indigo-50 border-indigo-300' : 'bg-white border-gray-200 active:bg-gray-50')}>
-                    <div className="flex items-start gap-3">
-                      <span className={'mt-0.5 shrink-0 w-5 h-5 rounded-full border-2 flex items-center justify-center ' + (isSel ? 'bg-indigo-600 border-indigo-600' : 'border-gray-300')}>
-                        {isSel && <Icon name="check" size={12} className="text-white" />}
+                    className={'w-full text-left rounded-lg border px-3 py-2 transition-colors ' + (isSel ? 'bg-indigo-50 border-indigo-300' : 'bg-white border-gray-200 active:bg-gray-50')}>
+                    <div className="flex items-center gap-2.5">
+                      <span className={'shrink-0 w-[18px] h-[18px] rounded-full border-2 flex items-center justify-center ' + (isSel ? 'bg-indigo-600 border-indigo-600' : 'border-gray-300')}>
+                        {isSel && <Icon name="check" size={11} className="text-white" />}
                       </span>
-                      <div className="min-w-0 flex-1">
-                        <p className="font-bold text-gray-900 text-sm truncate">{c.event}</p>
-                        <p className="text-xs text-gray-500 mt-0.5 truncate">{c.venueDate}</p>
-                      </div>
+                      <p className="min-w-0 flex-1 font-bold text-gray-900 text-sm truncate">{c.event}</p>
+                      <p className="shrink-0 text-sm font-bold text-indigo-600 tabular-nums">{c.actual}</p>
                     </div>
-                    <div className="grid grid-cols-4 gap-1.5 mt-3 pl-8">
-                      <div>
-                        <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wide">Booking</p>
-                        <p className="text-sm font-semibold text-gray-700 tabular-nums">{c.booking}</p>
-                      </div>
-                      <div>
-                        <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wide">Extra</p>
-                        <p className="text-sm font-semibold text-gray-700 tabular-nums">{c.extra}</p>
-                      </div>
-                      <div>
-                        <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wide">Balance</p>
-                        <p className="text-sm font-semibold text-gray-700 tabular-nums">{c.balance}</p>
-                      </div>
-                      <div>
-                        <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wide">Actual</p>
-                        <p className="text-sm font-bold text-indigo-600 tabular-nums">{c.actual}</p>
-                      </div>
+                    <div className="flex items-center justify-between gap-2 mt-0.5 pl-[26px]">
+                      <p className="text-[11px] text-gray-500 truncate">{c.venueDate}</p>
+                      <p className="shrink-0 text-[11px] text-gray-400 tabular-nums">{c.booking} · {c.extra} · {c.balance}</p>
                     </div>
                   </button>
                 )
@@ -423,7 +407,7 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
               </button>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
               <div>
                 <label className={LABEL}>Department</label>
                 <select value={row.departmentId} onChange={function (e) { onChangeDepartment(row.id, e) }} className={CTRL}>
@@ -439,7 +423,7 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
                 </select>
               </div>
               {isKitchen && (
-                <div>
+                <div className="col-span-2 sm:col-span-1">
                   <label className={LABEL}>Section</label>
                   <select value={row.section} onChange={function (e) { onChangeSection(row.id, e) }} className={CTRL + ' bg-amber-50 border-amber-300'}>
                     <option value="">Select…</option>
