@@ -453,24 +453,6 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
             {row.showInventory && (
               <div className="p-3 bg-gray-50 border border-gray-200 rounded-xl space-y-2">
                 <p className="text-xs font-bold text-gray-500">Inventory used</p>
-                <div className="relative">
-                  <input type="text" value={row.invSearch} onChange={function (e) { onInvSearchChange(row.id, e) }}
-                    placeholder="Search inventory items to add..." className={CTRL + ' pl-8'} style={{ fontSize: '16px' }} />
-                  <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400"><Icon name="search" size={14} /></span>
-                  {row.invResults.length > 0 && (
-                    <div className="absolute z-10 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden">
-                      {row.invResults.map(function (r) {
-                        return (
-                          <button key={r.itemSource + ':' + r.itemId} onClick={function () { addInventoryItem(row, r) }}
-                            className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-indigo-50 border-b border-gray-100 last:border-0">
-                            <span className="font-semibold">{r.name}</span>
-                            <span className="text-gray-400 text-xs">{r.unit}</span>
-                          </button>
-                        )
-                      })}
-                    </div>
-                  )}
-                </div>
                 {row.inventoryRows.length > 0 && (
                   <div className="space-y-2">
                     {row.inventoryRows.map(function (l) {
@@ -510,6 +492,24 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
                 {row.inventoryRows.length > 0 && (
                   <p className="text-right text-xs text-gray-500">Inventory subtotal <span className="font-bold text-gray-900">{rupees(rowInvSubtotal(row))}</span></p>
                 )}
+                <div className="relative">
+                  <input type="text" value={row.invSearch} onChange={function (e) { onInvSearchChange(row.id, e) }}
+                    placeholder="Search inventory items to add..." className={CTRL + ' pl-8'} style={{ fontSize: '16px' }} />
+                  <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400"><Icon name="search" size={14} /></span>
+                  {row.invResults.length > 0 && (
+                    <div className="absolute z-10 left-0 right-0 bottom-full mb-1 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden">
+                      {row.invResults.map(function (r) {
+                        return (
+                          <button key={r.itemSource + ':' + r.itemId} onClick={function () { addInventoryItem(row, r) }}
+                            className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-indigo-50 border-b border-gray-100 last:border-0">
+                            <span className="font-semibold">{r.name}</span>
+                            <span className="text-gray-400 text-xs">{r.unit}</span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 
