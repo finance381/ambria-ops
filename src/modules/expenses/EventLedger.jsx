@@ -419,7 +419,7 @@ function EventLedger(props) {
     var wtById = {}
     if (collTxnIds.length > 0) {
       var { data: wtRows } = await supabase.from('wallet_transactions')
-        .select('id, amount_paise, payment_mode, receipt_no, status, performed_by, received_image_path, checked_by, checked_at, tally_entered_by, tally_entered_at')
+        .select('id, amount_paise, payment_mode, bank_payment_type, receipt_no, status, performed_by, received_image_path, checked_by, checked_at, tally_entered_by, tally_entered_at')
         .in('id', collTxnIds)
       ;(wtRows || []).forEach(function (w) {
         wtById[w.id] = w
@@ -2102,6 +2102,12 @@ function EventLedger(props) {
                   <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">Mode</div>
                   <div className="text-[15px] font-bold text-slate-900">{wt.payment_mode || '—'}</div>
                 </div>
+                {wt.bank_payment_type && (
+                  <div>
+                    <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">Payment Type</div>
+                    <div className="text-[15px] font-bold text-slate-900">{wt.bank_payment_type}</div>
+                  </div>
+                )}
                 <div>
                   <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">Collected by</div>
                   <div className="text-[15px] font-bold text-slate-900">{r._collectorName || '—'}</div>

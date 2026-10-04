@@ -264,7 +264,7 @@ function PaymentsLedger({ profile }) {
         .limit(1000),
       supabase
         .from('wallet_transactions')
-        .select('id, created_at, amount_paise, description, payment_mode, receipt_no, reference_id, performed_by, status, received_image_path, checked_by, checked_at, tally_entered_by, tally_entered_at')
+        .select('id, created_at, amount_paise, description, payment_mode, bank_payment_type, receipt_no, reference_id, performed_by, status, received_image_path, checked_by, checked_at, tally_entered_by, tally_entered_at')
         .eq('reference_type', 'collection')
         .not('payment_mode', 'is', null)
         .neq('status', 'cancelled')
@@ -417,6 +417,7 @@ function PaymentsLedger({ profile }) {
         logged_at: w.created_at,
         direction: meta.direction,
         mode: w.payment_mode,
+        _bankPaymentType: w.bank_payment_type || null,
         amount_paise: w.amount_paise || 0,
         party_name: partyName,
         collector_name: (w.performed_by && profileNames[w.performed_by]) || '',
@@ -1231,6 +1232,9 @@ function PaymentsLedger({ profile }) {
                 <div className="flex justify-between"><span className="text-gray-500">Party</span><span className="font-medium text-gray-800">{r.party_name}</span></div>
                 <div className="flex justify-between"><span className="text-gray-500">Date</span><span className="font-medium text-gray-800">{formatDate(r.date)}</span></div>
                 <div className="flex justify-between"><span className="text-gray-500">Mode</span><span className="font-medium text-gray-800">{r.mode === 'cash' ? 'Cash' : 'Bank'}</span></div>
+                {r._bankPaymentType && (
+                  <div className="flex justify-between"><span className="text-gray-500">Payment Type</span><span className="font-medium text-gray-800">{r._bankPaymentType}</span></div>
+                )}
                 {r.description && (
                   <div className="flex justify-between gap-3"><span className="text-gray-500 flex-shrink-0">Description</span><span className="font-medium text-gray-800 text-right">{r.description}</span></div>
                 )}
