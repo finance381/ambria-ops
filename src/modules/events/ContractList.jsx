@@ -20,13 +20,15 @@ var CONTRACT_SELECT = 'id, lms_event_id, contract_no, contract_date, function_da
   'balance_amount, status, synced_at, created_user_name, ppt_link, pdf_link, enquiry_mode, priority, address, ' +
   'is_tentative, pax, function_type, merged_into_id, tally_entered_by, tally_entered_at'
 
-// LMS gives an off-site booking its own venue_name per department — "Outdoor
-// Venue", "Outdoor Catering", "Outdoor Decor", "Outdoor Entertainment" (see
-// venueColors.js, which already keys a legend colour off these same four
-// literal strings) — rather than a separate indoor/outdoor flag. Anything
-// else is one of Ambria's own halls, i.e. indoor.
-function isOutdoorVenue(venueName) {
-  return !!venueName && venueName.toLowerCase().indexOf('outdoor') !== -1
+// LMS's own indoor/outdoor flag — confirmed directly against the live API:
+// every department returns a `lead_type` field, "I" (one of Ambria's own
+// venues) or "O" (an external/off-site booking), which sync-events already
+// pulls in under `contract_type` (mapRow in supabase/functions/sync-events,
+// `e[dep.d + "lead_type"]`). It was never decoded anywhere it's shown — a
+// blank event_name fell back to the raw letter as a title. This is the
+// authoritative signal; venue_name string-matching was a guess and is gone.
+function venueTypeLabel(v) {
+  return v === 'I' ? 'Indoor' : v === 'O' ? 'Outdoor' : v
 }
 
 // A flat, un-grouped list of every synced LMS contract — Events.jsx clusters
@@ -157,7 +159,7 @@ function ContractList({ profile, deepLinkContractId }) {
     var matchVenue = !venueFilter || c.venue_name === venueFilter
     var matchDept = !deptFilter || c.department === deptFilter
     var matchEntered = !enteredFilter || (enteredFilter === 'yes' ? !!c.tally_entered_by : !c.tally_entered_by)
-    var matchVenueType = !venueTypeFilter || (venueTypeFilter === 'outdoor' ? isOutdoorVenue(c.venue_name) : !isOutdoorVenue(c.venue_name))
+    var matchVenueType = !venueTypeFilter || c.contract_type === (venueTypeFilter === 'outdoor' ? 'O' : 'I')
     return matchSearch && matchVenue && matchDept && matchEntered && matchVenueType
   })
 
@@ -246,7 +248,7 @@ function ContractList({ profile, deepLinkContractId }) {
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <h3 className="font-semibold text-gray-800 text-sm truncate">{c.event_name || c.contract_type || '—'}</h3>
+                    <h3 className="font-semibold text-gray-800 text-sm truncate">{c.event_name || '—'}</h3>
                     {c.is_tentative && <Badge color="amber">Tentative</Badge>}
                     {c.department && <span className={"text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full flex-shrink-0 " + (DEPT_BADGE[c.department] || "bg-gray-100 text-gray-600")}>{c.department}</span>}
                   </div>
@@ -313,7 +315,7 @@ function ContractList({ profile, deepLinkContractId }) {
 
       {/* ═══ CONTRACT DETAIL MODAL — every events_safe field ═══ */}
       <Modal open={!!selected} onClose={function () { setSelected(null) }}
-        title={selected ? (selected.event_name || selected.contract_type || '—') : ''} wide>
+        title={selected ? (selected.event_name || '—') : ''} wide>
         {selected && (
           <div className="space-y-4 text-sm">
             <div className="flex items-center gap-2 flex-wrap">
@@ -332,7 +334,7 @@ function ContractList({ profile, deepLinkContractId }) {
                 ['Secondary contact', selected.secondary_contact],
                 ['Contract date', selected.contract_date ? formatDate(selected.contract_date) : null],
                 ['Function date', selected.function_date ? formatDate(selected.function_date) : null],
-                ['Contract type', selected.contract_type],
+                ['Venue type', venueTypeLabel(selected.contract_type)],
                 ['Function type', selected.function_type],
                 ['Venue', selected.venue_name],
                 ['Location', selected.location],
