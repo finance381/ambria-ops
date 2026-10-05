@@ -20,6 +20,15 @@ var CONTRACT_SELECT = 'id, lms_event_id, contract_no, contract_date, function_da
   'balance_amount, status, synced_at, created_user_name, ppt_link, pdf_link, enquiry_mode, priority, address, ' +
   'is_tentative, pax, function_type, merged_into_id, tally_entered_by, tally_entered_at'
 
+// LMS gives an off-site booking its own venue_name per department — "Outdoor
+// Venue", "Outdoor Catering", "Outdoor Decor", "Outdoor Entertainment" (see
+// venueColors.js, which already keys a legend colour off these same four
+// literal strings) — rather than a separate indoor/outdoor flag. Anything
+// else is one of Ambria's own halls, i.e. indoor.
+function isOutdoorVenue(venueName) {
+  return !!venueName && venueName.toLowerCase().indexOf('outdoor') !== -1
+}
+
 // A flat, un-grouped list of every synced LMS contract — Events.jsx clusters
 // same-guest functions into one card and hides most contract fields behind
 // two levels of drill-down (group → function). This is the other view: one
@@ -32,6 +41,7 @@ function ContractList({ profile, deepLinkContractId }) {
   var [search, setSearch] = useState('')
   var [venueFilter, setVenueFilter] = useState('')
   var [deptFilter, setDeptFilter] = useState('')
+  var [venueTypeFilter, setVenueTypeFilter] = useState('')
   var [page, setPage] = useState(1)
   var [perPage, setPerPage] = useState(25)
   var [selected, setSelected] = useState(null)
@@ -147,7 +157,8 @@ function ContractList({ profile, deepLinkContractId }) {
     var matchVenue = !venueFilter || c.venue_name === venueFilter
     var matchDept = !deptFilter || c.department === deptFilter
     var matchEntered = !enteredFilter || (enteredFilter === 'yes' ? !!c.tally_entered_by : !c.tally_entered_by)
-    return matchSearch && matchVenue && matchDept && matchEntered
+    var matchVenueType = !venueTypeFilter || (venueTypeFilter === 'outdoor' ? isOutdoorVenue(c.venue_name) : !isOutdoorVenue(c.venue_name))
+    return matchSearch && matchVenue && matchDept && matchEntered && matchVenueType
   })
 
   var totalPages = Math.ceil(filtered.length / perPage)
@@ -197,6 +208,13 @@ function ContractList({ profile, deepLinkContractId }) {
             <option value="">Entered: All</option>
             <option value="yes">Entered: Yes</option>
             <option value="no">Entered: No</option>
+          </select>
+          <select value={venueTypeFilter}
+            onChange={function (e) { setVenueTypeFilter(e.target.value); setPage(1) }}
+            className="flex-1 min-w-[120px] px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            <option value="">Indoor/Outdoor: All</option>
+            <option value="indoor">Indoor</option>
+            <option value="outdoor">Outdoor</option>
           </select>
           <select value={perPage}
             onChange={function (e) { setPerPage(Number(e.target.value)); setPage(1) }}
