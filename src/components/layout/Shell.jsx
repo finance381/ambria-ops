@@ -14,6 +14,7 @@ import { hasPerm } from '../../lib/permissions'
 var Inventory = lazy(function () { return import('../../modules/inventory/Inventory') })
 var InventoryForm = lazy(function () { return import('../../modules/inventory/InventoryForm') })
 var Events = lazy(function () { return import('../../modules/events/Events') })
+var ContractList = lazy(function () { return import('../../modules/events/ContractList') })
 var ExtraPlateCollect = lazy(function () { return import('../../modules/events/ExtraPlateCollect') })
 var AdminReview = lazy(function () { return import('../../modules/categories/AdminReview') })
 var DeptReview = lazy(function () { return import('../../modules/categories/DeptReview') })
@@ -89,6 +90,7 @@ var GROUPS = [
   {
     key: 'events', label: 'Events', icon: 'calendar', items: [
       { key: 'events.list', label: 'Events', icon: 'calendar', tab: 'events' },
+      { key: 'events.list', id: 'events.contracts', label: 'Contracts', icon: 'fileText', tab: 'contracts', noBadge: true },
       { key: 'events.extra_plate_collect', label: 'Extra Plates', icon: 'utensils', tab: 'extra_plates' },
     ]
   },
@@ -811,6 +813,9 @@ function Shell({ profile, onSignOut }) {
         )}
         {tab === 'events' && (
           <Events profile={profile} />
+        )}
+        {tab === 'contracts' && (
+          <ContractList profile={profile} />
         )}
         {tab === 'extra_plates' && (
           <ExtraPlateCollect profile={profile} />

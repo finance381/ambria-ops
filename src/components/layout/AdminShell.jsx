@@ -32,6 +32,7 @@ function prefetchTab(cfg) {
 
 var RateCardEditor = lazyTab(function () { return import('../../modules/quote/RateCardEditor') })
 var Events = lazyTab(function () { return import('../../modules/events/Events') })
+var ContractList = lazyTab(function () { return import('../../modules/events/ContractList') })
 var ExtraPlateCollect = lazyTab(function () { return import('../../modules/events/ExtraPlateCollect') })
 var AdminItems = lazyTab(function () { return import('../../modules/inventory/AdminItems') })
 var Categories = lazyTab(function () { return import('../../modules/categories/Categories') })
@@ -143,6 +144,7 @@ function SubTabs({ tabs, active, onChange, large }) {
 var SUB_TAB_CONFIG = {
   events: [
     { key: 'events',       label: 'Events',        icon: 'calendar', component: Events,            perm: 'events.list' },
+    { key: 'contracts',    label: 'Contracts',     icon: 'fileText', component: ContractList,      perm: 'events.list' },
     { key: 'extra_plates', label: 'Extra Plates',  icon: 'utensils', component: ExtraPlateCollect, perm: 'events.extra_plate_collect' },
   ],
   inventory: [
