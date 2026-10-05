@@ -5,6 +5,7 @@ import { formatDate, formatPaise, titleCase } from '../../lib/format'
 import Modal from '../../components/ui/Modal'
 import { hasPerm } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
+import EnteredMark from '../../components/ui/EnteredMark'
 
 var DEPT_BADGE = {
   Venue: 'bg-blue-100 text-blue-700',
@@ -17,7 +18,7 @@ var CONTRACT_SELECT = 'id, lms_event_id, contract_no, contract_date, function_da
   'venue_name, location, contact_person, contact_number, secondary_contact, event_name, client_name, session, ' +
   'catering, total_plates, complementary_plates, extra_plates_charge, balance_received, balance_bank, ' +
   'balance_amount, status, synced_at, created_user_name, ppt_link, pdf_link, enquiry_mode, priority, address, ' +
-  'is_tentative, pax, function_type, merged_into_id'
+  'is_tentative, pax, function_type, merged_into_id, tally_entered_by, tally_entered_at'
 
 // A flat, un-grouped list of every synced LMS contract — Events.jsx clusters
 // same-guest functions into one card and hides most contract fields behind
@@ -55,6 +56,7 @@ function ContractList({ profile, deepLinkContractId }) {
       .then(function (res) {
         setPinnedContract(res.data || null)
         setSelected(res.data || null)
+        if (res.data) loadEnteredNames([res.data])
         setPinnedLoading(false)
       })
   }, [filterId])
@@ -66,11 +68,17 @@ function ContractList({ profile, deepLinkContractId }) {
   }, [refData.venues])
 
   var isAdmin = hasPerm(profile?.permsNew, 'events.list')
+  var isSysAdmin = hasPerm(profile?.permsNew, 'admin.dashboard')
+  var canMarkEntered = hasPerm(profile?.permsNew, 'finance.wallet.mark_entered')
   var userEventDeptNames = (profile?.event_dept_ids || []).map(function (id) {
     var dept = departments.find(function (d) { return d.id === id })
     return dept ? dept.name : null
   }).filter(Boolean)
   var hasEventDeptFilter = !isAdmin && userEventDeptNames.length > 0
+
+  var [enteredNames, setEnteredNames] = useState({})
+  var [enteringId, setEnteringId] = useState(null)
+  var [enteredFilter, setEnteredFilter] = useState('')
 
   useEffect(function () { load() }, [])
 
@@ -89,8 +97,36 @@ function ContractList({ profile, deepLinkContractId }) {
       supabase.from('departments').select('id, name').eq('active', true).eq('hide_from_lists', false),
     ])
     setDepartments(deptRes.data || [])
-    setContracts(res.data || [])
+    var rows = res.data || []
+    setContracts(rows)
+    loadEnteredNames(rows)
     setLoading(false)
+  }
+
+  function loadEnteredNames(rows) {
+    var ids = []
+    rows.forEach(function (c) { if (c.tally_entered_by && ids.indexOf(c.tally_entered_by) === -1) ids.push(c.tally_entered_by) })
+    if (ids.length === 0) return
+    supabase.from('profiles').select('id, name').in('id', ids).then(function (res) {
+      var next = {}
+      ;(res.data || []).forEach(function (p) { next[p.id] = p.name })
+      setEnteredNames(function (prev) { return Object.assign({}, prev, next) })
+    })
+  }
+
+  async function toggleContractEntered(id) {
+    if (enteringId) return
+    setEnteringId(id)
+    var res = await supabase.rpc('fn_toggle_event_tally_entered', { p_event_id: id })
+    setEnteringId(null)
+    if (res.error) { alert('Failed: ' + res.error.message); return }
+    var patch = res.data
+      ? { tally_entered_by: profile.id, tally_entered_at: new Date().toISOString() }
+      : { tally_entered_by: null, tally_entered_at: null }
+    setContracts(function (prev) { return prev.map(function (c) { return c.id === id ? Object.assign({}, c, patch) : c }) })
+    setPinnedContract(function (prev) { return prev && prev.id === id ? Object.assign({}, prev, patch) : prev })
+    setSelected(function (prev) { return prev && prev.id === id ? Object.assign({}, prev, patch) : prev })
+    if (res.data && profile.name) setEnteredNames(function (prev) { return Object.assign({}, prev, { [profile.id]: profile.name }) })
   }
 
   var visible = hasEventDeptFilter
@@ -110,7 +146,8 @@ function ContractList({ profile, deepLinkContractId }) {
       (c.venue_name || '').toLowerCase().indexOf(searchLower) !== -1
     var matchVenue = !venueFilter || c.venue_name === venueFilter
     var matchDept = !deptFilter || c.department === deptFilter
-    return matchSearch && matchVenue && matchDept
+    var matchEntered = !enteredFilter || (enteredFilter === 'yes' ? !!c.tally_entered_by : !c.tally_entered_by)
+    return matchSearch && matchVenue && matchDept && matchEntered
   })
 
   var totalPages = Math.ceil(filtered.length / perPage)
@@ -154,6 +191,13 @@ function ContractList({ profile, deepLinkContractId }) {
             <option value="">All Depts</option>
             {departments.map(function (d) { return <option key={d.id} value={d.name}>{d.name}</option> })}
           </select>
+          <select value={enteredFilter}
+            onChange={function (e) { setEnteredFilter(e.target.value); setPage(1) }}
+            className="flex-1 min-w-[120px] px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            <option value="">Entered: All</option>
+            <option value="yes">Entered: Yes</option>
+            <option value="no">Entered: No</option>
+          </select>
           <select value={perPage}
             onChange={function (e) { setPerPage(Number(e.target.value)); setPage(1) }}
             className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
@@ -195,11 +239,26 @@ function ContractList({ profile, deepLinkContractId }) {
                     {c.venue_name && <span>{c.venue_name}</span>}
                   </div>
                 </div>
-                {isAdmin && c.balance_amount ? (
-                  <span className={"shrink-0 text-xs font-semibold " + (c.balance_amount < 0 ? "text-red-600" : "text-green-600")}>
-                    {formatPaise(Math.abs(c.balance_amount))} {c.balance_amount < 0 ? 'due' : 'adv'}
-                  </span>
-                ) : null}
+                <div className="shrink-0 flex flex-col items-end gap-1">
+                  {isAdmin && c.balance_amount ? (
+                    <span className={"text-xs font-semibold " + (c.balance_amount < 0 ? "text-red-600" : "text-green-600")}>
+                      {formatPaise(Math.abs(c.balance_amount))} {c.balance_amount < 0 ? 'due' : 'adv'}
+                    </span>
+                  ) : null}
+                  {(c.tally_entered_by || canMarkEntered) && (
+                    <span onClick={function (ev) { ev.stopPropagation() }}>
+                      <EnteredMark
+                        entered={!!c.tally_entered_by}
+                        enteredByName={enteredNames[c.tally_entered_by]}
+                        enteredAt={c.tally_entered_at}
+                        canToggle={canMarkEntered}
+                        canUnenter={c.tally_entered_by === profile.id || isSysAdmin}
+                        busy={enteringId === c.id}
+                        onToggle={function () { toggleContractEntered(c.id) }}
+                      />
+                    </span>
+                  )}
+                </div>
               </div>
             </button>
           )
@@ -295,6 +354,21 @@ function ContractList({ profile, deepLinkContractId }) {
                     <span className={"font-bold " + (selected.balance_amount < 0 ? "text-red-600" : "text-green-600")}>{formatPaise(Math.abs(selected.balance_amount))}</span>
                   </div>
                 )}
+              </div>
+            )}
+
+            {(selected.tally_entered_by || canMarkEntered) && (
+              <div className="flex items-center justify-between pt-3 border-t border-gray-100">
+                <span className="text-xs font-semibold text-gray-500">Entered in Tally</span>
+                <EnteredMark
+                  entered={!!selected.tally_entered_by}
+                  enteredByName={enteredNames[selected.tally_entered_by]}
+                  enteredAt={selected.tally_entered_at}
+                  canToggle={canMarkEntered}
+                  canUnenter={selected.tally_entered_by === profile.id || isSysAdmin}
+                  busy={enteringId === selected.id}
+                  onToggle={function () { toggleContractEntered(selected.id) }}
+                />
               </div>
             )}
 
