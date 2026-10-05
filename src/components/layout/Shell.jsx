@@ -183,6 +183,7 @@ function Shell({ profile, onSignOut }) {
   // expense's edit/Raise JV view instead of just the Expenses tab.
   var [deepLinkExpense, setDeepLinkExpense] = useState(null)
   var [deepLinkTransferId, setDeepLinkTransferId] = useState(null)
+  var [deepLinkContractId, setDeepLinkContractId] = useState(null)
   var [menuOpen, setMenuOpen] = useState(false)
   var [menuPos, setMenuPos] = useState(null)
   var menuBtnRef = useRef(null)
@@ -300,6 +301,11 @@ function Shell({ profile, onSignOut }) {
       var fromGroup3 = activeGroup, fromTab3 = tab, fromSub3 = subTab
       pushBack(function () { setActiveGroup(fromGroup3); setTab(fromTab3); setSubTab(fromSub3) })
       setActiveGroup('events'); setTab('events'); setSubTab(null)
+    } else if (link && link.indexOf('contracts:') === 0) {
+      var fromGroup4 = activeGroup, fromTab4 = tab, fromSub4 = subTab
+      pushBack(function () { setActiveGroup(fromGroup4); setTab(fromTab4); setSubTab(fromSub4) })
+      setActiveGroup('events'); setTab('contracts'); setSubTab(null)
+      setDeepLinkContractId(link.slice('contracts:'.length))
     }
   }
 
@@ -815,7 +821,7 @@ function Shell({ profile, onSignOut }) {
           <Events profile={profile} />
         )}
         {tab === 'contracts' && (
-          <ContractList profile={profile} />
+          <ContractList profile={profile} deepLinkContractId={deepLinkContractId} />
         )}
         {tab === 'extra_plates' && (
           <ExtraPlateCollect profile={profile} />

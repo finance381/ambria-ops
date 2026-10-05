@@ -197,18 +197,22 @@ async function notifyNewContractsSynced(supa: any, SUPABASE_URL: string, SERVICE
   var body = newRows.length === 1
     ? (newRows[0].event_name || newRows[0].client_name || newRows[0].contract_no || "A new contract") + " (" + newRows[0].department + ")"
     : deptSummary
+  // A single new contract has one obvious place to send the click — straight
+  // to that row in the Contracts list, not just the tab in general. A batch
+  // of several has no single target, so it still lands on the tab at large.
+  var link = (newRows.length === 1 && newRows[0].id) ? ("contracts:" + newRows[0].id) : "events"
 
   for (var i = 0; i < userIds.length; i++) {
     var uid = userIds[i]
     var insRes = await supa.from("notifications").insert({
-      user_id: uid, type: "lms_sync", title: title, body: body, link: "events",
+      user_id: uid, type: "lms_sync", title: title, body: body, link: link,
     })
     if (insRes.error) { console.log("sync-events: notification insert failed: " + insRes.error.message); continue }
     try {
       await fetch(SUPABASE_URL + "/functions/v1/send-push", {
         method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": "Bearer " + SERVICE_ROLE },
-        body: JSON.stringify({ user_id: uid, title: title, body: body, link: "events" }),
+        body: JSON.stringify({ user_id: uid, title: title, body: body, link: link }),
       })
     } catch (pushErr) {
       console.log("sync-events: send-push call failed")
@@ -342,17 +346,25 @@ serve(async (req) => {
           .in("lms_event_id", chunkIds)
         var existingSet = new Set((existingRows || []).map(function (r: any) { return r.lms_event_id }))
 
-        var { error, count } = await supabase
+        var { data: upsertedRows, error, count } = await supabase
           .from("events")
           .upsert(chunk, { onConflict: "lms_event_id", count: "exact" })
+          .select("id, lms_event_id")
 
         if (error) {
           console.log("Upsert error " + dep.name + " chunk " + i + ":", error.message)
           result.errors.push(dep.name + ": upsert - " + error.message)
         } else {
           result.synced += count || chunk.length
+          // The upsert payload itself has no `id` (assigned by Postgres) — pull
+          // it back off the upsert's own response so a single-new-contract
+          // notification can deep-link straight to that row.
+          var idByLms: Record<string, number> = {}
+          ;(upsertedRows || []).forEach(function (r: any) { idByLms[r.lms_event_id] = r.id })
           for (var ci2 = 0; ci2 < chunk.length; ci2++) {
-            if (!existingSet.has(chunk[ci2].lms_event_id)) result.newRows.push(chunk[ci2])
+            if (!existingSet.has(chunk[ci2].lms_event_id)) {
+              result.newRows.push(Object.assign({}, chunk[ci2], { id: idByLms[chunk[ci2].lms_event_id] }))
+            }
           }
         }
       }

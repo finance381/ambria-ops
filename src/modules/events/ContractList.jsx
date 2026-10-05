@@ -24,7 +24,7 @@ var CONTRACT_SELECT = 'id, lms_event_id, contract_no, contract_date, function_da
 // two levels of drill-down (group → function). This is the other view: one
 // row per contract, click through to see every field events_safe carries,
 // for whoever needs the raw contract detail rather than the day-of grouping.
-function ContractList({ profile }) {
+function ContractList({ profile, deepLinkContractId }) {
   var [contracts, setContracts] = useState([])
   var [loading, setLoading] = useState(true)
   var [departments, setDepartments] = useState([])
@@ -34,6 +34,30 @@ function ContractList({ profile }) {
   var [page, setPage] = useState(1)
   var [perPage, setPerPage] = useState(25)
   var [selected, setSelected] = useState(null)
+
+  // Deep-link from a "new contract synced" notification — pins the view to
+  // just that one contract regardless of the normal date-floor/search/filter
+  // state, fetched directly by id so it resolves even if the contract falls
+  // outside the default list window. Local state (not read straight off the
+  // prop) so "Clear" can drop it without needing the parent to forget it too.
+  var [filterId, setFilterId] = useState(deepLinkContractId || null)
+  var [pinnedContract, setPinnedContract] = useState(null)
+  var [pinnedLoading, setPinnedLoading] = useState(false)
+
+  useEffect(function () {
+    if (deepLinkContractId) setFilterId(deepLinkContractId)
+  }, [deepLinkContractId])
+
+  useEffect(function () {
+    if (!filterId) { setPinnedContract(null); return }
+    setPinnedLoading(true)
+    supabase.from('events_safe').select(CONTRACT_SELECT).eq('id', filterId).maybeSingle()
+      .then(function (res) {
+        setPinnedContract(res.data || null)
+        setSelected(res.data || null)
+        setPinnedLoading(false)
+      })
+  }, [filterId])
   var refData = useReferenceData()
   var venueMap = useMemo(function () {
     var m = {}
@@ -91,6 +115,7 @@ function ContractList({ profile }) {
 
   var totalPages = Math.ceil(filtered.length / perPage)
   var paged = filtered.slice((page - 1) * perPage, page * perPage)
+  var rowsToShow = filterId ? (pinnedContract ? [pinnedContract] : []) : paged
 
   if (loading) {
     return <p className="text-gray-400 text-sm">Loading contracts...</p>
@@ -98,7 +123,18 @@ function ContractList({ profile }) {
 
   return (
     <div className="space-y-4">
+      {filterId && (
+        <div className="flex items-center justify-between gap-3 p-3 bg-indigo-50 border border-indigo-200 rounded-lg">
+          <p className="text-sm font-semibold text-indigo-900">Showing 1 contract from your notification</p>
+          <button type="button" onClick={function () { setFilterId(null) }}
+            className="shrink-0 text-xs font-bold text-indigo-600 hover:text-indigo-800">
+            Clear — view all
+          </button>
+        </div>
+      )}
+
       {/* Toolbar */}
+      {!filterId && (
       <div className="space-y-2">
         <input type="text" value={search}
           onChange={function (e) { setSearch(e.target.value); setPage(1) }}
@@ -128,13 +164,20 @@ function ContractList({ profile }) {
         </div>
         <p className="text-xs text-gray-400">{filtered.length} contract{filtered.length === 1 ? '' : 's'}</p>
       </div>
+      )}
 
-      {filtered.length === 0 && (
+      {filterId && pinnedLoading && (
+        <p className="text-gray-400 text-sm text-center py-8">Loading contract...</p>
+      )}
+      {filterId && !pinnedLoading && !pinnedContract && (
+        <p className="text-gray-400 text-sm text-center py-8">That contract couldn't be found — it may have been merged or removed.</p>
+      )}
+      {!filterId && filtered.length === 0 && (
         <p className="text-gray-400 text-sm text-center py-8">No contracts found</p>
       )}
 
       <div className="space-y-2">
-        {paged.map(function (c) {
+        {rowsToShow.map(function (c) {
           return (
             <button key={c.id} type="button" onClick={function () { setSelected(c) }}
               className="w-full text-left bg-white border border-gray-200 rounded-lg p-3 hover:shadow-md hover:border-gray-300 transition-shadow">
@@ -164,7 +207,7 @@ function ContractList({ profile }) {
       </div>
 
       {/* Pagination */}
-      {totalPages > 1 && (
+      {!filterId && totalPages > 1 && (
         <div className="flex items-center justify-center gap-2 pt-2">
           <button onClick={function () { setPage(1) }} disabled={page === 1}
             className="px-2.5 py-1.5 text-xs border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed">«</button>

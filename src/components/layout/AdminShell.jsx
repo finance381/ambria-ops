@@ -205,7 +205,7 @@ function subTabAllowed(cfg, permsNew) {
   return true
 }
 
-function TabbedSection({ config, profile, onNavigate, activeSubTab, deepLinkExpense, onDeepLinkHandled, onSubTabMeta, navNonce, invSubDept, onInvSubDeptChange, largeTabs, deepLinkTransferId }) {
+function TabbedSection({ config, profile, onNavigate, activeSubTab, deepLinkExpense, onDeepLinkHandled, onSubTabMeta, navNonce, invSubDept, onInvSubDeptChange, largeTabs, deepLinkTransferId, deepLinkContractId }) {
   var permsNew = profile.permsNew || []
   var visibleConfig = config.filter(function (c) { return subTabAllowed(c, permsNew) })
 
@@ -240,7 +240,7 @@ function TabbedSection({ config, profile, onNavigate, activeSubTab, deepLinkExpe
       setSub(activeSubTab)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeSubTab, deepLinkExpense, deepLinkTransferId, navNonce])
+  }, [activeSubTab, deepLinkExpense, deepLinkTransferId, deepLinkContractId, navNonce])
 
   var _isAllowed = visibleConfig.find(function (c) { return c.key === sub }) != null
   var Active = _isAllowed ? config.find(function (c) { return c.key === sub })?.component : null
@@ -257,6 +257,7 @@ function TabbedSection({ config, profile, onNavigate, activeSubTab, deepLinkExpe
           onNavigateToExpenses={function (expenseId, mode) { onNavigate('expenses', 'expenses', expenseId ? { id: expenseId, mode: mode } : null) }}
           deepLinkExpense={deepLinkExpense} onDeepLinkHandled={onDeepLinkHandled}
           deepLinkTransferId={deepLinkTransferId}
+          deepLinkContractId={deepLinkContractId}
           invSubDept={invSubDept} navNonce={navNonce} onInvSubDeptChange={onInvSubDeptChange} />}
       </Suspense>
     </div>
@@ -372,6 +373,7 @@ function makeTabbedModule(configKey) {
     return <TabbedSection config={SUB_TAB_CONFIG[configKey]} profile={props.profile} onNavigate={props.onNavigate} activeSubTab={props.activeSubTab}
       deepLinkExpense={props.deepLinkExpense} onDeepLinkHandled={props.onDeepLinkHandled} onSubTabMeta={props.onSubTabMeta}
       deepLinkTransferId={props.deepLinkTransferId}
+      deepLinkContractId={props.deepLinkContractId}
       navNonce={props.navNonce} invSubDept={props.invSubDept} onInvSubDeptChange={props.onInvSubDeptChange}
       largeTabs={configKey === 'inventory'} />
   }
@@ -415,6 +417,7 @@ function AdminShell({ profile, onSignOut }) {
   // specific expense's edit/Raise JV view instead of just the Expenses tab.
   var [deepLinkExpense, setDeepLinkExpense] = useState(null)
   var [deepLinkTransferId, setDeepLinkTransferId] = useState(null)
+  var [deepLinkContractId, setDeepLinkContractId] = useState(null)
 
   // Resolves a notification's `link` string — same simple string formats
   // Shell.jsx's mobile equivalent uses, since there's no URL router here either.
@@ -429,6 +432,9 @@ function AdminShell({ profile, onSignOut }) {
       setDeepLinkExpense({ id: link.slice('expense:'.length), mode: null })
     } else if (link === 'events') {
       setActive('events'); setSubTab(null); setDeepLinkExpense(null)
+    } else if (link && link.indexOf('contracts:') === 0) {
+      setActive('events'); setSubTab('contracts'); setDeepLinkExpense(null)
+      setDeepLinkContractId(link.slice('contracts:'.length))
     }
   }
 
@@ -806,6 +812,7 @@ function AdminShell({ profile, onSignOut }) {
               deepLinkExpense={deepLinkExpense}
               onDeepLinkHandled={function () { setDeepLinkExpense(null) }}
               deepLinkTransferId={deepLinkTransferId}
+              deepLinkContractId={deepLinkContractId}
               onSubTabMeta={setSubTabMeta}
               navNonce={navNonce} invSubDept={invSubDept} onInvSubDeptChange={setInvSubDept} />
           </Suspense>
