@@ -1201,7 +1201,15 @@ function EventLedger(props) {
             looks. The department stays beside the PDF it files. */}
         {(function () {
           var depts = contracts.filter(function (c) { return c.department })
-          var withPdf = contracts.filter(function (c) { return c.pdf_link })[0]
+          // LMS's own pdf_link for a Catering contract opens its menu PDF,
+          // not a contract — there's no separate contract document for
+          // Catering on their end at all (confirmed against the live API).
+          // Prefer a real contract from another department when one's also
+          // on this event; only fall back to Catering's (mislabelled) link
+          // if that's the only pdf_link going.
+          var withPdfList = contracts.filter(function (c) { return c.pdf_link })
+          var withPdf = withPdfList.find(function (c) { return c.department !== 'Catering' }) || withPdfList[0]
+          var isMenuPdf = withPdf && withPdf.department === 'Catering'
           if (depts.length === 0 && !withPdf) return null
           return (
             <div className="mt-2.5 flex items-center justify-between gap-3">
@@ -1222,7 +1230,8 @@ function EventLedger(props) {
               </div>
               {withPdf && (
                 <a href={withPdf.pdf_link} target="_blank" rel="noopener noreferrer"
-                  title="Open the LMS contract PDF" aria-label="Open the LMS contract PDF"
+                  title={isMenuPdf ? 'Open the LMS menu PDF' : 'Open the LMS contract PDF'}
+                  aria-label={isMenuPdf ? 'Open the LMS menu PDF' : 'Open the LMS contract PDF'}
                   className="shrink-0 w-9 h-9 inline-flex items-center justify-center rounded-xl border border-slate-200 text-slate-500 active:bg-slate-50 transition-colors">
                   <Icon name="fileText" size={16} className="block" />
                 </a>
@@ -1356,13 +1365,18 @@ function EventLedger(props) {
                   this screen edits an event — they arrive from LMS — so the
                   slot carries the one thing it can actually open. */}
               {(function () {
-                var withPdf = contracts.filter(function (c) { return c.pdf_link })[0]
+                // Same preference-over-Catering rule as the card header above —
+                // Catering's pdf_link opens a menu, not a contract.
+                var withPdfList = contracts.filter(function (c) { return c.pdf_link })
+                var withPdf = withPdfList.find(function (c) { return c.department !== 'Catering' }) || withPdfList[0]
                 if (!withPdf) return null
+                var isMenuPdf = withPdf.department === 'Catering'
                 return (
                   <>
                     <span aria-hidden="true" className="w-px h-6 bg-slate-200" />
                     <a href={withPdf.pdf_link} target="_blank" rel="noopener noreferrer"
-                      title="Open the LMS contract PDF" aria-label="Open the LMS contract PDF"
+                      title={isMenuPdf ? 'Open the LMS menu PDF' : 'Open the LMS contract PDF'}
+                      aria-label={isMenuPdf ? 'Open the LMS menu PDF' : 'Open the LMS contract PDF'}
                       className="w-9 h-9 inline-flex items-center justify-center rounded-xl border border-slate-200 text-slate-500 hover:text-indigo-700 hover:border-indigo-300 hover:bg-indigo-50 transition-colors">
                       <Icon name="fileText" size={16} />
                     </a>

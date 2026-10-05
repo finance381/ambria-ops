@@ -394,7 +394,11 @@ function ContractList({ profile, deepLinkContractId }) {
 
             {(selected.pdf_link || selected.ppt_link) && (
               <div className="flex gap-3">
-                {selected.pdf_link && <a href={selected.pdf_link} target="_blank" rel="noreferrer" className="text-xs font-semibold text-indigo-600 hover:text-indigo-800">View contract PDF ↗</a>}
+                {selected.pdf_link && (
+                  <a href={selected.pdf_link} target="_blank" rel="noreferrer" className="text-xs font-semibold text-indigo-600 hover:text-indigo-800">
+                    {selected.department === 'Catering' ? 'View menu PDF' : 'View contract PDF'} ↗
+                  </a>
+                )}
                 {selected.ppt_link && <a href={selected.ppt_link} target="_blank" rel="noreferrer" className="text-xs font-semibold text-indigo-600 hover:text-indigo-800">View PPT ↗</a>}
               </div>
             )}
