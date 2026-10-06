@@ -58,6 +58,12 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
   var [collectMsg, setCollectMsg] = useState('')
   var [cameraFor, setCameraFor] = useState(null) // 'issue' | 'collect' | null
 
+  // Manual plate rate (only reachable when LMS never had one on the contract)
+  var [editingRate, setEditingRate] = useState(false)
+  var [manualRateInput, setManualRateInput] = useState('')
+  var [manualRateSaving, setManualRateSaving] = useState(false)
+  var [manualRateMsg, setManualRateMsg] = useState('')
+
   // Recent
   var [recentGroups, setRecentGroups] = useState([])
   var [listLoading, setListLoading] = useState(false)
@@ -93,7 +99,7 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
     if (!d) { setEvents([]); return }
     setEventsLoading(true)
     var { data } = await supabase.from('events')
-      .select('id, event_name, function_date, venue_name, client_name, session, extra_plates_charge, total_plates, complementary_plates, created_user_name, department, contract_no')
+      .select('id, event_name, function_date, venue_name, client_name, session, extra_plates_charge, manual_plate_rate_paise, total_plates, complementary_plates, created_user_name, department, contract_no')
       .eq('function_date', d)
       .in('department', ['Venue', 'Catering'])
       .is('lms_cancelled_at', null)
@@ -126,8 +132,38 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
     setCollectMode('')
     setCollectSubMode('')
     setCollectDiscount('')
+    setEditingRate(false)
+    setManualRateInput('')
+    setManualRateMsg('')
     if (row) await loadEventState(Number(fid), row)
 
+  }
+
+  async function saveManualRate() {
+    if (!eventDetail) return
+    var rupees = Number(manualRateInput)
+    if (!manualRateInput || isNaN(rupees) || rupees <= 0) { setManualRateMsg('Enter a valid rate.'); return }
+    setManualRateSaving(true)
+    setManualRateMsg('')
+    var { error } = await supabase.rpc('fn_set_event_manual_plate_rate', {
+      p_event_id: Number(eventId), p_rate_paise: Math.round(rupees * 100),
+    })
+    setManualRateSaving(false)
+    if (error) { setManualRateMsg(error.message); return }
+    setEventDetail(Object.assign({}, eventDetail, { manual_plate_rate_paise: Math.round(rupees * 100) }))
+    setEditingRate(false)
+    setManualRateInput('')
+  }
+
+  async function clearManualRate() {
+    if (!eventDetail) return
+    setManualRateSaving(true)
+    var { error } = await supabase.rpc('fn_set_event_manual_plate_rate', {
+      p_event_id: Number(eventId), p_rate_paise: null,
+    })
+    setManualRateSaving(false)
+    if (error) { setManualRateMsg(error.message); return }
+    setEventDetail(Object.assign({}, eventDetail, { manual_plate_rate_paise: null }))
   }
 
   async function loadEventState(eid, evRow) {
@@ -365,7 +401,13 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
   var quota = eventDetail ? (eventDetail.total_plates || 0) : 0
   var complementary = eventDetail ? (eventDetail.complementary_plates || 0) : 0
   var paidPax = quota - complementary
-  var ratePaise = eventDetail ? Number(eventDetail.extra_plates_charge || 0) * 2 : 0
+  // A manual rate (set below, when LMS never got one entered) is already the
+  // final per-plate figure an admin typed in — unlike the LMS field, it's not
+  // run through the *2 conversion.
+  var hasManualRate = !!(eventDetail && eventDetail.manual_plate_rate_paise != null)
+  var ratePaise = eventDetail
+    ? (hasManualRate ? Number(eventDetail.manual_plate_rate_paise) : Number(eventDetail.extra_plates_charge || 0) * 2)
+    : 0
 
   var thisReturned = Math.max(0, Math.floor(Number(collectReturned) || 0))
   var combinedReturned = priorReturned + thisReturned
@@ -484,11 +526,52 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
               </div>
               <div className="border-t border-amber-200 pt-2">
                 <div className="text-[10px] font-semibold text-amber-800 uppercase tracking-wide">Rate</div>
-                <div className="text-base font-bold text-amber-900">
-                  {ratePaise > 0
-                    ? '₹' + (ratePaise / 100).toLocaleString('en-IN') + ' per plate'
-                    : <span className="text-red-700">No rate on contract</span>}
-                </div>
+                {ratePaise > 0 ? (
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-base font-bold text-amber-900">
+                      ₹{(ratePaise / 100).toLocaleString('en-IN')} per plate
+                      {hasManualRate && <span className="ml-1.5 text-[10px] font-semibold text-amber-600 uppercase">(manual)</span>}
+                    </div>
+                    {hasManualRate && isAdmin && (
+                      <button type="button" onClick={clearManualRate} disabled={manualRateSaving}
+                        className="text-[11px] font-semibold text-amber-700 underline">
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                ) : editingRate ? (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-bold text-amber-900">₹</span>
+                      <input type="number" step="1" inputMode="numeric" autoFocus value={manualRateInput}
+                        onChange={function (e) { setManualRateInput(e.target.value) }}
+                        placeholder="e.g. 450" style={{ fontSize: '16px' }}
+                        className="flex-1 px-3 py-2 border border-amber-300 rounded-lg text-sm" />
+                      <span className="text-xs text-amber-700">/ plate</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button type="button" onClick={saveManualRate} disabled={manualRateSaving}
+                        className="px-3 py-1.5 rounded-lg bg-amber-600 text-white text-xs font-bold disabled:opacity-50">
+                        {manualRateSaving ? 'Saving…' : 'Save rate'}
+                      </button>
+                      <button type="button" onClick={function () { setEditingRate(false); setManualRateInput(''); setManualRateMsg('') }}
+                        className="px-3 py-1.5 rounded-lg text-amber-700 text-xs font-bold">
+                        Cancel
+                      </button>
+                    </div>
+                    {manualRateMsg && <div className="text-xs text-red-600">{manualRateMsg}</div>}
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-base font-bold text-red-700">No rate on contract</span>
+                    {isAdmin && (
+                      <button type="button" onClick={function () { setEditingRate(true) }}
+                        className="text-[11px] font-semibold text-amber-700 underline shrink-0">
+                        Set manually
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
               <div className="border-t border-amber-200 pt-2 grid grid-cols-4 gap-2 text-center">
                 <div>
