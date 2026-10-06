@@ -66,6 +66,7 @@ var RoleTemplates = lazyTab(function () { return import('../../modules/users/Rol
 var EmployeeDocTypes = lazyTab(function () { return import('../../modules/employees/EmployeeDocTypes') })
 var SalaryLedger = lazyTab(function () { return import('../../modules/employees/SalaryLedger') })
 var SalaryPayouts = lazyTab(function () { return import('../../modules/expenses/SalaryPayouts') })
+var DecorVarCost = lazyTab(function () { return import('../../modules/expenses/DecorVarCost') })
 // Two round trips, not one: the hub arrives and only then asks for whichever
 // ledger is active, so warming the hub alone would still leave the second wait
 // in place. Expense is the tab it opens on, so it is fetched alongside the hub
@@ -183,6 +184,7 @@ var SUB_TAB_CONFIG = {
   expenses: [
     { key: 'wallet',         label: 'Wallet',         icon: 'wallet',     component: Wallet,         perm: 'finance.wallet' },
     { key: 'expenses',       label: 'Expenses',       icon: 'receipt',    component: Expenses,       perm: 'finance.expenses' },
+    { key: 'decor_var_cost', label: 'Decor Var Cost', icon: 'calculator', component: DecorVarCost,   perm: 'finance.expenses' },
     { key: 'payments',       label: 'Payments',       icon: 'transfer',   component: Payments,       perm: 'finance.payments' },
     { key: 'salary_payouts', label: 'Salary Payouts', icon: 'banknote',   component: SalaryPayouts,  perm: 'finance.salary_payouts' },
     { key: 'ledgers',        label: 'Ledgers',        icon: 'list',       component: LedgersHub,

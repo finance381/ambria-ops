@@ -26,6 +26,7 @@ var VendorLedger = lazy(function () { return import('../../modules/expenses/Vend
 var EventLedger = lazy(function () { return import('../../modules/expenses/EventLedger') })
 var Payments = lazy(function () { return import('../../modules/expenses/Payments') })
 var PaymentsLedger = lazy(function () { return import('../../modules/expenses/PaymentsLedger') })
+var DecorVarCost = lazy(function () { return import('../../modules/expenses/DecorVarCost') })
 var CostTransfers = lazy(function () { return import('../../modules/expenses/CostTransfers') })
 var SalaryPayouts = lazy(function () { return import('../../modules/expenses/SalaryPayouts') })
 var SalaryLedger = lazy(function () { return import('../../modules/employees/SalaryLedger') })
@@ -124,6 +125,9 @@ var GROUPS = [
     key: 'expenses', label: 'Finance', icon: 'wallet', items: [
       { key: 'finance.wallet', label: 'Wallet', icon: 'wallet', tab: 'wallet' },
       { key: 'finance.expenses', label: 'Expenses', icon: 'banknote', tab: 'expenses' },
+      // Whoever records expenses fills in the decor cost sheets too. Same
+      // permission, its own tile; the Expenses badge stays on Expenses.
+      { key: 'finance.expenses', id: 'finance.decor_var_cost', label: 'Decor Var Cost', icon: 'calculator', tab: 'decor_var_cost', noBadge: true },
       { key: 'finance.cost_transfers', label: 'Cost Transfers', icon: 'transfer', tab: 'cost_transfers' },
       { key: 'finance.ledgers.expense', label: 'Expense Ledger', icon: 'fileText', tab: 'ledgers' },
       { key: 'finance.ledgers.event', label: 'Event Ledger', icon: 'calendar', tab: 'event_ledger' },
@@ -238,7 +242,10 @@ function Shell({ profile, onSignOut }) {
   // Badge sum per group
   function groupBadge(group) {
     var total = 0
-    group.items.forEach(function (f) { total += (badges[f.key] || 0) })
+    // noBadge tiles share their permission key with another tile (Cash &
+    // Bank with Payments, Decor Var Cost with Expenses); counting them too
+    // put the same pending items into the group's badge twice.
+    group.items.forEach(function (f) { if (!f.noBadge) total += (badges[f.key] || 0) })
     return total
   }
 
@@ -758,7 +765,7 @@ function Shell({ profile, onSignOut }) {
               var extra = null
               if (f.key === 'finance.wallet' && walletBalance !== null) {
                 extra = <span className={"text-xs font-bold " + (walletBalance < 0 ? "text-red-600" : "text-green-700")}>{formatPoints(walletBalance)}</span>
-              } else if (f.key === 'finance.expenses' && financeStats.expMonthCount > 0) {
+              } else if (f.key === 'finance.expenses' && !f.id && financeStats.expMonthCount > 0) {
                 extra = <span className="text-[11.5px] font-medium text-slate-500 tabular-nums">{financeStats.expMonthCount + ' · ' + formatPoints(financeStats.expMonthTotal)}</span>
               }
               // The expense ledger tile carries no figure. A month's total is
@@ -852,6 +859,9 @@ function Shell({ profile, onSignOut }) {
         )}
         {tab === 'cash_bank' && (
           <PaymentsLedger profile={profile} />
+        )}
+        {tab === 'decor_var_cost' && (
+          <DecorVarCost profile={profile} />
         )}
         {tab === 'salary_payouts' && (
           <SalaryPayouts profile={profile} />

@@ -25,6 +25,10 @@ export default defineConfig({
         // network on a cold load while everything around it came from the cache,
         // which is the one thing a backdrop must not do.
         globPatterns: ['**/*.{js,css,html,ico,png,svg,webp}'],
+        // exceljs (~940 kB) is only ever loaded when someone exports a Decor
+        // Var Cost sheet; precaching it made every phone download it on every
+        // update. Left out, it is fetched the one time it is asked for.
+        globIgnores: ['**/exceljs*.js'],
       },
       manifest: {
           "name": "Ambria Ops",
