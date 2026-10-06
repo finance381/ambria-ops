@@ -202,6 +202,7 @@ function CostTransfers({ profile, inAdmin }) {
       .select(EVENT_COLS)
       .gte('function_date', isoDay(from))
       .lte('function_date', isoDay(to))
+      .is('lms_cancelled_at', null)
       .order('function_date')
       .order('event_name')
     if (error) { prefetchedRef.current = false; return }
@@ -241,6 +242,7 @@ function CostTransfers({ profile, inAdmin }) {
     var { data } = await supabase.from('events')
       .select(EVENT_COLS)
       .eq('function_date', dateStr)
+      .is('lms_cancelled_at', null)
       .order('event_name')
     var rows = data || []
     eventsByDateRef.current[dateStr] = rows
@@ -297,7 +299,7 @@ function CostTransfers({ profile, inAdmin }) {
   async function loadLookups() {
     try {
       var results = await Promise.all([
-        supabase.from('events').select('id, function_date, event_name, client_name').order('function_date', { ascending: false }).limit(500),
+        supabase.from('events').select('id, function_date, event_name, client_name').is('lms_cancelled_at', null).order('function_date', { ascending: false }).limit(500),
         supabase.from('vendors').select('id, name, category_ids').eq('active', true).order('name'),
         supabase.from('job_departments').select('id, name').order('name'),
         supabase.from('categories').select('id, sub_department_id').order('id'),

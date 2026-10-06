@@ -276,6 +276,7 @@ function EventLedger(props) {
       .gte('function_date', start)
       .lte('function_date', end)
       .is('merged_into_id', null)
+      .is('lms_cancelled_at', null)
       .order('event_name')
       .then(function (res) {
         if (!alive) return

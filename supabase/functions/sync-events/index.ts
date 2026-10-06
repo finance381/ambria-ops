@@ -175,6 +175,10 @@ function mapRow(e: any, dep: typeof DEPARTMENTS[0], lmsUserMap: Record<string, s
     total_amount_paise: safePaise(e[h + "total_amt"] || 0),
     net_amount_paise: safePaise(e[h + "net_amt"] || 0),
     lms_head_id: safeInt(e.headid || e.id || 0) || null,
+    // Any row LMS actively returns (uncancelled) this run is, by definition,
+    // not cancelled -- clears a flag a previous run may have set if LMS
+    // un-cancelled it since.
+    lms_cancelled_at: null,
   }
 }
 
@@ -369,16 +373,27 @@ serve(async (req) => {
         }
       }
 
-      // Stale detection — rows not touched by this sync
-      var { count: staleCount } = await supabase
-        .from("events")
-        .select("id", { count: "exact", head: true })
-        .like("lms_event_id", dep.name + "_%")
-        .lt("synced_at", syncStartedAt)
-
-      result.stale = staleCount || 0
-      if (result.stale > 0) {
-        console.log(dep.name + ": " + result.stale + " stale rows (possibly cancelled in LMS)")
+      // Stale rows — not touched by this sync, which (since this department's
+      // fetch loop ran clean start to finish, see the error-count guard below)
+      // means LMS no longer returns them uncancelled: either genuinely
+      // cancelled (cancel_remarks now set, so our fetch loop skips it) or
+      // removed outright. Either way, flag them so events_safe and every
+      // picker that filters on it stop showing them. Only do this when the
+      // fetch had zero errors this run — a partial page failure would make
+      // perfectly live contracts look stale just because we never reached
+      // them, and that's not something to act on.
+      if (result.errors.length === 0) {
+        var { data: staleRows } = await supabase
+          .from("events")
+          .update({ lms_cancelled_at: new Date().toISOString() })
+          .like("lms_event_id", dep.name + "_%")
+          .lt("synced_at", syncStartedAt)
+          .is("lms_cancelled_at", null)
+          .select("id")
+        result.stale = (staleRows || []).length
+        if (result.stale > 0) {
+          console.log(dep.name + ": " + result.stale + " rows cancelled in LMS, flagged")
+        }
       }
 
       return result

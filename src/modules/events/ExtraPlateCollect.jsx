@@ -96,6 +96,7 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
       .select('id, event_name, function_date, venue_name, client_name, session, extra_plates_charge, total_plates, complementary_plates, created_user_name, department, contract_no')
       .eq('function_date', d)
       .in('department', ['Venue', 'Catering'])
+      .is('lms_cancelled_at', null)
       .order('event_name')
     setEvents(data || [])
     setEventsLoading(false)

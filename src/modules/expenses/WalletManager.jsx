@@ -1268,6 +1268,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
       .select('id, event_name, function_date, venue_name, client_name, session, contact_person, contact_number, secondary_contact, created_user_name, department, contract_no, is_tentative')
       .eq('function_date', dateStr)
       .is('merged_into_id', null)
+      .is('lms_cancelled_at', null)
       .order('event_name')
     setCollectEvents(data || [])
     setCollectFunctionsLoading(false)

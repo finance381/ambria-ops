@@ -460,6 +460,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
     var { data } = await supabase.from('events')
       .select('id, event_name, function_date, contract_type, venue_name, session, client_name, department, contract_no, created_user_name')
       .eq('function_date', dateStr)
+      .is('lms_cancelled_at', null)
       .order('event_name')
     var rows = data || []
     setEvents(rows)

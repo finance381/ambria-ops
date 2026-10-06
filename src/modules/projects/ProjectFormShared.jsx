@@ -497,7 +497,7 @@ export function LinkedEventSection({ formApi, readOnly }) {
     setEventDate(dateStr)
     if (!dateStr) { setEvents([]); return }
     setEventsLoading(true)
-    supabase.from('events').select('id, event_name, client_name, function_date').eq('function_date', dateStr).order('event_name')
+    supabase.from('events').select('id, event_name, client_name, function_date').eq('function_date', dateStr).is('lms_cancelled_at', null).order('event_name')
       .then(function (res) { setEvents(res.data || []); setEventsLoading(false) })
   }
 
